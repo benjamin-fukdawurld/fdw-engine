@@ -1,72 +1,39 @@
-import { useMachine } from '@xstate/react';
-import { useEffect, MutableRefObject } from 'react';
+import { useEffect, useState, useRef, MutableRefObject } from 'react';
 
-import { RenderDeviceMachine } from '../machines/RenderDeviceMachine';
+import Gpu from '../engine/Gpu';
+import Surface from '../engine/Surface';
 
-export function useWebGPU({
-  canvas,
-  label,
-}: {
+export type WebGPUProps = {
   canvas: MutableRefObject<HTMLCanvasElement | null>;
   label?: string;
-}) {
-  const [state, send] = useMachine(RenderDeviceMachine);
-  const init = async () => {
-    if (canvas.current === null || state.value !== 'notInitialized') {
-      return;
-    }
+};
 
-    canvas.current.width = canvas.current.offsetWidth;
-    canvas.current.height = canvas.current.offsetHeight;
+export function useWebGPU({ canvas, label }: WebGPUProps) {
+  const gpu = useRef<Gpu | null>(null);
+  const surface = useRef<Surface | null>(null);
+  const [gpuReady, setGpuReady] = useState<boolean>(false);
 
-    const adapter = (await navigator.gpu?.requestAdapter()) ?? null;
-    if (!adapter) {
-      send({
-        type: 'Init failed',
-        errorMessage: 'browser does not support WebGPU',
-      });
-      throw new Error('browser does not support WebGPU');
-    }
+  const init = async (canvas: HTMLCanvasElement) => {
+    gpu.current = new Gpu(label);
+    surface.current = new Surface(canvas);
 
-    send({ type: 'Adapter ready', adapter });
+    await gpu.current.init();
+    await surface.current.init(gpu.current);
 
-    const device =
-      (await adapter?.requestDevice({
-        label: `${label ?? 'untitled'} device`,
-      })) ?? null;
-    if (!device) {
-      send({
-        type: 'Init failed',
-        errorMessage: 'browser does not support WebGPU',
-      });
-      throw new Error('browser does not support WebGPU');
-    }
-
-    send({ type: 'Device ready', device });
-
-    const context = canvas.current?.getContext('webgpu') ?? null;
-    if (!context) {
-      send({
-        type: 'Init failed',
-        errorMessage: 'browser does not support WebGPU',
-      });
-      throw new Error('canvas does not support WebGPU');
-    }
-
-    send({ type: 'Context ready', context });
-
-    const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({
-      device,
-      format,
-    });
-
-    send({ type: 'Device configured', format });
+    setGpuReady(true);
   };
 
   useEffect(() => {
-    init();
+    if (!canvas.current) {
+      return;
+    }
+
+    init(canvas.current);
   }, []);
 
-  return state;
+  return {
+    gpu: gpu.current,
+    surface: surface.current,
+    gpuReady,
+  };
 }
