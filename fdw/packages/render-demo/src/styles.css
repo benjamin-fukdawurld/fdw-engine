@@ -1,0 +1,13 @@
+body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-flow: column nowrap;
+  height: 100svh;
+}
+
+#main-canvas {
+  border: solid 1px black;
+  display: block;
+  flex-grow: 1;
+}
