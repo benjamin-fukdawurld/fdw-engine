@@ -1,60 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useWebGPU, useProgram } from '../hooks';
-
-import hardcodedShader from '../assets/hardcoded.wgsl?raw';
-import Gpu from '../engine/Gpu';
-import Surface from '../engine/Surface';
-import Program from '../engine/Program';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { main } from './sample';
 
 export function WebGPUCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [ready, setReady] = useState<boolean>(false);
 
-  const { gpu, surface, gpuReady } = useWebGPU({
-    canvas: canvasRef,
-    label: 'default',
-  });
-  const { programReady, render } = useProgram({
-    gpu,
-    surface,
-    gpuReady,
-    shaderCode: hardcodedShader,
-    renderPass: (gpu: Gpu, surface: Surface, program: Program) => {
-      return () => {
-        const renderPassDescriptor: GPURenderPassDescriptor = {
-          label: 'our basic canvas renderPass',
-          colorAttachments: [
-            {
-              view: surface.context.getCurrentTexture().createView(),
-              clearValue: [0.3, 0.3, 0.3, 1],
-              loadOp: 'clear',
-              storeOp: 'store',
-            },
-          ],
-        };
-
-        const pass = program.encoder.beginRenderPass(renderPassDescriptor);
-        pass.setPipeline(program.pipeline);
-        pass.draw(3);
-        pass.end();
-
-        const commandBuffer = program.encoder.finish();
-        gpu.device.queue.submit([commandBuffer]);
-      };
-    },
-  });
-
-  useEffect(() => {
-    if (!programReady || !render) {
+  const init = async () => {
+    if (ready || !canvasRef.current) {
       return;
     }
 
-    render();
-  }, [programReady]);
+    setReady(true);
+    main(canvasRef.current);
+  };
+
+  useLayoutEffect(() => {
+    init();
+  }, [ready]);
 
   return (
     <canvas
       style={{
+        display: 'block',
         width: '100%',
+        height: '100%',
       }}
       ref={canvasRef}
     ></canvas>

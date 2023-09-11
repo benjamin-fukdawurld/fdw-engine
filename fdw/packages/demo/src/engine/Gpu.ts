@@ -134,7 +134,7 @@ export default class Gpu {
    * @param descriptor - Description of the GPUCommandEncoder to create.
    */
   public createCommandEncoder(
-    descriptor: GPUCommandEncoderDescriptor
+    descriptor?: GPUCommandEncoderDescriptor
   ): GPUCommandEncoder {
     return this.device.createCommandEncoder(this.formatLabel(descriptor));
   }

@@ -1,5 +1,12 @@
 import Gpu from './Gpu';
 
+export type SurfaceResizeContext = {
+  surface: Surface;
+  gpu: Gpu;
+};
+
+export type SurfaceResizeFunc = (ctx: SurfaceResizeContext) => void;
+
 /**
  * Class representing a canvas with the WebGPU context that belongs to it.
  */
@@ -13,6 +20,10 @@ export default class Surface {
    * @type {HTMLCanvasElement}
    */
   public readonly canvas: HTMLCanvasElement;
+
+  public onResize?: SurfaceResizeFunc;
+
+  private _resizeObserver: ResizeObserver | null;
 
   /**
    * The WebGPU context attached to the canvas.
@@ -39,6 +50,8 @@ export default class Surface {
    */
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
+
+    this._resizeObserver = null;
     this._context = null;
     this._format = null;
   }
@@ -108,5 +121,27 @@ export default class Surface {
       device: gpu.device,
       format: this._format,
     });
+
+    this._resizeObserver = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        const width = Math.min(
+          entry.contentBoxSize[0].inlineSize,
+          gpu.device.limits.maxTextureDimension2D
+        );
+        const height = Math.min(
+          entry.contentBoxSize[0].blockSize,
+          gpu.device.limits.maxTextureDimension2D
+        );
+
+        this.canvas.width = Math.max(1, width);
+        this.canvas.height = Math.max(1, height);
+
+        if (this.onResize) {
+          this.onResize({ surface: this, gpu });
+        }
+      });
+    });
+
+    this._resizeObserver.observe(this.canvas);
   }
 }
