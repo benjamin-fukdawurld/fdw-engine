@@ -21,8 +21,22 @@ export class Surface {
    */
   public readonly canvas: HTMLCanvasElement;
 
+  /**
+   * The callback used when the Surface is resized.
+   * @date 16/09/2023 - 21:43:16
+   *
+   * @public
+   * @type {?SurfaceResizeFunc}
+   */
   public onResize?: SurfaceResizeFunc;
 
+  /**
+   * The ResizeObserver monitoring the resize changes on the canvas.
+   * @date 16/09/2023 - 21:44:44
+   *
+   * @private
+   * @type {(ResizeObserver | null)}
+   */
   private _resizeObserver: ResizeObserver | null;
 
   /**
@@ -58,7 +72,7 @@ export class Surface {
 
   /**
    * Check whether the Surface has been initialized (ie: the WebGPU context and
-   * the prefered format has been set and configured).
+   * the preferred format has been set and configured).
    * @date 09/09/2023 - 17:22:41
    *
    * @readonly

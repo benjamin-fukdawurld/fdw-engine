@@ -1,10 +1,28 @@
 import Gpu from './Gpu';
 
+/**
+ * Object containing the necessary data to initialize a Program.
+ */
 export type ProgramDescriptor = {
+  /**
+   * Generate a GPUShaderModuleDescriptor for the current program.
+   * @returns The GPUShaderModuleDescriptor of the Program.
+   */
   shaderDescriptor: () => GPUShaderModuleDescriptor;
+
+  /**
+   * Generate a GPURenderPipelineDescriptor for the Program.
+   * @param shader The GPUShaderModule of the program.
+   * @returns The GPURenderPipelineDescriptor of the Program.
+   */
   pipelineDescriptor: (shader: GPUShaderModule) => GPURenderPipelineDescriptor;
 };
 
+/**
+ * Class representing a WebGPU shader program.
+ *
+ * It contains both, the shader module and the render pipeline of the program.
+ */
 export class Program {
   private _shaderModule: GPUShaderModule | null;
   private _pipeline: GPURenderPipeline | null;
@@ -61,12 +79,19 @@ export class Program {
     return this._pipeline;
   }
 
+  /**
+   * Initialize the Program by creating the shader module and setting up the
+   * pipeline
+   *
+   * @param gpu the Gpu wrapper
+   * @param programDescriptor The Program descriptor
+   */
   async init(
     gpu: Gpu,
     { shaderDescriptor, pipelineDescriptor }: ProgramDescriptor
   ): Promise<void> {
-    this._shaderModule = gpu.createShaderModule(shaderDescriptor());
-    this._pipeline = gpu.createRenderPipeline(
+    this._shaderModule = gpu.device.createShaderModule(shaderDescriptor());
+    this._pipeline = gpu.device.createRenderPipeline(
       pipelineDescriptor(this._shaderModule)
     );
   }
