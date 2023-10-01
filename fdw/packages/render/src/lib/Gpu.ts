@@ -82,62 +82,6 @@ export class Gpu {
       throw new Error('browser does not support WebGPU');
     }
   }
-
-  /**
-   * Prepend the label of the GPU device to the descriptor label using a '.' to
-   * join them. If no descriptor is passed then the returned object only
-   * contains the label. If the given descriptor contains no label then the GPU
-   * device's label is set to the descriptor.
-   *
-   * @note It is recommended to always give a label to your entities so it makes
-   * it easier to debug the code if something goes wrong.
-   *
-   * @param descriptor the descriptor which holds the label to format
-   * @returns
-   */
-  private formatLabel<T extends GPUObjectDescriptorBase>(descriptor?: T): T {
-    let label = this.label;
-    if (!descriptor) {
-      return { label } as T;
-    }
-
-    if (descriptor?.label) {
-      label = `${label}.${descriptor.label}`;
-    }
-
-    return { ...descriptor, label };
-  }
-
-  /**
-   * Creates a GPUShaderModule.
-   * @param descriptor Description of the GPUShaderModule to create.
-   * @returns The shader module created
-   */
-  public createShaderModule(
-    descriptor: GPUShaderModuleDescriptor
-  ): GPUShaderModule {
-    return this.device.createShaderModule(this.formatLabel(descriptor));
-  }
-
-  /**
-   * Creates a GPURenderPipeline using immediate pipeline creation.
-   * @param descriptor Description of the GPURenderPipeline to create.
-   */
-  public createRenderPipeline(
-    descriptor: GPURenderPipelineDescriptor
-  ): GPURenderPipeline {
-    return this.device.createRenderPipeline(this.formatLabel(descriptor));
-  }
-
-  /**
-   * Creates a GPUCommandEncoder.
-   * @param descriptor - Description of the GPUCommandEncoder to create.
-   */
-  public createCommandEncoder(
-    descriptor?: GPUCommandEncoderDescriptor
-  ): GPUCommandEncoder {
-    return this.device.createCommandEncoder(this.formatLabel(descriptor));
-  }
 }
 
 export default Gpu;
