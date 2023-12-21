@@ -4,10 +4,11 @@ body {
   display: flex;
   flex-flow: column nowrap;
   height: 100svh;
+  max-height: 100svh;
 }
 
 #main-canvas {
   border: solid 1px black;
   display: block;
-  flex-grow: 1;
+  height: 100%;
 }
