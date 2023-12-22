@@ -24,7 +24,7 @@ export default class App {
       colorAttachments: [
         {
           view: this.engine.surface.context.getCurrentTexture().createView(),
-          clearValue: [0.3, 0.3, 0.3, 1],
+          clearValue: [0.3, 0.3, 0.3, 0], // made transparent RN
           loadOp: 'clear',
           storeOp: 'store',
         },
@@ -40,7 +40,7 @@ export default class App {
     });
 
     const pass = encoder.beginRenderPass(renderPassDescriptor);
-    this.scene.render(pass);
+    this.scene.render(this.engine, pass);
     pass.end();
 
     const commandBuffer = encoder.finish();
