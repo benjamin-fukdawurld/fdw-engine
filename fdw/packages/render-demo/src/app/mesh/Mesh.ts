@@ -1,9 +1,4 @@
-import {
-  IMeshBuilder,
-  MeshBuffers,
-  MeshData,
-  VertexAttributes,
-} from '../mesh/types';
+import { IMeshBuilder, MeshBuffers, MeshData, VertexAttributes } from './types';
 
 export class MeshBuilder implements IMeshBuilder {
   public toBuffers({
