@@ -134,6 +134,7 @@ export class Surface {
     this._context.configure({
       device: gpu.device,
       format: this._format,
+      alphaMode: 'premultiplied',
     });
 
     this._resizeObserver = new ResizeObserver((entries) => {
