@@ -1,5 +1,5 @@
 import { vec2, vec3 } from 'gl-matrix';
-import { MeshData } from './Mesh';
+import { MeshData } from './types';
 
 export class VertexProxy {
   public readonly mesh: MeshData;
@@ -11,7 +11,7 @@ export class VertexProxy {
   }
 
   get positionIndex(): number {
-    return this.mesh.indices[this.index * 3][0];
+    return this.mesh.indices[this.index * 3]; //[0];
   }
 
   get positionOffset(): number {
@@ -19,7 +19,7 @@ export class VertexProxy {
   }
 
   get uvIndex(): number {
-    return this.mesh.indices[this.index * 3][1];
+    return this.mesh.indices[this.index * 3]; //[1];
   }
 
   get uvOffset(): number {
@@ -27,7 +27,7 @@ export class VertexProxy {
   }
 
   get normalIndex(): number {
-    return this.mesh.indices[this.index * 3][2];
+    return this.mesh.indices[this.index * 3]; //[2];
   }
 
   get normalOffset(): number {
