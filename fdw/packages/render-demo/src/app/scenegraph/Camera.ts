@@ -1,4 +1,4 @@
-import { mat4, vec3 } from 'gl-matrix';
+import { mat4, vec3 } from 'wgpu-matrix';
 
 export type Screen = {
   x: number;
@@ -10,9 +10,9 @@ export type Screen = {
 export type ProjectionType = 'ortho' | 'perspective';
 
 export type CameraProps = {
-  position?: vec3;
-  target?: vec3;
-  up?: vec3;
+  position?: Float32Array;
+  target?: Float32Array;
+  up?: Float32Array;
 
   near?: number;
   far?: number;
@@ -22,9 +22,9 @@ export type CameraProps = {
 };
 
 export class Camera {
-  private _position: vec3;
-  private _target: vec3;
-  private _up: vec3;
+  private _position: Float32Array;
+  private _target: Float32Array;
+  private _up: Float32Array;
 
   private _near: number;
   private _far: number;
@@ -32,16 +32,16 @@ export class Camera {
   private _fov: number;
   private _projection: ProjectionType;
 
-  private _viewMatrix: mat4;
+  private _viewMatrix: Float32Array;
   private _viewMatrixUpToDate: boolean;
 
-  private _projectionMatrix: mat4;
+  private _projectionMatrix: Float32Array;
   private _projectionMatrixUpToDate: boolean;
 
   constructor(props?: CameraProps) {
-    this._position = props?.position ?? [0, 0, 10];
-    this._target = props?.target ?? [0, 0, 0];
-    this._up = props?.up ?? [0, 1, 0];
+    this._position = props?.position ?? vec3.create(0, 0, 10);
+    this._target = props?.target ?? vec3.create(0, 0, 0);
+    this._up = props?.up ?? vec3.create(0, 1, 0);
 
     this._near = props?.near ?? 0.001;
     this._far = props?.far ?? 1000;
@@ -54,39 +54,39 @@ export class Camera {
 
     this._screen = screen as Screen;
 
-    this._fov = props?.fov ?? 0.0;
+    this._fov = props?.fov ?? Math.PI / 2;
     this._projection = props?.projection ?? 'perspective';
 
-    this._viewMatrix = mat4.identity(new Float32Array(16));
+    this._viewMatrix = mat4.identity();
     this._viewMatrixUpToDate = false;
 
-    this._projectionMatrix = mat4.identity(new Float32Array(16));
+    this._projectionMatrix = mat4.identity();
     this._projectionMatrixUpToDate = false;
   }
 
-  get position(): vec3 {
+  get position(): Float32Array {
     return this._position;
   }
 
-  set position(value: vec3) {
+  set position(value: Float32Array) {
     this._position = value;
     this._viewMatrixUpToDate = false;
   }
 
-  get target(): vec3 {
+  get target(): Float32Array {
     return this._target;
   }
 
-  set target(value: vec3) {
+  set target(value: Float32Array) {
     this._target = value;
     this._viewMatrixUpToDate = false;
   }
 
-  get up(): vec3 {
+  get up(): Float32Array {
     return this._up;
   }
 
-  set up(value: vec3) {
+  set up(value: Float32Array) {
     this._up = value;
     this._viewMatrixUpToDate = false;
   }
@@ -188,7 +188,7 @@ export class Camera {
     }
   }
 
-  get viewMatrix(): mat4 {
+  get viewMatrix(): Float32Array {
     if (!this._viewMatrixUpToDate) {
       this.updateViewMatrix();
     }
@@ -196,7 +196,7 @@ export class Camera {
     return this._viewMatrix;
   }
 
-  get projectionMatrix(): mat4 {
+  get projectionMatrix(): Float32Array {
     if (!this._projectionMatrixUpToDate) {
       this.updateProjectionMatrix();
     }
@@ -213,23 +213,23 @@ export class Camera {
     switch (this._projection) {
       case 'ortho':
         mat4.ortho(
-          this._projectionMatrix,
-          this.screenLeft,
-          this.screenRight,
-          this.screenBottom,
-          this.screenTop,
-          this._near,
-          this._far
+          this.position[0] - this.screen.width / 2,
+          this.position[0] + this.screen.width / 2,
+          this.position[1] - this.screen.height / 2,
+          this.position[1] + this.screen.height / 2,
+          -this._far,
+          this._far,
+          this._projectionMatrix
         );
         break;
 
       case 'perspective':
         mat4.perspective(
-          this._projectionMatrix,
           this._fov,
           this.screen.width / this.screen.height,
-          this._near,
-          this._far
+          -this._far,
+          this._far,
+          this._projectionMatrix
         );
         break;
     }
