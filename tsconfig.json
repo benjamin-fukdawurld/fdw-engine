@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compileOnSave": false,
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/web-gpu-renderer"
+    },
+    {
+      "path": "./apps/demo"
+    },
+    {
+      "path": "./packages/ui"
+    }
+  ]
+}

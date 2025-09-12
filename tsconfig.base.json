@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "importHelpers": true,
+    "isolatedModules": true,
+    "lib": ["es2022", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "customConditions": ["@fdw-engine/source"],
+    "baseUrl": ".",
+    "paths": {
+      "@/components/ui/*": ["packages/ui/src/components/ui/*"],
+      "@/lib/*": ["packages/ui/src/lib/*"],
+      "@fdw-engine/ui": ["packages/ui/src/index.ts"],
+      "@fdw-engine/ui/*": ["packages/ui/src/*"]
+    }
+  }
+}
