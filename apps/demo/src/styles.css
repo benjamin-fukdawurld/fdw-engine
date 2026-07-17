@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+/* You can add global styles to this file, and also import other style files */
+
+#root {
+  height: 100vh;
+  height: 100svh;
+  width: 100vw;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+}

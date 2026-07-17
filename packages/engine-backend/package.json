@@ -1,0 +1,17 @@
+{
+  "name": "@fdw/engine-backend",
+  "version": "0.0.1",
+  "dependencies": {
+    "tslib": "^2.3.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw-engine/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}

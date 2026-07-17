@@ -21,8 +21,9 @@
     "paths": {
       "@/components/ui/*": ["packages/ui/src/components/ui/*"],
       "@/lib/*": ["packages/ui/src/lib/*"],
-      "@fdw-engine/ui": ["packages/ui/src/index.ts"],
-      "@fdw-engine/ui/*": ["packages/ui/src/*"]
+      "@fdw/engine-backend": ["packages/engine-backend/src/index.ts"],
+      "@fdw/engine-core": ["packages/engine-core/src/index.ts"],
+      "@fdw/engine-webgpu": ["packages/engine-webgpu/src/index.ts"]
     }
   }
 }

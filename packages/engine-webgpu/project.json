@@ -1,0 +1,7 @@
+{
+  "name": "engine-webgpu",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-webgpu/src",
+  "projectType": "library",
+  "tags": []
+}
