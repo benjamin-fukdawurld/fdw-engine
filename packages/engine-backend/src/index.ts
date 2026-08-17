@@ -3,3 +3,5 @@ export * from './Surface';
 export * from './types';
 export * from './camera';
 export * from './transform';
+export * from './math';
+export * from './gpu';

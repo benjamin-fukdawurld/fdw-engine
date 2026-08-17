@@ -1,30 +1,50 @@
-export type Mat3Api<TMat3, TMat2, TVec3> = {
-  identity: (out?: TMat3) => TMat3;
-  premultiply: (a: TMat3, b: TMat3, out?: TMat3) => TMat3;
-  multiply: (a: TMat3, b: TMat3, out?: TMat3) => TMat3;
-  invert: (a: TMat3, out?: TMat3) => TMat3;
-  transpose: (a: TMat3, out?: TMat3) => TMat3;
+export type Mat3Api = {
+  identity: (out?: Float32Array) => Float32Array;
+  premultiply: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  multiply: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  invert: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  transpose: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
 
-  fromMat2: (m2: TMat2, out?: TMat3) => TMat3;
-  getMat2: (mat: TMat3, out?: TMat2) => TMat2;
+  negate: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  multiplyScalar: (
+    a: ArrayLike<number>,
+    scalar: number,
+    out?: Float32Array
+  ) => Float32Array;
+  add: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
 
-  rotateAxisAngle: (mat: TMat3, rad: number, axis: TVec3, out?: TMat3) => TMat3;
-  scale: (mat: TMat3, scale: TVec3, out?: TMat3) => TMat3;
+  determinant: (mat: ArrayLike<number>) => number;
 
-  determinant: (mat: TMat3) => number;
+  fromMat4: (mat4: ArrayLike<number>, out?: Float32Array) => Float32Array;
 
-  create(): TMat3;
-  copy: (mat: TMat3, out: TMat3) => TMat3;
-  clone: (mat: TMat3) => TMat3;
-  equals: (a: TMat3, b: TMat3, epsilon?: number) => boolean;
-  zero: (out?: TMat3) => TMat3;
-  one: (out?: TMat3) => TMat3;
-  toArray: (mat: TMat3, out?: number[]) => number[];
-  fromArray: (arr: number[], out?: TMat3) => TMat3;
+  create: () => Float32Array;
+  copy: (mat: ArrayLike<number>, out: Float32Array) => Float32Array;
+  clone: (mat: ArrayLike<number>) => Float32Array;
+  equals: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    epsilon?: number
+  ) => boolean;
+  zero: (out?: Float32Array) => Float32Array;
+  one: (out?: Float32Array) => Float32Array;
+  toArray: (mat: ArrayLike<number>, out?: number[]) => number[];
+  fromArray: (arr: number[], out?: Float32Array) => Float32Array;
 
-  isIdentity: (mat: TMat3, epsilon?: number) => boolean;
-  isFinite: (mat: TMat3) => boolean;
-  isNaN: (mat: TMat3) => boolean;
+  isIdentity: (mat: ArrayLike<number>, epsilon?: number) => boolean;
+  isFinite: (mat: ArrayLike<number>) => boolean;
+  isNaN: (mat: ArrayLike<number>) => boolean;
 
-  str: (mat: TMat3) => string;
+  str: (mat: ArrayLike<number>) => string;
 };

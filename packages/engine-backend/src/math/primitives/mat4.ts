@@ -1,18 +1,55 @@
-export type Mat4Api<TMat4, TMat3, TVec3, TQuat> = {
-  identity: (out?: TMat4) => TMat4;
-  premultiply: (a: TMat4, b: TMat4, out?: TMat4) => TMat4;
-  multiply: (a: TMat4, b: TMat4, out?: TMat4) => TMat4;
-  invert: (a: TMat4, out?: TMat4) => TMat4;
-  transpose: (a: TMat4, out?: TMat4) => TMat4;
+export type Mat4Api = {
+  identity: (out?: Float32Array) => Float32Array;
+  premultiply: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  multiply: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  invert: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  transpose: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
 
-  lookAt: (eye: TVec3, center: TVec3, up: TVec3, out?: TMat4) => TMat4;
+  negate: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  add: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  multiplyScalar: (
+    a: ArrayLike<number>,
+    scalar: number,
+    out?: Float32Array
+  ) => Float32Array;
+
+  aim: (
+    position: ArrayLike<number>,
+    target: ArrayLike<number>,
+    up: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  cameraAim: (
+    eye: ArrayLike<number>,
+    target: ArrayLike<number>,
+    up: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  lookAt: (
+    eye: ArrayLike<number>,
+    center: ArrayLike<number>,
+    up: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
   perspective: (
     fovy: number,
     aspect: number,
     near: number,
     far: number,
-    out?: TMat4
-  ) => TMat4;
+    out?: Float32Array
+  ) => Float32Array;
   ortho: (
     left: number,
     right: number,
@@ -20,42 +57,82 @@ export type Mat4Api<TMat4, TMat3, TVec3, TQuat> = {
     top: number,
     near: number,
     far: number,
-    out?: TMat4
-  ) => TMat4;
+    out?: Float32Array
+  ) => Float32Array;
 
-  fromTranslation: (translation: TVec3, out?: TMat4) => TMat4;
-  fromAxisAngle: (rad: number, axis: TVec3, out?: TMat4) => TMat4;
-  fromScaling: (scale: TVec3, out?: TMat4) => TMat4;
-  fromQuat: (q: TQuat, out?: TMat4) => TMat4;
-  fromMat3: (m3: TMat3, out?: TMat4) => TMat4;
+  fromTranslation: (
+    translation: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  fromAxisAngle: (
+    rad: number,
+    axis: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  fromScaling: (scale: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  fromQuat: (q: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  fromMat3: (m3: ArrayLike<number>, out?: Float32Array) => Float32Array;
 
-  getTranslation: (mat: TMat4, out?: TVec3) => TVec3;
-  getScaling: (mat: TMat4, out?: TVec3) => TVec3;
-  getRotation: (mat: TMat4, out?: TQuat) => TQuat;
-  setTranslation: (mat: TMat4, translation: TVec3, out?: TMat4) => TMat4;
-  setScaling: (mat: TMat4, scale: TVec3, out?: TMat4) => TMat4;
-  setRotation: (mat: TMat4, q: TQuat, out?: TMat4) => TMat4;
-  getMat3: (mat: TMat4, out?: TMat3) => TMat3;
+  getTranslation: (mat: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  getScaling: (mat: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  getRotation: (mat: ArrayLike<number>, out?: Float32Array) => Float32Array;
+  setTranslation: (
+    mat: ArrayLike<number>,
+    translation: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  setScaling: (
+    mat: ArrayLike<number>,
+    scale: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  setRotation: (
+    mat: ArrayLike<number>,
+    q: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  getMat3: (mat: ArrayLike<number>, out?: Float32Array) => Float32Array;
 
-  translate: (mat: TMat4, translation: TVec3, out?: TMat4) => TMat4;
-  rotateAxisAngle: (mat: TMat4, rad: number, axis: TVec3, out?: TMat4) => TMat4;
-  scale: (mat: TMat4, scale: TVec3, out?: TMat4) => TMat4;
-  rotateQuat: (mat: TMat4, q: TQuat, out?: TMat4) => TMat4;
+  translate: (
+    mat: ArrayLike<number>,
+    translation: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  rotateAxisAngle: (
+    mat: ArrayLike<number>,
+    rad: number,
+    axis: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  scale: (
+    mat: ArrayLike<number>,
+    scale: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
+  rotateQuat: (
+    mat: ArrayLike<number>,
+    q: ArrayLike<number>,
+    out?: Float32Array
+  ) => Float32Array;
 
-  determinant: (mat: TMat4) => number;
+  determinant: (mat: ArrayLike<number>) => number;
 
-  create(): TMat4;
-  copy: (mat: TMat4, out: TMat4) => TMat4;
-  clone: (mat: TMat4) => TMat4;
-  equals: (a: TMat4, b: TMat4, epsilon?: number) => boolean;
-  zero: (out?: TMat4) => TMat4;
-  one: (out?: TMat4) => TMat4;
-  toArray: (mat: TMat4, out?: number[]) => number[];
-  fromArray: (arr: number[], out?: TMat4) => TMat4;
+  create(): Float32Array;
+  copy: (mat: ArrayLike<number>, out: Float32Array) => Float32Array;
+  clone: (mat: ArrayLike<number>) => Float32Array;
+  equals: (
+    a: ArrayLike<number>,
+    b: ArrayLike<number>,
+    epsilon?: number
+  ) => boolean;
+  zero: (out?: Float32Array) => Float32Array;
+  one: (out?: Float32Array) => Float32Array;
+  toArray: (mat: ArrayLike<number>, out?: number[]) => number[];
+  fromArray: (arr: number[], out?: Float32Array) => Float32Array;
 
-  isIdentity: (mat: TMat4, epsilon?: number) => boolean;
-  isFinite: (mat: TMat4) => boolean;
-  isNaN: (mat: TMat4) => boolean;
+  isIdentity: (mat: ArrayLike<number>, epsilon?: number) => boolean;
+  isFinite: (mat: ArrayLike<number>) => boolean;
+  isNaN: (mat: ArrayLike<number>) => boolean;
 
-  str: (mat: TMat4) => string;
+  str: (mat: ArrayLike<number>) => string;
 };

@@ -1,3 +1,4 @@
+import { QuatView, Vec3View } from '../math';
 import { SpatialTransformData } from '../types';
 
 export type PerspectiveProjectionData = {
@@ -31,4 +32,8 @@ export type CameraState = {
   projectionVersion: number;
 };
 
-export type CameraSnapshot = Readonly<CameraState> & Readonly<CameraData>;
+export type CameraSnapshot = Readonly<CameraState> &
+  Readonly<CameraData> & {
+    position: Readonly<Vec3View>;
+    rotation: Readonly<QuatView>;
+  };

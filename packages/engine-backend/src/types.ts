@@ -1,41 +1,19 @@
-export type Color = {
-  r: number;
-  g: number;
-  b: number;
-  a: number;
-};
+import { IQuat, IVec3 } from './math';
+export type { IVec2, IVec3, IVec4, IQuat } from './math';
 
-export type Vec2 = {
-  x: number;
-  y: number;
-};
-
-export type Vec3 = Vec2 & {
-  z: number;
-};
-
-export type Vec4 = Vec3 & {
-  w: number;
-};
-
-export type Quat = {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-};
+export type Mat2 = Float32Array<ArrayBufferLike>;
 
 export type Mat3 = Float32Array<ArrayBufferLike>;
 
 export type Mat4 = Float32Array<ArrayBufferLike>;
 
 export type SpatialTransformData = {
-  position: Vec3;
-  rotation: Quat;
+  position: IVec3;
+  rotation: IQuat;
 };
 
 export type TransformData = SpatialTransformData & {
-  scale: Vec3;
+  scale: IVec3;
 };
 
 export const MeshAttributeSemanticNames = [

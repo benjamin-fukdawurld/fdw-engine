@@ -1,61 +1,52 @@
 import { Mat3, Mat4 } from 'wgpu-matrix';
-import {
-  TransformCreateMatrixBufferStrategy,
-  InverseLocalMatrixStrategy,
-  LocalMatrixStrategy,
-  LocalNormalMatrixStrategy,
-  TransformSnapshot,
-  WorldMatrixStrategy,
-  WorldNormalMatrixStrategy,
-  TransformWriteMatrixBufferStrategy,
-} from './types';
+import { TransformSnapshot } from './types';
 import { TransformCache } from './TransformCache';
 import { SnapshotProvider } from '../utils';
 import CachedValue from '../utils/CachedValue';
+import { TransformMath } from '../math/TransformMath';
+import { GpuBuffer, GpuBufferFactory } from '../gpu';
 
-export class TransformAdapter<TBuffer = unknown> {
+export class TransformAdapter {
   public readonly transformCache: TransformCache;
 
   public readonly localMatrixBuffer: CachedValue<
-    TBuffer | undefined,
+    GpuBuffer | undefined,
     [SnapshotProvider<Mat4>]
   >;
   public readonly inverseLocalMatrixBuffer: CachedValue<
-    TBuffer | undefined,
+    GpuBuffer | undefined,
     [SnapshotProvider<Mat4>]
   >;
   public readonly normalMatrixBuffer: CachedValue<
-    TBuffer | undefined,
+    GpuBuffer | undefined,
     [SnapshotProvider<Mat3>]
   >;
   public readonly worldMatrixBuffer: CachedValue<
-    TBuffer | undefined,
+    GpuBuffer | undefined,
     [SnapshotProvider<Mat4>]
   >;
   public readonly worldNormalMatrixBuffer: CachedValue<
-    TBuffer | undefined,
+    GpuBuffer | undefined,
     [SnapshotProvider<Mat3>]
   >;
 
   constructor(options: {
     transform: TransformSnapshot;
-    localMatrixStrategy: LocalMatrixStrategy;
-    inverseLocalMatrixStrategy: InverseLocalMatrixStrategy;
-    normalMatrixStrategy: LocalNormalMatrixStrategy;
-    worldMatrixStrategy: WorldMatrixStrategy;
-    worldNormalMatrixStrategy: WorldNormalMatrixStrategy;
-    createMatrixBufferStrategy: TransformCreateMatrixBufferStrategy<TBuffer>;
-    writeMatrixBufferStrategy: TransformWriteMatrixBufferStrategy<TBuffer>;
+    transformMath: TransformMath;
+    bufferFactory: GpuBufferFactory;
   }) {
     const updateBuffer = (
-      buffer: TBuffer | undefined,
+      buffer: GpuBuffer | undefined,
       type: 'mat3' | 'mat4',
       matrix: Mat4 | Mat3
-    ): TBuffer => {
+    ): GpuBuffer => {
       if (!buffer) {
-        buffer = options.createMatrixBufferStrategy(type);
+        buffer = options.bufferFactory.create({
+          size: type === 'mat4' ? 16 * 4 : 12 * 4, // 4x4 or 3x3 matrix, 4 bytes per float
+          usage: ['uniform', 'copy-dst'],
+        });
       }
-      options.writeMatrixBufferStrategy(buffer, type, matrix);
+      buffer.write(0, new Float32Array(matrix).buffer);
 
       return buffer;
     };
@@ -65,7 +56,7 @@ export class TransformAdapter<TBuffer = unknown> {
     });
 
     this.localMatrixBuffer = new CachedValue<
-      TBuffer | undefined,
+      GpuBuffer | undefined,
       [SnapshotProvider<Mat4>]
     >({
       initialValue: undefined,
@@ -74,7 +65,7 @@ export class TransformAdapter<TBuffer = unknown> {
       dependencies: [this.transformCache.localMatrix],
     });
     this.inverseLocalMatrixBuffer = new CachedValue<
-      TBuffer | undefined,
+      GpuBuffer | undefined,
       [SnapshotProvider<Mat4>]
     >({
       initialValue: undefined,
@@ -83,7 +74,7 @@ export class TransformAdapter<TBuffer = unknown> {
       dependencies: [this.transformCache.inverseLocalMatrix],
     });
     this.normalMatrixBuffer = new CachedValue<
-      TBuffer | undefined,
+      GpuBuffer | undefined,
       [SnapshotProvider<Mat3>]
     >({
       initialValue: undefined,
@@ -92,7 +83,7 @@ export class TransformAdapter<TBuffer = unknown> {
       dependencies: [this.transformCache.normalMatrix],
     });
     this.worldMatrixBuffer = new CachedValue<
-      TBuffer | undefined,
+      GpuBuffer | undefined,
       [SnapshotProvider<Mat4>]
     >({
       initialValue: undefined,
@@ -101,7 +92,7 @@ export class TransformAdapter<TBuffer = unknown> {
       dependencies: [this.transformCache.worldMatrix],
     });
     this.worldNormalMatrixBuffer = new CachedValue<
-      TBuffer | undefined,
+      GpuBuffer | undefined,
       [SnapshotProvider<Mat3>]
     >({
       initialValue: undefined,

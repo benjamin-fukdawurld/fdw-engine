@@ -1,11 +1,8 @@
-import {
-  TransformCacheStrategy,
-  TransformParentProvider,
-  TransformSnapshot,
-} from './types';
+import { TransformParentProvider, TransformSnapshot } from './types';
 import { Mat3, Mat4 } from '../types';
 import { SnapshotValue, CachedValue, SnapshotProvider } from '../utils';
 import { mat3, mat4 } from 'wgpu-matrix';
+import { TransformMath } from '../math/TransformMath';
 
 export class TransformCache implements TransformParentProvider {
   public readonly transform: TransformSnapshot;
@@ -34,15 +31,12 @@ export class TransformCache implements TransformParentProvider {
   constructor({
     transform,
     transformParentProvider,
-    localMatrixStrategy,
-    inverseLocalMatrixStrategy,
-    normalMatrixStrategy,
-    worldMatrixStrategy,
-    worldNormalMatrixStrategy,
+    transformMath,
   }: {
     transform: TransformSnapshot;
     transformParentProvider?: TransformParentProvider;
-  } & TransformCacheStrategy) {
+    transformMath: TransformMath;
+  }) {
     this.transform = transform;
     this.transformParentProvider = transformParentProvider;
 
@@ -51,8 +45,14 @@ export class TransformCache implements TransformParentProvider {
       [SnapshotProvider<TransformSnapshot>]
     >({
       initialValue: new Float32Array(16),
-      updateStrategy: (_, dependencies) =>
-        localMatrixStrategy(dependencies[0].value),
+      updateStrategy: (_, dependencies) => {
+        const { position, rotation, scale } = dependencies[0].value;
+        return transformMath.getLocalMatrix(
+          position.asArray(),
+          rotation.asArray(),
+          scale.asArray()
+        );
+      },
       dependencies: [
         new SnapshotValue<TransformSnapshot>({
           valueGetter: () => this.transform,
@@ -64,21 +64,21 @@ export class TransformCache implements TransformParentProvider {
     this.inverseLocalMatrix = new CachedValue<Mat4, [SnapshotProvider<Mat4>]>({
       initialValue: new Float32Array(16),
       updateStrategy: (_, dependencies) =>
-        inverseLocalMatrixStrategy(dependencies[0].value),
+        transformMath.getInverseLocalMatrix(dependencies[0].value),
       dependencies: [this.localMatrix],
     });
 
     this.normalMatrix = new CachedValue<Mat3, [SnapshotProvider<Mat4>]>({
       initialValue: new Float32Array(9),
       updateStrategy: (_, dependencies) =>
-        normalMatrixStrategy(dependencies[0].value),
+        transformMath.getLocalNormalMatrix(dependencies[0].value),
       dependencies: [this.localMatrix],
     });
 
     this.worldMatrix = new CachedValue<Mat4, SnapshotProvider<Mat4>[]>({
       initialValue: new Float32Array(16),
       updateStrategy: (_, dependencies) =>
-        worldMatrixStrategy(
+        transformMath.getWorldMatrix(
           dependencies[0].value,
           transformParentProvider?.worldMatrix.value
         ),
@@ -95,7 +95,7 @@ export class TransformCache implements TransformParentProvider {
     this.worldNormalMatrix = new CachedValue<Mat3, SnapshotProvider<Mat3>[]>({
       initialValue: new Float32Array(9),
       updateStrategy: (_, dependencies) =>
-        worldNormalMatrixStrategy(
+        transformMath.getWorldNormalMatrix(
           dependencies[0].value,
           transformParentProvider?.worldNormalMatrix.value
         ),

@@ -1,81 +1,76 @@
 import { Mat4 } from 'wgpu-matrix';
 import { CameraSnapshot } from './types';
-import {
-  CameraCache,
-  ViewMatrixStrategy,
-  ProjectionMatrixStrategy,
-  ViewProjectionMatrixStrategy,
-} from './CameraCache';
+import { CameraCache } from './CameraCache';
 import { SnapshotProvider } from '../utils/types';
 import { CachedValue } from '../utils';
+import { CameraMath } from '../math';
+import { GpuBuffer, GpuBufferFactory } from '../gpu';
 
-export type CameraCreateMatrixBufferStrategy<TBuffer = unknown> = () => TBuffer;
-export type CameraWriteMatrixBufferStrategy<TBuffer = unknown> = (
-  buffer: TBuffer,
-  data: Mat4
-) => TBuffer;
-
-export class CameraAdapter<TBuffer = unknown> {
+export class CameraAdapter {
   public readonly cameraCache: CameraCache;
 
   public readonly viewMatrixBuffer: CachedValue<
-    TBuffer,
+    GpuBuffer,
     [SnapshotProvider<Mat4>]
   >;
   public readonly projectionMatrixBuffer: CachedValue<
-    TBuffer,
+    GpuBuffer,
     [SnapshotProvider<Mat4>]
   >;
   public readonly viewProjectionMatrixBuffer: CachedValue<
-    TBuffer,
+    GpuBuffer,
     [SnapshotProvider<Mat4>, SnapshotProvider<Mat4>]
   >;
 
   constructor(options: {
     camera: CameraSnapshot;
-    createMatrixBufferStrategy: CameraCreateMatrixBufferStrategy<TBuffer>;
-    writeMatrixBufferStrategy: CameraWriteMatrixBufferStrategy<TBuffer>;
-    viewMatrixStrategy: ViewMatrixStrategy;
-    projectionMatrixStrategy: ProjectionMatrixStrategy;
-    viewProjectionMatrixStrategy: ViewProjectionMatrixStrategy;
+    cameraMath: CameraMath;
+    bufferFactory: GpuBufferFactory;
   }) {
-    this.cameraCache = new CameraCache(
-      options.camera,
-      options.viewMatrixStrategy,
-      options.projectionMatrixStrategy,
-      options.viewProjectionMatrixStrategy
-    );
+    this.cameraCache = new CameraCache(options.camera, options.cameraMath);
 
-    this.viewMatrixBuffer = new CachedValue<TBuffer, [SnapshotProvider<Mat4>]>({
-      initialValue: options.createMatrixBufferStrategy(),
-      updateStrategy: (buffer, dependencies) =>
-        options.writeMatrixBufferStrategy(buffer, dependencies[0].value),
+    this.viewMatrixBuffer = new CachedValue<
+      GpuBuffer,
+      [SnapshotProvider<Mat4>]
+    >({
+      initialValue: options.bufferFactory.create({
+        size: 16 * 4, // 4x4 matrix, 4 bytes per float
+        usage: ['uniform', 'copy-dst'],
+      }),
+      updateStrategy: (buffer, dependencies) => {
+        buffer.write(0, dependencies[0].value.buffer as ArrayBuffer);
+        return buffer;
+      },
       dependencies: [this.cameraCache.viewMatrix],
     });
 
     this.projectionMatrixBuffer = new CachedValue<
-      TBuffer,
+      GpuBuffer,
       [SnapshotProvider<Mat4>]
     >({
-      initialValue: options.createMatrixBufferStrategy(),
-      updateStrategy: (buffer, dependencies) =>
-        options.writeMatrixBufferStrategy(buffer, dependencies[0].value),
+      initialValue: options.bufferFactory.create({
+        size: 16 * 4, // 4x4 matrix, 4 bytes per float
+        usage: ['uniform', 'copy-dst'],
+      }),
+      updateStrategy: (buffer, dependencies) => {
+        buffer.write(0, dependencies[0].value.buffer as ArrayBuffer);
+        return buffer;
+      },
       dependencies: [this.cameraCache.projectionMatrix],
     });
 
     this.viewProjectionMatrixBuffer = new CachedValue<
-      TBuffer,
+      GpuBuffer,
       [SnapshotProvider<Mat4>, SnapshotProvider<Mat4>]
     >({
-      initialValue: options.createMatrixBufferStrategy(),
-      updateStrategy: (buffer, dependencies) =>
-        options.writeMatrixBufferStrategy(
-          buffer,
-          options.viewProjectionMatrixStrategy(
-            dependencies[0].value,
-            dependencies[1].value
-          )
-        ),
+      initialValue: options.bufferFactory.create({
+        size: 16 * 4, // 4x4 matrix, 4 bytes per float
+        usage: ['uniform', 'copy-dst'],
+      }),
+      updateStrategy: (buffer, dependencies) => {
+        buffer.write(0, dependencies[0].value.buffer as ArrayBuffer);
+        return buffer;
+      },
       dependencies: [
         this.cameraCache.viewMatrix,
         this.cameraCache.projectionMatrix,

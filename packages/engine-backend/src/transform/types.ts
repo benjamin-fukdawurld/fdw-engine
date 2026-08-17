@@ -1,12 +1,17 @@
 import { SnapshotProvider } from '../utils/types';
 import { Mat3, Mat4, TransformData } from '../types';
+import { QuatView, Vec3View } from '../math';
 
 export type TransformState = {
   version: number;
 };
 
 export type TransformSnapshot = Readonly<TransformState> &
-  Readonly<TransformData>;
+  Readonly<TransformData> & {
+    position: Readonly<Vec3View>;
+    rotation: Readonly<QuatView>;
+    scale: Readonly<Vec3View>;
+  };
 
 export type TransformParentProvider = {
   readonly worldMatrix: SnapshotProvider<Mat4>;
@@ -25,20 +30,3 @@ export type WorldNormalMatrixStrategy = (
   normalMatrix: Mat3,
   parentWorldNormalMatrix?: Mat3
 ) => Mat3;
-
-export type TransformCreateMatrixBufferStrategy<TBuffer = unknown> = (
-  type: 'mat3' | 'mat4'
-) => TBuffer;
-export type TransformWriteMatrixBufferStrategy<TBuffer = unknown> = (
-  buffer: TBuffer,
-  type: 'mat3' | 'mat4',
-  data: Mat3 | Mat4
-) => void;
-
-export type TransformCacheStrategy = {
-  localMatrixStrategy: LocalMatrixStrategy;
-  inverseLocalMatrixStrategy: InverseLocalMatrixStrategy;
-  normalMatrixStrategy: LocalNormalMatrixStrategy;
-  worldMatrixStrategy: WorldMatrixStrategy;
-  worldNormalMatrixStrategy: WorldNormalMatrixStrategy;
-};

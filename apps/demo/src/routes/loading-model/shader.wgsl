@@ -17,11 +17,11 @@ var<uniform> projectionMatrix: mat4x4<f32>;
 @vertex
 fn vs_main(
     @location(0) inPos: vec3<f32>,
-    @location(1) inColor: vec3<f32>
+    @location(1) inNormal: vec3<f32>, @location(2) inUV: vec2<f32>
 ) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = projectionMatrix * viewMatrix * modelMatrix * vec4<f32>(inPos + offset, 1.0);
-    out.color = inColor;
+    out.color = vec3<f32>(inNormal * 0.5 + 0.5); // Normalize normal to [0, 1] range for color
     return out;
 }
 
