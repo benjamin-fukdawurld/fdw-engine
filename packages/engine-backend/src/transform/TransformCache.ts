@@ -1,8 +1,8 @@
 import { TransformParentProvider, TransformSnapshot } from './types';
-import { Mat3, Mat4 } from '../types';
 import { SnapshotValue, CachedValue, SnapshotProvider } from '../utils';
 import { mat3, mat4 } from 'wgpu-matrix';
 import { TransformMath } from '../math/TransformMath';
+import { Mat3, Mat4 } from '../math';
 
 export class TransformCache implements TransformParentProvider {
   public readonly transform: TransformSnapshot;

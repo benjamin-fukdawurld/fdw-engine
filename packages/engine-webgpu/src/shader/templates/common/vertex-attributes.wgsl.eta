@@ -1,0 +1,8 @@
+<% if (it.attributes?.length) {-%>
+struct VertexInput {
+<% for (let i = 0, imax = it.attributes.length; i < imax; i++) { -%>
+    @location(<%~ i %>) <%~ it.attributes[i].semantic %>: <%~ it.$ctx.formatAttributeType(it.attributes[i]) %>,
+
+<%- } -%>
+};
+<%- } -%>

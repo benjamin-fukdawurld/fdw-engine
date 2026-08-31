@@ -1,0 +1,4 @@
+<% for (let i = 0, imax = it.uniforms?.length ?? 0; i < imax; i++) { -%>
+@group(<%= it.group %>) @binding( <%~ i %> ) var<uniform> <%~ it.uniforms[i].name %>: <%~ it.uniforms[i].type.serialize() %>;
+
+<%- } -%>

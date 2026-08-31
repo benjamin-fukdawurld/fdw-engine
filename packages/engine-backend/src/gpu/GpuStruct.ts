@@ -40,4 +40,5 @@ export interface StructBuildStrategy {
   getWriteCallback(
     blueprint: GpuStructFieldBluePrint
   ): (target: ArrayBuffer, offset: number, value: unknown) => void;
+  getSerializeCallback(blueprint: GpuStructFieldBluePrint): () => string;
 }

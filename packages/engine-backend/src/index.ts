@@ -5,3 +5,5 @@ export * from './camera';
 export * from './transform';
 export * from './math';
 export * from './gpu';
+export * from './light';
+export * from './utils';

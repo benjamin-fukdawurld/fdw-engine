@@ -128,6 +128,19 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
       }
     };
   },
+
+  getSerializeCallback: (blueprint: GpuStructFieldBluePrint) => {
+    return (): string => {
+      const fields = blueprint.fields
+        .map((field) => {
+          return `${field.name}: ${field.type.serialize()}`;
+        })
+        .join(',\n  ');
+      return `{
+  ${fields}
+}`;
+    };
+  },
 };
 
 export const uniformStructBuildStrategy: StructBuildStrategy = {
@@ -201,6 +214,19 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
         }
         field.type.write(target, offset + field.offset, fieldValue);
       }
+    };
+  },
+
+  getSerializeCallback: (blueprint: GpuStructFieldBluePrint) => {
+    return (): string => {
+      const fields = blueprint.fields
+        .map((field) => {
+          return `${field.name}: ${field.type.serialize()}`;
+        })
+        .join(',\n  ');
+      return `{
+  ${fields}
+}`;
     };
   },
 };

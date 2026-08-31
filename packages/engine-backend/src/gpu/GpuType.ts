@@ -3,4 +3,5 @@ export interface GpuType<T> {
   readonly alignment: number;
 
   write(target: ArrayBuffer, offset: number, value: T): void;
+  serialize(): string;
 }

@@ -2,12 +2,17 @@ import { Mat4 } from 'wgpu-matrix';
 import { CameraSnapshot } from './types';
 import { CameraCache } from './CameraCache';
 import { SnapshotProvider } from '../utils/types';
-import { CachedValue } from '../utils';
+import { CachedValue, SnapshotValue } from '../utils';
 import { CameraMath } from '../math';
 import { GpuBuffer, GpuBufferFactory } from '../gpu';
 
 export class CameraAdapter {
   public readonly cameraCache: CameraCache;
+
+  public readonly positionBuffer: CachedValue<
+    GpuBuffer,
+    [SnapshotProvider<CameraSnapshot>]
+  >;
 
   public readonly viewMatrixBuffer: CachedValue<
     GpuBuffer,
@@ -28,6 +33,30 @@ export class CameraAdapter {
     bufferFactory: GpuBufferFactory;
   }) {
     this.cameraCache = new CameraCache(options.camera, options.cameraMath);
+
+    this.positionBuffer = new CachedValue<
+      GpuBuffer,
+      [SnapshotProvider<CameraSnapshot>]
+    >({
+      initialValue: options.bufferFactory.create({
+        size: 3 * 4, // 3 floats, 4 bytes per float
+        usage: ['uniform', 'copy-dst'],
+      }),
+      updateStrategy: (buffer, dependencies) => {
+        const position = dependencies[0].value.position;
+        buffer.write(
+          0,
+          new Float32Array([position.x, position.y, position.z]).buffer
+        );
+        return buffer;
+      },
+      dependencies: [
+        new SnapshotValue<CameraSnapshot>({
+          valueGetter: () => options.camera,
+          versionGetter: () => options.camera.transformVersion,
+        }),
+      ],
+    });
 
     this.viewMatrixBuffer = new CachedValue<
       GpuBuffer,

@@ -58,6 +58,7 @@ export class StructBuilder {
       hasDynamicSize: this.strategy.hasDynamicSize(this.blueprint),
       runtimeSize: this.strategy.getRuntimeSizeCallback(this.blueprint),
       write: this.strategy.getWriteCallback(this.blueprint),
+      serialize: this.strategy.getSerializeCallback(this.blueprint),
     };
   }
 

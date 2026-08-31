@@ -84,6 +84,7 @@
     "@preact/signals-react": "^3.10.1",
     "@tanstack/react-router": "^1.170.11",
     "@thi.ng/geom-io-obj": "^1.0.3",
+    "eta": "^4.6.0",
     "lucide-react": "^1.24.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

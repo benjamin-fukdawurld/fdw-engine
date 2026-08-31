@@ -27,3 +27,9 @@ export type IQuat = {
 export type QuatLike = IQuat | [number, number, number, number] | Float32Array;
 
 export type RotationOrder = 'xyz' | 'xzy' | 'yxz' | 'yzx' | 'zxy' | 'zyx';
+
+export type Mat2 = Float32Array<ArrayBufferLike>;
+
+export type Mat3 = Float32Array<ArrayBufferLike>;
+
+export type Mat4 = Float32Array<ArrayBufferLike>;

@@ -1,12 +1,6 @@
 import { IQuat, IVec3 } from './math';
 export type { IVec2, IVec3, IVec4, IQuat } from './math';
 
-export type Mat2 = Float32Array<ArrayBufferLike>;
-
-export type Mat3 = Float32Array<ArrayBufferLike>;
-
-export type Mat4 = Float32Array<ArrayBufferLike>;
-
 export type SpatialTransformData = {
   position: IVec3;
   rotation: IQuat;

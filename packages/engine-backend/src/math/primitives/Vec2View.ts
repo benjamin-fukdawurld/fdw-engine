@@ -1,13 +1,17 @@
 import { IVec2 } from './types';
 
 export class Vec2View implements IVec2 {
-  private _buffer: DataView;
+  private _buffer: DataView<ArrayBuffer>;
 
   constructor(buffer?: ArrayBuffer, byteOffset?: number) {
-    this._buffer = new DataView(
+    this._buffer = new DataView<ArrayBuffer>(
       buffer ?? new ArrayBuffer(2 * 4),
       byteOffset ?? 0
     );
+  }
+
+  get buffer(): DataView<ArrayBuffer> {
+    return this._buffer;
   }
 
   get x(): number {
@@ -28,6 +32,11 @@ export class Vec2View implements IVec2 {
 
   asArray(): Float32Array {
     return new Float32Array(this._buffer.buffer, this._buffer.byteOffset, 2);
+  }
+
+  set(arr: number[]): void {
+    this.x = arr[0];
+    this.y = arr[1];
   }
 }
 

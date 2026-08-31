@@ -4,7 +4,7 @@ import { CachedValue, SnapshotProvider, SnapshotValue } from '../utils';
 import { CameraMath } from '../math';
 
 export class CameraCache {
-  public camera: CameraSnapshot;
+  public _camera: CameraSnapshot;
 
   public readonly viewMatrix: CachedValue<
     Mat4,
@@ -20,7 +20,7 @@ export class CameraCache {
   >;
 
   constructor(camera: CameraSnapshot, cameraMath: CameraMath) {
-    this.camera = camera;
+    this._camera = camera;
     this.viewMatrix = new CachedValue<Mat4, [SnapshotProvider<CameraSnapshot>]>(
       {
         initialValue: new Float32Array(16),
@@ -31,8 +31,8 @@ export class CameraCache {
           ),
         dependencies: [
           new SnapshotValue<CameraSnapshot>({
-            valueGetter: () => this.camera,
-            versionGetter: () => this.camera.transformVersion,
+            valueGetter: () => this._camera,
+            versionGetter: () => this._camera.transformVersion,
           }),
         ],
       }
@@ -47,8 +47,8 @@ export class CameraCache {
         cameraMath.getProjectionMatrix(dependencies[0].value.projection),
       dependencies: [
         new SnapshotValue<CameraSnapshot>({
-          valueGetter: () => this.camera,
-          versionGetter: () => this.camera.projectionVersion,
+          valueGetter: () => this._camera,
+          versionGetter: () => this._camera.projectionVersion,
         }),
       ],
     });
@@ -65,5 +65,16 @@ export class CameraCache {
         ),
       dependencies: [this.viewMatrix, this.projectionMatrix],
     });
+  }
+
+  get camera(): CameraSnapshot {
+    return this._camera;
+  }
+
+  set camera(newCamera: CameraSnapshot) {
+    this._camera = newCamera;
+    this.viewMatrix.invalidate();
+    this.projectionMatrix.invalidate();
+    this.viewProjectionMatrix.invalidate();
   }
 }
