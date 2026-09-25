@@ -1,4 +1,8 @@
 export * from './BufferFactory';
+export * from './Sampler';
+export * from './Texture';
+export * from './TextureFactory';
+
 export * from './arrays';
 export * from './layouts';
 export * from './primitives';

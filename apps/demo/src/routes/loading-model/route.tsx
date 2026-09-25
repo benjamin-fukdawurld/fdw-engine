@@ -1,7 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
 import Layout from '../../components/Layout';
 import { Engine, Surface } from '@fdw/engine-backend';
-import { quat, WebGpuEngine, WebGpuSurface } from '@fdw/engine-webgpu';
+import {
+  quat,
+  WebGpuEngine,
+  WebGpuSurface,
+  TextureFactory,
+  Texture,
+  Sampler,
+} from '@fdw/engine-webgpu';
 
 import { useRef } from 'react';
 
@@ -14,9 +21,7 @@ import {
   Mesh,
   Material,
   SceneAdapter,
-  mtlMaterialToMaterial,
 } from '../../utils3d';
-import { Texture } from '../../utils3d/Texture';
 
 export const Route = createFileRoute('/loading-model')({
   component: RouteComponent,
@@ -25,6 +30,7 @@ export const Route = createFileRoute('/loading-model')({
 function RouteComponent() {
   const applicationRef = useRef<Application | null>(null);
   const sceneAdapterRef = useRef<SceneAdapter | null>(null);
+  const textureFactoryRef = useRef<TextureFactory | null>(null);
 
   return (
     <Layout
@@ -34,6 +40,9 @@ function RouteComponent() {
           engine: engine as WebGpuEngine,
           surface: surface as WebGpuSurface,
         });
+        textureFactoryRef.current = new TextureFactory(
+          applicationRef.current!.engine.device!
+        );
         const obj = await ObjImporter.load('/sphere.obj');
 
         // const mat = mtlMaterialToMaterial(obj[0].material!);
@@ -80,21 +89,22 @@ function RouteComponent() {
           const blob = await response.blob();
           const imageBitmap = await createImageBitmap(blob);
 
-          return new Texture({
-            name: 'diffuseTexture',
-            width: imageBitmap.width,
-            height: imageBitmap.height,
-            format: 'rgba8unorm',
-            device: applicationRef.current!.engine.device!,
-            imageBitmap,
-            samplerDescriptor: {
-              addressModeU: 'repeat',
-              addressModeV: 'repeat',
-              magFilter: 'linear',
-              minFilter: 'linear',
-              mipmapFilter: 'linear',
+          const texture = textureFactoryRef.current!.createTexture({
+            dimensions: {
+              width: imageBitmap.width,
+              height: imageBitmap.height,
             },
-          });
+            format: 'rgba8unorm',
+            type: '2d',
+            source: imageBitmap,
+            label: 'diffuseTexture',
+            readwrite: true,
+          }) as Texture;
+
+          return {
+            texture,
+            sampler: textureFactoryRef.current!.createSampler() as Sampler,
+          };
         };
 
         const specularTexture = async () => {
@@ -102,21 +112,22 @@ function RouteComponent() {
           const blob = await response.blob();
           const imageBitmap = await createImageBitmap(blob);
 
-          return new Texture({
-            name: 'specularTexture',
-            width: imageBitmap.width,
-            height: imageBitmap.height,
-            format: 'rgba8unorm',
-            device: applicationRef.current!.engine.device!,
-            imageBitmap,
-            samplerDescriptor: {
-              addressModeU: 'repeat',
-              addressModeV: 'repeat',
-              magFilter: 'linear',
-              minFilter: 'linear',
-              mipmapFilter: 'linear',
+          const texture = textureFactoryRef.current!.createTexture({
+            dimensions: {
+              width: imageBitmap.width,
+              height: imageBitmap.height,
             },
-          });
+            format: 'rgba8unorm',
+            type: '2d',
+            source: imageBitmap,
+            label: 'specularTexture',
+            readwrite: true,
+          }) as Texture;
+
+          return {
+            texture,
+            sampler: textureFactoryRef.current!.createSampler() as Sampler,
+          };
         };
 
         const shininessTexture = async () => {
@@ -124,22 +135,24 @@ function RouteComponent() {
           const blob = await response.blob();
           const imageBitmap = await createImageBitmap(blob);
 
-          return new Texture({
-            name: 'shininessTexture',
-            width: imageBitmap.width,
-            height: imageBitmap.height,
-            format: 'rgba8unorm',
-            device: applicationRef.current!.engine.device!,
-            imageBitmap,
-            samplerDescriptor: {
-              addressModeU: 'repeat',
-              addressModeV: 'repeat',
-              magFilter: 'linear',
-              minFilter: 'linear',
-              mipmapFilter: 'linear',
+          const texture = textureFactoryRef.current!.createTexture({
+            dimensions: {
+              width: imageBitmap.width,
+              height: imageBitmap.height,
             },
-          });
+            format: 'rgba8unorm',
+            type: '2d',
+            source: imageBitmap,
+            label: 'shininessTexture',
+            readwrite: true,
+          }) as Texture;
+
+          return {
+            texture,
+            sampler: textureFactoryRef.current!.createSampler() as Sampler,
+          };
         };
+
         sceneAdapterRef.current!.scene.meshes[0].material.textures.push(
           await diffuseTexture(),
           await specularTexture(),

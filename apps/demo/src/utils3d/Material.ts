@@ -4,8 +4,7 @@ import {
   GpuType,
   MeshAttributeDescription,
 } from '@fdw/engine-backend';
-import { ShaderWritter, Buffer } from '@fdw/engine-webgpu';
-import { Texture } from './Texture';
+import { ShaderWritter, Buffer, Texture, Sampler } from '@fdw/engine-webgpu';
 
 export type MaterialUniformType<T = unknown> =
   | GpuType<T>
@@ -28,7 +27,7 @@ export class Material {
   materialUniforms: MaterialUniformDescription[];
   objectUniforms: MaterialUniformDescription[];
 
-  textures: Texture[];
+  textures: { texture: Texture; sampler: Sampler }[];
 
   constructor(options: {
     type: string;
@@ -114,18 +113,18 @@ export class MaterialAdapter {
     | {
         binding: number;
         uniform?: never;
-        texture: Texture;
+        texture: { texture: Texture; sampler: Sampler };
       }): GPUBindGroupLayoutEntry[] {
     if (texture) {
       return [
         {
           binding,
-          visibility: texture.stage,
+          visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX,
           texture: {},
         },
         {
           binding: binding + 1,
-          visibility: texture.stage,
+          visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX,
           sampler: {},
         },
       ];
@@ -144,7 +143,7 @@ export class MaterialAdapter {
 
   static getBindGroupLayout(
     uniforms: MaterialUniformDescription[],
-    textures: Texture[]
+    textures: { texture: Texture; sampler: Sampler }[]
   ): GPUBindGroupLayoutDescriptor {
     const entries = [
       ...uniforms
@@ -171,22 +170,22 @@ export class MaterialAdapter {
   static createBindGroup(
     device: GPUDevice,
     uniforms: MaterialUniformDescription[],
-    textures: Texture[]
+    tex: { texture: Texture; sampler: Sampler }[]
   ): { bindgroup: GPUBindGroup; layout: GPUBindGroupLayout } {
     const bindGroupLayout = device.createBindGroupLayout(
-      MaterialAdapter.getBindGroupLayout(uniforms, textures)
+      MaterialAdapter.getBindGroupLayout(uniforms, tex)
     );
 
-    const textureBindings = textures
+    const textureBindings = tex
       .map((texture, index): [GPUBindGroupEntry, GPUBindGroupEntry] => {
         return [
           {
             binding: uniforms.length + index * 2,
-            resource: texture.texture.createView(),
+            resource: texture.texture.view!,
           },
           {
             binding: uniforms.length + index * 2 + 1,
-            resource: texture.sampler,
+            resource: texture.sampler.sampler!,
           },
         ];
       })
@@ -219,8 +218,6 @@ export class MaterialAdapter {
       case 'snorm8x4':
       case 'unorm16x4':
       case 'unorm8x4':
-      case 'unorm8x4-bgra':
-      case 'unorm10-10-10-2':
         return 'vec4<f32>';
       case 'float32x3':
         return 'vec3<f32>';

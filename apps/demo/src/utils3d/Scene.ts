@@ -11,7 +11,7 @@ import {
   uniformPrimitives,
   WebGpuSurface,
 } from '@fdw/engine-webgpu';
-import { Material, MaterialAdapter } from './Material';
+import { MaterialAdapter } from './Material';
 import { Mesh, MeshRenderData } from './Mesh';
 
 export class Scene {

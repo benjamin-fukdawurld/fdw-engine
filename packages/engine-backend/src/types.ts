@@ -10,7 +10,7 @@ export type TransformData = SpatialTransformData & {
   scale: IVec3;
 };
 
-export const MeshAttributeSemanticNames = [
+export const MeshAttributeSemanticNames_ = [
   'position',
   'normal',
   'color',
@@ -19,31 +19,30 @@ export const MeshAttributeSemanticNames = [
   'joints',
   'weights',
 ] as const;
-export type MeshAttributeSemantic =
-  | (typeof MeshAttributeSemanticNames)[number]
+export type MeshAttributeSemantic_ =
+  | (typeof MeshAttributeSemanticNames_)[number]
   | (string & {});
 
-export type VertexFormat = GPUVertexFormat;
+export type VertexFormat_ = GPUVertexFormat;
+export type VertexStepMode_ = GPUVertexStepMode;
 
-export type MeshAttributeDescription = {
-  semantic: MeshAttributeSemantic;
-  format: VertexFormat;
+export type MeshAttributeDescription_ = {
+  semantic: MeshAttributeSemantic_;
+  format: VertexFormat_;
   offset: number;
 };
 
-export type VertexStepMode = GPUVertexStepMode;
-
-export type MeshBufferDescription = {
+export type MeshBufferDescription_ = {
   stride: number;
-  stepMode: VertexStepMode;
-  attributes: MeshAttributeDescription[];
+  stepMode: VertexStepMode_;
+  attributes: MeshAttributeDescription_[];
 };
 
-export type IndexFormat = GPUIndexFormat;
+export type IndexFormat_ = GPUIndexFormat;
 
-export type MeshDescription = {
-  vertexBuffers: MeshBufferDescription[];
+export type MeshDescription_ = {
+  vertexBuffers: MeshBufferDescription_[];
   indexBuffer?: {
-    format: IndexFormat;
+    format: IndexFormat_;
   };
 };

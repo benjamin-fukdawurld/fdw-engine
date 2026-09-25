@@ -1,5 +1,5 @@
 <% for (let i = 0, imax = it.textures?.length ?? 0, binding = it.bindingOffset ?? 0; i < imax; i++, binding += 2) { -%>
-@group(<%= it.group %>) @binding( <%~ binding %> ) var <%~ it.textures[i].name %>: texture_2d<f32>;
-@group(<%= it.group %>) @binding( <%~ binding + 1 %> ) var <%~ it.textures[i].name %>Sampler: sampler;
+@group(<%= it.group %>) @binding( <%~ binding %> ) var <%~ it.textures[i].texture.label %>: texture_2d<f32>;
+@group(<%= it.group %>) @binding( <%~ binding + 1 %> ) var <%~ it.textures[i].texture.label %>Sampler: sampler;
 
 <%- } -%>
