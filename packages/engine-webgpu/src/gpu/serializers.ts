@@ -7,10 +7,10 @@ function arrayFormatter(type: string, length?: number): string {
 export const uniformSerializers: SerializerApi = {
   bool: {
     serialize(): string {
-      return 'bool';
+      return 'u32';
     },
     serializeArray(length?: number): string {
-      return arrayFormatter('bool', length);
+      return arrayFormatter('u32', length);
     },
   },
 

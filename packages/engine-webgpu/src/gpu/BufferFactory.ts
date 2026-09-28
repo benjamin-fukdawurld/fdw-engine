@@ -113,7 +113,7 @@ export class BufferFactory implements GpuBufferFactory {
       (!usage.includes('copy-dst') || updateFrequency === 'static');
 
     const buffer = this.device.createBuffer({
-      size,
+      size: size + (size % 4),
       usage: gpuUsage,
       mappedAtCreation,
       label,
@@ -127,11 +127,15 @@ export class BufferFactory implements GpuBufferFactory {
       const dst = new Uint8Array(buffer.getMappedRange());
       const src =
         initialData instanceof ArrayBuffer
-          ? new Uint8Array(initialData)
+          ? new Uint8Array(
+              initialData,
+              0,
+              Math.min(initialData.byteLength, size)
+            )
           : new Uint8Array(
               initialData.buffer,
               initialData.byteOffset,
-              initialData.byteLength
+              Math.min(initialData.byteLength, size)
             );
       dst.set(src);
       buffer.unmap();

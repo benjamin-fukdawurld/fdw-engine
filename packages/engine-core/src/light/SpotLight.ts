@@ -9,7 +9,11 @@ export class SpotLight extends BaseLight implements SpotLightSnapshot {
   private _cutoff: DataView<ArrayBuffer>;
 
   constructor(data?: Partial<SpotLightSnapshot>) {
-    super('spot', new ArrayBuffer(BaseLight.bufferSize + 6 * 4 + 2 * 4), data);
+    super(
+      'spot',
+      new ArrayBuffer(BaseLight.bufferSize + 6 * 4 + 3 * 4 + 2 * 4),
+      data
+    );
     this._position = new Vec3View(this._buffer, BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
     this._direction = new Vec3View(this._buffer, BaseLight.bufferSize + 3 * 4);

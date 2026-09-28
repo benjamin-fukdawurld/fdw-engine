@@ -33,8 +33,6 @@ export class ShaderWritter {
       case 'snorm8x4':
       case 'unorm16x4':
       case 'unorm8x4':
-      case 'unorm8x4-bgra':
-      case 'unorm10-10-10-2':
         return 'vec4<f32>';
       case 'float32x3':
         return 'vec3<f32>';

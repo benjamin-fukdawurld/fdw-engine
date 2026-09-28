@@ -1,5 +1,5 @@
 import { ProjectionData } from '../camera/types';
-import { Mat4 } from '../types';
+import { Mat4 } from './primitives';
 import { PrimitivesAdapter } from './primitives/PrimitivesAdapter';
 
 export class CameraMath {

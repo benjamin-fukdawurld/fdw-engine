@@ -12,3 +12,4 @@ export * from './Vec2View';
 export * from './Vec3View';
 export * from './Vec4View';
 export * from './QuatView';
+export * from './ColorView';

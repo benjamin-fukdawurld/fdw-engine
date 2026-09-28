@@ -143,7 +143,7 @@ export const uniformWriters: WriterApi = {
       const view = new DataView(target, offset, uniformLayout.mat3.size);
       for (let column = 0; column < 3; column++) {
         for (let row = 0; row < 3; row++) {
-          view.setFloat32(column * 16 + row * 4, value[column * 3 + row], true);
+          view.setFloat32(column * 16 + row * 4, value[column * 4 + row], true);
         }
       }
     },

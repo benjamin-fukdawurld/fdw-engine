@@ -1,109 +1,137 @@
 # FdwEngine
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+A multi-layer 3D engine written in TypeScript.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+The goal is to cleanly separate **3D scene manipulation** from **the underlying rendering technology**, so that the same application can run on WebGPU in the browser today, and on Vulkan, DirectX or Metal in a native window tomorrow.
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+> 🚧 Work in progress — APIs may change at any time.
 
-## Generate a library
+## Architecture
+
+The engine is organized in three layers:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Application (e.g. apps/demo)                            │
+└──────────────────────────────────────────────────────────┘
+                          │
+┌──────────────────────────────────────────────────────────┐
+│  Frontend — @fdw/engine-core                             │
+│  Scene, cameras, transforms, lights, materials…          │
+│  No dependency on any graphics API.                      │
+└──────────────────────────────────────────────────────────┘
+                          │
+┌──────────────────────────────────────────────────────────┐
+│  Abstract API — @fdw/engine-backend                      │
+│  Contracts (interfaces) between frontend and backends    │
+│  Engine, Surface, GPU (buffers, textures, layouts…),     │
+│  math, camera, transform, mesh, material, light          │
+└──────────────────────────────────────────────────────────┘
+                          │
+        ┌─────────────────┼─────────────────┬──────────────┐
+        │                 │                 │              │
+┌───────────────┐ ┌───────────────┐ ┌──────────────┐ ┌──────────┐
+│ engine-webgpu │ │ engine-vulkan │ │ engine-dx12  │ │ engine-  │
+│ (in progress) │ │   (planned)   │ │  (planned)   │ │  metal…  │
+└───────────────┘ └───────────────┘ └──────────────┘ └──────────┘
+```
+
+### 1. Frontend — `@fdw/engine-core`
+
+High-level API for engine users. It lets you build and manipulate a 3D scene (cameras, transforms, directional / point / spot lights, …) **without caring about the rendering technology**. The frontend depends only on the abstract API.
+
+### 2. Abstract API — `@fdw/engine-backend`
+
+The contract layer between the frontend and the backends. It defines:
+
+- the engine lifecycle (`Engine`: `init`, `pause`, `resume`, `destroy`) and the render surface (`Surface`);
+- GPU abstractions (buffers, textures, samplers, layouts, data structs and serializers);
+- math primitives (`vec2/3/4`, `mat3/4`, `quat`) and shared types (camera, transform, mesh, material, light).
+
+No graphics-API-specific code belongs in this layer.
+
+### 3. Concrete backends — `@fdw/engine-<tech>`
+
+Each backend implements the abstract API for a given graphics technology and windowing system.
+
+| Backend              | Technology | Windowing           | Status      |
+| -------------------- | ---------- | ------------------- | ----------- |
+| `@fdw/engine-webgpu` | WebGPU     | Browser (canvas)    | In progress |
+| `@fdw/engine-vulkan` | Vulkan     | Native (e.g. SDL)   | Planned     |
+| —                    | DirectX 12 | Native              | Planned     |
+| —                    | Metal      | Native              | Planned     |
+
+The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface`, the GPU implementations, and a WGSL shader generator based on [Eta](https://eta.js.org/) templates (Phong lighting model).
+
+## Roadmap
+
+1. **v1 — WebGPU / browser**: first complete backend, rendering into a `<canvas>`.
+2. **Windowing abstraction**: decouple `Surface` from the browser canvas to support other windowing systems.
+3. **Native backends**: Vulkan in a native window (SDL), then possibly DirectX and Metal.
+
+## Repository layout
+
+```
+apps/
+  demo/                 React + Vite demo application (WebGPU)
+packages/
+  engine-core/          Frontend: scene manipulation API
+  engine-backend/       Abstract API
+  engine-webgpu/        WebGPU backend
+```
+
+The monorepo is managed with [Nx](https://nx.dev).
+
+## Getting started
+
+### Prerequisites
+
+- Node.js ≥ 20
+- A WebGPU-capable browser (recent Chrome / Edge, Firefox Nightly, Safari Technology Preview…)
+
+### Install
 
 ```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
+npm install
 ```
 
-## Run tasks
-
-To build the library use:
+### Run the demo
 
 ```sh
-npx nx build pkg1
+npm run serve
 ```
 
-To run any task with Nx use:
+The demo contains a series of progressive examples (triangle, vertex/index buffers, uniforms, matrices, camera, textures, depth testing, face culling, OBJ/MTL model loading…) in [apps/demo/src/routes](apps/demo/src/routes).
+
+### Build the packages
 
 ```sh
-npx nx <target> <project-name>
+npm run build
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
-
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Versioning and releasing
-
-To version and release the library use
-
-```
-npx nx release
-```
-
-Pass `--dry-run` to see what would happen without actually releasing the library.
-
-[Learn more about Nx release &raquo;](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Keep TypeScript project references up to date
-
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
-
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
+### Generate the documentation
 
 ```sh
-npx nx sync
+npm run docs
 ```
 
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
+Documentation is generated with [TypeDoc](https://typedoc.org/) for each engine package.
 
-```sh
-npx nx sync:check
+## Usage example
+
+```ts
+import { Engine } from '@fdw/engine-backend';
+import { WebGpuEngine } from '@fdw/engine-webgpu';
+
+// Only the backend choice depends on the rendering technology.
+const engine: Engine = new WebGpuEngine();
+await engine.init();
+
+// … build the scene with @fdw/engine-core …
+
+await engine.destroy();
 ```
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+## License
 
-## Set up CI!
-
-### Step 1
-
-To connect to Nx Cloud, run the following command:
-
-```sh
-npx nx connect
-```
-
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
-
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-### Step 2
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
-```
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+MIT

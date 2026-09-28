@@ -33,7 +33,9 @@ export class TransformMath {
   }
 
   getLocalNormalMatrix(localMatrix: Float32Array): Float32Array {
-    const normalMatrix = this.primitiveApis.mat4.invert(localMatrix);
+    const normalMatrix = this.primitiveApis.mat4.transpose(
+      this.primitiveApis.mat4.invert(localMatrix)
+    );
     return this.primitiveApis.mat3.fromMat4(normalMatrix);
   }
 

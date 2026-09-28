@@ -33,3 +33,15 @@ export type Mat2 = Float32Array<ArrayBufferLike>;
 export type Mat3 = Float32Array<ArrayBufferLike>;
 
 export type Mat4 = Float32Array<ArrayBufferLike>;
+
+export type IColor = {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+};
+
+export type ColorLike =
+  | IColor
+  | [number, number, number, number]
+  | Float32Array;

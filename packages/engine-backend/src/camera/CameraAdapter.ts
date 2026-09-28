@@ -1,9 +1,8 @@
-import { Mat4 } from 'wgpu-matrix';
 import { CameraSnapshot } from './types';
 import { CameraCache } from './CameraCache';
 import { SnapshotProvider } from '../utils/types';
 import { CachedValue, SnapshotValue } from '../utils';
-import { CameraMath } from '../math';
+import { CameraMath, Mat4 } from '../math';
 import { GpuBuffer, GpuBufferFactory } from '../gpu';
 
 export class CameraAdapter {
@@ -24,7 +23,7 @@ export class CameraAdapter {
   >;
   public readonly viewProjectionMatrixBuffer: CachedValue<
     GpuBuffer,
-    [SnapshotProvider<Mat4>, SnapshotProvider<Mat4>]
+    [SnapshotProvider<Mat4>]
   >;
 
   constructor(options: {
@@ -90,7 +89,7 @@ export class CameraAdapter {
 
     this.viewProjectionMatrixBuffer = new CachedValue<
       GpuBuffer,
-      [SnapshotProvider<Mat4>, SnapshotProvider<Mat4>]
+      [SnapshotProvider<Mat4>]
     >({
       initialValue: options.bufferFactory.create({
         size: 16 * 4, // 4x4 matrix, 4 bytes per float
@@ -100,10 +99,7 @@ export class CameraAdapter {
         buffer.write(0, dependencies[0].value.buffer as ArrayBuffer);
         return buffer;
       },
-      dependencies: [
-        this.cameraCache.viewMatrix,
-        this.cameraCache.projectionMatrix,
-      ],
+      dependencies: [this.cameraCache.viewProjectionMatrix],
     });
   }
 }

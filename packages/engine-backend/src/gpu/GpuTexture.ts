@@ -65,7 +65,7 @@ export interface GpuTexture extends Readonly<GpuTextureConfiguration> {
 export interface GpuTextureFactory {
   createTexture(
     descriptor: GpuTextureConfiguration & {
-      source?: ImageBitmap | ArrayBufferView;
+      source?: ArrayBufferView<ArrayBuffer> | unknown;
       readwrite?: boolean;
     }
   ): GpuTexture;

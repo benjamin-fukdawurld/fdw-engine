@@ -1,4 +1,4 @@
-import { Mat4 } from 'wgpu-matrix';
+import { Mat4 } from '../math';
 import { CameraSnapshot } from './types';
 import { CachedValue, SnapshotProvider, SnapshotValue } from '../utils';
 import { CameraMath } from '../math';

@@ -3,7 +3,6 @@ import {
   GpuStructField,
   GpuStructFieldBluePrint,
   struct,
-  StructBuilder,
   StructBuildStrategy,
 } from '@fdw/engine-backend';
 

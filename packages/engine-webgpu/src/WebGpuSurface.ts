@@ -1,10 +1,9 @@
-import { Engine, Surface } from '@fdw/engine-backend';
+import { Engine, Surface, IColor } from '@fdw/engine-backend';
 import WebGpuEngine from './WebGpuEngine';
-import { Color } from '@fdw/engine-core';
 
 export type WebGpuSurfaceConfig = {
   alphaMode?: 'premultiplied' | 'opaque';
-  clearColor?: Color;
+  clearColor?: IColor;
 };
 
 export class WebGpuSurface implements Surface {

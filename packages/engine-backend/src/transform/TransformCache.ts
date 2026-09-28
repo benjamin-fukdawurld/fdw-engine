@@ -1,6 +1,5 @@
 import { TransformParentProvider, TransformSnapshot } from './types';
 import { SnapshotValue, CachedValue, SnapshotProvider } from '../utils';
-import { mat3, mat4 } from 'wgpu-matrix';
 import { TransformMath } from '../math/TransformMath';
 import { Mat3, Mat4 } from '../math';
 
@@ -86,7 +85,7 @@ export class TransformCache implements TransformParentProvider {
         this.localMatrix,
         this.transformParentProvider?.worldMatrix ??
           new SnapshotValue<Mat4>({
-            valueGetter: () => mat4.identity(),
+            valueGetter: () => transformMath.primitiveApis.mat4.identity(),
             versionGetter: () => 0,
           }),
       ],
@@ -103,7 +102,7 @@ export class TransformCache implements TransformParentProvider {
         this.normalMatrix,
         this.transformParentProvider?.worldNormalMatrix ??
           new SnapshotValue<Mat3>({
-            valueGetter: () => mat3.identity(),
+            valueGetter: () => transformMath.primitiveApis.mat3.identity(),
             versionGetter: () => 0,
           }),
       ],

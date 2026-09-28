@@ -1,4 +1,4 @@
-import { Mat3, Mat4 } from 'wgpu-matrix';
+import { Mat3, Mat4 } from '../math';
 import { TransformSnapshot } from './types';
 import { TransformCache } from './TransformCache';
 import { SnapshotProvider } from '../utils';

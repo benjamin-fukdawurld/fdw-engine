@@ -20,7 +20,7 @@ export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
 
   createTexture(
     descriptor: GpuTextureConfiguration & {
-      source?: ImageBitmap | ArrayBufferView;
+      source?: ArrayBufferView<ArrayBuffer> | unknown;
       readwrite?: boolean;
     }
   ): GpuTexture {
@@ -37,7 +37,9 @@ export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
-        (readwrite ? GPUTextureUsage.RENDER_ATTACHMENT : 0),
+        (readwrite || source instanceof ImageBitmap
+          ? GPUTextureUsage.RENDER_ATTACHMENT
+          : 0),
       label,
     };
 
@@ -49,7 +51,7 @@ export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
           width,
           height,
         ]);
-      } else {
+      } else if (source instanceof ArrayBuffer) {
         this.device.queue.writeTexture(
           { texture },
           source,
@@ -59,6 +61,8 @@ export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
           },
           [width, height]
         );
+      } else {
+        throw new Error(`Unsupported source type: ${source}`);
       }
     }
 

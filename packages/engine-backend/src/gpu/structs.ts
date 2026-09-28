@@ -50,8 +50,9 @@ export class StructBuilder {
 
     const { size, stride, alignment, fields } = this.blueprint;
     const alignedStride = this.strategy.align(stride, alignment);
+    const alignedSize = this.strategy.align(size, alignment);
     return {
-      size,
+      size: alignedSize,
       alignment,
       fields,
       stride: alignedStride,
