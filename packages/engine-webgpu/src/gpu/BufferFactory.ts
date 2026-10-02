@@ -112,8 +112,10 @@ export class BufferFactory implements GpuBufferFactory {
       initialData !== undefined &&
       (!usage.includes('copy-dst') || updateFrequency === 'static');
 
+    const paddedSize = Math.ceil(size / 4) * 4;
+
     const buffer = this.device.createBuffer({
-      size: size + (size % 4),
+      size: paddedSize,
       usage: gpuUsage,
       mappedAtCreation,
       label,

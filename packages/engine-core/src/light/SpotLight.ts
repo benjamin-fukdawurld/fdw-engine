@@ -1,4 +1,10 @@
-import { IVec3, SpotLightSnapshot, Vec3View } from '@fdw/engine-backend';
+import {
+  IVec3,
+  LightAttenuationDataSize,
+  LightCutoffDataSize,
+  SpotLightSnapshot,
+  Vec3View,
+} from '@fdw/engine-backend';
 import { BaseLight } from './BaseLight';
 
 export class SpotLight extends BaseLight implements SpotLightSnapshot {
@@ -11,7 +17,12 @@ export class SpotLight extends BaseLight implements SpotLightSnapshot {
   constructor(data?: Partial<SpotLightSnapshot>) {
     super(
       'spot',
-      new ArrayBuffer(BaseLight.bufferSize + 6 * 4 + 3 * 4 + 2 * 4),
+      new ArrayBuffer(
+        BaseLight.bufferSize +
+          LightAttenuationDataSize +
+          LightCutoffDataSize +
+          6 * 4 // 2 Vec3s for position and direction, each with 3 floats, each float is 4 bytes
+      ),
       data
     );
     this._position = new Vec3View(this._buffer, BaseLight.bufferSize);

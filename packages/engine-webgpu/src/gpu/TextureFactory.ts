@@ -11,7 +11,9 @@ import {
 import { Texture } from './Texture';
 import { Sampler } from './Sampler';
 
-export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
+export class TextureFactory
+  implements GpuTextureFactory<ImageBitmap>, GpuSamplerFactory
+{
   public readonly device: GPUDevice;
 
   constructor(device: GPUDevice) {
@@ -20,7 +22,7 @@ export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
 
   createTexture(
     descriptor: GpuTextureConfiguration & {
-      source?: ArrayBufferView<ArrayBuffer> | unknown;
+      source?: ImageBitmap | ArrayBufferView | ArrayBuffer;
       readwrite?: boolean;
     }
   ): GpuTexture {
@@ -51,7 +53,7 @@ export class TextureFactory implements GpuTextureFactory, GpuSamplerFactory {
           width,
           height,
         ]);
-      } else if (source instanceof ArrayBuffer) {
+      } else if (ArrayBuffer.isView(source) || source instanceof ArrayBuffer) {
         this.device.queue.writeTexture(
           { texture },
           source,

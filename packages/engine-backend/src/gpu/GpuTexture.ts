@@ -62,10 +62,10 @@ export interface GpuTexture extends Readonly<GpuTextureConfiguration> {
   destroy(): void;
 }
 
-export interface GpuTextureFactory {
+export interface GpuTextureFactory<TextureSource = never> {
   createTexture(
     descriptor: GpuTextureConfiguration & {
-      source?: ArrayBufferView<ArrayBuffer> | unknown;
+      source?: TextureSource | ArrayBufferView | ArrayBuffer;
       readwrite?: boolean;
     }
   ): GpuTexture;

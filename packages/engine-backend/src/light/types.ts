@@ -10,16 +10,22 @@ export type LightColorData = {
   specular: IVec3;
 };
 
+export const LightColorDataSize = 36 as const; // 3 Vec3s, each with 3 floats, each float is 4 bytes
+
 export type LightAttenuationData = {
   constantAttenuation: number;
   linearAttenuation: number;
   quadraticAttenuation: number;
 };
 
+export const LightAttenuationDataSize = 12 as const; // 3 floats, each float is 4 bytes
+
 export type LightCutoffData = {
   innerCutoff: number;
   outerCutoff: number;
 };
+
+export const LightCutoffDataSize = 8 as const; // 2 floats, each float is 4 bytes
 
 export type BaseLightData = {
   type: LightType;

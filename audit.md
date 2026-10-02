@@ -137,7 +137,7 @@ Les points marqués « (vérifié) » ont été confirmés par relecture ciblée
 - 🔴 `Engine extends EventTarget` (`Engine.ts:13`) suppose un environnement DOM ou Node.
 - 🔴 Les conventions de clip-space sont implicitement celles de WebGPU, via `perspective` et `ortho`. Vulkan inverse l'axe Y et OpenGL utilise une profondeur de -1 à 1.
 - 🔴 `GpuSerializer.serialize(): string` génère du code shader (WGSL) depuis l'API abstraite.
-- 🔴 Le format de mat3 (9 floats compacts ou 12 avec padding) n'est pas spécifié dans `Mat3Api`. `TransformCache.ts:72,96` initialise encore les mat3 avec `new Float32Array(9)`, alors que le backend WebGPU en produit 12.
+- 🟡 Le format de mat3 est maintenant documenté sur le type `Mat3` : il est défini par la bibliothèque de maths du backend, et les writers doivent le respecter. Choix assumé : un backend qui change de bibliothèque de maths fournit ses propres writers. Reste à faire : `TransformCache.ts:72,96` initialise encore les mat3 avec `new Float32Array(9)` au lieu de `mat3.identity()`.
 
 ### 3.2 Dépendances entre couches
 

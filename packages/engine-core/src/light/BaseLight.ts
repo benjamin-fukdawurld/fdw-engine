@@ -1,6 +1,7 @@
 import {
   BaseLightSnapshot,
   IVec3,
+  LightColorDataSize,
   LightType,
   Vec3View,
 } from '@fdw/engine-backend';
@@ -15,7 +16,7 @@ export class BaseLight implements BaseLightSnapshot {
 
   protected _version: number;
 
-  protected static readonly bufferSize: number = 3 * 4 * 4; // 3 vectors of 3 floats each
+  protected static readonly bufferSize: number = LightColorDataSize;
 
   protected constructor(
     type: LightType,

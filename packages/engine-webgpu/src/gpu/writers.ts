@@ -139,6 +139,7 @@ export const uniformWriters: WriterApi = {
   },
 
   mat3: {
+    // Expects the wgpu-matrix layout: 12 floats, columns padded to 4.
     write(target: ArrayBuffer, offset: number, value: Float32Array): void {
       const view = new DataView(target, offset, uniformLayout.mat3.size);
       for (let column = 0; column < 3; column++) {

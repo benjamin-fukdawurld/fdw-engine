@@ -1,4 +1,9 @@
-import { IVec3, PointLightSnapshot, Vec3View } from '@fdw/engine-backend';
+import {
+  IVec3,
+  LightAttenuationDataSize,
+  PointLightSnapshot,
+  Vec3View,
+} from '@fdw/engine-backend';
 import { BaseLight } from './BaseLight';
 
 export class PointLight extends BaseLight implements PointLightSnapshot {
@@ -7,7 +12,13 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
   private _attenuation: DataView<ArrayBuffer>;
 
   constructor(data?: Partial<PointLightSnapshot>) {
-    super('point', new ArrayBuffer(BaseLight.bufferSize + 3 * 4 + 3 * 4), data);
+    super(
+      'point',
+      new ArrayBuffer(
+        BaseLight.bufferSize + LightAttenuationDataSize + 3 * 4 // Vec3 for position, 3 floats, each float is 4 bytes
+      ),
+      data
+    );
     this._position = new Vec3View(this._buffer, BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
     this._attenuation = new DataView(

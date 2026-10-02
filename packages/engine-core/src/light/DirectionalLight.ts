@@ -8,7 +8,13 @@ export class DirectionalLight
   private _direction: Vec3View;
 
   constructor(data?: Partial<DirectionalLightSnapshot>) {
-    super('directional', new ArrayBuffer(BaseLight.bufferSize + 3 * 4), data);
+    super(
+      'directional',
+      new ArrayBuffer(
+        BaseLight.bufferSize + 3 * 4 // Vec3 for direction, 3 floats, each float is 4 bytes
+      ),
+      data
+    );
     this._direction = new Vec3View(this._buffer, BaseLight.bufferSize);
     this.direction = data?.direction ?? { x: 0, y: 0, z: -1 };
   }

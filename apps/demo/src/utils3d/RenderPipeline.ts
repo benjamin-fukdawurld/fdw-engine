@@ -1,7 +1,6 @@
 import {
   MaterialDescription,
   MeshDescription,
-  Material,
   Mesh,
 } from '@fdw/engine-backend';
 import { Buffer, WebGpuEngine } from '@fdw/engine-webgpu';
@@ -72,7 +71,7 @@ export class RenderPipeline {
     });
   }
 
-  render(passEncoder: GPURenderPassEncoder, mesh: Mesh, material: Material) {
+  render(passEncoder: GPURenderPassEncoder, mesh: Mesh) {
     passEncoder.setPipeline(this.pipeline);
     for (let i = 0; i < mesh.vertices.length; i++) {
       const buffer = mesh.vertices[i] as Buffer;
