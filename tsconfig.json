@@ -17,6 +17,9 @@
     },
     {
       "path": "./packages/engine-shader"
+    },
+    {
+      "path": "./tests/rendering"
     }
   ]
 }

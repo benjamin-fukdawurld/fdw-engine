@@ -219,6 +219,10 @@ function translateNode(
   const args = inputValues();
   const type = types.outputs['result'];
   switch (op) {
+    case 'identity':
+      // No instruction: the output is the input value.
+      builder.define({ node: node.id, port: 'result' }, args[0]);
+      return;
     case 'add':
     case 'sub':
     case 'mul':

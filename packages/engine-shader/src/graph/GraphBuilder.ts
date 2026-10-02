@@ -269,6 +269,11 @@ export class GraphBuilder {
       | 'object.world'
       | 'object.normalMatrix'
       | 'time'
+      | 'light.position'
+      | 'light.ambient'
+      | 'light.diffuse'
+      | 'light.specular'
+      | 'light.attenuation'
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }

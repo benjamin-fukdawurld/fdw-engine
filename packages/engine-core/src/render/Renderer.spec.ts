@@ -10,9 +10,16 @@ import {
   Surface,
   TransformMath,
 } from '@fdw/engine-backend';
-import { GraphBuilder, MaterialGraphData, std, T } from '@fdw/engine-shader';
+import {
+  GraphBuilder,
+  MaterialGraphData,
+  std,
+  stdMacros,
+  T,
+} from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { Camera } from '../Camera';
+import { DirectionalLight, PointLight } from '../light';
 import { Transform } from '../Transform';
 import { Material } from './Material';
 import { Mesh } from './Mesh';
@@ -140,7 +147,16 @@ function fakeBackend() {
           ).map((b) => b.buffer),
         };
       },
-      createRenderPipelineAsync: () => Promise.reject(new Error('unused')),
+      createRenderPipelineAsync: async (descriptor) => {
+        log.pipelines.push(descriptor);
+        return {
+          label: descriptor.label,
+          vertexBuffers: matchVertexLayout(
+            descriptor.program.vertexInputs,
+            descriptor.vertex
+          ).map((b) => b.buffer),
+        };
+      },
       createBindGroupLayout: (group) => ({
         key: JSON.stringify(group.bindings.map((b) => b.resource)),
       }),
@@ -471,6 +487,135 @@ describe('Renderer', () => {
       depthCompare: 'less',
     });
     expect(pipeline.targets[0].blend).toBeDefined();
+  });
+});
+
+describe('Renderer, phase 4', () => {
+  // Float index of the light members in the fake frame block (16 bytes per
+  // member, 64 per matrix).
+  const light = { position: 56, ambient: 60, attenuation: 72 };
+
+  const frameFloats = (log: ReturnType<typeof fakeBackend>['log']) =>
+    floatsOf(
+      log.buffers.find((b) => b.label === 'frame uniforms') as FakeBuffer
+    );
+
+  it('writes the main light in the frame uniforms', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const camera = new Camera();
+    const items = [
+      {
+        mesh: triangle(),
+        material: new Material({ graph: colorGraph() }),
+        transform: transformAt(0),
+      },
+    ];
+
+    renderer.render({
+      items,
+      camera,
+      surface,
+      lights: [
+        new DirectionalLight({
+          direction: { x: 0, y: -2, z: 0 },
+          ambient: { x: 0.1, y: 0.2, z: 0.3 },
+        }),
+      ],
+    });
+    let floats = frameFloats(log);
+    // Directional: the direction towards the light, w = 0, no attenuation.
+    expect(floats.slice(light.position, light.position + 4)).toEqual([
+      -0, 1, -0, 0,
+    ]);
+    expect(
+      floats.slice(light.ambient, light.ambient + 3).map((v) => +v.toFixed(3))
+    ).toEqual([0.1, 0.2, 0.3]);
+    expect(floats.slice(light.attenuation, light.attenuation + 3)).toEqual([
+      1, 0, 0,
+    ]);
+
+    renderer.render({
+      items,
+      camera,
+      surface,
+      lights: [
+        new PointLight({
+          position: { x: 1, y: 2, z: 3 },
+          linearAttenuation: 0.5,
+        }),
+      ],
+    });
+    floats = frameFloats(log);
+    expect(floats.slice(light.position, light.position + 4)).toEqual([
+      1, 2, 3, 1,
+    ]);
+    expect(floats.slice(light.attenuation, light.attenuation + 3)).toEqual([
+      1, 0.5, 0,
+    ]);
+
+    // No light: neutral attenuation, so that lit materials do not divide by
+    // zero.
+    renderer.render({ items, camera, surface });
+    floats = frameFloats(log);
+    expect(floats.slice(light.attenuation, light.attenuation + 3)).toEqual([
+      1, 0, 0,
+    ]);
+  });
+
+  it('compiles a new variant when a feature changes', () => {
+    const { render, log } = setup();
+    const g = new GraphBuilder('variants');
+    g.parameter('textured', false);
+    const textured = g.call(std.textureSample, {
+      texture: g.texture('map'),
+      sampler: g.sampler('mapSampler'),
+      uv: g.attribute('uv', T.vec2f),
+    });
+    g.surface({
+      baseColor: g.call(
+        stdMacros.staticSwitch,
+        { ifTrue: textured.swizzle('rgb'), ifFalse: [1, 0, 0] },
+        { params: { feature: 'textured' } }
+      ),
+    });
+    const material = new Material({
+      graph: g.build(),
+      values: { map: {}, mapSampler: {} } as never,
+    });
+    const items = [{ mesh: triangle(), material, transform: transformAt(0) }];
+
+    render(items);
+    render(items);
+    expect(log.pipelines).toHaveLength(1);
+    expect(log.pipelines[0].program.variantKey).toEqual({ textured: false });
+
+    material.setFeature('textured', true);
+    render(items);
+    expect(log.pipelines).toHaveLength(2);
+    expect(log.pipelines[1].program.variantKey).toEqual({ textured: true });
+  });
+
+  it('skips items until their asynchronous pipeline is ready', async () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend, { asyncPipelines: true });
+    const items = [
+      {
+        mesh: triangle(),
+        material: new Material({ graph: colorGraph() }),
+        transform: transformAt(0),
+      },
+    ];
+    const camera = new Camera();
+
+    renderer.render({ items, camera, surface });
+    expect(log.draws).toHaveLength(0);
+    expect(log.submits).toBe(1);
+
+    await renderer.whenReady();
+    renderer.render({ items, camera, surface });
+    expect(log.draws).toHaveLength(1);
+    expect(log.pipelines).toHaveLength(1);
   });
 });
 

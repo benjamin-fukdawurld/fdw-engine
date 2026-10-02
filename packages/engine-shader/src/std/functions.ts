@@ -60,6 +60,25 @@ export const sin = unaryFloat('sin', 'sin');
 export const cos = unaryFloat('cos', 'cos');
 export const saturate = unaryFloat('saturate', 'saturate');
 
+// 0 when x < edge, 1 otherwise.
+export const step = intrinsic(
+  'step',
+  'step',
+  [port('edge', float), port('x', float)],
+  float
+);
+
+// Returns its value unchanged, but only in the fragment stage: what depends on
+// it is computed per pixel instead of being interpolated. Typically used on a
+// normal or a position before normalizing or lighting.
+export const perFragment = intrinsic(
+  'perFragment',
+  'identity',
+  [port('value', any)],
+  any,
+  'fragment'
+);
+
 export const pow = intrinsic(
   'pow',
   'pow',
@@ -219,6 +238,8 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   sin,
   cos,
   saturate,
+  step,
+  perFragment,
   pow,
   dot,
   length,

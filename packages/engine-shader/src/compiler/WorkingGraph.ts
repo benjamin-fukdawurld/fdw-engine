@@ -5,14 +5,12 @@ import type {
   NodeId,
   PortRef,
   StaticValue,
+  ValueSource,
 } from '../graph/MaterialGraphData';
+import { composeSwizzles } from '../graph/swizzle';
 import type { ConstantValue } from '../types/ConstantValue';
 
-// The value connected to an input: another port (possibly swizzled) or a
-// literal.
-export type InputSource =
-  | { readonly ref: PortRef; readonly swizzle?: string }
-  | { readonly value: ConstantValue };
+export type InputSource = ValueSource;
 
 // A mutable copy of a graph, transformed by the compiler passes.
 export class WorkingGraph {
@@ -98,6 +96,29 @@ export class WorkingGraph {
     this.edges = this.edges.filter(
       (edge) => edge.from.node !== id && edge.to.node !== id
     );
+  }
+
+  // Makes every use of an output port read another value instead. Swizzles
+  // of the uses are applied on top of the swizzle of the new source.
+  redirectPort(
+    from: PortRef,
+    to: { readonly ref: PortRef; readonly swizzle?: string }
+  ): void {
+    this.edges = this.edges.map((edge) => {
+      if (edge.from.node !== from.node || edge.from.port !== from.port) {
+        return edge;
+      }
+      const swizzle = to.swizzle
+        ? edge.swizzle
+          ? composeSwizzles(to.swizzle, edge.swizzle)
+          : to.swizzle
+        : edge.swizzle;
+      return {
+        from: to.ref,
+        to: edge.to,
+        ...(swizzle ? { swizzle } : {}),
+      };
+    });
   }
 
   // Makes every use of a node read the same port of another node instead.

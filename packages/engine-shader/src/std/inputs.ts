@@ -128,6 +128,11 @@ const engineValues: Record<string, ShaderType> = {
   'object.world': T.mat4f,
   'object.normalMatrix': T.mat3f,
   time: T.f32,
+  'light.position': T.vec4f,
+  'light.ambient': T.vec3f,
+  'light.diffuse': T.vec3f,
+  'light.specular': T.vec3f,
+  'light.attenuation': T.vec3f,
 };
 
 export const engine: NodeDefinition = {

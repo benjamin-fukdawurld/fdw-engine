@@ -1,5 +1,9 @@
 import type { GpuSampler, GpuTexture, UniformValue } from '@fdw/engine-backend';
-import type { ConstantValue, MaterialGraphData } from '@fdw/engine-shader';
+import type {
+  ConstantValue,
+  MaterialGraphData,
+  StaticValue,
+} from '@fdw/engine-shader';
 
 // A uniform value, or a texture or sampler bound by name.
 export type MaterialValue = UniformValue | GpuTexture | GpuSampler;
@@ -22,14 +26,15 @@ export const defaultRenderState: RenderState = {
 };
 
 // A material graph with its values. Changing a value never recompiles the
-// shader: only the graph and the render state define the program and the
-// pipeline.
+// shader: only the graph, the features and the render state define the
+// program and the pipeline.
 export class Material {
   readonly graph: MaterialGraphData;
   readonly renderState: RenderState;
   readonly label?: string;
 
   private readonly _values = new Map<string, MaterialValue>();
+  private _features: Readonly<Record<string, StaticValue>>;
   // Initial values declared by the uniforms of the graph.
   private readonly _defaults = new Map<string, ConstantValue>();
   private _version = 0;
@@ -37,15 +42,20 @@ export class Material {
   constructor({
     graph,
     values = {},
+    features = {},
     renderState = {},
     label,
   }: {
     graph: MaterialGraphData;
     values?: Readonly<Record<string, MaterialValue>>;
+    // Static parameters read by the macros of the graph: changing one
+    // selects another variant of the program.
+    features?: Readonly<Record<string, StaticValue>>;
     renderState?: Partial<RenderState>;
     label?: string;
   }) {
     this.graph = graph;
+    this._features = { ...features };
     this.renderState = { ...defaultRenderState, ...renderState };
     this.label = label;
 
@@ -71,6 +81,17 @@ export class Material {
   setValue(name: string, value: MaterialValue): this {
     this._values.set(name, value);
     this._version++;
+    return this;
+  }
+
+  get features(): Readonly<Record<string, StaticValue>> {
+    return this._features;
+  }
+
+  // Selects another variant of the program: compiled on the next frame if it
+  // is not in the cache yet.
+  setFeature(name: string, value: StaticValue): this {
+    this._features = { ...this._features, [name]: value };
     return this;
   }
 

@@ -10,7 +10,7 @@ import {
 } from '@fdw/engine-core';
 import { GraphBuilder, std, T } from '@fdw/engine-shader';
 import Layout from '../../components/Layout';
-import { createCube } from '../../utils3d/geometry';
+import { axisAngle, createCube } from '../../utils3d/geometry';
 
 export const Route = createFileRoute('/material-graph')({
   component: RouteComponent,
@@ -58,12 +58,6 @@ function glassGraph() {
   g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
   return g.build();
 }
-
-// Rotation of `angle` radians around a unit axis, as a quaternion.
-const axisAngle = (x: number, y: number, z: number, angle: number) => {
-  const s = Math.sin(angle / 2);
-  return { x: x * s, y: y * s, z: z * s, w: Math.cos(angle / 2) };
-};
 
 async function loadTexture(backend: RenderBackend, url: string) {
   const image = await createImageBitmap(await (await fetch(url)).blob());

@@ -1,6 +1,6 @@
 # Proposition : material graph et pipeline de rendu multi-backend
 
-_Statut : proposition de conception — 01/10/2026_
+_Statut : proposition de conception — 01/10/2026 Phase 4 implémentée_
 
 Ce document propose une architecture et un plan d'implémentation pour :
 
@@ -103,10 +103,10 @@ Ce document propose une architecture et un plan d'implémentation pour :
 
 Deux notions sont séparées tout au long du document :
 
-| Notion | Description | Dépend du backend ? |
-|---|---|---|
-| **Logique** | Types de shader, graphe, IR, `ProgramLayout` (quelles ressources, de quel type, à quelle fréquence) | Non |
-| **Physique** | Offsets et alignements en mémoire, numéros de binding, code source généré, objets GPU | Oui |
+| Notion       | Description                                                                                         | Dépend du backend ? |
+| ------------ | --------------------------------------------------------------------------------------------------- | ------------------- |
+| **Logique**  | Types de shader, graphe, IR, `ProgramLayout` (quelles ressources, de quel type, à quelle fréquence) | Non                 |
+| **Physique** | Offsets et alignements en mémoire, numéros de binding, code source généré, objets GPU               | Oui                 |
 
 ---
 
@@ -135,12 +135,12 @@ Pourquoi un package séparé :
 
 Ce que chaque package expose :
 
-| Package | Contenu |
-|---|---|
-| `engine-shader` | `ShaderType`, `MaterialGraph`, `GraphBuilder`, `NodeDefinition`, la bibliothèque `std`, `compile()`, `ShaderModuleIR`, `ProgramLayout` |
+| Package          | Contenu                                                                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine-shader`  | `ShaderType`, `MaterialGraph`, `GraphBuilder`, `NodeDefinition`, la bibliothèque `std`, `compile()`, `ShaderModuleIR`, `ProgramLayout`                                                       |
 | `engine-backend` | `ShaderCodegen`, `PhysicalLayoutStrategy`, `GpuShaderProgram`, `GpuRenderPipeline`, `GpuBindGroupLayout`, `GpuBindGroup`, `GpuCommandEncoder`, `GpuRenderPassEncoder`, `BackendCapabilities` |
-| `engine-core` | `Material`, `RenderState`, `Renderer`, `RenderItem` (et à terme Scene, Mesh) |
-| `engine-webgpu` | `WgslCodegen`, `WebGpuPipelineFactory`, `WebGpuCommandEncoder`… |
+| `engine-core`    | `Material`, `RenderState`, `Renderer`, `RenderItem` (et à terme Scene, Mesh)                                                                                                                 |
+| `engine-webgpu`  | `WgslCodegen`, `WebGpuPipelineFactory`, `WebGpuCommandEncoder`…                                                                                                                              |
 
 ---
 
@@ -153,16 +153,41 @@ Le système de types décrit **ce que manipule le shader**, pas sa représentati
 ```ts
 export type ScalarKind = 'f32' | 'f16' | 'i32' | 'u32' | 'bool';
 
-export type TextureDimension = '1d' | '2d' | '2d-array' | '3d' | 'cube' | 'cube-array';
-export type TextureSampleType = 'float' | 'unfilterable-float' | 'depth' | 'sint' | 'uint';
+export type TextureDimension =
+  | '1d'
+  | '2d'
+  | '2d-array'
+  | '3d'
+  | 'cube'
+  | 'cube-array';
+export type TextureSampleType =
+  | 'float'
+  | 'unfilterable-float'
+  | 'depth'
+  | 'sint'
+  | 'uint';
 
 export type ShaderType =
   | { kind: 'scalar'; scalar: ScalarKind }
   | { kind: 'vector'; size: 2 | 3 | 4; scalar: ScalarKind }
-  | { kind: 'matrix'; columns: 2 | 3 | 4; rows: 2 | 3 | 4; scalar: 'f32' | 'f16' }
+  | {
+      kind: 'matrix';
+      columns: 2 | 3 | 4;
+      rows: 2 | 3 | 4;
+      scalar: 'f32' | 'f16';
+    }
   | { kind: 'array'; element: ShaderType; length?: number } // length absente = taille à l'exécution (storage)
-  | { kind: 'struct'; name: string; fields: readonly { name: string; type: ShaderType }[] }
-  | { kind: 'texture'; dimension: TextureDimension; sampleType: TextureSampleType; multisampled?: boolean }
+  | {
+      kind: 'struct';
+      name: string;
+      fields: readonly { name: string; type: ShaderType }[];
+    }
+  | {
+      kind: 'texture';
+      dimension: TextureDimension;
+      sampleType: TextureSampleType;
+      multisampled?: boolean;
+    }
   | { kind: 'sampler'; comparison: boolean };
 ```
 
@@ -170,13 +195,22 @@ Des raccourcis rendent la construction lisible :
 
 ```ts
 export const T = {
-  f32: scalar('f32'), i32: scalar('i32'), u32: scalar('u32'), bool: scalar('bool'),
-  vec2f: vec(2, 'f32'), vec3f: vec(3, 'f32'), vec4f: vec(4, 'f32'),
-  vec2i: vec(2, 'i32'), vec4u: vec(4, 'u32'),
-  mat3f: mat(3, 3), mat4f: mat(4, 4),
-  texture2d: texture('2d', 'float'), textureCube: texture('cube', 'float'),
+  f32: scalar('f32'),
+  i32: scalar('i32'),
+  u32: scalar('u32'),
+  bool: scalar('bool'),
+  vec2f: vec(2, 'f32'),
+  vec3f: vec(3, 'f32'),
+  vec4f: vec(4, 'f32'),
+  vec2i: vec(2, 'i32'),
+  vec4u: vec(4, 'u32'),
+  mat3f: mat(3, 3),
+  mat4f: mat(4, 4),
+  texture2d: texture('2d', 'float'),
+  textureCube: texture('cube', 'float'),
   depthTexture2d: texture('2d', 'depth'),
-  sampler: sampler(false), comparisonSampler: sampler(true),
+  sampler: sampler(false),
+  comparisonSampler: sampler(true),
 } as const;
 ```
 
@@ -187,16 +221,16 @@ Beaucoup de fonctions sont génériques : `add`, `mix` ou `normalize` acceptent 
 ```ts
 export type TypeConstraint =
   | 'any'
-  | 'numeric'        // scalaires et vecteurs, sauf bool
-  | 'float'          // f32 ou f16, scalaires et vecteurs
+  | 'numeric' // scalaires et vecteurs, sauf bool
+  | 'float' // f32 ou f16, scalaires et vecteurs
   | 'float-vector'
   | 'integer';
 
 export type PortType =
   | ShaderType
-  | { kind: 'generic'; name: string; constraint: TypeConstraint }      // T
-  | { kind: 'element-of'; of: string }                                  // scalaire de T
-  | { kind: 'vector-of'; of: string; size: 2 | 3 | 4 };                 // vecN du scalaire de T
+  | { kind: 'generic'; name: string; constraint: TypeConstraint } // T
+  | { kind: 'element-of'; of: string } // scalaire de T
+  | { kind: 'vector-of'; of: string; size: 2 | 3 | 4 }; // vecN du scalaire de T
 ```
 
 Exemples de signatures :
@@ -232,10 +266,10 @@ export type NodeId = string;
 
 export interface GraphNode {
   readonly id: NodeId;
-  readonly type: string;                         // id de NodeDefinition : 'std.mul', 'input.uniform'…
+  readonly type: string; // id de NodeDefinition : 'std.mul', 'input.uniform'…
   readonly params: Readonly<Record<string, StaticValue>>; // paramètres de compilation
   readonly defaults?: Readonly<Record<string, ConstantValue>>; // valeurs des ports non connectés
-  readonly label?: string;                       // utilisé pour nommer les variables générées
+  readonly label?: string; // utilisé pour nommer les variables générées
 }
 
 export interface PortRef {
@@ -244,9 +278,9 @@ export interface PortRef {
 }
 
 export interface GraphEdge {
-  readonly from: PortRef;        // sortie
-  readonly to: PortRef;          // entrée
-  readonly swizzle?: string;     // 'xyz', 'x', 'rg'…
+  readonly from: PortRef; // sortie
+  readonly to: PortRef; // entrée
+  readonly swizzle?: string; // 'xyz', 'x', 'rg'…
 }
 
 export interface MaterialGraphData {
@@ -270,22 +304,27 @@ Règles structurelles :
 Chaque type de nœud est décrit par une `NodeDefinition`, enregistrée dans un `NodeRegistry`. La bibliothèque standard en fournit un ensemble, et l'utilisateur peut en ajouter.
 
 ```ts
-export type NodeCategory = 'input' | 'constant' | 'function' | 'macro' | 'output';
+export type NodeCategory =
+  | 'input'
+  | 'constant'
+  | 'function'
+  | 'macro'
+  | 'output';
 
 export interface PortSchema {
   readonly name: string;
   readonly type: PortType;
-  readonly default?: ConstantValue;   // pour les entrées
+  readonly default?: ConstantValue; // pour les entrées
   readonly optional?: boolean;
 }
 
 export interface NodeDefinition<P extends StaticParams = StaticParams> {
-  readonly id: string;                          // 'std.mul'
+  readonly id: string; // 'std.mul'
   readonly category: NodeCategory;
-  readonly params?: ParamSchema<P>;             // paramètres de compilation (statiques)
-  inputs(params: P): readonly PortSchema[];     // les ports peuvent dépendre des paramètres
+  readonly params?: ParamSchema<P>; // paramètres de compilation (statiques)
+  inputs(params: P): readonly PortSchema[]; // les ports peuvent dépendre des paramètres
   outputs(params: P): readonly PortSchema[];
-  readonly stage?: 'vertex' | 'fragment';       // restriction de stage, si elle existe
+  readonly stage?: 'vertex' | 'fragment'; // restriction de stage, si elle existe
 }
 ```
 
@@ -295,24 +334,24 @@ Les ports dépendent des paramètres, ce qui permet par exemple à un nœud `inp
 
 #### Entrées (`input.*`)
 
-| Nœud | Paramètres | Sortie | Correspondance |
-|---|---|---|---|
-| `input.attribute` | `semantic` (`position`, `normal`, `uv`, `color`, `tangent`, `joints`, `weights` ou nom libre), `type` | valeur de l'attribut | `MeshAttributeSemantic` d'engine-backend |
-| `input.uniform` | `name`, `type`, `slot` (`frame`, `material`, `object`) | valeur | un membre du bloc uniform du slot |
-| `input.storage` | `name`, `type` (struct ou tableau), `slot`, `access` (`read`, `read-write`) | référence au buffer | un storage buffer |
-| `input.texture` | `name`, `dimension`, `sampleType`, `slot` | texture | une texture |
-| `input.sampler` | `name`, `comparison`, `slot` | sampler | un sampler |
-| `input.builtin` | `builtin` (`vertex-index`, `instance-index`, `frag-coord`, `front-facing`) | valeur | les builtins de chaque langage |
-| `input.engine` | `value` (`camera.viewProjection`, `camera.position`, `object.world`, `object.normalMatrix`, `time`…) | valeur | les uniforms fournis par le moteur dans les slots `frame` et `object` |
+| Nœud              | Paramètres                                                                                            | Sortie               | Correspondance                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------- |
+| `input.attribute` | `semantic` (`position`, `normal`, `uv`, `color`, `tangent`, `joints`, `weights` ou nom libre), `type` | valeur de l'attribut | `MeshAttributeSemantic` d'engine-backend                              |
+| `input.uniform`   | `name`, `type`, `slot` (`frame`, `material`, `object`)                                                | valeur               | un membre du bloc uniform du slot                                     |
+| `input.storage`   | `name`, `type` (struct ou tableau), `slot`, `access` (`read`, `read-write`)                           | référence au buffer  | un storage buffer                                                     |
+| `input.texture`   | `name`, `dimension`, `sampleType`, `slot`                                                             | texture              | une texture                                                           |
+| `input.sampler`   | `name`, `comparison`, `slot`                                                                          | sampler              | un sampler                                                            |
+| `input.builtin`   | `builtin` (`vertex-index`, `instance-index`, `frag-coord`, `front-facing`)                            | valeur               | les builtins de chaque langage                                        |
+| `input.engine`    | `value` (`camera.viewProjection`, `camera.position`, `object.world`, `object.normalMatrix`, `time`…)  | valeur               | les uniforms fournis par le moteur dans les slots `frame` et `object` |
 
 `input.engine` est important : l'utilisateur ne déclare jamais lui-même les matrices de caméra ou de transform. Le moteur fournit un **contrat fixe pour les slots `frame` et `object`**, partagé par tous les matériaux, ce qui permet de réutiliser les mêmes bind groups pour tous les draws (§11.2).
 
 #### Constantes (`const.*`)
 
-| Nœud | Exemple |
-|---|---|
-| `const.value` | `{ type: vec3f, value: [1, 0.5, 0] }` |
-| `const.pi`, `const.e`… | constantes nommées |
+| Nœud                   | Exemple                               |
+| ---------------------- | ------------------------------------- |
+| `const.value`          | `{ type: vec3f, value: [1, 0.5, 0] }` |
+| `const.pi`, `const.e`… | constantes nommées                    |
 
 Les constantes participent au **constant folding** (§7.5). Un `const.value` modifié change le code généré, donc la clé du programme. Si une valeur doit varier sans recompilation, il faut un `input.uniform`.
 
@@ -339,28 +378,29 @@ export type FunctionImplementation =
 Une macro est **évaluée à la compilation** : elle reçoit ses paramètres statiques et ses entrées, et elle **génère des nœuds** qui la remplacent dans le graphe. Après l'expansion, il ne reste aucune macro.
 
 ```ts
-export interface MacroDefinition<P extends StaticParams = StaticParams> extends NodeDefinition<P> {
+export interface MacroDefinition<P extends StaticParams = StaticParams>
+  extends NodeDefinition<P> {
   readonly category: 'macro';
   expand(context: MacroContext<P>): Readonly<Record<string, PortRef>>; // sorties → ports générés
 }
 
 export interface MacroContext<P> {
-  readonly params: P;                                   // paramètres statiques résolus
+  readonly params: P; // paramètres statiques résolus
   readonly inputs: Readonly<Record<string, PortRef | undefined>>;
-  readonly builder: GraphBuilder;                       // pour créer les nœuds de remplacement
-  readonly capabilities: BackendCapabilities;           // permet d'adapter l'expansion au backend
+  readonly builder: GraphBuilder; // pour créer les nœuds de remplacement
+  readonly capabilities: BackendCapabilities; // permet d'adapter l'expansion au backend
   readonly features: Readonly<Record<string, StaticValue>>;
 }
 ```
 
 La différence entre fonction et macro :
 
-| | Fonction | Macro |
-|---|---|---|
-| Moment | Exécution (GPU) | Compilation (CPU) |
-| Résultat | Un appel de fonction dans le code généré | Des nœuds insérés à la place du nœud |
-| Peut changer la structure du graphe | Non | Oui |
-| Usage typique | Calcul réutilisable | Variantes, déroulage de boucles, adaptation aux capacités du backend |
+|                                     | Fonction                                 | Macro                                                                |
+| ----------------------------------- | ---------------------------------------- | -------------------------------------------------------------------- |
+| Moment                              | Exécution (GPU)                          | Compilation (CPU)                                                    |
+| Résultat                            | Un appel de fonction dans le code généré | Des nœuds insérés à la place du nœud                                 |
+| Peut changer la structure du graphe | Non                                      | Oui                                                                  |
+| Usage typique                       | Calcul réutilisable                      | Variantes, déroulage de boucles, adaptation aux capacités du backend |
 
 Exemples de macros de la bibliothèque standard :
 
@@ -399,11 +439,11 @@ Pour les cas avancés (post-processing, plein écran, debug), des sorties brutes
 
 Un paramètre statique est une valeur connue à la compilation. Il peut venir de trois sources :
 
-| Source | Exemple | Qui le fixe |
-|---|---|---|
-| Le matériau | `normalMap: true`, `alphaMode: 'mask'` | l'utilisateur, à la création du `Material` |
-| Le mesh | `hasAttribute.color`, `hasAttribute.tangent` | dérivé automatiquement de `MeshDescription` |
-| Le contexte | `skinning`, `instancing`, `shadowPass` | le renderer |
+| Source      | Exemple                                      | Qui le fixe                                 |
+| ----------- | -------------------------------------------- | ------------------------------------------- |
+| Le matériau | `normalMap: true`, `alphaMode: 'mask'`       | l'utilisateur, à la création du `Material`  |
+| Le mesh     | `hasAttribute.color`, `hasAttribute.tangent` | dérivé automatiquement de `MeshDescription` |
+| Le contexte | `skinning`, `instancing`, `shadowPass`       | le renderer                                 |
 
 L'ensemble des paramètres statiques effectivement **lus** pendant la compilation forme la **clé de variante**. Le compilateur enregistre quels paramètres ont été consultés, ce qui évite de créer des variantes inutiles : si aucun nœud ne lit `hasAttribute.color`, deux meshs qui diffèrent seulement par la couleur de vertex partagent le même programme.
 
@@ -421,10 +461,13 @@ Une API fluide et typée en TypeScript, qui produit un `MaterialGraphData` :
 ```ts
 const g = new GraphBuilder('textured-phong');
 
-const uv      = g.attribute('uv', T.vec2f);
+const uv = g.attribute('uv', T.vec2f);
 const diffuse = g.texture('diffuseMap', { dimension: '2d', slot: 'material' });
-const smp     = g.sampler('diffuseSampler', { slot: 'material' });
-const tint    = g.uniform('tint', T.vec4f, { slot: 'material', default: [1, 1, 1, 1] });
+const smp = g.sampler('diffuseSampler', { slot: 'material' });
+const tint = g.uniform('tint', T.vec4f, {
+  slot: 'material',
+  default: [1, 1, 1, 1],
+});
 
 const texel = g.call(std.textureSample, { texture: diffuse, sampler: smp, uv });
 const color = g.call(std.mul, { a: texel, b: tint });
@@ -450,13 +493,13 @@ Les erreurs de type sont détectées dès `g.call()` quand les types sont connus
 ```ts
 export interface CompileOptions {
   readonly registry: NodeRegistry;
-  readonly features: Readonly<Record<string, StaticValue>>;   // paramètres statiques résolus
+  readonly features: Readonly<Record<string, StaticValue>>; // paramètres statiques résolus
   readonly vertexAttributes: readonly MeshAttributeSemantic[]; // ce que le mesh fournit
-  readonly capabilities: BackendCapabilities;                 // limites et fonctionnalités du backend
+  readonly capabilities: BackendCapabilities; // limites et fonctionnalités du backend
 }
 
 export interface CompiledProgram {
-  readonly programKey: string;                     // hash structurel + variante
+  readonly programKey: string; // hash structurel + variante
   readonly variantKey: Readonly<Record<string, StaticValue>>; // paramètres effectivement lus
   readonly module: ShaderModuleIR;
   readonly layout: ProgramLayout;
@@ -464,7 +507,10 @@ export interface CompiledProgram {
   readonly diagnostics: readonly Diagnostic[];
 }
 
-export function compile(graph: MaterialGraphData, options: CompileOptions): CompiledProgram;
+export function compile(
+  graph: MaterialGraphData,
+  options: CompileOptions
+): CompiledProgram;
 ```
 
 Le compilateur est une **fonction pure** : les mêmes entrées donnent toujours la même sortie. C'est ce qui rend le cache fiable et les tests par snapshot possibles.
@@ -548,9 +594,22 @@ export interface ProgramLayout {
 }
 
 export type LogicalBinding =
-  | { kind: 'uniform-block'; name: string; members: readonly { name: string; type: ShaderType }[] }
-  | { kind: 'storage'; name: string; type: ShaderType; access: 'read' | 'read-write' }
-  | { kind: 'texture'; name: string; type: Extract<ShaderType, { kind: 'texture' }> }
+  | {
+      kind: 'uniform-block';
+      name: string;
+      members: readonly { name: string; type: ShaderType }[];
+    }
+  | {
+      kind: 'storage';
+      name: string;
+      type: ShaderType;
+      access: 'read' | 'read-write';
+    }
+  | {
+      kind: 'texture';
+      name: string;
+      type: Extract<ShaderType, { kind: 'texture' }>;
+    }
   | { kind: 'sampler'; name: string; comparison: boolean };
 ```
 
@@ -560,7 +619,10 @@ Les **offsets en mémoire** sont calculés ensuite par le backend, parce que les
 // engine-backend
 export interface PhysicalLayoutStrategy {
   // ShaderType logique → GpuType avec taille et alignement réels
-  typeOf(type: ShaderType, addressSpace: 'uniform' | 'storage'): GpuType<unknown> | GpuStruct<unknown>;
+  typeOf(
+    type: ShaderType,
+    addressSpace: 'uniform' | 'storage'
+  ): GpuType<unknown> | GpuStruct<unknown>;
   // ProgramLayout logique → numéros de binding concrets, offsets, tailles de buffers
   resolve(layout: ProgramLayout): PhysicalProgramLayout;
 }
@@ -582,31 +644,37 @@ export interface IrInstruction {
   readonly type: ShaderType;
   readonly op: IrOp;
   readonly args: readonly ValueId[];
-  readonly name?: string;            // dérivé du label du nœud, pour la lisibilité
-  readonly sourceNode?: NodeId;      // pour le débogage (commentaires, source maps)
+  readonly name?: string; // dérivé du label du nœud, pour la lisibilité
+  readonly sourceNode?: NodeId; // pour le débogage (commentaires, source maps)
 }
 
 export type IrOp =
   | { kind: 'constant'; value: ConstantValue }
-  | { kind: 'load-input'; input: string }                 // attribut ou varying
+  | { kind: 'load-input'; input: string } // attribut ou varying
   | { kind: 'load-builtin'; builtin: Builtin }
   | { kind: 'load-resource'; binding: string; member?: string }
-  | { kind: 'binary'; operator: '+' | '-' | '*' | '/' | '%' | '==' | '<' | '&&' /* … */ }
+  | {
+      kind: 'binary';
+      operator: '+' | '-' | '*' | '/' | '%' | '==' | '<' | '&&' /* … */;
+    }
   | { kind: 'unary'; operator: '-' | '!' }
-  | { kind: 'intrinsic'; name: IntrinsicOp }              // dot, normalize, mix, clamp…
-  | { kind: 'sample'; variant: 'implicit-lod' | 'level' | 'bias' | 'grad' | 'compare' }
-  | { kind: 'construct' }                                  // vec3f(a, b, c), struct
+  | { kind: 'intrinsic'; name: IntrinsicOp } // dot, normalize, mix, clamp…
+  | {
+      kind: 'sample';
+      variant: 'implicit-lod' | 'level' | 'bias' | 'grad' | 'compare';
+    }
+  | { kind: 'construct' } // vec3f(a, b, c), struct
   | { kind: 'swizzle'; components: string }
   | { kind: 'convert'; to: ShaderType }
-  | { kind: 'select' }                                     // select(cond, a, b), sans branche
-  | { kind: 'call'; function: string }                     // fonction définie par un sous-graphe
-  | { kind: 'native'; function: string }                   // fonction en code natif
-  | { kind: 'light-loop'; body: string };                  // construction dédiée (§6.6)
+  | { kind: 'select' } // select(cond, a, b), sans branche
+  | { kind: 'call'; function: string } // fonction définie par un sous-graphe
+  | { kind: 'native'; function: string } // fonction en code natif
+  | { kind: 'light-loop'; body: string }; // construction dédiée (§6.6)
 
 export interface IrEntryPoint {
   readonly stage: 'vertex' | 'fragment';
-  readonly inputs: readonly IrStageVariable[];   // attributs (vertex) ou varyings (fragment)
-  readonly outputs: readonly IrStageVariable[];  // varyings (vertex) ou cibles de couleur (fragment)
+  readonly inputs: readonly IrStageVariable[]; // attributs (vertex) ou varyings (fragment)
+  readonly outputs: readonly IrStageVariable[]; // varyings (vertex) ou cibles de couleur (fragment)
   readonly body: readonly IrInstruction[];
   readonly results: Readonly<Record<string, ValueId>>; // sortie → valeur
 }
@@ -632,7 +700,13 @@ export interface ShaderModuleIR {
 
 ```ts
 // engine-backend
-export type ShaderLanguage = 'wgsl' | 'glsl-es-300' | 'glsl-450' | 'msl' | 'hlsl' | 'spirv';
+export type ShaderLanguage =
+  | 'wgsl'
+  | 'glsl-es-300'
+  | 'glsl-450'
+  | 'msl'
+  | 'hlsl'
+  | 'spirv';
 
 export interface ShaderCodegen {
   readonly language: ShaderLanguage;
@@ -640,26 +714,35 @@ export interface ShaderCodegen {
 }
 
 export type ShaderSources =
-  | { kind: 'text'; vertex: string; fragment: string; entryPoints?: { vertex: string; fragment: string } }
-  | { kind: 'text-single-module'; code: string; entryPoints: { vertex: string; fragment: string } } // WGSL, MSL, HLSL
-  | { kind: 'binary'; vertex: Uint32Array; fragment: Uint32Array };                               // SPIR-V
+  | {
+      kind: 'text';
+      vertex: string;
+      fragment: string;
+      entryPoints?: { vertex: string; fragment: string };
+    }
+  | {
+      kind: 'text-single-module';
+      code: string;
+      entryPoints: { vertex: string; fragment: string };
+    } // WGSL, MSL, HLSL
+  | { kind: 'binary'; vertex: Uint32Array; fragment: Uint32Array }; // SPIR-V
 ```
 
 Un générateur est essentiellement un `switch` sur `IrOp` qui produit une ligne par instruction (`let v12: vec3<f32> = normalize(v11);`), plus la déclaration des ressources et des entry points. Sans flot de contrôle, un générateur complet tient en quelques centaines de lignes.
 
 ### 9.2 Les différences à absorber
 
-| Aspect | WGSL (WebGPU) | GLSL ES 3.0 (WebGL2) | GLSL 450 (Vulkan) | MSL (Metal) | HLSL (D3D12) |
-|---|---|---|---|---|---|
-| Binding des ressources | `@group(g) @binding(b)` | blocs uniform + unités de texture, pas de groupes | `layout(set = g, binding = b)` | `[[buffer(n)]]`, `[[texture(n)]]`, `[[sampler(n)]]` | `register(bN, spaceG)` |
-| Texture et sampler | séparés | **combinés** (`sampler2D`) | séparés ou combinés | séparés | séparés |
-| Storage buffers | oui | **non** | oui | oui | oui (`StructuredBuffer`) |
-| Entry points | plusieurs par module | un programme = deux sources | une source par stage | plusieurs par module | plusieurs par module |
-| Profondeur du clip space | [0, 1] | **[-1, 1]** | [0, 1] | [0, 1] | [0, 1] |
-| Axe Y du NDC | vers le haut | vers le haut | **vers le bas** | vers le haut | vers le haut |
-| Origine des textures / du framebuffer | haut gauche | **bas gauche** | haut gauche | haut gauche | haut gauche |
-| Matrices | colonnes | colonnes | colonnes | colonnes | **lignes par défaut** (émettre `column_major`) |
-| Précision | — | **qualificateurs obligatoires** | — | `half` | `min16float` |
+| Aspect                                | WGSL (WebGPU)           | GLSL ES 3.0 (WebGL2)                              | GLSL 450 (Vulkan)              | MSL (Metal)                                         | HLSL (D3D12)                                   |
+| ------------------------------------- | ----------------------- | ------------------------------------------------- | ------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
+| Binding des ressources                | `@group(g) @binding(b)` | blocs uniform + unités de texture, pas de groupes | `layout(set = g, binding = b)` | `[[buffer(n)]]`, `[[texture(n)]]`, `[[sampler(n)]]` | `register(bN, spaceG)`                         |
+| Texture et sampler                    | séparés                 | **combinés** (`sampler2D`)                        | séparés ou combinés            | séparés                                             | séparés                                        |
+| Storage buffers                       | oui                     | **non**                                           | oui                            | oui                                                 | oui (`StructuredBuffer`)                       |
+| Entry points                          | plusieurs par module    | un programme = deux sources                       | une source par stage           | plusieurs par module                                | plusieurs par module                           |
+| Profondeur du clip space              | [0, 1]                  | **[-1, 1]**                                       | [0, 1]                         | [0, 1]                                              | [0, 1]                                         |
+| Axe Y du NDC                          | vers le haut            | vers le haut                                      | **vers le bas**                | vers le haut                                        | vers le haut                                   |
+| Origine des textures / du framebuffer | haut gauche             | **bas gauche**                                    | haut gauche                    | haut gauche                                         | haut gauche                                    |
+| Matrices                              | colonnes                | colonnes                                          | colonnes                       | colonnes                                            | **lignes par défaut** (émettre `column_major`) |
+| Précision                             | —                       | **qualificateurs obligatoires**                   | —                              | `half`                                              | `min16float`                                   |
 
 Comment le compilateur et les générateurs les absorbent :
 
@@ -672,11 +755,11 @@ Comment le compilateur et les générateurs les absorbent :
 
 ### 9.3 Stratégie de génération : émetteurs directs ou cross-compilation
 
-| Option | Principe | Avantages | Inconvénients |
-|---|---|---|---|
-| **A. Émetteurs directs** | un générateur par langage depuis l'IR | aucune dépendance, code lisible, contrôle total, s'exécute dans le navigateur | N générateurs à maintenir |
-| **B. Un émetteur + cross-compilateur** | WGSL généré, puis converti par [naga](https://github.com/gfx-rs/wgpu/tree/trunk/naga) (WASM ou natif) en SPIR-V, MSL, HLSL ou GLSL | un seul générateur, conversions éprouvées | dépendance lourde, code produit moins lisible, coût du WASM dans le navigateur |
-| **C. SPIR-V directement** | générer du binaire SPIR-V, puis SPIRV-Cross pour les autres langages | standard de l'industrie | génération binaire complexe, débogage difficile |
+| Option                                 | Principe                                                                                                                           | Avantages                                                                     | Inconvénients                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **A. Émetteurs directs**               | un générateur par langage depuis l'IR                                                                                              | aucune dépendance, code lisible, contrôle total, s'exécute dans le navigateur | N générateurs à maintenir                                                      |
+| **B. Un émetteur + cross-compilateur** | WGSL généré, puis converti par [naga](https://github.com/gfx-rs/wgpu/tree/trunk/naga) (WASM ou natif) en SPIR-V, MSL, HLSL ou GLSL | un seul générateur, conversions éprouvées                                     | dépendance lourde, code produit moins lisible, coût du WASM dans le navigateur |
+| **C. SPIR-V directement**              | générer du binaire SPIR-V, puis SPIRV-Cross pour les autres langages                                                               | standard de l'industrie                                                       | génération binaire complexe, débogage difficile                                |
 
 **Recommandation : l'option A**, au moins pour WGSL et GLSL ES, les deux cibles web, où il faut compiler à l'exécution et rester léger. L'absence de flot de contrôle dans l'IR rend chaque générateur petit. Pour les backends natifs, les deux voies restent ouvertes : des générateurs directs MSL et HLSL (tout aussi simples), ou naga dans la chaîne native si l'on préfère s'appuyer sur un outil éprouvé. L'architecture ne change pas, car `ShaderCodegen` est l'unique point d'extension.
 
@@ -694,9 +777,13 @@ export interface RenderPipelineDescriptor {
   readonly label?: string;
   readonly program: CompiledProgram;
   readonly layout: PhysicalProgramLayout;
-  readonly vertex: MeshDescription;               // existe déjà dans engine-backend
+  readonly vertex: MeshDescription; // existe déjà dans engine-backend
   readonly primitive: {
-    readonly topology: 'triangle-list' | 'triangle-strip' | 'line-list' | 'point-list';
+    readonly topology:
+      | 'triangle-list'
+      | 'triangle-strip'
+      | 'line-list'
+      | 'point-list';
     readonly cullMode: 'none' | 'front' | 'back';
     readonly frontFace: 'ccw' | 'cw';
   };
@@ -705,7 +792,10 @@ export interface RenderPipelineDescriptor {
     readonly depthWrite: boolean;
     readonly depthCompare: CompareFunction;
   };
-  readonly targets: readonly { readonly format: GpuTextureFormat; readonly blend?: BlendState }[];
+  readonly targets: readonly {
+    readonly format: GpuTextureFormat;
+    readonly blend?: BlendState;
+  }[];
   readonly sampleCount: number;
 }
 
@@ -714,19 +804,24 @@ export interface GpuPipelineFactory {
   readonly layoutStrategy: PhysicalLayoutStrategy;
   readonly capabilities: BackendCapabilities;
   createRenderPipeline(descriptor: RenderPipelineDescriptor): GpuRenderPipeline;
-  createRenderPipelineAsync(descriptor: RenderPipelineDescriptor): Promise<GpuRenderPipeline>;
+  createRenderPipelineAsync(
+    descriptor: RenderPipelineDescriptor
+  ): Promise<GpuRenderPipeline>;
   createBindGroupLayout(group: PhysicalBindGroupLayout): GpuBindGroupLayout;
-  createBindGroup(layout: GpuBindGroupLayout, entries: readonly GpuBindGroupEntry[]): GpuBindGroup;
+  createBindGroup(
+    layout: GpuBindGroupLayout,
+    entries: readonly GpuBindGroupEntry[]
+  ): GpuBindGroup;
 }
 ```
 
 Correspondance avec chaque backend :
 
-| Abstraction | WebGPU | Vulkan | Metal | D3D12 | WebGL2 |
-|---|---|---|---|---|---|
-| `GpuRenderPipeline` | `GPURenderPipeline` | `VkPipeline` | `MTLRenderPipelineState` + `MTLDepthStencilState` | PSO | programme + état mémorisé |
-| `GpuBindGroupLayout` | `GPUBindGroupLayout` | `VkDescriptorSetLayout` | (argument buffer) | partie de la root signature | table de correspondance |
-| `GpuBindGroup` | `GPUBindGroup` | `VkDescriptorSet` | argument buffer ou liaisons directes | descriptor table | liaisons appliquées au draw |
+| Abstraction          | WebGPU               | Vulkan                  | Metal                                             | D3D12                       | WebGL2                      |
+| -------------------- | -------------------- | ----------------------- | ------------------------------------------------- | --------------------------- | --------------------------- |
+| `GpuRenderPipeline`  | `GPURenderPipeline`  | `VkPipeline`            | `MTLRenderPipelineState` + `MTLDepthStencilState` | PSO                         | programme + état mémorisé   |
+| `GpuBindGroupLayout` | `GPUBindGroupLayout` | `VkDescriptorSetLayout` | (argument buffer)                                 | partie de la root signature | table de correspondance     |
+| `GpuBindGroup`       | `GPUBindGroup`       | `VkDescriptorSet`       | argument buffer ou liaisons directes              | descriptor table            | liaisons appliquées au draw |
 
 ### 10.2 Correspondance entre le mesh et le programme
 
@@ -772,11 +867,26 @@ export interface GpuCommandEncoder {
 
 export interface GpuRenderPassEncoder {
   setPipeline(pipeline: GpuRenderPipeline): void;
-  setBindGroup(index: number, group: GpuBindGroup, dynamicOffsets?: readonly number[]): void;
+  setBindGroup(
+    index: number,
+    group: GpuBindGroup,
+    dynamicOffsets?: readonly number[]
+  ): void;
   setVertexBuffer(slot: number, buffer: GpuBuffer, offset?: number): void;
   setIndexBuffer(buffer: GpuBuffer, format: IndexFormat, offset?: number): void;
-  draw(vertexCount: number, instanceCount?: number, firstVertex?: number, firstInstance?: number): void;
-  drawIndexed(indexCount: number, instanceCount?: number, firstIndex?: number, baseVertex?: number, firstInstance?: number): void;
+  draw(
+    vertexCount: number,
+    instanceCount?: number,
+    firstVertex?: number,
+    firstInstance?: number
+  ): void;
+  drawIndexed(
+    indexCount: number,
+    instanceCount?: number,
+    firstIndex?: number,
+    baseVertex?: number,
+    firstInstance?: number
+  ): void;
   end(): void;
 }
 
@@ -806,14 +916,14 @@ export interface RenderState {
 export class Material {
   constructor(options: {
     graph: MaterialGraphData;
-    features?: Readonly<Record<string, StaticValue>>;   // normalMap: true…
+    features?: Readonly<Record<string, StaticValue>>; // normalMap: true…
     renderState?: Partial<RenderState>;
-    values?: Readonly<Record<string, MaterialValue>>;   // tint: [1, 0.5, 0.5, 1], diffuseMap: texture…
+    values?: Readonly<Record<string, MaterialValue>>; // tint: [1, 0.5, 0.5, 1], diffuseMap: texture…
   });
 
-  setValue(name: string, value: MaterialValue): this;   // incrémente la version, ne recompile pas
-  setFeature(name: string, value: StaticValue): this;   // change la variante : nouveau programme
-  readonly version: number;          // valeurs
+  setValue(name: string, value: MaterialValue): this; // incrémente la version, ne recompile pas
+  setFeature(name: string, value: StaticValue): this; // change la variante : nouveau programme
+  readonly version: number; // valeurs
   readonly structureVersion: number; // graphe, features, render state
 }
 ```
@@ -827,11 +937,11 @@ Côté backend, un **`MaterialBinding`** (un par couple matériau et programme) 
 
 ### 11.2 Fréquences de mise à jour
 
-| Groupe | Slot | Contenu | Mis à jour | Lié |
-|---|---|---|---|---|
-| 0 | `frame` | caméra (view, projection, position), lumières, temps | une fois par frame | une fois par passe |
-| 1 | `material` | uniforms, textures et samplers du matériau | quand les valeurs changent | à chaque changement de matériau |
-| 2 | `object` | matrice monde, normal matrix (déjà fournies par `TransformAdapter`) | quand le transform change | à chaque objet |
+| Groupe | Slot       | Contenu                                                             | Mis à jour                 | Lié                             |
+| ------ | ---------- | ------------------------------------------------------------------- | -------------------------- | ------------------------------- |
+| 0      | `frame`    | caméra (view, projection, position), lumières, temps                | une fois par frame         | une fois par passe              |
+| 1      | `material` | uniforms, textures et samplers du matériau                          | quand les valeurs changent | à chaque changement de matériau |
+| 2      | `object`   | matrice monde, normal matrix (déjà fournies par `TransformAdapter`) | quand le transform change  | à chaque objet                  |
 
 Plus tard, on pourra regrouper les données `object` de tous les objets dans **un seul grand buffer avec des offsets dynamiques** : un seul bind group au lieu d'un par objet. L'interface `setBindGroup(index, group, dynamicOffsets)` le permet déjà.
 
@@ -846,7 +956,12 @@ export interface RenderItem {
 }
 
 export interface Renderer {
-  render(items: Iterable<RenderItem>, camera: Camera, lights: readonly Light[], surface: Surface): void;
+  render(
+    items: Iterable<RenderItem>,
+    camera: Camera,
+    lights: readonly Light[],
+    surface: Surface
+  ): void;
 }
 ```
 
@@ -861,7 +976,10 @@ Le déroulement d'une frame :
 Pour l'utilisateur, tout se réduit à :
 
 ```ts
-const material = new Material({ graph, values: { tint: [1, 0.8, 0.8, 1], diffuseMap: texture } });
+const material = new Material({
+  graph,
+  values: { tint: [1, 0.8, 0.8, 1], diffuseMap: texture },
+});
 renderer.render([{ mesh, material, transform }], camera, lights, surface);
 ```
 
@@ -934,17 +1052,17 @@ Le graphe, l'IR et le layout logique sont identiques. Seuls le générateur et l
 
 ## 13. Intégration avec l'existant
 
-| Élément existant | Devenir |
-|---|---|
-| `MaterialBindingSlot`, `getMaterialBindingSlotOrder()` (engine-backend) | **Réutilisés** : ils définissent les groupes et leur ordre |
-| `MeshDescription`, `MeshAttributeSemantic` (engine-backend) | **Réutilisés** : sémantiques des nœuds `input.attribute` et correspondance des vertex layouts |
-| `GpuType`, `GpuStruct`, `StructBuildStrategy`, `PrimitiveApi` (engine-backend / engine-webgpu) | **Réutilisés** par `PhysicalLayoutStrategy` pour calculer les offsets |
-| `CachedValue`, `SnapshotValue` (engine-backend) | **Réutilisés** pour les mises à jour versionnées des buffers et les caches |
-| `CameraAdapter`, `TransformAdapter` | **Réutilisés** pour les slots `frame` et `object` |
-| Concept de `shapeKey` de l'ancien `Material` | **Repris** sous la forme `programKey` / `stateKey` |
-| `ShaderWritter` et les templates Eta | **Remplacés** par `WgslCodegen`. Le Phong des templates devient la macro `lighting.phong` |
-| `GpuSerializer.serialize(): string` (engine-backend) | **Supprimé** de l'API abstraite : la génération de code passe aux générateurs (point de l'audit, §3.1) |
-| `apps/demo/src/utils3d` (Scene, Material, RenderPipeline, Mesh) | **Remplacés** par `Material`, `Renderer` et les pipelines du moteur |
+| Élément existant                                                                               | Devenir                                                                                                |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `MaterialBindingSlot`, `getMaterialBindingSlotOrder()` (engine-backend)                        | **Réutilisés** : ils définissent les groupes et leur ordre                                             |
+| `MeshDescription`, `MeshAttributeSemantic` (engine-backend)                                    | **Réutilisés** : sémantiques des nœuds `input.attribute` et correspondance des vertex layouts          |
+| `GpuType`, `GpuStruct`, `StructBuildStrategy`, `PrimitiveApi` (engine-backend / engine-webgpu) | **Réutilisés** par `PhysicalLayoutStrategy` pour calculer les offsets                                  |
+| `CachedValue`, `SnapshotValue` (engine-backend)                                                | **Réutilisés** pour les mises à jour versionnées des buffers et les caches                             |
+| `CameraAdapter`, `TransformAdapter`                                                            | **Réutilisés** pour les slots `frame` et `object`                                                      |
+| Concept de `shapeKey` de l'ancien `Material`                                                   | **Repris** sous la forme `programKey` / `stateKey`                                                     |
+| `ShaderWritter` et les templates Eta                                                           | **Remplacés** par `WgslCodegen`. Le Phong des templates devient la macro `lighting.phong`              |
+| `GpuSerializer.serialize(): string` (engine-backend)                                           | **Supprimé** de l'API abstraite : la génération de code passe aux générateurs (point de l'audit, §3.1) |
+| `apps/demo/src/utils3d` (Scene, Material, RenderPipeline, Mesh)                                | **Remplacés** par `Material`, `Renderer` et les pipelines du moteur                                    |
 
 ---
 
@@ -952,15 +1070,15 @@ Le graphe, l'IR et le layout logique sont identiques. Seuls le générateur et l
 
 Chaque phase a un livrable vérifiable. L'ordre est choisi pour valider l'abstraction le plus tôt possible avec un deuxième backend (phase 5).
 
-| Phase | Contenu | Critère de fin |
-|---|---|---|
-| **1. Types et graphe** | Package `engine-shader` : `ShaderType`, `PortType`, `MaterialGraphData`, `GraphBuilder`, `NodeRegistry`, validation (acyclicité, ports), format JSON | Tests unitaires de validation et d'aller-retour JSON |
-| **2. Compilateur et WGSL** | Inférence de types, élimination du code mort, folding, CSE, analyse de fréquence, allocation des ressources, IR, `WgslCodegen`. Bibliothèque `std` minimale (arithmétique, vecteurs, `textureSample`), `output.surface`, `lighting.unlit` | Tests par snapshot du WGSL, validation du WGSL par naga en CI, une route de la démo en unlit texturé |
-| **3. Pipelines et renderer WebGPU** | `RenderPipelineDescriptor`, `GpuPipelineFactory`, command encoder, `ProgramCache`, `PipelineCache`, `Material`, `Renderer` | La route `loading-model` réécrite avec `Material` et `Renderer`, sans aucun appel direct à WebGPU |
-| **4. Macros et variantes** | `macro.staticSwitch`, `macro.repeat`, `lighting.phong`, `normalMapping`, attributs optionnels, clé de variante, compilation asynchrone | Le Phong actuel reproduit à l'identique ; deux meshs avec et sans couleur de vertex partagent ou non le programme selon l'usage |
-| **5. WebGL2** | `GlslEsCodegen`, aplatissement des groupes, combinaison texture+sampler, capacités, backend `engine-webgl2` | Les mêmes routes de démo rendues en WebGL2 avec les mêmes graphes |
-| **6. Natif** | Conventions de clip space, `Glsl450Codegen` → SPIR-V (glslang ou naga) pour Vulkan avec SDL, puis MSL et HLSL | Une scène de la démo rendue dans une fenêtre SDL avec Vulkan |
-| **7. Outils** (facultatif) | Précompilation hors ligne, cache persistant, éditeur visuel | — |
+| Phase                               | Contenu                                                                                                                                                                                                                                   | Critère de fin                                                                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Types et graphe**              | Package `engine-shader` : `ShaderType`, `PortType`, `MaterialGraphData`, `GraphBuilder`, `NodeRegistry`, validation (acyclicité, ports), format JSON                                                                                      | Tests unitaires de validation et d'aller-retour JSON                                                                            |
+| **2. Compilateur et WGSL**          | Inférence de types, élimination du code mort, folding, CSE, analyse de fréquence, allocation des ressources, IR, `WgslCodegen`. Bibliothèque `std` minimale (arithmétique, vecteurs, `textureSample`), `output.surface`, `lighting.unlit` | Tests par snapshot du WGSL, validation du WGSL par naga en CI, une route de la démo en unlit texturé                            |
+| **3. Pipelines et renderer WebGPU** | `RenderPipelineDescriptor`, `GpuPipelineFactory`, command encoder, `ProgramCache`, `PipelineCache`, `Material`, `Renderer`                                                                                                                | La route `loading-model` réécrite avec `Material` et `Renderer`, sans aucun appel direct à WebGPU                               |
+| **4. Macros et variantes**          | `macro.staticSwitch`, `macro.repeat`, `lighting.phong`, `normalMapping`, attributs optionnels, clé de variante, compilation asynchrone                                                                                                    | Le Phong actuel reproduit à l'identique ; deux meshs avec et sans couleur de vertex partagent ou non le programme selon l'usage |
+| **5. WebGL2**                       | `GlslEsCodegen`, aplatissement des groupes, combinaison texture+sampler, capacités, backend `engine-webgl2`                                                                                                                               | Les mêmes routes de démo rendues en WebGL2 avec les mêmes graphes                                                               |
+| **6. Natif**                        | Conventions de clip space, `Glsl450Codegen` → SPIR-V (glslang ou naga) pour Vulkan avec SDL, puis MSL et HLSL                                                                                                                             | Une scène de la démo rendue dans une fenêtre SDL avec Vulkan                                                                    |
+| **7. Outils** (facultatif)          | Précompilation hors ligne, cache persistant, éditeur visuel                                                                                                                                                                               | —                                                                                                                               |
 
 La phase 5 est la plus importante pour la vision du projet : c'est le premier test réel de l'abstraction. WebGL2 diffère de WebGPU sur presque tous les points du §9.2. S'il passe sans changer le graphe ni l'IR, l'architecture tiendra pour les backends natifs.
 
@@ -968,15 +1086,15 @@ La phase 5 est la plus importante pour la vision du projet : c'est le premier te
 
 ## 15. Stratégie de test
 
-| Niveau | Quoi | Outils |
-|---|---|---|
-| Types | Unification des génériques, contraintes, diffusion scalaire | Vitest |
-| Graphe | Validation, détection de cycles, aller-retour JSON, messages d'erreur | Vitest |
-| Compilateur | Élimination du code mort, folding, CSE, fréquences, varyings, ordre des bindings, clé de variante | Vitest, snapshots de l'IR |
-| Générateurs | Code émis pour une IR fixe | Snapshots par langage |
-| Validité du code | Le code généré compile réellement | naga ou tint (WGSL), `glslangValidator` (GLSL), `dxc` (HLSL), `xcrun metal` (MSL, sur macOS) en CI |
-| Layout physique | Offsets et tailles conformes aux règles WGSL, std140, HLSL | Vitest, comparés aux valeurs de référence (et à la réflexion de naga) |
-| Rendu | Images de référence | Chrome headless avec WebGPU, comparaison d'images (plus tard) |
+| Niveau           | Quoi                                                                                              | Outils                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Types            | Unification des génériques, contraintes, diffusion scalaire                                       | Vitest                                                                                             |
+| Graphe           | Validation, détection de cycles, aller-retour JSON, messages d'erreur                             | Vitest                                                                                             |
+| Compilateur      | Élimination du code mort, folding, CSE, fréquences, varyings, ordre des bindings, clé de variante | Vitest, snapshots de l'IR                                                                          |
+| Générateurs      | Code émis pour une IR fixe                                                                        | Snapshots par langage                                                                              |
+| Validité du code | Le code généré compile réellement                                                                 | naga ou tint (WGSL), `glslangValidator` (GLSL), `dxc` (HLSL), `xcrun metal` (MSL, sur macOS) en CI |
+| Layout physique  | Offsets et tailles conformes aux règles WGSL, std140, HLSL                                        | Vitest, comparés aux valeurs de référence (et à la réflexion de naga)                              |
+| Rendu            | Images de référence                                                                               | Chrome headless avec WebGPU, comparaison d'images (plus tard)                                      |
 
 Le compilateur étant une fonction pure sans GPU, la grande majorité des tests tourne dans Node, en quelques secondes.
 
@@ -984,16 +1102,16 @@ Le compilateur étant une fonction pure sans GPU, la grande majorité des tests 
 
 ## 16. Risques et questions ouvertes
 
-| Sujet | Risque | Proposition |
-|---|---|---|
-| **Explosion des variantes** | Chaque paramètre statique double potentiellement le nombre de programmes | Ne compter que les paramètres effectivement lus (§6.5), compilation asynchrone, cache, et une limite configurable avec avertissement |
-| **Uniformité en WGSL** | WGSL interdit `textureSample` (et les dérivées) dans un flot de contrôle non uniforme | Le DAG n'a pas de branches : les conditions deviennent des `select()`. Dans `lightLoop`, utiliser `textureSampleLevel` |
-| **Limites de WebGL2** | Pas de storage buffers, blocs uniform limités (16 Ko garantis), peu de varyings | `BackendCapabilities` consultées à la compilation, macros avec repli, erreurs explicites |
-| **Packing des uniforms** | Règles différentes entre WGSL, std140, HLSL et Metal | Centralisées dans `PhysicalLayoutStrategy`, testées contre des valeurs de référence |
-| **Débogage** | Le code généré est difficile à relier au graphe | Noms dérivés des labels, commentaires `// node #id type`, et plus tard des source maps nœud ↔ ligne |
-| **Code natif** | Les nœuds `native` cassent la portabilité | Les limiter, et refuser la compilation si un langage cible manque |
-| **Temps de compilation** | Saccades à la première apparition d'un matériau | Compilation asynchrone, matériau de repli, préchauffage des variantes connues |
-| **Coercions implicites** | Pratiques mais sources d'erreurs | Politique stricte (§5.3), avec insertion assistée par l'éditeur |
+| Sujet                       | Risque                                                                                | Proposition                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Explosion des variantes** | Chaque paramètre statique double potentiellement le nombre de programmes              | Ne compter que les paramètres effectivement lus (§6.5), compilation asynchrone, cache, et une limite configurable avec avertissement |
+| **Uniformité en WGSL**      | WGSL interdit `textureSample` (et les dérivées) dans un flot de contrôle non uniforme | Le DAG n'a pas de branches : les conditions deviennent des `select()`. Dans `lightLoop`, utiliser `textureSampleLevel`               |
+| **Limites de WebGL2**       | Pas de storage buffers, blocs uniform limités (16 Ko garantis), peu de varyings       | `BackendCapabilities` consultées à la compilation, macros avec repli, erreurs explicites                                             |
+| **Packing des uniforms**    | Règles différentes entre WGSL, std140, HLSL et Metal                                  | Centralisées dans `PhysicalLayoutStrategy`, testées contre des valeurs de référence                                                  |
+| **Débogage**                | Le code généré est difficile à relier au graphe                                       | Noms dérivés des labels, commentaires `// node #id type`, et plus tard des source maps nœud ↔ ligne                                  |
+| **Code natif**              | Les nœuds `native` cassent la portabilité                                             | Les limiter, et refuser la compilation si un langage cible manque                                                                    |
+| **Temps de compilation**    | Saccades à la première apparition d'un matériau                                       | Compilation asynchrone, matériau de repli, préchauffage des variantes connues                                                        |
+| **Coercions implicites**    | Pratiques mais sources d'erreurs                                                      | Politique stricte (§5.3), avec insertion assistée par l'éditeur                                                                      |
 
 Questions à trancher :
 

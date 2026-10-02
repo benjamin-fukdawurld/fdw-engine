@@ -67,8 +67,13 @@ describe('wgslLayoutStrategy', () => {
       ['projection', 128, 64],
       ['cameraPosition', 192, 12],
       ['time', 204, 4],
+      ['lightPosition', 208, 16],
+      ['lightAmbient', 224, 12],
+      ['lightDiffuse', 240, 12],
+      ['lightSpecular', 256, 12],
+      ['lightAttenuation', 272, 12],
     ]);
-    expect(block('frame').size).toBe(208);
+    expect(block('frame').size).toBe(288);
   });
 
   it('pads the mat3 columns of the object block', () => {

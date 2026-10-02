@@ -82,10 +82,10 @@ describe('compile', () => {
     });
 
     it('rejects the shading models that are not implemented yet', () => {
-      const g = new GraphBuilder('phong');
-      g.surface({ shadingModel: 'phong' });
+      const g = new GraphBuilder('pbr');
+      g.surface({ shadingModel: 'pbr' });
       expect(compileError(g.build())).toMatch(
-        /"phong" shading model is not supported yet/
+        /"pbr" shading model is not supported yet \(no lighting.pbr macro\)/
       );
     });
 

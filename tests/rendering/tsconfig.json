@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "outDir": "../../dist/out-tsc/rendering-tests",
+    "types": ["node", "vitest/importMeta", "vite/client", "@webgpu/types"]
+  },
+  "include": ["vitest.config.mts", "src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../packages/engine-core"
+    },
+    {
+      "path": "../../packages/engine-shader"
+    },
+    {
+      "path": "../../packages/engine-webgpu"
+    }
+  ]
+}

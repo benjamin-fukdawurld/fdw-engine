@@ -1,4 +1,5 @@
 import {
+  PointLightData,
   IVec3,
   LightAttenuationDataSize,
   PointLightSnapshot,
@@ -11,7 +12,8 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
 
   private _attenuation: DataView<ArrayBuffer>;
 
-  constructor(data?: Partial<PointLightSnapshot>) {
+  // Plain values: { position: { x, y, z }, ambient: … }.
+  constructor(data?: Partial<Omit<PointLightData, 'type'>>) {
     super(
       'point',
       new ArrayBuffer(

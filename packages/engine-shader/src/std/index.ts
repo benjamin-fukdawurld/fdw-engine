@@ -3,6 +3,8 @@ import type { NodeDefinition } from '../graph/NodeDefinition';
 import * as constants from './constants';
 import * as functions from './functions';
 import * as inputs from './inputs';
+import { lightingDefinitions } from './lighting';
+import * as macros from './macros';
 import * as outputs from './outputs';
 
 export { ShadingModelNames } from './outputs';
@@ -23,6 +25,8 @@ export const std = {
   sin: functions.sin,
   cos: functions.cos,
   saturate: functions.saturate,
+  step: functions.step,
+  perFragment: functions.perFragment,
   pow: functions.pow,
   dot: functions.dot,
   length: functions.length,
@@ -64,11 +68,23 @@ export const stdOutputs = {
   fragment: outputs.fragment,
 } as const;
 
+// Macros, by short name: g.node(stdMacros.staticSwitch, { params, inputs }).
+export const stdMacros = {
+  staticSwitch: macros.staticSwitch,
+  optionalAttribute: macros.optionalAttribute,
+  repeat: macros.repeat,
+  normalMapping: macros.normalMapping,
+} as const;
+
+export { call, engineValue, swizzle } from './macros';
+
 export const standardNodeDefinitions: readonly NodeDefinition[] = [
   ...Object.values(stdInputs),
   ...Object.values(stdConstants),
   ...functions.functionDefinitions,
   ...Object.values(stdOutputs),
+  ...macros.macroDefinitions,
+  ...lightingDefinitions,
 ];
 
 export function createStandardRegistry(): NodeRegistry {

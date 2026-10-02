@@ -77,6 +77,8 @@ const evaluators: Partial<
   cos: componentWise(Math.cos),
   saturate: componentWise((x) => Math.min(Math.max(x, 0), 1)),
   pow: componentWise(Math.pow),
+  step: componentWise((edge, x) => (x < edge ? 0 : 1)),
+  identity: ([value]) => value,
   mix: componentWise((a, b, t) => a + (b - a) * t),
   clamp: componentWise((x, low, high) => Math.min(Math.max(x, low), high)),
   smoothstep: componentWise((low, high, x) => {

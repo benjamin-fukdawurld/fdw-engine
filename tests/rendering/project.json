@@ -1,0 +1,7 @@
+{
+  "name": "rendering-tests",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tests/rendering/src",
+  "projectType": "library",
+  "tags": ["type:test"]
+}

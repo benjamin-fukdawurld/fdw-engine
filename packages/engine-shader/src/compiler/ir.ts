@@ -36,7 +36,8 @@ export type IrIntrinsic =
   | 'mix'
   | 'clamp'
   | 'smoothstep'
-  | 'saturate';
+  | 'saturate'
+  | 'step';
 
 export type IrOp =
   // Scalars are numbers or booleans; vectors and matrices are full arrays of

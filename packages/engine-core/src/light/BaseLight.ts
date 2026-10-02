@@ -1,4 +1,5 @@
 import {
+  LightColorData,
   BaseLightSnapshot,
   IVec3,
   LightColorDataSize,
@@ -21,7 +22,7 @@ export class BaseLight implements BaseLightSnapshot {
   protected constructor(
     type: LightType,
     buffer: ArrayBuffer,
-    data?: Partial<BaseLightSnapshot>
+    data?: Partial<LightColorData>
   ) {
     this.type = type;
     this._buffer = buffer;

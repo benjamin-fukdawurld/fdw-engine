@@ -1,6 +1,12 @@
 import type { ConstantValue } from '../types/ConstantValue';
 import type { PortType } from '../types/PortType';
-import type { MaterialGraphData, StaticValue } from './MaterialGraphData';
+import type { ShaderType } from '../types/ShaderType';
+import type {
+  GraphNode,
+  MaterialGraphData,
+  StaticValue,
+  ValueSource,
+} from './MaterialGraphData';
 
 export const NodeCategoryNames = [
   'input',
@@ -72,6 +78,9 @@ export type IntrinsicOp =
   | 'clamp'
   | 'smoothstep'
   | 'saturate'
+  | 'step'
+  // Returns its input unchanged: used to force a computation per fragment.
+  | 'identity'
   | 'select'
   | 'construct'
   | 'convert'
@@ -99,6 +108,43 @@ export type FunctionImplementation =
 export interface FunctionDefinition extends NodeDefinition {
   readonly category: 'function';
   readonly implementation: FunctionImplementation;
+}
+
+// What a macro can do while it is expanded.
+export interface MacroContext {
+  readonly node: GraphNode;
+  readonly params: StaticParams;
+  // The value feeding an input: its edge, the node default or the port
+  // default; undefined for an unconnected optional input.
+  input(port: string): ValueSource | undefined;
+  // Concrete type of an input or output port of the macro node.
+  typeOf(port: string): ShaderType | undefined;
+  // Adds a node; returns a function giving its output ports (by default its
+  // only output).
+  add(
+    type: string,
+    params?: StaticParams,
+    inputs?: Readonly<Record<string, ValueSource | ConstantValue | undefined>>
+  ): (port?: string) => ValueSource;
+  // Whether a node type has an input port.
+  hasInput(type: string, port: string): boolean;
+  // A static parameter: a feature of the material, a declared parameter of
+  // the graph, or 'hasAttribute.<semantic>'. Reading it adds it to the
+  // variant key of the program.
+  feature(name: string): StaticValue | undefined;
+}
+
+// A node evaluated at compile time: it is replaced by the nodes it generates.
+export interface MacroDefinition extends NodeDefinition {
+  readonly category: 'macro';
+  // The value of each output of the macro.
+  expand(context: MacroContext): Readonly<Record<string, ValueSource>>;
+}
+
+export function isMacroDefinition(
+  definition: NodeDefinition
+): definition is MacroDefinition {
+  return definition.category === 'macro';
 }
 
 export function isFunctionDefinition(

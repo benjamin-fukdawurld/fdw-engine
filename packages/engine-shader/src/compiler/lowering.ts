@@ -28,25 +28,27 @@ export function lowerSurface(
   const definition = registry.require('output.surface');
   const params = resolveParams(definition, surface.params);
   const shadingModel = params['shadingModel'] as string;
-  if (shadingModel !== 'unlit') {
+  // The shading model is a macro, which may be registered by the user.
+  const lighting = `lighting.${shadingModel}`;
+  if (!registry.has(lighting)) {
     diagnostics.push({
       severity: 'error',
       node: surface.id,
-      message: `the "${shadingModel}" shading model is not supported yet, only "unlit" is`,
+      message: `the "${shadingModel}" shading model is not supported yet (no ${lighting} macro)`,
     });
     return;
   }
 
   // The source of each surface input: its edge, its node default, or the
-  // port default.
+  // port default; undefined for unconnected optional inputs.
   const ports = definition.inputs(params);
-  const source = (port: string): InputSource => {
+  const source = (port: string): InputSource | undefined => {
     const connected = graph.inputSource(surface, port);
     if (connected) {
       return connected;
     }
-    const schema = ports.find((candidate) => candidate.name === port);
-    return { value: schema?.default ?? 0 };
+    const value = ports.find((candidate) => candidate.name === port)?.default;
+    return value === undefined ? undefined : { value };
   };
   const out = (node: string, port = 'result'): InputSource => ({
     ref: { node, port },
@@ -57,7 +59,7 @@ export function lowerSurface(
     semantic: 'position',
     type: T.vec3f,
   });
-  const offset = source('positionOffset');
+  const offset = source('positionOffset') ?? { value: 0 };
   const displaced = isZero(offset)
     ? out(position, 'value')
     : out(
@@ -84,13 +86,22 @@ export function lowerSurface(
   );
   graph.addNode('output.vertex', {}, { clipPosition: out(clipPosition) });
 
-  // Unlit shading model: the base color, as is.
+  // Fragment stage: the shading model turns the surface into a color.
+  const surfaceInputs: Record<string, InputSource | undefined> = {};
+  for (const port of ports) {
+    if (port.name !== 'positionOffset') {
+      surfaceInputs[port.name] = source(port.name);
+    }
+  }
   const color = graph.addNode(
-    'std.extend',
+    lighting,
     {},
-    { xyz: source('baseColor'), w: source('alpha') }
+    {
+      ...surfaceInputs,
+      worldPosition: out(worldPosition),
+    }
   );
-  graph.addNode('output.fragment', {}, { color: out(color) });
+  graph.addNode('output.fragment', {}, { color: out(color, 'color') });
 
   graph.removeNode(surface.id);
 }

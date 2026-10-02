@@ -1,4 +1,9 @@
-import { DirectionalLightSnapshot, IVec3, Vec3View } from '@fdw/engine-backend';
+import {
+  DirectionalLightData,
+  DirectionalLightSnapshot,
+  IVec3,
+  Vec3View,
+} from '@fdw/engine-backend';
 import { BaseLight } from './BaseLight';
 
 export class DirectionalLight
@@ -7,7 +12,8 @@ export class DirectionalLight
 {
   private _direction: Vec3View;
 
-  constructor(data?: Partial<DirectionalLightSnapshot>) {
+  // Plain values: { position: { x, y, z }, ambient: … }.
+  constructor(data?: Partial<Omit<DirectionalLightData, 'type'>>) {
     super(
       'directional',
       new ArrayBuffer(

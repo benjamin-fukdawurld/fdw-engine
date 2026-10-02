@@ -56,6 +56,16 @@ export const engineUniformBlocks: Readonly<
     { name: 'projection', type: T.mat4f },
     { name: 'cameraPosition', type: T.vec3f },
     { name: 'time', type: T.f32 },
+    // Main light. w = 1: point light at xyz; w = 0: directional light, xyz
+    // being the direction towards the light. The direction from a point P to
+    // the light is normalize(xyz - P × w) in both cases.
+    { name: 'lightPosition', type: T.vec4f },
+    { name: 'lightAmbient', type: T.vec3f },
+    { name: 'lightDiffuse', type: T.vec3f },
+    { name: 'lightSpecular', type: T.vec3f },
+    // Constant, linear and quadratic attenuation; (1, 0, 0) for no
+    // attenuation.
+    { name: 'lightAttenuation', type: T.vec3f },
   ],
   object: [
     { name: 'world', type: T.mat4f },
@@ -75,6 +85,11 @@ export const engineValueLocations: Readonly<
   'camera.projection': { slot: 'frame', member: 'projection' },
   'camera.position': { slot: 'frame', member: 'cameraPosition' },
   time: { slot: 'frame', member: 'time' },
+  'light.position': { slot: 'frame', member: 'lightPosition' },
+  'light.ambient': { slot: 'frame', member: 'lightAmbient' },
+  'light.diffuse': { slot: 'frame', member: 'lightDiffuse' },
+  'light.specular': { slot: 'frame', member: 'lightSpecular' },
+  'light.attenuation': { slot: 'frame', member: 'lightAttenuation' },
   'object.world': { slot: 'object', member: 'world' },
   'object.normalMatrix': { slot: 'object', member: 'normalMatrix' },
 };

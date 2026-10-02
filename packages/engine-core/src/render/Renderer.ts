@@ -8,11 +8,13 @@ import {
   GpuRenderPipeline,
   GpuRenderTarget,
   IColor,
+  IVec3,
   meshSemantics,
   PhysicalBindGroup,
   PhysicalProgramLayout,
   PhysicalUniformBlock,
   RenderBackend,
+  RenderPipelineDescriptor,
   Surface,
   TransformCache,
   UniformValue,
@@ -24,6 +26,7 @@ import {
   NodeRegistry,
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
+import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
 import type { Transform } from '../Transform';
 import { Material, MaterialValue } from './Material';
 import type { Mesh } from './Mesh';
@@ -41,7 +44,21 @@ export interface RenderOptions {
   readonly clearColor?: IColor;
   // Seconds, exposed to the materials as the 'time' engine value.
   readonly time?: number;
+  // Lights of the scene. Only the first one is used for now (a single main
+  // light, in the frame uniforms); spot lights are lit as point lights.
+  readonly lights?: readonly BaseLight[];
 }
+
+export interface RendererOptions {
+  readonly registry?: NodeRegistry;
+  // Create pipelines asynchronously: an item is skipped until its pipeline
+  // is ready, instead of blocking the frame while it compiles.
+  readonly asyncPipelines?: boolean;
+}
+
+type PipelineEntry =
+  | { readonly pipeline: GpuRenderPipeline }
+  | { readonly pending: Promise<void> };
 
 interface GpuMesh {
   version: number;
@@ -78,6 +95,46 @@ interface PreparedItem {
   readonly object: ObjectState;
 }
 
+// The main light, in the frame uniforms. Without light, the colors are zero
+// and lit materials only show their emissive color; the attenuation stays
+// neutral, as a zero attenuation would divide by zero (and give NaN colors).
+function lightValues(
+  light: BaseLight | undefined
+): Record<string, UniformValue> {
+  if (!light) {
+    return { lightPosition: [0, 0, 1, 0], lightAttenuation: [1, 0, 0] };
+  }
+  const color = (value: Readonly<IVec3>) => [value.x, value.y, value.z];
+  const common = {
+    lightAmbient: color(light.ambient),
+    lightDiffuse: color(light.diffuse),
+    lightSpecular: color(light.specular),
+  };
+  if (light instanceof DirectionalLight) {
+    // Towards the light: the opposite of the direction it shines in.
+    const { x, y, z } = light.direction;
+    const length = Math.hypot(x, y, z) || 1;
+    return {
+      ...common,
+      lightPosition: [-x / length, -y / length, -z / length, 0],
+      lightAttenuation: [1, 0, 0],
+    };
+  }
+  if (light instanceof PointLight || light instanceof SpotLight) {
+    const { x, y, z } = light.position;
+    return {
+      ...common,
+      lightPosition: [x, y, z, 1],
+      lightAttenuation: [
+        light.constantAttenuation,
+        light.linearAttenuation,
+        light.quadraticAttenuation,
+      ],
+    };
+  }
+  return common;
+}
+
 const isHandle = (value: MaterialValue | undefined): boolean =>
   typeof value === 'object' && value !== null && !('length' in value);
 
@@ -92,7 +149,8 @@ export class Renderer {
     MaterialGraphData,
     Map<string, CompiledProgram>
   >();
-  private readonly _pipelines = new Map<string, GpuRenderPipeline>();
+  private readonly _pipelines = new Map<string, PipelineEntry>();
+  private readonly _asyncPipelines: boolean;
   private readonly _meshes = new WeakMap<Mesh, GpuMesh>();
   private readonly _objects = new WeakMap<Transform, ObjectState>();
   private readonly _materials = new WeakMap<
@@ -103,12 +161,19 @@ export class Renderer {
   private readonly _frame: UniformGroup = { bindGroups: new Map() };
   private _depth?: GpuRenderTarget & { destroy(): void };
 
-  constructor(
-    backend: RenderBackend,
-    options: { registry?: NodeRegistry } = {}
-  ) {
+  constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
     this._registry = options.registry;
+    this._asyncPipelines = options.asyncPipelines ?? false;
+  }
+
+  // Resolves when the pipelines being created asynchronously are ready.
+  async whenReady(): Promise<void> {
+    await Promise.all(
+      [...this._pipelines.values()].map((entry) =>
+        'pending' in entry ? entry.pending : undefined
+      )
+    );
   }
 
   render({
@@ -117,11 +182,14 @@ export class Renderer {
     surface,
     clearColor,
     time = 0,
+    lights = [],
   }: RenderOptions): void {
     const target = surface.getCurrentTarget();
     const depth = this.depthTarget(target);
 
-    const prepared = [...items].map((item) => this.prepare(item, surface));
+    const prepared = [...items]
+      .map((item) => this.prepare(item, surface))
+      .filter((entry): entry is PreparedItem => entry !== undefined);
     const cameraCache = this.cameraCache(camera);
     const ordered = this.sort(prepared, cameraCache);
 
@@ -133,7 +201,7 @@ export class Renderer {
     });
 
     if (ordered.length > 0) {
-      this.updateFrame(ordered[0].layout, cameraCache, time);
+      this.updateFrame(ordered[0].layout, cameraCache, time, lights[0]);
     }
     for (const entry of ordered) {
       this.draw(pass, entry);
@@ -154,7 +222,9 @@ export class Renderer {
 
   private program(material: Material, mesh: Mesh): CompiledProgram {
     const semantics = meshSemantics(mesh.description);
-    const key = [...semantics].sort().join(',');
+    const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
+      material.features
+    )}`;
     let byAttributes = this._programs.get(material.graph);
     if (!byAttributes) {
       byAttributes = new Map();
@@ -164,6 +234,7 @@ export class Renderer {
     if (!program) {
       program = compile(material.graph, {
         vertexAttributes: semantics,
+        features: material.features,
         ...(this._registry ? { registry: this._registry } : {}),
       });
       byAttributes.set(key, program);
@@ -171,7 +242,11 @@ export class Renderer {
     return program;
   }
 
-  private prepare(item: RenderItem, surface: Surface): PreparedItem {
+  // Undefined while the pipeline of the item is being created.
+  private prepare(
+    item: RenderItem,
+    surface: Surface
+  ): PreparedItem | undefined {
     const program = this.program(item.material, item.mesh);
     const layout = this.backend.pipelines.resolveLayout(program);
     const state = item.material.renderState;
@@ -180,30 +255,42 @@ export class Renderer {
     const pipelineKey = `${program.programKey}|${vertexKey}|${stateKey}|${surface.format}|${this.backend.depthFormat}`;
 
     if (!this._pipelines.has(pipelineKey)) {
-      this._pipelines.set(
-        pipelineKey,
-        this.backend.pipelines.createRenderPipeline({
-          label: item.material.label ?? program.name,
-          program,
-          vertex: item.mesh.description,
-          primitive: {
-            topology: 'triangle-list',
-            cullMode: state.doubleSided ? 'none' : 'back',
-            frontFace: 'ccw',
+      const descriptor: RenderPipelineDescriptor = {
+        label: item.material.label ?? program.name,
+        program,
+        vertex: item.mesh.description,
+        primitive: {
+          topology: 'triangle-list',
+          cullMode: state.doubleSided ? 'none' : 'back',
+          frontFace: 'ccw',
+        },
+        depthStencil: {
+          format: this.backend.depthFormat,
+          depthWrite: state.depthTest && state.depthWrite,
+          depthCompare: state.depthTest ? 'less' : 'always',
+        },
+        targets: [
+          {
+            format: surface.format,
+            ...(state.alphaMode === 'blend' ? { blend: alphaBlending } : {}),
           },
-          depthStencil: {
-            format: this.backend.depthFormat,
-            depthWrite: state.depthTest && state.depthWrite,
-            depthCompare: state.depthTest ? 'less' : 'always',
-          },
-          targets: [
-            {
-              format: surface.format,
-              ...(state.alphaMode === 'blend' ? { blend: alphaBlending } : {}),
-            },
-          ],
-        })
-      );
+        ],
+      };
+      if (this._asyncPipelines) {
+        const pending = this.backend.pipelines
+          .createRenderPipelineAsync(descriptor)
+          .then((pipeline) => {
+            this._pipelines.set(pipelineKey, { pipeline });
+          });
+        this._pipelines.set(pipelineKey, { pending });
+      } else {
+        this._pipelines.set(pipelineKey, {
+          pipeline: this.backend.pipelines.createRenderPipeline(descriptor),
+        });
+      }
+    }
+    if ('pending' in (this._pipelines.get(pipelineKey) as PipelineEntry)) {
+      return undefined;
     }
 
     return {
@@ -321,7 +408,8 @@ export class Renderer {
   private updateFrame(
     layout: PhysicalProgramLayout,
     camera: CameraCache,
-    time: number
+    time: number,
+    light: BaseLight | undefined
   ): void {
     const group = layout.groups.find((candidate) => candidate.slot === 'frame');
     const block = group?.bindings[0]?.block;
@@ -335,6 +423,7 @@ export class Renderer {
       projection: camera.projectionMatrix.value,
       cameraPosition: [position.x, position.y, position.z],
       time,
+      ...lightValues(light),
     };
     this._frame.block = block;
     this.upload(
@@ -498,7 +587,9 @@ export class Renderer {
     pass: GpuRenderPassEncoder,
     { item, program, layout, pipelineKey, object }: PreparedItem
   ): void {
-    const pipeline = this._pipelines.get(pipelineKey) as GpuRenderPipeline;
+    const pipeline = (
+      this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
+    ).pipeline;
     pass.setPipeline(pipeline);
 
     for (const group of layout.groups) {

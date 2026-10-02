@@ -1,4 +1,5 @@
 import {
+  SpotLightData,
   IVec3,
   LightAttenuationDataSize,
   LightCutoffDataSize,
@@ -14,7 +15,8 @@ export class SpotLight extends BaseLight implements SpotLightSnapshot {
   private _attenuation: DataView<ArrayBuffer>;
   private _cutoff: DataView<ArrayBuffer>;
 
-  constructor(data?: Partial<SpotLightSnapshot>) {
+  // Plain values: { position: { x, y, z }, ambient: … }.
+  constructor(data?: Partial<Omit<SpotLightData, 'type'>>) {
     super(
       'spot',
       new ArrayBuffer(

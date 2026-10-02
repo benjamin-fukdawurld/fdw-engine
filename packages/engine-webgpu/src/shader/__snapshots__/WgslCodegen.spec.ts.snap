@@ -9,6 +9,11 @@ struct FrameUniforms {
   u_projection: mat4x4<f32>,
   u_cameraPosition: vec3<f32>,
   u_time: f32,
+  u_lightPosition: vec4<f32>,
+  u_lightAmbient: vec3<f32>,
+  u_lightDiffuse: vec3<f32>,
+  u_lightSpecular: vec3<f32>,
+  u_lightAttenuation: vec3<f32>,
 };
 @group(0) @binding(0) var<uniform> frameUniforms: FrameUniforms;
 
@@ -61,7 +66,7 @@ fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
   let v6_color: vec4<f32> = v5 * v3_tint; // #n6
   let v7: vec3<f32> = v6_color.rgb;
   let v8: f32 = v6_color.a;
-  let v9: vec4<f32> = vec4<f32>(v7, v8); // #c7
+  let v9: vec4<f32> = vec4<f32>(v7, v8); // #c9
   return v9;
 }
 "

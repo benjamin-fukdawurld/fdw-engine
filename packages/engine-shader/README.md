@@ -54,9 +54,10 @@ engine-webgpu    ← WebGPU backend: WgslCodegen, wgslLayoutStrategy
 
 | Export | Content |
 | --- | --- |
-| `std` | Functions: `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `sin`, `cos`, `saturate`, `pow`, `dot`, `length`, `normalize`, `cross`, `reflect`, `mix`, `clamp`, `smoothstep`, `select`, `textureSample`, `vec2`, `vec3`, `vec4`, `extend`, `transform`, `transform3`, `convert` |
+| `std` | Functions: `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `sin`, `cos`, `saturate`, `pow`, `dot`, `length`, `normalize`, `cross`, `reflect`, `mix`, `clamp`, `smoothstep`, `step`, `select`, `perFragment`, `textureSample`, `vec2`, `vec3`, `vec4`, `extend`, `transform`, `transform3`, `convert` |
 | `stdInputs` | `input.attribute`, `input.uniform`, `input.storage`, `input.texture`, `input.sampler`, `input.builtin`, `input.engine` |
 | `stdConstants` | `const.value`, `const.pi` |
+| `stdMacros` | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping` (and the `lighting.*` shading models, registered by name) |
 | `stdOutputs` | `output.surface` (shading models `unlit`, `phong`, `pbr`), and the raw `output.vertex` / `output.fragment` |
 | `createStandardRegistry()` | A `NodeRegistry` with all the standard node types |
 
@@ -118,9 +119,41 @@ The compiler runs these passes:
 5. **Layout**: `frame` (group 0), `material` (group 1), `object` (group 2), then custom slots sorted by name. Within a slot: one uniform block, then textures and samplers, each sorted by name.
 6. **IR generation** and **program key**: a Merkle hash of the optimized graph, independent of the node ids and of the uniform values.
 
+## Macros and variants
+
+A macro is a node evaluated at compile time: it is replaced by the nodes it generates. Macros read **static parameters** (`context.feature(name)`), which come from the material features (`compile(graph, { features })`), then from the parameters declared by the graph (`g.parameter(name, default)`), then from the mesh (`hasAttribute.<semantic>`). Every parameter read is recorded in the **variant key** of the program; parameters that are not read do not create variants.
+
+| Macro | Description |
+| --- | --- |
+| `macro.staticSwitch` | `ifTrue` or `ifFalse` from a feature: only the chosen branch is compiled |
+| `macro.optionalAttribute` | A vertex attribute when the mesh has it, a fallback otherwise |
+| `macro.repeat` | Applies a function node `count` times, with the iteration index |
+| `macro.normalMapping` | World normal perturbed by a tangent-space normal map when the mesh has tangents, the interpolated normal otherwise |
+
+```ts
+const g = new GraphBuilder('vertex-colored');
+const color = g.call(stdMacros.optionalAttribute, { fallback: [1, 1, 1] }, {
+  params: { semantic: 'color', type: T.vec3f },
+});
+g.surface({ baseColor: color });
+// A mesh with colors and a mesh without get two programs; a graph that does
+// not read the colors gives the same program for both.
+```
+
+**Shading models are macros** named `lighting.<model>`, inserted by the compiler behind `output.surface`: `lighting.unlit` and `lighting.phong`. A shading model can be added by registering a macro `lighting.<name>` that takes the surface inputs and `worldPosition`, and returns a `color`.
+
+`lighting.phong` uses the main light of the `frame` slot (`light.position`, `light.ambient`, `light.diffuse`, `light.specular`, `light.attenuation`):
+
+```
+ambient × baseColor + (diffuse × baseColor × max(N·L, 0) + specular × specularColor × max(V·R, 0)^shininess) × attenuation + emissive
+```
+
+The normal and the position are interpolated, then the lighting is computed per fragment (`std.perFragment`).
+
 ### Current limitations
 
-- Only the `unlit` shading model; `phong` and `pbr` come with the macros (phase 4 of the design).
+- A single light (`light.*` engine values); several lights need the light loop of the design.
+- No `pbr` shading model yet.
 - No storage buffers, no array or struct uniforms, no `f16`.
-- No macros, subgraph or native functions yet.
+- No subgraph or native functions yet.
 - `textureSample` only takes 2D textures.

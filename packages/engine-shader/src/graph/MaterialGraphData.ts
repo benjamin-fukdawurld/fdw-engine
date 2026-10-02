@@ -58,3 +58,8 @@ export interface MaterialGraphData {
 }
 
 export const portKey = (ref: PortRef): string => `${ref.node}:${ref.port}`;
+
+// A value feeding an input: an output port (possibly swizzled) or a literal.
+export type ValueSource =
+  | { readonly ref: PortRef; readonly swizzle?: string }
+  | { readonly value: ConstantValue };
