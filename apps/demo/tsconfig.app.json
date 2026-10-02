@@ -36,6 +36,9 @@
   "include": ["src/**/*.js", "src/**/*.jsx", "src/**/*.ts", "src/**/*.tsx"],
   "references": [
     {
+      "path": "../../packages/engine-shader/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-core/tsconfig.lib.json"
     },
     {

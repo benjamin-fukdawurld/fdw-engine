@@ -23,9 +23,21 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 | ------------------ | --------- | ------------------------------------------------------------------------ |
 | `Engine`           | interface | Engine lifecycle: `init`, `pause`, `resume`, `destroy`, `state` signal   |
 | `EngineState`      | type      | `uninitialized` · `initializing` · `ready` · `paused` · `destroying` · `destroyed` |
-| `Surface`          | interface | Render target (`width`, `height`, `init(engine)`)                        |
+| `Surface`          | interface | Where frames are rendered: `width`, `height`, `format`, `init(engine)`, `getCurrentTarget()`, `present()` |
 
-`Engine` extends `EventTarget` and exposes its state as a [Preact signal](https://github.com/preactjs/signals).
+`Engine` extends `EventTarget`, exposes its state as a [Preact signal](https://github.com/preactjs/signals), and its `RenderBackend` once ready.
+
+### Rendering (`render/`)
+
+An abstract rendering API modelled on WebGPU, which maps almost directly onto Vulkan, Metal and Direct3D 12.
+
+| Export | Kind | Description |
+| --- | --- | --- |
+| `RenderBackend` | interface | Everything a renderer needs: buffer, texture and pipeline factories, math, render targets, command encoding and submission |
+| `GpuPipelineFactory` | interface | Physical layouts, render pipelines, bind group layouts (shared between equal groups) and bind groups |
+| `RenderPipelineDescriptor`, `PrimitiveState`, `DepthStencilState`, `ColorTargetState`, `BlendState` | type | Pipeline description; `alphaBlending` is the standard blend state |
+| `GpuCommandEncoder`, `GpuRenderPassEncoder`, `RenderPassDescriptor`, `GpuRenderTarget` | interface | Command recording and render targets |
+| `matchVertexLayout()`, `isVertexFormatCompatible()`, `meshSemantics()` | function | Matching of the program inputs with the mesh attributes, by semantic |
 
 ### GPU resources (`gpu/`)
 
@@ -146,6 +158,8 @@ A backend must provide:
 - a `Surface` implementation for its windowing system;
 - `GpuBufferFactory`, `GpuTextureFactory` and `GpuSamplerFactory`;
 - a `PrimitivesAdapter` (math primitives), used to build `TransformMath` and `CameraMath`;
-- the `LayoutApi` / `WriterApi` / `SerializerApi` and `StructBuildStrategy` matching its shading language.
+- the `LayoutApi` / `WriterApi` / `SerializerApi` and `StructBuildStrategy` matching its shading language;
+- a `ShaderCodegen` and a `PhysicalLayoutStrategy` (binding numbers, uniform offsets, `writeUniform`);
+- a `RenderBackend`, with its `GpuPipelineFactory` and command encoding.
 
 See `@fdw/engine-webgpu` for a reference implementation.

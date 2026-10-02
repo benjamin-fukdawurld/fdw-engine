@@ -1,4 +1,5 @@
-import { compile, GraphBuilder, std, T } from '@fdw/engine-shader';
+import type { UniformValue } from '@fdw/engine-backend';
+import { compile, GraphBuilder, ShaderType, std, T } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { wgslLayoutStrategy } from './wgslLayoutStrategy';
 
@@ -92,5 +93,49 @@ describe('wgslLayoutStrategy', () => {
         .bindings.slice(1)
         .map((binding) => binding.block)
     ).toEqual([undefined, undefined]);
+  });
+});
+
+describe('wgslLayoutStrategy.writeUniform', () => {
+  const write = (type: ShaderType, value: UniformValue, size = 64) => {
+    const view = new DataView(new ArrayBuffer(size));
+    wgslLayoutStrategy.writeUniform(
+      view,
+      { name: 'u', type, offset: 0, size },
+      value
+    );
+    return view;
+  };
+  const floats = (view: DataView) => [...new Float32Array(view.buffer)];
+
+  it('writes scalars with their kind', () => {
+    expect(write(T.f32, 1.5).getFloat32(0, true)).toBe(1.5);
+    expect(write(T.i32, -3).getInt32(0, true)).toBe(-3);
+    expect(write(T.u32, 7).getUint32(0, true)).toBe(7);
+    expect(write(T.u32, true).getUint32(0, true)).toBe(1);
+  });
+
+  it('writes vectors', () => {
+    expect(floats(write(T.vec3f, [1, 2, 3], 16))).toEqual([1, 2, 3, 0]);
+  });
+
+  it('pads the columns of a mat3, from packed or padded data', () => {
+    const expected = [1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0];
+    expect(floats(write(T.mat3f, [1, 2, 3, 4, 5, 6, 7, 8, 9], 48))).toEqual(
+      expected
+    );
+    expect(
+      floats(write(T.mat3f, [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99], 48))
+    ).toEqual(expected);
+  });
+
+  it('writes a mat4 as is', () => {
+    const matrix = Array.from({ length: 16 }, (_, i) => i);
+    expect(floats(write(T.mat4f, matrix, 64))).toEqual(matrix);
+  });
+
+  it('rejects values of the wrong shape', () => {
+    expect(() => write(T.vec3f, [1, 2])).toThrow(/expects 3 components/);
+    expect(() => write(T.f32, [1])).toThrow(/expects a number/);
   });
 });

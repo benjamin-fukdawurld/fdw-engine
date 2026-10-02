@@ -41,6 +41,14 @@ export const GpuTextureFormatNames = [
   'rgba32sint',
 
   'rgb10a2unorm',
+  // Surface formats.
+  'bgra8unorm',
+  'bgra8unorm-srgb',
+  // Depth formats, for depth attachments.
+  'depth16unorm',
+  'depth24plus',
+  'depth24plus-stencil8',
+  'depth32float',
 ] as const;
 export type GpuTextureFormatName = (typeof GpuTextureFormatNames)[number];
 export type GpuTextureFormat = GpuTextureFormatName | (string & {});

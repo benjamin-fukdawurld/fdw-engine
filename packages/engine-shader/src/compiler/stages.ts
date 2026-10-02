@@ -208,7 +208,7 @@ export function planStages({
     })
     .map((attribute, location) => ({
       ...attribute,
-      name: uniqueName(identifier(attribute.semantic)),
+      name: uniqueName(`a_${identifier(attribute.semantic)}`),
       location,
     }));
 

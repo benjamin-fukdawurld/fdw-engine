@@ -1,5 +1,6 @@
-import { Engine, Surface, IColor } from '@fdw/engine-backend';
+import { Engine, GpuTextureFormat, IColor, Surface } from '@fdw/engine-backend';
 import WebGpuEngine from './WebGpuEngine';
+import { WebGpuRenderTarget } from './render/WebGpuRenderTarget';
 
 export type WebGpuSurfaceConfig = {
   alphaMode?: 'premultiplied' | 'opaque';
@@ -52,6 +53,28 @@ export class WebGpuSurface implements Surface {
 
   set height(value: number) {
     this.context.canvas.height = value;
+  }
+
+  get format(): GpuTextureFormat {
+    if (!this.textureFormat) {
+      throw new Error('The surface is not initialized');
+    }
+    return this.textureFormat;
+  }
+
+  getCurrentTarget(): WebGpuRenderTarget {
+    const texture = this.context.getCurrentTexture();
+    return new WebGpuRenderTarget(
+      texture.createView(),
+      texture.width,
+      texture.height,
+      this.format
+    );
+  }
+
+  // The canvas is presented when the browser composites the page.
+  present(): void {
+    return;
   }
 
   get textureView() {

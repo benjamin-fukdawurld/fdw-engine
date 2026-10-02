@@ -37,6 +37,18 @@ export interface PhysicalProgramLayout {
   readonly groups: readonly PhysicalBindGroup[];
 }
 
+// A value written to a uniform block member: a number or boolean for
+// scalars, components for vectors and matrices (column-major; a mat3 can be
+// given as 9 packed floats or as 12 floats with padded columns).
+export type UniformValue = number | boolean | ArrayLike<number>;
+
 export interface PhysicalLayoutStrategy {
   resolve(layout: ProgramLayout): PhysicalProgramLayout;
+  // Writes a value at the offset of a member, in the memory layout of the
+  // backend.
+  writeUniform(
+    target: DataView,
+    member: PhysicalUniformMember,
+    value: UniformValue
+  ): void;
 }

@@ -1,28 +1,57 @@
 import { Engine, EngineState } from '@fdw/engine-backend';
 import { signal, Signal } from '@preact/signals-core';
+import { WebGpuRenderBackend } from './render/WebGpuRenderBackend';
+
+export type WebGpuEngineOptions = {
+  // The WebGPU entry point. Defaults to navigator.gpu; can be provided to run
+  // outside a browser (e.g. Dawn for Node).
+  gpu?: GPU;
+};
 
 export class WebGpuEngine extends EventTarget implements Engine {
   adapter?: GPUAdapter;
   device?: GPUDevice;
+  backend: WebGpuRenderBackend | undefined = undefined;
   state: Signal<EngineState> = signal('uninitialized');
 
+  private readonly _gpu?: GPU;
+
+  constructor(options: WebGpuEngineOptions = {}) {
+    super();
+    this._gpu = options.gpu;
+  }
+
   async init(): Promise<void> {
+    if (
+      this.state.value !== 'uninitialized' &&
+      this.state.value !== 'destroyed'
+    ) {
+      throw new Error(
+        `Cannot initialize an engine in the ${this.state.value} state`
+      );
+    }
     this.state.value = 'initializing';
-    if (!navigator.gpu) {
-      throw new Error('WebGPU is not supported in this browser');
+
+    try {
+      const gpu = this._gpu ?? globalThis.navigator?.gpu;
+      if (!gpu) {
+        throw new Error('WebGPU is not supported in this environment');
+      }
+
+      const adapter = await gpu.requestAdapter();
+      if (!adapter) {
+        throw new Error('Failed to get GPU adapter');
+      }
+      this.adapter = adapter;
+      this.device = await adapter.requestDevice();
+      this.backend = new WebGpuRenderBackend(this.device);
+    } catch (error) {
+      this.adapter = undefined;
+      this.device = undefined;
+      this.state.value = 'uninitialized';
+      throw error;
     }
 
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) {
-      throw new Error('Failed to get GPU adapter');
-    }
-    this.adapter = adapter;
-
-    const device = await this.adapter.requestDevice();
-    if (!device) {
-      throw new Error('Failed to get GPU device');
-    }
-    this.device = device;
     this.state.value = 'ready';
     this.dispatchEvent(
       new CustomEvent<WebGpuEngine>('ready', { detail: this })
@@ -53,9 +82,10 @@ export class WebGpuEngine extends EventTarget implements Engine {
 
   async destroy(): Promise<void> {
     this.state.value = 'destroying';
-    this.device!.destroy();
+    this.device?.destroy();
     this.device = undefined;
     this.adapter = undefined;
+    this.backend = undefined;
 
     this.state.value = 'destroyed';
     this.dispatchEvent(

@@ -11,6 +11,10 @@ import {
 import { Texture } from './Texture';
 import { Sampler } from './Sampler';
 
+// ImageBitmap only exists in browsers: guard the check for other runtimes.
+const isImageBitmap = (source: unknown): source is ImageBitmap =>
+  typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap;
+
 export class TextureFactory
   implements GpuTextureFactory<ImageBitmap>, GpuSamplerFactory
 {
@@ -39,7 +43,7 @@ export class TextureFactory
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
-        (readwrite || source instanceof ImageBitmap
+        (readwrite || isImageBitmap(source)
           ? GPUTextureUsage.RENDER_ATTACHMENT
           : 0),
       label,
@@ -48,7 +52,7 @@ export class TextureFactory
     const texture = this.device.createTexture(textureDescriptor);
 
     if (source) {
-      if (source instanceof ImageBitmap) {
+      if (isImageBitmap(source)) {
         this.device.queue.copyExternalImageToTexture({ source }, { texture }, [
           width,
           height,

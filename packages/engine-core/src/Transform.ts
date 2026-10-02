@@ -14,7 +14,7 @@ export class Transform implements TransformSnapshot {
 
   private _version: number;
 
-  constructor(data?: TransformData) {
+  constructor(data?: Partial<TransformData>) {
     const buffer = new ArrayBuffer((3 + 4 + 3) * 4);
     this._position = new Vec3View(buffer, 0);
     this._rotation = new QuatView(buffer, 3 * 4);

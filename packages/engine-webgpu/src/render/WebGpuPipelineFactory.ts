@@ -1,0 +1,245 @@
+import {
+  GpuBindGroup,
+  GpuBindGroupEntry,
+  GpuBindGroupLayout,
+  GpuPipelineFactory,
+  GpuRenderPipeline,
+  matchVertexLayout,
+  PhysicalBindGroup,
+  PhysicalBinding,
+  PhysicalProgramLayout,
+  RenderPipelineDescriptor,
+} from '@fdw/engine-backend';
+import type { CompiledProgram } from '@fdw/engine-shader';
+import { Buffer } from '../gpu/BufferFactory';
+import { Sampler } from '../gpu/Sampler';
+import { Texture } from '../gpu/Texture';
+import { WgslCodegen } from '../shader/WgslCodegen';
+import { wgslLayoutStrategy } from '../shader/wgslLayoutStrategy';
+
+export class WebGpuRenderPipeline implements GpuRenderPipeline {
+  constructor(
+    readonly pipeline: GPURenderPipeline,
+    readonly vertexBuffers: readonly number[],
+    readonly label?: string
+  ) {}
+}
+
+export class WebGpuBindGroupLayout implements GpuBindGroupLayout {
+  constructor(readonly key: string, readonly layout: GPUBindGroupLayout) {}
+}
+
+export class WebGpuBindGroup implements GpuBindGroup {
+  constructor(
+    readonly layout: WebGpuBindGroupLayout,
+    readonly group: GPUBindGroup
+  ) {}
+}
+
+function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
+  // Programs do not say which stage reads which resource yet.
+  const visibility = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+  const { resource } = binding;
+  switch (resource.kind) {
+    case 'uniform-block':
+      return {
+        binding: binding.binding,
+        visibility,
+        buffer: { type: 'uniform', minBindingSize: binding.block?.size },
+      };
+    case 'texture':
+      return {
+        binding: binding.binding,
+        visibility,
+        texture: {
+          sampleType: resource.type.sampleType,
+          viewDimension: resource.type.dimension,
+          multisampled: resource.type.multisampled ?? false,
+        },
+      };
+    case 'sampler':
+      return {
+        binding: binding.binding,
+        visibility,
+        sampler: { type: resource.comparison ? 'comparison' : 'filtering' },
+      };
+  }
+}
+
+function bindingResource(entry: GpuBindGroupEntry): GPUBindingResource {
+  const { resource } = entry;
+  if (resource instanceof Buffer) {
+    return { buffer: resource.buffer };
+  }
+  if (resource instanceof Texture && resource.view) {
+    return resource.view;
+  }
+  if (resource instanceof Sampler && resource.sampler) {
+    return resource.sampler;
+  }
+  throw new Error(
+    `Binding ${entry.binding}: the resource was not created by the WebGPU backend, or was destroyed`
+  );
+}
+
+export class WebGpuPipelineFactory implements GpuPipelineFactory {
+  readonly codegen = new WgslCodegen();
+  readonly layoutStrategy = wgslLayoutStrategy;
+
+  // Caches by program key, and by layout descriptor.
+  private readonly _layouts = new Map<string, PhysicalProgramLayout>();
+  private readonly _modules = new Map<string, GPUShaderModule>();
+  private readonly _bindGroupLayouts = new Map<string, WebGpuBindGroupLayout>();
+
+  constructor(readonly device: GPUDevice) {}
+
+  resolveLayout(program: CompiledProgram): PhysicalProgramLayout {
+    let layout = this._layouts.get(program.programKey);
+    if (!layout) {
+      layout = this.layoutStrategy.resolve(program.layout);
+      this._layouts.set(program.programKey, layout);
+    }
+    return layout;
+  }
+
+  createBindGroupLayout(group: PhysicalBindGroup): WebGpuBindGroupLayout {
+    const entries = group.bindings.map(layoutEntry);
+    const key = JSON.stringify(entries);
+    let layout = this._bindGroupLayouts.get(key);
+    if (!layout) {
+      layout = new WebGpuBindGroupLayout(
+        key,
+        this.device.createBindGroupLayout({
+          label: `${group.slot} group`,
+          entries,
+        })
+      );
+      this._bindGroupLayouts.set(key, layout);
+    }
+    return layout;
+  }
+
+  createBindGroup(
+    layout: GpuBindGroupLayout,
+    entries: readonly GpuBindGroupEntry[]
+  ): GpuBindGroup {
+    if (!(layout instanceof WebGpuBindGroupLayout)) {
+      throw new Error(
+        'The bind group layout was not created by the WebGPU backend'
+      );
+    }
+    return new WebGpuBindGroup(
+      layout,
+      this.device.createBindGroup({
+        layout: layout.layout,
+        entries: entries.map((entry) => ({
+          binding: entry.binding,
+          resource: bindingResource(entry),
+        })),
+      })
+    );
+  }
+
+  createRenderPipeline(
+    descriptor: RenderPipelineDescriptor
+  ): GpuRenderPipeline {
+    const { gpuDescriptor, vertexBuffers } = this.describe(descriptor);
+    return new WebGpuRenderPipeline(
+      this.device.createRenderPipeline(gpuDescriptor),
+      vertexBuffers,
+      descriptor.label
+    );
+  }
+
+  async createRenderPipelineAsync(
+    descriptor: RenderPipelineDescriptor
+  ): Promise<GpuRenderPipeline> {
+    const { gpuDescriptor, vertexBuffers } = this.describe(descriptor);
+    return new WebGpuRenderPipeline(
+      await this.device.createRenderPipelineAsync(gpuDescriptor),
+      vertexBuffers,
+      descriptor.label
+    );
+  }
+
+  private shaderModule(program: CompiledProgram): GPUShaderModule {
+    let module = this._modules.get(program.programKey);
+    if (!module) {
+      const sources = this.codegen.emit(
+        program.module,
+        this.resolveLayout(program)
+      );
+      if (sources.kind !== 'single-module') {
+        throw new Error('The WGSL generator must produce a single module');
+      }
+      module = this.device.createShaderModule({
+        label: program.name,
+        code: sources.code,
+      });
+      this._modules.set(program.programKey, module);
+    }
+    return module;
+  }
+
+  private describe(descriptor: RenderPipelineDescriptor): {
+    gpuDescriptor: GPURenderPipelineDescriptor;
+    vertexBuffers: number[];
+  } {
+    const { program, primitive, depthStencil, targets } = descriptor;
+    const module = this.shaderModule(program);
+    const layout = this.resolveLayout(program);
+    const buffers = matchVertexLayout(program.vertexInputs, descriptor.vertex);
+
+    return {
+      vertexBuffers: buffers.map((buffer) => buffer.buffer),
+      gpuDescriptor: {
+        label: descriptor.label ?? program.name,
+        layout: this.device.createPipelineLayout({
+          bindGroupLayouts: layout.groups.map(
+            (group) => this.createBindGroupLayout(group).layout
+          ),
+        }),
+        vertex: {
+          module,
+          entryPoint: 'vs_main',
+          buffers: buffers.map((buffer) => ({
+            arrayStride: buffer.stride,
+            stepMode: buffer.stepMode,
+            attributes: buffer.attributes.map((attribute) => ({
+              shaderLocation: attribute.location,
+              offset: attribute.offset,
+              format: attribute.format,
+            })),
+          })),
+        },
+        fragment: {
+          module,
+          entryPoint: 'fs_main',
+          targets: targets.map((target) => ({
+            format: target.format as GPUTextureFormat,
+            ...(target.blend ? { blend: target.blend } : {}),
+          })),
+        },
+        primitive: {
+          topology: primitive.topology,
+          cullMode: primitive.cullMode,
+          frontFace: primitive.frontFace,
+          ...(primitive.topology.endsWith('strip') &&
+          descriptor.vertex.indexBuffer
+            ? { stripIndexFormat: descriptor.vertex.indexBuffer.format }
+            : {}),
+        },
+        ...(depthStencil
+          ? {
+              depthStencil: {
+                format: depthStencil.format as GPUTextureFormat,
+                depthWriteEnabled: depthStencil.depthWrite,
+                depthCompare: depthStencil.depthCompare,
+              },
+            }
+          : {}),
+        multisample: { count: descriptor.sampleCount ?? 1 },
+      },
+    };
+  }
+}

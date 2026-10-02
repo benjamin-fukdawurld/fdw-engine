@@ -28,6 +28,15 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 
 > `DirectionalLight`, `PointLight` and `SpotLight` are defined in `src/light/` but not yet re-exported from the package entry point.
 
+### Rendering (`render/`)
+
+| Export | Kind | Description |
+| --- | --- | --- |
+| `Material` | class | A material graph (`@fdw/engine-shader`) with its values (uniforms, textures, samplers) and its `RenderState`. Changing a value never recompiles anything |
+| `RenderState` | type | `alphaMode` (`opaque` / `blend`), `doubleSided`, `depthTest`, `depthWrite` |
+| `Mesh` | class | CPU-side geometry: vertex buffers laid out as described by a `MeshDescription`, optional indices |
+| `Renderer` | class | Draws `RenderItem`s (`{ mesh, material, transform }`) on any `RenderBackend` |
+
 ## Design
 
 All scene objects follow the same principles:
@@ -36,6 +45,29 @@ All scene objects follow the same principles:
 - **Versioning**: every change increments a version counter (`version`, or `transformVersion` / `projectionVersion` for `Camera`). Backends use these counters to recompute derived data (matrices, GPU buffers…) only when needed.
 - **Compact storage**: values are stored in a single `ArrayBuffer`, exposed through `Vec3View` / `QuatView`, which makes uploading them to the GPU cheap.
 - **Partial updates**: setters accept partial values (`transform.position = { y: 2 }` keeps `x` and `z`).
+
+## Rendering
+
+```ts
+import { Camera, Material, Renderer, Transform } from '@fdw/engine-core';
+import { GraphBuilder, std, T } from '@fdw/engine-shader';
+
+const g = new GraphBuilder('tinted');
+g.surface({ baseColor: g.uniform('color', T.vec3f, { default: [1, 0.5, 0] }) });
+const material = new Material({ graph: g.build() });
+
+const renderer = new Renderer(engine.backend);
+renderer.render({ items: [{ mesh, material, transform }], camera, surface, time });
+
+material.setValue('color', [0, 0.5, 1]); // next frame: one buffer write
+```
+
+The renderer caches everything it creates:
+
+- **Programs** are compiled once per graph and set of mesh attributes; **pipelines** once per program, vertex layout, render state and target formats.
+- **Uniform buffers** follow the update frequencies of the design: the `frame` buffer (camera, time) is written every frame, an `object` buffer only when its transform changes, a `material` buffer only when the material version changes. Bind groups are rebuilt only when a buffer is recreated or a texture or sampler changes.
+- **Frame and object bind groups are shared** by all the programs, since their layout is a fixed contract.
+- **Draw order**: opaque items grouped by pipeline then material, then transparent items back to front.
 
 ## Usage
 

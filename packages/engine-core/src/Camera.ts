@@ -16,7 +16,7 @@ export class Camera implements CameraSnapshot {
   private _transformVersion: number;
   private _projectionVersion: number;
 
-  constructor(data?: CameraData) {
+  constructor(data?: Partial<CameraData>) {
     const buffer = new ArrayBuffer((3 + 4) * 4);
     this._position = new Vec3View(buffer, 0);
     this._position.x = data?.position?.x ?? 0;

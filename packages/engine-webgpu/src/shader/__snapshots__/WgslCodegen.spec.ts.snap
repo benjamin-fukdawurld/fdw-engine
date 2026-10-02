@@ -4,32 +4,32 @@ exports[`WgslCodegen > generates a complete program 1`] = `
 "// Generated from material graph "textured-unlit". Do not edit.
 
 struct FrameUniforms {
-  viewProjection: mat4x4<f32>,
-  view: mat4x4<f32>,
-  projection: mat4x4<f32>,
-  cameraPosition: vec3<f32>,
-  time: f32,
+  u_viewProjection: mat4x4<f32>,
+  u_view: mat4x4<f32>,
+  u_projection: mat4x4<f32>,
+  u_cameraPosition: vec3<f32>,
+  u_time: f32,
 };
 @group(0) @binding(0) var<uniform> frameUniforms: FrameUniforms;
 
 struct MaterialUniforms {
-  tint: vec4<f32>,
+  u_tint: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> materialUniforms: MaterialUniforms;
 
-@group(1) @binding(1) var diffuseMap: texture_2d<f32>;
+@group(1) @binding(1) var t_diffuseMap: texture_2d<f32>;
 
-@group(1) @binding(2) var diffuseSampler: sampler;
+@group(1) @binding(2) var s_diffuseSampler: sampler;
 
 struct ObjectUniforms {
-  world: mat4x4<f32>,
-  normalMatrix: mat3x3<f32>,
+  u_world: mat4x4<f32>,
+  u_normalMatrix: mat3x3<f32>,
 };
 @group(2) @binding(0) var<uniform> objectUniforms: ObjectUniforms;
 
 struct VertexInput {
-  @location(0) position: vec3<f32>,
-  @location(1) uv: vec2<f32>,
+  @location(0) a_position: vec3<f32>,
+  @location(1) a_uv: vec2<f32>,
 };
 
 struct Varyings {
@@ -39,14 +39,14 @@ struct Varyings {
 
 @vertex
 fn vs_main(in: VertexInput) -> Varyings {
-  let v1: mat4x4<f32> = objectUniforms.world; // #c2
-  let v2: mat4x4<f32> = frameUniforms.viewProjection; // #c4
-  let v3: vec3<f32> = in.position;
+  let v1: mat4x4<f32> = objectUniforms.u_world; // #c2
+  let v2: mat4x4<f32> = frameUniforms.u_viewProjection; // #c4
+  let v3: vec3<f32> = in.a_position;
   let v4: f32 = 1.0;
   let v5: vec4<f32> = vec4<f32>(v3, v4); // #c1
   let v6: vec4<f32> = v1 * v5; // #c3
   let v7: vec4<f32> = v2 * v6; // #c5
-  let v8: vec2<f32> = in.uv;
+  let v8: vec2<f32> = in.a_uv;
   var out: Varyings;
   out.clipPosition = v7;
   out.v_uv = v8;
@@ -55,9 +55,9 @@ fn vs_main(in: VertexInput) -> Varyings {
 
 @fragment
 fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
-  let v3_tint: vec4<f32> = materialUniforms.tint; // #n5
+  let v3_tint: vec4<f32> = materialUniforms.u_tint; // #n5
   let v4: vec2<f32> = in.v_uv;
-  let v5: vec4<f32> = textureSample(diffuseMap, diffuseSampler, v4); // #n4
+  let v5: vec4<f32> = textureSample(t_diffuseMap, s_diffuseSampler, v4); // #n4
   let v6_color: vec4<f32> = v5 * v3_tint; // #n6
   let v7: vec3<f32> = v6_color.rgb;
   let v8: f32 = v6_color.a;

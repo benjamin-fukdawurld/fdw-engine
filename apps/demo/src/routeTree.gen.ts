@@ -16,6 +16,7 @@ import { Route as TriangleHardColorRouteRouteImport } from './routes/triangle-ha
 import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
 import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
 import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
+import { Route as MaterialGraphRouteRouteImport } from './routes/material-graph/route'
 import { Route as LoadingModelRouteRouteImport } from './routes/loading-model/route'
 import { Route as IndexBufferRouteRouteImport } from './routes/index-buffer/route'
 import { Route as FaceCullingRouteRouteImport } from './routes/face-culling/route'
@@ -59,6 +60,11 @@ const TexturedTriangleRouteRoute = TexturedTriangleRouteRouteImport.update({
 const MatrixRouteRoute = MatrixRouteRouteImport.update({
   id: '/matrix',
   path: '/matrix',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaterialGraphRouteRoute = MaterialGraphRouteRouteImport.update({
+  id: '/material-graph',
+  path: '/material-graph',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoadingModelRouteRoute = LoadingModelRouteRouteImport.update({
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/face-culling': typeof FaceCullingRouteRoute
   '/index-buffer': typeof IndexBufferRouteRoute
   '/loading-model': typeof LoadingModelRouteRoute
+  '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/face-culling': typeof FaceCullingRouteRoute
   '/index-buffer': typeof IndexBufferRouteRoute
   '/loading-model': typeof LoadingModelRouteRoute
+  '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/face-culling': typeof FaceCullingRouteRoute
   '/index-buffer': typeof IndexBufferRouteRoute
   '/loading-model': typeof LoadingModelRouteRoute
+  '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
     | '/face-culling'
     | '/index-buffer'
     | '/loading-model'
+    | '/material-graph'
     | '/matrix'
     | '/textured-triangle'
     | '/triangle'
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/face-culling'
     | '/index-buffer'
     | '/loading-model'
+    | '/material-graph'
     | '/matrix'
     | '/textured-triangle'
     | '/triangle'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/face-culling'
     | '/index-buffer'
     | '/loading-model'
+    | '/material-graph'
     | '/matrix'
     | '/textured-triangle'
     | '/triangle'
@@ -230,6 +242,7 @@ export interface RootRouteChildren {
   FaceCullingRouteRoute: typeof FaceCullingRouteRoute
   IndexBufferRouteRoute: typeof IndexBufferRouteRoute
   LoadingModelRouteRoute: typeof LoadingModelRouteRoute
+  MaterialGraphRouteRoute: typeof MaterialGraphRouteRoute
   MatrixRouteRoute: typeof MatrixRouteRoute
   TexturedTriangleRouteRoute: typeof TexturedTriangleRouteRoute
   TriangleRouteRoute: typeof TriangleRouteRoute
@@ -288,6 +301,13 @@ declare module '@tanstack/react-router' {
       path: '/matrix'
       fullPath: '/matrix'
       preLoaderRoute: typeof MatrixRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/material-graph': {
+      id: '/material-graph'
+      path: '/material-graph'
+      fullPath: '/material-graph'
+      preLoaderRoute: typeof MaterialGraphRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/loading-model': {
@@ -366,6 +386,7 @@ const rootRouteChildren: RootRouteChildren = {
   FaceCullingRouteRoute: FaceCullingRouteRoute,
   IndexBufferRouteRoute: IndexBufferRouteRoute,
   LoadingModelRouteRoute: LoadingModelRouteRoute,
+  MaterialGraphRouteRoute: MaterialGraphRouteRoute,
   MatrixRouteRoute: MatrixRouteRoute,
   TexturedTriangleRouteRoute: TexturedTriangleRouteRoute,
   TriangleRouteRoute: TriangleRouteRoute,

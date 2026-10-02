@@ -72,6 +72,9 @@ function RouteComponent() {
                 <a className="text-sm text-center" href="/loading-model">
                   Loading Model
                 </a>
+                <a className="text-sm text-center" href="/material-graph">
+                  Material Graph
+                </a>
               </div>
             )}
           </li>

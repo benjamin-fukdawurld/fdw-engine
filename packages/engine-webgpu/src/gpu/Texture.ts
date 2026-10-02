@@ -12,6 +12,7 @@ export class Texture implements GpuTexture {
   readonly dimensions: GpuTextureDimensions;
 
   _texture?: GPUTexture;
+  private _view?: GPUTextureView;
 
   constructor(config: GpuTextureConfiguration & { texture: GPUTexture }) {
     this._texture = config.texture;
@@ -28,15 +29,20 @@ export class Texture implements GpuTexture {
     return this._texture;
   }
 
+  // Created once: a view per access would allocate on every bind group.
   get view(): GPUTextureView | undefined {
-    return this._texture?.createView({
-      dimension: Texture.textureTypeToGPUTextureViewDimension(this.type),
-    });
+    if (!this._view && this._texture) {
+      this._view = this._texture.createView({
+        dimension: Texture.textureTypeToGPUTextureViewDimension(this.type),
+      });
+    }
+    return this._view;
   }
 
   destroy(): void {
     this._texture?.destroy();
     this._texture = undefined;
+    this._view = undefined;
   }
 
   private static textureTypeToGPUTextureViewDimension(

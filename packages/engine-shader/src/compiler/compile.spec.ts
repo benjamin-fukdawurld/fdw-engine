@@ -57,8 +57,13 @@ describe('compile', () => {
       const vertex = stage(program, 'vertex');
 
       expect(program.vertexInputs).toEqual([
-        { semantic: 'position', type: T.vec3f, location: 0, name: 'position' },
-        { semantic: 'uv', type: T.vec2f, location: 1, name: 'uv' },
+        {
+          semantic: 'position',
+          type: T.vec3f,
+          location: 0,
+          name: 'a_position',
+        },
+        { semantic: 'uv', type: T.vec2f, location: 1, name: 'a_uv' },
       ]);
       expect(ops(vertex, 'load-resource').map((i) => i.op)).toEqual([
         { kind: 'load-resource', binding: 'objectUniforms', member: 'world' },

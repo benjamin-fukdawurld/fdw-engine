@@ -18,9 +18,18 @@ engine-webgpu    ← concrete backend (this package)
 
 | Export                | Kind  | Description                                                                      |
 | --------------------- | ----- | -------------------------------------------------------------------------------- |
-| `WebGpuEngine`        | class | Implements `Engine`: requests the `GPUAdapter` / `GPUDevice` and manages the lifecycle |
+| `WebGpuEngine`        | class | Implements `Engine`: requests the `GPUAdapter` / `GPUDevice`, manages the lifecycle and exposes the `backend` once ready. Accepts a `gpu` option to run outside a browser (e.g. Dawn for Node) |
 | `WebGpuSurface`       | class | Implements `Surface` on top of an `HTMLCanvasElement` (`GPUCanvasContext`)       |
+| `WebGpuOffscreenSurface` | class | Implements `Surface` with a texture: render-to-texture, screenshots, headless tests (`readPixels()`) |
 | `WebGpuSurfaceConfig` | type  | Surface options: `alphaMode`, `clearColor`                                       |
+
+### Rendering (`render/`)
+
+| Export | Description |
+| --- | --- |
+| `WebGpuRenderBackend` | Implements `RenderBackend`: buffer, texture and pipeline factories, math, render targets, command encoding |
+| `WebGpuPipelineFactory` | Implements `GpuPipelineFactory`: WGSL generation, shader modules and bind group layouts cached, explicit pipeline layouts |
+| `WebGpuCommandEncoder`, `WebGpuRenderTarget` | Command recording and render targets |
 
 ### GPU resources (`gpu/`)
 

@@ -117,6 +117,28 @@ describe('WgslCodegen', () => {
   });
 
   it('uses textures and samplers inline, as WGSL handles cannot be let-bound', () => {
+    const layout: PhysicalProgramLayout = {
+      groups: [
+        {
+          index: 0,
+          slot: 'material',
+          bindings: [
+            {
+              binding: 0,
+              resource: { kind: 'texture', name: 'map', type: T.texture2d },
+            },
+            {
+              binding: 1,
+              resource: {
+                kind: 'sampler',
+                name: 'mapSampler',
+                comparison: false,
+              },
+            },
+          ],
+        },
+      ],
+    };
     const code = emit(
       fragmentModule([
         {
@@ -145,11 +167,12 @@ describe('WgslCodegen', () => {
           name: 'texel',
           sourceNode: 'n4',
         },
-      ])
+      ]),
+      layout
     );
     expect(code).not.toMatch(/let v\d+: (texture|sampler)/);
     expect(code).toContain(
-      'let v4_texel: vec4<f32> = textureSample(map, mapSampler, v3); // #n4'
+      'let v4_texel: vec4<f32> = textureSample(t_map, s_mapSampler, v3); // #n4'
     );
   });
 
