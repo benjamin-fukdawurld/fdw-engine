@@ -9,3 +9,4 @@ export * from './light';
 export * from './utils';
 export * from './material';
 export * from './mesh';
+export * from './shader';

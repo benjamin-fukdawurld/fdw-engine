@@ -38,6 +38,8 @@ export const std = {
   vec3: functions.vec3,
   vec4: functions.vec4,
   extend: functions.extend,
+  transform: functions.transform,
+  transform3: functions.transform3,
   convert: functions.convert,
 } as const;
 
@@ -58,6 +60,8 @@ export const stdConstants = {
 
 export const stdOutputs = {
   surface: outputs.surface,
+  vertex: outputs.vertex,
+  fragment: outputs.fragment,
 } as const;
 
 export const standardNodeDefinitions: readonly NodeDefinition[] = [

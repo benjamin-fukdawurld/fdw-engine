@@ -2,16 +2,16 @@
 
 Material graph of FdwEngine: a backend-agnostic description of materials as a directed acyclic graph (DAG) of typed nodes.
 
-This package is pure TypeScript, with no GPU dependency. It is the first step of the design described in [design/material-graph.md](../../design/material-graph.md): it provides the type system, the graph model, the standard node library, type inference, validation and serialization. The compiler (graph → IR) and the code generators come next.
+This package is pure TypeScript, with no GPU dependency. It implements the design described in [design/material-graph.md](../../design/material-graph.md): the type system, the graph model, the standard node library, type inference, validation, serialization, and the compiler that turns a graph into a backend-independent program (IR + resource layout). Code generators live in the backends (`WgslCodegen` in `@fdw/engine-webgpu`).
 
 ## Position in the stack
 
 ```
-engine-shader    ← material graph, types (this package)
+engine-shader    ← material graph, types, compiler (this package)
      ▲
-engine-core      ← frontend (scene, materials)
-engine-backend   ← abstract API
-engine-webgpu    ← WebGPU backend
+engine-backend   ← abstract API: ShaderCodegen, PhysicalLayoutStrategy
+     ▲
+engine-webgpu    ← WebGPU backend: WgslCodegen, wgslLayoutStrategy
 ```
 
 ## Public API
@@ -40,14 +40,24 @@ engine-webgpu    ← WebGPU backend
 | `serializeGraph()`, `parseGraph()` | function | JSON serialization |
 | `Diagnostic`, `GraphError` | type / class | Errors and warnings, located by node and port |
 
+### Compiler
+
+| Export | Kind | Description |
+| --- | --- | --- |
+| `compile()` | function | Graph → `CompiledProgram`. Throws a `GraphError` when the graph has errors |
+| `CompiledProgram` | type | `programKey`, IR `module`, logical `layout`, `vertexInputs`, warnings |
+| `ShaderModuleIR`, `IrEntryPoint`, `IrInstruction`, `IrOp` | type | Intermediate representation: typed SSA instructions, one straight list per stage |
+| `ProgramLayout`, `LogicalBinding` | type | Resources grouped by slot (`frame`, `material`, `object`, custom slots) |
+| `engineUniformBlocks`, `engineValueLocations` | const | Fixed contract of the `frame` and `object` slots, shared by every program |
+
 ### Standard library
 
 | Export | Content |
 | --- | --- |
-| `std` | Functions: `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `sin`, `cos`, `saturate`, `pow`, `dot`, `length`, `normalize`, `cross`, `reflect`, `mix`, `clamp`, `smoothstep`, `select`, `textureSample`, `vec2`, `vec3`, `vec4`, `extend`, `convert` |
+| `std` | Functions: `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `sin`, `cos`, `saturate`, `pow`, `dot`, `length`, `normalize`, `cross`, `reflect`, `mix`, `clamp`, `smoothstep`, `select`, `textureSample`, `vec2`, `vec3`, `vec4`, `extend`, `transform`, `transform3`, `convert` |
 | `stdInputs` | `input.attribute`, `input.uniform`, `input.storage`, `input.texture`, `input.sampler`, `input.builtin`, `input.engine` |
 | `stdConstants` | `const.value`, `const.pi` |
-| `stdOutputs` | `output.surface` (shading models `unlit`, `phong`, `pbr`) |
+| `stdOutputs` | `output.surface` (shading models `unlit`, `phong`, `pbr`), and the raw `output.vertex` / `output.fragment` |
 | `createStandardRegistry()` | A `NodeRegistry` with all the standard node types |
 
 ## Usage
@@ -87,3 +97,30 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 - **Generics** are unified from the connected inputs: `mul(f32, vec3<f32>)` binds `T = vec3<f32>`. When no input of a generic is connected, the type of its literal default is used (`f32`, or a float vector).
 - **Swizzles** are carried by the edges (`.xyz`, `.rg`), and cannot mix component sets (`.xg`).
 - **Resources** (uniforms, storage buffers, textures, samplers) are identified by name: nodes using the same name must declare the same resource.
+
+## Compilation
+
+```ts
+import { compile } from '@fdw/engine-shader';
+import { WgslCodegen, wgslLayoutStrategy } from '@fdw/engine-webgpu';
+
+const program = compile(graph, { vertexAttributes: ['position', 'normal', 'uv'] });
+const layout = wgslLayoutStrategy.resolve(program.layout); // bindings, offsets
+const sources = new WgslCodegen().emit(program.module, layout);
+```
+
+The compiler runs these passes:
+
+1. **Validation** of the graph, then of what the compiler supports.
+2. **Lowering** of `output.surface`: standard vertex stage (object → world → clip space) and shading model, ending with `output.vertex` and `output.fragment`.
+3. **Optimizations**: dead code elimination (unused resources included), constant folding (f32 scalars and vectors), common subexpression elimination.
+4. **Frequency analysis**: each value is constant, per draw (uniforms, textures, engine values), per vertex or per fragment. Per-vertex values used by the fragment stage are computed as early as possible and interpolated through varyings (flat for integers); constant and uniform values are recomputed in each stage; values that cannot be interpolated (bool, matrices) are computed in the fragment stage.
+5. **Layout**: `frame` (group 0), `material` (group 1), `object` (group 2), then custom slots sorted by name. Within a slot: one uniform block, then textures and samplers, each sorted by name.
+6. **IR generation** and **program key**: a Merkle hash of the optimized graph, independent of the node ids and of the uniform values.
+
+### Current limitations
+
+- Only the `unlit` shading model; `phong` and `pbr` come with the macros (phase 4 of the design).
+- No storage buffers, no array or struct uniforms, no `f16`.
+- No macros, subgraph or native functions yet.
+- `textureSample` only takes 2D textures.

@@ -65,7 +65,7 @@ The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface`, the GPU implementat
 
 ### Material graph — `@fdw/engine-shader` (in progress)
 
-Materials are being redesigned as a backend-agnostic graph of typed nodes, compiled to shaders and render pipelines for each backend. The `@fdw/engine-shader` package already provides the type system, the graph model, the standard node library and validation; the compiler and code generators come next. See the [design proposal](design/material-graph.md) (in French).
+Materials are being redesigned as a backend-agnostic graph of typed nodes, compiled to shaders and render pipelines for each backend. The `@fdw/engine-shader` package provides the type system, the graph model, the standard node library, validation and the compiler (graph → IR + resource layout); `@fdw/engine-webgpu` generates WGSL from it. Pipelines and the material runtime come next. See the [design proposal](design/material-graph.md) (in French).
 
 ## Roadmap
 
@@ -82,7 +82,7 @@ packages/
   engine-core/          Frontend: scene manipulation API
   engine-backend/       Abstract API
   engine-webgpu/        WebGPU backend
-  engine-shader/        Material graph: shader types, graph model, validation
+  engine-shader/        Material graph: shader types, graph model, compiler
 design/                 Design proposals
 ```
 

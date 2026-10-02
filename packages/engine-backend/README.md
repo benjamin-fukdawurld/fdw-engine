@@ -76,6 +76,17 @@ Describes how CPU-side values are laid out in GPU memory and how they are declar
 | `Material`, `MaterialDescription`, `MaterialBinding*`          | class / type | Material made of uniform, storage and texture bindings grouped in slots (`frame`, `material`, `object`) |
 | `MeshDescription`, `MeshInputData`, `Mesh`, `VertexAttributeFormat` | type | Vertex buffer layout, attributes and index buffer   |
 
+### Shaders (`shader/`)
+
+Interfaces between the backend-independent programs compiled by `@fdw/engine-shader` and each backend.
+
+| Export | Kind | Description |
+| --- | --- | --- |
+| `PhysicalLayoutStrategy` | interface | Resolves a logical `ProgramLayout` into binding numbers and uniform block offsets, following the rules of a backend |
+| `PhysicalProgramLayout`, `PhysicalBindGroup`, `PhysicalBinding`, `PhysicalUniformBlock` | type | The resolved layout |
+| `ShaderCodegen` | interface | Translates the IR of a program into the language of a backend |
+| `ShaderLanguage`, `ShaderSources` | type | Target languages and generated sources |
+
 ### Utilities (`utils/`)
 
 | Export             | Kind  | Description                                                                 |

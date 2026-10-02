@@ -163,6 +163,35 @@ export function resolveGraphNode(
   }
 }
 
+// A graph ends either with one 'output.surface', or with one 'output.vertex'
+// and one 'output.fragment' for full control over the stages.
+export function checkOutputNodes(
+  outputs: readonly Pick<GraphNode, 'id' | 'type'>[]
+): string | undefined {
+  if (outputs.length === 0) {
+    return 'the graph has no output node';
+  }
+  const types = outputs.map((node) => node.type).sort();
+  if (
+    (types.length === 1 && types[0] === 'output.surface') ||
+    (types.length === 2 &&
+      types[0] === 'output.fragment' &&
+      types[1] === 'output.vertex')
+  ) {
+    return undefined;
+  }
+  if (types.length === 1) {
+    const missing =
+      types[0] === 'output.vertex' ? 'output.fragment' : 'output.vertex';
+    return `the graph has a ${types[0]} node but no ${missing} node`;
+  }
+  return `the graph has ${outputs.length} output nodes (${outputs
+    .map((node) => `#${node.id} ${node.type}`)
+    .join(
+      ', '
+    )}): use either one output.surface, or one output.vertex and one output.fragment`;
+}
+
 // Uniforms, storage buffers, textures and samplers become named bindings:
 // nodes using the same name must declare the same resource. The uniform
 // default value is not part of the declaration.
@@ -362,21 +391,13 @@ export function validateGraph(
 
   checkResourceDeclarations(nodes, diagnostics);
 
-  const outputNodes = [...nodes.values()].filter(
-    (resolved) => resolved.definition.category === 'output'
+  const outputError = checkOutputNodes(
+    [...nodes.values()]
+      .filter((resolved) => resolved.definition.category === 'output')
+      .map((resolved) => resolved.node)
   );
-  if (outputNodes.length === 0) {
-    diagnostics.push({
-      severity: 'error',
-      message: 'the graph has no output node',
-    });
-  } else if (outputNodes.length > 1) {
-    diagnostics.push({
-      severity: 'error',
-      message: `the graph has ${outputNodes.length} output nodes (${outputNodes
-        .map((resolved) => `#${resolved.node.id}`)
-        .join(', ')}), only one is allowed`,
-    });
+  if (outputError) {
+    diagnostics.push({ severity: 'error', message: outputError });
   }
 
   const types = new Map<NodeId, NodeTypes>();

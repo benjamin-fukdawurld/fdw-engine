@@ -54,6 +54,17 @@ export interface NodeOptions {
   readonly label?: string;
 }
 
+// The surface ports, plus the shading model. The index signature has to
+// accept the shading model string too.
+export type SurfaceInputs = {
+  readonly shadingModel?: ShadingModel;
+  readonly [port: string]:
+    | PortHandle
+    | ConstantValue
+    | ShadingModel
+    | undefined;
+};
+
 type Slot = 'frame' | 'material' | 'object' | (string & {});
 
 // Builds a MaterialGraphData step by step. Types are checked as soon as a node
@@ -66,7 +77,7 @@ export class GraphBuilder {
   private readonly _edges: GraphEdge[] = [];
   private readonly _parameters: GraphParameterDeclaration[] = [];
   private _nextId = 1;
-  private _hasOutput = false;
+  private readonly _outputTypes: string[] = [];
 
   constructor(name: string, registry: NodeRegistry = createStandardRegistry()) {
     this.name = name;
@@ -141,7 +152,12 @@ export class GraphBuilder {
     }
 
     if (resolvedDefinition.category === 'output') {
-      if (this._hasOutput) {
+      // Allowed: one output.surface, or output.vertex and output.fragment.
+      const outputs = [...this._outputTypes, resolvedDefinition.id].sort();
+      const allowed =
+        outputs.length === 1 ||
+        (outputs[0] === 'output.fragment' && outputs[1] === 'output.vertex');
+      if (!allowed) {
         throw new GraphError([
           {
             severity: 'error',
@@ -150,7 +166,7 @@ export class GraphBuilder {
           },
         ]);
       }
-      this._hasOutput = true;
+      this._outputTypes.push(resolvedDefinition.id);
     }
 
     this._nodes.push(node);
@@ -261,10 +277,10 @@ export class GraphBuilder {
     return this.call('const.value', {}, { params: { type, value }, label });
   }
 
-  surface(inputs: NodeInputs & { shadingModel?: ShadingModel } = {}): void {
+  surface(inputs: SurfaceInputs = {}): void {
     const { shadingModel = 'unlit', ...ports } = inputs;
     this.node('output.surface', {
-      params: { shadingModel: shadingModel as string },
+      params: { shadingModel },
       inputs: ports as NodeInputs,
     });
   }

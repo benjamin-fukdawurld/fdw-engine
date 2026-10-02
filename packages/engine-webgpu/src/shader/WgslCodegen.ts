@@ -1,0 +1,334 @@
+import type {
+  PhysicalProgramLayout,
+  ShaderCodegen,
+  ShaderSources,
+} from '@fdw/engine-backend';
+import {
+  ConstantValue,
+  IrEntryPoint,
+  IrInstruction,
+  IrStageVariable,
+  ShaderModuleIR,
+  ShaderType,
+  typeToString,
+} from '@fdw/engine-shader';
+
+const textureNames: Record<string, string> = {
+  '1d': 'texture_1d',
+  '2d': 'texture_2d',
+  '2d-array': 'texture_2d_array',
+  '3d': 'texture_3d',
+  cube: 'texture_cube',
+  'cube-array': 'texture_cube_array',
+};
+
+const depthTextureNames: Record<string, string> = {
+  '2d': 'texture_depth_2d',
+  '2d-array': 'texture_depth_2d_array',
+  cube: 'texture_depth_cube',
+  'cube-array': 'texture_depth_cube_array',
+};
+
+const sampledTypes = {
+  float: 'f32',
+  'unfilterable-float': 'f32',
+  sint: 'i32',
+  uint: 'u32',
+} as const;
+
+export function wgslType(type: ShaderType): string {
+  switch (type.kind) {
+    case 'scalar':
+      return type.scalar;
+    case 'vector':
+      return `vec${type.size}<${type.scalar}>`;
+    case 'matrix':
+      return `mat${type.columns}x${type.rows}<${type.scalar}>`;
+    case 'texture': {
+      if (type.sampleType === 'depth') {
+        const name = depthTextureNames[type.dimension];
+        if (!name) {
+          throw new Error(
+            `No WGSL depth texture for dimension ${type.dimension}`
+          );
+        }
+        return type.multisampled ? 'texture_depth_multisampled_2d' : name;
+      }
+      const sampled = sampledTypes[type.sampleType];
+      return type.multisampled
+        ? `texture_multisampled_2d<${sampled}>`
+        : `${textureNames[type.dimension]}<${sampled}>`;
+    }
+    case 'sampler':
+      return type.comparison ? 'sampler_comparison' : 'sampler';
+    default:
+      throw new Error(
+        `${typeToString(type)} is not supported by the WGSL generator`
+      );
+  }
+}
+
+function floatLiteral(value: number): string {
+  const text = String(value);
+  return /[.eE]/.test(text) ? text : `${text}.0`;
+}
+
+function scalarLiteral(value: number | boolean, scalar: string): string {
+  if (typeof value === 'boolean') {
+    return String(value);
+  }
+  switch (scalar) {
+    case 'i32':
+      return `${value}i`;
+    case 'u32':
+      return `${value}u`;
+    default:
+      return floatLiteral(value);
+  }
+}
+
+function literal(type: ShaderType, value: ConstantValue): string {
+  if (type.kind === 'scalar') {
+    return scalarLiteral(value as number | boolean, type.scalar);
+  }
+  if (type.kind === 'vector' || type.kind === 'matrix') {
+    const components = (value as readonly number[]).map((component) =>
+      scalarLiteral(component, type.scalar)
+    );
+    return `${wgslType(type)}(${components.join(', ')})`;
+  }
+  throw new Error(`Cannot write a ${typeToString(type)} literal`);
+}
+
+// Texture and sampler values are handles: WGSL does not allow binding them
+// to a let, so they are used inline.
+const isHandle = (type: ShaderType) =>
+  type.kind === 'texture' || type.kind === 'sampler';
+
+const identifier = (text: string) =>
+  text.replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
+
+const structName = (name: string) =>
+  name.charAt(0).toUpperCase() + name.slice(1);
+
+const builtinParameters = {
+  'vertex-index': {
+    name: 'vertexIndex',
+    declaration: '@builtin(vertex_index) vertexIndex: u32',
+  },
+  'instance-index': {
+    name: 'instanceIndex',
+    declaration: '@builtin(instance_index) instanceIndex: u32',
+  },
+  'front-facing': {
+    name: 'frontFacing',
+    declaration: '@builtin(front_facing) frontFacing: bool',
+  },
+} as const;
+
+function stageVariable(variable: IrStageVariable): string {
+  const attributes = variable.builtin
+    ? `@builtin(${variable.builtin})`
+    : `@location(${variable.location})${
+        variable.interpolation === 'flat' ? ' @interpolate(flat)' : ''
+      }`;
+  return `  ${attributes} ${variable.name}: ${wgslType(variable.type)},`;
+}
+
+function emitBody(entryPoint: IrEntryPoint): {
+  lines: string[];
+  expressions: Map<number, string>;
+  builtins: Set<string>;
+} {
+  const expressions = new Map<number, string>();
+  const builtins = new Set<string>();
+  const lines: string[] = [];
+  const arg = (instruction: IrInstruction, index: number) =>
+    expressions.get(instruction.args[index]) as string;
+  const args = (instruction: IrInstruction) =>
+    instruction.args.map((_, i) => arg(instruction, i)).join(', ');
+
+  for (const instruction of entryPoint.body) {
+    const { op, type } = instruction;
+    let expression: string;
+    switch (op.kind) {
+      case 'constant':
+        expression = literal(type, op.value);
+        break;
+      case 'load-input':
+        expression = `in.${op.input}`;
+        break;
+      case 'load-builtin':
+        if (op.builtin === 'frag-coord') {
+          // In a fragment shader, the position builtin is the fragment
+          // coordinate.
+          expression = 'in.clipPosition';
+        } else {
+          builtins.add(op.builtin);
+          expression = builtinParameters[op.builtin].name;
+        }
+        break;
+      case 'load-resource':
+        expression = op.member ? `${op.binding}.${op.member}` : op.binding;
+        break;
+      case 'binary':
+        expression = `${arg(instruction, 0)} ${op.operator} ${arg(
+          instruction,
+          1
+        )}`;
+        break;
+      case 'intrinsic':
+        expression = `${op.name}(${args(instruction)})`;
+        break;
+      case 'select':
+        expression = `select(${args(instruction)})`;
+        break;
+      case 'sample':
+        expression = `textureSample(${args(instruction)})`;
+        break;
+      case 'construct':
+      case 'convert':
+        expression = `${wgslType(type)}(${args(instruction)})`;
+        break;
+      case 'swizzle':
+        expression = `${arg(instruction, 0)}.${op.components}`;
+        break;
+    }
+
+    if (isHandle(type)) {
+      expressions.set(instruction.id, expression);
+      continue;
+    }
+    const name = `v${instruction.id}${
+      instruction.name ? `_${identifier(instruction.name)}` : ''
+    }`;
+    const comment = instruction.sourceNode
+      ? ` // #${instruction.sourceNode}`
+      : '';
+    lines.push(`  let ${name}: ${wgslType(type)} = ${expression};${comment}`);
+    expressions.set(instruction.id, name);
+  }
+
+  return { lines, expressions, builtins };
+}
+
+// Generates a WGSL module with a vs_main and an fs_main entry point.
+export class WgslCodegen implements ShaderCodegen {
+  readonly language = 'wgsl' as const;
+
+  emit(module: ShaderModuleIR, layout: PhysicalProgramLayout): ShaderSources {
+    const vertex = module.entryPoints.find(
+      (entryPoint) => entryPoint.stage === 'vertex'
+    );
+    const fragment = module.entryPoints.find(
+      (entryPoint) => entryPoint.stage === 'fragment'
+    );
+    if (!vertex || !fragment) {
+      throw new Error('A program needs a vertex and a fragment entry point');
+    }
+
+    const sections: string[] = [
+      `// Generated from material graph "${module.name}". Do not edit.`,
+    ];
+
+    for (const group of layout.groups) {
+      for (const { binding, resource } of group.bindings) {
+        const location = `@group(${group.index}) @binding(${binding})`;
+        if (resource.kind === 'uniform-block') {
+          const struct = structName(resource.name);
+          sections.push(
+            [
+              `struct ${struct} {`,
+              ...resource.members.map(
+                (member) => `  ${member.name}: ${wgslType(member.type)},`
+              ),
+              '};',
+              `${location} var<uniform> ${resource.name}: ${struct};`,
+            ].join('\n')
+          );
+        } else if (resource.kind === 'texture') {
+          sections.push(
+            `${location} var ${resource.name}: ${wgslType(resource.type)};`
+          );
+        } else {
+          sections.push(
+            `${location} var ${resource.name}: ${
+              resource.comparison ? 'sampler_comparison' : 'sampler'
+            };`
+          );
+        }
+      }
+    }
+
+    if (vertex.inputs.length > 0) {
+      sections.push(
+        [
+          'struct VertexInput {',
+          ...vertex.inputs.map(stageVariable),
+          '};',
+        ].join('\n')
+      );
+    }
+    sections.push(
+      ['struct Varyings {', ...vertex.outputs.map(stageVariable), '};'].join(
+        '\n'
+      )
+    );
+
+    const vertexBody = emitBody(vertex);
+    const vertexParameters = [
+      ...(vertex.inputs.length > 0 ? ['in: VertexInput'] : []),
+      ...[...vertexBody.builtins].map(
+        (builtin) =>
+          builtinParameters[builtin as keyof typeof builtinParameters]
+            .declaration
+      ),
+    ];
+    sections.push(
+      [
+        '@vertex',
+        `fn vs_main(${vertexParameters.join(', ')}) -> Varyings {`,
+        ...vertexBody.lines,
+        '  var out: Varyings;',
+        ...vertex.outputs.map(
+          (output) =>
+            `  out.${output.name} = ${vertexBody.expressions.get(
+              vertex.results[output.name]
+            )};`
+        ),
+        '  return out;',
+        '}',
+      ].join('\n')
+    );
+
+    const fragmentBody = emitBody(fragment);
+    const fragmentParameters = [
+      'in: Varyings',
+      ...[...fragmentBody.builtins].map(
+        (builtin) =>
+          builtinParameters[builtin as keyof typeof builtinParameters]
+            .declaration
+      ),
+    ];
+    const color = fragment.outputs[0];
+    sections.push(
+      [
+        '@fragment',
+        `fn fs_main(${fragmentParameters.join(', ')}) -> @location(${
+          color.location
+        }) ${wgslType(color.type)} {`,
+        ...fragmentBody.lines,
+        `  return ${fragmentBody.expressions.get(
+          fragment.results[color.name]
+        )};`,
+        '}',
+      ].join('\n')
+    );
+
+    return {
+      kind: 'single-module',
+      code: `${sections.join('\n\n')}\n`,
+      entryPoints: { vertex: 'vs_main', fragment: 'fs_main' },
+    };
+  }
+}

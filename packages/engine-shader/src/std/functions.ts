@@ -179,6 +179,21 @@ export const extend = intrinsic(
   T.vec4f
 );
 
+// Matrix × vector products: transforming positions and directions.
+export const transform = intrinsic(
+  'transform',
+  'mul',
+  [port('matrix', T.mat4f), port('vector', T.vec4f)],
+  T.vec4f
+);
+
+export const transform3 = intrinsic(
+  'transform3',
+  'mul',
+  [port('matrix', T.mat3f), port('vector', T.vec3f)],
+  T.vec3f
+);
+
 export const convert: FunctionDefinition = {
   id: 'std.convert',
   category: 'function',
@@ -219,5 +234,7 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   vec3,
   vec4,
   extend,
+  transform,
+  transform3,
   convert,
 ];

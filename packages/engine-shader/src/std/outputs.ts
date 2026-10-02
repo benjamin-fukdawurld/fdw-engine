@@ -50,3 +50,21 @@ export const surface: NodeDefinition = {
   },
   outputs: () => [],
 };
+
+// Raw stage outputs, for full control (post-processing, full-screen passes).
+// The compiler also lowers 'output.surface' to this pair.
+export const vertex: NodeDefinition = {
+  id: 'output.vertex',
+  category: 'output',
+  inputs: () => [{ name: 'clipPosition', type: T.vec4f }],
+  outputs: () => [],
+  stage: () => 'vertex',
+};
+
+export const fragment: NodeDefinition = {
+  id: 'output.fragment',
+  category: 'output',
+  inputs: () => [{ name: 'color', type: T.vec4f }],
+  outputs: () => [],
+  stage: () => 'fragment',
+};

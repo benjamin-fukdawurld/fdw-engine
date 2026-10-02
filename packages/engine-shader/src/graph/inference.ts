@@ -133,6 +133,13 @@ export function resolveNodeTypes({
       .filter((port) => connected[port.name] !== undefined)
       .map((port) => ({ port: port.name, type: connected[port.name] }));
 
+    // Literals of the unconnected ports of the generic.
+    const literals = ports
+      .filter((port) => connected[port.name] === undefined)
+      .map((port) => defaults[port.name] ?? port.default)
+      .filter((value): value is ConstantValue => value !== undefined);
+    const vectorLiteral = literals.find(Array.isArray);
+
     let bound: ShaderType | undefined;
     if (candidates.length > 0) {
       const result = unify(candidates);
@@ -141,15 +148,18 @@ export function resolveNodeTypes({
         continue;
       }
       bound = result.type;
-    } else {
-      // Nothing connected: fall back on the type of a literal default.
-      for (const port of ports) {
-        const value = defaults[port.name] ?? port.default;
-        bound = value !== undefined ? literalType(value) : undefined;
-        if (bound) {
-          break;
+      // Vector literals widen a scalar binding, like a connected vector
+      // would: mix([0, 0, 0], [1, 1, 1], t: f32) binds T = vec3<f32>.
+      if (bound.kind === 'scalar' && vectorLiteral) {
+        const literal = literalType(vectorLiteral);
+        if (literal?.kind === 'vector') {
+          bound = vec(literal.size, bound.scalar);
         }
       }
+    } else {
+      // Nothing connected: the type of the literals, vectors first.
+      const literal = vectorLiteral ?? literals[0];
+      bound = literal !== undefined ? literalType(literal) : undefined;
     }
 
     if (!bound) {

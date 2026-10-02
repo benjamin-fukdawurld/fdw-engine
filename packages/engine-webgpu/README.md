@@ -54,9 +54,12 @@ Implementations of the abstract layout API following WGSL alignment rules:
 
 | Export          | Description                                                                                  |
 | --------------- | -------------------------------------------------------------------------------------------- |
-| `ShaderWritter` | Generates WGSL code from [Eta](https://eta.js.org/) templates (`ShaderWritter.render(...)`) |
+| `WgslCodegen` | Implements `ShaderCodegen`: generates a WGSL module (`vs_main`, `fs_main`) from the IR of a program compiled by `@fdw/engine-shader` |
+| `wgslLayoutStrategy` | Implements `PhysicalLayoutStrategy`: one bind group per slot, uniform blocks laid out with the WGSL uniform address space rules |
+| `wgslType()` | WGSL name of a shader type |
+| `ShaderWritter` | Legacy: generates WGSL code from [Eta](https://eta.js.org/) templates (`ShaderWritter.render(...)`), to be replaced by `WgslCodegen` |
 
-Available templates:
+Available templates (legacy `ShaderWritter`):
 
 | Name                 | Content                                          |
 | -------------------- | ------------------------------------------------ |
