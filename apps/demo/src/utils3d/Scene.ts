@@ -102,6 +102,15 @@ export class SceneAdapter {
     return this._cameraAdapter.value;
   }
 
+  // Must be called once per frame, before rendering. Reading the cached
+  // buffers is what uploads the camera data to the GPU when it has changed.
+  update(): void {
+    const camera = this.cameraAdapter;
+    void camera.positionBuffer.value;
+    void camera.viewMatrixBuffer.value;
+    void camera.projectionMatrixBuffer.value;
+  }
+
   setupMesh({
     mesh,
     device,
@@ -287,18 +296,43 @@ export class SceneAdapter {
     passEncoder: GPURenderPassEncoder;
   }) {
     const mesh = meshRenderData.mesh;
-    const shaderModule = meshRenderData.shaderModule;
-    const material = meshRenderData.material;
-    material.frameUniforms[0].value = this.cameraAdapter.positionBuffer.value!;
-    material.frameUniforms[1].value =
-      this.cameraAdapter.viewMatrixBuffer.value!;
 
-    const pipeline = device.createRenderPipeline({
+    // Uploads the object matrices to the GPU when the transform has changed.
+    void mesh.transformAdapter.worldMatrixBuffer.value;
+    void mesh.transformAdapter.worldNormalMatrixBuffer.value;
+
+    meshRenderData.pipeline ??= this.createPipeline({
+      meshRenderData,
+      device,
+      surface,
+    });
+
+    passEncoder.setPipeline(meshRenderData.pipeline);
+    passEncoder.setVertexBuffer(0, mesh.vertexBuffer.buffer);
+    passEncoder.setIndexBuffer(mesh.indexBuffer!.buffer, 'uint16');
+    passEncoder.setBindGroup(0, meshRenderData.frameUniformBindGroup);
+    passEncoder.setBindGroup(1, meshRenderData.materialBindGroup);
+    passEncoder.setBindGroup(2, meshRenderData.objectBindGroup);
+    passEncoder.drawIndexed(mesh.numberOfIndices, 1, 0, 0, 0);
+  }
+
+  private createPipeline({
+    meshRenderData,
+    device,
+    surface,
+  }: {
+    meshRenderData: MeshRenderData;
+    device: GPUDevice;
+    surface: WebGpuSurface;
+  }): GPURenderPipeline {
+    const shaderModule = meshRenderData.shaderModule;
+
+    return device.createRenderPipeline({
       layout: meshRenderData.pipelineLayout,
       vertex: {
         module: shaderModule,
         entryPoint: 'vs_main',
-        buffers: [material.getVertexBufferLayout()],
+        buffers: [meshRenderData.material.getVertexBufferLayout()],
       },
       fragment: {
         module: shaderModule,
@@ -320,13 +354,5 @@ export class SceneAdapter {
         format: 'depth24plus-stencil8',
       },
     });
-
-    passEncoder.setPipeline(pipeline);
-    passEncoder.setVertexBuffer(0, mesh.vertexBuffer.buffer);
-    passEncoder.setIndexBuffer(mesh.indexBuffer!.buffer, 'uint16');
-    passEncoder.setBindGroup(0, meshRenderData.frameUniformBindGroup);
-    passEncoder.setBindGroup(1, meshRenderData.materialBindGroup);
-    passEncoder.setBindGroup(2, meshRenderData.objectBindGroup);
-    passEncoder.drawIndexed(mesh.numberOfIndices, 1, 0, 0, 0);
   }
 }

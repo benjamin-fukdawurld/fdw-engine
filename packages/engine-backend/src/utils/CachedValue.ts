@@ -57,10 +57,16 @@ export class CachedValue<
 
     if (this.dirty) {
       this._updating = true;
-      this._value = this._updateStrategy(this._value, this._dependencies);
-      this._version++;
-      this._dependencyVersions = this._dependencies.map((dep) => dep.version);
-      this._updating = false;
+      try {
+        this._value = this._updateStrategy(this._value, this._dependencies);
+        this._version++;
+        this._dependencyVersions = this._dependencies.map((dep) => dep.version);
+      } finally {
+        // Reset even if the update throws, otherwise every later access would
+        // be reported as a circular dependency. The value stays dirty, so the
+        // update is retried on the next access.
+        this._updating = false;
+      }
     }
   }
 }

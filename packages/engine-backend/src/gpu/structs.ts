@@ -49,17 +49,23 @@ export class StructBuilder {
     this.strategy.validateFields(this.blueprint.fields);
 
     const { size, stride, alignment, fields } = this.blueprint;
-    const alignedStride = this.strategy.align(stride, alignment);
-    const alignedSize = this.strategy.align(size, alignment);
-    return {
-      size: alignedSize,
+    // Snapshot of the blueprint: the built struct and its callbacks must not
+    // see fields added to the builder afterwards.
+    const blueprint: GpuStructFieldBluePrint = {
+      size: this.strategy.align(size, alignment),
+      stride: this.strategy.align(stride, alignment),
       alignment,
-      fields,
-      stride: alignedStride,
-      hasDynamicSize: this.strategy.hasDynamicSize(this.blueprint),
-      runtimeSize: this.strategy.getRuntimeSizeCallback(this.blueprint),
-      write: this.strategy.getWriteCallback(this.blueprint),
-      serialize: this.strategy.getSerializeCallback(this.blueprint),
+      fields: [...fields],
+    };
+    return {
+      size: blueprint.size,
+      alignment,
+      fields: blueprint.fields,
+      stride: blueprint.stride,
+      hasDynamicSize: this.strategy.hasDynamicSize(blueprint),
+      runtimeSize: this.strategy.getRuntimeSizeCallback(blueprint),
+      write: this.strategy.getWriteCallback(blueprint),
+      serialize: this.strategy.getSerializeCallback(blueprint),
     };
   }
 

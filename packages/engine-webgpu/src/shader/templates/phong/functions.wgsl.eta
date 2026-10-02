@@ -58,20 +58,23 @@ fn getShininess(
 <% } %>
 ) -> f32 {
     var result = 32.0;
-    <% if (it.shininess) { %>
+    <% if (it.shininess != null) { %>
     result = <%= it.shininess %>;
     <% } %>
 
     <% if (it.shininessTexture) { %>
-    result = result
-      * textureSample(
+    // The texture stores the exponent normalized to [0, 1]: it replaces the
+    // uniform value instead of scaling it.
+    result = textureSample(
         <%= it.shininessTexture %>,
         <%= it.shininessTextureSampler %>,
         uv
       ).<%= it.shininessTextureChannel ?? 'r' %> * 255.0;
     <% } %>
 
-    return result;
+    // pow(x, 0.0) is 1 (and pow(0.0, 0.0) is undefined): an exponent below 1
+    // would turn the whole surface into a white highlight.
+    return max(result, 1.0);
 }
 
 fn getAmbientLighting(
@@ -101,7 +104,9 @@ fn getSpecularLighting(
 ) -> vec3<f32> {
     let reflectDir = reflect(-lightDirection, normal);
     let spec = pow(max(dot(viewDirection, reflectDir), 0.0), shininess);
-    return spec * specularColor * specularLightColor;
+    // No highlight on faces turned away from the light.
+    let facing = select(0.0, 1.0, dot(normal, lightDirection) > 0.0);
+    return facing * spec * specularColor * specularLightColor;
 }
 
 fn getLighting(

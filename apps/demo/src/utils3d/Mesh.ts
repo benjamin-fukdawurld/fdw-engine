@@ -55,6 +55,8 @@ export type MeshRenderData = {
   material: Material;
   shaderModule: GPUShaderModule;
   pipelineLayout: GPUPipelineLayout;
+  // Created on first render, once the surface format is known.
+  pipeline?: GPURenderPipeline;
   frameUniformBindGroup: GPUBindGroup;
   objectBindGroup: GPUBindGroup;
   materialBindGroup: GPUBindGroup;

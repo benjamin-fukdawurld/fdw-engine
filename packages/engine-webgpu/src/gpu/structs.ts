@@ -1,17 +1,80 @@
 import {
   GpuArray,
+  GpuStruct,
   GpuStructField,
   GpuStructFieldBluePrint,
   struct,
   StructBuildStrategy,
 } from '@fdw/engine-backend';
 
+type FieldType = GpuStructField<unknown>['type'];
+
 const align = (offset: number, alignment: number): number =>
   Math.ceil(offset / alignment) * alignment;
 
+const isStruct = (type: FieldType): type is GpuStruct<unknown> =>
+  'fields' in type;
+
+const isArray = (type: FieldType): type is GpuArray<unknown> =>
+  'element' in type;
+
 const isRuntimeSizedArray = (
   field: Omit<GpuStructField<unknown>, 'offset'>
-): boolean => 'element' in field.type && field.type.length === undefined;
+): boolean => isArray(field.type) && field.type.length === undefined;
+
+// Built structs always define the hasDynamicSize key (possibly undefined),
+// so the value must be tested, not the presence of the key.
+const isRuntimeSizedStruct = (type: FieldType): boolean =>
+  isStruct(type) && type.hasDynamicSize === true;
+
+const naturalAlignment = (type: FieldType): number =>
+  isArray(type) ? type.element.alignment : type.alignment;
+
+// WGSL uniform address space rules: array and struct members are aligned to
+// 16 bytes, and a struct member occupies a multiple of 16 bytes. WGSL does not
+// insert this padding itself, so the serialized members carry explicit
+// @align / @size attributes (see uniformMemberAttributes).
+const uniformFieldAlignment = (type: FieldType): number =>
+  isArray(type) || isStruct(type)
+    ? align(naturalAlignment(type), 16)
+    : type.alignment;
+
+const uniformFieldSize = (type: FieldType): number => {
+  if (isArray(type)) {
+    return type.stride * (type.length ?? 1);
+  }
+  if (isStruct(type)) {
+    return align(type.size, 16);
+  }
+  return type.size;
+};
+
+const uniformMemberAttributes = (field: GpuStructField<unknown>): string => {
+  const attributes: string[] = [];
+  const alignment = uniformFieldAlignment(field.type);
+  if (alignment !== naturalAlignment(field.type)) {
+    attributes.push(`@align(${alignment})`);
+  }
+  if (isStruct(field.type) && uniformFieldSize(field.type) !== field.type.size) {
+    attributes.push(`@size(${uniformFieldSize(field.type)})`);
+  }
+  return attributes.map((attribute) => `${attribute} `).join('');
+};
+
+const serializeStruct = (
+  blueprint: GpuStructFieldBluePrint,
+  memberAttributes: (field: GpuStructField<unknown>) => string = () => ''
+): string => {
+  const fields = blueprint.fields
+    .map(
+      (field) =>
+        `${memberAttributes(field)}${field.name}: ${field.type.serialize()}`
+    )
+    .join(',\n  ');
+  return `{
+  ${fields}
+}`;
+};
 
 const getRuntimeSizedArrayField = (
   blueprint: GpuStructFieldBluePrint
@@ -39,8 +102,7 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
         );
       }
 
-      const isRuntimeStruct = 'hasDynamicSize' in field.type;
-      if (isRuntimeStruct) {
+      if (isRuntimeSizedStruct(field.type)) {
         throw new Error(
           `Runtime-sized struct field "${field.name}" cannot be members of other structs`
         );
@@ -90,7 +152,7 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
     const runtimeField = getRuntimeSizedArrayField(blueprint);
 
     return !runtimeField
-      ? (_: T) => blueprint.size
+      ? (_: T) => align(blueprint.size, blueprint.alignment)
       : (value: T) => {
           const runtimeFieldValue = value[runtimeField.name as keyof T];
           if (runtimeFieldValue === undefined) {
@@ -129,16 +191,7 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
   },
 
   getSerializeCallback: (blueprint: GpuStructFieldBluePrint) => {
-    return (): string => {
-      const fields = blueprint.fields
-        .map((field) => {
-          return `${field.name}: ${field.type.serialize()}`;
-        })
-        .join(',\n  ');
-      return `{
-  ${fields}
-}`;
-    };
+    return (): string => serializeStruct(blueprint);
   },
 };
 
@@ -155,38 +208,28 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
         );
       }
 
-      const isRuntimeStruct = 'hasDynamicSize' in field.type;
-      if (isRuntimeStruct) {
+      if (isRuntimeSizedStruct(field.type)) {
         throw new Error(
           `Runtime-sized struct field "${field.name}" are not allowed in uniform structs`
+        );
+      }
+
+      // Unlike alignment, the stride cannot be fixed with an attribute: WGSL
+      // derives it from the element type.
+      if (isArray(field.type) && field.type.stride % 16 !== 0) {
+        throw new Error(
+          `Array field "${field.name}" has a stride of ${field.type.stride} bytes, but arrays in uniform structs need a stride multiple of 16 (use vec4 elements instead)`
         );
       }
     });
   },
 
-  getFieldSize: (field: Omit<GpuStructField<unknown>, 'offset'>): number => {
-    switch (true) {
-      case 'size' in field.type:
-        return field.type.size;
-      case 'stride' in field.type:
-        return field.type.stride * (field.type.length ?? 1);
-      default:
-        throw new Error(`Unknown type for field ${field.name}`);
-    }
-  },
+  getFieldSize: (field: Omit<GpuStructField<unknown>, 'offset'>): number =>
+    uniformFieldSize(field.type),
 
   getFieldAlignment: (
     field: Omit<GpuStructField<unknown>, 'offset'>
-  ): number => {
-    switch (true) {
-      case 'alignment' in field.type:
-        return field.type.alignment;
-      case 'element' in field.type:
-        return field.type.element.alignment;
-      default:
-        throw new Error(`Unknown type for field ${field.name}`);
-    }
-  },
+  ): number => uniformFieldAlignment(field.type),
 
   getFieldOffset: ({
     offset,
@@ -201,7 +244,7 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
   getRuntimeSizeCallback: <T = unknown>(
     blueprint: GpuStructFieldBluePrint
   ): ((value: T) => number) => {
-    return () => blueprint.size;
+    return () => align(blueprint.size, blueprint.alignment);
   },
 
   getWriteCallback: (blueprint: GpuStructFieldBluePrint) => {
@@ -217,16 +260,7 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
   },
 
   getSerializeCallback: (blueprint: GpuStructFieldBluePrint) => {
-    return (): string => {
-      const fields = blueprint.fields
-        .map((field) => {
-          return `${field.name}: ${field.type.serialize()}`;
-        })
-        .join(',\n  ');
-      return `{
-  ${fields}
-}`;
-    };
+    return (): string => serializeStruct(blueprint, uniformMemberAttributes);
   },
 };
 

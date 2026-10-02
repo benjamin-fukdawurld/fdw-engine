@@ -181,6 +181,7 @@ function RouteComponent() {
             elapsedTime
           );
           camera.rotation = { x: q[0], y: q[1], z: q[2], w: q[3] };
+          sceneAdapterRef.current!.update();
 
           const commandEncoder =
             applicationRef.current!.engine.device!.createCommandEncoder();
