@@ -41,6 +41,8 @@ export default defineConfig(() => ({
     globals: true,
     environment: 'jsdom',
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // No tests yet: don't fail the test target until they are written.
+    passWithNoTests: true,
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

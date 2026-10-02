@@ -63,6 +63,10 @@ Each backend implements the abstract API for a given graphics technology and win
 
 The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface`, the GPU implementations, and a WGSL shader generator based on [Eta](https://eta.js.org/) templates (Phong lighting model).
 
+### Material graph — `@fdw/engine-shader` (in progress)
+
+Materials are being redesigned as a backend-agnostic graph of typed nodes, compiled to shaders and render pipelines for each backend. The `@fdw/engine-shader` package already provides the type system, the graph model, the standard node library and validation; the compiler and code generators come next. See the [design proposal](design/material-graph.md) (in French).
+
 ## Roadmap
 
 1. **v1 — WebGPU / browser**: first complete backend, rendering into a `<canvas>`.
@@ -78,6 +82,8 @@ packages/
   engine-core/          Frontend: scene manipulation API
   engine-backend/       Abstract API
   engine-webgpu/        WebGPU backend
+  engine-shader/        Material graph: shader types, graph model, validation
+design/                 Design proposals
 ```
 
 The monorepo is managed with [Nx](https://nx.dev).
@@ -108,6 +114,14 @@ The demo contains a series of progressive examples (triangle, vertex/index buffe
 ```sh
 npm run build
 ```
+
+### Run the tests
+
+```sh
+npm test
+```
+
+Tests use [Vitest](https://vitest.dev/). Each package has its own `vitest.config.mts`, and test files are `src/**/*.spec.ts` or `src/**/*.test.ts`. To test a single package, run `npx nx test engine-shader`, or `npx vitest --watch` from the package directory for watch mode.
 
 ### Generate the documentation
 
