@@ -22,7 +22,7 @@ export class TextureFactory
 
   createTexture(
     descriptor: GpuTextureConfiguration & {
-      source?: ImageBitmap | ArrayBufferView | ArrayBuffer;
+      source?: ImageBitmap | ArrayBufferView<ArrayBuffer>;
       readwrite?: boolean;
     }
   ): GpuTexture {
@@ -53,7 +53,7 @@ export class TextureFactory
           width,
           height,
         ]);
-      } else if (ArrayBuffer.isView(source) || source instanceof ArrayBuffer) {
+      } else if (ArrayBuffer.isView(source)) {
         this.device.queue.writeTexture(
           { texture },
           source,

@@ -28,7 +28,7 @@ export interface GpuBufferFactory {
     size: number;
     usage: readonly GpuBufferUsage[];
     label?: string;
-    initialData?: ArrayBuffer | ArrayBufferView;
+    initialData?: ArrayBufferView<ArrayBuffer>;
     updateFrequency?: GpuBufferUpdateFrequency;
   }): GpuBuffer;
 }

@@ -7,7 +7,8 @@
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
-    { "path": "../engine-backend/tsconfig.lib.json" },
-    { "path": "../engine-core/tsconfig.lib.json" }
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    }
   ]
 }
