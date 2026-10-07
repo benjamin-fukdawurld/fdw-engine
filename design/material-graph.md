@@ -194,7 +194,7 @@ export type ShaderType =
 Des raccourcis rendent la construction lisible :
 
 ```ts
-export const T = {
+export const BuiltinTypes = {
   f32: scalar('f32'),
   i32: scalar('i32'),
   u32: scalar('u32'),
@@ -461,10 +461,10 @@ Une API fluide et typée en TypeScript, qui produit un `MaterialGraphData` :
 ```ts
 const g = new GraphBuilder('textured-phong');
 
-const uv = g.attribute('uv', T.vec2f);
+const uv = g.attribute('uv', BuiltinTypes.vec2f);
 const diffuse = g.texture('diffuseMap', { dimension: '2d', slot: 'material' });
 const smp = g.sampler('diffuseSampler', { slot: 'material' });
-const tint = g.uniform('tint', T.vec4f, {
+const tint = g.uniform('tint', BuiltinTypes.vec4f, {
   slot: 'material',
   default: [1, 1, 1, 1],
 });
@@ -476,7 +476,7 @@ g.surface({
   shadingModel: 'phong',
   baseColor: color.swizzle('rgb'),
   alpha: color.swizzle('a'),
-  shininess: g.constant(T.f32, 32),
+  shininess: g.constant(BuiltinTypes.f32, 32),
 });
 
 const graph: MaterialGraphData = g.build(); // valide la structure et les types connus

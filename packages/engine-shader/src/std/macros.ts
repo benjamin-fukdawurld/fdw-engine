@@ -3,7 +3,7 @@ import type { MacroContext, MacroDefinition } from '../graph/NodeDefinition';
 import { composeSwizzles } from '../graph/swizzle';
 import type { ConstantValue } from '../types/ConstantValue';
 import { generic } from '../types/PortType';
-import { ShaderType, T } from '../types/ShaderType';
+import { ShaderType, BuiltinTypes } from '../types/ShaderType';
 
 const any = generic('T', 'any');
 
@@ -124,7 +124,10 @@ function worldDirection(
 export const vertexNormal = (context: MacroContext): ValueSource =>
   worldDirection(
     context,
-    context.add('input.attribute', { semantic: 'normal', type: T.vec3f })()
+    context.add('input.attribute', {
+      semantic: 'normal',
+      type: BuiltinTypes.vec3f,
+    })()
   );
 
 // World-space normal perturbed by a tangent-space normal map, when the mesh
@@ -135,10 +138,10 @@ export const normalMapping: MacroDefinition = {
   category: 'macro',
   inputs: () => [
     // Texel of the normal map, in [0, 1].
-    { name: 'sample', type: T.vec3f },
-    { name: 'strength', type: T.f32, default: 1 },
+    { name: 'sample', type: BuiltinTypes.vec3f },
+    { name: 'strength', type: BuiltinTypes.f32, default: 1 },
   ],
-  outputs: () => [{ name: 'normal', type: T.vec3f }],
+  outputs: () => [{ name: 'normal', type: BuiltinTypes.vec3f }],
   expand: (context) => {
     const n = vertexNormal(context);
     if (!context.feature('hasAttribute.tangent')) {
@@ -147,7 +150,7 @@ export const normalMapping: MacroDefinition = {
 
     const tangent = context.add('input.attribute', {
       semantic: 'tangent',
-      type: T.vec4f,
+      type: BuiltinTypes.vec4f,
     })();
     const t = worldDirection(context, swizzle(tangent, 'xyz'));
     const b = call(context, 'std.mul', {

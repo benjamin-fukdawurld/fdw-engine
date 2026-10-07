@@ -21,7 +21,7 @@ engine-webgpu    ← WebGPU backend: WgslCodegen, wgslLayoutStrategy
 | Export | Kind | Description |
 | --- | --- | --- |
 | `ShaderType` | type | Logical shader type: scalar, vector, matrix, array, struct, texture, sampler |
-| `T` | const | Shortcuts: `T.f32`, `T.vec3f`, `T.mat4f`, `T.texture2d`, `T.sampler`… |
+| `BuiltinTypes` | const | Shortcuts: `BuiltinTypes.f32`, `BuiltinTypes.vec3f`, `BuiltinTypes.mat4f`, `BuiltinTypes.texture2d`, `BuiltinTypes.sampler`… |
 | `scalar()`, `vec()`, `mat()`, `arrayType()`, `structType()`, `texture()`, `sampler()` | function | Type constructors |
 | `PortType`, `generic()`, `elementOf()`, `vectorOf()` | type / function | Port types, with generics and constraints (`numeric`, `float`, `float-vector`, `integer`) |
 | `ConstantValue` | type | Untyped literal (`number`, `boolean`, `number[]`), typed by the port it is attached to |
@@ -68,10 +68,10 @@ import { GraphBuilder, T, std } from '@fdw/engine-shader';
 
 const g = new GraphBuilder('textured-phong');
 
-const uv = g.attribute('uv', T.vec2f);
+const uv = g.attribute('uv', BuiltinTypes.vec2f);
 const diffuse = g.texture('diffuseMap', { slot: 'material' });
 const smp = g.sampler('diffuseSampler', { slot: 'material' });
-const tint = g.uniform('tint', T.vec4f, { slot: 'material', default: [1, 1, 1, 1] });
+const tint = g.uniform('tint', BuiltinTypes.vec4f, { slot: 'material', default: [1, 1, 1, 1] });
 
 const texel = g.call(std.textureSample, { texture: diffuse, sampler: smp, uv });
 const color = g.call(std.mul, { a: texel, b: tint });
@@ -80,7 +80,7 @@ g.surface({
   shadingModel: 'phong',
   baseColor: color.swizzle('rgb'),
   alpha: color.swizzle('a'),
-  shininess: g.constant(T.f32, 32),
+  shininess: g.constant(BuiltinTypes.f32, 32),
 });
 
 const graph = g.build(); // MaterialGraphData, serializable with serializeGraph()
@@ -133,7 +133,7 @@ A macro is a node evaluated at compile time: it is replaced by the nodes it gene
 ```ts
 const g = new GraphBuilder('vertex-colored');
 const color = g.call(stdMacros.optionalAttribute, { fallback: [1, 1, 1] }, {
-  params: { semantic: 'color', type: T.vec3f },
+  params: { semantic: 'color', type: BuiltinTypes.vec3f },
 });
 g.surface({ baseColor: color });
 // A mesh with colors and a mesh without get two programs; a graph that does

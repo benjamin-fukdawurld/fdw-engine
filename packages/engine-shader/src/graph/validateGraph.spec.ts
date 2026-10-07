@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createStandardRegistry } from '../std';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import type {
   GraphEdge,
   GraphNode,
@@ -48,7 +48,7 @@ describe('validateGraph', () => {
           {
             id: 'color',
             type: 'input.attribute',
-            params: { semantic: 'color', type: T.vec4f },
+            params: { semantic: 'color', type: BuiltinTypes.vec4f },
           },
           surface,
         ],
@@ -58,7 +58,9 @@ describe('validateGraph', () => {
     );
     expect(result.valid).toBe(true);
     expect(result.order).toEqual(['color', 'out']);
-    expect(result.types.get('out')?.inputs['baseColor']).toEqual(T.vec3f);
+    expect(result.types.get('out')?.inputs['baseColor']).toEqual(
+      BuiltinTypes.vec3f
+    );
   });
 
   it('reports duplicate ids and unknown node types', () => {
@@ -122,7 +124,7 @@ describe('validateGraph', () => {
           {
             id: 'a',
             type: 'const.value',
-            params: { type: T.vec3f, value: [1, 1, 1] },
+            params: { type: BuiltinTypes.vec3f, value: [1, 1, 1] },
           },
           surface,
         ],
@@ -147,7 +149,7 @@ describe('validateGraph', () => {
           {
             id: 'a',
             type: 'const.value',
-            params: { type: T.vec3f, value: [1, 1, 1] },
+            params: { type: BuiltinTypes.vec3f, value: [1, 1, 1] },
           },
           surface,
         ],
@@ -186,7 +188,7 @@ describe('validateGraph', () => {
       {
         id: 'n',
         type: 'input.attribute',
-        params: { semantic: 'normal', type: T.vec3f },
+        params: { semantic: 'normal', type: BuiltinTypes.vec3f },
       },
       surface,
     ];
@@ -219,7 +221,7 @@ describe('validateGraph', () => {
     const base = {
       id: 'u1',
       type: 'input.uniform',
-      params: { name: 'tint', type: T.vec4f, default: [1, 1, 1, 1] },
+      params: { name: 'tint', type: BuiltinTypes.vec4f, default: [1, 1, 1, 1] },
     };
     expect(
       errorsOf(
@@ -238,7 +240,11 @@ describe('validateGraph', () => {
       errorsOf(
         graph([
           base,
-          { ...base, id: 'u2', params: { name: 'tint', type: T.vec3f } },
+          {
+            ...base,
+            id: 'u2',
+            params: { name: 'tint', type: BuiltinTypes.vec3f },
+          },
           surface,
         ])
       )
@@ -249,12 +255,12 @@ describe('validateGraph', () => {
           {
             id: 'a1',
             type: 'input.attribute',
-            params: { semantic: 'uv', type: T.vec2f },
+            params: { semantic: 'uv', type: BuiltinTypes.vec2f },
           },
           {
             id: 'a2',
             type: 'input.attribute',
-            params: { semantic: 'uv', type: T.vec3f },
+            params: { semantic: 'uv', type: BuiltinTypes.vec3f },
           },
           surface,
         ])

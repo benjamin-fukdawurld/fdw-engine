@@ -52,7 +52,7 @@ import { Camera, Material, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder, std, T } from '@fdw/engine-shader';
 
 const g = new GraphBuilder('tinted');
-g.surface({ baseColor: g.uniform('color', T.vec3f, { default: [1, 0.5, 0] }) });
+g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f, { default: [1, 0.5, 0] }) });
 const material = new Material({ graph: g.build() });
 
 const renderer = new Renderer(engine.backend);

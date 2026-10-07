@@ -1,5 +1,5 @@
 import { WebGpuEngine, WebGpuOffscreenSurface } from '@fdw/engine-webgpu';
-import { GraphBuilder, std, stdMacros, T } from '@fdw/engine-shader';
+import { GraphBuilder, std, stdMacros, BuiltinTypes } from '@fdw/engine-shader';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BaseLight,
@@ -47,7 +47,9 @@ const quad = () =>
 
 const colorGraph = () => {
   const g = new GraphBuilder('color');
-  const color = g.uniform('color', T.vec4f, { default: [1, 0, 0, 1] });
+  const color = g.uniform('color', BuiltinTypes.vec4f, {
+    default: [1, 0, 0, 1],
+  });
   g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
   return g.build();
 };
@@ -57,9 +59,9 @@ const texturedGraph = () => {
   const texel = g.call(std.textureSample, {
     texture: g.texture('map'),
     sampler: g.sampler('mapSampler'),
-    uv: g.attribute('uv', T.vec2f),
+    uv: g.attribute('uv', BuiltinTypes.vec2f),
   });
-  const tint = g.uniform('tint', T.vec3f, { default: [1, 1, 1] });
+  const tint = g.uniform('tint', BuiltinTypes.vec3f, { default: [1, 1, 1] });
   g.surface({
     baseColor: g.call(std.mul, { a: texel.swizzle('rgb'), b: tint }),
   });

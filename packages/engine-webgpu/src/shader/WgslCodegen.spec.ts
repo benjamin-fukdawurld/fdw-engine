@@ -6,7 +6,7 @@ import {
   IrInstruction,
   ShaderModuleIR,
   std,
-  T,
+  BuiltinTypes,
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { WgslCodegen, wgslType } from './WgslCodegen';
@@ -27,7 +27,7 @@ const emit = (
 
 const clipPosition = {
   name: 'clipPosition',
-  type: T.vec4f,
+  type: BuiltinTypes.vec4f,
   builtin: 'position' as const,
 };
 
@@ -43,7 +43,7 @@ const fragmentModule = (
     body: [
       {
         id: 1,
-        type: T.vec4f,
+        type: BuiltinTypes.vec4f,
         op: { kind: 'constant', value: [0, 0, 0, 1] },
         args: [],
       },
@@ -53,7 +53,7 @@ const fragmentModule = (
   const fragment: IrEntryPoint = {
     stage: 'fragment',
     inputs: [clipPosition],
-    outputs: [{ name: 'color', type: T.vec4f, location: 0 }],
+    outputs: [{ name: 'color', type: BuiltinTypes.vec4f, location: 0 }],
     body,
     results: { color: result },
   };
@@ -62,24 +62,24 @@ const fragmentModule = (
 
 describe('wgslType', () => {
   it.each([
-    [T.f32, 'f32'],
-    [T.vec3u, 'vec3<u32>'],
-    [T.mat3f, 'mat3x3<f32>'],
-    [T.texture2d, 'texture_2d<f32>'],
-    [T.textureCube, 'texture_cube<f32>'],
-    [T.depthTexture2d, 'texture_depth_2d'],
+    [BuiltinTypes.f32, 'f32'],
+    [BuiltinTypes.vec3u, 'vec3<u32>'],
+    [BuiltinTypes.mat3f, 'mat3x3<f32>'],
+    [BuiltinTypes.texture2d, 'texture_2d<f32>'],
+    [BuiltinTypes.textureCube, 'texture_cube<f32>'],
+    [BuiltinTypes.depthTexture2d, 'texture_depth_2d'],
     [
       { kind: 'texture', dimension: '2d', sampleType: 'uint' } as const,
       'texture_2d<u32>',
     ],
-    [T.comparisonSampler, 'sampler_comparison'],
+    [BuiltinTypes.comparisonSampler, 'sampler_comparison'],
   ])('%j → %s', (type, expected) => {
     expect(wgslType(type)).toBe(expected);
   });
 
   it('rejects types that are not supported yet', () => {
     expect(() =>
-      wgslType({ kind: 'array', element: T.f32, length: 4 })
+      wgslType({ kind: 'array', element: BuiltinTypes.f32, length: 4 })
     ).toThrow(/not supported/);
   });
 });
@@ -88,19 +88,39 @@ describe('WgslCodegen', () => {
   it('writes typed literals', () => {
     const code = emit(
       fragmentModule([
-        { id: 1, type: T.f32, op: { kind: 'constant', value: 1 }, args: [] },
-        { id: 2, type: T.f32, op: { kind: 'constant', value: 1e-7 }, args: [] },
-        { id: 3, type: T.i32, op: { kind: 'constant', value: -2 }, args: [] },
-        { id: 4, type: T.u32, op: { kind: 'constant', value: 3 }, args: [] },
+        {
+          id: 1,
+          type: BuiltinTypes.f32,
+          op: { kind: 'constant', value: 1 },
+          args: [],
+        },
+        {
+          id: 2,
+          type: BuiltinTypes.f32,
+          op: { kind: 'constant', value: 1e-7 },
+          args: [],
+        },
+        {
+          id: 3,
+          type: BuiltinTypes.i32,
+          op: { kind: 'constant', value: -2 },
+          args: [],
+        },
+        {
+          id: 4,
+          type: BuiltinTypes.u32,
+          op: { kind: 'constant', value: 3 },
+          args: [],
+        },
         {
           id: 5,
-          type: T.bool,
+          type: BuiltinTypes.bool,
           op: { kind: 'constant', value: true },
           args: [],
         },
         {
           id: 6,
-          type: T.vec4f,
+          type: BuiltinTypes.vec4f,
           op: { kind: 'constant', value: [1, 0.5, 0, 1] },
           args: [],
         },
@@ -125,7 +145,11 @@ describe('WgslCodegen', () => {
           bindings: [
             {
               binding: 0,
-              resource: { kind: 'texture', name: 'map', type: T.texture2d },
+              resource: {
+                kind: 'texture',
+                name: 'map',
+                type: BuiltinTypes.texture2d,
+              },
             },
             {
               binding: 1,
@@ -143,25 +167,25 @@ describe('WgslCodegen', () => {
       fragmentModule([
         {
           id: 1,
-          type: T.texture2d,
+          type: BuiltinTypes.texture2d,
           op: { kind: 'load-resource', binding: 'map' },
           args: [],
         },
         {
           id: 2,
-          type: T.sampler,
+          type: BuiltinTypes.sampler,
           op: { kind: 'load-resource', binding: 'mapSampler' },
           args: [],
         },
         {
           id: 3,
-          type: T.vec2f,
+          type: BuiltinTypes.vec2f,
           op: { kind: 'constant', value: [0.5, 0.5] },
           args: [],
         },
         {
           id: 4,
-          type: T.vec4f,
+          type: BuiltinTypes.vec4f,
           op: { kind: 'sample' },
           args: [1, 2, 3],
           name: 'texel',
@@ -181,23 +205,28 @@ describe('WgslCodegen', () => {
       fragmentModule([
         {
           id: 1,
-          type: T.bool,
+          type: BuiltinTypes.bool,
           op: { kind: 'load-builtin', builtin: 'front-facing' },
           args: [],
         },
         {
           id: 2,
-          type: T.vec4f,
+          type: BuiltinTypes.vec4f,
           op: { kind: 'load-builtin', builtin: 'frag-coord' },
           args: [],
         },
         {
           id: 3,
-          type: T.vec4f,
+          type: BuiltinTypes.vec4f,
           op: { kind: 'constant', value: [0, 0, 0, 0] },
           args: [],
         },
-        { id: 4, type: T.vec4f, op: { kind: 'select' }, args: [3, 2, 1] },
+        {
+          id: 4,
+          type: BuiltinTypes.vec4f,
+          op: { kind: 'select' },
+          args: [3, 2, 1],
+        },
       ])
     );
     expect(code).toContain(
@@ -211,14 +240,14 @@ describe('WgslCodegen', () => {
     const module = fragmentModule([
       {
         id: 1,
-        type: T.vec4f,
+        type: BuiltinTypes.vec4f,
         op: { kind: 'constant', value: [1, 1, 1, 1] },
         args: [],
       },
     ]);
     const varying = {
       name: 'v_id',
-      type: T.u32,
+      type: BuiltinTypes.u32,
       location: 0,
       interpolation: 'flat' as const,
     };
@@ -232,7 +261,7 @@ describe('WgslCodegen', () => {
             ...vertex.body,
             {
               id: 2,
-              type: T.u32,
+              type: BuiltinTypes.u32,
               op: { kind: 'constant', value: 7 },
               args: [],
             },
@@ -249,7 +278,7 @@ describe('WgslCodegen', () => {
 
   it('generates a complete program', () => {
     const g = new GraphBuilder('textured-unlit');
-    const uv = g.attribute('uv', T.vec2f);
+    const uv = g.attribute('uv', BuiltinTypes.vec2f);
     const texel = g.call(std.textureSample, {
       texture: g.texture('diffuseMap'),
       sampler: g.sampler('diffuseSampler'),
@@ -257,7 +286,7 @@ describe('WgslCodegen', () => {
     });
     const color = g.call(
       std.mul,
-      { a: texel, b: g.uniform('tint', T.vec4f) },
+      { a: texel, b: g.uniform('tint', BuiltinTypes.vec4f) },
       { label: 'color' }
     );
     g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });

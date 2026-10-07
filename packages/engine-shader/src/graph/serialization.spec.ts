@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { createStandardRegistry, std } from '../std';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { GraphBuilder } from './GraphBuilder';
 import { parseGraph, serializeGraph } from './serialization';
 import { validateGraph } from './validateGraph';
 
 const sampleGraph = () => {
   const g = new GraphBuilder('sample');
-  const color = g.uniform('color', T.vec4f, { default: [1, 0, 0, 1] });
+  const color = g.uniform('color', BuiltinTypes.vec4f, {
+    default: [1, 0, 0, 1],
+  });
   g.surface({ baseColor: g.call(std.saturate, { x: color }).swizzle('rgb') });
   return g.build();
 };

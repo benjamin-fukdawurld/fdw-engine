@@ -8,7 +8,7 @@ import {
   RenderItem,
   Transform,
 } from '@fdw/engine-core';
-import { GraphBuilder, std, T } from '@fdw/engine-shader';
+import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import Layout from '../../components/Layout';
 import { axisAngle, createCube } from '../../utils3d/geometry';
 
@@ -22,9 +22,9 @@ function texturedGraph() {
   const texel = g.call(std.textureSample, {
     texture: g.texture('map'),
     sampler: g.sampler('mapSampler'),
-    uv: g.attribute('uv', T.vec2f),
+    uv: g.attribute('uv', BuiltinTypes.vec2f),
   });
-  const tint = g.uniform('tint', T.vec3f, { default: [1, 1, 1] });
+  const tint = g.uniform('tint', BuiltinTypes.vec3f, { default: [1, 1, 1] });
   g.surface({
     baseColor: g.call(std.mul, { a: texel.swizzle('rgb'), b: tint }),
   });
@@ -43,8 +43,8 @@ function pulsingGraph() {
   });
   g.surface({
     baseColor: g.call(std.mix, {
-      a: g.uniform('from', T.vec3f, { default: [1, 0.3, 0.1] }),
-      b: g.uniform('to', T.vec3f, { default: [0.1, 0.4, 1] }),
+      a: g.uniform('from', BuiltinTypes.vec3f, { default: [1, 0.3, 0.1] }),
+      b: g.uniform('to', BuiltinTypes.vec3f, { default: [0.1, 0.4, 1] }),
       t,
     }),
   });
@@ -54,7 +54,9 @@ function pulsingGraph() {
 // A flat color with an alpha, drawn with blending.
 function glassGraph() {
   const g = new GraphBuilder('glass');
-  const color = g.uniform('color', T.vec4f, { default: [0.6, 1, 0.8, 0.4] });
+  const color = g.uniform('color', BuiltinTypes.vec4f, {
+    default: [0.6, 1, 0.8, 0.4],
+  });
   g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
   return g.build();
 }

@@ -3,7 +3,7 @@ import { GraphError } from '../graph/Diagnostic';
 import { GraphBuilder } from '../graph/GraphBuilder';
 import type { MaterialGraphData } from '../graph/MaterialGraphData';
 import { std } from '../std';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { CompiledProgram, compile } from './compile';
 import type { IrEntryPoint, IrOp } from './ir';
 
@@ -19,19 +19,19 @@ const texturedUnlit = (
   options: { tintDefault?: number[]; extra?: boolean } = {}
 ) => {
   const g = new GraphBuilder('textured-unlit');
-  const uv = g.attribute('uv', T.vec2f);
+  const uv = g.attribute('uv', BuiltinTypes.vec2f);
   const texel = g.call(std.textureSample, {
     texture: g.texture('diffuseMap'),
     sampler: g.sampler('diffuseSampler'),
     uv,
   });
-  const tint = g.uniform('tint', T.vec4f, {
+  const tint = g.uniform('tint', BuiltinTypes.vec4f, {
     default: options.tintDefault ?? [1, 1, 1, 1],
   });
   const color = g.call(std.mul, { a: texel, b: tint }, { label: 'color' });
   if (options.extra) {
     // Dead code: not connected to the surface.
-    g.call(std.add, { a: g.uniform('unused', T.f32), b: 1 });
+    g.call(std.add, { a: g.uniform('unused', BuiltinTypes.f32), b: 1 });
   }
   g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
   return g.build();
@@ -59,11 +59,11 @@ describe('compile', () => {
       expect(program.vertexInputs).toEqual([
         {
           semantic: 'position',
-          type: T.vec3f,
+          type: BuiltinTypes.vec3f,
           location: 0,
           name: 'a_position',
         },
-        { semantic: 'uv', type: T.vec2f, location: 1, name: 'a_uv' },
+        { semantic: 'uv', type: BuiltinTypes.vec2f, location: 1, name: 'a_uv' },
       ]);
       expect(ops(vertex, 'load-resource').map((i) => i.op)).toEqual([
         { kind: 'load-resource', binding: 'objectUniforms', member: 'world' },
@@ -91,7 +91,7 @@ describe('compile', () => {
 
     it('adds the position offset only when it is connected', () => {
       const g = new GraphBuilder('offset');
-      g.surface({ positionOffset: g.uniform('offset', T.vec3f) });
+      g.surface({ positionOffset: g.uniform('offset', BuiltinTypes.vec3f) });
       expect(ops(stage(compile(g.build()), 'vertex'), 'binary')).toHaveLength(
         3
       );
@@ -104,7 +104,7 @@ describe('compile', () => {
       g.node('output.vertex', {
         inputs: {
           clipPosition: g.call(std.extend, {
-            xyz: g.attribute('position', T.vec3f),
+            xyz: g.attribute('position', BuiltinTypes.vec3f),
           }),
         },
       });
@@ -148,7 +148,10 @@ describe('compile', () => {
 
     it('folds constant expressions', () => {
       const g = new GraphBuilder('folding');
-      const half = g.call(std.mul, { a: g.constant(T.f32, 0.25), b: 2 });
+      const half = g.call(std.mul, {
+        a: g.constant(BuiltinTypes.f32, 0.25),
+        b: 2,
+      });
       const color = g.call(std.mix, { a: [0, 0, 0], b: [1, 1, 1], t: half });
       g.surface({
         baseColor: g.call(std.normalize, {
@@ -172,7 +175,9 @@ describe('compile', () => {
 
     it('does not fold divisions by zero', () => {
       const g = new GraphBuilder('division');
-      g.surface({ alpha: g.call(std.div, { a: g.constant(T.f32, 1), b: 0 }) });
+      g.surface({
+        alpha: g.call(std.div, { a: g.constant(BuiltinTypes.f32, 1), b: 0 }),
+      });
       expect(ops(stage(compile(g.build()), 'fragment'), 'binary')).toHaveLength(
         1
       );
@@ -180,8 +185,14 @@ describe('compile', () => {
 
     it('merges identical nodes', () => {
       const g = new GraphBuilder('cse');
-      const a = g.call(std.mul, { a: g.uniform('tint', T.vec3f), b: 2 });
-      const b = g.call(std.mul, { a: g.uniform('tint', T.vec3f), b: 2 });
+      const a = g.call(std.mul, {
+        a: g.uniform('tint', BuiltinTypes.vec3f),
+        b: 2,
+      });
+      const b = g.call(std.mul, {
+        a: g.uniform('tint', BuiltinTypes.vec3f),
+        b: 2,
+      });
       g.surface({ baseColor: g.call(std.add, { a, b }) });
       const fragment = stage(compile(g.build()), 'fragment');
       expect(ops(fragment, 'load-resource')).toHaveLength(1);
@@ -205,7 +216,7 @@ describe('compile', () => {
 
     it('computes per-vertex values in the vertex stage', () => {
       const g = new GraphBuilder('per-vertex');
-      const normal = g.attribute('normal', T.vec3f);
+      const normal = g.attribute('normal', BuiltinTypes.vec3f);
       g.surface({
         baseColor: g.call(std.normalize, { x: normal }, { label: 'n' }),
       });
@@ -223,7 +234,7 @@ describe('compile', () => {
 
     it('recomputes uniform values in the fragment stage instead of interpolating them', () => {
       const g = new GraphBuilder('uniform');
-      g.surface({ baseColor: g.uniform('color', T.vec3f) });
+      g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f) });
       const program = compile(g.build());
       expect(stage(program, 'vertex').outputs).toHaveLength(1);
       expect(ops(stage(program, 'fragment'), 'load-resource')).toHaveLength(1);
@@ -231,7 +242,7 @@ describe('compile', () => {
 
     it('uses flat interpolation for integers', () => {
       const g = new GraphBuilder('flat');
-      const id = g.attribute('materialId', T.u32);
+      const id = g.attribute('materialId', BuiltinTypes.u32);
       // select() depends on a fragment-only builtin: the u32 has to cross.
       const chosen = g.call(std.select, {
         ifFalse: id,
@@ -242,14 +253,14 @@ describe('compile', () => {
         alpha: g.call(
           std.convert,
           { value: chosen },
-          { params: { to: T.f32 } }
+          { params: { to: BuiltinTypes.f32 } }
         ),
       });
       const vertex = stage(compile(g.build()), 'vertex');
       expect(vertex.outputs[1]).toEqual(
         expect.objectContaining({
           name: 'v_materialId',
-          type: T.u32,
+          type: BuiltinTypes.u32,
           interpolation: 'flat',
         })
       );
@@ -257,16 +268,16 @@ describe('compile', () => {
 
     it('computes values that cannot be interpolated in the fragment stage', () => {
       const g = new GraphBuilder('bool');
-      const level = g.attribute('level', T.u32);
+      const level = g.attribute('level', BuiltinTypes.u32);
       const enabled = g.call(
         std.convert,
         { value: level },
-        { params: { to: T.bool } }
+        { params: { to: BuiltinTypes.bool } }
       );
       const texel = g.call(std.textureSample, {
         texture: g.texture('map'),
         sampler: g.sampler('mapSampler'),
-        uv: g.attribute('uv', T.vec2f),
+        uv: g.attribute('uv', BuiltinTypes.vec2f),
       });
       // The select() is per fragment (texture sample) and needs a bool
       // computed from a vertex attribute: the u32 crosses, not the bool.
@@ -280,10 +291,10 @@ describe('compile', () => {
       const program = compile(g.build());
       expect(
         stage(program, 'vertex').outputs.map((output) => output.type)
-      ).toEqual([T.vec4f, T.u32, T.vec2f]);
+      ).toEqual([BuiltinTypes.vec4f, BuiltinTypes.u32, BuiltinTypes.vec2f]);
       expect(
         ops(stage(program, 'fragment'), 'convert').map((i) => i.type)
-      ).toEqual([T.bool]);
+      ).toEqual([BuiltinTypes.bool]);
     });
 
     it('enforces the varying limit', () => {
@@ -291,12 +302,12 @@ describe('compile', () => {
       const texel = g.call(std.textureSample, {
         texture: g.texture('map'),
         sampler: g.sampler('mapSampler'),
-        uv: g.attribute('uv', T.vec2f),
+        uv: g.attribute('uv', BuiltinTypes.vec2f),
       });
       g.surface({
         baseColor: g.call(std.mul, {
           a: texel.swizzle('rgb'),
-          b: g.attribute('color', T.vec3f),
+          b: g.attribute('color', BuiltinTypes.vec3f),
         }),
       });
       expect(
@@ -310,8 +321,8 @@ describe('compile', () => {
       const g = new GraphBuilder('slots');
       g.surface({
         baseColor: g.call(std.add, {
-          a: g.uniform('a', T.vec3f, { slot: 'zone' }),
-          b: g.uniform('b', T.vec3f, { slot: 'atmosphere' }),
+          a: g.uniform('a', BuiltinTypes.vec3f, { slot: 'zone' }),
+          b: g.uniform('b', BuiltinTypes.vec3f, { slot: 'atmosphere' }),
         }),
       });
       const layout = compile(g.build()).layout;
@@ -332,7 +343,7 @@ describe('compile', () => {
 
     it('sorts the material resources by kind and name', () => {
       const g = new GraphBuilder('sorted');
-      const uv = g.attribute('uv', T.vec2f);
+      const uv = g.attribute('uv', BuiltinTypes.vec2f);
       const sample = (name: string) =>
         g.call(std.textureSample, {
           texture: g.texture(`${name}Map`),
@@ -342,8 +353,8 @@ describe('compile', () => {
       const color = g.call(std.mul, {
         a: g.call(std.add, { a: sample('specular'), b: sample('diffuse') }),
         b: g.call(std.add, {
-          a: g.uniform('zTint', T.vec4f),
-          b: g.uniform('aTint', T.vec4f),
+          a: g.uniform('zTint', BuiltinTypes.vec4f),
+          b: g.uniform('aTint', BuiltinTypes.vec4f),
         }),
       });
       g.surface({ baseColor: color.swizzle('rgb') });
@@ -358,8 +369,8 @@ describe('compile', () => {
       expect(material.bindings[0]).toEqual(
         expect.objectContaining({
           members: [
-            { name: 'aTint', type: T.vec4f },
-            { name: 'zTint', type: T.vec4f },
+            { name: 'aTint', type: BuiltinTypes.vec4f },
+            { name: 'zTint', type: BuiltinTypes.vec4f },
           ],
         })
       );
@@ -370,22 +381,23 @@ describe('compile', () => {
     it.each([
       [
         'storage buffers',
-        (g: GraphBuilder) => g.storage('lights', T.vec4f),
+        (g: GraphBuilder) => g.storage('lights', BuiltinTypes.vec4f),
         /storage buffers are not supported yet/,
       ],
       [
         'the engine slots',
-        (g: GraphBuilder) => g.uniform('exposure', T.f32, { slot: 'frame' }),
+        (g: GraphBuilder) =>
+          g.uniform('exposure', BuiltinTypes.f32, { slot: 'frame' }),
         /slot "frame" is reserved/,
       ],
       [
         'bool uniforms',
-        (g: GraphBuilder) => g.uniform('enabled', T.bool),
+        (g: GraphBuilder) => g.uniform('enabled', BuiltinTypes.bool),
         /bool is not allowed in uniform buffers/,
       ],
       [
         'reserved names',
-        (g: GraphBuilder) => g.uniform('materialUniforms', T.f32),
+        (g: GraphBuilder) => g.uniform('materialUniforms', BuiltinTypes.f32),
         /reserved for uniform blocks/,
       ],
     ])('rejects %s', (_, declare, message) => {

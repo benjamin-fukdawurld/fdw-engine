@@ -2,7 +2,7 @@ import {
   isFloatScalarKind,
   ScalarKind,
   ShaderType,
-  T,
+  BuiltinTypes,
   vec,
   VectorSize,
 } from './ShaderType';
@@ -15,10 +15,10 @@ export type ConstantValue = number | boolean | readonly number[];
 // generic input): numbers are f32, arrays of 2 to 4 numbers are float vectors.
 export function literalType(value: ConstantValue): ShaderType | undefined {
   if (typeof value === 'boolean') {
-    return T.bool;
+    return BuiltinTypes.bool;
   }
   if (typeof value === 'number') {
-    return T.f32;
+    return BuiltinTypes.f32;
   }
   if (value.length >= 2 && value.length <= 4) {
     return vec(value.length as VectorSize, 'f32');

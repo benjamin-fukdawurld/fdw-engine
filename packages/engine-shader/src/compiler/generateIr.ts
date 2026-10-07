@@ -4,7 +4,7 @@ import { isFunctionDefinition, PortSchema } from '../graph/NodeDefinition';
 import { swizzleType } from '../graph/swizzle';
 import type { ResolvedNode } from '../graph/validateGraph';
 import type { ConstantValue } from '../types/ConstantValue';
-import { ShaderType, T } from '../types/ShaderType';
+import { ShaderType, BuiltinTypes } from '../types/ShaderType';
 import type {
   IrBuiltin,
   IrEntryPoint,
@@ -165,7 +165,7 @@ function translateNode(
       return;
     }
     case 'const.pi':
-      output('value', T.f32, { kind: 'constant', value: Math.PI });
+      output('value', BuiltinTypes.f32, { kind: 'constant', value: Math.PI });
       return;
     case 'input.attribute':
       // Attributes are bound to their stage input by the caller.
@@ -254,7 +254,7 @@ function translateNode(
 
 const clipPosition: IrStageVariable = {
   name: 'clipPosition',
-  type: T.vec4f,
+  type: BuiltinTypes.vec4f,
   builtin: 'position',
 };
 
@@ -336,7 +336,7 @@ export function generateIr({
     {
       stage: 'fragment',
       inputs: [clipPosition, ...varyings],
-      outputs: [{ name: 'color', type: T.vec4f, location: 0 }],
+      outputs: [{ name: 'color', type: BuiltinTypes.vec4f, location: 0 }],
       body: fragment.body,
       results: fragmentResults,
     },

@@ -4,7 +4,7 @@ import { GraphBuilder } from '../graph/GraphBuilder';
 import type { MaterialGraphData } from '../graph/MaterialGraphData';
 import type { NodeDefinition } from '../graph/NodeDefinition';
 import { createStandardRegistry, std, stdMacros } from '../std';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { CompiledProgram, compile, CompileOptions } from './compile';
 import type { IrEntryPoint, IrOp } from './ir';
 
@@ -36,13 +36,13 @@ describe('macro.staticSwitch', () => {
     const textured = g.call(std.textureSample, {
       texture: g.texture('map'),
       sampler: g.sampler('mapSampler'),
-      uv: g.attribute('uv', T.vec2f),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
     });
     const chosen = g.call(
       stdMacros.staticSwitch,
       {
         ifTrue: textured.swizzle('rgb'),
-        ifFalse: g.uniform('color', T.vec3f),
+        ifFalse: g.uniform('color', BuiltinTypes.vec3f),
       },
       { params: { feature: 'useTexture' } }
     );
@@ -75,7 +75,7 @@ describe('macro.optionalAttribute', () => {
       stdMacros.optionalAttribute,
       { fallback: [1, 1, 1] },
       {
-        params: { semantic: 'color', type: T.vec3f },
+        params: { semantic: 'color', type: BuiltinTypes.vec3f },
       }
     );
     g.surface({ baseColor: color });
@@ -100,7 +100,7 @@ describe('macro.optionalAttribute', () => {
 
   it('does not create variants for attributes the graph does not read', () => {
     const g = new GraphBuilder('flat');
-    g.surface({ baseColor: g.uniform('color', T.vec3f) });
+    g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f) });
     const graph = g.build();
     const colored = compile(graph, { vertexAttributes: withColor });
     const plain = compile(graph, { vertexAttributes: withoutColor });
@@ -118,10 +118,10 @@ describe('macro.repeat', () => {
       category: 'function',
       implementation: { kind: 'intrinsic', op: 'add' },
       inputs: () => [
-        { name: 'value', type: T.f32 },
-        { name: 'index', type: T.f32 },
+        { name: 'value', type: BuiltinTypes.f32 },
+        { name: 'index', type: BuiltinTypes.f32 },
       ],
-      outputs: () => [{ name: 'result', type: T.f32 }],
+      outputs: () => [{ name: 'result', type: BuiltinTypes.f32 }],
     } as NodeDefinition);
     return r;
   };
@@ -131,7 +131,7 @@ describe('macro.repeat', () => {
     g.surface({
       alpha: g.call(
         stdMacros.repeat,
-        { initial: g.uniform('start', T.f32) },
+        { initial: g.uniform('start', BuiltinTypes.f32) },
         { params: { body: 'test.addIndex', count } }
       ),
     });
@@ -164,8 +164,8 @@ describe('macro.repeat', () => {
     r.register({
       id: 'test.unimplemented',
       category: 'function',
-      inputs: () => [{ name: 'value', type: T.f32 }],
-      outputs: () => [{ name: 'result', type: T.f32 }],
+      inputs: () => [{ name: 'value', type: BuiltinTypes.f32 }],
+      outputs: () => [{ name: 'result', type: BuiltinTypes.f32 }],
     });
     const g = new GraphBuilder('unimplemented', r);
     g.surface({ alpha: g.call('test.unimplemented', { value: 1 }) });
@@ -181,7 +181,7 @@ describe('macro.normalMapping', () => {
     const sample = g.call(std.textureSample, {
       texture: g.texture('normalMap'),
       sampler: g.sampler('normalSampler'),
-      uv: g.attribute('uv', T.vec2f),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
     });
     const normal = g.call(stdMacros.normalMapping, {
       sample: sample.swizzle('rgb'),
@@ -223,8 +223,8 @@ describe('lighting.phong', () => {
     const g = new GraphBuilder('phong');
     g.surface({
       shadingModel: 'phong',
-      baseColor: g.uniform('color', T.vec3f),
-      shininess: g.uniform('shininess', T.f32),
+      baseColor: g.uniform('color', BuiltinTypes.vec3f),
+      shininess: g.uniform('shininess', BuiltinTypes.f32),
     });
     return g.build();
   };
@@ -259,9 +259,9 @@ describe('lighting.phong', () => {
     expect(ops(vertex, 'intrinsic')).toEqual([]);
     // Interpolated: the world normal and the world position.
     expect(vertex.outputs.map((output) => output.type)).toEqual([
-      T.vec4f,
-      T.vec3f,
-      T.vec4f,
+      BuiltinTypes.vec4f,
+      BuiltinTypes.vec3f,
+      BuiltinTypes.vec4f,
     ]);
     expect(
       ops(stage(program, 'fragment'), 'intrinsic').map(
@@ -281,7 +281,10 @@ describe('lighting.phong', () => {
 
   it('uses the normal of the surface when it is connected', () => {
     const g = new GraphBuilder('custom-normal');
-    g.surface({ shadingModel: 'phong', normal: g.uniform('up', T.vec3f) });
+    g.surface({
+      shadingModel: 'phong',
+      normal: g.uniform('up', BuiltinTypes.vec3f),
+    });
     const program = compile(g.build());
     expect(program.vertexInputs.map((input) => input.semantic)).toEqual([
       'position',

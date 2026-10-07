@@ -1,4 +1,4 @@
-import { T } from '@fdw/engine-shader';
+import { BuiltinTypes } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import type { MeshDescription } from '../mesh';
 import {
@@ -30,7 +30,7 @@ const mesh: MeshDescription = {
   vertexCount: 3,
 };
 
-const input = (semantic: string, type = T.vec3f, location = 0) => ({
+const input = (semantic: string, type = BuiltinTypes.vec3f, location = 0) => ({
   semantic,
   type,
   location,
@@ -39,26 +39,35 @@ const input = (semantic: string, type = T.vec3f, location = 0) => ({
 
 describe('vertex formats', () => {
   it.each([
-    ['float32x3', T.vec3f],
-    ['unorm8x4', T.vec4f],
-    ['uint32', T.u32],
-    ['sint16x2', T.vec2i],
+    ['float32x3', BuiltinTypes.vec3f],
+    ['unorm8x4', BuiltinTypes.vec4f],
+    ['uint32', BuiltinTypes.u32],
+    ['sint16x2', BuiltinTypes.vec2i],
   ] as const)('%s is read as %j', (format, type) => {
     expect(vertexFormatShaderType(format)).toEqual(type);
   });
 
   it('accepts attributes with more components than the input', () => {
-    expect(isVertexFormatCompatible('float32x4', T.vec3f)).toBe(true);
-    expect(isVertexFormatCompatible('float32x2', T.vec3f)).toBe(false);
-    expect(isVertexFormatCompatible('uint32', T.f32)).toBe(false);
-    expect(isVertexFormatCompatible('float32x4', T.mat4f)).toBe(false);
+    expect(isVertexFormatCompatible('float32x4', BuiltinTypes.vec3f)).toBe(
+      true
+    );
+    expect(isVertexFormatCompatible('float32x2', BuiltinTypes.vec3f)).toBe(
+      false
+    );
+    expect(isVertexFormatCompatible('uint32', BuiltinTypes.f32)).toBe(false);
+    expect(isVertexFormatCompatible('float32x4', BuiltinTypes.mat4f)).toBe(
+      false
+    );
   });
 });
 
 describe('matchVertexLayout', () => {
   it('keeps only the attributes and buffers read by the program', () => {
     expect(
-      matchVertexLayout([input('position'), input('uv', T.vec2f, 1)], mesh)
+      matchVertexLayout(
+        [input('position'), input('uv', BuiltinTypes.vec2f, 1)],
+        mesh
+      )
     ).toEqual([
       {
         buffer: 0,
@@ -87,9 +96,9 @@ describe('matchVertexLayout', () => {
     expect(() => matchVertexLayout([input('tangent')], mesh)).toThrow(
       'The mesh has no "tangent" attribute'
     );
-    expect(() => matchVertexLayout([input('uv', T.vec3f)], mesh)).toThrow(
-      /float32x2, which cannot feed a vec3<f32>/
-    );
+    expect(() =>
+      matchVertexLayout([input('uv', BuiltinTypes.vec3f)], mesh)
+    ).toThrow(/float32x2, which cannot feed a vec3<f32>/);
   });
 
   it('lists the semantics of a mesh', () => {

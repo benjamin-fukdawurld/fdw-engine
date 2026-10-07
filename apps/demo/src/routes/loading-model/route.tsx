@@ -8,7 +8,7 @@ import {
   Renderer,
   Transform,
 } from '@fdw/engine-core';
-import { GraphBuilder, std, T } from '@fdw/engine-shader';
+import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import Layout from '../../components/Layout';
 import { ObjImporter } from '../../utils3d';
 import { axisAngle, meshFromObj } from '../../utils3d/geometry';
@@ -21,7 +21,7 @@ export const Route = createFileRoute('/loading-model')({
 // the exponent divided by 255.
 function texturedPhong() {
   const g = new GraphBuilder('textured-phong');
-  const uv = g.attribute('uv', T.vec2f);
+  const uv = g.attribute('uv', BuiltinTypes.vec2f);
   const sample = (name: string) =>
     g.call(std.textureSample, {
       texture: g.texture(`${name}Map`),

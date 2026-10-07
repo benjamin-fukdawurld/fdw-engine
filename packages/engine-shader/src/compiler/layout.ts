@@ -1,4 +1,4 @@
-import { ShaderType, T, TextureType } from '../types/ShaderType';
+import { ShaderType, BuiltinTypes, TextureType } from '../types/ShaderType';
 
 // Logical layout of the resources of a program: which resources, of which
 // type, grouped by update frequency. Memory offsets and binding numbers are
@@ -51,25 +51,25 @@ export const engineUniformBlocks: Readonly<
   >
 > = {
   frame: [
-    { name: 'viewProjection', type: T.mat4f },
-    { name: 'view', type: T.mat4f },
-    { name: 'projection', type: T.mat4f },
-    { name: 'cameraPosition', type: T.vec3f },
-    { name: 'time', type: T.f32 },
+    { name: 'viewProjection', type: BuiltinTypes.mat4f },
+    { name: 'view', type: BuiltinTypes.mat4f },
+    { name: 'projection', type: BuiltinTypes.mat4f },
+    { name: 'cameraPosition', type: BuiltinTypes.vec3f },
+    { name: 'time', type: BuiltinTypes.f32 },
     // Main light. w = 1: point light at xyz; w = 0: directional light, xyz
     // being the direction towards the light. The direction from a point P to
     // the light is normalize(xyz - P × w) in both cases.
-    { name: 'lightPosition', type: T.vec4f },
-    { name: 'lightAmbient', type: T.vec3f },
-    { name: 'lightDiffuse', type: T.vec3f },
-    { name: 'lightSpecular', type: T.vec3f },
+    { name: 'lightPosition', type: BuiltinTypes.vec4f },
+    { name: 'lightAmbient', type: BuiltinTypes.vec3f },
+    { name: 'lightDiffuse', type: BuiltinTypes.vec3f },
+    { name: 'lightSpecular', type: BuiltinTypes.vec3f },
     // Constant, linear and quadratic attenuation; (1, 0, 0) for no
     // attenuation.
-    { name: 'lightAttenuation', type: T.vec3f },
+    { name: 'lightAttenuation', type: BuiltinTypes.vec3f },
   ],
   object: [
-    { name: 'world', type: T.mat4f },
-    { name: 'normalMatrix', type: T.mat3f },
+    { name: 'world', type: BuiltinTypes.mat4f },
+    { name: 'normalMatrix', type: BuiltinTypes.mat3f },
   ],
 };
 

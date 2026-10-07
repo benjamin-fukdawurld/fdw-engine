@@ -1,6 +1,6 @@
 import {
   ShaderType,
-  T,
+  BuiltinTypes,
   texture,
   TextureDimension,
   TextureDimensionNames,
@@ -93,16 +93,18 @@ export const samplerInput: NodeDefinition = {
   outputs: (params) => [
     {
       name: 'value',
-      type: params['comparison'] ? T.comparisonSampler : T.sampler,
+      type: params['comparison']
+        ? BuiltinTypes.comparisonSampler
+        : BuiltinTypes.sampler,
     },
   ],
 };
 
 const builtins: Record<string, { type: ShaderType; stage: ShaderStage }> = {
-  'vertex-index': { type: T.u32, stage: 'vertex' },
-  'instance-index': { type: T.u32, stage: 'vertex' },
-  'frag-coord': { type: T.vec4f, stage: 'fragment' },
-  'front-facing': { type: T.bool, stage: 'fragment' },
+  'vertex-index': { type: BuiltinTypes.u32, stage: 'vertex' },
+  'instance-index': { type: BuiltinTypes.u32, stage: 'vertex' },
+  'frag-coord': { type: BuiltinTypes.vec4f, stage: 'fragment' },
+  'front-facing': { type: BuiltinTypes.bool, stage: 'fragment' },
 };
 
 export const builtin: NodeDefinition = {
@@ -121,18 +123,18 @@ export const builtin: NodeDefinition = {
 // Values provided by the engine in the 'frame' and 'object' slots, shared by
 // every material. Materials never declare them as uniforms.
 const engineValues: Record<string, ShaderType> = {
-  'camera.view': T.mat4f,
-  'camera.projection': T.mat4f,
-  'camera.viewProjection': T.mat4f,
-  'camera.position': T.vec3f,
-  'object.world': T.mat4f,
-  'object.normalMatrix': T.mat3f,
-  time: T.f32,
-  'light.position': T.vec4f,
-  'light.ambient': T.vec3f,
-  'light.diffuse': T.vec3f,
-  'light.specular': T.vec3f,
-  'light.attenuation': T.vec3f,
+  'camera.view': BuiltinTypes.mat4f,
+  'camera.projection': BuiltinTypes.mat4f,
+  'camera.viewProjection': BuiltinTypes.mat4f,
+  'camera.position': BuiltinTypes.vec3f,
+  'object.world': BuiltinTypes.mat4f,
+  'object.normalMatrix': BuiltinTypes.mat3f,
+  time: BuiltinTypes.f32,
+  'light.position': BuiltinTypes.vec4f,
+  'light.ambient': BuiltinTypes.vec3f,
+  'light.diffuse': BuiltinTypes.vec3f,
+  'light.specular': BuiltinTypes.vec3f,
+  'light.attenuation': BuiltinTypes.vec3f,
 };
 
 export const engine: NodeDefinition = {

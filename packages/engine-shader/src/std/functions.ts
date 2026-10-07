@@ -1,5 +1,5 @@
 import { elementOf, generic, PortType } from '../types/PortType';
-import { ShaderType, T } from '../types/ShaderType';
+import { ShaderType, BuiltinTypes } from '../types/ShaderType';
 import type {
   FunctionDefinition,
   IntrinsicOp,
@@ -110,8 +110,8 @@ export const normalize = intrinsic(
 export const cross = intrinsic(
   'cross',
   'cross',
-  [port('a', T.vec3f), port('b', T.vec3f)],
-  T.vec3f
+  [port('a', BuiltinTypes.vec3f), port('b', BuiltinTypes.vec3f)],
+  BuiltinTypes.vec3f
 );
 
 export const reflect = intrinsic(
@@ -146,7 +146,11 @@ export const smoothstep = intrinsic(
 export const select = intrinsic(
   'select',
   'select',
-  [port('ifFalse', any), port('ifTrue', any), port('condition', T.bool)],
+  [
+    port('ifFalse', any),
+    port('ifTrue', any),
+    port('condition', BuiltinTypes.bool),
+  ],
   any
 );
 
@@ -156,61 +160,65 @@ export const textureSample = intrinsic(
   'textureSample',
   'texture-sample',
   [
-    port('texture', T.texture2d),
-    port('sampler', T.sampler),
-    port('uv', T.vec2f),
+    port('texture', BuiltinTypes.texture2d),
+    port('sampler', BuiltinTypes.sampler),
+    port('uv', BuiltinTypes.vec2f),
   ],
-  T.vec4f,
+  BuiltinTypes.vec4f,
   'fragment'
 );
 
 export const vec2 = intrinsic(
   'vec2',
   'construct',
-  [port('x', T.f32, 0), port('y', T.f32, 0)],
-  T.vec2f
+  [port('x', BuiltinTypes.f32, 0), port('y', BuiltinTypes.f32, 0)],
+  BuiltinTypes.vec2f
 );
 
 export const vec3 = intrinsic(
   'vec3',
   'construct',
-  [port('x', T.f32, 0), port('y', T.f32, 0), port('z', T.f32, 0)],
-  T.vec3f
+  [
+    port('x', BuiltinTypes.f32, 0),
+    port('y', BuiltinTypes.f32, 0),
+    port('z', BuiltinTypes.f32, 0),
+  ],
+  BuiltinTypes.vec3f
 );
 
 export const vec4 = intrinsic(
   'vec4',
   'construct',
   [
-    port('x', T.f32, 0),
-    port('y', T.f32, 0),
-    port('z', T.f32, 0),
-    port('w', T.f32, 0),
+    port('x', BuiltinTypes.f32, 0),
+    port('y', BuiltinTypes.f32, 0),
+    port('z', BuiltinTypes.f32, 0),
+    port('w', BuiltinTypes.f32, 0),
   ],
-  T.vec4f
+  BuiltinTypes.vec4f
 );
 
 // vec4(xyz, w): typically a color with its alpha, or a position with w = 1.
 export const extend = intrinsic(
   'extend',
   'construct',
-  [port('xyz', T.vec3f), port('w', T.f32, 1)],
-  T.vec4f
+  [port('xyz', BuiltinTypes.vec3f), port('w', BuiltinTypes.f32, 1)],
+  BuiltinTypes.vec4f
 );
 
 // Matrix × vector products: transforming positions and directions.
 export const transform = intrinsic(
   'transform',
   'mul',
-  [port('matrix', T.mat4f), port('vector', T.vec4f)],
-  T.vec4f
+  [port('matrix', BuiltinTypes.mat4f), port('vector', BuiltinTypes.vec4f)],
+  BuiltinTypes.vec4f
 );
 
 export const transform3 = intrinsic(
   'transform3',
   'mul',
-  [port('matrix', T.mat3f), port('vector', T.vec3f)],
-  T.vec3f
+  [port('matrix', BuiltinTypes.mat3f), port('vector', BuiltinTypes.vec3f)],
+  BuiltinTypes.vec3f
 );
 
 export const convert: FunctionDefinition = {

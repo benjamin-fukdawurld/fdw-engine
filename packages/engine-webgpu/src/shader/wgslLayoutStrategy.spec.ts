@@ -1,18 +1,24 @@
 import type { UniformValue } from '@fdw/engine-backend';
-import { compile, GraphBuilder, ShaderType, std, T } from '@fdw/engine-shader';
+import {
+  compile,
+  GraphBuilder,
+  ShaderType,
+  std,
+  BuiltinTypes,
+} from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { wgslLayoutStrategy } from './wgslLayoutStrategy';
 
 const program = () => {
   const g = new GraphBuilder('layout');
-  const uv = g.attribute('uv', T.vec2f);
+  const uv = g.attribute('uv', BuiltinTypes.vec2f);
   const texel = g.call(std.textureSample, {
     texture: g.texture('diffuseMap'),
     sampler: g.sampler('diffuseSampler'),
     uv,
   });
-  const scale = g.uniform('scale', T.f32);
-  const tint = g.uniform('tint', T.vec3f);
+  const scale = g.uniform('scale', BuiltinTypes.f32);
+  const tint = g.uniform('tint', BuiltinTypes.vec3f);
   const color = g.call(std.mul, {
     a: g.call(std.mul, { a: texel.swizzle('rgb'), b: tint }),
     b: scale,
@@ -21,8 +27,8 @@ const program = () => {
     baseColor: color,
     alpha: g.call(
       std.convert,
-      { value: g.uniform('mode', T.u32, { slot: 'pass' }) },
-      { params: { to: T.f32 } }
+      { value: g.uniform('mode', BuiltinTypes.u32, { slot: 'pass' }) },
+      { params: { to: BuiltinTypes.f32 } }
     ),
   });
   return compile(g.build());
@@ -114,33 +120,39 @@ describe('wgslLayoutStrategy.writeUniform', () => {
   const floats = (view: DataView) => [...new Float32Array(view.buffer)];
 
   it('writes scalars with their kind', () => {
-    expect(write(T.f32, 1.5).getFloat32(0, true)).toBe(1.5);
-    expect(write(T.i32, -3).getInt32(0, true)).toBe(-3);
-    expect(write(T.u32, 7).getUint32(0, true)).toBe(7);
-    expect(write(T.u32, true).getUint32(0, true)).toBe(1);
+    expect(write(BuiltinTypes.f32, 1.5).getFloat32(0, true)).toBe(1.5);
+    expect(write(BuiltinTypes.i32, -3).getInt32(0, true)).toBe(-3);
+    expect(write(BuiltinTypes.u32, 7).getUint32(0, true)).toBe(7);
+    expect(write(BuiltinTypes.u32, true).getUint32(0, true)).toBe(1);
   });
 
   it('writes vectors', () => {
-    expect(floats(write(T.vec3f, [1, 2, 3], 16))).toEqual([1, 2, 3, 0]);
+    expect(floats(write(BuiltinTypes.vec3f, [1, 2, 3], 16))).toEqual([
+      1, 2, 3, 0,
+    ]);
   });
 
   it('pads the columns of a mat3, from packed or padded data', () => {
     const expected = [1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0];
-    expect(floats(write(T.mat3f, [1, 2, 3, 4, 5, 6, 7, 8, 9], 48))).toEqual(
-      expected
-    );
     expect(
-      floats(write(T.mat3f, [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99], 48))
+      floats(write(BuiltinTypes.mat3f, [1, 2, 3, 4, 5, 6, 7, 8, 9], 48))
+    ).toEqual(expected);
+    expect(
+      floats(
+        write(BuiltinTypes.mat3f, [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99], 48)
+      )
     ).toEqual(expected);
   });
 
   it('writes a mat4 as is', () => {
     const matrix = Array.from({ length: 16 }, (_, i) => i);
-    expect(floats(write(T.mat4f, matrix, 64))).toEqual(matrix);
+    expect(floats(write(BuiltinTypes.mat4f, matrix, 64))).toEqual(matrix);
   });
 
   it('rejects values of the wrong shape', () => {
-    expect(() => write(T.vec3f, [1, 2])).toThrow(/expects 3 components/);
-    expect(() => write(T.f32, [1])).toThrow(/expects a number/);
+    expect(() => write(BuiltinTypes.vec3f, [1, 2])).toThrow(
+      /expects 3 components/
+    );
+    expect(() => write(BuiltinTypes.f32, [1])).toThrow(/expects a number/);
   });
 });

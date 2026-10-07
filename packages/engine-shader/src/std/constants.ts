@@ -1,5 +1,5 @@
 import { ConstantValue, isConstantCompatible } from '../types/ConstantValue';
-import { ShaderType, T, typeToString } from '../types/ShaderType';
+import { ShaderType, BuiltinTypes, typeToString } from '../types/ShaderType';
 import type { NodeDefinition } from '../graph/NodeDefinition';
 
 // A constant is part of the generated code: changing it recompiles the shader.
@@ -28,5 +28,5 @@ export const pi: NodeDefinition = {
   id: 'const.pi',
   category: 'constant',
   inputs: () => [],
-  outputs: () => [{ name: 'value', type: T.f32 }],
+  outputs: () => [{ name: 'value', type: BuiltinTypes.f32 }],
 };

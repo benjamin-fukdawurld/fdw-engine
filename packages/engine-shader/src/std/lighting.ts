@@ -1,6 +1,6 @@
 import type { ValueSource } from '../graph/MaterialGraphData';
 import type { MacroDefinition } from '../graph/NodeDefinition';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { call, engineValue, swizzle, vertexNormal } from './macros';
 import { ShadingModel, surface } from './outputs';
 
@@ -18,9 +18,9 @@ function lightingModel(
       ...surface
         .inputs({ shadingModel: model })
         .filter((port) => port.name !== 'positionOffset'),
-      { name: 'worldPosition', type: T.vec4f },
+      { name: 'worldPosition', type: BuiltinTypes.vec4f },
     ],
-    outputs: () => [{ name: 'color', type: T.vec4f }],
+    outputs: () => [{ name: 'color', type: BuiltinTypes.vec4f }],
     expand,
   };
 }

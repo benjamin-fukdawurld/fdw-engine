@@ -15,7 +15,7 @@ import {
   MaterialGraphData,
   std,
   stdMacros,
-  T,
+  BuiltinTypes,
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { Camera } from '../Camera';
@@ -244,7 +244,9 @@ const triangle = () =>
 
 const colorGraph = (name = 'color'): MaterialGraphData => {
   const g = new GraphBuilder(name);
-  g.surface({ baseColor: g.uniform('color', T.vec3f, { default: [1, 0, 0] }) });
+  g.surface({
+    baseColor: g.uniform('color', BuiltinTypes.vec3f, { default: [1, 0, 0] }),
+  });
   return g.build();
 };
 
@@ -253,7 +255,7 @@ const texturedGraph = (): MaterialGraphData => {
   const texel = g.call(std.textureSample, {
     texture: g.texture('map'),
     sampler: g.sampler('mapSampler'),
-    uv: g.attribute('uv', T.vec2f),
+    uv: g.attribute('uv', BuiltinTypes.vec2f),
   });
   g.surface({ baseColor: texel.swizzle('rgb') });
   return g.build();
@@ -570,7 +572,7 @@ describe('Renderer, phase 4', () => {
     const textured = g.call(std.textureSample, {
       texture: g.texture('map'),
       sampler: g.sampler('mapSampler'),
-      uv: g.attribute('uv', T.vec2f),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
     });
     g.surface({
       baseColor: g.call(

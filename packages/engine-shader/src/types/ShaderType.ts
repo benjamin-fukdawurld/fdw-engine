@@ -126,8 +126,8 @@ export const sampler = (comparison = false): SamplerType => ({
   comparison,
 });
 
-// Shortcuts for the most common types.
-export const T = {
+// The most common types, ready to use: BuiltinTypes.vec3f, BuiltinTypes.mat4f…
+export const BuiltinTypes = {
   f32: scalar('f32'),
   f16: scalar('f16'),
   i32: scalar('i32'),

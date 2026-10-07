@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { elementOf, generic } from '../types/PortType';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { isAssignable, resolveNodeTypes } from './inference';
 
 const numeric = generic('T', 'numeric');
@@ -14,11 +14,11 @@ const binaryPorts = {
 
 describe('isAssignable', () => {
   it('allows equal types and scalar splat only', () => {
-    expect(isAssignable(T.vec3f, T.vec3f)).toBe(true);
-    expect(isAssignable(T.f32, T.vec3f)).toBe(true);
-    expect(isAssignable(T.i32, T.vec3f)).toBe(false);
-    expect(isAssignable(T.vec3f, T.f32)).toBe(false);
-    expect(isAssignable(T.vec4f, T.vec3f)).toBe(false);
+    expect(isAssignable(BuiltinTypes.vec3f, BuiltinTypes.vec3f)).toBe(true);
+    expect(isAssignable(BuiltinTypes.f32, BuiltinTypes.vec3f)).toBe(true);
+    expect(isAssignable(BuiltinTypes.i32, BuiltinTypes.vec3f)).toBe(false);
+    expect(isAssignable(BuiltinTypes.vec3f, BuiltinTypes.f32)).toBe(false);
+    expect(isAssignable(BuiltinTypes.vec4f, BuiltinTypes.vec3f)).toBe(false);
   });
 });
 
@@ -26,26 +26,26 @@ describe('resolveNodeTypes', () => {
   it('binds a generic from the connected inputs', () => {
     const { types, errors } = resolveNodeTypes({
       ...binaryPorts,
-      connected: { a: T.vec3f, b: T.vec3f },
+      connected: { a: BuiltinTypes.vec3f, b: BuiltinTypes.vec3f },
     });
     expect(errors).toEqual([]);
-    expect(types.outputs['result']).toEqual(T.vec3f);
+    expect(types.outputs['result']).toEqual(BuiltinTypes.vec3f);
   });
 
   it('widens a scalar to the vector connected to the same generic', () => {
     const { types, errors } = resolveNodeTypes({
       ...binaryPorts,
-      connected: { a: T.f32, b: T.vec4f },
+      connected: { a: BuiltinTypes.f32, b: BuiltinTypes.vec4f },
     });
     expect(errors).toEqual([]);
-    expect(types.inputs['a']).toEqual(T.vec4f);
-    expect(types.outputs['result']).toEqual(T.vec4f);
+    expect(types.inputs['a']).toEqual(BuiltinTypes.vec4f);
+    expect(types.outputs['result']).toEqual(BuiltinTypes.vec4f);
   });
 
   it('reports incompatible types on the faulty port', () => {
     const { errors } = resolveNodeTypes({
       ...binaryPorts,
-      connected: { a: T.vec3f, b: T.vec4f },
+      connected: { a: BuiltinTypes.vec3f, b: BuiltinTypes.vec4f },
     });
     expect(errors).toEqual([
       expect.objectContaining({
@@ -62,13 +62,13 @@ describe('resolveNodeTypes', () => {
       defaults: { a: [1, 2], b: 3 },
     });
     expect(errors).toEqual([]);
-    expect(types.outputs['result']).toEqual(T.vec2f);
+    expect(types.outputs['result']).toEqual(BuiltinTypes.vec2f);
   });
 
   it('checks the constraint of the generic', () => {
     const { errors } = resolveNodeTypes({
       ...binaryPorts,
-      connected: { a: T.bool, b: T.bool },
+      connected: { a: BuiltinTypes.bool, b: BuiltinTypes.bool },
     });
     expect(errors[0].message).toMatch(
       /does not satisfy the constraint "numeric"/
@@ -83,14 +83,14 @@ describe('resolveNodeTypes', () => {
         { name: 'b', type: floatVector },
       ],
       outputs: [{ name: 'result', type: elementOf('T') }],
-      connected: { a: T.vec3f, b: T.vec3f },
+      connected: { a: BuiltinTypes.vec3f, b: BuiltinTypes.vec3f },
     });
-    expect(types.outputs['result']).toEqual(T.f32);
+    expect(types.outputs['result']).toEqual(BuiltinTypes.f32);
   });
 
   it('requires unconnected inputs without default to be connected', () => {
     const { errors } = resolveNodeTypes({
-      inputs: [{ name: 'texture', type: T.texture2d }],
+      inputs: [{ name: 'texture', type: BuiltinTypes.texture2d }],
       outputs: [],
       connected: {},
     });
@@ -104,7 +104,7 @@ describe('resolveNodeTypes', () => {
 
   it('accepts unconnected optional inputs', () => {
     const { errors } = resolveNodeTypes({
-      inputs: [{ name: 'normal', type: T.vec3f, optional: true }],
+      inputs: [{ name: 'normal', type: BuiltinTypes.vec3f, optional: true }],
       outputs: [],
       connected: {},
     });
@@ -113,7 +113,7 @@ describe('resolveNodeTypes', () => {
 
   it('checks the default values against the port type', () => {
     const { errors } = resolveNodeTypes({
-      inputs: [{ name: 'color', type: T.vec3f }],
+      inputs: [{ name: 'color', type: BuiltinTypes.vec3f }],
       outputs: [],
       connected: {},
       defaults: { color: [1, 0] },

@@ -5,7 +5,7 @@ import {
   MaterialGraphData,
   std,
   stdMacros,
-  T,
+  BuiltinTypes,
 } from '@fdw/engine-shader';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebGpuEngine } from '../WebGpuEngine';
@@ -42,9 +42,9 @@ const graphs: Record<string, () => MaterialGraphData> = {
     const texel = g.call(std.textureSample, {
       texture: g.texture('map'),
       sampler: g.sampler('mapSampler'),
-      uv: g.attribute('uv', T.vec2f),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
     });
-    const tint = g.uniform('tint', T.vec4f);
+    const tint = g.uniform('tint', BuiltinTypes.vec4f);
     const color = g.call(std.mul, { a: texel, b: tint });
     g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
     return g.build();
@@ -58,15 +58,15 @@ const graphs: Record<string, () => MaterialGraphData> = {
     const g = new GraphBuilder('reserved');
     g.surface({
       baseColor: g.call(std.mix, {
-        a: g.uniform('from', T.vec3f),
-        b: g.uniform('to', T.vec3f),
-        t: g.uniform('type', T.f32),
+        a: g.uniform('from', BuiltinTypes.vec3f),
+        b: g.uniform('to', BuiltinTypes.vec3f),
+        t: g.uniform('type', BuiltinTypes.f32),
       }),
       alpha: g
         .call(std.textureSample, {
           texture: g.texture('module'),
           sampler: g.sampler('self'),
-          uv: g.attribute('uv', T.vec2f),
+          uv: g.attribute('uv', BuiltinTypes.vec2f),
         })
         .swizzle('a'),
     });
@@ -75,14 +75,16 @@ const graphs: Record<string, () => MaterialGraphData> = {
   'builtin function names as names': () => {
     const g = new GraphBuilder('builtins');
     g.surface({
-      baseColor: g.call(std.normalize, { x: g.uniform('normalize', T.vec3f) }),
-      alpha: g.uniform('min', T.f32),
+      baseColor: g.call(std.normalize, {
+        x: g.uniform('normalize', BuiltinTypes.vec3f),
+      }),
+      alpha: g.uniform('min', BuiltinTypes.f32),
     });
     return g.build();
   },
   'vertex animation, intrinsics, integers and custom slots': () => {
     const g = new GraphBuilder('animated');
-    const normal = g.attribute('normal', T.vec3f);
+    const normal = g.attribute('normal', BuiltinTypes.vec3f);
     const wave = g.call(std.sin, { x: g.engine('time') });
     const offset = g.call(std.mul, {
       a: g.call(std.normalize, { x: normal }),
@@ -95,14 +97,16 @@ const graphs: Record<string, () => MaterialGraphData> = {
       base: g.call(std.sub, { a: 1, b: lit }),
       exponent: 5,
     });
-    const color = g.attribute('color', T.vec4f);
+    const color = g.attribute('color', BuiltinTypes.vec4f);
     const mixed = g.call(std.mix, {
       a: color.swizzle('rgb'),
       b: [1, 1, 1],
       t: fresnel,
     });
-    const index = g.uniform('paletteIndex', T.u32, { slot: 'custom' });
-    const id = g.attribute('materialId', T.u32);
+    const index = g.uniform('paletteIndex', BuiltinTypes.u32, {
+      slot: 'custom',
+    });
+    const id = g.attribute('materialId', BuiltinTypes.u32);
     const chosen = g.call(std.select, {
       ifFalse: id,
       ifTrue: index,
@@ -111,7 +115,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
     const scale = g.call(
       std.convert,
       { value: chosen },
-      { params: { to: T.f32 } }
+      { params: { to: BuiltinTypes.f32 } }
     );
     g.surface({
       baseColor: g.call(std.clamp, { x: mixed, low: 0, high: scale }),
@@ -121,7 +125,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
   },
   'phong, textured, with emissive': () => {
     const g = new GraphBuilder('phong');
-    const uv = g.attribute('uv', T.vec2f);
+    const uv = g.attribute('uv', BuiltinTypes.vec2f);
     const sample = (name: string) =>
       g.call(std.textureSample, {
         texture: g.texture(name),
@@ -136,7 +140,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
         a: sample('shininess').swizzle('r'),
         b: 255,
       }),
-      emissive: g.uniform('emissive', T.vec3f),
+      emissive: g.uniform('emissive', BuiltinTypes.vec3f),
     });
     return g.build();
   },
@@ -145,7 +149,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
     const sample = g.call(std.textureSample, {
       texture: g.texture('normalMap'),
       sampler: g.sampler('normalSampler'),
-      uv: g.attribute('uv', T.vec2f),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
     });
     g.surface({
       shadingModel: 'phong',
@@ -157,7 +161,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
   },
   'raw stage outputs': () => {
     const g = new GraphBuilder('raw');
-    const position = g.attribute('position', T.vec3f);
+    const position = g.attribute('position', BuiltinTypes.vec3f);
     g.node('output.vertex', {
       inputs: {
         clipPosition: g.call(std.transform, {

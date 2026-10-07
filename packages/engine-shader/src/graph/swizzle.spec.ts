@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { composeSwizzles, parseSwizzle, swizzleType } from './swizzle';
 
 describe('parseSwizzle', () => {
@@ -18,14 +18,14 @@ describe('parseSwizzle', () => {
 
 describe('swizzleType', () => {
   it('gives a scalar for one component and a vector otherwise', () => {
-    expect(swizzleType(T.vec4f, 'a')).toEqual(T.f32);
-    expect(swizzleType(T.vec4f, 'rgb')).toEqual(T.vec3f);
-    expect(swizzleType(T.vec2i, 'yyxx')).toEqual(T.vec4i);
+    expect(swizzleType(BuiltinTypes.vec4f, 'a')).toEqual(BuiltinTypes.f32);
+    expect(swizzleType(BuiltinTypes.vec4f, 'rgb')).toEqual(BuiltinTypes.vec3f);
+    expect(swizzleType(BuiltinTypes.vec2i, 'yyxx')).toEqual(BuiltinTypes.vec4i);
   });
 
   it('reports out-of-range components and non-vectors', () => {
-    expect(swizzleType(T.vec3f, 'w')).toMatch(/out of range/);
-    expect(swizzleType(T.f32, 'x')).toMatch(/cannot swizzle/);
+    expect(swizzleType(BuiltinTypes.vec3f, 'w')).toMatch(/out of range/);
+    expect(swizzleType(BuiltinTypes.f32, 'x')).toMatch(/cannot swizzle/);
   });
 });
 

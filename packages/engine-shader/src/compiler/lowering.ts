@@ -1,7 +1,7 @@
 import type { Diagnostic } from '../graph/Diagnostic';
 import type { NodeRegistry } from '../graph/NodeRegistry';
 import { resolveParams } from '../graph/NodeDefinition';
-import { T } from '../types/ShaderType';
+import { BuiltinTypes } from '../types/ShaderType';
 import { InputSource, WorkingGraph } from './WorkingGraph';
 
 const isZero = (source: InputSource): boolean =>
@@ -57,7 +57,7 @@ export function lowerSurface(
   // Vertex stage: object → world → clip space.
   const position = graph.addNode('input.attribute', {
     semantic: 'position',
-    type: T.vec3f,
+    type: BuiltinTypes.vec3f,
   });
   const offset = source('positionOffset') ?? { value: 0 };
   const displaced = isZero(offset)
