@@ -1,5 +1,3 @@
-import { uniformPrimitives } from '@fdw/engine-webgpu';
-import { Material } from './Material';
 import { readLines } from './utils';
 
 export interface MtlTexture {
@@ -204,72 +202,4 @@ export async function parseMtl(url: string): Promise<MtlMaterial[]> {
   }
 
   return materials;
-}
-
-export function mtlMaterialToMaterial(mtlMaterial: MtlMaterial): Material {
-  const material = new Material({ type: mtlMaterial.name });
-  if (mtlMaterial.Ka) {
-    material.materialUniforms.push({
-      name: 'ambientColor',
-      type: uniformPrimitives.vec3,
-      value: new Float32Array(mtlMaterial.Ka),
-      stages: ['fragment'],
-    });
-  }
-
-  if (mtlMaterial.Kd) {
-    material.materialUniforms.push({
-      name: 'diffuseColor',
-      type: uniformPrimitives.vec3,
-      value: new Float32Array(mtlMaterial.Kd),
-      stages: ['fragment'],
-    });
-  }
-
-  if (mtlMaterial.Ks) {
-    material.materialUniforms.push({
-      name: 'specularColor',
-      type: uniformPrimitives.vec3,
-      value: new Float32Array(mtlMaterial.Ks),
-      stages: ['fragment'],
-    });
-  }
-
-  if (mtlMaterial.Ke) {
-    material.materialUniforms.push({
-      name: 'emissiveColor',
-      type: uniformPrimitives.vec3,
-      value: new Float32Array(mtlMaterial.Ke),
-      stages: ['fragment'],
-    });
-  }
-
-  if (mtlMaterial.Ns !== undefined) {
-    material.materialUniforms.push({
-      name: 'specularExponent',
-      type: uniformPrimitives.float32,
-      value: new Float32Array([mtlMaterial.Ns]),
-      stages: ['fragment'],
-    });
-  }
-
-  if (mtlMaterial.Ni !== undefined) {
-    material.materialUniforms.push({
-      name: 'opticalDensity',
-      type: uniformPrimitives.float32,
-      value: new Float32Array([mtlMaterial.Ni]),
-      stages: ['fragment'],
-    });
-  }
-
-  if (mtlMaterial.d !== undefined) {
-    material.materialUniforms.push({
-      name: 'dissolve',
-      type: uniformPrimitives.float32,
-      value: new Float32Array([mtlMaterial.d]),
-      stages: ['fragment'],
-    });
-  }
-
-  return material;
 }

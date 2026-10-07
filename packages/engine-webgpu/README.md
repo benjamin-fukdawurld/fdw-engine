@@ -66,18 +66,6 @@ Implementations of the abstract layout API following WGSL alignment rules:
 | `WgslCodegen` | Implements `ShaderCodegen`: generates a WGSL module (`vs_main`, `fs_main`) from the IR of a program compiled by `@fdw/engine-shader` |
 | `wgslLayoutStrategy` | Implements `PhysicalLayoutStrategy`: one bind group per slot, uniform blocks laid out with the WGSL uniform address space rules |
 | `wgslType()` | WGSL name of a shader type |
-| `ShaderWritter` | Legacy: generates WGSL code from [Eta](https://eta.js.org/) templates (`ShaderWritter.render(...)`), to be replaced by `WgslCodegen` |
-
-Available templates (legacy `ShaderWritter`):
-
-| Name                 | Content                                          |
-| -------------------- | ------------------------------------------------ |
-| `@base`              | Base shader layout                               |
-| `@phong`             | Phong lighting shader                            |
-| `@functions`         | Phong lighting functions                         |
-| `@vertex-attributes` | Vertex input declarations from a mesh description |
-| `@uniforms`          | Uniform declarations                             |
-| `@textures`          | Texture and sampler declarations                 |
 
 ## Usage
 

@@ -17,8 +17,8 @@ export const Route = createFileRoute('/loading-model')({
   component: RouteComponent,
 });
 
-// Phong with diffuse, specular and shininess maps, as the former Eta
-// templates: the shininess map stores the exponent divided by 255.
+// Phong with diffuse, specular and shininess maps. The shininess map stores
+// the exponent divided by 255.
 function texturedPhong() {
   const g = new GraphBuilder('textured-phong');
   const uv = g.attribute('uv', T.vec2f);

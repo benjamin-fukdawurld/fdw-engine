@@ -61,7 +61,7 @@ Each backend implements the abstract API for a given graphics technology and win
 | —                    | DirectX 12 | Native              | Planned     |
 | —                    | Metal      | Native              | Planned     |
 
-The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface`, the GPU implementations, and a WGSL shader generator based on [Eta](https://eta.js.org/) templates (Phong lighting model).
+The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface` / `WebGpuOffscreenSurface`, the GPU implementations, and `WgslCodegen`, which generates WGSL from the programs compiled by `@fdw/engine-shader`.
 
 ### Material graph — `@fdw/engine-shader` (in progress)
 

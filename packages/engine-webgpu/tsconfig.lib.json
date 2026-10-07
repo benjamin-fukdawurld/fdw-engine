@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "../../dist/packages/engine-webgpu",
-    "types": ["node", "vite/client", "@webgpu/types"]
+    "types": ["node", "@webgpu/types"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
