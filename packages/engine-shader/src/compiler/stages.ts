@@ -5,14 +5,14 @@ import type { ResolvedNode } from '../graph/validateGraph';
 import { ShaderType, typeToString } from '../types/ShaderType';
 import type { WorkingGraph } from './WorkingGraph';
 
-// When a value is computed, from the cheapest to the most expensive.
+/** When a value is computed, from the cheapest to the most expensive. */
 export const Frequency = {
   Constant: 0,
-  // Once per draw: uniforms, textures, engine values.
+  /** Once per draw: uniforms, textures, engine values. */
   Uniform: 1,
-  // Once per vertex.
+  /** Once per vertex. */
   Vertex: 2,
-  // Once per pixel.
+  /** Once per pixel. */
   Fragment: 3,
 } as const;
 export type Frequency = (typeof Frequency)[keyof typeof Frequency];

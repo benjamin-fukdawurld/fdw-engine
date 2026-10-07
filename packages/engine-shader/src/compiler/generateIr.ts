@@ -47,8 +47,10 @@ class StageBuilder {
   constructor(
     private readonly _graph: WorkingGraph,
     private readonly _types: ReadonlyMap<NodeId, NodeTypes>,
-    // Values read from a stage input instead of being computed: varyings in
-    // the fragment stage.
+    /**
+     * Values read from a stage input instead of being computed: varyings in
+     * the fragment stage.
+     */
     private readonly _stageInputs: ReadonlyMap<string, string>
   ) {}
 
@@ -74,7 +76,7 @@ class StageBuilder {
     this._values.set(`${ref.node}:${ref.port}`, value);
   }
 
-  // The value of an output port in this stage.
+  /** The value of an output port in this stage. */
   value(ref: PortRef): { id: ValueId; type: ShaderType } {
     const key = `${ref.node}:${ref.port}`;
     const type = this._types.get(ref.node)?.outputs[ref.port] as ShaderType;
@@ -92,7 +94,7 @@ class StageBuilder {
     return { id, type };
   }
 
-  // The value of an input of a node, converted to the type of the port.
+  /** The value of an input of a node, converted to the type of the port. */
   input(
     node: GraphNode,
     port: PortSchema,
@@ -128,7 +130,7 @@ class StageBuilder {
       });
     }
 
-    // Scalar splat, made explicit for the code generators.
+    /** Scalar splat, made explicit for the code generators. */
     if (value.type.kind === 'scalar' && expected.kind === 'vector') {
       return this.emit(expected, { kind: 'construct' }, [value.id]);
     }

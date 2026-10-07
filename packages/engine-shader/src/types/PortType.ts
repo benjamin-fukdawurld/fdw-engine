@@ -7,6 +7,11 @@ import {
   VectorSize,
 } from './ShaderType';
 
+/**
+ * Constraints a generic port type can have.
+ *
+ * @group Port types
+ */
 export const TypeConstraintNames = [
   'any',
   // Scalars and vectors, except bool.
@@ -17,49 +22,105 @@ export const TypeConstraintNames = [
   // i32 / u32 scalars and vectors.
   'integer',
 ] as const;
+/**
+ * A constraint on the type bound to a generic:
+ * - `any`: any type;
+ * - `numeric`: scalars and vectors, except `bool`;
+ * - `float`: `f32` / `f16` scalars and vectors;
+ * - `float-vector`: `f32` / `f16` vectors;
+ * - `integer`: `i32` / `u32` scalars and vectors.
+ *
+ * @group Port types
+ */
 export type TypeConstraint = (typeof TypeConstraintNames)[number];
 
+/**
+ * A type variable: ports sharing the same generic name get the same type,
+ * inferred from what is connected to them.
+ *
+ * @group Port types
+ */
 export type GenericPortType = {
   readonly kind: 'generic';
   readonly name: string;
   readonly constraint: TypeConstraint;
 };
 
-// The scalar type of a generic: f32 for T = vec3<f32>.
+/**
+ * The scalar type of a generic: f32 for T = vec3<f32>.
+ *
+ * @group Port types
+ */
 export type ElementOfPortType = {
   readonly kind: 'element-of';
   readonly of: string;
 };
 
-// A vector built from the scalar type of a generic: vec2<f32> for T = vec3<f32>.
+/**
+ * A vector built from the scalar type of a generic: vec2<f32> for T = vec3<f32>.
+ *
+ * @group Port types
+ */
 export type VectorOfPortType = {
   readonly kind: 'vector-of';
   readonly of: string;
   readonly size: VectorSize;
 };
 
+/**
+ * The type of a port in a node definition: a concrete shader type, or a type
+ * derived from a generic.
+ *
+ * @group Port types
+ */
 export type PortType =
   | ShaderType
   | GenericPortType
   | ElementOfPortType
   | VectorOfPortType;
 
+/**
+ * Creates a generic port type.
+ *
+ * @example
+ * ```ts
+ * // add<T: numeric>(a: T, b: T) -> T
+ * const numeric = generic('T', 'numeric');
+ * ```
+ *
+ * @group Port types
+ */
 export const generic = (
   name: string,
   constraint: TypeConstraint = 'any'
 ): GenericPortType => ({ kind: 'generic', name, constraint });
 
+/**
+ * The scalar type of a generic: `f32` for `T = vec3<f32>`.
+ *
+ * @group Port types
+ */
 export const elementOf = (of: string): ElementOfPortType => ({
   kind: 'element-of',
   of,
 });
 
+/**
+ * A vector of the scalar type of a generic: `vec2<f32>` for `T = vec3<f32>`.
+ *
+ * @group Port types
+ */
 export const vectorOf = (of: string, size: VectorSize): VectorOfPortType => ({
   kind: 'vector-of',
   of,
   size,
 });
 
+/**
+ * Whether a port type is a concrete shader type.
+ *
+ * @group Port types
+ */
 export function isConcretePortType(type: PortType): type is ShaderType {
   return (
     type.kind !== 'generic' &&
@@ -68,6 +129,11 @@ export function isConcretePortType(type: PortType): type is ShaderType {
   );
 }
 
+/**
+ * The scalar kind of a scalar, vector or matrix type.
+ *
+ * @group Port types
+ */
 export function scalarKindOf(type: ShaderType): ScalarKind | undefined {
   switch (type.kind) {
     case 'scalar':
@@ -79,6 +145,11 @@ export function scalarKindOf(type: ShaderType): ScalarKind | undefined {
   }
 }
 
+/**
+ * Whether a shader type satisfies a generic constraint.
+ *
+ * @group Port types
+ */
 export function satisfiesConstraint(
   type: ShaderType,
   constraint: TypeConstraint
@@ -103,6 +174,11 @@ export function satisfiesConstraint(
   }
 }
 
+/**
+ * Readable representation of a port type, for diagnostics.
+ *
+ * @group Port types
+ */
 export function portTypeToString(type: PortType): string {
   switch (type.kind) {
     case 'generic':

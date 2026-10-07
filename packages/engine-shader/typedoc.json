@@ -3,5 +3,20 @@
   "entryPoints": ["src/index.ts"],
   "tsconfig": "tsconfig.lib.json",
   "out": "../../docs/api/engine-shader",
-  "name": "@fdw/engine-shader"
+  "name": "@fdw/engine-shader",
+  "readme": "README.md",
+  "navigation": { "includeGroups": true },
+  "groupOrder": [
+    "Building graphs",
+    "Shader types",
+    "Graph model",
+    "Standard library",
+    "Node definitions",
+    "Port types",
+    "Validation",
+    "Compilation",
+    "Program layout",
+    "Intermediate representation",
+    "*"
+  ]
 }

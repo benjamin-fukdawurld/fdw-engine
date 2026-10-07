@@ -2,9 +2,13 @@ import { ShaderType, vec, VectorSize } from '../types/ShaderType';
 
 const componentSets = ['xyzw', 'rgba'] as const;
 
-// Indices of the components selected by a swizzle ('zx' → [2, 0]), or
-// undefined if the swizzle is malformed. Mixing component sets ('xg') is not
-// allowed, as in WGSL and GLSL.
+/**
+ * Indices of the components selected by a swizzle ('zx' → [2, 0]), or
+ * undefined if the swizzle is malformed. Mixing component sets ('xg') is not
+ * allowed, as in WGSL and GLSL.
+ *
+ * @group Validation
+ */
 export function parseSwizzle(swizzle: string): number[] | undefined {
   if (swizzle.length < 1 || swizzle.length > 4) {
     return undefined;
@@ -18,7 +22,11 @@ export function parseSwizzle(swizzle: string): number[] | undefined {
   return undefined;
 }
 
-// Type of a swizzled value. Only vectors can be swizzled.
+/**
+ * Type of a swizzled value. Only vectors can be swizzled.
+ *
+ * @group Validation
+ */
 export function swizzleType(
   type: ShaderType,
   swizzle: string
@@ -38,8 +46,12 @@ export function swizzleType(
     : vec(indices.length as VectorSize, type.scalar);
 }
 
-// Applying `outer` to a value already swizzled by `inner`: 'xyz' then 'zx'
-// gives 'zx', 'wzy' then 'x' gives 'w'.
+/**
+ * Applying `outer` to a value already swizzled by `inner`: 'xyz' then 'zx'
+ * gives 'zx', 'wzy' then 'x' gives 'w'.
+ *
+ * @group Validation
+ */
 export function composeSwizzles(
   inner: string,
   outer: string

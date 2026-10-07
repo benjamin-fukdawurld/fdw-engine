@@ -89,7 +89,7 @@ function expandMacro(
   graph.removeNode(node.id);
 }
 
-// Replaces every macro node by the nodes it generates.
+/** Replaces every macro node by the nodes it generates. */
 export function expandMacros({
   graph,
   registry,

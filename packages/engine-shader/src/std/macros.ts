@@ -7,21 +7,42 @@ import { ShaderType, BuiltinTypes } from '../types/ShaderType';
 
 const any = generic('T', 'any');
 
-type Inputs = Readonly<Record<string, ValueSource | ConstantValue | undefined>>;
+/**
+ * Inputs given to {@link call}.
+ *
+ * @group Standard library
+ */
+export type MacroInputs = Readonly<
+  Record<string, ValueSource | ConstantValue | undefined>
+>;
 
-// Helpers for macro bodies: call a function node and get its output, swizzle
-// a value.
+/**
+ * Helpers for macro bodies: call a function node and get its output, swizzle
+ * a value.
+ *
+ * @group Standard library
+ */
 export const call = (
   context: MacroContext,
   type: string,
-  inputs: Inputs
+  inputs: MacroInputs
 ): ValueSource => context.add(type, {}, inputs)();
 
+/**
+ * Helper for macro bodies: reads an engine value.
+ *
+ * @group Standard library
+ */
 export const engineValue = (
   context: MacroContext,
   value: string
 ): ValueSource => context.add('input.engine', { value })();
 
+/**
+ * Helper for macro bodies: selects components of a value.
+ *
+ * @group Standard library
+ */
 export function swizzle(source: ValueSource, mask: string): ValueSource {
   if (!('ref' in source)) {
     throw new Error('A literal cannot be swizzled');
@@ -35,8 +56,10 @@ export function swizzle(source: ValueSource, mask: string): ValueSource {
   return { ref: source.ref, swizzle: combined };
 }
 
-// Chooses one of two values from a static parameter: only the chosen branch
-// is compiled, the other one is removed as dead code.
+/**
+ * Chooses one of two values from a static parameter: only the chosen branch
+ * is compiled, the other one is removed as dead code.
+ */
 export const staticSwitch: MacroDefinition = {
   id: 'macro.staticSwitch',
   category: 'macro',
@@ -55,8 +78,10 @@ export const staticSwitch: MacroDefinition = {
   },
 };
 
-// A vertex attribute when the mesh has it, a fallback value otherwise: one
-// material for meshes with and without vertex colors, tangents…
+/**
+ * A vertex attribute when the mesh has it, a fallback value otherwise: one
+ * material for meshes with and without vertex colors, tangents…
+ */
 export const optionalAttribute: MacroDefinition = {
   id: 'macro.optionalAttribute',
   category: 'macro',
@@ -78,9 +103,11 @@ export const optionalAttribute: MacroDefinition = {
   },
 };
 
-// Applies a function node `count` times: result = body(…body(body(initial))).
-// The body node type needs a 'value' input, and may have an 'index' input
-// receiving the iteration number (0, 1, 2…).
+/**
+ * Applies a function node `count` times: result = body(…body(body(initial))).
+ * The body node type needs a 'value' input, and may have an 'index' input
+ * receiving the iteration number (0, 1, 2…).
+ */
 export const repeat: MacroDefinition = {
   id: 'macro.repeat',
   category: 'macro',
@@ -120,7 +147,7 @@ function worldDirection(
   });
 }
 
-// World-space normal of the fragment from the mesh normals.
+/** World-space normal of the fragment from the mesh normals. */
 export const vertexNormal = (context: MacroContext): ValueSource =>
   worldDirection(
     context,
@@ -130,9 +157,11 @@ export const vertexNormal = (context: MacroContext): ValueSource =>
     })()
   );
 
-// World-space normal perturbed by a tangent-space normal map, when the mesh
-// has tangents (xyz: tangent, w: handedness). Without tangents, the
-// interpolated normal is used and the map is ignored.
+/**
+ * World-space normal perturbed by a tangent-space normal map, when the mesh
+ * has tangents (xyz: tangent, w: handedness). Without tangents, the
+ * interpolated normal is used and the map is ignored.
+ */
 export const normalMapping: MacroDefinition = {
   id: 'macro.normalMapping',
   category: 'macro',

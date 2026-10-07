@@ -19,23 +19,42 @@ import {
 } from '../types/ShaderType';
 import type { PortSchema } from './NodeDefinition';
 
+/**
+ * Concrete types of the ports of a node.
+ *
+ * @group Validation
+ */
 export interface NodeTypes {
   readonly inputs: Readonly<Record<string, ShaderType>>;
   readonly outputs: Readonly<Record<string, ShaderType>>;
 }
 
+/**
+ * A type error on a port of a node.
+ *
+ * @group Validation
+ */
 export interface PortTypeError {
   readonly port?: string;
   readonly message: string;
 }
 
+/**
+ * Result of {@link resolveNodeTypes}.
+ *
+ * @group Validation
+ */
 export interface NodeTypeResolution {
   readonly types: NodeTypes;
   readonly errors: readonly PortTypeError[];
 }
 
-// The only implicit conversion: a scalar splats to a vector of the same
-// scalar kind. Any other conversion needs an explicit node.
+/**
+ * The only implicit conversion: a scalar splats to a vector of the same
+ * scalar kind. Any other conversion needs an explicit node.
+ *
+ * @group Validation
+ */
 export function isAssignable(from: ShaderType, to: ShaderType): boolean {
   if (typeEquals(from, to)) {
     return true;
@@ -106,8 +125,12 @@ function collectGenerics(
   return generics;
 }
 
-// Resolves the concrete type of every port of a node, from the types of the
-// values connected to its inputs and from the literal defaults.
+/**
+ * Resolves the concrete type of every port of a node, from the types of the
+ * values connected to its inputs and from the literal defaults.
+ *
+ * @group Validation
+ */
 export function resolveNodeTypes({
   inputs,
   outputs,
@@ -116,9 +139,9 @@ export function resolveNodeTypes({
 }: {
   inputs: readonly PortSchema[];
   outputs: readonly PortSchema[];
-  // Types of the values connected to the inputs (after swizzle).
+  /** Types of the values connected to the inputs (after swizzle). */
   connected: Readonly<Record<string, ShaderType>>;
-  // Node-level values of the unconnected inputs.
+  /** Node-level values of the unconnected inputs. */
   defaults?: Readonly<Record<string, ConstantValue>>;
 }): NodeTypeResolution {
   const errors: PortTypeError[] = [];
@@ -148,8 +171,10 @@ export function resolveNodeTypes({
         continue;
       }
       bound = result.type;
-      // Vector literals widen a scalar binding, like a connected vector
-      // would: mix([0, 0, 0], [1, 1, 1], t: f32) binds T = vec3<f32>.
+      /**
+       * Vector literals widen a scalar binding, like a connected vector
+       * would: mix([0, 0, 0], [1, 1, 1], t: f32) binds T = vec3<f32>.
+       */
       if (bound.kind === 'scalar' && vectorLiteral) {
         const literal = literalType(vectorLiteral);
         if (literal?.kind === 'vector') {

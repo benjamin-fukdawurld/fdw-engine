@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { Camera } from '../Camera';
 import { DirectionalLight, PointLight } from '../light';
 import { Transform } from '../Transform';
-import { Material } from './Material';
+import { Material, RenderState } from './Material';
 import { Mesh } from './Mesh';
 import { Renderer } from './Renderer';
 
@@ -472,11 +472,7 @@ describe('Renderer', () => {
         mesh: triangle(),
         material: new Material({
           graph: colorGraph(),
-          renderState: {
-            doubleSided: true,
-            alphaMode: 'blend',
-            depthWrite: false,
-          },
+          renderState: { doubleSided: true, depthWrite: false },
         }),
         transform: transformAt(0),
       },
@@ -488,7 +484,28 @@ describe('Renderer', () => {
       depthWrite: false,
       depthCompare: 'less',
     });
-    expect(pipeline.targets[0].blend).toBeDefined();
+    expect(pipeline.targets[0].blend).toBeUndefined();
+  });
+
+  it('draws double-sided transparent items back faces first', () => {
+    const { render, log } = setup();
+    render([
+      {
+        mesh: triangle(),
+        material: new Material({
+          graph: colorGraph(),
+          renderState: { doubleSided: true, alphaMode: 'blend' },
+          label: 'glass',
+        }),
+        transform: transformAt(0),
+      },
+    ]);
+    expect(log.pipelines.map((p) => p.primitive.cullMode)).toEqual([
+      'front',
+      'back',
+    ]);
+    expect(log.draws).toHaveLength(2);
+    expect(log.pipelines[0].targets[0].blend).toBeDefined();
   });
 });
 
@@ -628,6 +645,14 @@ describe('Material', () => {
     material.setValue('color', [0, 1, 0]);
     expect(material.getValue('color')).toEqual([0, 1, 0]);
     expect(material.version).toBe(1);
+  });
+
+  it('disables depth writes of transparent materials by default', () => {
+    const material = (renderState: Partial<RenderState>) =>
+      new Material({ graph: colorGraph(), renderState }).renderState.depthWrite;
+    expect(material({})).toBe(true);
+    expect(material({ alphaMode: 'blend' })).toBe(false);
+    expect(material({ alphaMode: 'blend', depthWrite: true })).toBe(true);
   });
 });
 

@@ -13,6 +13,7 @@ import {
   PhysicalBindGroup,
   PhysicalProgramLayout,
   PhysicalUniformBlock,
+  PrimitiveState,
   RenderBackend,
   RenderPipelineDescriptor,
   Surface,
@@ -188,7 +189,7 @@ export class Renderer {
     const depth = this.depthTarget(target);
 
     const prepared = [...items]
-      .map((item) => this.prepare(item, surface))
+      .flatMap((item) => this.passes(item).map((cullMode) => this.prepare(item, surface, cullMode)))
       .filter((entry): entry is PreparedItem => entry !== undefined);
     const cameraCache = this.cameraCache(camera);
     const ordered = this.sort(prepared, cameraCache);
@@ -242,17 +243,29 @@ export class Renderer {
     return program;
   }
 
+  // A double-sided transparent item is drawn twice: its back faces, then its
+  // front faces, so that they blend in the right order (exact for convex
+  // shapes). The sort keeps the two passes in this order.
+  private passes(item: RenderItem): PrimitiveState['cullMode'][] {
+    const { alphaMode, doubleSided } = item.material.renderState;
+    if (!doubleSided) {
+      return ['back'];
+    }
+    return alphaMode === 'blend' ? ['front', 'back'] : ['none'];
+  }
+
   // Undefined while the pipeline of the item is being created.
   private prepare(
     item: RenderItem,
-    surface: Surface
+    surface: Surface,
+    cullMode: PrimitiveState['cullMode']
   ): PreparedItem | undefined {
     const program = this.program(item.material, item.mesh);
     const layout = this.backend.pipelines.resolveLayout(program);
     const state = item.material.renderState;
     const vertexKey = JSON.stringify(item.mesh.description.vertexBuffers);
     const stateKey = JSON.stringify(state);
-    const pipelineKey = `${program.programKey}|${vertexKey}|${stateKey}|${surface.format}|${this.backend.depthFormat}`;
+    const pipelineKey = `${program.programKey}|${vertexKey}|${stateKey}|${cullMode}|${surface.format}|${this.backend.depthFormat}`;
 
     if (!this._pipelines.has(pipelineKey)) {
       const descriptor: RenderPipelineDescriptor = {
@@ -261,7 +274,7 @@ export class Renderer {
         vertex: item.mesh.description,
         primitive: {
           topology: 'triangle-list',
-          cullMode: state.doubleSided ? 'none' : 'back',
+          cullMode,
           frontFace: 'ccw',
         },
         depthStencil: {

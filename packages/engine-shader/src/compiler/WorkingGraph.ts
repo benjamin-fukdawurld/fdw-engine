@@ -12,7 +12,7 @@ import type { ConstantValue } from '../types/ConstantValue';
 
 export type InputSource = ValueSource;
 
-// A mutable copy of a graph, transformed by the compiler passes.
+/** A mutable copy of a graph, transformed by the compiler passes. */
 export class WorkingGraph {
   readonly name: string;
   readonly nodes = new Map<NodeId, GraphNode>();
@@ -41,8 +41,10 @@ export class WorkingGraph {
     return this.edges.filter((edge) => edge.to.node === node);
   }
 
-  // The source of an input of a node, or undefined when it is unconnected
-  // and has no node-level default.
+  /**
+   * The source of an input of a node, or undefined when it is unconnected
+   * and has no node-level default.
+   */
   inputSource(node: GraphNode, port: string): InputSource | undefined {
     const edge = this.edges.find(
       (candidate) => candidate.to.node === node.id && candidate.to.port === port
@@ -98,8 +100,10 @@ export class WorkingGraph {
     );
   }
 
-  // Makes every use of an output port read another value instead. Swizzles
-  // of the uses are applied on top of the swizzle of the new source.
+  /**
+   * Makes every use of an output port read another value instead. Swizzles
+   * of the uses are applied on top of the swizzle of the new source.
+   */
   redirectPort(
     from: PortRef,
     to: { readonly ref: PortRef; readonly swizzle?: string }
@@ -121,7 +125,7 @@ export class WorkingGraph {
     });
   }
 
-  // Makes every use of a node read the same port of another node instead.
+  /** Makes every use of a node read the same port of another node instead. */
   redirectUses(from: NodeId, to: NodeId): void {
     this.edges = this.edges.map((edge) =>
       edge.from.node === from

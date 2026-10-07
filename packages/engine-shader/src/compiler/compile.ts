@@ -31,50 +31,99 @@ import { optimize, structuralParams } from './optimize';
 import { planStages } from './stages';
 import { WorkingGraph } from './WorkingGraph';
 
-// Bumped when the compiler output changes, to invalidate cached programs.
+/**
+ * Bumped when the compiler output changes, to invalidate cached programs.
+ *
+ * @group Compilation
+ */
 export const CompilerVersion = 1;
 
+/**
+ * Limits of the target backend that the compiler checks.
+ *
+ * @group Compilation
+ */
 export interface CompilerCapabilities {
-  // Maximum number of varyings between the vertex and fragment stages.
+  /** Maximum number of varyings between the vertex and fragment stages. */
   readonly maxVaryings: number;
 }
 
+/**
+ * The guaranteed limits of WebGPU.
+ *
+ * @group Compilation
+ */
 export const defaultCompilerCapabilities: CompilerCapabilities = {
-  // WebGPU guaranteed limit (maxInterStageShaderVariables).
+  /** WebGPU guaranteed limit (maxInterStageShaderVariables). */
   maxVaryings: 16,
 };
 
+/**
+ * Options of {@link compile}.
+ *
+ * @group Compilation
+ */
 export interface CompileOptions {
+  /** Node types of the graph. Defaults to the standard library. */
   readonly registry?: NodeRegistry;
-  // Semantics of the attributes provided by the mesh. When given, the
-  // compilation fails if the program needs another one.
+  /**
+   * Semantics of the attributes provided by the mesh. When given, the
+   * compilation fails if the program needs another one.
+   */
   readonly vertexAttributes?: readonly string[];
+  /**
+   * Limits of the target backend. Defaults to
+   * {@link defaultCompilerCapabilities}.
+   */
   readonly capabilities?: Partial<CompilerCapabilities>;
-  // Static parameters of the material, read by the macros: normalMap: true…
-  // They override the defaults declared by the graph parameters.
+  /**
+   * Static parameters of the material, read by the macros: normalMap: true…
+   * They override the defaults declared by the graph parameters.
+   */
   readonly features?: Readonly<Record<string, StaticValue>>;
 }
 
+/**
+ * A vertex attribute read by a program.
+ *
+ * @group Compilation
+ */
 export interface VertexInputRequirement {
+  /** Semantic of the attribute. */
   readonly semantic: string;
+  /** Type read by the shader. */
   readonly type: ShaderType;
+  /** Shader location of the input. */
   readonly location: number;
-  // Name of the stage input in the generated code.
+  /** Name of the stage input in the generated code. */
   readonly name: string;
 }
 
+/**
+ * A backend-independent program, result of {@link compile}.
+ *
+ * @group Compilation
+ */
 export interface CompiledProgram {
+  /** Name of the graph. */
   readonly name: string;
-  // Structural hash of the program: equal for graphs that compile to the same
-  // code, independently of the uniform values.
+  /**
+   * Structural hash of the program: equal for graphs that compile to the same
+   * code, independently of the uniform values.
+   */
   readonly programKey: string;
-  // Static parameters read by the macros during the compilation, with the
-  // value they had. Parameters that were not read do not create variants.
+  /**
+   * Static parameters read by the macros during the compilation, with the
+   * value they had. Parameters that were not read do not create variants.
+   */
   readonly variantKey: Readonly<Record<string, StaticValue>>;
+  /** The code of the vertex and fragment stages. */
   readonly module: ShaderModuleIR;
+  /** The resources of the program, by slot. */
   readonly layout: ProgramLayout;
+  /** The vertex attributes the program reads. */
   readonly vertexInputs: readonly VertexInputRequirement[];
-  // Warnings; errors make compile() throw.
+  /** Warnings; errors make compile() throw. */
   readonly diagnostics: readonly Diagnostic[];
 }
 
@@ -116,7 +165,7 @@ function checkSupport(
       isFunctionDefinition(definition) &&
       definition.implementation?.kind !== 'intrinsic'
     ) {
-      // A function node type may also have no implementation at all.
+      /** A function node type may also have no implementation at all. */
       error(
         definition.implementation
           ? `${definition.implementation.kind} functions are not supported yet`
@@ -310,8 +359,28 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
   return hashString(stableStringify({ version: CompilerVersion, outputs }));
 }
 
-// Compiles a material graph into a backend-independent program: IR, resource
-// layout and vertex inputs. Throws a GraphError when the graph has errors.
+/**
+ * Compiles a material graph into a backend-independent program: the
+ * intermediate representation of its stages, its resource layout and its
+ * vertex inputs. A backend then generates the shader code from it.
+ *
+ * The compiler lowers `output.surface` (standard vertex stage and shading
+ * model), expands the macros, removes dead code, folds constants, merges
+ * identical nodes, and places each computation in the vertex or fragment
+ * stage.
+ *
+ * @throws {@link GraphError} when the graph has errors.
+ *
+ * @example
+ * ```ts
+ * const program = compile(graph, {
+ *   vertexAttributes: ['position', 'normal', 'uv'],
+ * });
+ * program.programKey; // equal for graphs that compile to the same code
+ * ```
+ *
+ * @group Compilation
+ */
 export function compile(
   graph: MaterialGraphData,
   options: CompileOptions = {}
@@ -387,7 +456,7 @@ export function compile(
     return result;
   };
   const lowered = revalidate();
-  // The nodes generated by the macros are checked too.
+  /** The nodes generated by the macros are checked too. */
   checkSupport(lowered, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);

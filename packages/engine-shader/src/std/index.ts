@@ -10,7 +10,23 @@ import * as outputs from './outputs';
 export { ShadingModelNames } from './outputs';
 export type { ShadingModel } from './outputs';
 
-// Standard functions, by short name: g.call(std.mul, { a, b }).
+/**
+ * The standard functions, by short name.
+ *
+ * Arithmetic (`add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`,
+ * `fract`, `sqrt`, `sin`, `cos`, `pow`, `saturate`, `step`), vectors (`dot`,
+ * `cross`, `length`, `normalize`, `reflect`), interpolation (`mix`, `clamp`,
+ * `smoothstep`, `select`), textures (`textureSample`), construction (`vec2`,
+ * `vec3`, `vec4`, `extend`, `convert`), transforms (`transform`,
+ * `transform3`) and `perFragment`.
+ *
+ * @example
+ * ```ts
+ * const color = g.call(std.mul, { a: texel, b: tint });
+ * ```
+ *
+ * @group Standard library
+ */
 export const std = {
   add: functions.add,
   sub: functions.sub,
@@ -47,6 +63,12 @@ export const std = {
   convert: functions.convert,
 } as const;
 
+/**
+ * The input node types: attribute, uniform, storage, texture, sampler,
+ * builtin and engine values.
+ *
+ * @group Standard library
+ */
 export const stdInputs = {
   attribute: inputs.attribute,
   uniform: inputs.uniform,
@@ -57,18 +79,33 @@ export const stdInputs = {
   engine: inputs.engine,
 } as const;
 
+/**
+ * The constant node types.
+ *
+ * @group Standard library
+ */
 export const stdConstants = {
   value: constants.value,
   pi: constants.pi,
 } as const;
 
+/**
+ * The output node types: `output.surface`, and the raw `output.vertex` /
+ * `output.fragment`.
+ *
+ * @group Standard library
+ */
 export const stdOutputs = {
   surface: outputs.surface,
   vertex: outputs.vertex,
   fragment: outputs.fragment,
 } as const;
 
-// Macros, by short name: g.node(stdMacros.staticSwitch, { params, inputs }).
+/**
+ * Macros, by short name: g.node(stdMacros.staticSwitch, { params, inputs }).
+ *
+ * @group Standard library
+ */
 export const stdMacros = {
   staticSwitch: macros.staticSwitch,
   optionalAttribute: macros.optionalAttribute,
@@ -77,7 +114,14 @@ export const stdMacros = {
 } as const;
 
 export { call, engineValue, swizzle } from './macros';
+export type { MacroInputs } from './macros';
 
+/**
+ * All the node types of the standard library, macros and shading models
+ * included.
+ *
+ * @group Standard library
+ */
 export const standardNodeDefinitions: readonly NodeDefinition[] = [
   ...Object.values(stdInputs),
   ...Object.values(stdConstants),
@@ -87,6 +131,11 @@ export const standardNodeDefinitions: readonly NodeDefinition[] = [
   ...lightingDefinitions,
 ];
 
+/**
+ * A registry with all the node types of the standard library.
+ *
+ * @group Standard library
+ */
 export function createStandardRegistry(): NodeRegistry {
   return new NodeRegistry(standardNodeDefinitions);
 }

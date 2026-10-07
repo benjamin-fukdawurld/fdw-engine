@@ -7,12 +7,20 @@ import {
   VectorSize,
 } from './ShaderType';
 
-// An untyped literal. Its type comes from the port it is attached to: 1 can be
-// an f32, an i32 or, through scalar splat, a vec3<f32>.
+/**
+ * An untyped literal. Its type comes from the port it is attached to: 1 can be
+ * an f32, an i32 or, through scalar splat, a vec3<f32>.
+ *
+ * @group Shader types
+ */
 export type ConstantValue = number | boolean | readonly number[];
 
-// The type a literal gets when nothing else gives it one (e.g. an unconnected
-// generic input): numbers are f32, arrays of 2 to 4 numbers are float vectors.
+/**
+ * The type a literal gets when nothing else gives it one (e.g. an unconnected
+ * generic input): numbers are f32, arrays of 2 to 4 numbers are float vectors.
+ *
+ * @group Shader types
+ */
 export function literalType(value: ConstantValue): ShaderType | undefined {
   if (typeof value === 'boolean') {
     return BuiltinTypes.bool;
@@ -42,8 +50,12 @@ function isScalarLiteralCompatible(value: number | boolean, kind: ScalarKind) {
   return Number.isInteger(value) && value >= -0x80000000 && value <= 0x7fffffff;
 }
 
-// Whether a literal can be used as a value of the given type. A single number
-// is accepted for a vector (scalar splat), consistently with port connections.
+/**
+ * Whether a literal can be used as a value of the given type. A single number
+ * is accepted for a vector (scalar splat), consistently with port connections.
+ *
+ * @group Shader types
+ */
 export function isConstantCompatible(
   value: ConstantValue,
   type: ShaderType

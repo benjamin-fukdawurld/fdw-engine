@@ -248,6 +248,44 @@ describe.skipIf(!dawn)('Renderer on WebGPU (Dawn)', () => {
     ).toEqual([255, 0, 0, 255]);
   });
 
+  it('shows both layers of a double-sided transparent shape', async () => {
+    // A slab: a quad facing +z at z = 0.5, listed first, and one facing -z at
+    // z = -0.5. Drawn in index order with depth writes, the front face would
+    // hide the back one.
+    const slab = new Mesh({
+      description: {
+        vertexBuffers: [
+          {
+            stride: 12,
+            stepMode: 'vertex',
+            attributes: [
+              { semantic: 'position', format: 'float32x3', offset: 0 },
+            ],
+          },
+        ],
+        vertexCount: 8,
+        indexBuffer: { format: 'uint16', count: 12 },
+      },
+      vertices: [
+        new Float32Array([
+          -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+          -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
+        ]),
+      ],
+      indices: new Uint16Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+    });
+    const glass = new Material({
+      graph: colorGraph(),
+      values: { color: [0, 0, 1, 0.5] },
+      renderState: { alphaMode: 'blend', doubleSided: true },
+    });
+    const pixel = await render([
+      { mesh: slab, material: glass, transform: at(0) },
+    ]);
+    // Two layers of 0.5 × blue over black: 0.75 × 255.
+    expectColor(pixel(32, 32), [0, 0, 191, 255]);
+  });
+
   it('reports no WebGPU validation error', async () => {
     const device = engine.device!;
     device.pushErrorScope('validation');

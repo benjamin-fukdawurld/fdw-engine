@@ -1,7 +1,18 @@
 import { BuiltinTypes } from '../types/ShaderType';
 import type { NodeDefinition, PortSchema } from '../graph/NodeDefinition';
 
+/**
+ * The shading models of `output.surface`.
+ *
+ * @group Standard library
+ */
 export const ShadingModelNames = ['unlit', 'phong', 'pbr'] as const;
+/**
+ * A shading model: `unlit`, `phong` (`pbr` is declared but not implemented
+ * yet). Each one is a macro named `lighting.<model>`.
+ *
+ * @group Standard library
+ */
 export type ShadingModel = (typeof ShadingModelNames)[number];
 
 const commonPorts: readonly PortSchema[] = [
@@ -30,8 +41,10 @@ const shadingModelPorts: Record<ShadingModel, readonly PortSchema[]> = {
   ],
 };
 
-// The surface of the material. A shading model, inserted by the compiler,
-// turns it into the final color.
+/**
+ * The surface of the material. A shading model, inserted by the compiler,
+ * turns it into the final color.
+ */
 export const surface: NodeDefinition = {
   id: 'output.surface',
   category: 'output',
@@ -51,8 +64,10 @@ export const surface: NodeDefinition = {
   outputs: () => [],
 };
 
-// Raw stage outputs, for full control (post-processing, full-screen passes).
-// The compiler also lowers 'output.surface' to this pair.
+/**
+ * Raw stage outputs, for full control (post-processing, full-screen passes).
+ * The compiler also lowers 'output.surface' to this pair.
+ */
 export const vertex: NodeDefinition = {
   id: 'output.vertex',
   category: 'output',

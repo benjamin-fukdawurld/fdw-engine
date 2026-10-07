@@ -15,6 +15,8 @@ export interface RenderState {
   // Draws both faces of the triangles.
   readonly doubleSided: boolean;
   readonly depthTest: boolean;
+  // Defaults to false for transparent materials: they must not hide what is
+  // behind them, including their own back faces.
   readonly depthWrite: boolean;
 }
 
@@ -56,7 +58,11 @@ export class Material {
   }) {
     this.graph = graph;
     this._features = { ...features };
-    this.renderState = { ...defaultRenderState, ...renderState };
+    this.renderState = {
+      ...defaultRenderState,
+      depthWrite: renderState.alphaMode !== 'blend',
+      ...renderState,
+    };
     this.label = label;
 
     for (const node of graph.nodes) {

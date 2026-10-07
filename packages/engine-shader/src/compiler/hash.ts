@@ -1,4 +1,8 @@
-// 64-bit FNV-1a hash, as 16 hex digits. Used for cache keys, not security.
+/**
+ * 64-bit FNV-1a hash, as 16 hex digits. Used for cache keys, not security.
+ *
+ * @group Compilation
+ */
 export function hashString(text: string): string {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
@@ -9,7 +13,7 @@ export function hashString(text: string): string {
   return hash.toString(16).padStart(16, '0');
 }
 
-// JSON with sorted object keys: equal values give equal strings.
+/** JSON with sorted object keys: equal values give equal strings. */
 export const stableStringify = (value: unknown): string =>
   JSON.stringify(value, (_, inner) =>
     inner && typeof inner === 'object' && !Array.isArray(inner)

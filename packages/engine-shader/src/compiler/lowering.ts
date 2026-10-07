@@ -10,9 +10,11 @@ const isZero = (source: InputSource): boolean =>
     ? source.value.every((component) => component === 0)
     : source.value === 0);
 
-// Replaces 'output.surface' by the standard vertex stage and the shading
-// model, ending with 'output.vertex' and 'output.fragment'. Graphs that
-// already use the raw outputs are left unchanged.
+/**
+ * Replaces 'output.surface' by the standard vertex stage and the shading
+ * model, ending with 'output.vertex' and 'output.fragment'. Graphs that
+ * already use the raw outputs are left unchanged.
+ */
 export function lowerSurface(
   graph: WorkingGraph,
   registry: NodeRegistry,

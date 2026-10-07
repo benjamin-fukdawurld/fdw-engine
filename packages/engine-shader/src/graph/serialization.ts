@@ -4,6 +4,11 @@ import {
   MaterialGraphVersion,
 } from './MaterialGraphData';
 
+/**
+ * Serializes a graph as indented JSON.
+ *
+ * @group Graph model
+ */
 export function serializeGraph(graph: MaterialGraphData): string {
   return JSON.stringify(graph, null, 2);
 }
@@ -20,8 +25,12 @@ function isPortRef(value: unknown): boolean {
   );
 }
 
-// Parses a graph document and checks its structure. The semantic checks
-// (node types, ports, types, cycles) are done by validateGraph.
+/**
+ * Parses a graph document and checks its structure. The semantic checks
+ * (node types, ports, types, cycles) are done by validateGraph.
+ *
+ * @group Graph model
+ */
 export function parseGraph(source: string | unknown): MaterialGraphData {
   const data: unknown =
     typeof source === 'string' ? JSON.parse(source) : source;

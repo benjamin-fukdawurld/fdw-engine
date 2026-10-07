@@ -19,6 +19,11 @@ import {
 import { NodeRegistry } from './NodeRegistry';
 import { parseSwizzle, swizzleType } from './swizzle';
 
+/**
+ * A node with its definition, resolved parameters and ports.
+ *
+ * @group Validation
+ */
 export interface ResolvedNode {
   readonly node: GraphNode;
   readonly definition: NodeDefinition;
@@ -27,14 +32,21 @@ export interface ResolvedNode {
   readonly outputs: readonly PortSchema[];
 }
 
+/**
+ * Result of {@link validateGraph}.
+ *
+ * @group Validation
+ */
 export interface GraphValidation {
-  // True when no diagnostic is an error.
+  /** True when no diagnostic is an error. */
   readonly valid: boolean;
+  /** Errors and warnings. */
   readonly diagnostics: readonly Diagnostic[];
+  /** The nodes that could be resolved. */
   readonly nodes: ReadonlyMap<NodeId, ResolvedNode>;
-  // Topological order of the nodes; empty when the graph has a cycle.
+  /** Topological order of the nodes; empty when the graph has a cycle. */
   readonly order: readonly NodeId[];
-  // Concrete port types of the nodes whose types could be resolved.
+  /** Concrete port types of the nodes whose types could be resolved. */
   readonly types: ReadonlyMap<NodeId, NodeTypes>;
 }
 
@@ -93,8 +105,12 @@ function checkParam(
   }
 }
 
-// Checks the parameters of a node and resolves its ports. Problems are added
-// to `diagnostics`; returns undefined when the node cannot be resolved.
+/**
+ * Checks the parameters of a node and resolves its ports. Problems are added
+ * to `diagnostics`; returns undefined when the node cannot be resolved.
+ *
+ * @group Validation
+ */
 export function resolveGraphNode(
   node: GraphNode,
   registry: NodeRegistry,
@@ -163,8 +179,12 @@ export function resolveGraphNode(
   }
 }
 
-// A graph ends either with one 'output.surface', or with one 'output.vertex'
-// and one 'output.fragment' for full control over the stages.
+/**
+ * A graph ends either with one 'output.surface', or with one 'output.vertex'
+ * and one 'output.fragment' for full control over the stages.
+ *
+ * @group Validation
+ */
 export function checkOutputNodes(
   outputs: readonly Pick<GraphNode, 'id' | 'type'>[]
 ): string | undefined {
@@ -292,6 +312,16 @@ function topologicalOrder(
   return order;
 }
 
+/**
+ * Validates a graph: node types and parameters, edges and swizzles, cycles,
+ * output nodes, resource declarations and types. Returns the topological
+ * order and the port types, for the compiler.
+ *
+ * Unlike {@link GraphBuilder.build} and {@link compile}, it does not throw:
+ * the problems are in `diagnostics`.
+ *
+ * @group Validation
+ */
 export function validateGraph(
   graph: MaterialGraphData,
   registry: NodeRegistry
@@ -437,8 +467,10 @@ export function validateGraph(
       connected[edge.to.port] = swizzled;
     }
 
-    // Typing a node whose inputs are partly unknown would only produce
-    // cascading errors.
+    /**
+     * Typing a node whose inputs are partly unknown would only produce
+     * cascading errors.
+     */
     if (upstreamUnknown) {
       continue;
     }

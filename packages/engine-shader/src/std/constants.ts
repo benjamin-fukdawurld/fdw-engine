@@ -2,8 +2,10 @@ import { ConstantValue, isConstantCompatible } from '../types/ConstantValue';
 import { ShaderType, BuiltinTypes, typeToString } from '../types/ShaderType';
 import type { NodeDefinition } from '../graph/NodeDefinition';
 
-// A constant is part of the generated code: changing it recompiles the shader.
-// Use an 'input.uniform' for values that change at runtime.
+/**
+ * A constant is part of the generated code: changing it recompiles the shader.
+ * Use an 'input.uniform' for values that change at runtime.
+ */
 export const value: NodeDefinition = {
   id: 'const.value',
   category: 'constant',

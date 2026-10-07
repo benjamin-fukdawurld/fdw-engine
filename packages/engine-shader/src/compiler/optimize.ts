@@ -14,7 +14,7 @@ import type { WorkingGraph } from './WorkingGraph';
 
 const rootTypes = new Set(['output.vertex', 'output.fragment']);
 
-// Removes the nodes that do not contribute to the stage outputs.
+/** Removes the nodes that do not contribute to the stage outputs. */
 export function eliminateDeadCode(graph: WorkingGraph): void {
   const live = new Set<NodeId>();
   const pending = [...graph.nodes.values()]
@@ -232,9 +232,11 @@ function foldNode(
 
 // --- Common subexpression elimination -----------------------------------------
 
-// The parameters that define what a node computes. The default value of a
-// uniform is only its initial value on new materials: it is not part of the
-// program, so that materials differing by their values share it.
+/**
+ * The parameters that define what a node computes. The default value of a
+ * uniform is only its initial value on new materials: it is not part of the
+ * program, so that materials differing by their values share it.
+ */
 export function structuralParams(node: GraphNode): GraphNode['params'] {
   if (node.type !== 'input.uniform') {
     return node.params;

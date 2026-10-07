@@ -60,7 +60,7 @@ export const sin = unaryFloat('sin', 'sin');
 export const cos = unaryFloat('cos', 'cos');
 export const saturate = unaryFloat('saturate', 'saturate');
 
-// 0 when x < edge, 1 otherwise.
+/** 0 when x < edge, 1 otherwise. */
 export const step = intrinsic(
   'step',
   'step',
@@ -68,9 +68,11 @@ export const step = intrinsic(
   float
 );
 
-// Returns its value unchanged, but only in the fragment stage: what depends on
-// it is computed per pixel instead of being interpolated. Typically used on a
-// normal or a position before normalizing or lighting.
+/**
+ * Returns its value unchanged, but only in the fragment stage: what depends on
+ * it is computed per pixel instead of being interpolated. Typically used on a
+ * normal or a position before normalizing or lighting.
+ */
 export const perFragment = intrinsic(
   'perFragment',
   'identity',
@@ -142,7 +144,7 @@ export const smoothstep = intrinsic(
   float
 );
 
-// Branchless choice between two values: the graph has no control flow.
+/** Branchless choice between two values: the graph has no control flow. */
 export const select = intrinsic(
   'select',
   'select',
@@ -154,8 +156,10 @@ export const select = intrinsic(
   any
 );
 
-// Implicit-LOD sampling needs derivatives, so it is only valid in a fragment
-// shader.
+/**
+ * Implicit-LOD sampling needs derivatives, so it is only valid in a fragment
+ * shader.
+ */
 export const textureSample = intrinsic(
   'textureSample',
   'texture-sample',
@@ -198,7 +202,7 @@ export const vec4 = intrinsic(
   BuiltinTypes.vec4f
 );
 
-// vec4(xyz, w): typically a color with its alpha, or a position with w = 1.
+/** vec4(xyz, w): typically a color with its alpha, or a position with w = 1. */
 export const extend = intrinsic(
   'extend',
   'construct',
@@ -206,7 +210,7 @@ export const extend = intrinsic(
   BuiltinTypes.vec4f
 );
 
-// Matrix × vector products: transforming positions and directions.
+/** Matrix × vector products: transforming positions and directions. */
 export const transform = intrinsic(
   'transform',
   'mul',

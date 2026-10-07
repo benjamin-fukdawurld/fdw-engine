@@ -22,16 +22,39 @@ import { NodeRegistry } from './NodeRegistry';
 import { composeSwizzles, swizzleType } from './swizzle';
 import { resolveGraphNode, validateGraph } from './validateGraph';
 
-// A typed reference to an output port, possibly swizzled.
+/**
+ * A typed reference to an output port of a node, possibly swizzled.
+ *
+ * Port handles are returned by the {@link GraphBuilder} methods and passed as
+ * inputs of other nodes.
+ *
+ * @group Building graphs
+ */
 export class PortHandle {
   constructor(
+    /** Id of the node. */
     readonly node: NodeId,
+    /** Name of the output port. */
     readonly port: string,
-    // Type of the value, after the swizzle.
+    /** Type of the value, after the swizzle. */
     readonly type: ShaderType,
+    /** Components selected from the port value ('xyz', 'a'…), if any. */
     readonly swizzleMask?: string
   ) {}
 
+  /**
+   * Selects components of a vector value. Swizzles compose:
+   * `color.swizzle('xyz').swizzle('zx')` reads `color.zx`.
+   *
+   * @param mask - Components to select, from `xyzw` or `rgba` (not mixed).
+   * @throws {@link GraphError} when the value is not a vector or a component is
+   * out of range.
+   *
+   * @example
+   * ```ts
+   * g.surface({ baseColor: texel.swizzle('rgb'), alpha: texel.swizzle('a') });
+   * ```
+   */
   swizzle(mask: string): PortHandle {
     const type = swizzleType(this.type, mask);
     if (typeof type === 'string') {
@@ -46,17 +69,37 @@ export class PortHandle {
   }
 }
 
+/**
+ * Values of the inputs of a node, by port name: a port of another node, or a
+ * literal.
+ *
+ * @group Building graphs
+ */
 export type NodeInputs = Readonly<Record<string, PortHandle | ConstantValue>>;
 
+/**
+ * Options of {@link GraphBuilder.node}.
+ *
+ * @group Building graphs
+ */
 export interface NodeOptions {
+  /** Compile-time parameters of the node, as declared by its definition. */
   readonly params?: StaticParams;
+  /** Values of the inputs. */
   readonly inputs?: NodeInputs;
+  /** Name of the node, used to name the variables of the generated code. */
   readonly label?: string;
 }
 
-// The surface ports, plus the shading model. The index signature has to
-// accept the shading model string too.
+/**
+ * Inputs of {@link GraphBuilder.surface}: the surface ports of the shading
+ * model (`baseColor`, `alpha`, `normal`, `shininess`…), plus the shading model
+ * itself.
+ *
+ * @group Building graphs
+ */
 export type SurfaceInputs = {
+  /** Shading model of the surface. Defaults to `'unlit'`. */
   readonly shadingModel?: ShadingModel;
   readonly [port: string]:
     | PortHandle
@@ -65,12 +108,47 @@ export type SurfaceInputs = {
     | undefined;
 };
 
-type Slot = 'frame' | 'material' | 'object' | (string & {});
+/**
+ * A binding slot: groups the resources by update frequency. `'material'` is
+ * the default for material resources; `'frame'` and `'object'` are reserved
+ * for engine values; custom slots get their own bind group.
+ *
+ * @group Building graphs
+ */
+export type BindingSlot = 'frame' | 'material' | 'object' | (string & {});
 
-// Builds a MaterialGraphData step by step. Types are checked as soon as a node
-// is added, so errors point at the faulty call.
+/**
+ * Builds a {@link MaterialGraphData} step by step.
+ *
+ * Types are checked as soon as a node is added, so errors point at the faulty
+ * call. Call {@link GraphBuilder.build} at the end to validate the whole graph.
+ *
+ * @example
+ * ```ts
+ * import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
+ *
+ * const g = new GraphBuilder('textured');
+ * const texel = g.call(std.textureSample, {
+ *   texture: g.texture('diffuseMap'),
+ *   sampler: g.sampler('diffuseSampler'),
+ *   uv: g.attribute('uv', BuiltinTypes.vec2f),
+ * });
+ * const tint = g.uniform('tint', BuiltinTypes.vec4f, { default: [1, 1, 1, 1] });
+ * const color = g.call(std.mul, { a: texel, b: tint });
+ * g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
+ *
+ * const graph = g.build();
+ * ```
+ *
+ * @group Building graphs
+ */
 export class GraphBuilder {
+  /** Name of the graph, used in diagnostics and in the generated code. */
   readonly name: string;
+  /**
+   * Node types available to the graph. Custom node types passed to
+   * {@link GraphBuilder.node} are registered on first use.
+   */
   readonly registry: NodeRegistry;
 
   private readonly _nodes: GraphNode[] = [];
@@ -79,12 +157,31 @@ export class GraphBuilder {
   private _nextId = 1;
   private readonly _outputTypes: string[] = [];
 
+  /**
+   * @param name - Name of the graph.
+   * @param registry - Node types available to the graph. Defaults to the
+   * standard library ({@link createStandardRegistry}).
+   */
   constructor(name: string, registry: NodeRegistry = createStandardRegistry()) {
     this.name = name;
     this.registry = registry;
   }
 
-  // Adds a node and returns its outputs, by port name.
+  /**
+   * Adds a node and returns its outputs, by port name.
+   *
+   * Use it for nodes with several outputs or none; {@link GraphBuilder.call} is
+   * shorter for the others.
+   *
+   * @param definition - The node type, or its id.
+   * @throws {@link GraphError} on unknown types, invalid parameters, unknown
+   * inputs or type errors.
+   *
+   * @example
+   * ```ts
+   * g.node('output.vertex', { inputs: { clipPosition } });
+   * ```
+   */
   node(
     definition: NodeDefinition | string,
     { params = {}, inputs = {}, label }: NodeOptions = {}
@@ -179,7 +276,20 @@ export class GraphBuilder {
     return outputs;
   }
 
-  // Adds a function node with a single output and returns that output.
+  /**
+   * Adds a node with a single output and returns that output.
+   *
+   * Literals can be given directly as inputs: a number is splatted to a vector
+   * when needed.
+   *
+   * @example
+   * ```ts
+   * const doubled = g.call(std.mul, { a: normal, b: 2 });
+   * const facing = g.call(std.saturate, {
+   *   x: g.call(std.dot, { a: normal, b: [0, 1, 0] }),
+   * });
+   * ```
+   */
   call(
     definition: NodeDefinition | string,
     inputs: NodeInputs = {},
@@ -196,6 +306,13 @@ export class GraphBuilder {
     return outputs[0];
   }
 
+  /**
+   * Reads a vertex attribute of the mesh.
+   *
+   * @param semantic - Semantic of the attribute: `'position'`, `'normal'`,
+   * `'uv'`, `'color'`, `'tangent'`… or a custom one.
+   * @param type - Type read by the shader.
+   */
   attribute(semantic: string, type: ShaderType, label?: string): PortHandle {
     return this.call(
       'input.attribute',
@@ -204,10 +321,18 @@ export class GraphBuilder {
     );
   }
 
+  /**
+   * Reads a uniform value of the material. Its value is set on the material at
+   * runtime, without recompiling the shader.
+   *
+   * @param name - Name of the uniform, used to set its value.
+   * @param options.slot - Binding slot, `'material'` by default.
+   * @param options.default - Initial value on new materials.
+   */
   uniform(
     name: string,
     type: ShaderType,
-    options: { slot?: Slot; default?: ConstantValue } = {}
+    options: { slot?: BindingSlot; default?: ConstantValue } = {}
   ): PortHandle {
     return this.call(
       'input.uniform',
@@ -216,10 +341,11 @@ export class GraphBuilder {
     );
   }
 
+  /** Reads a storage buffer. Not supported by the compiler yet. */
   storage(
     name: string,
     type: ShaderType,
-    options: { slot?: Slot; access?: 'read' | 'read-write' } = {}
+    options: { slot?: BindingSlot; access?: 'read' | 'read-write' } = {}
   ): PortHandle {
     return this.call(
       'input.storage',
@@ -228,12 +354,18 @@ export class GraphBuilder {
     );
   }
 
+  /**
+   * Reads a texture of the material, to sample with `std.textureSample`.
+   *
+   * @param options.dimension - `'2d'` by default.
+   * @param options.sampleType - `'float'` by default.
+   */
   texture(
     name: string,
     options: {
       dimension?: TextureDimension;
       sampleType?: TextureSampleType;
-      slot?: Slot;
+      slot?: BindingSlot;
     } = {}
   ): PortHandle {
     return this.call(
@@ -243,9 +375,10 @@ export class GraphBuilder {
     );
   }
 
+  /** Reads a sampler of the material, to sample textures with. */
   sampler(
     name: string,
-    options: { comparison?: boolean; slot?: Slot } = {}
+    options: { comparison?: boolean; slot?: BindingSlot } = {}
   ): PortHandle {
     return this.call(
       'input.sampler',
@@ -254,12 +387,21 @@ export class GraphBuilder {
     );
   }
 
+  /**
+   * Reads a value provided by the GPU: vertex and instance index (vertex
+   * stage), fragment coordinate and facing (fragment stage).
+   */
   builtin(
     builtin: 'vertex-index' | 'instance-index' | 'frag-coord' | 'front-facing'
   ): PortHandle {
     return this.call('input.builtin', {}, { params: { builtin } });
   }
 
+  /**
+   * Reads a value provided by the engine: camera, object transform, time, main
+   * light. These values live in the fixed `frame` and `object` slots, shared by
+   * every material.
+   */
   engine(
     value:
       | 'camera.view'
@@ -278,10 +420,23 @@ export class GraphBuilder {
     return this.call('input.engine', {}, { params: { value } });
   }
 
+  /**
+   * A constant value. It is part of the generated code: changing it recompiles
+   * the shader. Use {@link GraphBuilder.uniform} for values that change.
+   */
   constant(type: ShaderType, value: ConstantValue, label?: string): PortHandle {
     return this.call('const.value', {}, { params: { type, value }, label });
   }
 
+  /**
+   * Ends the graph with the surface of the material. The compiler adds the
+   * standard vertex stage and the lighting of the shading model.
+   *
+   * @example
+   * ```ts
+   * g.surface({ shadingModel: 'phong', baseColor: color, shininess: 32 });
+   * ```
+   */
   surface(inputs: SurfaceInputs = {}): void {
     const { shadingModel = 'unlit', ...ports } = inputs;
     this.node('output.surface', {
@@ -290,7 +445,15 @@ export class GraphBuilder {
     });
   }
 
-  // Declares a static parameter (a "feature") of the graph.
+  /**
+   * Declares a static parameter (a "feature") of the graph, read by the
+   * macros. Materials can override its value.
+   *
+   * @example
+   * ```ts
+   * g.parameter('useTexture', false, 'Samples the diffuse map');
+   * ```
+   */
   parameter(
     name: string,
     defaultValue: StaticValue,
@@ -307,8 +470,12 @@ export class GraphBuilder {
     return this;
   }
 
-  // Validates the whole graph and returns it. Throws a GraphError when the
-  // graph has errors; warnings are accepted.
+  /**
+   * Validates the whole graph and returns it.
+   *
+   * @throws {@link GraphError} when the graph has errors; warnings are
+   * accepted.
+   */
   build(): MaterialGraphData {
     const graph: MaterialGraphData = {
       format: MaterialGraphFormat,

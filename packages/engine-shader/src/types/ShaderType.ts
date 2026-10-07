@@ -2,9 +2,24 @@
 // shading language or memory layout. The physical layout (size, alignment,
 // offsets) is computed by each backend.
 
+/**
+ * Scalar kinds of the shader types.
+ *
+ * @group Shader types
+ */
 export const ScalarKindNames = ['f32', 'f16', 'i32', 'u32', 'bool'] as const;
+/**
+ * A scalar kind: `f32`, `f16`, `i32`, `u32` or `bool`.
+ *
+ * @group Shader types
+ */
 export type ScalarKind = (typeof ScalarKindNames)[number];
 
+/**
+ * Dimensions of the texture types.
+ *
+ * @group Shader types
+ */
 export const TextureDimensionNames = [
   '1d',
   '2d',
@@ -13,8 +28,18 @@ export const TextureDimensionNames = [
   'cube',
   'cube-array',
 ] as const;
+/**
+ * A texture dimension: `1d`, `2d`, `2d-array`, `3d`, `cube` or `cube-array`.
+ *
+ * @group Shader types
+ */
 export type TextureDimension = (typeof TextureDimensionNames)[number];
 
+/**
+ * Types of the values read from textures.
+ *
+ * @group Shader types
+ */
 export const TextureSampleTypeNames = [
   'float',
   'unfilterable-float',
@@ -22,22 +47,52 @@ export const TextureSampleTypeNames = [
   'sint',
   'uint',
 ] as const;
+/**
+ * Type of the values read from a texture.
+ *
+ * @group Shader types
+ */
 export type TextureSampleType = (typeof TextureSampleTypeNames)[number];
 
+/**
+ * Number of components of a vector.
+ *
+ * @group Shader types
+ */
 export type VectorSize = 2 | 3 | 4;
+/**
+ * Number of columns or rows of a matrix.
+ *
+ * @group Shader types
+ */
 export type MatrixSize = 2 | 3 | 4;
 
+/**
+ * A scalar: `f32`, `i32`…
+ *
+ * @group Shader types
+ */
 export type ScalarType = {
   readonly kind: 'scalar';
   readonly scalar: ScalarKind;
 };
 
+/**
+ * A vector of 2 to 4 scalars: `vec3<f32>`…
+ *
+ * @group Shader types
+ */
 export type VectorType = {
   readonly kind: 'vector';
   readonly size: VectorSize;
   readonly scalar: ScalarKind;
 };
 
+/**
+ * A matrix of floats, column-major: `mat4x4<f32>`…
+ *
+ * @group Shader types
+ */
 export type MatrixType = {
   readonly kind: 'matrix';
   readonly columns: MatrixSize;
@@ -45,13 +100,23 @@ export type MatrixType = {
   readonly scalar: 'f32' | 'f16';
 };
 
+/**
+ * An array, of fixed size or sized at runtime.
+ *
+ * @group Shader types
+ */
 export type ArrayType = {
   readonly kind: 'array';
   readonly element: ShaderType;
-  // Absent for runtime-sized arrays (storage buffers only).
+  /** Absent for runtime-sized arrays (storage buffers only). */
   readonly length?: number;
 };
 
+/**
+ * A named structure.
+ *
+ * @group Shader types
+ */
 export type StructType = {
   readonly kind: 'struct';
   readonly name: string;
@@ -61,6 +126,11 @@ export type StructType = {
   }[];
 };
 
+/**
+ * A texture.
+ *
+ * @group Shader types
+ */
 export type TextureType = {
   readonly kind: 'texture';
   readonly dimension: TextureDimension;
@@ -68,11 +138,26 @@ export type TextureType = {
   readonly multisampled?: boolean;
 };
 
+/**
+ * A sampler, regular or comparison (for depth textures).
+ *
+ * @group Shader types
+ */
 export type SamplerType = {
   readonly kind: 'sampler';
   readonly comparison: boolean;
 };
 
+/**
+ * A logical shader type: what a shader manipulates, independently of any
+ * shading language or memory layout.
+ *
+ * Shader types are plain objects, serializable as JSON. Use
+ * {@link BuiltinTypes} for the common ones, or the constructors
+ * ({@link vec}, {@link mat}, {@link texture}…).
+ *
+ * @group Shader types
+ */
 export type ShaderType =
   | ScalarType
   | VectorType
@@ -82,11 +167,22 @@ export type ShaderType =
   | TextureType
   | SamplerType;
 
+/**
+ * Creates a scalar type.
+ *
+ * @group Shader types
+ */
 export const scalar = (kind: ScalarKind): ScalarType => ({
   kind: 'scalar',
   scalar: kind,
 });
 
+/**
+ * Creates a vector type: `vec(3)` is `vec3<f32>`, `vec(2, 'u32')` is
+ * `vec2<u32>`.
+ *
+ * @group Shader types
+ */
 export const vec = (
   size: VectorSize,
   kind: ScalarKind = 'f32'
@@ -96,22 +192,43 @@ export const vec = (
   scalar: kind,
 });
 
+/**
+ * Creates a matrix type of floats.
+ *
+ * @group Shader types
+ */
 export const mat = (
   columns: MatrixSize,
   rows: MatrixSize,
   kind: 'f32' | 'f16' = 'f32'
 ): MatrixType => ({ kind: 'matrix', columns, rows, scalar: kind });
 
+/**
+ * Creates an array type. Without length, the array is sized at runtime
+ * (storage buffers only).
+ *
+ * @group Shader types
+ */
 export const arrayType = (element: ShaderType, length?: number): ArrayType =>
   length === undefined
     ? { kind: 'array', element }
     : { kind: 'array', element, length };
 
+/**
+ * Creates a struct type.
+ *
+ * @group Shader types
+ */
 export const structType = (
   name: string,
   fields: readonly { name: string; type: ShaderType }[]
 ): StructType => ({ kind: 'struct', name, fields });
 
+/**
+ * Creates a texture type.
+ *
+ * @group Shader types
+ */
 export const texture = (
   dimension: TextureDimension,
   sampleType: TextureSampleType = 'float',
@@ -121,12 +238,30 @@ export const texture = (
     ? { kind: 'texture', dimension, sampleType, multisampled }
     : { kind: 'texture', dimension, sampleType };
 
+/**
+ * Creates a sampler type.
+ *
+ * @group Shader types
+ */
 export const sampler = (comparison = false): SamplerType => ({
   kind: 'sampler',
   comparison,
 });
 
-// The most common types, ready to use: BuiltinTypes.vec3f, BuiltinTypes.mat4f…
+/**
+ * The most common shader types, ready to use.
+ *
+ * @example
+ * ```ts
+ * g.uniform('tint', BuiltinTypes.vec4f);
+ * g.attribute('uv', BuiltinTypes.vec2f);
+ *
+ * // A shorter name, if preferred:
+ * import { BuiltinTypes as t } from '@fdw/engine-shader';
+ * ```
+ *
+ * @group Shader types
+ */
 export const BuiltinTypes = {
   f32: scalar('f32'),
   f16: scalar('f16'),
@@ -151,14 +286,29 @@ export const BuiltinTypes = {
   comparisonSampler: sampler(true),
 } as const;
 
+/**
+ * Whether a scalar kind is a number (not `bool`).
+ *
+ * @group Shader types
+ */
 export function isNumericScalarKind(kind: ScalarKind): boolean {
   return kind !== 'bool';
 }
 
+/**
+ * Whether a scalar kind is a float (`f32` or `f16`).
+ *
+ * @group Shader types
+ */
 export function isFloatScalarKind(kind: ScalarKind): boolean {
   return kind === 'f32' || kind === 'f16';
 }
 
+/**
+ * Structural equality of two shader types.
+ *
+ * @group Shader types
+ */
 export function typeEquals(a: ShaderType, b: ShaderType): boolean {
   if (a.kind !== b.kind) {
     return false;
@@ -208,7 +358,11 @@ export function typeEquals(a: ShaderType, b: ShaderType): boolean {
   }
 }
 
-// Readable, language-neutral representation used in diagnostics.
+/**
+ * Readable, language-neutral representation used in diagnostics.
+ *
+ * @group Shader types
+ */
 export function typeToString(type: ShaderType): string {
   switch (type.kind) {
     case 'scalar':

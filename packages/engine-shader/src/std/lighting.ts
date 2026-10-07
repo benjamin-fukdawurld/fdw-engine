@@ -32,8 +32,10 @@ export const unlit = lightingModel('unlit', (context) => ({
   }),
 }));
 
-// Phong lighting with the main light of the frame:
-//   ambient + (diffuse + specular) × attenuation + emissive
+/**
+ * Phong lighting with the main light of the frame:
+ *   ambient + (diffuse + specular) × attenuation + emissive
+ */
 export const phong = lightingModel('phong', (context) => {
   const c = context;
   const position = swizzle(
