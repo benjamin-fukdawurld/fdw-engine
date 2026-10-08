@@ -4,7 +4,11 @@ import {
   TextureDimension,
   TextureSampleType,
 } from '../types/ShaderType';
-import { createStandardRegistry, ShadingModel } from '../std';
+import {
+  createStandardRegistry,
+  ShadingModel,
+  standardNodeDefinitions,
+} from '../std';
 import { Diagnostic, GraphError } from './Diagnostic';
 import { resolveNodeTypes } from './inference';
 import {
@@ -103,11 +107,8 @@ export interface NodeOptions {
 export type SurfaceInputs = {
   /** Shading model of the surface. Defaults to `'unlit'`. */
   readonly shadingModel?: ShadingModel;
-  readonly [port: string]:
-    | PortHandle
-    | ConstantValue
-    | ShadingModel
-    | undefined;
+  // The inputs of the shading model; shadingModel is the only string.
+  readonly [port: string]: PortHandle | ConstantValue | string | undefined;
 };
 
 /**
@@ -434,6 +435,7 @@ export class GraphBuilder {
       | 'object.world'
       | 'object.normalMatrix'
       | 'time'
+      | 'exposure'
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }
@@ -488,7 +490,9 @@ export class GraphBuilder {
    * ```
    */
   surface(inputs: SurfaceInputs = {}): void {
-    const { shadingModel = 'unlit', ...ports } = inputs;
+    const { shadingModel = 'unlit', ...ports } = inputs as SurfaceInputs & {
+      shadingModel?: ShadingModel;
+    };
     this.node('output.surface', {
       params: { shadingModel },
       inputs: ports as NodeInputs,
@@ -529,10 +533,19 @@ export class GraphBuilder {
   build(): MaterialGraphData {
     // The function graphs called by the graph are embedded: the graph then
     // compiles without registering them.
+    // The standard ones are known by every registry.
+    const standard = new Set(standardNodeDefinitions());
+    const types = new Set(this._nodes.map((node) => node.type));
+    // The shading model of the surface is a node type too.
+    for (const node of this._nodes) {
+      if (node.type === 'output.surface') {
+        types.add(`lighting.${node.params['shadingModel'] ?? 'unlit'}`);
+      }
+    }
     const functions: GraphFunctionData[] = [];
-    for (const type of new Set(this._nodes.map((node) => node.type))) {
+    for (const type of types) {
       const definition = this.registry.get(type);
-      if (isGraphFunction(definition)) {
+      if (isGraphFunction(definition) && !standard.has(definition)) {
         functions.push({
           id: definition.id,
           ...(definition.description

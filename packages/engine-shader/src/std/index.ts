@@ -3,13 +3,17 @@ import type { NodeDefinition } from '../graph/NodeDefinition';
 import * as constants from './constants';
 import * as functions from './functions';
 import * as inputs from './inputs';
-import { lightingDefinitions } from './lighting';
+import { createColorFunctions } from './color';
+import { createShadingModels } from './lighting';
 import * as lights from './lights';
 import * as macros from './macros';
 import * as outputs from './outputs';
 import * as subgraphs from './subgraphs';
 
 export { ShadingModelNames } from './outputs';
+export { defineShadingModel } from './lighting';
+export { ToneMappingNames } from './color';
+export type { ToneMapping } from './color';
 export type { ShadingModel } from './outputs';
 
 /**
@@ -154,7 +158,7 @@ export type { MacroInputs } from './macros';
  *
  * @group Standard library
  */
-export const standardNodeDefinitions: readonly NodeDefinition[] = [
+const baseDefinitions: readonly NodeDefinition[] = [
   ...Object.values(stdInputs),
   ...Object.values(stdConstants),
   ...functions.functionDefinitions,
@@ -162,8 +166,41 @@ export const standardNodeDefinitions: readonly NodeDefinition[] = [
   ...lights.lightDefinitions,
   ...subgraphs.subgraphDefinitions,
   ...macros.macroDefinitions,
-  ...lightingDefinitions,
 ];
+
+// The shading models and the color functions are function graphs, built
+// with the other standard
+// node types on first use (not when the modules load: the graph builder
+// depends on this module).
+let shadingModels: readonly NodeDefinition[] | undefined;
+let buildingShadingModels = false;
+
+/**
+ * All the node types of the standard library, macros and shading models
+ * included.
+ *
+ * @group Standard library
+ */
+export function standardNodeDefinitions(): readonly NodeDefinition[] {
+  if (!shadingModels) {
+    // Building the models uses the graph builder, which asks for the
+    // standard definitions: the base ones are enough meanwhile.
+    if (buildingShadingModels) {
+      return baseDefinitions;
+    }
+    buildingShadingModels = true;
+    try {
+      const base = new NodeRegistry(baseDefinitions);
+      shadingModels = [
+        ...createColorFunctions(base),
+        ...createShadingModels(base),
+      ];
+    } finally {
+      buildingShadingModels = false;
+    }
+  }
+  return [...baseDefinitions, ...shadingModels];
+}
 
 /**
  * A registry with all the node types of the standard library.
@@ -171,5 +208,5 @@ export const standardNodeDefinitions: readonly NodeDefinition[] = [
  * @group Standard library
  */
 export function createStandardRegistry(): NodeRegistry {
-  return new NodeRegistry(standardNodeDefinitions);
+  return new NodeRegistry(standardNodeDefinitions());
 }

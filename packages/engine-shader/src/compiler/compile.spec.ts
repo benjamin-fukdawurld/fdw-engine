@@ -81,11 +81,10 @@ describe('compile', () => {
       ]);
     });
 
-    it('rejects the shading models that are not implemented yet', () => {
-      const g = new GraphBuilder('pbr');
-      g.surface({ shadingModel: 'pbr' });
-      expect(compileError(g.build())).toMatch(
-        /"pbr" shading model is not supported yet \(no lighting.pbr macro\)/
+    it('rejects unknown shading models', () => {
+      const g = new GraphBuilder('toon');
+      expect(() => g.surface({ shadingModel: 'toon' })).toThrow(
+        /unknown shading model "toon" \(no lighting.toon node type\)/
       );
     });
 

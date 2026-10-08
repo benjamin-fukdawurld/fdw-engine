@@ -61,14 +61,15 @@ function expandMacro(
       }
       const id = graph.addNode(type, nodeParams, sources);
       const added = registry.require(type);
-      const defaultPort = added.outputs(resolveParams(added, nodeParams))[0]
-        ?.name;
+      const defaultPort = added.outputs(resolveParams(added, nodeParams), {
+        registry,
+      })[0]?.name;
       return (port = defaultPort) => ({ ref: { node: id, port } });
     },
     hasInput: (type, port) => {
       const target = registry.require(type);
       return target
-        .inputs(resolveParams(target, {}))
+        .inputs(resolveParams(target, {}), { registry })
         .some((input) => input.name === port);
     },
     feature,

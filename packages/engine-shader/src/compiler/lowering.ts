@@ -19,6 +19,11 @@ const isZero = (source: InputSource): boolean =>
  * With the 'alphaMode' feature set to 'mask' (given by the renderer from the
  * render state), fragments whose alpha is below the 'alphaCutoff' uniform are
  * discarded.
+ *
+ * The color of the shading model is linear. With the 'toneMapping' feature
+ * (other than 'none'), it is multiplied by the exposure of the frame and tone
+ * mapped; with the 'outputEncoding' feature set to 'srgb', it is encoded for
+ * display. Without these features, the color is written as is.
  */
 export function lowerSurface(
   graph: WorkingGraph,
@@ -49,7 +54,7 @@ export function lowerSurface(
 
   // The source of each surface input: its edge, its node default, or the
   // port default; undefined for unconnected optional inputs.
-  const ports = definition.inputs(params);
+  const ports = definition.inputs(params, { registry });
   const source = (port: string): InputSource | undefined => {
     const connected = graph.inputSource(surface, port);
     if (connected) {
@@ -101,6 +106,28 @@ export function lowerSurface(
       surfaceInputs[port.name] = source(port.name);
     }
   }
+  // Without a normal on the surface, the model gets the interpolated normal
+  // of the mesh, in world space (normalized by the model, per fragment).
+  if (
+    ports.some((port) => port.name === 'normal') &&
+    !surfaceInputs['normal']
+  ) {
+    const normal = graph.addNode('input.attribute', {
+      semantic: 'normal',
+      type: BuiltinTypes.vec3f,
+    });
+    const normalMatrix = graph.addNode('input.engine', {
+      value: 'object.normalMatrix',
+    });
+    const worldNormal = graph.addNode(
+      'std.transform3',
+      {},
+      { matrix: out(normalMatrix, 'value'), vector: out(normal, 'value') }
+    );
+    surfaceInputs['normal'] = out(
+      graph.addNode('std.perFragment', {}, { value: out(worldNormal) })
+    );
+  }
   const color = graph.addNode(
     lighting,
     {},
@@ -109,6 +136,46 @@ export function lowerSurface(
       worldPosition: out(worldPosition),
     }
   );
+  let output = out(color, 'color');
+  const toneMapping = feature('toneMapping') ?? 'none';
+  const encoding = feature('outputEncoding') ?? 'linear';
+  if (toneMapping !== 'none' || encoding === 'srgb') {
+    let rgb: InputSource = { ...output, swizzle: 'xyz' };
+    if (toneMapping !== 'none') {
+      const operators: Record<string, string> = {
+        reinhard: 'color.toneMapReinhard',
+        aces: 'color.toneMapAces',
+        neutral: 'color.toneMapNeutral',
+      };
+      const operator = operators[toneMapping as string];
+      if (!operator) {
+        diagnostics.push({
+          severity: 'error',
+          node: surface.id,
+          message: `unknown tone mapping "${String(toneMapping)}"`,
+        });
+        return;
+      }
+      const exposure = graph.addNode('input.engine', { value: 'exposure' });
+      const exposed = graph.addNode(
+        'std.mul',
+        {},
+        { a: rgb, b: out(exposure, 'value') }
+      );
+      rgb = out(graph.addNode(operator, {}, { color: out(exposed) }));
+    }
+    if (encoding === 'srgb') {
+      rgb = out(graph.addNode('color.linearToSrgb', {}, { color: rgb }));
+    }
+    output = out(
+      graph.addNode(
+        'std.extend',
+        {},
+        { xyz: rgb, w: { ...out(color, 'color'), swizzle: 'w' } }
+      )
+    );
+  }
+
   let discard: InputSource | undefined;
   if (feature('alphaMode') === 'mask') {
     const cutoff = graph.addNode('input.uniform', {
@@ -128,9 +195,7 @@ export function lowerSurface(
   graph.addNode(
     'output.fragment',
     {},
-    discard
-      ? { color: out(color, 'color'), discard }
-      : { color: out(color, 'color') }
+    discard ? { color: output, discard } : { color: output }
   );
 
   graph.removeNode(surface.id);

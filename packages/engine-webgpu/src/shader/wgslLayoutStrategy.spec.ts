@@ -74,7 +74,8 @@ describe('wgslLayoutStrategy', () => {
       ['projection', 128, 64],
       ['cameraPosition', 192, 12],
       ['time', 204, 4],
-      ['lightCount', 208, 4],
+      ['exposure', 208, 4],
+      ['lightCount', 212, 4],
       // Arrays of 16 vec4, aligned to 16 bytes.
       ['lightPositions', 224, 256],
       ['lightAmbients', 480, 256],

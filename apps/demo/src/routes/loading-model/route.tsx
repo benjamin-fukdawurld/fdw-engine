@@ -37,12 +37,18 @@ function texturedPhong() {
   return g.build();
 }
 
-async function loadTexture(backend: RenderBackend, url: string) {
+// Color textures are sRGB, decoded to linear colors by the GPU; data
+// textures (specular, shininess…) are linear.
+async function loadTexture(
+  backend: RenderBackend,
+  url: string,
+  colorSpace: 'srgb' | 'linear' = 'srgb'
+) {
   const image = await createImageBitmap(await (await fetch(url)).blob());
   return backend.textures.createTexture({
     label: url,
     type: '2d',
-    format: 'rgba8unorm',
+    format: colorSpace === 'srgb' ? 'rgba8unorm-srgb' : 'rgba8unorm',
     dimensions: { width: image.width, height: image.height },
     source: image,
   });
@@ -77,8 +83,16 @@ function RouteComponent() {
       graph: texturedPhong(),
       values: {
         diffuseMap: await loadTexture(backend, '/sphere-diffuse.png'),
-        specularMap: await loadTexture(backend, '/sphere-specular.png'),
-        shininessMap: await loadTexture(backend, '/sphere-shininess.png'),
+        specularMap: await loadTexture(
+          backend,
+          '/sphere-specular.png',
+          'linear'
+        ),
+        shininessMap: await loadTexture(
+          backend,
+          '/sphere-shininess.png',
+          'linear'
+        ),
         diffuseSampler: sampler,
         specularSampler: sampler,
         shininessSampler: sampler,

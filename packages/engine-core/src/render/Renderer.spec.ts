@@ -494,7 +494,11 @@ describe('Renderer', () => {
     const pipeline = log.pipelines.find((p) => p.label === 'leaves');
     expect(pipeline?.targets[0].blend).toBeUndefined();
     expect(pipeline?.depthStencil?.depthWrite).toBe(true);
-    expect(pipeline?.program.variantKey).toEqual({ alphaMode: 'mask' });
+    expect(pipeline?.program.variantKey).toEqual({
+      alphaMode: 'mask',
+      toneMapping: 'none',
+      outputEncoding: 'srgb',
+    });
     // alphaCutoff (0.5 by default) comes first in the block, sorted by name.
     const uniforms = log.buffers.find((b) => b.label === 'leaves uniforms');
     expect(floatsOf(uniforms as FakeBuffer)[0]).toBe(0.5);
@@ -681,6 +685,8 @@ describe('Renderer, phase 4', () => {
     expect(log.pipelines[0].program.variantKey).toEqual({
       textured: false,
       alphaMode: 'opaque',
+      toneMapping: 'none',
+      outputEncoding: 'srgb',
     });
 
     material.setFeature('textured', true);
@@ -689,6 +695,8 @@ describe('Renderer, phase 4', () => {
     expect(log.pipelines[1].program.variantKey).toEqual({
       textured: true,
       alphaMode: 'opaque',
+      toneMapping: 'none',
+      outputEncoding: 'srgb',
     });
   });
 

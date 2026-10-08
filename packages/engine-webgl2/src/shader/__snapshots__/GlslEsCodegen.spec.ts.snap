@@ -14,6 +14,7 @@ layout(std140) uniform FrameUniforms {
   mat4 u_projection;
   vec3 u_cameraPosition;
   float u_time;
+  float u_exposure;
   uint u_lightCount;
   vec4 u_lightPositions[16];
   vec4 u_lightAmbients[16];
@@ -65,6 +66,7 @@ layout(std140) uniform FrameUniforms {
   mat4 u_projection;
   vec3 u_cameraPosition;
   float u_time;
+  float u_exposure;
   uint u_lightCount;
   vec4 u_lightPositions[16];
   vec4 u_lightAmbients[16];

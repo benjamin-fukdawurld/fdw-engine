@@ -26,6 +26,7 @@ import {
   MaterialGraphData,
   MaxLights,
   NodeRegistry,
+  ToneMapping,
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
@@ -46,6 +47,8 @@ export interface RenderOptions {
   readonly clearColor?: IColor;
   // Seconds, exposed to the materials as the 'time' engine value.
   readonly time?: number;
+  // Multiplies the linear colors before the tone mapping. Defaults to 1.
+  readonly exposure?: number;
   // Lights of the scene, summed by the lit shading models. Up to MaxLights
   // (16) are used, the others are ignored.
   readonly lights?: readonly BaseLight[];
@@ -53,6 +56,13 @@ export interface RenderOptions {
 
 export interface RendererOptions {
   readonly registry?: NodeRegistry;
+  // How the linear colors of the materials are written to the surface:
+  // tone mapping (multiplied by the exposure of each frame first), and the
+  // encoding of the surface. Defaults: no tone mapping, sRGB encoding.
+  readonly output?: {
+    readonly toneMapping?: ToneMapping;
+    readonly encoding?: 'srgb' | 'linear';
+  };
   // Create pipelines asynchronously: an item is skipped until its pipeline
   // is ready, instead of blocking the frame while it compiles.
   readonly asyncPipelines?: boolean;
@@ -181,6 +191,10 @@ export class Renderer {
   >();
   private readonly _pipelines = new Map<string, PipelineEntry>();
   private readonly _asyncPipelines: boolean;
+  private readonly _output: {
+    readonly toneMapping: ToneMapping;
+    readonly outputEncoding: 'srgb' | 'linear';
+  };
   private readonly _meshes = new WeakMap<Mesh, GpuMesh>();
   private readonly _objects = new WeakMap<Transform, ObjectState>();
   private readonly _materials = new WeakMap<
@@ -195,6 +209,10 @@ export class Renderer {
     this.backend = backend;
     this._registry = options.registry;
     this._asyncPipelines = options.asyncPipelines ?? false;
+    this._output = {
+      toneMapping: options.output?.toneMapping ?? 'none',
+      outputEncoding: options.output?.encoding ?? 'srgb',
+    };
   }
 
   // Resolves when the pipelines being created asynchronously are ready.
@@ -212,6 +230,7 @@ export class Renderer {
     surface,
     clearColor,
     time = 0,
+    exposure = 1,
     lights = [],
   }: RenderOptions): void {
     const target = surface.getCurrentTarget();
@@ -235,7 +254,7 @@ export class Renderer {
     });
 
     if (ordered.length > 0) {
-      this.updateFrame(ordered[0].layout, cameraCache, time, lights);
+      this.updateFrame(ordered[0].layout, cameraCache, time, exposure, lights);
     }
     for (const entry of ordered) {
       this.draw(pass, entry);
@@ -261,6 +280,7 @@ export class Renderer {
     const features = {
       ...material.features,
       alphaMode: material.renderState.alphaMode,
+      ...this._output,
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
       features
@@ -464,6 +484,7 @@ export class Renderer {
     layout: PhysicalProgramLayout,
     camera: CameraCache,
     time: number,
+    exposure: number,
     lights: readonly BaseLight[]
   ): void {
     const group = layout.groups.find((candidate) => candidate.slot === 'frame');
@@ -478,6 +499,7 @@ export class Renderer {
       projection: camera.projectionMatrix.value,
       cameraPosition: [position.x, position.y, position.z],
       time,
+      exposure,
       ...lightValues(lights),
     };
     this._frame.block = block;

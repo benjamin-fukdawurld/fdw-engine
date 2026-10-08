@@ -1,67 +1,52 @@
 import { BuiltinTypes } from '../types/ShaderType';
-import type { NodeDefinition, PortSchema } from '../graph/NodeDefinition';
+import { NodeDefinition, resolveParams } from '../graph/NodeDefinition';
 
 /**
- * The shading models of `output.surface`.
+ * The shading models of the standard library. Others can be registered with
+ * {@link defineShadingModel}.
  *
  * @group Standard library
  */
 export const ShadingModelNames = ['unlit', 'phong', 'pbr'] as const;
 /**
- * A shading model: `unlit`, `phong` (`pbr` is declared but not implemented
- * yet). Each one is a macro named `lighting.<model>`.
+ * A shading model: `unlit`, `phong`, `pbr`, or the name of a shading model
+ * registered as the node type `lighting.<name>`.
  *
  * @group Standard library
  */
-export type ShadingModel = (typeof ShadingModelNames)[number];
-
-const commonPorts: readonly PortSchema[] = [
-  { name: 'baseColor', type: BuiltinTypes.vec3f, default: [1, 1, 1] },
-  // Opacity: blended with 'blend' materials, compared to the alphaCutoff
-  // uniform with 'mask' ones.
-  { name: 'alpha', type: BuiltinTypes.f32, default: 1 },
-  // Vertex stage: displacement of the vertex, in object space.
-  { name: 'positionOffset', type: BuiltinTypes.vec3f, default: [0, 0, 0] },
-];
-
-const litPorts: readonly PortSchema[] = [
-  { name: 'emissive', type: BuiltinTypes.vec3f, default: [0, 0, 0] },
-  // World-space normal. When unconnected, the compiler uses the interpolated
-  // vertex normal.
-  { name: 'normal', type: BuiltinTypes.vec3f, optional: true },
-];
-
-const shadingModelPorts: Record<ShadingModel, readonly PortSchema[]> = {
-  unlit: [],
-  phong: [
-    { name: 'specular', type: BuiltinTypes.vec3f, default: [1, 1, 1] },
-    { name: 'shininess', type: BuiltinTypes.f32, default: 32 },
-  ],
-  pbr: [
-    { name: 'roughness', type: BuiltinTypes.f32, default: 0.5 },
-    { name: 'metallic', type: BuiltinTypes.f32, default: 0 },
-  ],
-};
+export type ShadingModel = (typeof ShadingModelNames)[number] | (string & {});
 
 /**
- * The surface of the material. A shading model, inserted by the compiler,
- * turns it into the final color.
+ * The surface of the material. Its inputs are those of its shading model
+ * (the node type `lighting.<shadingModel>`), plus `positionOffset`: the
+ * compiler inserts the model, which turns the surface into the final color.
  */
 export const surface: NodeDefinition = {
   id: 'output.surface',
   category: 'output',
   params: {
-    shadingModel: {
-      kind: 'string',
-      values: ShadingModelNames,
-      default: 'unlit',
-    },
+    shadingModel: { kind: 'string', default: 'unlit' },
   },
-  inputs: (params) => {
-    const model = params['shadingModel'] as ShadingModel;
-    return model === 'unlit'
-      ? commonPorts
-      : [...commonPorts, ...litPorts, ...shadingModelPorts[model]];
+  inputs: (params, context) => {
+    const name = params['shadingModel'] as string;
+    const model = context?.registry?.get(`lighting.${name}`);
+    if (!model) {
+      throw new Error(
+        `unknown shading model "${name}" (no lighting.${name} node type)`
+      );
+    }
+    const ports = model
+      .inputs(resolveParams(model, {}), context)
+      .filter((port) => port.name !== 'worldPosition')
+      // The interpolated normal of the mesh when unconnected.
+      .map((port) =>
+        port.name === 'normal' ? { ...port, optional: true } : port
+      );
+    return [
+      // Vertex stage: displacement of the vertex, in object space.
+      { name: 'positionOffset', type: BuiltinTypes.vec3f, default: [0, 0, 0] },
+      ...ports,
+    ];
   },
   outputs: () => [],
 };

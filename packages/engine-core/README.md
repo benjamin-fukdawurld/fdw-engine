@@ -74,6 +74,7 @@ The renderer caches everything it creates:
 - **Frame and object bind groups are shared** by all the programs, since their layout is a fixed contract.
 - **Draw order**: opaque items grouped by pipeline then material, then transparent items back to front.
 - **Lights**: `render({ lights })` gives the lights of the frame — `DirectionalLight`, `PointLight` and `SpotLight` (cone from `innerCutoff` / `outerCutoff`, half-angles in degrees) — summed by the lit shading models. Up to 16 lights (`MaxLights`) are used.
+- **Colors**: the materials compute **linear** colors. Color textures are created in an `-srgb` format (`rgba8unorm-srgb`), decoded by the GPU; data textures (normal, roughness, specular maps) stay linear. `new Renderer(backend, { output: { toneMapping, encoding } })` chooses the tone mapping (`none` by default, `reinhard`, `aces`, `neutral`) and the encoding of the surface (`srgb` by default, `linear`); `render({ exposure })` multiplies the colors before the tone mapping.
 - **Asynchronous pipelines**: with `new Renderer(backend, { asyncPipelines: true })`, an item is skipped until its pipeline is ready instead of blocking the frame; `await renderer.whenReady()` waits for the pending ones.
 
 ## Usage

@@ -35,6 +35,8 @@ export interface RenderingFixture {
 
 export const size = 64;
 
+const linearOutput = { encoding: 'linear', toneMapping: 'none' } as const;
+
 // A 1×1 quad in the z = 0 plane, with uvs (v pointing down, like images).
 const quad = () =>
   new Mesh({
@@ -135,13 +137,15 @@ export function describeRenderer(
       items: RenderItem[],
       time = 0,
       lights: BaseLight[] = [],
-      using: Renderer = renderer
+      using: Renderer = renderer,
+      exposure = 1
     ) => {
       using.render({
         items,
         camera,
         surface,
         time,
+        exposure,
         lights,
         clearColor: { r: 0, g: 0, b: 0, a: 1 },
       });
@@ -155,7 +159,8 @@ export function describeRenderer(
       fixture = await createFixture();
       backend = fixture.backend;
       surface = fixture.surface;
-      renderer = new Renderer(backend);
+      // Linear output: the expected colors are those computed by the shaders.
+      renderer = new Renderer(backend, { output: linearOutput });
     });
 
     afterAll(() => {
@@ -377,6 +382,113 @@ export function describeRenderer(
       ]);
       // Two layers of 0.5 × blue over black: 0.75 × 255.
       expectColor(pixel(32, 32), [0, 0, 191, 255]);
+    });
+
+    describe('color management', () => {
+      const gray = (value: number) => {
+        const g = new GraphBuilder('gray');
+        g.surface({ baseColor: [value, value, value] });
+        return g.build();
+      };
+      const pixelOf = async (
+        graph: ReturnType<typeof gray>,
+        output: ConstructorParameters<typeof Renderer>[1],
+        exposure = 1,
+        values: Record<string, never> = {}
+      ) => {
+        const using = new Renderer(backend, output);
+        const pixel = await render(
+          [
+            {
+              mesh: quad(),
+              material: new Material({ graph, values }),
+              transform: at(0),
+            },
+          ],
+          0,
+          [],
+          using,
+          exposure
+        );
+        using.destroy();
+        return pixel(32, 32);
+      };
+      const byte = (value: number) =>
+        Math.round(Math.min(Math.max(value, 0), 1) * 255);
+      const srgb = (c: number) =>
+        c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+
+      it('encodes the linear colors in sRGB by default', async () => {
+        for (const value of [0.5, 0.002, 1]) {
+          const v = byte(srgb(value));
+          expectColor(await pixelOf(gray(value), {}), [v, v, v, 255]);
+        }
+      });
+
+      it('decodes the sRGB textures', async () => {
+        // 188 encodes 0.5 in sRGB: read as 0.5, written as 128 in linear.
+        const map = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm-srgb',
+          dimensions: { width: 1, height: 1 },
+          source: new Uint8Array([188, 188, 188, 255]),
+        });
+        const pixel = await render([
+          {
+            mesh: quad(),
+            material: new Material({
+              graph: texturedGraph(),
+              values: {
+                map,
+                mapSampler: backend.textures.createSampler(),
+              },
+            }),
+            transform: at(0),
+          },
+        ]);
+        expectColor(pixel(32, 32), [128, 128, 128, 255]);
+      });
+
+      it('tone maps the colors multiplied by the exposure', async () => {
+        const aces = (c: number) =>
+          (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+        // Khronos PBR Neutral, for a gray: below the compression, the color
+        // only loses the offset; above, its peak is compressed.
+        const neutral = (c: number) => {
+          const offset = c < 0.08 ? c - 6.25 * c * c : 0.04;
+          const peak = c - offset;
+          const start = 0.76;
+          if (peak < start) {
+            return peak;
+          }
+          const d = 1 - start;
+          return 1 - (d * d) / (peak + d - start);
+        };
+        const cases: [string, (c: number) => number, number, number][] = [
+          ['reinhard', (c) => c / (1 + c), 2, 1],
+          ['aces', aces, 0.8, 1],
+          ['neutral', neutral, 0.5, 1],
+          ['neutral', neutral, 3, 1],
+          // The exposure scales the color before the tone mapping.
+          ['reinhard', (c) => c / (1 + c), 1, 3],
+        ];
+        for (const [toneMapping, operator, value, exposure] of cases) {
+          const v = byte(operator(value * exposure));
+          expectColor(
+            await pixelOf(
+              gray(value),
+              {
+                output: {
+                  toneMapping: toneMapping as 'reinhard',
+                  encoding: 'linear',
+                },
+              },
+              exposure
+            ),
+            [v, v, v, 255]
+          );
+        }
+      });
     });
 
     describe('phase 4: lighting, features, async pipelines', () => {
@@ -643,6 +755,122 @@ export function describeRenderer(
         }
       });
 
+      // Reference implementation of lighting.pbr, at the center of a pixel,
+      // for gray lights without attenuation nor spot.
+      const pbrReference = (
+        x: number,
+        y: number,
+        material: { baseColor: Vec3; metallic: number; roughness: number },
+        ...lights: {
+          position: Vec3;
+          w: number;
+          ambient: number;
+          intensity: number;
+        }[]
+      ) => {
+        const p: Vec3 = [
+          (x + 0.5) / (size / 2) - 1,
+          1 - (y + 0.5) / (size / 2),
+          0,
+        ];
+        const n: Vec3 = [0, 0, 1];
+        const v = normalize(sub([0, 0, 5], p));
+        const nDotV = Math.max(dot(n, v), 1e-4);
+        const r = Math.min(Math.max(material.roughness, 0.04), 1);
+        const a2 = r ** 4;
+        const k = (r + 1) ** 2 / 8;
+        const geometry = (value: number) => value / (value * (1 - k) + k);
+        const f0 = material.baseColor.map(
+          (c) => 0.04 + (c - 0.04) * material.metallic
+        );
+        const diffuseColor = material.baseColor.map(
+          (c) => c * (1 - material.metallic)
+        );
+        const color = [0, 0, 0];
+        for (const light of lights) {
+          const l = normalize(sub(light.position, scale(p, light.w)));
+          const h = normalize([l[0] + v[0], l[1] + v[1], l[2] + v[2]]);
+          const nDotL = Math.max(dot(n, l), 0);
+          const nDotH = Math.max(dot(n, h), 0);
+          const vDotH = Math.max(dot(v, h), 0);
+          const d = nDotH * nDotH * (a2 - 1) + 1;
+          const distribution = a2 / (Math.PI * d * d);
+          const g = geometry(nDotL) * geometry(nDotV);
+          for (let i = 0; i < 3; i++) {
+            const fresnel = f0[i] + (1 - f0[i]) * (1 - vDotH) ** 5;
+            const specular =
+              (distribution * g * fresnel) / (4 * nDotL * nDotV + 1e-4);
+            const diffuse = ((1 - fresnel) * diffuseColor[i]) / Math.PI;
+            color[i] +=
+              light.ambient * material.baseColor[i] +
+              (diffuse + specular) * light.intensity * Math.PI * nDotL;
+          }
+        }
+        return color
+          .map((value) => Math.round(Math.min(Math.max(value, 0), 1) * 255))
+          .concat(255);
+      };
+
+      it('matches the reference PBR for dielectrics and metals', async () => {
+        const gray = (value: number) => ({ x: value, y: value, z: value });
+        const lights = [
+          new DirectionalLight({
+            direction: { x: -0.6, y: 0, z: -0.8 },
+            ambient: gray(0.05),
+            diffuse: gray(0.6),
+            specular: gray(0.6),
+          }),
+          new PointLight({
+            position: { x: -0.3, y: 0.4, z: 1.5 },
+            ambient: gray(0),
+            diffuse: gray(0.4),
+            specular: gray(0.4),
+          }),
+        ];
+        const baseColor: Vec3 = [0.8, 0.3, 0.2];
+        for (const [metallic, roughness] of [
+          [0, 0.9],
+          [0, 0.3],
+          [1, 0.4],
+        ]) {
+          const g = new GraphBuilder('pbr');
+          g.surface({ shadingModel: 'pbr', baseColor, metallic, roughness });
+          const pixel = await render(
+            [
+              {
+                mesh: litQuad(),
+                material: new Material({ graph: g.build() }),
+                transform: at(0),
+              },
+            ],
+            0,
+            lights
+          );
+          for (const [x, y] of [
+            [32, 32],
+            [20, 18],
+            [5, 5],
+            [60, 40],
+          ]) {
+            expectColor(
+              pixel(x, y),
+              pbrReference(
+                x,
+                y,
+                { baseColor, metallic, roughness },
+                {
+                  position: [0.6, 0, 0.8],
+                  w: 0,
+                  ambient: 0.05,
+                  intensity: 0.6,
+                },
+                { position: [-0.3, 0.4, 1.5], w: 1, ambient: 0, intensity: 0.4 }
+              )
+            );
+          }
+        }
+      });
+
       it('only shows the emissive color without light', async () => {
         const g = new GraphBuilder('emissive');
         g.surface({ shadingModel: 'phong', emissive: [0, 0.5, 0] });
@@ -673,6 +901,7 @@ export function describeRenderer(
       it('skips items until their asynchronous pipeline is ready', async () => {
         const asyncRenderer = new Renderer(backend, {
           asyncPipelines: true,
+          output: linearOutput,
         });
         const items = [
           {

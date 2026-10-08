@@ -166,8 +166,8 @@ export function resolveGraphNode(
       node,
       definition,
       params,
-      inputs: definition.inputs(params),
-      outputs: definition.outputs(params),
+      inputs: definition.inputs(params, { registry }),
+      outputs: definition.outputs(params, { registry }),
     };
   } catch (error) {
     diagnostics.push({

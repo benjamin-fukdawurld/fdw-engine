@@ -1,4 +1,5 @@
 import type { ConstantValue } from '../types/ConstantValue';
+import type { NodeRegistry } from './NodeRegistry';
 import type { PortType } from '../types/PortType';
 import type { ShaderType } from '../types/ShaderType';
 import type {
@@ -81,6 +82,17 @@ export interface ParamSchema {
 export type StaticParams = Readonly<Record<string, StaticValue>>;
 
 /**
+ * What the ports of a node can depend on, besides its parameters: the
+ * registry the graph is resolved with (the ports of `output.surface` are
+ * those of its shading model).
+ *
+ * @group Node definitions
+ */
+export interface PortContext {
+  readonly registry?: NodeRegistry;
+}
+
+/**
  * A node type: its category, parameters and ports.
  *
  * @example A custom function node
@@ -113,9 +125,9 @@ export interface NodeDefinition {
    * Ports can depend on the parameters: the output of 'input.uniform' has the
    * type given by its 'type' parameter.
    */
-  inputs(params: StaticParams): readonly PortSchema[];
+  inputs(params: StaticParams, context?: PortContext): readonly PortSchema[];
   /** Output ports, given the parameters. */
-  outputs(params: StaticParams): readonly PortSchema[];
+  outputs(params: StaticParams, context?: PortContext): readonly PortSchema[];
   /** Restricts the node to a stage (derivatives, implicit-LOD sampling…). */
   stage?(params: StaticParams): ShaderStage | undefined;
 }

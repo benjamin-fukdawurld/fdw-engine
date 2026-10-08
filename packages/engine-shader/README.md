@@ -152,7 +152,17 @@ g.surface({ baseColor: color });
 // not read the colors gives the same program for both.
 ```
 
-**Shading models are macros** named `lighting.<model>`, inserted by the compiler behind `output.surface`: `lighting.unlit` and `lighting.phong`. A shading model can be added by registering a macro `lighting.<name>` that takes the surface inputs and `worldPosition`, and returns a `color`.
+**Shading models are nodes** named `lighting.<model>`, inserted by the compiler behind `output.surface`: the inputs of the surface are those of its model. The standard ones are function graphs:
+
+| Model   | Inputs (besides `baseColor`, `alpha`)                                                                                                                 |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unlit` | —                                                                                                                                                     |
+| `phong` | `emissive`, `normal`, `specular`, `shininess`                                                                                                         |
+| `pbr`   | `emissive`, `normal`, `metallic`, `roughness`, `occlusion` — metallic/roughness as in glTF: Cook-Torrance with GGX, Smith-Schlick and Schlick Fresnel |
+
+`normal` is optional: when unconnected, the model gets the interpolated normal of the mesh. A custom model is a function graph with the inputs of its surface plus `worldPosition` (vec4), and a `color` output (vec4), registered with `defineShadingModel(name, graph)`; it can also replace a standard one in a registry. It reads the lights with `light.current` / `light.sum`.
+
+**Colors are linear.** The `toneMapping` feature (`none`, `reinhard`, `aces`, `neutral` — Khronos PBR Neutral) multiplies the color of the model by the `exposure` of the frame and tone maps it; the `outputEncoding` feature (`srgb`) encodes it for display. The `Renderer` sets both from its `output` option; without them, the color is written as is. The operators and the encoding are function graphs too (`color.toneMapAces`, `color.linearToSrgb`…).
 
 `lighting.phong` sums the lights of the frame (up to `MaxLights`, 16):
 
@@ -195,7 +205,8 @@ The compiler **inlines** each call: the program is the same as with the graph wr
 ### Current limitations
 
 - At most 16 lights per frame, without shadows.
-- No `pbr` shading model yet.
+- No image-based lighting (IBL) yet: the ambient term of the lit models is a constant color per light.
+- Tone mapping is applied per material, before blending: slightly wrong for transparent materials until the render graph brings a post-processing pass.
 - No storage buffers, no array or struct uniforms in materials (the engine uses arrays for the lights), no `f16`.
 - Function inputs have concrete types (no generics yet); functions are inlined, not emitted as functions of the target language; no native functions.
 - `textureSample` only takes 2D textures.
