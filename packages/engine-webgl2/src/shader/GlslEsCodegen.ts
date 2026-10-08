@@ -144,6 +144,15 @@ const memberIdentifier = (name: string) => identifier(`u_${name}`);
 
 const vectorComponents = 'xyzw';
 
+const vectorComparisons = {
+  '<': 'lessThan',
+  '<=': 'lessThanEqual',
+  '>': 'greaterThan',
+  '>=': 'greaterThanEqual',
+  '==': 'equal',
+  '!=': 'notEqual',
+} as const;
+
 interface BodyState {
   readonly lines: string[];
   readonly expressions: Map<number, string>;
@@ -252,6 +261,15 @@ function emitInstructions(
           1
         )}`;
         break;
+      case 'compare': {
+        const [a, b] = [arg(instruction, 0), arg(instruction, 1)];
+        // Vectors are compared by functions in GLSL, scalars by operators.
+        expression =
+          type.kind === 'vector'
+            ? `${vectorComparisons[op.operator]}(${a}, ${b})`
+            : `${a} ${op.operator} ${b}`;
+        break;
+      }
       case 'intrinsic':
         expression =
           op.name === 'saturate'
@@ -432,6 +450,16 @@ export class GlslEsCodegen implements ShaderCodegen {
       [
         'void main() {',
         ...fragmentBody.lines,
+        // After the whole body: every texture sample has run.
+        ...(fragment.results['discard'] !== undefined
+          ? [
+              `  if (${fragmentBody.expressions.get(
+                fragment.results['discard']
+              )}) {`,
+              '    discard;',
+              '  }',
+            ]
+          : []),
         `  o_${identifier(color.name)} = ${fragmentBody.expressions.get(
           fragment.results[color.name]
         )};`,

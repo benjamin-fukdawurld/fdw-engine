@@ -1,4 +1,4 @@
-import { elementOf, generic, PortType } from '../types/PortType';
+import { boolOf, elementOf, generic, PortType } from '../types/PortType';
 import { ShaderType, BuiltinTypes } from '../types/ShaderType';
 import type {
   FunctionDefinition,
@@ -53,6 +53,17 @@ export const min = binary('min', 'min');
 export const max = binary('max', 'max');
 
 export const abs = intrinsic('abs', 'abs', [port('x', numeric)], numeric);
+
+// Component-wise comparisons: bool for scalars, vecN<bool> for vectors.
+const comparison = (id: string, op: IntrinsicOp) =>
+  intrinsic(id, op, [port('a', numeric), port('b', numeric)], boolOf('T'));
+
+export const less = comparison('less', 'less');
+export const lessEqual = comparison('lessEqual', 'less-equal');
+export const greater = comparison('greater', 'greater');
+export const greaterEqual = comparison('greaterEqual', 'greater-equal');
+export const equal = comparison('equal', 'equal');
+export const notEqual = comparison('notEqual', 'not-equal');
 export const floor = unaryFloat('floor', 'floor');
 export const fract = unaryFloat('fract', 'fract');
 export const sqrt = unaryFloat('sqrt', 'sqrt');
@@ -262,6 +273,12 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   clamp,
   smoothstep,
   select,
+  less,
+  lessEqual,
+  greater,
+  greaterEqual,
+  equal,
+  notEqual,
   textureSample,
   vec2,
   vec3,

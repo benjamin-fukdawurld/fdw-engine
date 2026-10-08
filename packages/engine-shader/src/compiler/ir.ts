@@ -34,6 +34,13 @@ export type IrBuiltin =
 export type IrBinaryOperator = '+' | '-' | '*' | '/';
 
 /**
+ * Comparison operators: component-wise for vectors, giving booleans.
+ *
+ * @group Intermediate representation
+ */
+export type IrComparison = '<' | '<=' | '>' | '>=' | '==' | '!=';
+
+/**
  * Intrinsic functions, with the same semantics in every target language.
  *
  * @group Intermediate representation
@@ -80,6 +87,7 @@ export type IrOp =
       readonly member?: string;
     }
   | { readonly kind: 'binary'; readonly operator: IrBinaryOperator }
+  | { readonly kind: 'compare'; readonly operator: IrComparison }
   | { readonly kind: 'intrinsic'; readonly name: IrIntrinsic }
   /** select(ifFalse, ifTrue, condition): branchless choice. */
   | { readonly kind: 'select' }
@@ -157,7 +165,14 @@ export interface IrEntryPoint {
   readonly outputs: readonly IrStageVariable[];
   /** The instructions, in execution order. */
   readonly body: readonly IrInstruction[];
-  /** Value written to each output, by output name. */
+  /**
+   * Value written to each output, by output name. The fragment stage can also
+   * have a `discard` result: a boolean abandoning the fragment when true.
+   * It is a result rather than an instruction, so that the body keeps no side
+   * effect; the code generators test it after the whole body, just before
+   * writing the color (after every texture sample, as derivatives need the
+   * neighboring fragments).
+   */
   readonly results: Readonly<Record<string, ValueId>>;
 }
 

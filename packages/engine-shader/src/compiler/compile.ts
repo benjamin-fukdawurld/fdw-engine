@@ -410,12 +410,6 @@ export function compile(
     fail(diagnostics);
   }
 
-  const working = new WorkingGraph(graph);
-  lowerSurface(working, registry, diagnostics);
-  if (diagnostics.length > 0) {
-    fail(diagnostics);
-  }
-
   // Static parameters: material features, then graph parameter defaults,
   // then the attributes of the mesh. Every read is recorded.
   const variantKey: Record<string, StaticValue> = {};
@@ -441,6 +435,14 @@ export function compile(
     }
     return value;
   };
+
+  // The surface lowering reads the 'alphaMode' feature.
+  const working = new WorkingGraph(graph);
+  lowerSurface(working, registry, diagnostics, feature);
+  if (diagnostics.length > 0) {
+    fail(diagnostics);
+  }
+
   expandMacros({ graph: working, registry, feature, diagnostics });
   if (diagnostics.length > 0) {
     fail(diagnostics);

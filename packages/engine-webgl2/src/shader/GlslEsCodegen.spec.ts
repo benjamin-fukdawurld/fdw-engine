@@ -361,6 +361,66 @@ describe('GlslEsCodegen', () => {
     expect(fragment).toMatch(/ {4}v\d+ \+= v\d+;\n {2}\}/);
   });
 
+  it('discards after the whole body, before writing the color', () => {
+    const g = new GraphBuilder('masked');
+    const texel = g.call(std.textureSample, {
+      texture: g.texture('map'),
+      sampler: g.sampler('mapSampler'),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
+    });
+    g.surface({ baseColor: texel.swizzle('rgb'), alpha: texel.swizzle('a') });
+    const program = compile(g.build(), { features: { alphaMode: 'mask' } });
+    const { fragment } = emit(
+      program.module,
+      std140LayoutStrategy.resolve(program.layout)
+    );
+    expect(fragment).toMatch(
+      /bool (v\d+) = v\d+ < v\d+;[\s\S]*\n {2}if \(\1\) \{\n {4}discard;\n {2}\}\n {2}o_color = v\d+;\n\}/
+    );
+    expect(fragment.indexOf('texture(')).toBeLessThan(
+      fragment.indexOf('discard')
+    );
+  });
+
+  it('compares vectors with functions', () => {
+    const { fragment } = emit(
+      fragmentModule([
+        {
+          id: 1,
+          type: BuiltinTypes.vec3f,
+          op: { kind: 'constant', value: [0, 1, 2] },
+          args: [],
+        },
+        {
+          id: 2,
+          type: { kind: 'vector', size: 3, scalar: 'bool' },
+          op: { kind: 'compare', operator: '<=' },
+          args: [1, 1],
+        },
+        {
+          id: 3,
+          type: BuiltinTypes.f32,
+          op: { kind: 'swizzle', components: 'x' },
+          args: [1],
+        },
+        {
+          id: 4,
+          type: BuiltinTypes.bool,
+          op: { kind: 'compare', operator: '!=' },
+          args: [3, 3],
+        },
+        {
+          id: 5,
+          type: BuiltinTypes.vec4f,
+          op: { kind: 'constant', value: [1, 1, 1, 1] },
+          args: [],
+        },
+      ])
+    );
+    expect(fragment).toContain('bvec3 v2 = lessThanEqual(v1, v1);');
+    expect(fragment).toContain('bool v4 = v3 != v3;');
+  });
+
   it('generates a complete program', () => {
     const g = new GraphBuilder('textured-unlit');
     const uv = g.attribute('uv', BuiltinTypes.vec2f);

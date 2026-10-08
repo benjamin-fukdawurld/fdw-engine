@@ -10,8 +10,9 @@ export type MaterialValue = UniformValue | GpuTexture | GpuSampler;
 
 export interface RenderState {
   // 'blend' draws the material after the opaque ones, back to front, with
-  // alpha blending.
-  readonly alphaMode: 'opaque' | 'blend';
+  // alpha blending. 'mask' discards the fragments whose alpha is below the
+  // 'alphaCutoff' value (0.5 by default), and is drawn with the opaque ones.
+  readonly alphaMode: 'opaque' | 'mask' | 'blend';
   // Draws both faces of the triangles.
   readonly doubleSided: boolean;
   readonly depthTest: boolean;
@@ -65,6 +66,10 @@ export class Material {
     };
     this.label = label;
 
+    // The uniform inserted by the compiler for masked materials.
+    if (this.renderState.alphaMode === 'mask') {
+      this._defaults.set('alphaCutoff', 0.5);
+    }
     for (const node of graph.nodes) {
       const value = node.params['default'];
       if (node.type === 'input.uniform' && value !== undefined) {

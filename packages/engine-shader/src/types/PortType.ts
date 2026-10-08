@@ -68,6 +68,17 @@ export type VectorOfPortType = {
 };
 
 /**
+ * A boolean of the shape of a generic: `bool` for `T = f32`, `vec3<bool>`
+ * for `T = vec3<f32>`. The result of a component-wise comparison.
+ *
+ * @group Port types
+ */
+export type BoolOfPortType = {
+  readonly kind: 'bool-of';
+  readonly of: string;
+};
+
+/**
  * The type of a port in a node definition: a concrete shader type, or a type
  * derived from a generic.
  *
@@ -77,7 +88,8 @@ export type PortType =
   | ShaderType
   | GenericPortType
   | ElementOfPortType
-  | VectorOfPortType;
+  | VectorOfPortType
+  | BoolOfPortType;
 
 /**
  * Creates a generic port type.
@@ -117,6 +129,13 @@ export const vectorOf = (of: string, size: VectorSize): VectorOfPortType => ({
 });
 
 /**
+ * A boolean of the shape of a generic: `vec3<bool>` for `T = vec3<f32>`.
+ *
+ * @group Port types
+ */
+export const boolOf = (of: string): BoolOfPortType => ({ kind: 'bool-of', of });
+
+/**
  * Whether a port type is a concrete shader type.
  *
  * @group Port types
@@ -125,7 +144,8 @@ export function isConcretePortType(type: PortType): type is ShaderType {
   return (
     type.kind !== 'generic' &&
     type.kind !== 'element-of' &&
-    type.kind !== 'vector-of'
+    type.kind !== 'vector-of' &&
+    type.kind !== 'bool-of'
   );
 }
 
@@ -189,6 +209,8 @@ export function portTypeToString(type: PortType): string {
       return `element-of<${type.of}>`;
     case 'vector-of':
       return `vec${type.size}<element-of<${type.of}>>`;
+    case 'bool-of':
+      return `bool-of<${type.of}>`;
     default:
       return typeToString(type);
   }

@@ -474,6 +474,36 @@ describe('Renderer', () => {
     expect(log.draws[1].groups[2]).not.toBe(log.draws[2].groups[2]);
   });
 
+  it('draws masked materials with the opaque ones, with their cutoff', () => {
+    const { render, log } = setup();
+    const glass = new Material({
+      graph: colorGraph(),
+      renderState: { alphaMode: 'blend' },
+      label: 'glass',
+    });
+    const leaves = new Material({
+      graph: colorGraph(),
+      renderState: { alphaMode: 'mask' },
+      label: 'leaves',
+    });
+    render([
+      { mesh: triangle(), material: glass, transform: transformAt(0) },
+      { mesh: triangle(), material: leaves, transform: transformAt(1) },
+    ]);
+    expect(log.draws.map((draw) => draw.pipeline)).toEqual(['leaves', 'glass']);
+    const pipeline = log.pipelines.find((p) => p.label === 'leaves');
+    expect(pipeline?.targets[0].blend).toBeUndefined();
+    expect(pipeline?.depthStencil?.depthWrite).toBe(true);
+    expect(pipeline?.program.variantKey).toEqual({ alphaMode: 'mask' });
+    // alphaCutoff (0.5 by default) comes first in the block, sorted by name.
+    const uniforms = log.buffers.find((b) => b.label === 'leaves uniforms');
+    expect(floatsOf(uniforms as FakeBuffer)[0]).toBe(0.5);
+
+    leaves.setValue('alphaCutoff', 0.25);
+    render([{ mesh: triangle(), material: leaves, transform: transformAt(1) }]);
+    expect(floatsOf(uniforms as FakeBuffer)[0]).toBe(0.25);
+  });
+
   it('derives the pipeline state from the render state', () => {
     const { render, log } = setup();
     render([
@@ -648,12 +678,18 @@ describe('Renderer, phase 4', () => {
     render(items);
     render(items);
     expect(log.pipelines).toHaveLength(1);
-    expect(log.pipelines[0].program.variantKey).toEqual({ textured: false });
+    expect(log.pipelines[0].program.variantKey).toEqual({
+      textured: false,
+      alphaMode: 'opaque',
+    });
 
     material.setFeature('textured', true);
     render(items);
     expect(log.pipelines).toHaveLength(2);
-    expect(log.pipelines[1].program.variantKey).toEqual({ textured: true });
+    expect(log.pipelines[1].program.variantKey).toEqual({
+      textured: true,
+      alphaMode: 'opaque',
+    });
   });
 
   it('skips items until their asynchronous pipeline is ready', async () => {

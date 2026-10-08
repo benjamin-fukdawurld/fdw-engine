@@ -44,6 +44,15 @@ function normalizeConstant(
 
 const binaryOperators = { add: '+', sub: '-', mul: '*', div: '/' } as const;
 
+const comparisons = {
+  less: '<',
+  'less-equal': '<=',
+  greater: '>',
+  'greater-equal': '>=',
+  equal: '==',
+  'not-equal': '!=',
+} as const;
+
 class StageBuilder {
   readonly body: IrInstruction[] = [];
   // Instructions and values of the scopes being built: the stage, then the
@@ -293,9 +302,14 @@ function translateNode(
     case 'output.vertex':
       results['clipPosition'] = inputValues()[0];
       return;
-    case 'output.fragment':
-      results['color'] = inputValues()[0];
+    case 'output.fragment': {
+      const [color, discard] = inputValues();
+      results['color'] = color;
+      if (discard !== undefined) {
+        results['discard'] = discard;
+      }
       return;
+    }
   }
 
   if (
@@ -332,6 +346,19 @@ function translateNode(
       return;
     case 'texture-sample':
       output('result', type, { kind: 'sample' }, args);
+      return;
+    case 'less':
+    case 'less-equal':
+    case 'greater':
+    case 'greater-equal':
+    case 'equal':
+    case 'not-equal':
+      output(
+        'result',
+        type,
+        { kind: 'compare', operator: comparisons[op] },
+        args
+      );
       return;
     default:
       output(

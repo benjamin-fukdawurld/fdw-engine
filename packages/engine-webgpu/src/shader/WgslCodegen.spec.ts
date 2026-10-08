@@ -305,6 +305,29 @@ describe('WgslCodegen', () => {
     expect(code).toMatch(/ {4}(v\d+) = \1 \+ v\d+;\n {2}\}/);
   });
 
+  it('discards after the whole body, before returning the color', () => {
+    const g = new GraphBuilder('masked');
+    const texel = g.call(std.textureSample, {
+      texture: g.texture('map'),
+      sampler: g.sampler('mapSampler'),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
+    });
+    g.surface({ baseColor: texel.swizzle('rgb'), alpha: texel.swizzle('a') });
+    const program = compile(g.build(), { features: { alphaMode: 'mask' } });
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    const fragment = code.slice(code.indexOf('@fragment'));
+    expect(fragment).toMatch(
+      /let (v\d+): bool = v\d+ < v\d+;[\s\S]*\n {2}if \(\1\) \{\n {4}discard;\n {2}\}\n {2}return v\d+;\n\}/
+    );
+    // The texture is sampled before the test.
+    expect(fragment.indexOf('textureSample')).toBeLessThan(
+      fragment.indexOf('discard')
+    );
+  });
+
   it('generates a complete program', () => {
     const g = new GraphBuilder('textured-unlit');
     const uv = g.attribute('uv', BuiltinTypes.vec2f);

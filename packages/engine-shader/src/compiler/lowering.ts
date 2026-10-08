@@ -1,4 +1,5 @@
 import type { Diagnostic } from '../graph/Diagnostic';
+import type { StaticValue } from '../graph/MaterialGraphData';
 import type { NodeRegistry } from '../graph/NodeRegistry';
 import { resolveParams } from '../graph/NodeDefinition';
 import { BuiltinTypes } from '../types/ShaderType';
@@ -14,11 +15,16 @@ const isZero = (source: InputSource): boolean =>
  * Replaces 'output.surface' by the standard vertex stage and the shading
  * model, ending with 'output.vertex' and 'output.fragment'. Graphs that
  * already use the raw outputs are left unchanged.
+ *
+ * With the 'alphaMode' feature set to 'mask' (given by the renderer from the
+ * render state), fragments whose alpha is below the 'alphaCutoff' uniform are
+ * discarded.
  */
 export function lowerSurface(
   graph: WorkingGraph,
   registry: NodeRegistry,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
+  feature: (name: string) => StaticValue | undefined = () => undefined
 ): void {
   const surface = [...graph.nodes.values()].find(
     (node) => node.type === 'output.surface'
@@ -103,7 +109,29 @@ export function lowerSurface(
       worldPosition: out(worldPosition),
     }
   );
-  graph.addNode('output.fragment', {}, { color: out(color, 'color') });
+  let discard: InputSource | undefined;
+  if (feature('alphaMode') === 'mask') {
+    const cutoff = graph.addNode('input.uniform', {
+      name: 'alphaCutoff',
+      type: BuiltinTypes.f32,
+      slot: 'material',
+      default: 0.5,
+    });
+    discard = out(
+      graph.addNode(
+        'std.less',
+        {},
+        { a: source('alpha') ?? { value: 1 }, b: out(cutoff, 'value') }
+      )
+    );
+  }
+  graph.addNode(
+    'output.fragment',
+    {},
+    discard
+      ? { color: out(color, 'color'), discard }
+      : { color: out(color, 'color') }
+  );
 
   graph.removeNode(surface.id);
 }

@@ -246,6 +246,8 @@ function emitInstructions(
         break;
       }
       case 'binary':
+      case 'compare':
+        // Comparisons are component-wise for vectors in WGSL.
         expression = `${arg(instruction, 0)} ${op.operator} ${arg(
           instruction,
           1
@@ -394,6 +396,16 @@ export class WgslCodegen implements ShaderCodegen {
           color.location
         }) ${wgslType(color.type)} {`,
         ...fragmentBody.lines,
+        // After the whole body: every texture sample has run.
+        ...(fragment.results['discard'] !== undefined
+          ? [
+              `  if (${fragmentBody.expressions.get(
+                fragment.results['discard']
+              )}) {`,
+              '    discard;',
+              '  }',
+            ]
+          : []),
         `  return ${fragmentBody.expressions.get(
           fragment.results[color.name]
         )};`,

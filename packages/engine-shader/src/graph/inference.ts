@@ -83,6 +83,13 @@ function resolvePortType(
       const kind: ScalarKind | undefined = bound && scalarKindOf(bound);
       return kind ? vec(type.size, kind) : undefined;
     }
+    case 'bool-of': {
+      const bound = bindings.get(type.of);
+      if (bound?.kind === 'scalar') {
+        return { kind: 'scalar', scalar: 'bool' };
+      }
+      return bound?.kind === 'vector' ? vec(bound.size, 'bool') : undefined;
+    }
     default:
       return type;
   }

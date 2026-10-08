@@ -30,6 +30,7 @@ Ce document propose une architecture et un plan d'implémentation pour :
 16. [Risques et questions ouvertes](#16-risques-et-questions-ouvertes)
 17. [Écarts restants après la phase 5](#17-écarts-restants-après-la-phase-5)
 18. [Évolutions envisagées et compatibilité](#18-évolutions-envisagées-et-compatibilité)
+19. [Chantiers avant la phase 6](#19-chantiers-avant-la-phase-6)
 
 ---
 
@@ -745,17 +746,17 @@ Un générateur est essentiellement un `switch` sur `IrOp` qui produit une ligne
 
 ### 9.2 Les différences à absorber
 
-| Aspect                                | WGSL (WebGPU)           | GLSL ES 3.0 (WebGL2)                              | GLSL 450 (Vulkan)              | MSL (Metal)                                         | HLSL (D3D12)                                   |
-| ------------------------------------- | ----------------------- | ------------------------------------------------- | ------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
-| Binding des ressources                | `@group(g) @binding(b)` | blocs uniform + unités de texture, pas de groupes | `layout(set = g, binding = b)` | `[[buffer(n)]]`, `[[texture(n)]]`, `[[sampler(n)]]` | `register(bN, spaceG)`                         |
-| Texture et sampler                    | séparés                 | **combinés** (`sampler2D`)                        | séparés ou combinés            | séparés                                             | séparés                                        |
-| Storage buffers                       | oui                     | **non**                                           | oui                            | oui                                                 | oui (`StructuredBuffer`)                       |
-| Entry points                          | plusieurs par module    | un programme = deux sources                       | une source par stage           | plusieurs par module                                | plusieurs par module                           |
-| Profondeur du clip space              | [0, 1]                  | **[-1, 1]**                                       | [0, 1]                         | [0, 1]                                              | [0, 1]                                         |
-| Axe Y du NDC                          | vers le haut            | vers le haut                                      | **vers le bas**                | vers le haut                                        | vers le haut                                   |
-| Origine des textures / du framebuffer | haut gauche             | **bas gauche**                                    | haut gauche                    | haut gauche                                         | haut gauche                                    |
-| Matrices                              | colonnes                | colonnes                                          | colonnes                       | colonnes                                            | **lignes par défaut** (émettre `column_major`) |
-| Précision                             | —                       | **qualificateurs obligatoires**                   | —                              | `half`                                              | `min16float`                                   |
+| Aspect                                | WGSL (WebGPU)           | GLSL ES 3.0 (WebGL2)                                                 | GLSL 450 (Vulkan)                                                                                                                                     | MSL (Metal)                                         | HLSL (D3D12)                                   |
+| ------------------------------------- | ----------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------- |
+| Binding des ressources                | `@group(g) @binding(b)` | blocs uniform + unités de texture, pas de groupes                    | `layout(set = g, binding = b)`                                                                                                                        | `[[buffer(n)]]`, `[[texture(n)]]`, `[[sampler(n)]]` | `register(bN, spaceG)`                         |
+| Texture et sampler                    | séparés                 | **combinés** (`sampler2D`)                                           | séparés ou combinés                                                                                                                                   | séparés                                             | séparés                                        |
+| Storage buffers                       | §5.1                    | `input.storage` existe, la compilation renvoie « not supported yet » | Chantier 4 (§19) : WebGPU, erreur explicite sur WebGL2. **Ensuite** : repli WebGL2 par texture de données (RGBA32F lue par `texelFetch`) ; structures |
+| Entry points                          | plusieurs par module    | un programme = deux sources                                          | une source par stage                                                                                                                                  | plusieurs par module                                | plusieurs par module                           |
+| Profondeur du clip space              | [0, 1]                  | **[-1, 1]**                                                          | [0, 1]                                                                                                                                                | [0, 1]                                              | [0, 1]                                         |
+| Axe Y du NDC                          | vers le haut            | vers le haut                                                         | **vers le bas**                                                                                                                                       | vers le haut                                        | vers le haut                                   |
+| Origine des textures / du framebuffer | haut gauche             | **bas gauche**                                                       | haut gauche                                                                                                                                           | haut gauche                                         | haut gauche                                    |
+| Matrices                              | colonnes                | colonnes                                                             | colonnes                                                                                                                                              | colonnes                                            | **lignes par défaut** (émettre `column_major`) |
+| Précision                             | —                       | **qualificateurs obligatoires**                                      | —                                                                                                                                                     | `half`                                              | `min16float`                                   |
 
 Comment le compilateur et les générateurs les absorbent :
 
@@ -1150,24 +1151,25 @@ Deux choix d'implémentation s'écartent de la proposition du §9.2 :
 
 Les points suivants du design ne sont pas encore implémentés, ou seulement en partie. Ils sont à régler par la suite.
 
-| Sujet                                     | Référence | État actuel                                                                                                         | À faire                                                                                                                   |
-| ----------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Fonctions `subgraph` et `native`          | §6.3      | Déclarées dans `NodeDefinition`, refusées par le compilateur                                                        | Émettre des fonctions dans l'IR et les générateurs ; refuser les nœuds `native` sans implémentation pour le langage cible |
-| Storage buffers                           | §5.1      | `input.storage` existe, la compilation renvoie « not supported yet »                                                | Layout, IR, générateurs, repli ou erreur explicite sur WebGL2                                                             |
-| Modèle PBR                                | §6.4      | `pbr` déclaré, sans macro `lighting.pbr`                                                                            | Implémenter, puis passer les modèles d'éclairage en nœuds (§16, question 2)                                               |
-| `alphaMode: 'mask'`                       | §6.5      | Seuls `opaque` et `blend` existent                                                                                  | Seuil d'alpha (`discard`) et tri avec les opaques                                                                         |
-| Paramètres statiques du contexte          | §6.5      | `skinning`, `instancing`, `shadowPass` non fournis par le renderer                                                  | Les ajouter avec les fonctionnalités correspondantes (instancing, ombres)                                                 |
-| Transparence                              | §11.3     | Tri par objet, deux passes (faces arrière puis avant) pour les objets double face                                   | Exact pour les formes convexes seulement ; OIT à étudier                                                                  |
-| Validation du code généré en CI           | §15       | Le WGSL est validé par Dawn, le GLSL par Chromium (ANGLE), dans les tests de rendu                                  | Ajouter naga et `glslangValidator` pour des messages indépendants des pilotes                                             |
-| Variantes et compilation                  | §16       | Compilation asynchrone ; un objet est sauté tant que son pipeline n'est pas prêt                                    | Limite du nombre de variantes avec avertissement, matériau de repli, préchauffage                                         |
-| Débogage du code généré                   | §16       | Noms dérivés des labels, commentaires `// #id` du nœud d'origine (WGSL et GLSL)                                     | Source maps nœud ↔ ligne                                                                                                  |
-| `f16`                                     | §5.1, §16 | Le type existe, sans prise en charge de bout en bout                                                                | Capacité `shader-f16`, layout, générateurs (§16, question 3)                                                              |
-| `frag-coord` en WebGL2                    | §9.2      | `gl_FragCoord` a son origine en bas à gauche, celle de WGSL en haut à gauche                                        | Corriger y avec la hauteur de la cible (uniform du moteur)                                                                |
-| Rendu multi-échantillonné                 | §10.1     | `sampleCount` ignoré en WebGL2 ; contexte créé sans antialiasing                                                    | Renderbuffers multi-échantillonnés et résolution par `blitFramebuffer`                                                    |
-| Présentation WebGL2                       | §10.4     | Le contexte appartient à l'engine (OffscreenCanvas) ; chaque surface rend dans un framebuffer copié vers son canvas | Mesurer le coût de la copie (`transferToImageBitmap`) ; mode direct déjà possible en donnant le canvas à l'engine         |
-| Lumières                                  | §6.6      | Boucle `loop-sum` sur 16 lumières au plus, Phong uniquement                                                         | Ombres ; au-delà de 16 lumières, storage buffer (WebGPU) ou texture de données (WebGL2) ; culling des lumières par objet  |
-| Boucles génériques                        | §6.6, §8  | `loop-sum` ne somme que sur les lumières                                                                            | Généraliser (`fold` avec accumulateur quelconque) si d'autres boucles dynamiques deviennent nécessaires                   |
-| Tableaux et structures dans les matériaux | §5.1      | Les tableaux de taille fixe sont supportés dans les blocs uniform du moteur, pas dans les uniforms des matériaux    | Les ouvrir aux matériaux, puis les structures                                                                             |
+| Sujet                                     | Référence | État actuel                                                                                                                                  | À faire                                                                                                                                                                                                                                |
+| ----------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fonctions `subgraph` et `native`          | §6.3      | Déclarées dans `NodeDefinition`, refusées par le compilateur                                                                                 | Chantier 2 (§19) : inlining des sous-graphes. **Ensuite** : de vraies fonctions dans le code généré (`fn` en WGSL, fonctions GLSL), pour limiter la taille du code ; nœuds `native`, refusés sans implémentation pour le langage cible |
+| Storage buffers                           | §5.1      | `input.storage` existe, la compilation renvoie « not supported yet »                                                                         | Layout, IR, générateurs, repli ou erreur explicite sur WebGL2                                                                                                                                                                          |
+| Modèle PBR                                | §6.4      | `pbr` déclaré, sans macro `lighting.pbr`                                                                                                     | Chantier 3 (§19) : PBR metallic/roughness avec un terme ambiant simple. **Ensuite** : éclairage par environnement (IBL : cubemap d'environnement, irradiance diffuse, specular préfiltré, table BRDF)                                  |
+| Paramètres statiques du contexte          | §6.5      | `skinning`, `instancing`, `shadowPass` non fournis par le renderer                                                                           | Les ajouter avec les fonctionnalités correspondantes (instancing, ombres)                                                                                                                                                              |
+| Transparence                              | §11.3     | Tri par objet, deux passes (faces arrière puis avant) pour les objets double face                                                            | Exact pour les formes convexes seulement ; OIT à étudier                                                                                                                                                                               |
+| Validation du code généré en CI           | §15       | Le WGSL est validé par Dawn, le GLSL par Chromium (ANGLE), dans les tests de rendu                                                           | Ajouter naga et `glslangValidator` pour des messages indépendants des pilotes                                                                                                                                                          |
+| Variantes et compilation                  | §16       | Compilation asynchrone ; un objet est sauté tant que son pipeline n'est pas prêt                                                             | Limite du nombre de variantes avec avertissement, matériau de repli, préchauffage                                                                                                                                                      |
+| Débogage du code généré                   | §16       | Noms dérivés des labels, commentaires `// #id` du nœud d'origine (WGSL et GLSL)                                                              | Source maps nœud ↔ ligne                                                                                                                                                                                                               |
+| `f16`                                     | §5.1, §16 | Le type existe, sans prise en charge de bout en bout                                                                                         | Capacité `shader-f16`, layout, générateurs (§16, question 3)                                                                                                                                                                           |
+| `frag-coord` en WebGL2                    | §9.2      | `gl_FragCoord` a son origine en bas à gauche, celle de WGSL en haut à gauche                                                                 | Corriger y avec la hauteur de la cible (uniform du moteur)                                                                                                                                                                             |
+| Rendu multi-échantillonné                 | §10.1     | `sampleCount` ignoré en WebGL2 ; contexte créé sans antialiasing                                                                             | Renderbuffers multi-échantillonnés et résolution par `blitFramebuffer`                                                                                                                                                                 |
+| Présentation WebGL2                       | §10.4     | Le contexte appartient à l'engine (OffscreenCanvas) ; chaque surface rend dans un framebuffer copié vers son canvas                          | Mesurer le coût de la copie (`transferToImageBitmap`) ; mode direct déjà possible en donnant le canvas à l'engine                                                                                                                      |
+| Lumières                                  | §6.6      | Boucle `loop-sum` sur 16 lumières au plus, Phong uniquement                                                                                  | Ombres ; au-delà de 16 lumières, storage buffer (WebGPU) ou texture de données (WebGL2) ; culling des lumières par objet                                                                                                               |
+| Boucles génériques                        | §6.6, §8  | `loop-sum` ne somme que sur les lumières                                                                                                     | Généraliser (`fold` avec accumulateur quelconque) si d'autres boucles dynamiques deviennent nécessaires                                                                                                                                |
+| Tableaux et structures dans les matériaux | §5.1      | Les tableaux de taille fixe sont supportés dans les blocs uniform du moteur, pas dans les uniforms des matériaux                             | Les ouvrir aux matériaux, puis les structures                                                                                                                                                                                          |
+| Tone mapping                              | §19.6     | Chantier 3 : appliqué à la fin du shader de chaque matériau (option B) ; légèrement faux pour les transparents                               | **Avec le render graph** : rendu dans une cible HDR (`rgba16float`) et passe de post-traitement de tone mapping (option C), sans changer les matériaux                                                                                 |
+| `select` vectoriel                        | §6.3      | La condition de `std.select` est un `bool` scalaire ; les comparaisons de vecteurs donnent des `vecN<bool>` qu'aucun nœud ne consomme encore | Condition `bool-of<T>` pour un choix composante par composante (`select` en WGSL, `mix` avec `bvec` en GLSL)                                                                                                                           |
 
 ---
 
@@ -1230,3 +1232,104 @@ Pour garder ces évolutions possibles sans refonte :
 3. **Accès aux lumières par `light.current` / `light.sum` uniquement** : aucun graphe ne doit dépendre de la disposition des tableaux de lumières, pour pouvoir passer aux storage buffers et aux clusters.
 4. **Ressources indexées (bindless)** : textures en tableaux, matériaux dans des buffers indexés. Utiles au clustered forward, à la réduction des draw calls et au ray tracing, à prévoir dans l'API abstraite comme capacité du backend.
 5. **Capacités des backends** : chaque fonctionnalité optionnelle (storage buffers, compute, ray queries, bindless, `f16`) est une capacité consultée à la compilation et au rendu, avec un repli ou une erreur explicite.
+
+---
+
+## 19. Chantiers avant la phase 6
+
+Avant la phase 6 (backends natifs), le material graph est complété, pour pouvoir être jugé satisfaisant et passer ensuite au render graph et au compute graph (§16, question 4). Quatre chantiers, dans cet ordre (validé) : chacun sert le suivant.
+
+| Chantier                                | Contenu                                                                            | Prérequis de                               |
+| --------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------ |
+| 1. `alphaMode: 'mask'`                  | Surfaces découpées par un seuil d'alpha                                            | —                                          |
+| 2. Fonctions `subgraph`                 | Une fonction écrite comme un graphe, utilisée comme un nœud                        | Modèles d'éclairage personnalisés          |
+| 3. Modèles d'éclairage comme nœuds, PBR | Modèles fournis par le moteur ou écrits par l'utilisateur ; PBR metallic/roughness | —                                          |
+| 4. Storage buffers                      | Grands tableaux de données lus par les shaders                                     | Compute graph, lumières illimitées (§18.1) |
+
+Démarche commune à chaque chantier : design dans ce document (avec validation quand il y a une décision à prendre), compilateur et tests unitaires, générateurs WGSL et GLSL, runtime, tests de rendu sur les deux backends (référence CPU pour l'éclairage), démo et documentation, point d'étape avant le chantier suivant.
+
+### 19.1 `alphaMode: 'mask'`
+
+_Fait._ Le `Renderer` passe `alphaMode` comme feature ; `output.fragment` a une entrée optionnelle `discard` (aussi utilisable par les graphes bruts). Les comparaisons (`std.less`, `std.greater`…, composante par composante, type de résultat `bool-of<T>`) ont été ajoutées pour exprimer la condition ; l'IR les représente par l'opération `compare`.
+
+- **Render state** : `alphaMode: 'mask'` ; les objets masqués sont triés avec les opaques et écrivent la profondeur.
+- **Seuil** : `alphaCutoff`, uniform du matériau (0.5 par défaut) : le changer ne recompile rien.
+- **Compilateur** : le `Renderer` passe `alphaMode` comme feature ; la lowering de `output.surface` la lit (une variante seulement pour les matériaux masqués) et produit la condition `alpha < alphaCutoff`.
+- **IR** : la condition n'est pas une instruction mais une sortie du fragment, à côté de la couleur : `results.discard`, une valeur booléenne. Le corps reste du code pur, sans effet de bord ; les générateurs émettent le test juste avant de rendre la couleur (`if (c) { discard; }`), après tous les échantillonnages de textures. Voir §19.5.
+- **Tests** : quad texturé avec un alpha en damier ; les pixels sous le seuil gardent la couleur de fond, sur les deux backends.
+
+### 19.2 Fonctions `subgraph`
+
+- **Interface** : nœuds `function.input` (nom, type, générique possible) et `function.output` dans le graphe de la fonction ; `FunctionImplementation { kind: 'graph' }` existe déjà.
+- **Compilation par inlining** (décidé) : avant l'expansion des macros, chaque appel est remplacé par une copie du graphe de la fonction (ids préfixés, labels conservés pour le code généré). Les optimisations, la CSE, le découpage en stages et la boucle sur les lumières s'appliquent sans changement. Les appels récursifs sont refusés.
+- **Sérialisation** : fonctions référencées par id dans le registre ; un graphe JSON peut embarquer les siennes dans une section `functions`.
+- **Tests** : inlining, récursion refusée, types génériques, aller-retour JSON, rendu identique à celui du même graphe écrit à la main.
+- **Ensuite** (§17) : de vraies fonctions dans le code généré, pour limiter la taille du code quand une fonction est appelée souvent.
+
+### 19.3 Modèles d'éclairage comme nœuds, PBR
+
+- **Modèle d'éclairage** : une fonction-graphe (§19.2) qui reçoit les entrées de la surface et la position, et rend une couleur, avec `light.current` / `light.sum` pour les lumières. Unlit et Phong sont réécrits sous cette forme. Un modèle est enregistré sous un nom et choisi par `g.surface({ shadingModel })`. La séparation surface / éclairage est conservée (§18.3).
+- **PBR metallic/roughness** (celui de glTF) : Cook-Torrance (distribution GGX, géométrie de Smith, Fresnel de Schlick) ; entrées `baseColor`, `metallic`, `roughness`, `normal`, `emissive`, `occlusion` ; terme ambiant simple.
+- **Éclairage par environnement (IBL)** : hors de ce chantier, **à implémenter ensuite** (§17).
+- **Gestion des couleurs et tone mapping** : workflow linéaire et tone mapping dans les shaders (option B, §19.6).
+- **Tests** : référence CPU du PBR comparée pixel par pixel sur les deux backends, pour plusieurs `roughness` et `metallic` ; modèle personnalisé enregistré par un test ; démo d'une grille de sphères `roughness` × `metallic`.
+
+### 19.4 Storage buffers
+
+- **Graphe** : `input.storage`, lu par `std.index(buffer, index)` ; longueur par `std.arrayLength`.
+- **Types** : tableaux de taille dynamique de scalaires, vecteurs et matrices ; les structures viendront ensuite.
+- **Layout** : ressource `storage-buffer` du `ProgramLayout` ; layout physique `std430` / WGSL `storage`.
+- **IR** : `index` existe ; ajout de `array-length`.
+- **WebGPU** : `var<storage, read>`, binding `read-only-storage`.
+- **WebGL2** : capacité `storageBuffers: false`, la compilation échoue avec un message clair. **Repli par texture de données à faire ensuite** (§17).
+- **Tests** : layout `std430`, génération WGSL, rendu d'une palette lue dans un storage buffer sur Dawn, erreur explicite sur WebGL2.
+
+### 19.5 Le discard et ses implications
+
+`discard` abandonne le fragment : ni couleur ni profondeur ne sont écrites. C'est le seul moyen de découper une surface sans transparence. Trois contraintes en découlent.
+
+1. **L'IR reste pure.** Jusqu'ici, aucune instruction n'a d'effet de bord : l'élimination du code mort, la CSE et le placement dans les stages peuvent supprimer, fusionner ou déplacer n'importe quelle instruction. Un `discard` doit au contraire toujours être exécuté, et à un endroit précis. D'où le choix d'en faire une **sortie** du fragment (une condition, comme la couleur est une valeur) plutôt qu'une instruction : les passes existantes n'ont rien à savoir, et c'est le générateur qui place le test.
+2. **Les dérivées et les mipmaps.** `textureSample` choisit le niveau de mipmap à partir des différences entre pixels voisins, calculées par groupes de 2 × 2 pixels. En GLSL ES, un fragment abandonné n'exécute plus rien, et les dérivées de ses voisins deviennent indéfinies ; WGSL l'interdit par son analyse d'uniformité (un `textureSample` ne doit pas dépendre d'un branchement non uniforme). Placer le test **après tous les échantillonnages**, juste avant d'écrire la couleur, évite le problème dans les deux langages.
+3. **Les performances.** Un GPU teste normalement la profondeur avant d'exécuter le fragment shader (early depth test), et évite ainsi de calculer les pixels cachés. Un shader qui peut abandonner ses fragments désactive en partie cette optimisation sur beaucoup de GPU. C'est pourquoi le `discard` n'est émis que dans la variante des matériaux `mask` : les autres programmes n'en paient pas le coût.
+
+Plus tard, avec le multi-échantillonnage : l'_alpha to coverage_ donne des bords plus doux que le seuil, sans `discard`.
+
+### 19.6 Gestion des couleurs et tone mapping
+
+**Le problème.** Les écrans attendent des valeurs **encodées en sRGB** : une valeur de 0.5 dans l'image s'affiche avec environ 22 % de la luminosité maximale, pas 50 %. Les images (PNG, JPEG) sont stockées dans ce même encodage. Or les calculs d'éclairage (additionner des lumières, multiplier par N·L) ne sont justes que sur des valeurs **linéaires**, proportionnelles à l'énergie lumineuse.
+
+Aujourd'hui, le moteur calcule directement sur les valeurs encodées et écrit le résultat sans conversion. Les deux erreurs se compensent en partie, ce qui « a l'air correct », mais :
+
+- deux lumières de même intensité éclairent bien plus que le double d'une seule ;
+- les dégradés d'éclairage sont trop durs, la zone d'ombre trop sombre ;
+- le mélange des objets transparents et le filtrage des textures (mipmaps) assombrissent les couleurs ;
+- un PBR, calibré sur des valeurs physiques, donne des matériaux faux (métaux et rugosité notamment), et l'IBL est impossible.
+
+**Le workflow linéaire** :
+
+1. **Décoder les entrées** : les textures de couleur sont créées en format `-srgb` (`rgba8unorm-srgb`), le GPU les décode gratuitement à la lecture, filtrage compris. Les textures de **données** (normal maps, rugosité, métal) restent linéaires : chaque texture déclare son espace (`colorSpace: 'srgb' | 'linear'`). Les couleurs des uniforms sont linéaires, comme dans glTF ; un helper convertit les couleurs choisies dans une interface (sélecteur, CSS), qui sont en sRGB.
+2. **Calculer en linéaire** : rien à changer dans les graphes.
+3. **Encoder la sortie** : vers une cible `-srgb` (encodage gratuit par le GPU) ou, si le format de la surface ne le permet pas (le framebuffer par défaut de WebGL2), par une conversion à la fin du shader.
+
+**Le tone mapping.** En linéaire, l'éclairage dépasse souvent 1 : lumières fortes, reflets spéculaires, somme de plusieurs lumières. Écrêter à 1 brûle les zones claires et décale les teintes (un rouge saturé vire au jaune puis au blanc). Le tone mapping compresse la plage [0, ∞) vers [0, 1] de façon progressive, précédé d'une **exposition** (un multiplicateur, comme sur un appareil photo). Opérateurs courants :
+
+| Opérateur           | Caractère                                                                |
+| ------------------- | ------------------------------------------------------------------------ |
+| Reinhard            | Simple ; désature les zones claires                                      |
+| ACES (filmique)     | Contrasté, rendu « cinéma », standard du jeu vidéo                       |
+| Khronos PBR Neutral | Récent ; conserve les couleurs des matériaux (visualisation de produits) |
+| Aucun               | Écrêtage ; utile pour les tests et les rendus techniques                 |
+
+Le tone mapping est une propriété de l'**image** (caméra, scène), pas du matériau : tous les objets d'une frame doivent utiliser le même. Il est donc choisi par le `Renderer` (option de rendu), et non par un nœud du graphe de chaque matériau.
+
+**Où l'appliquer.** Idéalement dans une passe de post-traitement, après avoir rendu la scène dans une cible HDR (`rgba16float`) : c'est le rôle du render graph. Avant lui, il peut être appliqué à la fin du shader de chaque matériau ; c'est exact pour les objets opaques, légèrement faux pour les transparents (ils se mélangent après le tone mapping).
+
+**Options** :
+
+| Option                                                | Contenu                                                                                                                                                               | Conséquences                                                                                                                   |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| A. Statu quo                                          | Calculs sur valeurs encodées                                                                                                                                          | Aucun travail ; PBR et IBL faux                                                                                                |
+| B. Linéaire maintenant, tone mapping dans les shaders | Espaces des textures, encodage de la sortie ; opérateur et exposition choisis par le `Renderer` (feature pour l'opérateur, uniform du bloc `frame` pour l'exposition) | PBR juste ; les démos changent d'apparence ; le tone mapping passera dans une passe du render graph sans changer les matériaux |
+| C. Cible HDR et passe de post-traitement              | Comme B, avec une vraie passe de tone mapping                                                                                                                         | Transparents exacts ; demande le render graph                                                                                  |
+
+**Décision** : option **B** avec le chantier 3. L'option **C** (cible HDR et passe de tone mapping) est **à faire avec le render graph** (§17).

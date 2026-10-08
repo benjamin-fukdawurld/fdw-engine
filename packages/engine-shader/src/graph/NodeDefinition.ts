@@ -155,6 +155,13 @@ export type IntrinsicOp =
   | 'construct'
   | 'convert'
   | 'texture-sample'
+  // Component-wise comparisons, giving booleans.
+  | 'less'
+  | 'less-equal'
+  | 'greater'
+  | 'greater-equal'
+  | 'equal'
+  | 'not-equal'
   // Sums its input over the lights of the frame (light.sum).
   | 'light-sum';
 

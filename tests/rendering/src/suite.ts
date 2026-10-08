@@ -216,6 +216,62 @@ export function describeRenderer(
       );
     });
 
+    it('discards the masked fragments', async () => {
+      // 2×2 alpha checker: opaque at the top left and bottom right.
+      const map = backend.textures.createTexture({
+        type: '2d',
+        format: 'rgba8unorm',
+        dimensions: { width: 2, height: 2 },
+        source: new Uint8Array([
+          255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255,
+          255,
+        ]),
+      });
+      const mapSampler = backend.textures.createSampler({
+        minFilter: 'nearest',
+        magFilter: 'nearest',
+        mipmapFilter: 'nearest',
+      });
+      const g = new GraphBuilder('masked');
+      const texel = g.call(std.textureSample, {
+        texture: g.texture('map'),
+        sampler: g.sampler('mapSampler'),
+        uv: g.attribute('uv', BuiltinTypes.vec2f),
+      });
+      g.surface({ baseColor: texel.swizzle('rgb'), alpha: texel.swizzle('a') });
+      const masked = new Material({
+        graph: g.build(),
+        values: { map, mapSampler },
+        renderState: { alphaMode: 'mask' },
+      });
+      const red = new Material({
+        graph: colorGraph(),
+        values: { color: [1, 0, 0, 1] },
+      });
+      const full = { x: 2, y: 2, z: 1 };
+      // The masked quad is in front: through its holes, the red quad behind
+      // is visible.
+      const pixel = await render([
+        {
+          mesh: quad(),
+          material: masked,
+          transform: new Transform({ scale: full }),
+        },
+        {
+          mesh: quad(),
+          material: red,
+          transform: new Transform({
+            position: { x: 0, y: 0, z: -1 },
+            scale: full,
+          }),
+        },
+      ]);
+      expectColor(pixel(16, 16), [255, 255, 255, 255]);
+      expectColor(pixel(48, 16), [255, 0, 0, 255]);
+      expectColor(pixel(16, 48), [255, 0, 0, 255]);
+      expectColor(pixel(48, 48), [255, 255, 255, 255]);
+    });
+
     it('blends transparent materials over the opaque ones', async () => {
       const opaque = new Material({
         graph: colorGraph(),

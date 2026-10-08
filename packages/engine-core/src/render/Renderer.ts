@@ -256,8 +256,14 @@ export class Renderer {
 
   private program(material: Material, mesh: Mesh): CompiledProgram {
     const semantics = meshSemantics(mesh.description);
+    // The alpha mode selects the variant of the surface: masked materials
+    // discard their transparent fragments.
+    const features = {
+      ...material.features,
+      alphaMode: material.renderState.alphaMode,
+    };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
-      material.features
+      features
     )}`;
     let byAttributes = this._programs.get(material.graph);
     if (!byAttributes) {
@@ -268,7 +274,7 @@ export class Renderer {
     if (!program) {
       program = compile(material.graph, {
         vertexAttributes: semantics,
-        features: material.features,
+        features,
         ...(this.backend.capabilities
           ? { capabilities: this.backend.capabilities }
           : {}),
@@ -351,11 +357,11 @@ export class Renderer {
     };
   }
 
-  // Opaque items first, grouped by pipeline then material to limit state
-  // changes; then transparent items, back to front.
+  // Opaque and masked items first, grouped by pipeline then material to
+  // limit state changes; then transparent items, back to front.
   private sort(items: PreparedItem[], camera: CameraCache): PreparedItem[] {
     const opaque = items.filter(
-      (entry) => entry.item.material.renderState.alphaMode === 'opaque'
+      (entry) => entry.item.material.renderState.alphaMode !== 'blend'
     );
     const transparent = items.filter(
       (entry) => entry.item.material.renderState.alphaMode === 'blend'

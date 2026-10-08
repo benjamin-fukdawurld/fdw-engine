@@ -17,6 +17,8 @@ export type ShadingModel = (typeof ShadingModelNames)[number];
 
 const commonPorts: readonly PortSchema[] = [
   { name: 'baseColor', type: BuiltinTypes.vec3f, default: [1, 1, 1] },
+  // Opacity: blended with 'blend' materials, compared to the alphaCutoff
+  // uniform with 'mask' ones.
   { name: 'alpha', type: BuiltinTypes.f32, default: 1 },
   // Vertex stage: displacement of the vertex, in object space.
   { name: 'positionOffset', type: BuiltinTypes.vec3f, default: [0, 0, 0] },
@@ -79,7 +81,11 @@ export const vertex: NodeDefinition = {
 export const fragment: NodeDefinition = {
   id: 'output.fragment',
   category: 'output',
-  inputs: () => [{ name: 'color', type: BuiltinTypes.vec4f }],
+  inputs: () => [
+    { name: 'color', type: BuiltinTypes.vec4f },
+    // Abandons the fragment when true: neither color nor depth is written.
+    { name: 'discard', type: BuiltinTypes.bool, optional: true },
+  ],
   outputs: () => [],
   stage: () => 'fragment',
 };
