@@ -74,6 +74,22 @@ describe('std140LayoutStrategy', () => {
     ]);
   });
 
+  it('reads a wgpu-matrix mat3 (12 floats, padded columns)', () => {
+    const { members, size } = block([
+      { name: 'normalMatrix', type: BuiltinTypes.mat3f },
+    ]);
+    const data = new DataView(new ArrayBuffer(size));
+    // The padding of the source is not a component: 99 must not be read.
+    std140LayoutStrategy.writeUniform(
+      data,
+      members[0],
+      [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99]
+    );
+    expect([...new Float32Array(data.buffer)]).toEqual([
+      1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0,
+    ]);
+  });
+
   it('writes integers and booleans as 32-bit values', () => {
     const { members, size } = block([
       { name: 'count', type: BuiltinTypes.i32 },
