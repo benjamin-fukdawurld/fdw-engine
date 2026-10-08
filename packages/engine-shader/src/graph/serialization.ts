@@ -102,5 +102,24 @@ export function parseGraph(source: string | unknown): MaterialGraphData {
     throw new Error('Malformed "parameters"');
   }
 
+  const functions = data['functions'];
+  if (functions !== undefined) {
+    if (!Array.isArray(functions)) {
+      throw new Error('"functions" must be an array');
+    }
+    functions.forEach((entry, i) => {
+      if (
+        !isRecord(entry) ||
+        typeof entry['id'] !== 'string' ||
+        (entry['description'] !== undefined &&
+          typeof entry['description'] !== 'string')
+      ) {
+        throw new Error(`Malformed function at index ${i}`);
+      }
+      // Function graphs follow the same format.
+      parseGraph(entry['graph']);
+    });
+  }
+
   return data as unknown as MaterialGraphData;
 }

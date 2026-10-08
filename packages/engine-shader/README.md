@@ -29,16 +29,17 @@ engine-webgpu    ← WebGPU backend: WgslCodegen, wgslLayoutStrategy
 
 ### Graph
 
-| Export                                                              | Kind         | Description                                                                           |
-| ------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------- |
-| `MaterialGraphData`, `GraphNode`, `GraphEdge`                       | type         | Serializable graph model                                                              |
-| `NodeDefinition`, `FunctionDefinition`, `PortSchema`, `ParamSchema` | type         | Node type description                                                                 |
-| `NodeRegistry`                                                      | class        | Registry of node types                                                                |
-| `GraphBuilder`, `PortHandle`                                        | class        | Fluent API to build a graph, with types checked on each call                          |
-| `validateGraph()`                                                   | function     | Structural and type validation; returns diagnostics, topological order and port types |
-| `resolveNodeTypes()`                                                | function     | Type inference of a node: generics unification, scalar splat, constraints             |
-| `serializeGraph()`, `parseGraph()`                                  | function     | JSON serialization                                                                    |
-| `Diagnostic`, `GraphError`                                          | type / class | Errors and warnings, located by node and port                                         |
+| Export                                                              | Kind            | Description                                                                                            |
+| ------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------ |
+| `MaterialGraphData`, `GraphNode`, `GraphEdge`                       | type            | Serializable graph model                                                                               |
+| `NodeDefinition`, `FunctionDefinition`, `PortSchema`, `ParamSchema` | type            | Node type description                                                                                  |
+| `NodeRegistry`                                                      | class           | Registry of node types                                                                                 |
+| `GraphBuilder`, `PortHandle`                                        | class           | Fluent API to build a graph, with types checked on each call                                           |
+| `validateGraph()`                                                   | function        | Structural and type validation; returns diagnostics, topological order and port types                  |
+| `resolveNodeTypes()`                                                | function        | Type inference of a node: generics unification, scalar splat, constraints                              |
+| `serializeGraph()`, `parseGraph()`                                  | function        | JSON serialization                                                                                     |
+| `defineFunction()`, `GraphFunctionData`                             | function / type | A node type defined by a function graph, inlined by the compiler; graphs embed the functions they call |
+| `Diagnostic`, `GraphError`                                          | type / class    | Errors and warnings, located by node and port                                                          |
 
 ### Compiler
 
@@ -58,6 +59,8 @@ engine-webgpu    ← WebGPU backend: WgslCodegen, wgslLayoutStrategy
 | `stdInputs`                | `input.attribute`, `input.uniform`, `input.storage`, `input.texture`, `input.sampler`, `input.builtin`, `input.engine`                                                                                                                                                                                                                                                                                                             |
 | `stdConstants`             | `const.value`, `const.pi`                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `stdMacros`                | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping` (and the `lighting.*` shading models, registered by name)                                                                                                                                                                                                                                                                                                           |
+| `stdLights`                | `light.current`, `light.sum`: the lights of the frame                                                                                                                                                                                                                                                                                                                                                                              |
+| `stdFunctionPorts`         | `function.input`, `function.output`: the ports of a function graph                                                                                                                                                                                                                                                                                                                                                                 |
 | `stdOutputs`               | `output.surface` (shading models `unlit`, `phong`, `pbr`), and the raw `output.vertex` / `output.fragment`                                                                                                                                                                                                                                                                                                                         |
 | `createStandardRegistry()` | A `NodeRegistry` with all the standard node types                                                                                                                                                                                                                                                                                                                                                                                  |
 
@@ -173,10 +176,26 @@ const received = g.call(stdLights.sum, {
 });
 ```
 
+## Functions
+
+A function is written as a graph and used as a node. Its `function.input` nodes are the inputs of the node, its `function.output` nodes its outputs (typed by their value):
+
+```ts
+const f = new GraphBuilder('scale');
+const value = f.functionInput('value', BuiltinTypes.vec3f);
+const factor = f.functionInput('factor', BuiltinTypes.f32, { default: 2 });
+f.functionOutput('result', f.call(std.mul, { a: value, b: factor }));
+const scale = defineFunction(f.build(), { id: 'my.scale' });
+
+g.surface({ baseColor: g.call(scale, { value: color }) });
+```
+
+The compiler **inlines** each call: the program is the same as with the graph written in place, and the optimizations, the stages and the light loops apply through the function. A function graph can use resources (uniforms, textures), macros, lights and other functions; recursive functions are rejected. `build()` embeds the called functions in the `functions` section of the graph, so that a JSON graph compiles without registering them.
+
 ### Current limitations
 
 - At most 16 lights per frame, without shadows.
 - No `pbr` shading model yet.
 - No storage buffers, no array or struct uniforms in materials (the engine uses arrays for the lights), no `f16`.
-- No subgraph or native functions yet.
+- Function inputs have concrete types (no generics yet); functions are inlined, not emitted as functions of the target language; no native functions.
 - `textureSample` only takes 2D textures.

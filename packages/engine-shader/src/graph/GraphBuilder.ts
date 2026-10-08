@@ -11,6 +11,7 @@ import {
   GraphEdge,
   GraphNode,
   GraphParameterDeclaration,
+  GraphFunctionData,
   MaterialGraphData,
   MaterialGraphFormat,
   MaterialGraphVersion,
@@ -21,6 +22,7 @@ import type { NodeDefinition, StaticParams } from './NodeDefinition';
 import { NodeRegistry } from './NodeRegistry';
 import { composeSwizzles, swizzleType } from './swizzle';
 import { resolveGraphNode, validateGraph } from './validateGraph';
+import { isGraphFunction } from './functions';
 
 /**
  * A typed reference to an output port of a node, possibly swizzled.
@@ -248,9 +250,29 @@ export class GraphBuilder {
       throw new GraphError(diagnostics);
     }
 
-    if (resolvedDefinition.category === 'output') {
+    if (resolvedDefinition.id === 'function.output') {
+      if (this._outputTypes.some((type) => type !== 'function.output')) {
+        throw new GraphError([
+          {
+            severity: 'error',
+            node: id,
+            message: 'a function graph cannot have stage outputs',
+          },
+        ]);
+      }
+      this._outputTypes.push(resolvedDefinition.id);
+    } else if (resolvedDefinition.category === 'output') {
       // Allowed: one output.surface, or output.vertex and output.fragment.
       const outputs = [...this._outputTypes, resolvedDefinition.id].sort();
+      if (this._outputTypes.includes('function.output')) {
+        throw new GraphError([
+          {
+            severity: 'error',
+            node: id,
+            message: 'a function graph cannot have stage outputs',
+          },
+        ]);
+      }
       const allowed =
         outputs.length === 1 ||
         (outputs[0] === 'output.fragment' && outputs[1] === 'output.vertex');
@@ -417,6 +439,38 @@ export class GraphBuilder {
   }
 
   /**
+   * An input of a function graph: a port of the function node.
+   *
+   * @param options.default - Value used when the call leaves the input
+   * unconnected; without it, the input must be connected.
+   * @see {@link defineFunction}
+   */
+  functionInput(
+    name: string,
+    type: ShaderType,
+    options: { default?: ConstantValue; label?: string } = {}
+  ): PortHandle {
+    return this.call(
+      'function.input',
+      {},
+      {
+        params: withDefined({ name, type, default: options.default }),
+        ...(options.label ? { label: options.label } : {}),
+      }
+    );
+  }
+
+  /**
+   * An output of a function graph: a port of the function node, of the type
+   * of the value.
+   *
+   * @see {@link defineFunction}
+   */
+  functionOutput(name: string, value: PortHandle | ConstantValue): void {
+    this.node('function.output', { params: { name }, inputs: { value } });
+  }
+
+  /**
    * A constant value. It is part of the generated code: changing it recompiles
    * the shader. Use {@link GraphBuilder.uniform} for values that change.
    */
@@ -473,6 +527,21 @@ export class GraphBuilder {
    * accepted.
    */
   build(): MaterialGraphData {
+    // The function graphs called by the graph are embedded: the graph then
+    // compiles without registering them.
+    const functions: GraphFunctionData[] = [];
+    for (const type of new Set(this._nodes.map((node) => node.type))) {
+      const definition = this.registry.get(type);
+      if (isGraphFunction(definition)) {
+        functions.push({
+          id: definition.id,
+          ...(definition.description
+            ? { description: definition.description }
+            : {}),
+          graph: definition.implementation.graph,
+        });
+      }
+    }
     const graph: MaterialGraphData = {
       format: MaterialGraphFormat,
       version: MaterialGraphVersion,
@@ -482,6 +551,7 @@ export class GraphBuilder {
       ...(this._parameters.length > 0
         ? { parameters: [...this._parameters] }
         : {}),
+      ...(functions.length > 0 ? { functions } : {}),
     };
 
     const validation = validateGraph(graph, this.registry);

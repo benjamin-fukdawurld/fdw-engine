@@ -5,6 +5,7 @@ import type {
   NodeId,
   StaticValue,
 } from '../graph/MaterialGraphData';
+import { registryWithFunctions } from '../graph/functions';
 import { isFunctionDefinition } from '../graph/NodeDefinition';
 import type { NodeRegistry } from '../graph/NodeRegistry';
 import {
@@ -163,7 +164,8 @@ function checkSupport(
     }
     if (
       isFunctionDefinition(definition) &&
-      definition.implementation?.kind !== 'intrinsic'
+      definition.implementation?.kind !== 'intrinsic' &&
+      definition.implementation?.kind !== 'graph'
     ) {
       /** A function node type may also have no implementation at all. */
       error(
@@ -385,7 +387,11 @@ export function compile(
   graph: MaterialGraphData,
   options: CompileOptions = {}
 ): CompiledProgram {
-  const registry = options.registry ?? createStandardRegistry();
+  // With the function graphs embedded in the graph.
+  const registry = registryWithFunctions(
+    options.registry ?? createStandardRegistry(),
+    graph
+  );
   const capabilities = {
     ...defaultCompilerCapabilities,
     ...options.capabilities,

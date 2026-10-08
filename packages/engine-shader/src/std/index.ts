@@ -7,6 +7,7 @@ import { lightingDefinitions } from './lighting';
 import * as lights from './lights';
 import * as macros from './macros';
 import * as outputs from './outputs';
+import * as subgraphs from './subgraphs';
 
 export { ShadingModelNames } from './outputs';
 export type { ShadingModel } from './outputs';
@@ -110,6 +111,17 @@ export const stdOutputs = {
 } as const;
 
 /**
+ * The nodes of function graphs: `input` and `output`, the ports of the
+ * function. See {@link defineFunction}.
+ *
+ * @group Standard library
+ */
+export const stdFunctionPorts = {
+  input: subgraphs.input,
+  output: subgraphs.output,
+} as const;
+
+/**
  * The lights of the frame: `current`, the light being summed, and `sum`,
  * the sum of a value over the lights. Used by the lit shading models, and
  * by custom ones.
@@ -148,6 +160,7 @@ export const standardNodeDefinitions: readonly NodeDefinition[] = [
   ...functions.functionDefinitions,
   ...Object.values(stdOutputs),
   ...lights.lightDefinitions,
+  ...subgraphs.subgraphDefinitions,
   ...macros.macroDefinitions,
   ...lightingDefinitions,
 ];

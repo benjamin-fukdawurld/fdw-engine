@@ -5,5 +5,6 @@ export * from './Diagnostic';
 export * from './inference';
 export * from './swizzle';
 export * from './validateGraph';
+export * from './functions';
 export * from './serialization';
 export * from './GraphBuilder';

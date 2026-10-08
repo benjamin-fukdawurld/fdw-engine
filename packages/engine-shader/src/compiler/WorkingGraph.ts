@@ -61,7 +61,8 @@ export class WorkingGraph {
   addNode(
     type: string,
     params: Readonly<Record<string, StaticValue>> = {},
-    inputs: Readonly<Record<string, InputSource | undefined>> = {}
+    inputs: Readonly<Record<string, InputSource | undefined>> = {},
+    label?: string
   ): NodeId {
     let id: NodeId;
     do {
@@ -89,6 +90,7 @@ export class WorkingGraph {
       type,
       params,
       ...(Object.keys(defaults).length > 0 ? { defaults } : {}),
+      ...(label ? { label } : {}),
     });
     return id;
   }

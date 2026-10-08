@@ -1,5 +1,11 @@
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
-import { GraphBuilder, std, stdMacros, BuiltinTypes } from '@fdw/engine-shader';
+import {
+  BuiltinTypes,
+  defineFunction,
+  GraphBuilder,
+  std,
+  stdMacros,
+} from '@fdw/engine-shader';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BaseLight,
@@ -270,6 +276,25 @@ export function describeRenderer(
       expectColor(pixel(48, 16), [255, 0, 0, 255]);
       expectColor(pixel(16, 48), [255, 0, 0, 255]);
       expectColor(pixel(48, 48), [255, 255, 255, 255]);
+    });
+
+    it('renders a material calling a function graph', async () => {
+      const f = new GraphBuilder('halve');
+      const value = f.functionInput('value', BuiltinTypes.vec3f);
+      f.functionOutput('result', f.call(std.mul, { a: value, b: 0.5 }));
+      const halve = defineFunction(f.build(), { id: 'test.halve' });
+
+      const g = new GraphBuilder('halved');
+      g.surface({
+        baseColor: g.call(halve, {
+          value: g.uniform('color', BuiltinTypes.vec3f, { default: [1, 0, 1] }),
+        }),
+      });
+      const material = new Material({ graph: g.build() });
+      const pixel = await render([
+        { mesh: quad(), material, transform: at(0) },
+      ]);
+      expectColor(pixel(32, 32), [128, 0, 128, 255]);
     });
 
     it('blends transparent materials over the opaque ones', async () => {

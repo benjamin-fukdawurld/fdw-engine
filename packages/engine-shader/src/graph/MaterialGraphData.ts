@@ -98,6 +98,20 @@ export const MaterialGraphVersion = 1 as const;
  *
  * @group Graph model
  */
+/**
+ * A function graph embedded in a graph, so that the graph compiles without
+ * registering it first.
+ *
+ * @group Graph model
+ */
+export interface GraphFunctionData {
+  /** Node type of the function: 'my.fresnel'… */
+  readonly id: string;
+  readonly description?: string;
+  /** The function graph, with its function.input and function.output nodes. */
+  readonly graph: MaterialGraphData;
+}
+
 export interface MaterialGraphData {
   readonly format: typeof MaterialGraphFormat;
   readonly version: typeof MaterialGraphVersion;
@@ -108,6 +122,8 @@ export interface MaterialGraphData {
   readonly edges: readonly GraphEdge[];
   /** Static parameters declared by the graph. */
   readonly parameters?: readonly GraphParameterDeclaration[];
+  /** The function graphs called by the graph. */
+  readonly functions?: readonly GraphFunctionData[];
 }
 
 /**

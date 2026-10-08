@@ -191,6 +191,15 @@ export function checkOutputNodes(
   if (outputs.length === 0) {
     return 'the graph has no output node';
   }
+  // A function graph: function.output nodes only.
+  const functionOutputs = outputs.filter(
+    (node) => node.type === 'function.output'
+  );
+  if (functionOutputs.length > 0) {
+    return functionOutputs.length === outputs.length
+      ? undefined
+      : 'a function graph cannot have stage outputs: use only function.output nodes';
+  }
   const types = outputs.map((node) => node.type).sort();
   if (
     (types.length === 1 && types[0] === 'output.surface') ||
@@ -210,6 +219,30 @@ export function checkOutputNodes(
     .join(
       ', '
     )}): use either one output.surface, or one output.vertex and one output.fragment`;
+}
+
+// The inputs and the outputs of a function graph have distinct names.
+function checkFunctionPorts(
+  nodes: ReadonlyMap<NodeId, ResolvedNode>,
+  diagnostics: Diagnostic[]
+): void {
+  for (const type of ['function.input', 'function.output']) {
+    const names = new Set<string>();
+    for (const { node, params } of nodes.values()) {
+      if (node.type !== type) {
+        continue;
+      }
+      const name = params['name'] as string;
+      if (names.has(name)) {
+        diagnostics.push({
+          severity: 'error',
+          node: node.id,
+          message: `duplicate ${type} "${name}"`,
+        });
+      }
+      names.add(name);
+    }
+  }
 }
 
 // Uniforms, storage buffers, textures and samplers become named bindings:
@@ -420,6 +453,7 @@ export function validateGraph(
   }
 
   checkResourceDeclarations(nodes, diagnostics);
+  checkFunctionPorts(nodes, diagnostics);
 
   const outputError = checkOutputNodes(
     [...nodes.values()]
