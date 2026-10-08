@@ -3,8 +3,10 @@ import { useEffect, useRef } from 'react';
 import { Engine, RenderBackend, Surface } from '@fdw/engine-backend';
 import {
   Camera,
+  DirectionalLight,
   Material,
   PointLight,
+  SpotLight,
   Renderer,
   RenderItem,
   Transform,
@@ -127,13 +129,30 @@ function RouteComponent() {
       { mesh: cube, material: glass, transform: transforms[2] },
     ];
 
-    // A white light above the camera, on the right.
-    const light = new PointLight({
+    // Summed by the Phong materials: a white key light above the camera, a
+    // cold rim light from behind on the left, and a warm spot circling the
+    // cubes.
+    const keyLight = new PointLight({
       position: { x: 3, y: 4, z: 6 },
-      ambient: { x: 0.15, y: 0.15, z: 0.15 },
-      diffuse: { x: 1, y: 1, z: 1 },
-      specular: { x: 1, y: 1, z: 1 },
+      ambient: { x: 0.1, y: 0.1, z: 0.1 },
+      diffuse: { x: 0.8, y: 0.8, z: 0.8 },
+      specular: { x: 0.8, y: 0.8, z: 0.8 },
     });
+    const rimLight = new DirectionalLight({
+      direction: { x: 1, y: -0.3, z: 0.6 },
+      ambient: { x: 0, y: 0, z: 0 },
+      diffuse: { x: 0.2, y: 0.35, z: 0.8 },
+      specular: { x: 0.2, y: 0.35, z: 0.8 },
+    });
+    const spot = new SpotLight({
+      position: { x: 0, y: 3, z: 3 },
+      ambient: { x: 0, y: 0, z: 0 },
+      diffuse: { x: 1, y: 0.6, z: 0.2 },
+      specular: { x: 1, y: 0.6, z: 0.2 },
+      innerCutoff: 8,
+      outerCutoff: 16,
+    });
+    const lights = [keyLight, rimLight, spot];
 
     const camera = new Camera({
       position: { x: 0, y: 0, z: 5 },
@@ -154,13 +173,20 @@ function RouteComponent() {
       });
       // The tint is a uniform: changing it does not recompile anything.
       textured.setValue('tint', [1, 0.75 + 0.25 * Math.sin(time), 1]);
+      // The spot sweeps the three cubes.
+      const target = { x: 1.6 * Math.sin(time * 0.8), y: 0, z: 0 };
+      spot.direction = {
+        x: target.x - spot.position.x,
+        y: target.y - spot.position.y,
+        z: target.z - spot.position.z,
+      };
 
       renderer.render({
         items,
         camera,
         surface,
         time,
-        lights: [light],
+        lights,
         clearColor: { r: 0.08, g: 0.08, b: 0.1, a: 1 },
       });
       frameRef.current = requestAnimationFrame(frame);

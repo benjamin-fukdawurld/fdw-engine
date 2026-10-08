@@ -7,6 +7,7 @@ import {
   IrInstruction,
   ShaderModuleIR,
   std,
+  stdLights,
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { combinedSamplers } from './combinedSamplers';
@@ -331,6 +332,33 @@ describe('GlslEsCodegen', () => {
     );
     expect(fragment).toContain('vec4 v1_my_color = ');
     expect(fragment).not.toMatch(/__/);
+  });
+
+  it('sums over the lights with a loop', () => {
+    const g = new GraphBuilder('diffuse-lights');
+    const light = g.node(stdLights.current);
+    g.surface({
+      baseColor: g.call(stdLights.sum, {
+        value: g.call(std.mul, {
+          a: light.diffuse,
+          b: g.uniform('tint', BuiltinTypes.vec3f),
+        }),
+      }),
+    });
+    const program = compile(g.build());
+    const { fragment } = emit(
+      program.module,
+      std140LayoutStrategy.resolve(program.layout)
+    );
+    expect(fragment).toContain('uint u_lightCount;');
+    expect(fragment).toContain('vec4 u_lightDiffuses[16];');
+    expect(fragment).toMatch(
+      /vec3 (v\d+) = vec3\(0\.0\);\n {2}for \(uint (v\d+) = 0u; \2 < v\d+; \2\+\+\) \{/
+    );
+    expect(fragment).toMatch(
+      / {4}vec4 v\d+ = frameUniforms\.u_lightDiffuses\[v\d+\];/
+    );
+    expect(fragment).toMatch(/ {4}v\d+ \+= v\d+;\n {2}\}/);
   });
 
   it('generates a complete program', () => {

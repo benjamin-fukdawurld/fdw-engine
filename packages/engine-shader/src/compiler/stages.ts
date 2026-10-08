@@ -54,6 +54,10 @@ function nodeFrequency(
       if (node.type === 'input.attribute') {
         return Frequency.Vertex;
       }
+      if (node.type === 'light.current') {
+        // The body of a light loop, which runs per fragment.
+        return Frequency.Fragment;
+      }
       if (node.type === 'input.builtin') {
         return fragmentBuiltins.has(params['builtin'] as string)
           ? Frequency.Fragment

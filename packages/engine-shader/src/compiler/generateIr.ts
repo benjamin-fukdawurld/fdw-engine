@@ -4,7 +4,7 @@ import { isFunctionDefinition, PortSchema } from '../graph/NodeDefinition';
 import { swizzleType } from '../graph/swizzle';
 import type { ResolvedNode } from '../graph/validateGraph';
 import type { ConstantValue } from '../types/ConstantValue';
-import { ShaderType, BuiltinTypes } from '../types/ShaderType';
+import { arrayType, BuiltinTypes, ShaderType } from '../types/ShaderType';
 import type {
   IrBuiltin,
   IrEntryPoint,
@@ -15,7 +15,12 @@ import type {
   ShaderModuleIR,
   ValueId,
 } from './ir';
-import { engineValueLocations, uniformBlockName } from './layout';
+import {
+  engineValueLocations,
+  lightMembers,
+  MaxLights,
+  uniformBlockName,
+} from './layout';
 import type { StagePlan } from './stages';
 import type { WorkingGraph } from './WorkingGraph';
 
@@ -41,7 +46,11 @@ const binaryOperators = { add: '+', sub: '-', mul: '*', div: '/' } as const;
 
 class StageBuilder {
   readonly body: IrInstruction[] = [];
-  private readonly _values = new Map<string, ValueId>();
+  // Instructions and values of the scopes being built: the stage, then the
+  // bodies of the loops. Values of a scope are visible in the nested ones.
+  private readonly _bodies: IrInstruction[][] = [this.body];
+  private readonly _scopes: Map<string, ValueId>[] = [new Map()];
+  private readonly _loopIndices: ValueId[] = [];
   private _nextId = 1;
 
   constructor(
@@ -60,8 +69,8 @@ class StageBuilder {
     args: readonly ValueId[] = [],
     node?: GraphNode
   ): ValueId {
-    const id = this._nextId++;
-    this.body.push({
+    const id = this.newId();
+    this.currentBody.push({
       id,
       type,
       op,
@@ -72,15 +81,56 @@ class StageBuilder {
     return id;
   }
 
+  newId(): ValueId {
+    return this._nextId++;
+  }
+
+  /** The index of the loop being built, if any. */
+  get loopIndex(): ValueId | undefined {
+    return this._loopIndices[this._loopIndices.length - 1];
+  }
+
+  /** Starts the body of a loop with the given index. */
+  beginLoop(index: ValueId): void {
+    this._bodies.push([]);
+    this._scopes.push(new Map());
+    this._loopIndices.push(index);
+  }
+
+  /** Ends the body of the current loop and returns its instructions. */
+  endLoop(): IrInstruction[] {
+    this._scopes.pop();
+    this._loopIndices.pop();
+    return this._bodies.pop() as IrInstruction[];
+  }
+
   define(ref: PortRef, value: ValueId): void {
-    this._values.set(`${ref.node}:${ref.port}`, value);
+    this.set(`${ref.node}:${ref.port}`, value);
+  }
+
+  private get currentBody(): IrInstruction[] {
+    return this._bodies[this._bodies.length - 1];
+  }
+
+  private get(key: string): ValueId | undefined {
+    for (let i = this._scopes.length - 1; i >= 0; i--) {
+      const id = this._scopes[i].get(key);
+      if (id !== undefined) {
+        return id;
+      }
+    }
+    return undefined;
+  }
+
+  private set(key: string, id: ValueId): void {
+    this._scopes[this._scopes.length - 1].set(key, id);
   }
 
   /** The value of an output port in this stage. */
   value(ref: PortRef): { id: ValueId; type: ShaderType } {
     const key = `${ref.node}:${ref.port}`;
     const type = this._types.get(ref.node)?.outputs[ref.port] as ShaderType;
-    let id = this._values.get(key);
+    let id = this.get(key);
     if (id === undefined) {
       const input = this._stageInputs.get(key);
       if (input === undefined) {
@@ -89,7 +139,7 @@ class StageBuilder {
         );
       }
       id = this.emit(type, { kind: 'load-input', input });
-      this._values.set(key, id);
+      this.set(key, id);
     }
     return { id, type };
   }
@@ -108,14 +158,14 @@ class StageBuilder {
       if (source.swizzle) {
         const key = `${source.ref.node}:${source.ref.port}.${source.swizzle}`;
         const type = swizzleType(value.type, source.swizzle) as ShaderType;
-        let id = this._values.get(key);
+        let id = this.get(key);
         if (id === undefined) {
           id = this.emit(
             type,
             { kind: 'swizzle', components: source.swizzle },
             [value.id]
           );
-          this._values.set(key, id);
+          this.set(key, id);
         }
         value = { id, type };
       }
@@ -138,11 +188,47 @@ class StageBuilder {
   }
 }
 
+// The outputs of 'light.current' used by the graph: elements of the light
+// arrays of the frame block, at the index of the loop being built.
+function translateCurrentLight(
+  builder: StageBuilder,
+  node: GraphNode,
+  usedPorts: ReadonlySet<string>
+): void {
+  const index = builder.loopIndex;
+  if (index === undefined) {
+    throw new Error('internal error: light.current outside of a light loop');
+  }
+  for (const [port, { member, type }] of Object.entries(lightMembers)) {
+    if (!usedPorts.has(port)) {
+      continue;
+    }
+    const array = builder.emit(arrayType(BuiltinTypes.vec4f, MaxLights), {
+      kind: 'load-resource',
+      binding: uniformBlockName('frame'),
+      member,
+    });
+    let value = builder.emit(BuiltinTypes.vec4f, { kind: 'index' }, [
+      array,
+      index,
+    ]);
+    if (type.kind === 'vector' && type.size < 4) {
+      value = builder.emit(
+        type,
+        { kind: 'swizzle', components: 'xyzw'.slice(0, type.size) },
+        [value]
+      );
+    }
+    builder.define({ node: node.id, port }, value);
+  }
+}
+
 function translateNode(
   builder: StageBuilder,
   resolved: ResolvedNode,
   types: NodeTypes,
-  results: Record<string, ValueId>
+  results: Record<string, ValueId>,
+  usedPorts: ReadonlySet<string> = new Set()
 ): void {
   const { node, definition, params, inputs } = resolved;
   const output = (
@@ -201,6 +287,9 @@ function translateNode(
         builtin: params['builtin'] as IrBuiltin,
       });
       return;
+    case 'light.current':
+      translateCurrentLight(builder, node, usedPorts);
+      return;
     case 'output.vertex':
       results['clipPosition'] = inputValues()[0];
       return;
@@ -254,6 +343,126 @@ function translateNode(
   }
 }
 
+interface StageContext {
+  readonly graph: WorkingGraph;
+  readonly nodes: ReadonlyMap<NodeId, ResolvedNode>;
+  readonly order: readonly NodeId[];
+  readonly types: ReadonlyMap<NodeId, NodeTypes>;
+  /** Nodes computed in the body of a light loop. */
+  readonly loopBodies: ReadonlySet<NodeId>;
+  /** Output ports of each node read by other nodes. */
+  readonly usedPorts: ReadonlyMap<NodeId, ReadonlySet<string>>;
+}
+
+// The nodes depending on 'light.current' through a path that does not cross
+// a 'light.sum': they are computed once per light, in the loop of the sum
+// they feed.
+export function lightLoopBodies(graph: WorkingGraph): Set<NodeId> {
+  const dependent = new Set<NodeId>();
+  const pending = [...graph.nodes.values()]
+    .filter((node) => node.type === 'light.current')
+    .map((node) => node.id);
+  while (pending.length > 0) {
+    const id = pending.pop() as NodeId;
+    if (dependent.has(id)) {
+      continue;
+    }
+    dependent.add(id);
+    for (const edge of graph.edges) {
+      if (
+        edge.from.node === id &&
+        graph.nodes.get(edge.to.node)?.type !== 'light.sum'
+      ) {
+        pending.push(edge.to.node);
+      }
+    }
+  }
+  return dependent;
+}
+
+function translate(
+  context: StageContext,
+  builder: StageBuilder,
+  id: NodeId,
+  results: Record<string, ValueId>
+): void {
+  const resolved = context.nodes.get(id) as ResolvedNode;
+  if (resolved.node.type === 'light.sum') {
+    translateLightSum(context, builder, resolved);
+    return;
+  }
+  translateNode(
+    builder,
+    resolved,
+    context.types.get(id) as NodeTypes,
+    results,
+    context.usedPorts.get(id)
+  );
+}
+
+// A loop over the lights of the frame, summing the value computed by the
+// light-dependent nodes the input depends on. The other nodes it depends on
+// are computed before the loop.
+function translateLightSum(
+  context: StageContext,
+  builder: StageBuilder,
+  { node, inputs }: ResolvedNode
+): void {
+  const types = context.types.get(node.id) as NodeTypes;
+  const body = new Set<NodeId>();
+  const pending = context.graph.incoming(node.id).map((edge) => edge.from.node);
+  while (pending.length > 0) {
+    const id = pending.pop() as NodeId;
+    if (body.has(id) || !context.loopBodies.has(id)) {
+      continue;
+    }
+    body.add(id);
+    pending.push(...context.graph.incoming(id).map((edge) => edge.from.node));
+  }
+
+  const count = builder.emit(BuiltinTypes.u32, {
+    kind: 'load-resource',
+    binding: uniformBlockName('frame'),
+    member: 'lightCount',
+  });
+  const index = builder.newId();
+  builder.beginLoop(index);
+  for (const id of context.order) {
+    if (body.has(id)) {
+      translate(context, builder, id, {});
+    }
+  }
+  const result = builder.input(
+    node,
+    inputs[0],
+    types.inputs['value']
+  ) as ValueId;
+  const instructions = builder.endLoop();
+  builder.define(
+    { node: node.id, port: 'result' },
+    builder.emit(
+      types.outputs['result'],
+      { kind: 'loop-sum', index, body: instructions, result },
+      [count],
+      node
+    )
+  );
+}
+
+function translateStage(
+  context: StageContext,
+  builder: StageBuilder,
+  stageNodes: ReadonlySet<NodeId>,
+  results: Record<string, ValueId>
+): void {
+  for (const id of context.order) {
+    // Loop bodies are translated with their light.sum.
+    if (stageNodes.has(id) && !context.loopBodies.has(id)) {
+      translate(context, builder, id, results);
+    }
+  }
+}
+
 const clipPosition: IrStageVariable = {
   name: 'clipPosition',
   type: BuiltinTypes.vec4f,
@@ -273,6 +482,24 @@ export function generateIr({
   types: ReadonlyMap<NodeId, NodeTypes>;
   plan: StagePlan;
 }): ShaderModuleIR {
+  const usedPorts = new Map<NodeId, Set<string>>();
+  for (const edge of graph.edges) {
+    let ports = usedPorts.get(edge.from.node);
+    if (!ports) {
+      ports = new Set();
+      usedPorts.set(edge.from.node, ports);
+    }
+    ports.add(edge.from.port);
+  }
+  const context: StageContext = {
+    graph,
+    nodes,
+    order,
+    types,
+    loopBodies: lightLoopBodies(graph),
+    usedPorts,
+  };
+
   // Vertex stage: attributes are its inputs.
   const attributeInputs = new Map(
     plan.attributes.map((attribute) => [
@@ -282,16 +509,7 @@ export function generateIr({
   );
   const vertex = new StageBuilder(graph, types, attributeInputs);
   const vertexResults: Record<string, ValueId> = {};
-  for (const id of order) {
-    if (plan.vertex.has(id)) {
-      translateNode(
-        vertex,
-        nodes.get(id) as ResolvedNode,
-        types.get(id) as NodeTypes,
-        vertexResults
-      );
-    }
-  }
+  translateStage(context, vertex, plan.vertex, vertexResults);
   for (const varying of plan.varyings) {
     vertexResults[varying.name] = vertex.value(varying.source).id;
   }
@@ -305,16 +523,7 @@ export function generateIr({
   );
   const fragment = new StageBuilder(graph, types, varyingInputs);
   const fragmentResults: Record<string, ValueId> = {};
-  for (const id of order) {
-    if (plan.fragment.has(id)) {
-      translateNode(
-        fragment,
-        nodes.get(id) as ResolvedNode,
-        types.get(id) as NodeTypes,
-        fragmentResults
-      );
-    }
-  }
+  translateStage(context, fragment, plan.fragment, fragmentResults);
 
   const varyings: IrStageVariable[] = plan.varyings.map((varying) => ({
     name: varying.name,

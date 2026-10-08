@@ -6,7 +6,7 @@ import type { NodeDefinition } from '../graph/NodeDefinition';
 import { createStandardRegistry, std, stdMacros } from '../std';
 import { BuiltinTypes } from '../types/ShaderType';
 import { CompiledProgram, compile, CompileOptions } from './compile';
-import type { IrEntryPoint, IrOp } from './ir';
+import { forEachInstruction, IrEntryPoint, IrInstruction, IrOp } from './ir';
 
 const stage = (program: CompiledProgram, name: 'vertex' | 'fragment') =>
   program.module.entryPoints.find(
@@ -229,21 +229,56 @@ describe('lighting.phong', () => {
     return g.build();
   };
 
-  it('compiles with the main light of the frame', () => {
+  const members = (body: readonly IrInstruction[]) =>
+    body
+      .filter((i) => i.op.kind === 'load-resource')
+      .map((i) => (i.op as { member?: string }).member);
+  const intrinsics = (body: readonly IrInstruction[]) =>
+    body
+      .filter((i) => i.op.kind === 'intrinsic')
+      .map((i) => (i.op as { name: string }).name);
+
+  it('sums the lighting over the lights of the frame', () => {
     const program = compile(phong());
     const fragment = stage(program, 'fragment');
-    const members = ops(fragment, 'load-resource').map(
-      (i) => (i.op as { member?: string }).member
-    );
-    expect(members).toEqual(
+    const [loop] = ops(fragment, 'loop-sum');
+    const op = loop?.op;
+    if (op?.kind !== 'loop-sum') {
+      throw new Error('expected a light loop');
+    }
+    // The count of lights is read before the loop.
+    const count = fragment.body.find((i) => i.id === loop.args[0]);
+    expect(count?.op).toEqual({
+      kind: 'load-resource',
+      binding: 'frameUniforms',
+      member: 'lightCount',
+    });
+    // The light arrays are read in the loop, at its index.
+    expect(members(op.body)).toEqual(
       expect.arrayContaining([
-        'lightPosition',
-        'lightAmbient',
-        'lightDiffuse',
-        'lightSpecular',
-        'lightAttenuation',
-        'cameraPosition',
+        'lightPositions',
+        'lightAmbients',
+        'lightDiffuses',
+        'lightSpeculars',
+        'lightAttenuations',
+        'lightSpotDirections',
+        'lightSpotCones',
       ])
+    );
+    const indices = op.body.filter((i) => i.op.kind === 'index');
+    expect(indices.every((i) => i.args[1] === op.index)).toBe(true);
+    // What does not depend on the light is computed once, before the loop:
+    // the camera position, the normal, the view direction and the clamped
+    // shininess.
+    expect(members(fragment.body)).toContain('cameraPosition');
+    expect(members(op.body)).not.toContain('cameraPosition');
+    expect(intrinsics(fragment.body).sort()).toEqual([
+      'max',
+      'normalize',
+      'normalize',
+    ]);
+    expect(intrinsics(op.body)).toEqual(
+      expect.arrayContaining(['normalize', 'dot', 'reflect', 'pow', 'length'])
     );
     expect(program.vertexInputs.map((input) => input.semantic)).toEqual([
       'position',
@@ -263,11 +298,9 @@ describe('lighting.phong', () => {
       BuiltinTypes.vec3f,
       BuiltinTypes.vec4f,
     ]);
-    expect(
-      ops(stage(program, 'fragment'), 'intrinsic').map(
-        (i) => (i.op as { name: string }).name
-      )
-    ).toEqual(
+    const all: IrInstruction[] = [];
+    forEachInstruction(stage(program, 'fragment').body, (i) => all.push(i));
+    expect(intrinsics(all)).toEqual(
       expect.arrayContaining([
         'normalize',
         'dot',

@@ -10,6 +10,7 @@ import {
   PointLight,
   Renderer,
   RenderItem,
+  SpotLight,
   Transform,
 } from '@fdw/engine-core';
 
@@ -346,11 +347,22 @@ export function describeRenderer(
       ];
       const normalize = (a: Vec3) => scale(a, 1 / Math.hypot(...a));
 
-      // Reference implementation of lighting.phong, at the center of a pixel.
+      interface ReferenceLight {
+        position: Vec3;
+        w: number;
+        ambient: Vec3;
+        attenuation: Vec3;
+        // Diffuse and specular color, gray.
+        intensity?: number;
+        spot?: { direction: Vec3; innerDegrees: number; outerDegrees: number };
+      }
+
+      // Reference implementation of lighting.phong, summed over the lights,
+      // at the center of a pixel.
       const phongReference = (
         x: number,
         y: number,
-        light: { position: Vec3; w: number; ambient: Vec3; attenuation: Vec3 }
+        ...lights: ReferenceLight[]
       ) => {
         const p: Vec3 = [
           (x + 0.5) / (size / 2) - 1,
@@ -358,22 +370,38 @@ export function describeRenderer(
           0,
         ];
         const n: Vec3 = [0, 0, 1];
-        const toLight = sub(light.position, scale(p, light.w));
-        const l = normalize(toLight);
         const v = normalize(sub([0, 0, 5], p));
-        const d = Math.hypot(...toLight);
-        const [c, linear, q] = light.attenuation;
-        const attenuation = 1 / (c + linear * d + q * d * d);
-        const nDotL = dot(n, l);
-        const r = sub(scale(n, 2 * nDotL), l);
-        const specular =
-          Math.max(dot(v, r), 0) ** shininess * (nDotL >= 0 ? 1 : 0);
-        return base
-          .map(
-            (b, i) =>
+        const color = [0, 0, 0];
+        for (const light of lights) {
+          const toLight = sub(light.position, scale(p, light.w));
+          const l = normalize(toLight);
+          const d = Math.hypot(...toLight);
+          const [c, linear, q] = light.attenuation;
+          const attenuation = 1 / (c + linear * d + q * d * d);
+          let spot = 1;
+          if (light.spot) {
+            const cosine = (degrees: number) =>
+              Math.cos((degrees * Math.PI) / 180);
+            const inner = cosine(light.spot.innerDegrees);
+            const outer = cosine(light.spot.outerDegrees);
+            const theta = dot(scale(l, -1), normalize(light.spot.direction));
+            spot = Math.min(Math.max((theta - outer) / (inner - outer), 0), 1);
+          }
+          const nDotL = dot(n, l);
+          const r = sub(scale(n, 2 * nDotL), l);
+          const specular =
+            Math.max(dot(v, r), 0) ** shininess * (nDotL >= 0 ? 1 : 0);
+          const intensity = light.intensity ?? 1;
+          base.forEach((b, i) => {
+            color[i] +=
               light.ambient[i] * b +
-              (b * Math.max(nDotL, 0) + specular) * attenuation
-          )
+              intensity *
+                (b * Math.max(nDotL, 0) + specular) *
+                attenuation *
+                spot;
+          });
+        }
+        return color
           .map((value) => Math.round(Math.min(Math.max(value, 0), 1) * 255))
           .concat(255);
       };
@@ -446,6 +474,90 @@ export function describeRenderer(
               ambient: [0.05, 0.05, 0.05],
               attenuation: [1, 0.2, 0.5],
             })
+          );
+        }
+      });
+
+      it('sums several lights, spot lights included', async () => {
+        const gray = (value: number) => ({ x: value, y: value, z: value });
+        const lights = [
+          new DirectionalLight({
+            direction: { x: -0.6, y: 0, z: -0.8 },
+            ambient: gray(0.05),
+            diffuse: gray(0.3),
+            specular: gray(0.3),
+          }),
+          new PointLight({
+            position: { x: 0.3, y: -0.2, z: 1 },
+            ambient: gray(0),
+            diffuse: gray(0.3),
+            specular: gray(0.3),
+            constantAttenuation: 1,
+            linearAttenuation: 0.2,
+            quadraticAttenuation: 0.5,
+          }),
+          new SpotLight({
+            position: { x: -0.5, y: 0.5, z: 1.5 },
+            direction: { x: 0, y: 0, z: -1 },
+            ambient: gray(0),
+            diffuse: gray(0.4),
+            specular: gray(0.4),
+            innerCutoff: 10,
+            outerCutoff: 30,
+          }),
+        ];
+        const pixel = await render(
+          [
+            {
+              mesh: litQuad(),
+              material: new Material({ graph: phongGraph() }),
+              transform: at(0),
+            },
+          ],
+          0,
+          lights
+        );
+        // Under the spot, at the edge of its cone, outside of it, elsewhere.
+        for (const [x, y] of [
+          [16, 16],
+          [30, 16],
+          [5, 5],
+          [60, 60],
+          [32, 32],
+          [12, 50],
+        ]) {
+          expectColor(
+            pixel(x, y),
+            phongReference(
+              x,
+              y,
+              {
+                position: [0.6, 0, 0.8],
+                w: 0,
+                ambient: [0.05, 0.05, 0.05],
+                attenuation: [1, 0, 0],
+                intensity: 0.3,
+              },
+              {
+                position: [0.3, -0.2, 1],
+                w: 1,
+                ambient: [0, 0, 0],
+                attenuation: [1, 0.2, 0.5],
+                intensity: 0.3,
+              },
+              {
+                position: [-0.5, 0.5, 1.5],
+                w: 1,
+                ambient: [0, 0, 0],
+                attenuation: [1, 0, 0],
+                intensity: 0.4,
+                spot: {
+                  direction: [0, 0, -1],
+                  innerDegrees: 10,
+                  outerDegrees: 30,
+                },
+              }
+            )
           );
         }
       });

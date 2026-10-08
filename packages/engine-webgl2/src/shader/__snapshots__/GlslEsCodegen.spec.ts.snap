@@ -14,11 +14,14 @@ layout(std140) uniform FrameUniforms {
   mat4 u_projection;
   vec3 u_cameraPosition;
   float u_time;
-  vec4 u_lightPosition;
-  vec3 u_lightAmbient;
-  vec3 u_lightDiffuse;
-  vec3 u_lightSpecular;
-  vec3 u_lightAttenuation;
+  uint u_lightCount;
+  vec4 u_lightPositions[16];
+  vec4 u_lightAmbients[16];
+  vec4 u_lightDiffuses[16];
+  vec4 u_lightSpeculars[16];
+  vec4 u_lightAttenuations[16];
+  vec4 u_lightSpotDirections[16];
+  vec4 u_lightSpotCones[16];
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {
@@ -62,11 +65,14 @@ layout(std140) uniform FrameUniforms {
   mat4 u_projection;
   vec3 u_cameraPosition;
   float u_time;
-  vec4 u_lightPosition;
-  vec3 u_lightAmbient;
-  vec3 u_lightDiffuse;
-  vec3 u_lightSpecular;
-  vec3 u_lightAttenuation;
+  uint u_lightCount;
+  vec4 u_lightPositions[16];
+  vec4 u_lightAmbients[16];
+  vec4 u_lightDiffuses[16];
+  vec4 u_lightSpeculars[16];
+  vec4 u_lightAttenuations[16];
+  vec4 u_lightSpotDirections[16];
+  vec4 u_lightSpotCones[16];
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {

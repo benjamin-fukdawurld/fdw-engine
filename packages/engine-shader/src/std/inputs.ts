@@ -130,11 +130,6 @@ const engineValues: Record<string, ShaderType> = {
   'object.world': BuiltinTypes.mat4f,
   'object.normalMatrix': BuiltinTypes.mat3f,
   time: BuiltinTypes.f32,
-  'light.position': BuiltinTypes.vec4f,
-  'light.ambient': BuiltinTypes.vec3f,
-  'light.diffuse': BuiltinTypes.vec3f,
-  'light.specular': BuiltinTypes.vec3f,
-  'light.attenuation': BuiltinTypes.vec3f,
 };
 
 export const engine: NodeDefinition = {

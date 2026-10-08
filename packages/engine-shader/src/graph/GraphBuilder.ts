@@ -398,9 +398,10 @@ export class GraphBuilder {
   }
 
   /**
-   * Reads a value provided by the engine: camera, object transform, time, main
-   * light. These values live in the fixed `frame` and `object` slots, shared by
-   * every material.
+   * Reads a value provided by the engine: camera, object transform, time.
+   * These values live in the fixed `frame` and `object` slots, shared by
+   * every material. The lights are read with `light.current` and summed with
+   * `light.sum` (see `stdLights`).
    */
   engine(
     value:
@@ -411,11 +412,6 @@ export class GraphBuilder {
       | 'object.world'
       | 'object.normalMatrix'
       | 'time'
-      | 'light.position'
-      | 'light.ambient'
-      | 'light.diffuse'
-      | 'light.specular'
-      | 'light.attenuation'
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }

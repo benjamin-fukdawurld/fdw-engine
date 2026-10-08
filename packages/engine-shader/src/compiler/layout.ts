@@ -1,4 +1,9 @@
-import { ShaderType, BuiltinTypes, TextureType } from '../types/ShaderType';
+import {
+  arrayType,
+  BuiltinTypes,
+  ShaderType,
+  TextureType,
+} from '../types/ShaderType';
 
 // Logical layout of the resources of a program: which resources, of which
 // type, grouped by update frequency. Memory offsets and binding numbers are
@@ -75,6 +80,44 @@ export const EngineSlots = ['frame', 'object'] as const;
 export const uniformBlockName = (slot: string): string => `${slot}Uniforms`;
 
 /**
+ * Maximum number of lights of a frame: the size of the light arrays of the
+ * 'frame' uniform block.
+ *
+ * @group Program layout
+ */
+export const MaxLights = 16;
+
+const lightArray = arrayType(BuiltinTypes.vec4f, MaxLights);
+
+/**
+ * The lights of the frame, in the 'frame' uniform block: one array of vec4
+ * per property, indexed by light. Each output of the 'light.current' node
+ * reads the components of one of them.
+ *
+ * - position: xyz, and w = 1 for a point or spot light, 0 for a directional
+ *   light (xyz is then the direction towards the light). The direction from
+ *   a point P to the light is normalize(xyz - P × w) in both cases.
+ * - ambient, diffuse, specular: rgb colors.
+ * - attenuation: constant, linear and quadratic factors; (1, 0, 0) for none.
+ * - spotDirection: direction the spot shines in.
+ * - spotCone: cosines of the inner and outer angles of the cone; (-1, -2)
+ *   lights every direction.
+ *
+ * @group Program layout
+ */
+export const lightMembers: Readonly<
+  Record<string, { readonly member: string; readonly type: ShaderType }>
+> = {
+  position: { member: 'lightPositions', type: BuiltinTypes.vec4f },
+  ambient: { member: 'lightAmbients', type: BuiltinTypes.vec3f },
+  diffuse: { member: 'lightDiffuses', type: BuiltinTypes.vec3f },
+  specular: { member: 'lightSpeculars', type: BuiltinTypes.vec3f },
+  attenuation: { member: 'lightAttenuations', type: BuiltinTypes.vec3f },
+  spotDirection: { member: 'lightSpotDirections', type: BuiltinTypes.vec3f },
+  spotCone: { member: 'lightSpotCones', type: BuiltinTypes.vec2f },
+};
+
+/**
  * Members of the uniform blocks of the engine slots: a fixed contract.
  *
  * @group Program layout
@@ -91,16 +134,12 @@ export const engineUniformBlocks: Readonly<
     { name: 'projection', type: BuiltinTypes.mat4f },
     { name: 'cameraPosition', type: BuiltinTypes.vec3f },
     { name: 'time', type: BuiltinTypes.f32 },
-    // Main light. w = 1: point light at xyz; w = 0: directional light, xyz
-    // being the direction towards the light. The direction from a point P to
-    // the light is normalize(xyz - P × w) in both cases.
-    { name: 'lightPosition', type: BuiltinTypes.vec4f },
-    { name: 'lightAmbient', type: BuiltinTypes.vec3f },
-    { name: 'lightDiffuse', type: BuiltinTypes.vec3f },
-    { name: 'lightSpecular', type: BuiltinTypes.vec3f },
-    // Constant, linear and quadratic attenuation; (1, 0, 0) for no
-    // attenuation.
-    { name: 'lightAttenuation', type: BuiltinTypes.vec3f },
+    // Number of lights in the arrays below (see lightMembers).
+    { name: 'lightCount', type: BuiltinTypes.u32 },
+    ...Object.values(lightMembers).map(({ member }) => ({
+      name: member,
+      type: lightArray,
+    })),
   ],
   object: [
     { name: 'world', type: BuiltinTypes.mat4f },
@@ -124,11 +163,6 @@ export const engineValueLocations: Readonly<
   'camera.projection': { slot: 'frame', member: 'projection' },
   'camera.position': { slot: 'frame', member: 'cameraPosition' },
   time: { slot: 'frame', member: 'time' },
-  'light.position': { slot: 'frame', member: 'lightPosition' },
-  'light.ambient': { slot: 'frame', member: 'lightAmbient' },
-  'light.diffuse': { slot: 'frame', member: 'lightDiffuse' },
-  'light.specular': { slot: 'frame', member: 'lightSpecular' },
-  'light.attenuation': { slot: 'frame', member: 'lightAttenuation' },
   'object.world': { slot: 'object', member: 'world' },
   'object.normalMatrix': { slot: 'object', member: 'normalMatrix' },
 };

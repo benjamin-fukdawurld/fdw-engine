@@ -18,48 +18,48 @@ engine-webgpu    ← WebGPU backend: WgslCodegen, wgslLayoutStrategy
 
 ### Types
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `ShaderType` | type | Logical shader type: scalar, vector, matrix, array, struct, texture, sampler |
-| `BuiltinTypes` | const | Shortcuts: `BuiltinTypes.f32`, `BuiltinTypes.vec3f`, `BuiltinTypes.mat4f`, `BuiltinTypes.texture2d`, `BuiltinTypes.sampler`… |
-| `scalar()`, `vec()`, `mat()`, `arrayType()`, `structType()`, `texture()`, `sampler()` | function | Type constructors |
-| `PortType`, `generic()`, `elementOf()`, `vectorOf()` | type / function | Port types, with generics and constraints (`numeric`, `float`, `float-vector`, `integer`) |
-| `ConstantValue` | type | Untyped literal (`number`, `boolean`, `number[]`), typed by the port it is attached to |
-| `typeEquals()`, `typeToString()` | function | Comparison and readable representation |
+| Export                                                                                | Kind            | Description                                                                                                                  |
+| ------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `ShaderType`                                                                          | type            | Logical shader type: scalar, vector, matrix, array, struct, texture, sampler                                                 |
+| `BuiltinTypes`                                                                        | const           | Shortcuts: `BuiltinTypes.f32`, `BuiltinTypes.vec3f`, `BuiltinTypes.mat4f`, `BuiltinTypes.texture2d`, `BuiltinTypes.sampler`… |
+| `scalar()`, `vec()`, `mat()`, `arrayType()`, `structType()`, `texture()`, `sampler()` | function        | Type constructors                                                                                                            |
+| `PortType`, `generic()`, `elementOf()`, `vectorOf()`                                  | type / function | Port types, with generics and constraints (`numeric`, `float`, `float-vector`, `integer`)                                    |
+| `ConstantValue`                                                                       | type            | Untyped literal (`number`, `boolean`, `number[]`), typed by the port it is attached to                                       |
+| `typeEquals()`, `typeToString()`                                                      | function        | Comparison and readable representation                                                                                       |
 
 ### Graph
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `MaterialGraphData`, `GraphNode`, `GraphEdge` | type | Serializable graph model |
-| `NodeDefinition`, `FunctionDefinition`, `PortSchema`, `ParamSchema` | type | Node type description |
-| `NodeRegistry` | class | Registry of node types |
-| `GraphBuilder`, `PortHandle` | class | Fluent API to build a graph, with types checked on each call |
-| `validateGraph()` | function | Structural and type validation; returns diagnostics, topological order and port types |
-| `resolveNodeTypes()` | function | Type inference of a node: generics unification, scalar splat, constraints |
-| `serializeGraph()`, `parseGraph()` | function | JSON serialization |
-| `Diagnostic`, `GraphError` | type / class | Errors and warnings, located by node and port |
+| Export                                                              | Kind         | Description                                                                           |
+| ------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------- |
+| `MaterialGraphData`, `GraphNode`, `GraphEdge`                       | type         | Serializable graph model                                                              |
+| `NodeDefinition`, `FunctionDefinition`, `PortSchema`, `ParamSchema` | type         | Node type description                                                                 |
+| `NodeRegistry`                                                      | class        | Registry of node types                                                                |
+| `GraphBuilder`, `PortHandle`                                        | class        | Fluent API to build a graph, with types checked on each call                          |
+| `validateGraph()`                                                   | function     | Structural and type validation; returns diagnostics, topological order and port types |
+| `resolveNodeTypes()`                                                | function     | Type inference of a node: generics unification, scalar splat, constraints             |
+| `serializeGraph()`, `parseGraph()`                                  | function     | JSON serialization                                                                    |
+| `Diagnostic`, `GraphError`                                          | type / class | Errors and warnings, located by node and port                                         |
 
 ### Compiler
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `compile()` | function | Graph → `CompiledProgram`. Throws a `GraphError` when the graph has errors |
-| `CompiledProgram` | type | `programKey`, IR `module`, logical `layout`, `vertexInputs`, warnings |
-| `ShaderModuleIR`, `IrEntryPoint`, `IrInstruction`, `IrOp` | type | Intermediate representation: typed SSA instructions, one straight list per stage |
-| `ProgramLayout`, `LogicalBinding` | type | Resources grouped by slot (`frame`, `material`, `object`, custom slots) |
-| `engineUniformBlocks`, `engineValueLocations` | const | Fixed contract of the `frame` and `object` slots, shared by every program |
+| Export                                                    | Kind     | Description                                                                      |
+| --------------------------------------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `compile()`                                               | function | Graph → `CompiledProgram`. Throws a `GraphError` when the graph has errors       |
+| `CompiledProgram`                                         | type     | `programKey`, IR `module`, logical `layout`, `vertexInputs`, warnings            |
+| `ShaderModuleIR`, `IrEntryPoint`, `IrInstruction`, `IrOp` | type     | Intermediate representation: typed SSA instructions, one straight list per stage |
+| `ProgramLayout`, `LogicalBinding`                         | type     | Resources grouped by slot (`frame`, `material`, `object`, custom slots)          |
+| `engineUniformBlocks`, `engineValueLocations`             | const    | Fixed contract of the `frame` and `object` slots, shared by every program        |
 
 ### Standard library
 
-| Export | Content |
-| --- | --- |
-| `std` | Functions: `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `sin`, `cos`, `saturate`, `pow`, `dot`, `length`, `normalize`, `cross`, `reflect`, `mix`, `clamp`, `smoothstep`, `step`, `select`, `perFragment`, `textureSample`, `vec2`, `vec3`, `vec4`, `extend`, `transform`, `transform3`, `convert` |
-| `stdInputs` | `input.attribute`, `input.uniform`, `input.storage`, `input.texture`, `input.sampler`, `input.builtin`, `input.engine` |
-| `stdConstants` | `const.value`, `const.pi` |
-| `stdMacros` | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping` (and the `lighting.*` shading models, registered by name) |
-| `stdOutputs` | `output.surface` (shading models `unlit`, `phong`, `pbr`), and the raw `output.vertex` / `output.fragment` |
-| `createStandardRegistry()` | A `NodeRegistry` with all the standard node types |
+| Export                     | Content                                                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `std`                      | Functions: `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `sin`, `cos`, `saturate`, `pow`, `dot`, `length`, `normalize`, `cross`, `reflect`, `mix`, `clamp`, `smoothstep`, `step`, `select`, `perFragment`, `textureSample`, `vec2`, `vec3`, `vec4`, `extend`, `transform`, `transform3`, `convert` |
+| `stdInputs`                | `input.attribute`, `input.uniform`, `input.storage`, `input.texture`, `input.sampler`, `input.builtin`, `input.engine`                                                                                                                                                                                                          |
+| `stdConstants`             | `const.value`, `const.pi`                                                                                                                                                                                                                                                                                                       |
+| `stdMacros`                | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping` (and the `lighting.*` shading models, registered by name)                                                                                                                                                                                                        |
+| `stdOutputs`               | `output.surface` (shading models `unlit`, `phong`, `pbr`), and the raw `output.vertex` / `output.fragment`                                                                                                                                                                                                                      |
+| `createStandardRegistry()` | A `NodeRegistry` with all the standard node types                                                                                                                                                                                                                                                                               |
 
 ## Usage
 
@@ -71,7 +71,10 @@ const g = new GraphBuilder('textured-phong');
 const uv = g.attribute('uv', BuiltinTypes.vec2f);
 const diffuse = g.texture('diffuseMap', { slot: 'material' });
 const smp = g.sampler('diffuseSampler', { slot: 'material' });
-const tint = g.uniform('tint', BuiltinTypes.vec4f, { slot: 'material', default: [1, 1, 1, 1] });
+const tint = g.uniform('tint', BuiltinTypes.vec4f, {
+  slot: 'material',
+  default: [1, 1, 1, 1],
+});
 
 const texel = g.call(std.textureSample, { texture: diffuse, sampler: smp, uv });
 const color = g.call(std.mul, { a: texel, b: tint });
@@ -105,7 +108,9 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 import { compile } from '@fdw/engine-shader';
 import { WgslCodegen, wgslLayoutStrategy } from '@fdw/engine-webgpu';
 
-const program = compile(graph, { vertexAttributes: ['position', 'normal', 'uv'] });
+const program = compile(graph, {
+  vertexAttributes: ['position', 'normal', 'uv'],
+});
 const layout = wgslLayoutStrategy.resolve(program.layout); // bindings, offsets
 const sources = new WgslCodegen().emit(program.module, layout);
 ```
@@ -123,18 +128,22 @@ The compiler runs these passes:
 
 A macro is a node evaluated at compile time: it is replaced by the nodes it generates. Macros read **static parameters** (`context.feature(name)`), which come from the material features (`compile(graph, { features })`), then from the parameters declared by the graph (`g.parameter(name, default)`), then from the mesh (`hasAttribute.<semantic>`). Every parameter read is recorded in the **variant key** of the program; parameters that are not read do not create variants.
 
-| Macro | Description |
-| --- | --- |
-| `macro.staticSwitch` | `ifTrue` or `ifFalse` from a feature: only the chosen branch is compiled |
-| `macro.optionalAttribute` | A vertex attribute when the mesh has it, a fallback otherwise |
-| `macro.repeat` | Applies a function node `count` times, with the iteration index |
-| `macro.normalMapping` | World normal perturbed by a tangent-space normal map when the mesh has tangents, the interpolated normal otherwise |
+| Macro                     | Description                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `macro.staticSwitch`      | `ifTrue` or `ifFalse` from a feature: only the chosen branch is compiled                                           |
+| `macro.optionalAttribute` | A vertex attribute when the mesh has it, a fallback otherwise                                                      |
+| `macro.repeat`            | Applies a function node `count` times, with the iteration index                                                    |
+| `macro.normalMapping`     | World normal perturbed by a tangent-space normal map when the mesh has tangents, the interpolated normal otherwise |
 
 ```ts
 const g = new GraphBuilder('vertex-colored');
-const color = g.call(stdMacros.optionalAttribute, { fallback: [1, 1, 1] }, {
-  params: { semantic: 'color', type: BuiltinTypes.vec3f },
-});
+const color = g.call(
+  stdMacros.optionalAttribute,
+  { fallback: [1, 1, 1] },
+  {
+    params: { semantic: 'color', type: BuiltinTypes.vec3f },
+  }
+);
 g.surface({ baseColor: color });
 // A mesh with colors and a mesh without get two programs; a graph that does
 // not read the colors gives the same program for both.
@@ -142,18 +151,32 @@ g.surface({ baseColor: color });
 
 **Shading models are macros** named `lighting.<model>`, inserted by the compiler behind `output.surface`: `lighting.unlit` and `lighting.phong`. A shading model can be added by registering a macro `lighting.<name>` that takes the surface inputs and `worldPosition`, and returns a `color`.
 
-`lighting.phong` uses the main light of the `frame` slot (`light.position`, `light.ambient`, `light.diffuse`, `light.specular`, `light.attenuation`):
+`lighting.phong` sums the lights of the frame (up to `MaxLights`, 16):
 
 ```
-ambient × baseColor + (diffuse × baseColor × max(N·L, 0) + specular × specularColor × max(V·R, 0)^shininess) × attenuation + emissive
+Σ (ambient × baseColor + (diffuse × baseColor × max(N·L, 0) + specular × specularColor × max(V·R, 0)^shininess) × attenuation × spot) + emissive
 ```
 
 The normal and the position are interpolated, then the lighting is computed per fragment (`std.perFragment`).
 
+**Lights** are read with two nodes of `stdLights`, usable in custom shading models too:
+
+- `light.current`: the light being summed — `position` (w = 0 for a directional light), `ambient`, `diffuse`, `specular`, `attenuation`, `spotDirection`, `spotCone`;
+- `light.sum`: the sum of its `value` input over the lights.
+
+The nodes depending on `light.current` form the body of a loop over the lights; the others are computed once, before it. A per-light value can only reach the outputs through a `light.sum`. In the IR, the loop is a `loop-sum` instruction, the only control flow, whose body is itself straight code.
+
+```ts
+const light = g.node(stdLights.current);
+const received = g.call(stdLights.sum, {
+  value: g.call(std.mul, { a: light.diffuse, b: tint }),
+});
+```
+
 ### Current limitations
 
-- A single light (`light.*` engine values); several lights need the light loop of the design.
+- At most 16 lights per frame, without shadows.
 - No `pbr` shading model yet.
-- No storage buffers, no array or struct uniforms, no `f16`.
+- No storage buffers, no array or struct uniforms in materials (the engine uses arrays for the lights), no `f16`.
 - No subgraph or native functions yet.
 - `textureSample` only takes 2D textures.

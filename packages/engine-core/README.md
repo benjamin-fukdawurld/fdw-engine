@@ -26,15 +26,14 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 | `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation               |
 | `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles |
 
-
 ### Rendering (`render/`)
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `Material` | class | A material graph (`@fdw/engine-shader`) with its values (uniforms, textures, samplers), its features (static parameters selecting a variant of the program) and its `RenderState`. Changing a value never recompiles anything |
-| `RenderState` | type | `alphaMode` (`opaque` / `blend`), `doubleSided`, `depthTest`, `depthWrite` |
-| `Mesh` | class | CPU-side geometry: vertex buffers laid out as described by a `MeshDescription`, optional indices |
-| `Renderer` | class | Draws `RenderItem`s (`{ mesh, material, transform }`) on any `RenderBackend` |
+| Export        | Kind  | Description                                                                                                                                                                                                                   |
+| ------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Material`    | class | A material graph (`@fdw/engine-shader`) with its values (uniforms, textures, samplers), its features (static parameters selecting a variant of the program) and its `RenderState`. Changing a value never recompiles anything |
+| `RenderState` | type  | `alphaMode` (`opaque` / `blend`), `doubleSided`, `depthTest`, `depthWrite`                                                                                                                                                    |
+| `Mesh`        | class | CPU-side geometry: vertex buffers laid out as described by a `MeshDescription`, optional indices                                                                                                                              |
+| `Renderer`    | class | Draws `RenderItem`s (`{ mesh, material, transform }`) on any `RenderBackend`                                                                                                                                                  |
 
 ## Design
 
@@ -52,11 +51,18 @@ import { Camera, Material, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder, std, T } from '@fdw/engine-shader';
 
 const g = new GraphBuilder('tinted');
-g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f, { default: [1, 0.5, 0] }) });
+g.surface({
+  baseColor: g.uniform('color', BuiltinTypes.vec3f, { default: [1, 0.5, 0] }),
+});
 const material = new Material({ graph: g.build() });
 
 const renderer = new Renderer(engine.backend);
-renderer.render({ items: [{ mesh, material, transform }], camera, surface, time });
+renderer.render({
+  items: [{ mesh, material, transform }],
+  camera,
+  surface,
+  time,
+});
 
 material.setValue('color', [0, 0.5, 1]); // next frame: one buffer write
 ```
@@ -67,7 +73,7 @@ The renderer caches everything it creates:
 - **Uniform buffers** follow the update frequencies of the design: the `frame` buffer (camera, time) is written every frame, an `object` buffer only when its transform changes, a `material` buffer only when the material version changes. Bind groups are rebuilt only when a buffer is recreated or a texture or sampler changes.
 - **Frame and object bind groups are shared** by all the programs, since their layout is a fixed contract.
 - **Draw order**: opaque items grouped by pipeline then material, then transparent items back to front.
-- **Lights**: `render({ lights })` sets the main light of the frame (the first one): a `DirectionalLight` or a `PointLight` (spot lights are lit as point lights for now).
+- **Lights**: `render({ lights })` gives the lights of the frame — `DirectionalLight`, `PointLight` and `SpotLight` (cone from `innerCutoff` / `outerCutoff`, half-angles in degrees) — summed by the lit shading models. Up to 16 lights (`MaxLights`) are used.
 - **Asynchronous pipelines**: with `new Renderer(backend, { asyncPipelines: true })`, an item is skipped until its pipeline is ready instead of blocking the frame; `await renderer.whenReady()` waits for the pending ones.
 
 ## Usage

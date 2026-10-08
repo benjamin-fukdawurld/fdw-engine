@@ -62,6 +62,11 @@ export function wgslType(type: ShaderType): string {
     }
     case 'sampler':
       return type.comparison ? 'sampler_comparison' : 'sampler';
+    case 'array':
+      if (type.length !== undefined) {
+        return `array<${wgslType(type.element)}, ${type.length}>`;
+      }
+      throw new Error('Runtime-sized arrays are not supported yet');
     default:
       throw new Error(
         `${typeToString(type)} is not supported by the WGSL generator`
@@ -102,9 +107,10 @@ function literal(type: ShaderType, value: ConstantValue): string {
 }
 
 // Texture and sampler values are handles: WGSL does not allow binding them
-// to a let, so they are used inline.
-const isHandle = (type: ShaderType) =>
-  type.kind === 'texture' || type.kind === 'sampler';
+// to a let, so they are used inline. Arrays of uniform blocks are used
+// inline too, indexed in place rather than copied.
+const isInline = (type: ShaderType) =>
+  type.kind === 'texture' || type.kind === 'sampler' || type.kind === 'array';
 
 const identifier = (text: string) =>
   text.replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
@@ -153,26 +159,66 @@ function stageVariable(variable: IrStageVariable): string {
   return `  ${attributes} ${variable.name}: ${wgslType(variable.type)},`;
 }
 
+interface BodyState {
+  readonly lines: string[];
+  readonly expressions: Map<number, string>;
+  readonly builtins: Set<string>;
+}
+
+const valueName = (instruction: IrInstruction) =>
+  `v${instruction.id}${
+    instruction.name ? `_${identifier(instruction.name)}` : ''
+  }`;
+
 function emitBody(
   entryPoint: IrEntryPoint,
   resources: ReadonlyMap<string, string>
-): {
-  lines: string[];
-  expressions: Map<number, string>;
-  builtins: Set<string>;
-} {
-  const expressions = new Map<number, string>();
-  const builtins = new Set<string>();
-  const lines: string[] = [];
+): BodyState {
+  const state: BodyState = {
+    lines: [],
+    expressions: new Map(),
+    builtins: new Set(),
+  };
+  emitInstructions(entryPoint.body, resources, state, '  ');
+  return state;
+}
+
+function emitInstructions(
+  body: readonly IrInstruction[],
+  resources: ReadonlyMap<string, string>,
+  state: BodyState,
+  indent: string
+): void {
+  const { lines, expressions, builtins } = state;
   const arg = (instruction: IrInstruction, index: number) =>
     expressions.get(instruction.args[index]) as string;
   const args = (instruction: IrInstruction) =>
     instruction.args.map((_, i) => arg(instruction, i)).join(', ');
 
-  for (const instruction of entryPoint.body) {
+  for (const instruction of body) {
     const { op, type } = instruction;
     let expression: string;
     switch (op.kind) {
+      case 'loop-sum': {
+        const sum = valueName(instruction);
+        const index = `v${op.index}`;
+        const count = arg(instruction, 0);
+        lines.push(
+          `${indent}var ${sum}: ${wgslType(type)} = ${wgslType(type)}();`,
+          `${indent}for (var ${index}: u32 = 0u; ${index} < ${count}; ${index} = ${index} + 1u) {`
+        );
+        expressions.set(op.index, index);
+        emitInstructions(op.body, resources, state, `${indent}  `);
+        lines.push(
+          `${indent}  ${sum} = ${sum} + ${expressions.get(op.result)};`,
+          `${indent}}`
+        );
+        expressions.set(instruction.id, sum);
+        continue;
+      }
+      case 'index':
+        expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
+        break;
       case 'constant':
         expression = literal(type, op.value);
         break;
@@ -223,21 +269,19 @@ function emitBody(
         break;
     }
 
-    if (isHandle(type)) {
+    if (isInline(type)) {
       expressions.set(instruction.id, expression);
       continue;
     }
-    const name = `v${instruction.id}${
-      instruction.name ? `_${identifier(instruction.name)}` : ''
-    }`;
+    const name = valueName(instruction);
     const comment = instruction.sourceNode
       ? ` // #${instruction.sourceNode}`
       : '';
-    lines.push(`  let ${name}: ${wgslType(type)} = ${expression};${comment}`);
+    lines.push(
+      `${indent}let ${name}: ${wgslType(type)} = ${expression};${comment}`
+    );
     expressions.set(instruction.id, name);
   }
-
-  return { lines, expressions, builtins };
 }
 
 // Generates a WGSL module with a vs_main and an fs_main entry point.

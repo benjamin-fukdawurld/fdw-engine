@@ -110,6 +110,22 @@ function literal(type: ShaderType, value: ConstantValue): string {
 const isHandle = (type: ShaderType) =>
   type.kind === 'texture' || type.kind === 'sampler';
 
+// Values used inline rather than stored in a variable: handles, and the
+// arrays of uniform blocks, indexed in place rather than copied.
+const isInline = (type: ShaderType) => isHandle(type) || type.kind === 'array';
+
+// The declaration of a variable or block member: arrays put their length
+// after the name in GLSL.
+function declaration(type: ShaderType, name: string): string {
+  if (type.kind === 'array') {
+    if (type.length === undefined) {
+      throw new Error('Runtime-sized arrays are not supported by GLSL ES 3.00');
+    }
+    return `${glslType(type.element)} ${name}[${type.length}]`;
+  }
+  return `${glslType(type)} ${name}`;
+}
+
 // GLSL reserves the identifiers containing two consecutive underscores.
 const identifier = (text: string) =>
   text
@@ -128,24 +144,70 @@ const memberIdentifier = (name: string) => identifier(`u_${name}`);
 
 const vectorComponents = 'xyzw';
 
+interface BodyState {
+  readonly lines: string[];
+  readonly expressions: Map<number, string>;
+  readonly instructions: Map<number, IrInstruction>;
+}
+
+const valueName = (instruction: IrInstruction) =>
+  identifier(
+    `v${instruction.id}${instruction.name ? `_${instruction.name}` : ''}`
+  );
+
 function emitBody(
   entryPoint: IrEntryPoint,
   samplers: readonly CombinedSampler[]
-): { lines: string[]; expressions: Map<number, string> } {
-  const expressions = new Map<number, string>();
-  const instructions = new Map<number, IrInstruction>();
-  const lines: string[] = [];
+): BodyState {
+  const state: BodyState = {
+    lines: [],
+    expressions: new Map(),
+    instructions: new Map(),
+  };
+  emitInstructions(entryPoint.body, samplers, state, '  ');
+  return state;
+}
+
+function emitInstructions(
+  body: readonly IrInstruction[],
+  samplers: readonly CombinedSampler[],
+  state: BodyState,
+  indent: string
+): void {
+  const { lines, expressions, instructions } = state;
   const arg = (instruction: IrInstruction, index: number) =>
     expressions.get(instruction.args[index]) as string;
   const args = (instruction: IrInstruction) =>
     instruction.args.map((_, i) => arg(instruction, i)).join(', ');
   const typeOf = (id: number) => (instructions.get(id) as IrInstruction).type;
 
-  for (const instruction of entryPoint.body) {
+  for (const instruction of body) {
     instructions.set(instruction.id, instruction);
     const { op, type } = instruction;
     let expression: string;
     switch (op.kind) {
+      case 'loop-sum': {
+        const sum = valueName(instruction);
+        const index = `v${op.index}`;
+        lines.push(
+          `${indent}${glslType(type)} ${sum} = ${glslType(type)}(0.0);`,
+          `${indent}for (uint ${index} = 0u; ${index} < ${arg(
+            instruction,
+            0
+          )}; ${index}++) {`
+        );
+        expressions.set(op.index, index);
+        emitInstructions(op.body, samplers, state, `${indent}  `);
+        lines.push(
+          `${indent}  ${sum} += ${expressions.get(op.result)};`,
+          `${indent}}`
+        );
+        expressions.set(instruction.id, sum);
+        continue;
+      }
+      case 'index':
+        expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
+        break;
       case 'constant':
         expression = literal(type, op.value);
         break;
@@ -241,21 +303,17 @@ function emitBody(
         break;
     }
 
-    if (isHandle(type)) {
+    if (isInline(type)) {
       expressions.set(instruction.id, expression);
       continue;
     }
-    const name = identifier(
-      `v${instruction.id}${instruction.name ? `_${instruction.name}` : ''}`
-    );
+    const name = valueName(instruction);
     const comment = instruction.sourceNode
       ? ` // #${instruction.sourceNode}`
       : '';
-    lines.push(`  ${glslType(type)} ${name} = ${expression};${comment}`);
+    lines.push(`${indent}${glslType(type)} ${name} = ${expression};${comment}`);
     expressions.set(instruction.id, name);
   }
-
-  return { lines, expressions };
 }
 
 function varying(variable: IrStageVariable, direction: 'in' | 'out'): string {
@@ -311,7 +369,7 @@ export class GlslEsCodegen implements ShaderCodegen {
             `layout(std140) uniform ${glslBlockName(resource.name)} {`,
             ...resource.members.map(
               (member) =>
-                `  ${glslType(member.type)} ${memberIdentifier(member.name)};`
+                `  ${declaration(member.type, memberIdentifier(member.name))};`
             ),
             `} ${identifier(resource.name)};`,
           ].join('\n')

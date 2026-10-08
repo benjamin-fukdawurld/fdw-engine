@@ -12,14 +12,17 @@ import {
 } from '@fdw/engine-backend';
 import {
   GraphBuilder,
+  engineUniformBlocks,
   MaterialGraphData,
+  MaxLights,
+  ShaderType,
   std,
   stdMacros,
   BuiltinTypes,
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { Camera } from '../Camera';
-import { DirectionalLight, PointLight } from '../light';
+import { DirectionalLight, PointLight, SpotLight } from '../light';
 import { Transform } from '../Transform';
 import { Material, RenderState } from './Material';
 import { Mesh } from './Mesh';
@@ -42,9 +45,15 @@ class FakeBuffer implements GpuBuffer {
   }
 }
 
-const sizeOf = (kind: string) => (kind === 'matrix' ? 64 : 16);
+const sizeOf = (type: ShaderType): number =>
+  type.kind === 'matrix'
+    ? 64
+    : type.kind === 'array'
+    ? sizeOf(type.element) * (type.length ?? 0)
+    : 16;
 
-// Every member in its own 16-byte slot (64 for matrices), values as floats.
+// Every member in its own 16-byte slot (64 for matrices, 16 per element of
+// arrays), values as floats.
 const layoutStrategy: PhysicalLayoutStrategy = {
   resolve: (layout) => ({
     groups: layout.groups.map((group, index) => ({
@@ -56,7 +65,7 @@ const layoutStrategy: PhysicalLayoutStrategy = {
         }
         let offset = 0;
         const members = resource.members.map((member) => {
-          const size = sizeOf(member.type.kind);
+          const size = sizeOf(member.type);
           const physical = {
             name: member.name,
             type: member.type,
@@ -510,16 +519,29 @@ describe('Renderer', () => {
 });
 
 describe('Renderer, phase 4', () => {
-  // Float index of the light members in the fake frame block (16 bytes per
-  // member, 64 per matrix).
-  const light = { position: 56, ambient: 60, attenuation: 72 };
+  // Float index of a member of the fake frame block.
+  const frameIndex = (name: string) => {
+    let offset = 0;
+    for (const member of engineUniformBlocks.frame) {
+      if (member.name === name) {
+        return offset / 4;
+      }
+      offset += sizeOf(member.type);
+    }
+    throw new Error(`no frame member ${name}`);
+  };
+  // The vec4 of a light in an array of the frame block.
+  const lightVec4 = (floats: number[], array: string, light: number) => {
+    const index = frameIndex(array) + light * 4;
+    return floats.slice(index, index + 4).map((v) => +v.toFixed(4));
+  };
 
   const frameFloats = (log: ReturnType<typeof fakeBackend>['log']) =>
     floatsOf(
       log.buffers.find((b) => b.label === 'frame uniforms') as FakeBuffer
     );
 
-  it('writes the main light in the frame uniforms', () => {
+  it('writes the lights in the arrays of the frame uniforms', () => {
     const { backend, log } = fakeBackend();
     const renderer = new Renderer(backend);
     const camera = new Camera();
@@ -540,45 +562,64 @@ describe('Renderer, phase 4', () => {
           direction: { x: 0, y: -2, z: 0 },
           ambient: { x: 0.1, y: 0.2, z: 0.3 },
         }),
-      ],
-    });
-    let floats = frameFloats(log);
-    // Directional: the direction towards the light, w = 0, no attenuation.
-    expect(floats.slice(light.position, light.position + 4)).toEqual([
-      -0, 1, -0, 0,
-    ]);
-    expect(
-      floats.slice(light.ambient, light.ambient + 3).map((v) => +v.toFixed(3))
-    ).toEqual([0.1, 0.2, 0.3]);
-    expect(floats.slice(light.attenuation, light.attenuation + 3)).toEqual([
-      1, 0, 0,
-    ]);
-
-    renderer.render({
-      items,
-      camera,
-      surface,
-      lights: [
         new PointLight({
           position: { x: 1, y: 2, z: 3 },
           linearAttenuation: 0.5,
         }),
+        new SpotLight({
+          position: { x: 0, y: 5, z: 0 },
+          direction: { x: 0, y: -3, z: 0 },
+          innerCutoff: 0,
+          outerCutoff: 60,
+        }),
       ],
     });
-    floats = frameFloats(log);
-    expect(floats.slice(light.position, light.position + 4)).toEqual([
-      1, 2, 3, 1,
-    ]);
-    expect(floats.slice(light.attenuation, light.attenuation + 3)).toEqual([
-      1, 0.5, 0,
-    ]);
+    const floats = frameFloats(log);
+    expect(floats[frameIndex('lightCount')]).toBe(3);
+    // Directional: the direction towards the light, w = 0, no attenuation,
+    // a cone lighting every direction.
+    expect(lightVec4(floats, 'lightPositions', 0)).toEqual([0, 1, 0, 0]);
+    expect(lightVec4(floats, 'lightAmbients', 0)).toEqual([0.1, 0.2, 0.3, 0]);
+    expect(lightVec4(floats, 'lightAttenuations', 0)).toEqual([1, 0, 0, 0]);
+    expect(lightVec4(floats, 'lightSpotCones', 0)).toEqual([-1, -2, 0, 0]);
+    // Point: its position, w = 1, its attenuation.
+    expect(lightVec4(floats, 'lightPositions', 1)).toEqual([1, 2, 3, 1]);
+    expect(lightVec4(floats, 'lightAttenuations', 1)).toEqual([1, 0.5, 0, 0]);
+    // Spot: its normalized direction and the cosines of its cone.
+    expect(lightVec4(floats, 'lightSpotDirections', 2)).toEqual([0, -1, 0, 0]);
+    expect(lightVec4(floats, 'lightSpotCones', 2)).toEqual([1, 0.5, 0, 0]);
 
-    // No light: neutral attenuation, so that lit materials do not divide by
-    // zero.
+    // No light: nothing is summed, lit materials only show their emissive
+    // color.
     renderer.render({ items, camera, surface });
-    floats = frameFloats(log);
-    expect(floats.slice(light.attenuation, light.attenuation + 3)).toEqual([
-      1, 0, 0,
+    expect(frameFloats(log)[frameIndex('lightCount')]).toBe(0);
+  });
+
+  it('uses at most MaxLights lights', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    renderer.render({
+      items: [
+        {
+          mesh: triangle(),
+          material: new Material({ graph: colorGraph() }),
+          transform: transformAt(0),
+        },
+      ],
+      camera: new Camera(),
+      surface,
+      lights: Array.from(
+        { length: MaxLights + 2 },
+        (_, i) => new PointLight({ position: { x: i, y: 0, z: 0 } })
+      ),
+    });
+    const floats = frameFloats(log);
+    expect(floats[frameIndex('lightCount')]).toBe(MaxLights);
+    expect(lightVec4(floats, 'lightPositions', MaxLights - 1)).toEqual([
+      MaxLights - 1,
+      0,
+      0,
+      1,
     ]);
   });
 

@@ -5,7 +5,8 @@ import type { ShaderType } from '../types/ShaderType';
 // Intermediate representation produced by the compiler and translated by the
 // code generators. The graph has no control flow, so each entry point is a
 // straight list of typed instructions in SSA form: every value is defined
-// once, before its uses.
+// once, before its uses. The only loop is loop-sum, a structured sum whose
+// body is itself a straight list of instructions.
 
 /**
  * Id of a value, unique in its entry point.
@@ -88,7 +89,23 @@ export type IrOp =
   | { readonly kind: 'construct' }
   | { readonly kind: 'swizzle'; readonly components: string }
   /** Conversion of the scalar kind, component-wise for vectors. */
-  | { readonly kind: 'convert' };
+  | { readonly kind: 'convert' }
+  /** array[index]: an element of an array read from a uniform block. */
+  | { readonly kind: 'index' }
+  /**
+   * The only loop of the IR: the sum, for index from 0 to count - 1 (args[0],
+   * a u32), of the value `result` computed by `body` from `index`. The body
+   * is straight code too; it can read the values defined before the loop,
+   * and its own values are not visible after it.
+   */
+  | {
+      readonly kind: 'loop-sum';
+      /** Id of the loop index, a u32 read by the body. */
+      readonly index: ValueId;
+      readonly body: readonly IrInstruction[];
+      /** The value of the body summed over the iterations. */
+      readonly result: ValueId;
+    };
 
 /**
  * An instruction: defines one value from its arguments.
@@ -155,4 +172,22 @@ export interface ShaderModuleIR {
   readonly name: string;
   /** The vertex and fragment stages. */
   readonly entryPoints: readonly IrEntryPoint[];
+}
+
+/**
+ * Calls a function on every instruction of a body, those of the loop bodies
+ * included, in order.
+ *
+ * @group Intermediate representation
+ */
+export function forEachInstruction(
+  body: readonly IrInstruction[],
+  visit: (instruction: IrInstruction) => void
+): void {
+  for (const instruction of body) {
+    visit(instruction);
+    if (instruction.op.kind === 'loop-sum') {
+      forEachInstruction(instruction.op.body, visit);
+    }
+  }
 }

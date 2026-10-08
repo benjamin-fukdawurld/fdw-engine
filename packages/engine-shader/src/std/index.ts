@@ -4,6 +4,7 @@ import * as constants from './constants';
 import * as functions from './functions';
 import * as inputs from './inputs';
 import { lightingDefinitions } from './lighting';
+import * as lights from './lights';
 import * as macros from './macros';
 import * as outputs from './outputs';
 
@@ -102,6 +103,18 @@ export const stdOutputs = {
 } as const;
 
 /**
+ * The lights of the frame: `current`, the light being summed, and `sum`,
+ * the sum of a value over the lights. Used by the lit shading models, and
+ * by custom ones.
+ *
+ * @group Standard library
+ */
+export const stdLights = {
+  current: lights.current,
+  sum: lights.sum,
+} as const;
+
+/**
  * Macros, by short name: g.node(stdMacros.staticSwitch, { params, inputs }).
  *
  * @group Standard library
@@ -127,6 +140,7 @@ export const standardNodeDefinitions: readonly NodeDefinition[] = [
   ...Object.values(stdConstants),
   ...functions.functionDefinitions,
   ...Object.values(stdOutputs),
+  ...lights.lightDefinitions,
   ...macros.macroDefinitions,
   ...lightingDefinitions,
 ];

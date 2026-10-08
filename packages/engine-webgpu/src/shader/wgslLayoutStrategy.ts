@@ -1,67 +1,71 @@
 import type {
-  GpuType,
   PhysicalLayoutStrategy,
   PhysicalProgramLayout,
   PhysicalUniformBlock,
   PhysicalUniformMember,
-  PrimitiveApi,
   UniformValue,
 } from '@fdw/engine-backend';
 import { LogicalBinding, ShaderType, typeToString } from '@fdw/engine-shader';
-import { uniformPrimitives } from '../gpu/primitives';
-import { uniformStructBuilder } from '../gpu/structs';
 
-const vectorSuffix = { f32: '', i32: 'i', u32: 'u' } as const;
+const roundUp = (value: number, align: number) =>
+  Math.ceil(value / align) * align;
 
-// The GPU memory type of a uniform block member.
-function uniformTypeOf(type: ShaderType): GpuType<unknown> {
-  const primitive = (name: keyof PrimitiveApi) =>
-    uniformPrimitives[name] as GpuType<unknown>;
+const scalars = ['f32', 'i32', 'u32'];
 
-  if (type.kind === 'scalar') {
-    switch (type.scalar) {
-      case 'f32':
-        return primitive('float32');
-      case 'i32':
-        return primitive('int32');
-      case 'u32':
-        return primitive('uint32');
-    }
+// Alignment and size of a type in the uniform address space of WGSL.
+// vec3 is aligned like vec4 but takes 12 bytes: a scalar can follow it.
+// Matrices are arrays of column vectors; array elements must be 16-byte
+// aligned in uniform buffers.
+function uniformLayoutOf(type: ShaderType): { align: number; size: number } {
+  if (type.kind === 'scalar' && scalars.includes(type.scalar)) {
+    return { align: 4, size: 4 };
   }
-  if (type.kind === 'vector' && type.scalar in vectorSuffix) {
-    const suffix = vectorSuffix[type.scalar as keyof typeof vectorSuffix];
-    return primitive(`vec${type.size}${suffix}` as keyof PrimitiveApi);
+  if (type.kind === 'vector' && scalars.includes(type.scalar)) {
+    return { align: type.size === 2 ? 8 : 16, size: type.size * 4 };
   }
-  if (
-    type.kind === 'matrix' &&
-    type.scalar === 'f32' &&
-    type.columns === type.rows
-  ) {
-    return primitive(`mat${type.columns}` as keyof PrimitiveApi);
+  if (type.kind === 'matrix' && type.scalar === 'f32') {
+    const column = type.rows === 2 ? 8 : 16;
+    return { align: column, size: type.columns * column };
+  }
+  if (type.kind === 'array' && type.length !== undefined) {
+    const stride = arrayStride(type.element);
+    return {
+      align: roundUp(uniformLayoutOf(type.element).align, 16),
+      size: stride * type.length,
+    };
   }
   throw new Error(
     `${typeToString(type)} is not supported in a WGSL uniform block`
   );
 }
 
+function arrayStride(element: ShaderType): number {
+  const { align, size } = uniformLayoutOf(element);
+  const stride = roundUp(size, align);
+  if (stride % 16 !== 0) {
+    throw new Error(
+      `array<${typeToString(
+        element
+      )}> needs a stride multiple of 16 in a WGSL uniform block`
+    );
+  }
+  return stride;
+}
+
 function uniformBlock(
   resource: Extract<LogicalBinding, { kind: 'uniform-block' }>
 ): PhysicalUniformBlock {
-  const struct = uniformStructBuilder(
-    resource.members.map((member) => ({
-      name: member.name,
-      type: uniformTypeOf(member.type),
-    }))
-  );
-  return {
-    size: struct.size,
-    members: resource.members.map((member, i) => ({
-      name: member.name,
-      type: member.type,
-      offset: struct.fields[i].offset,
-      size: uniformTypeOf(member.type).size,
-    })),
-  };
+  let offset = 0;
+  let blockAlign = 16;
+  const members = resource.members.map((member) => {
+    const { align, size } = uniformLayoutOf(member.type);
+    offset = roundUp(offset, align);
+    blockAlign = Math.max(blockAlign, align);
+    const physical = { name: member.name, type: member.type, offset, size };
+    offset += size;
+    return physical;
+  });
+  return { size: roundUp(Math.max(offset, 1), blockAlign), members };
 }
 
 function writeScalar(
@@ -133,6 +137,38 @@ function writeUniform(
             true
           );
         }
+      }
+      return;
+    }
+    case 'array': {
+      // Elements one after the other in the value, each written at its
+      // stride; a shorter value fills the first elements.
+      const source = Array.from(value as ArrayLike<number>);
+      const element = type.element;
+      const count =
+        element.kind === 'scalar'
+          ? 1
+          : element.kind === 'vector'
+          ? element.size
+          : element.kind === 'matrix'
+          ? element.columns * element.rows
+          : 0;
+      if (count === 0 || typeof value !== 'object') {
+        throw new Error(
+          `Uniform "${name}": ${typeToString(type)} values are not supported`
+        );
+      }
+      const stride = arrayStride(element);
+      const length = Math.min(
+        type.length ?? 0,
+        Math.floor(source.length / count)
+      );
+      for (let i = 0; i < length; i++) {
+        writeUniform(
+          target,
+          { name, type: element, offset: offset + i * stride, size: stride },
+          source.slice(i * count, (i + 1) * count)
+        );
       }
       return;
     }

@@ -100,7 +100,9 @@ export class Buffer implements FdGpuBuffer {
     const byteLength = size ?? value.byteLength - (dataOffset ?? 0);
     if ((dataOffset ?? 0) + byteLength > value.byteLength) {
       throw new Error(
-        `Write of ${byteLength} bytes from offset ${dataOffset ?? 0} exceeds source data size ${value.byteLength}`
+        `Write of ${byteLength} bytes from offset ${
+          dataOffset ?? 0
+        } exceeds source data size ${value.byteLength}`
       );
     }
     if (offset + byteLength > this.size) {

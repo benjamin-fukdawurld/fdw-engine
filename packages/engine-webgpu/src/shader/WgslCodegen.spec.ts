@@ -6,6 +6,7 @@ import {
   IrInstruction,
   ShaderModuleIR,
   std,
+  stdLights,
   BuiltinTypes,
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
@@ -79,7 +80,7 @@ describe('wgslType', () => {
 
   it('rejects types that are not supported yet', () => {
     expect(() =>
-      wgslType({ kind: 'array', element: BuiltinTypes.f32, length: 4 })
+      wgslType({ kind: 'array', element: BuiltinTypes.f32 })
     ).toThrow(/not supported/);
   });
 });
@@ -274,6 +275,34 @@ describe('WgslCodegen', () => {
     });
     expect(code).toContain('@location(0) @interpolate(flat) v_id: u32,');
     expect(code).toContain('out.v_id = v2;');
+  });
+
+  it('sums over the lights with a loop', () => {
+    const g = new GraphBuilder('diffuse-lights');
+    const light = g.node(stdLights.current);
+    g.surface({
+      baseColor: g.call(stdLights.sum, {
+        value: g.call(std.mul, {
+          a: light.diffuse,
+          b: g.uniform('tint', BuiltinTypes.vec3f),
+        }),
+      }),
+    });
+    const program = compile(g.build());
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    expect(code).toContain('u_lightCount: u32,');
+    expect(code).toContain('u_lightDiffuses: array<vec4<f32>, 16>,');
+    expect(code).toMatch(
+      /var (v\d+): vec3<f32> = vec3<f32>\(\);\n {2}for \(var (v\d+): u32 = 0u; \2 < v\d+; \2 = \2 \+ 1u\) \{/
+    );
+    // The light arrays are indexed in place, in the loop body.
+    expect(code).toMatch(
+      / {4}let v\d+: vec4<f32> = frameUniforms\.u_lightDiffuses\[v\d+\];/
+    );
+    expect(code).toMatch(/ {4}(v\d+) = \1 \+ v\d+;\n {2}\}/);
   });
 
   it('generates a complete program', () => {

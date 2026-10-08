@@ -16,7 +16,7 @@ import { createStandardRegistry } from '../std';
 import { ShaderType, TextureType, typeToString } from '../types/ShaderType';
 import { hashString, stableStringify } from './hash';
 import type { ShaderModuleIR } from './ir';
-import { generateIr } from './generateIr';
+import { generateIr, lightLoopBodies } from './generateIr';
 import {
   EngineSlots,
   engineUniformBlocks,
@@ -36,7 +36,7 @@ import { WorkingGraph } from './WorkingGraph';
  *
  * @group Compilation
  */
-export const CompilerVersion = 1;
+export const CompilerVersion = 2;
 
 /**
  * Limits of the target backend that the compiler checks.
@@ -463,6 +463,21 @@ export function compile(
   }
   optimize(working, registry, lowered.order, lowered.types);
   const optimized = revalidate();
+
+  // Per-light values only exist in the loop of a light.sum.
+  for (const id of lightLoopBodies(working)) {
+    const node = working.nodes.get(id) as GraphNode;
+    if (node.type === 'output.vertex' || node.type === 'output.fragment') {
+      diagnostics.push({
+        severity: 'error',
+        node: id,
+        message: 'depends on light.current without going through a light.sum',
+      });
+    }
+  }
+  if (diagnostics.length > 0) {
+    fail(diagnostics);
+  }
 
   if (options.vertexAttributes) {
     const available = new Set(options.vertexAttributes);

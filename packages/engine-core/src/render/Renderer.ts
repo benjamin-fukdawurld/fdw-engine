@@ -24,6 +24,7 @@ import {
   compile,
   CompiledProgram,
   MaterialGraphData,
+  MaxLights,
   NodeRegistry,
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
@@ -45,8 +46,8 @@ export interface RenderOptions {
   readonly clearColor?: IColor;
   // Seconds, exposed to the materials as the 'time' engine value.
   readonly time?: number;
-  // Lights of the scene. Only the first one is used for now (a single main
-  // light, in the frame uniforms); spot lights are lit as point lights.
+  // Lights of the scene, summed by the lit shading models. Up to MaxLights
+  // (16) are used, the others are ignored.
   readonly lights?: readonly BaseLight[];
 }
 
@@ -96,44 +97,72 @@ interface PreparedItem {
   readonly object: ObjectState;
 }
 
-// The main light, in the frame uniforms. Without light, the colors are zero
-// and lit materials only show their emissive color; the attenuation stays
-// neutral, as a zero attenuation would divide by zero (and give NaN colors).
+const normalized = ({ x, y, z }: Readonly<IVec3>): number[] => {
+  const length = Math.hypot(x, y, z) || 1;
+  return [x / length, y / length, z / length];
+};
+
+// A cone lighting every direction: the spot factor is always 1.
+const noCone = [-1, -2, 0, 0];
+
+// The lights of the frame, in the light arrays of the frame uniforms (see
+// lightMembers in engine-shader): one vec4 per light and property.
 function lightValues(
-  light: BaseLight | undefined
+  lights: readonly BaseLight[]
 ): Record<string, UniformValue> {
-  if (!light) {
-    return { lightPosition: [0, 0, 1, 0], lightAttenuation: [1, 0, 0] };
-  }
-  const color = (value: Readonly<IVec3>) => [value.x, value.y, value.z];
-  const common = {
-    lightAmbient: color(light.ambient),
-    lightDiffuse: color(light.diffuse),
-    lightSpecular: color(light.specular),
+  const arrays: Record<string, number[]> = {
+    lightPositions: [],
+    lightAmbients: [],
+    lightDiffuses: [],
+    lightSpeculars: [],
+    lightAttenuations: [],
+    lightSpotDirections: [],
+    lightSpotCones: [],
   };
-  if (light instanceof DirectionalLight) {
-    // Towards the light: the opposite of the direction it shines in.
-    const { x, y, z } = light.direction;
-    const length = Math.hypot(x, y, z) || 1;
-    return {
-      ...common,
-      lightPosition: [-x / length, -y / length, -z / length, 0],
-      lightAttenuation: [1, 0, 0],
-    };
-  }
-  if (light instanceof PointLight || light instanceof SpotLight) {
-    const { x, y, z } = light.position;
-    return {
-      ...common,
-      lightPosition: [x, y, z, 1],
-      lightAttenuation: [
+  const color = (value: Readonly<IVec3>) => [value.x, value.y, value.z, 0];
+  let count = 0;
+  for (const light of lights) {
+    if (count === MaxLights) {
+      break;
+    }
+    let position: number[];
+    let attenuation = [1, 0, 0, 0];
+    let spotDirection = [0, 0, 0, 0];
+    let cone = noCone;
+    if (light instanceof DirectionalLight) {
+      // Towards the light: the opposite of the direction it shines in.
+      position = [...normalized(light.direction).map((v) => -v), 0];
+    } else if (light instanceof PointLight || light instanceof SpotLight) {
+      const { x, y, z } = light.position;
+      position = [x, y, z, 1];
+      attenuation = [
         light.constantAttenuation,
         light.linearAttenuation,
         light.quadraticAttenuation,
-      ],
-    };
+        0,
+      ];
+      if (light instanceof SpotLight) {
+        // Cutoffs are half-angles of the cone, in degrees. The inner cosine
+        // stays above the outer one: the shader divides by their difference.
+        const cosine = (degrees: number) => Math.cos((degrees * Math.PI) / 180);
+        const outer = cosine(light.outerCutoff);
+        const inner = Math.max(cosine(light.innerCutoff), outer + 1e-4);
+        spotDirection = [...normalized(light.direction), 0];
+        cone = [inner, outer, 0, 0];
+      }
+    } else {
+      continue;
+    }
+    arrays['lightPositions'].push(...position);
+    arrays['lightAmbients'].push(...color(light.ambient));
+    arrays['lightDiffuses'].push(...color(light.diffuse));
+    arrays['lightSpeculars'].push(...color(light.specular));
+    arrays['lightAttenuations'].push(...attenuation);
+    arrays['lightSpotDirections'].push(...spotDirection);
+    arrays['lightSpotCones'].push(...cone);
+    count++;
   }
-  return common;
+  return { lightCount: count, ...arrays };
 }
 
 const isHandle = (value: MaterialValue | undefined): boolean =>
@@ -206,7 +235,7 @@ export class Renderer {
     });
 
     if (ordered.length > 0) {
-      this.updateFrame(ordered[0].layout, cameraCache, time, lights[0]);
+      this.updateFrame(ordered[0].layout, cameraCache, time, lights);
     }
     for (const entry of ordered) {
       this.draw(pass, entry);
@@ -429,7 +458,7 @@ export class Renderer {
     layout: PhysicalProgramLayout,
     camera: CameraCache,
     time: number,
-    light: BaseLight | undefined
+    lights: readonly BaseLight[]
   ): void {
     const group = layout.groups.find((candidate) => candidate.slot === 'frame');
     const block = group?.bindings[0]?.block;
@@ -443,7 +472,7 @@ export class Renderer {
       projection: camera.projectionMatrix.value,
       cameraPosition: [position.x, position.y, position.z],
       time,
-      ...lightValues(light),
+      ...lightValues(lights),
     };
     this._frame.block = block;
     this.upload(

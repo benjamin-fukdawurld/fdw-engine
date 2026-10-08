@@ -1,6 +1,6 @@
 # Proposition : material graph et pipeline de rendu multi-backend
 
-_Statut : phases 1 à 5 implémentées (07/10/2026). Écarts restants : §17_
+_Statut : phases 1 à 5 implémentées, boucle sur les lumières comprise (07/10/2026). Écarts restants : §17_
 
 Ce document propose une architecture et un plan d'implémentation pour :
 
@@ -29,6 +29,7 @@ Ce document propose une architecture et un plan d'implémentation pour :
 15. [Stratégie de test](#15-stratégie-de-test)
 16. [Risques et questions ouvertes](#16-risques-et-questions-ouvertes)
 17. [Écarts restants après la phase 5](#17-écarts-restants-après-la-phase-5)
+18. [Évolutions envisagées et compatibilité](#18-évolutions-envisagées-et-compatibilité)
 
 ---
 
@@ -454,6 +455,17 @@ Un DAG n'a pas de boucles, et c'est voulu : le code généré reste linéaire, c
 
 - **déroulage à la compilation** (`macro.repeat`) quand le nombre d'itérations est statique ;
 - **constructions dédiées dans l'IR** pour les rares boucles dynamiques nécessaires, au premier rang desquelles la boucle sur les lumières (`lightLoop`) dont le nombre est fixé à l'exécution. Ces constructions sont fournies par le moteur, pas exprimées par l'utilisateur dans le graphe.
+
+**Implémentation de la boucle sur les lumières.** Le graphe reste un DAG. La boucle s'exprime avec deux nœuds fournis par le moteur (`stdLights`) :
+
+- `light.current` : « la lumière en cours », avec ses sorties `position` (w = 0 pour une lumière directionnelle), `ambient`, `diffuse`, `specular`, `attenuation`, `spotDirection` et `spotCone` ;
+- `light.sum(value)` : la somme de `value` sur les lumières de la frame.
+
+Les nœuds qui dépendent de `light.current`, par un chemin qui ne traverse pas de `light.sum`, forment le **corps de la boucle**. Les autres nœuds dont dépend la somme (normale, direction de vue, couleurs du matériau…) sont calculés **une seule fois, avant la boucle**. Le compilateur refuse une valeur par lumière qui atteindrait une sortie sans passer par un `light.sum`. `light.current` est de fréquence fragment : la boucle n'existe que dans le fragment shader.
+
+Dans l'IR, la boucle est l'instruction `loop-sum` : la somme, pour un index de 0 à `count - 1`, de la valeur calculée par son corps. C'est le seul flot de contrôle de l'IR, et il est structuré : le corps est lui-même du code linéaire, qui lit les valeurs définies avant la boucle, et ses propres valeurs ne sont pas visibles après. Les générateurs le traduisent par une variable accumulateur et une boucle `for`. Le nombre de lumières vient d'un uniform : la boucle est en flot de contrôle uniforme, et `textureSample` reste permis dans son corps.
+
+Les lumières sont des tableaux de `vec4` du bloc `frame` (`lightPositions`, `lightAmbients`…, `MaxLights` = 16 éléments), plus `lightCount`. Des tableaux de `vec4` plutôt qu'un tableau de structures : leur layout est identique en WGSL et en std140 (pas de 16 octets), et le système de types n'a pas besoin de structures. Les spots ont leur cône (cosinus des angles intérieur et extérieur) ; les autres lumières ont un cône qui couvre toutes les directions.
 
 ### 6.7 L'API de construction
 
@@ -1129,7 +1141,7 @@ Questions à trancher, avec les réponses provisoires retenues :
 
 ## 17. Écarts restants après la phase 5
 
-Les phases 1 à 5 sont livrées. Le backend WebGL2 (`@fdw/engine-webgl2`) rend les mêmes graphes que WebGPU, sans changement du graphe ni de l'IR : la suite de tests de rendu (`tests/rendering`) passe à l'identique sur Dawn et sur WebGL2 (Chromium headless, SwiftShader).
+Les phases 1 à 5 sont livrées, ainsi que la boucle sur les lumières (§6.6). Le backend WebGL2 (`@fdw/engine-webgl2`) rend les mêmes graphes que WebGPU, sans changement du graphe ni de l'IR : la suite de tests de rendu (`tests/rendering`) passe à l'identique sur Dawn et sur WebGL2 (Chromium headless, SwiftShader).
 
 Deux choix d'implémentation s'écartent de la proposition du §9.2 :
 
@@ -1138,19 +1150,83 @@ Deux choix d'implémentation s'écartent de la proposition du §9.2 :
 
 Les points suivants du design ne sont pas encore implémentés, ou seulement en partie. Ils sont à régler par la suite.
 
-| Sujet                                       | Référence | État actuel                                                                                                         | À faire                                                                                                                   |
-| ------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Fonctions `subgraph` et `native`            | §6.3      | Déclarées dans `NodeDefinition`, refusées par le compilateur                                                        | Émettre des fonctions dans l'IR et les générateurs ; refuser les nœuds `native` sans implémentation pour le langage cible |
-| Storage buffers                             | §5.1      | `input.storage` existe, la compilation renvoie « not supported yet »                                                | Layout, IR, générateurs, repli ou erreur explicite sur WebGL2                                                             |
-| Boucle sur les lumières, lumières multiples | §6.6      | Une seule lumière principale dans le bloc `frame`                                                                   | Construction `lightLoop` dans l'IR, tableau ou storage buffer de lumières                                                 |
-| Modèle PBR                                  | §6.4      | `pbr` déclaré, sans macro `lighting.pbr`                                                                            | Implémenter, puis passer les modèles d'éclairage en nœuds (§16, question 2)                                               |
-| `alphaMode: 'mask'`                         | §6.5      | Seuls `opaque` et `blend` existent                                                                                  | Seuil d'alpha (`discard`) et tri avec les opaques                                                                         |
-| Paramètres statiques du contexte            | §6.5      | `skinning`, `instancing`, `shadowPass` non fournis par le renderer                                                  | Les ajouter avec les fonctionnalités correspondantes (instancing, ombres)                                                 |
-| Transparence                                | §11.3     | Tri par objet, deux passes (faces arrière puis avant) pour les objets double face                                   | Exact pour les formes convexes seulement ; OIT à étudier                                                                  |
-| Validation du code généré en CI             | §15       | Le WGSL est validé par Dawn, le GLSL par Chromium (ANGLE), dans les tests de rendu                                  | Ajouter naga et `glslangValidator` pour des messages indépendants des pilotes                                             |
-| Variantes et compilation                    | §16       | Compilation asynchrone ; un objet est sauté tant que son pipeline n'est pas prêt                                    | Limite du nombre de variantes avec avertissement, matériau de repli, préchauffage                                         |
-| Débogage du code généré                     | §16       | Noms dérivés des labels, commentaires `// #id` du nœud d'origine (WGSL et GLSL)                                     | Source maps nœud ↔ ligne                                                                                                  |
-| `f16`                                       | §5.1, §16 | Le type existe, sans prise en charge de bout en bout                                                                | Capacité `shader-f16`, layout, générateurs (§16, question 3)                                                              |
-| `frag-coord` en WebGL2                      | §9.2      | `gl_FragCoord` a son origine en bas à gauche, celle de WGSL en haut à gauche                                        | Corriger y avec la hauteur de la cible (uniform du moteur)                                                                |
-| Rendu multi-échantillonné                   | §10.1     | `sampleCount` ignoré en WebGL2 ; contexte créé sans antialiasing                                                    | Renderbuffers multi-échantillonnés et résolution par `blitFramebuffer`                                                    |
-| Présentation WebGL2                         | §10.4     | Le contexte appartient à l'engine (OffscreenCanvas) ; chaque surface rend dans un framebuffer copié vers son canvas | Mesurer le coût de la copie (`transferToImageBitmap`) ; mode direct déjà possible en donnant le canvas à l'engine         |
+| Sujet                                     | Référence | État actuel                                                                                                         | À faire                                                                                                                   |
+| ----------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Fonctions `subgraph` et `native`          | §6.3      | Déclarées dans `NodeDefinition`, refusées par le compilateur                                                        | Émettre des fonctions dans l'IR et les générateurs ; refuser les nœuds `native` sans implémentation pour le langage cible |
+| Storage buffers                           | §5.1      | `input.storage` existe, la compilation renvoie « not supported yet »                                                | Layout, IR, générateurs, repli ou erreur explicite sur WebGL2                                                             |
+| Modèle PBR                                | §6.4      | `pbr` déclaré, sans macro `lighting.pbr`                                                                            | Implémenter, puis passer les modèles d'éclairage en nœuds (§16, question 2)                                               |
+| `alphaMode: 'mask'`                       | §6.5      | Seuls `opaque` et `blend` existent                                                                                  | Seuil d'alpha (`discard`) et tri avec les opaques                                                                         |
+| Paramètres statiques du contexte          | §6.5      | `skinning`, `instancing`, `shadowPass` non fournis par le renderer                                                  | Les ajouter avec les fonctionnalités correspondantes (instancing, ombres)                                                 |
+| Transparence                              | §11.3     | Tri par objet, deux passes (faces arrière puis avant) pour les objets double face                                   | Exact pour les formes convexes seulement ; OIT à étudier                                                                  |
+| Validation du code généré en CI           | §15       | Le WGSL est validé par Dawn, le GLSL par Chromium (ANGLE), dans les tests de rendu                                  | Ajouter naga et `glslangValidator` pour des messages indépendants des pilotes                                             |
+| Variantes et compilation                  | §16       | Compilation asynchrone ; un objet est sauté tant que son pipeline n'est pas prêt                                    | Limite du nombre de variantes avec avertissement, matériau de repli, préchauffage                                         |
+| Débogage du code généré                   | §16       | Noms dérivés des labels, commentaires `// #id` du nœud d'origine (WGSL et GLSL)                                     | Source maps nœud ↔ ligne                                                                                                  |
+| `f16`                                     | §5.1, §16 | Le type existe, sans prise en charge de bout en bout                                                                | Capacité `shader-f16`, layout, générateurs (§16, question 3)                                                              |
+| `frag-coord` en WebGL2                    | §9.2      | `gl_FragCoord` a son origine en bas à gauche, celle de WGSL en haut à gauche                                        | Corriger y avec la hauteur de la cible (uniform du moteur)                                                                |
+| Rendu multi-échantillonné                 | §10.1     | `sampleCount` ignoré en WebGL2 ; contexte créé sans antialiasing                                                    | Renderbuffers multi-échantillonnés et résolution par `blitFramebuffer`                                                    |
+| Présentation WebGL2                       | §10.4     | Le contexte appartient à l'engine (OffscreenCanvas) ; chaque surface rend dans un framebuffer copié vers son canvas | Mesurer le coût de la copie (`transferToImageBitmap`) ; mode direct déjà possible en donnant le canvas à l'engine         |
+| Lumières                                  | §6.6      | Boucle `loop-sum` sur 16 lumières au plus, Phong uniquement                                                         | Ombres ; au-delà de 16 lumières, storage buffer (WebGPU) ou texture de données (WebGL2) ; culling des lumières par objet  |
+| Boucles génériques                        | §6.6, §8  | `loop-sum` ne somme que sur les lumières                                                                            | Généraliser (`fold` avec accumulateur quelconque) si d'autres boucles dynamiques deviennent nécessaires                   |
+| Tableaux et structures dans les matériaux | §5.1      | Les tableaux de taille fixe sont supportés dans les blocs uniform du moteur, pas dans les uniforms des matériaux    | Les ouvrir aux matériaux, puis les structures                                                                             |
+
+---
+
+## 18. Évolutions envisagées et compatibilité
+
+Les fonctionnalités suivantes ne sont pas planifiées. Elles sont notées pour que les prochaines étapes (render graph, compute graph, backends natifs, nœuds d'éclairage) restent compatibles avec elles autant que possible.
+
+### 18.1 Un très grand nombre de lumières
+
+Aujourd'hui, ajouter une lumière ne régénère pas le shader (`lightCount` est un uniform, la boucle est dynamique), mais deux limites existent :
+
+- **Stockage** : 16 lumières au plus, dans des tableaux de taille fixe du bloc `frame` (WebGL2 ne garantit que 16 Ko de bloc uniform).
+- **Performance** : chaque fragment évalue toutes les lumières. Le coût par pixel croît avec le nombre total de lumières, même lointaines.
+
+Proposition, par étapes indépendantes :
+
+1. **Portée des lumières et culling par objet sur CPU.** Une portée finie par lumière (l'atténuation `1/(c + l·d + q·d²)` ne s'annule jamais) ; le renderer ne passe à chaque objet que les lumières qui touchent sa sphère englobante.
+2. **Stockage de taille variable** : storage buffer en WebGPU, texture de données (RGBA32F, lue par `texelFetch`) en WebGL2, selon `BackendCapabilities.storageBuffers`. Nouvelle opération de lecture indexée dans l'IR, traduite par chaque backend.
+3. **Clustered forward shading (Forward+)** : le volume de vue est découpé en clusters (par exemple 16 × 9 × 24, profondeur logarithmique). Une passe de culling calcule la liste des lumières de chaque cluster ; le fragment ne boucle que sur la liste du sien. Le coût par pixel dépend du nombre de lumières qui le touchent, pas du nombre total. Les lumières directionnelles restent dans une liste globale.
+4. **Culling en compute shader** sur WebGPU, comme première passe du compute graph. Le culling sur CPU reste le chemin de WebGL2.
+
+**Compatibilité** : `light.current` et `light.sum` gardent leur sémantique (« les lumières qui éclairent ce fragment ») ; seule la traduction de `loop-sum` change (itération sur la liste du cluster, avec une indirection d'index). Les graphes et les shading models n'ont pas à changer. Les ombres restent une limite à part : seules quelques lumières en projettent.
+
+### 18.2 Le ray tracing
+
+Un rendu par ray tracing parcourt les pixels et lance des rayons dans toute la scène, là où la rastérisation dessine les objets un par un. Il demande :
+
+- **toute la scène sur le GPU à la fois**, dans des structures d'accélération (BVH) ;
+- **tous les matériaux accessibles à la fois** : au point d'impact, le shader évalue le matériau de l'objet touché, quel qu'il soit ;
+- **un éclairage non local** : ombres, reflets et lumière indirecte par de nouveaux rayons.
+
+| Partie du moteur                                                                    | Réutilisable                                               | À faire évoluer                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scène (`engine-core`) : meshs, transforms, caméras, lumières, valeurs des matériaux | Telle quelle                                               | —                                                                                                                                                                                     |
+| Surface du material graph (`baseColor`, `normal`, `emissive`…)                      | Telle quelle : elle décrit ce qu'est le matériau           | —                                                                                                                                                                                     |
+| Types, IR, générateurs                                                              | Le principe : un shader d'impact est du code linéaire typé | Nouvelles opérations (lancer un rayon), mip explicite (pas de dérivées d'écran dans les shaders d'impact)                                                                             |
+| Shading models                                                                      | —                                                          | Une cible **BSDF** (évaluation, tirage d'une direction, densité) au lieu d'une couleur finale calculée par la boucle de lumières                                                      |
+| Stages et fréquences                                                                | —                                                          | Pas de découpage vertex / fragment : les attributs sont interpolés au point d'impact (coordonnées barycentriques)                                                                     |
+| Slots `frame` / `material` / `object`                                               | —                                                          | Tables indexées par l'identifiant de l'objet touché ; accès **bindless** aux textures                                                                                                 |
+| `RenderBackend`                                                                     | Buffers, textures, samplers                                | Structures d'accélération (construction, mise à jour) ; pipelines ray tracing ou ray queries                                                                                          |
+| `Renderer`                                                                          | —                                                          | Rastérisation pure (un draw par objet, tri des transparents, depth buffer) : le ray tracing serait une autre technique de rendu, orchestrée par le render graph                       |
+| Backends                                                                            | —                                                          | WebGPU n'a pas de ray tracing standard. Vulkan (`VK_KHR_ray_tracing_pipeline`, `VK_KHR_ray_query`), DirectX 12 (DXR), Metal ; générateurs GLSL avec extensions ray tracing, HLSL, MSL |
+
+Trois niveaux d'ambition :
+
+| Approche                 | Principe                                                                                                                              | Changement architectural                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Hybride**              | La rastérisation reste ; des rayons lancés depuis le fragment shader (ray queries) pour les ombres, les reflets, l'occlusion ambiante | Modéré : une ressource « structure d'accélération », un nœud `rayQuery`, une capacité du backend              |
+| **Ray tracing logiciel** | BVH dans des storage buffers, parcouru en compute shader, possible en WebGPU                                                          | Moyen : storage buffers et compute graph, déjà prévus                                                         |
+| **Path tracer complet**  | Toute l'image par rayons et rebonds                                                                                                   | Important : une seconde technique de rendu à côté de la rastérisation (BSDF, bindless, pipelines ray tracing) |
+
+Le chemin le plus réaliste est l'hybride, sur le backend Vulkan, après la phase 6.
+
+### 18.3 Contraintes de compatibilité pour les prochaines étapes
+
+Pour garder ces évolutions possibles sans refonte :
+
+1. **Render graph** : il doit accueillir d'autres passes que « un draw par objet » : passes compute (culling des lumières, ray tracing logiciel), passes ray tracing, plein écran. Le `Renderer` actuel devient une technique parmi d'autres.
+2. **Séparation surface / éclairage** : le matériau décrit sa surface ; l'éclairage est inséré par le compilateur derrière `output.surface`. Les futurs nœuds de modèles d'éclairage (§16, question 2) doivent rester remplaçables, pour pouvoir compiler la même surface vers une cible BSDF.
+3. **Accès aux lumières par `light.current` / `light.sum` uniquement** : aucun graphe ne doit dépendre de la disposition des tableaux de lumières, pour pouvoir passer aux storage buffers et aux clusters.
+4. **Ressources indexées (bindless)** : textures en tableaux, matériaux dans des buffers indexés. Utiles au clustered forward, à la réduction des draw calls et au ray tracing, à prévoir dans l'API abstraite comme capacité du backend.
+5. **Capacités des backends** : chaque fonctionnalité optionnelle (storage buffers, compute, ray queries, bindless, `f16`) est une capacité consultée à la compilation et au rendu, avec un repli ou une erreur explicite.

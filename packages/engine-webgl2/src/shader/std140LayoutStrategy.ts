@@ -11,9 +11,12 @@ const scalars = ['f32', 'i32', 'u32', 'bool'];
 
 // Alignment and size of a uniform block member, with the std140 rules:
 // scalars take 4 bytes, vec2 8, vec3 and vec4 16 (a vec3 is 12 bytes, and a
-// scalar can follow it); a matrix is an array of column vectors, each one
-// aligned to 16 bytes.
+// scalar can follow it); a matrix is an array of column vectors, and every
+// array element is aligned to 16 bytes.
 function std140(type: ShaderType): { align: number; size: number } {
+  if (type.kind === 'array' && type.length !== undefined) {
+    return { align: 16, size: arrayStride(type.element) * type.length };
+  }
   if (type.kind === 'scalar' && scalars.includes(type.scalar)) {
     return { align: 4, size: 4 };
   }
@@ -30,6 +33,8 @@ function std140(type: ShaderType): { align: number; size: number } {
 
 const alignTo = (offset: number, align: number) =>
   Math.ceil(offset / align) * align;
+
+const arrayStride = (element: ShaderType) => alignTo(std140(element).size, 16);
 
 function uniformBlock(
   resource: Extract<LogicalBinding, { kind: 'uniform-block' }>
@@ -114,6 +119,38 @@ function writeUniform(
             true
           );
         }
+      }
+      return;
+    }
+    case 'array': {
+      // Elements one after the other in the value, each written at its
+      // stride; a shorter value fills the first elements.
+      const element = type.element;
+      const count =
+        element.kind === 'scalar'
+          ? 1
+          : element.kind === 'vector'
+          ? element.size
+          : element.kind === 'matrix'
+          ? element.columns * element.rows
+          : 0;
+      if (count === 0 || typeof value !== 'object') {
+        throw new Error(
+          `Uniform "${name}": ${typeToString(type)} values are not supported`
+        );
+      }
+      const source = Array.from(value);
+      const stride = arrayStride(element);
+      const length = Math.min(
+        type.length ?? 0,
+        Math.floor(source.length / count)
+      );
+      for (let i = 0; i < length; i++) {
+        writeUniform(
+          target,
+          { name, type: element, offset: offset + i * stride, size: stride },
+          source.slice(i * count, (i + 1) * count)
+        );
       }
       return;
     }

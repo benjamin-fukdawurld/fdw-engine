@@ -1,5 +1,6 @@
 import type { PhysicalProgramLayout } from '@fdw/engine-backend';
-import type {
+import {
+  forEachInstruction,
   IrInstruction,
   ShaderModuleIR,
   TextureType,
@@ -35,8 +36,12 @@ export function combinedSamplers(
 
   const pairs = new Map<string, CombinedSampler>();
   for (const entryPoint of module.entryPoints) {
+    const instructions: IrInstruction[] = [];
+    forEachInstruction(entryPoint.body, (instruction) =>
+      instructions.push(instruction)
+    );
     const byId = new Map<number, IrInstruction>(
-      entryPoint.body.map((instruction) => [instruction.id, instruction])
+      instructions.map((instruction) => [instruction.id, instruction])
     );
     const bindingOf = (id: number): string => {
       const op = byId.get(id)?.op;
@@ -47,7 +52,7 @@ export function combinedSamplers(
       }
       return op.binding;
     };
-    for (const instruction of entryPoint.body) {
+    for (const instruction of instructions) {
       if (instruction.op.kind !== 'sample') {
         continue;
       }

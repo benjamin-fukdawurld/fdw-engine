@@ -55,7 +55,10 @@ const uniformMemberAttributes = (field: GpuStructField<unknown>): string => {
   if (alignment !== naturalAlignment(field.type)) {
     attributes.push(`@align(${alignment})`);
   }
-  if (isStruct(field.type) && uniformFieldSize(field.type) !== field.type.size) {
+  if (
+    isStruct(field.type) &&
+    uniformFieldSize(field.type) !== field.type.size
+  ) {
     attributes.push(`@size(${uniformFieldSize(field.type)})`);
   }
   return attributes.map((attribute) => `${attribute} `).join('');
@@ -227,9 +230,8 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
   getFieldSize: (field: Omit<GpuStructField<unknown>, 'offset'>): number =>
     uniformFieldSize(field.type),
 
-  getFieldAlignment: (
-    field: Omit<GpuStructField<unknown>, 'offset'>
-  ): number => uniformFieldAlignment(field.type),
+  getFieldAlignment: (field: Omit<GpuStructField<unknown>, 'offset'>): number =>
+    uniformFieldAlignment(field.type),
 
   getFieldOffset: ({
     offset,

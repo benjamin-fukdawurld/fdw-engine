@@ -154,7 +154,9 @@ export type IntrinsicOp =
   | 'select'
   | 'construct'
   | 'convert'
-  | 'texture-sample';
+  | 'texture-sample'
+  // Sums its input over the lights of the frame (light.sum).
+  | 'light-sum';
 
 /**
  * Code provided per shading language. Breaks portability: compilation fails

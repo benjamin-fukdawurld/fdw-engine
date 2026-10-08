@@ -1,5 +1,6 @@
 import type { UniformValue } from '@fdw/engine-backend';
 import {
+  arrayType,
   compile,
   GraphBuilder,
   ShaderType,
@@ -73,13 +74,17 @@ describe('wgslLayoutStrategy', () => {
       ['projection', 128, 64],
       ['cameraPosition', 192, 12],
       ['time', 204, 4],
-      ['lightPosition', 208, 16],
-      ['lightAmbient', 224, 12],
-      ['lightDiffuse', 240, 12],
-      ['lightSpecular', 256, 12],
-      ['lightAttenuation', 272, 12],
+      ['lightCount', 208, 4],
+      // Arrays of 16 vec4, aligned to 16 bytes.
+      ['lightPositions', 224, 256],
+      ['lightAmbients', 480, 256],
+      ['lightDiffuses', 736, 256],
+      ['lightSpeculars', 992, 256],
+      ['lightAttenuations', 1248, 256],
+      ['lightSpotDirections', 1504, 256],
+      ['lightSpotCones', 1760, 256],
     ]);
-    expect(block('frame').size).toBe(288);
+    expect(block('frame').size).toBe(2016);
   });
 
   it('pads the mat3 columns of the object block', () => {
@@ -142,6 +147,35 @@ describe('wgslLayoutStrategy.writeUniform', () => {
         write(BuiltinTypes.mat3f, [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99], 48)
       )
     ).toEqual(expected);
+  });
+
+  it('writes the elements of an array at their stride', () => {
+    const type = arrayType(BuiltinTypes.vec3f, 3);
+    // Two elements given out of three: the last one stays zero.
+    expect(floats(write(type, [1, 2, 3, 4, 5, 6], 48))).toEqual([
+      1, 2, 3, 0, 4, 5, 6, 0, 0, 0, 0, 0,
+    ]);
+  });
+
+  it('rejects arrays whose stride is not a multiple of 16', () => {
+    expect(() =>
+      wgslLayoutStrategy.resolve({
+        groups: [
+          {
+            slot: 'material',
+            bindings: [
+              {
+                kind: 'uniform-block',
+                name: 'materialUniforms',
+                members: [
+                  { name: 'weights', type: arrayType(BuiltinTypes.f32, 4) },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ).toThrow(/multiple of 16/);
   });
 
   it('writes a mat4 as is', () => {

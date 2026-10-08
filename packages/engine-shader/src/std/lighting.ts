@@ -33,8 +33,10 @@ export const unlit = lightingModel('unlit', (context) => ({
 }));
 
 /**
- * Phong lighting with the main light of the frame:
- *   ambient + (diffuse + specular) × attenuation + emissive
+ * Phong lighting, summed over the lights of the frame:
+ *   Σ (ambient + (diffuse + specular) × attenuation × spot) + emissive
+ * The values that do not depend on the light (normal, view direction…) are
+ * computed once, outside the loop.
  */
 export const phong = lightingModel('phong', (context) => {
   const c = context;
@@ -45,15 +47,6 @@ export const phong = lightingModel('phong', (context) => {
   const normal: ValueSource = c.input('normal')
     ? call(c, 'std.normalize', { x: c.input('normal') })
     : vertexNormal(c);
-
-  const light = engineValue(c, 'light.position');
-  // w = 1 for a point light, 0 for a directional one: normalize(xyz - P × w)
-  // is the direction to the light in both cases.
-  const toLight = call(c, 'std.sub', {
-    a: swizzle(light, 'xyz'),
-    b: call(c, 'std.mul', { a: position, b: swizzle(light, 'w') }),
-  });
-  const l = call(c, 'std.normalize', { x: toLight });
   const v = call(c, 'std.normalize', {
     x: call(c, 'std.sub', {
       a: engineValue(c, 'camera.position'),
@@ -61,7 +54,17 @@ export const phong = lightingModel('phong', (context) => {
     }),
   });
 
-  const attenuationFactors = engineValue(c, 'light.attenuation');
+  const light = c.add('light.current');
+  // w = 1 for a point or spot light, 0 for a directional one:
+  // normalize(xyz - P × w) is the direction to the light in all cases.
+  const lightPosition = light('position');
+  const toLight = call(c, 'std.sub', {
+    a: swizzle(lightPosition, 'xyz'),
+    b: call(c, 'std.mul', { a: position, b: swizzle(lightPosition, 'w') }),
+  });
+  const l = call(c, 'std.normalize', { x: toLight });
+
+  const attenuationFactors = light('attenuation');
   const distance = call(c, 'std.length', { x: toLight });
   const attenuation = call(c, 'std.div', {
     a: 1,
@@ -76,6 +79,26 @@ export const phong = lightingModel('phong', (context) => {
       b: call(c, 'std.mul', {
         a: swizzle(attenuationFactors, 'z'),
         b: call(c, 'std.mul', { a: distance, b: distance }),
+      }),
+    }),
+  });
+
+  // Spot cone: 1 inside the inner angle, 0 outside the outer one, linear in
+  // the cosine between them. Other lights have a cone covering every
+  // direction.
+  const cone = light('spotCone');
+  const spot = call(c, 'std.saturate', {
+    x: call(c, 'std.div', {
+      a: call(c, 'std.sub', {
+        a: call(c, 'std.dot', {
+          a: call(c, 'std.mul', { a: l, b: -1 }),
+          b: light('spotDirection'),
+        }),
+        b: swizzle(cone, 'y'),
+      }),
+      b: call(c, 'std.sub', {
+        a: swizzle(cone, 'x'),
+        b: swizzle(cone, 'y'),
       }),
     }),
   });
@@ -100,30 +123,25 @@ export const phong = lightingModel('phong', (context) => {
   });
 
   const baseColor = c.input('baseColor');
-  const ambient = call(c, 'std.mul', {
-    a: engineValue(c, 'light.ambient'),
-    b: baseColor,
-  });
+  const ambient = call(c, 'std.mul', { a: light('ambient'), b: baseColor });
   const diffuse = call(c, 'std.mul', {
-    a: call(c, 'std.mul', { a: engineValue(c, 'light.diffuse'), b: baseColor }),
+    a: call(c, 'std.mul', { a: light('diffuse'), b: baseColor }),
     b: diffuseFactor,
   });
   const specular = call(c, 'std.mul', {
-    a: call(c, 'std.mul', {
-      a: engineValue(c, 'light.specular'),
-      b: c.input('specular'),
-    }),
+    a: call(c, 'std.mul', { a: light('specular'), b: c.input('specular') }),
     b: specularFactor,
   });
 
-  const color = call(c, 'std.add', {
-    a: call(c, 'std.add', {
-      a: ambient,
-      b: call(c, 'std.mul', {
-        a: call(c, 'std.add', { a: diffuse, b: specular }),
-        b: attenuation,
-      }),
+  const perLight = call(c, 'std.add', {
+    a: ambient,
+    b: call(c, 'std.mul', {
+      a: call(c, 'std.add', { a: diffuse, b: specular }),
+      b: call(c, 'std.mul', { a: attenuation, b: spot }),
     }),
+  });
+  const color = call(c, 'std.add', {
+    a: call(c, 'light.sum', { value: perLight }),
     b: c.input('emissive'),
   });
   return { color: call(c, 'std.extend', { xyz: color, w: c.input('alpha') }) };

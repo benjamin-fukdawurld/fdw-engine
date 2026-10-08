@@ -24,7 +24,10 @@ describe('uniform struct strategy (WGSL uniform address space)', () => {
       { name: 'a', type: P.vec3 },
       { name: 'b', type: P.float32 },
     ]);
-    expect(offsets(s)).toEqual([['a', 0], ['b', 12]]);
+    expect(offsets(s)).toEqual([
+      ['a', 0],
+      ['b', 12],
+    ]);
     expect([s.size, s.alignment]).toEqual([16, 16]);
   });
 
@@ -40,7 +43,11 @@ describe('uniform struct strategy (WGSL uniform address space)', () => {
       { name: 'inner', type: inner },
       { name: 'b', type: P.float32 },
     ]);
-    expect(offsets(outer)).toEqual([['a', 0], ['inner', 16], ['b', 32]]);
+    expect(offsets(outer)).toEqual([
+      ['a', 0],
+      ['inner', 16],
+      ['b', 32],
+    ]);
     expect([outer.size, outer.alignment]).toEqual([48, 16]);
     expect(outer.serialize().replace(/\s+/g, ' ')).toBe(
       '{ a: f32, @align(16) @size(16) inner: { x: f32 }, b: f32 }'
@@ -52,20 +59,25 @@ describe('uniform struct strategy (WGSL uniform address space)', () => {
       { name: 'a', type: P.float32 },
       { name: 'colors', type: fixedArray('vec4', 2) },
     ]);
-    expect(offsets(s)).toEqual([['a', 0], ['colors', 16]]);
+    expect(offsets(s)).toEqual([
+      ['a', 0],
+      ['colors', 16],
+    ]);
     expect(s.size).toBe(48);
   });
 
   it('rejects arrays whose stride is not a multiple of 16', () => {
-    expect(() => uniformStructBuilder([{ name: 'weights', type: fixedArray('float32', 4) }])).toThrow(
-      /stride of 4 bytes.*use vec4/
-    );
+    expect(() =>
+      uniformStructBuilder([
+        { name: 'weights', type: fixedArray('float32', 4) },
+      ])
+    ).toThrow(/stride of 4 bytes.*use vec4/);
   });
 
   it('rejects runtime-sized arrays', () => {
-    expect(() => uniformStructBuilder([{ name: 'items', type: uniformArrays.float32 }])).toThrow(
-      /not allowed in uniform structs/
-    );
+    expect(() =>
+      uniformStructBuilder([{ name: 'items', type: uniformArrays.float32 }])
+    ).toThrow(/not allowed in uniform structs/);
   });
 });
 
@@ -77,7 +89,11 @@ describe('storage struct strategy', () => {
       { name: 'inner', type: inner },
       { name: 'b', type: P.float32 },
     ]);
-    expect(offsets(outer)).toEqual([['a', 0], ['inner', 4], ['b', 8]]);
+    expect(offsets(outer)).toEqual([
+      ['a', 0],
+      ['inner', 4],
+      ['b', 8],
+    ]);
     expect(outer.size).toBe(12);
   });
 
@@ -91,8 +107,12 @@ describe('storage struct strategy', () => {
   });
 
   it('rejects a runtime-sized struct nested in another struct', () => {
-    const runtime = storageStruct([{ name: 'items', type: uniformArrays.float32 }]);
-    expect(() => storageStruct([{ name: 'r', type: runtime }])).toThrow(/cannot be members of other structs/);
+    const runtime = storageStruct([
+      { name: 'items', type: uniformArrays.float32 },
+    ]);
+    expect(() => storageStruct([{ name: 'r', type: runtime }])).toThrow(
+      /cannot be members of other structs/
+    );
   });
 
   it('rejects a runtime-sized array that is not the last field', () => {
