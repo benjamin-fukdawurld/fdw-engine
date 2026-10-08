@@ -28,12 +28,12 @@ The engine is organized in three layers:
 │  math, camera, transform, mesh, material, light          │
 └──────────────────────────────────────────────────────────┘
                           │
-        ┌─────────────────┼─────────────────┬──────────────┐
-        │                 │                 │              │
-┌───────────────┐ ┌───────────────┐ ┌──────────────┐ ┌──────────┐
-│ engine-webgpu │ │ engine-vulkan │ │ engine-dx12  │ │ engine-  │
-│ (in progress) │ │   (planned)   │ │  (planned)   │ │  metal…  │
-└───────────────┘ └───────────────┘ └──────────────┘ └──────────┘
+        ┌─────────────────┼─────────────────┬────────────────┬──────────────┐
+        │                 │                 │                │              │
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌──────────────┐ ┌──────────┐
+│ engine-webgpu │ │ engine-webgl2 │ │ engine-vulkan │ │ engine-dx12  │ │ engine-  │
+│ (in progress) │ │ (in progress) │ │   (planned)   │ │  (planned)   │ │  metal…  │
+└───────────────┘ └───────────────┘ └───────────────┘ └──────────────┘ └──────────┘
 ```
 
 ### 1. Frontend — `@fdw/engine-core`
@@ -54,18 +54,19 @@ No graphics-API-specific code belongs in this layer.
 
 Each backend implements the abstract API for a given graphics technology and windowing system.
 
-| Backend              | Technology | Windowing           | Status      |
-| -------------------- | ---------- | ------------------- | ----------- |
-| `@fdw/engine-webgpu` | WebGPU     | Browser (canvas)    | In progress |
-| `@fdw/engine-vulkan` | Vulkan     | Native (e.g. SDL)   | Planned     |
-| —                    | DirectX 12 | Native              | Planned     |
-| —                    | Metal      | Native              | Planned     |
+| Backend              | Technology | Windowing         | Status      |
+| -------------------- | ---------- | ----------------- | ----------- |
+| `@fdw/engine-webgpu` | WebGPU     | Browser (canvas)  | In progress |
+| `@fdw/engine-webgl2` | WebGL2     | Browser (canvas)  | In progress |
+| `@fdw/engine-vulkan` | Vulkan     | Native (e.g. SDL) | Planned     |
+| —                    | DirectX 12 | Native            | Planned     |
+| —                    | Metal      | Native            | Planned     |
 
-The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface` / `WebGpuOffscreenSurface`, the GPU implementations, and `WgslCodegen`, which generates WGSL from the programs compiled by `@fdw/engine-shader`.
+The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface` / `WebGpuOffscreenSurface`, the GPU implementations, and `WgslCodegen`, which generates WGSL from the programs compiled by `@fdw/engine-shader`. The WebGL2 backend provides the same for browsers without WebGPU, with `GlslEsCodegen` generating GLSL ES 3.00 from the same programs.
 
 ### Material graph — `@fdw/engine-shader` (in progress)
 
-Materials are being redesigned as a backend-agnostic graph of typed nodes, compiled to shaders and render pipelines for each backend. The `@fdw/engine-shader` package provides the type system, the graph model, the standard node library, validation and the compiler (graph → IR + resource layout); `@fdw/engine-webgpu` generates WGSL from it, and `@fdw/engine-core` provides the runtime (`Material`, `Mesh`, `Renderer`) on top of an abstract `RenderBackend`. Shading models (unlit, Phong) and variants are macros of the graph. See the `material-graph` and `loading-model` routes of the demo. See the [design proposal](design/material-graph.md) (in French).
+Materials are being redesigned as a backend-agnostic graph of typed nodes, compiled to shaders and render pipelines for each backend. The `@fdw/engine-shader` package provides the type system, the graph model, the standard node library, validation and the compiler (graph → IR + resource layout); `@fdw/engine-webgpu` and `@fdw/engine-webgl2` generate WGSL and GLSL ES from it, and `@fdw/engine-core` provides the runtime (`Material`, `Mesh`, `Renderer`) on top of an abstract `RenderBackend`. Shading models (unlit, Phong) and variants are macros of the graph. See the `material-graph` and `loading-model` routes of the demo, which run on both backends (buttons in the header, or `?backend=webgl2`). See the [design proposal](design/material-graph.md) (in French).
 
 ## Roadmap
 
@@ -82,7 +83,10 @@ packages/
   engine-core/          Frontend: scene manipulation API
   engine-backend/       Abstract API
   engine-webgpu/        WebGPU backend
+  engine-webgl2/        WebGL2 backend
   engine-shader/        Material graph: shader types, graph model, compiler
+tests/
+  rendering/            Rendering tests shared by the backends (Dawn in Node, WebGL2 in headless Chromium)
 design/                 Design proposals
 ```
 
@@ -93,7 +97,8 @@ The monorepo is managed with [Nx](https://nx.dev).
 ### Prerequisites
 
 - Node.js ≥ 20
-- A WebGPU-capable browser (recent Chrome / Edge, Firefox Nightly, Safari Technology Preview…)
+- A WebGPU-capable browser (recent Chrome / Edge, Firefox Nightly, Safari Technology Preview…), or any WebGL2 browser for the routes built on the engine API
+- For the WebGL2 rendering tests: the Playwright Chromium headless shell (`npx playwright install chromium-headless-shell`)
 
 ### Install
 

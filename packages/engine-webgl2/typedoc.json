@@ -1,0 +1,7 @@
+{
+  "extends": ["../../typedoc.base.json"],
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.lib.json",
+  "out": "../../docs/api/engine-webgl2",
+  "name": "@fdw/engine-webgl2"
+}

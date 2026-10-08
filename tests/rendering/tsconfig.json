@@ -15,6 +15,12 @@
     },
     {
       "path": "../../packages/engine-webgpu"
+    },
+    {
+      "path": "../../packages/engine-webgl2"
+    },
+    {
+      "path": "../../packages/engine-backend"
     }
   ]
 }

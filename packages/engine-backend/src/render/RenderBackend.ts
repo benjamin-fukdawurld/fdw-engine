@@ -10,7 +10,10 @@ import type {
   PhysicalProgramLayout,
   ShaderCodegen,
 } from '../shader';
-import type { CompiledProgram } from '@fdw/engine-shader';
+import type {
+  CompiledProgram,
+  CompilerCapabilities,
+} from '@fdw/engine-shader';
 import type { GpuTextureFormat } from '../gpu';
 import type {
   GpuBindGroup,
@@ -58,6 +61,9 @@ export interface RenderBackend {
   readonly transformMath: TransformMath;
   // Preferred depth format for depth attachments.
   readonly depthFormat: GpuTextureFormat;
+  // Limits of the backend that the compiled programs must respect; the
+  // guaranteed limits of WebGPU when absent.
+  readonly capabilities?: Partial<CompilerCapabilities>;
   createRenderTarget(
     descriptor: RenderTargetDescriptor
   ): GpuRenderTarget & { destroy(): void };

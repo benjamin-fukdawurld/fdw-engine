@@ -1,8 +1,11 @@
-export * from './primitives';
+import {
+  CameraMath,
+  TransformMath,
+  wgpuMatrixPrimitives,
+} from '@fdw/engine-backend';
 
-import * as primitives from './primitives';
-import { CameraMath, TransformMath } from '@fdw/engine-backend';
+export const { vec2, vec3, vec4, quat, mat3, mat4 } = wgpuMatrixPrimitives;
 
-export const transformMath = new TransformMath(primitives);
+export const transformMath = new TransformMath(wgpuMatrixPrimitives);
 
-export const cameraMath = new CameraMath(primitives);
+export const cameraMath = new CameraMath(wgpuMatrixPrimitives);

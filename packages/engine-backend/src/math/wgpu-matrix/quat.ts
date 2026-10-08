@@ -1,4 +1,4 @@
-import { QuatApi as IQuatApi, RotationOrder } from '@fdw/engine-backend';
+import { QuatApi as IQuatApi, RotationOrder } from '../primitives';
 import { quat } from 'wgpu-matrix';
 
 export const QuatApi: IQuatApi = {

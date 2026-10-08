@@ -1,0 +1,102 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GlslEsCodegen > generates a complete program > fragment 1`] = `
+"#version 300 es
+// Generated from material graph "textured-unlit". Do not edit.
+
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+layout(std140) uniform FrameUniforms {
+  mat4 u_viewProjection;
+  mat4 u_view;
+  mat4 u_projection;
+  vec3 u_cameraPosition;
+  float u_time;
+  vec4 u_lightPosition;
+  vec3 u_lightAmbient;
+  vec3 u_lightDiffuse;
+  vec3 u_lightSpecular;
+  vec3 u_lightAttenuation;
+} frameUniforms;
+
+layout(std140) uniform MaterialUniforms {
+  vec4 u_tint;
+} materialUniforms;
+
+layout(std140) uniform ObjectUniforms {
+  mat4 u_world;
+  mat3 u_normalMatrix;
+} objectUniforms;
+
+uniform sampler2D ts0_diffuseMap_diffuseSampler;
+
+in vec2 v_uv;
+layout(location = 0) out vec4 o_color;
+
+void main() {
+  vec4 v3_tint = materialUniforms.u_tint; // #n5
+  vec2 v4 = v_uv;
+  vec4 v5 = texture(ts0_diffuseMap_diffuseSampler, v4); // #n4
+  vec4 v6_color = v5 * v3_tint; // #n6
+  vec3 v7 = v6_color.rgb;
+  float v8 = v6_color.a;
+  vec4 v9 = vec4(v7, v8); // #c9
+  o_color = v9;
+}
+"
+`;
+
+exports[`GlslEsCodegen > generates a complete program > vertex 1`] = `
+"#version 300 es
+// Generated from material graph "textured-unlit". Do not edit.
+
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+layout(std140) uniform FrameUniforms {
+  mat4 u_viewProjection;
+  mat4 u_view;
+  mat4 u_projection;
+  vec3 u_cameraPosition;
+  float u_time;
+  vec4 u_lightPosition;
+  vec3 u_lightAmbient;
+  vec3 u_lightDiffuse;
+  vec3 u_lightSpecular;
+  vec3 u_lightAttenuation;
+} frameUniforms;
+
+layout(std140) uniform MaterialUniforms {
+  vec4 u_tint;
+} materialUniforms;
+
+layout(std140) uniform ObjectUniforms {
+  mat4 u_world;
+  mat3 u_normalMatrix;
+} objectUniforms;
+
+uniform sampler2D ts0_diffuseMap_diffuseSampler;
+
+layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec2 a_uv;
+out vec2 v_uv;
+
+void main() {
+  mat4 v1 = objectUniforms.u_world; // #c2
+  mat4 v2 = frameUniforms.u_viewProjection; // #c4
+  vec3 v3 = a_position;
+  float v4 = 1.0;
+  vec4 v5 = vec4(v3, v4); // #c1
+  vec4 v6 = v1 * v5; // #c3
+  vec4 v7 = v2 * v6; // #c5
+  vec2 v8 = a_uv;
+  gl_Position = v7;
+  v_uv = v8;
+  // Clip space depth: [0, 1] in the engine, [-1, 1] in OpenGL.
+  gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+"
+`;

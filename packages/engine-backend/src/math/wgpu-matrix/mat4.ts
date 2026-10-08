@@ -1,4 +1,4 @@
-import type { Mat4Api as IMat4Api } from '@fdw/engine-backend';
+import type { Mat4Api as IMat4Api } from '../primitives';
 import { mat3, mat4, quat, vec3 } from 'wgpu-matrix';
 
 export const Mat4Api: IMat4Api = {

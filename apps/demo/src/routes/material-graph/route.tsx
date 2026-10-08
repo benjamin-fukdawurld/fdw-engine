@@ -4,6 +4,7 @@ import { Engine, RenderBackend, Surface } from '@fdw/engine-backend';
 import {
   Camera,
   Material,
+  PointLight,
   Renderer,
   RenderItem,
   Transform,
@@ -16,7 +17,7 @@ export const Route = createFileRoute('/material-graph')({
   component: RouteComponent,
 });
 
-// Unlit, textured, multiplied by a tint.
+// Phong, textured, multiplied by a tint.
 function texturedGraph() {
   const g = new GraphBuilder('textured');
   const texel = g.call(std.textureSample, {
@@ -26,12 +27,15 @@ function texturedGraph() {
   });
   const tint = g.uniform('tint', BuiltinTypes.vec3f, { default: [1, 1, 1] });
   g.surface({
+    shadingModel: 'phong',
     baseColor: g.call(std.mul, { a: texel.swizzle('rgb'), b: tint }),
+    specular: [0.3, 0.3, 0.3],
+    shininess: 16,
   });
   return g.build();
 }
 
-// A color cycling between two uniforms, driven by the engine time.
+// Unlit: a color cycling between two uniforms, driven by the engine time.
 function pulsingGraph() {
   const g = new GraphBuilder('pulsing');
   const wave = g.call(std.sin, {
@@ -51,13 +55,18 @@ function pulsingGraph() {
   return g.build();
 }
 
-// A flat color with an alpha, drawn with blending.
+// Phong with an alpha, drawn with blending: a shiny glass.
 function glassGraph() {
   const g = new GraphBuilder('glass');
   const color = g.uniform('color', BuiltinTypes.vec4f, {
     default: [0.6, 1, 0.8, 0.4],
   });
-  g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
+  g.surface({
+    shadingModel: 'phong',
+    baseColor: color.swizzle('rgb'),
+    alpha: color.swizzle('a'),
+    shininess: 64,
+  });
   return g.build();
 }
 
@@ -118,6 +127,14 @@ function RouteComponent() {
       { mesh: cube, material: glass, transform: transforms[2] },
     ];
 
+    // A white light above the camera, on the right.
+    const light = new PointLight({
+      position: { x: 3, y: 4, z: 6 },
+      ambient: { x: 0.15, y: 0.15, z: 0.15 },
+      diffuse: { x: 1, y: 1, z: 1 },
+      specular: { x: 1, y: 1, z: 1 },
+    });
+
     const camera = new Camera({
       position: { x: 0, y: 0, z: 5 },
       projection: {
@@ -143,6 +160,7 @@ function RouteComponent() {
         camera,
         surface,
         time,
+        lights: [light],
         clearColor: { r: 0.08, g: 0.08, b: 0.1, a: 1 },
       });
       frameRef.current = requestAnimationFrame(frame);
@@ -150,5 +168,5 @@ function RouteComponent() {
     frameRef.current = requestAnimationFrame(frame);
   };
 
-  return <Layout onSurfaceReady={onSurfaceReady} />;
+  return <Layout onSurfaceReady={onSurfaceReady} portable />;
 }

@@ -129,5 +129,5 @@ function RouteComponent() {
     frameRef.current = requestAnimationFrame(frame);
   };
 
-  return <Layout onSurfaceReady={onSurfaceReady} />;
+  return <Layout onSurfaceReady={onSurfaceReady} portable />;
 }

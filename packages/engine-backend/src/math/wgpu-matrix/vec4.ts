@@ -1,4 +1,4 @@
-import { Vec4Api as IVec4Api } from '@fdw/engine-backend';
+import { Vec4Api as IVec4Api } from '../primitives';
 import { vec4 } from 'wgpu-matrix';
 
 export const Vec4Api: IVec4Api = {

@@ -1,6 +1,6 @@
 # Proposition : material graph et pipeline de rendu multi-backend
 
-_Statut : proposition de conception — 01/10/2026 Phase 4 implémentée_
+_Statut : phases 1 à 5 implémentées (07/10/2026). Écarts restants : §17_
 
 Ce document propose une architecture et un plan d'implémentation pour :
 
@@ -28,6 +28,7 @@ Ce document propose une architecture et un plan d'implémentation pour :
 14. [Plan d'implémentation](#14-plan-dimplémentation)
 15. [Stratégie de test](#15-stratégie-de-test)
 16. [Risques et questions ouvertes](#16-risques-et-questions-ouvertes)
+17. [Écarts restants après la phase 5](#17-écarts-restants-après-la-phase-5)
 
 ---
 
@@ -1113,9 +1114,43 @@ Le compilateur étant une fonction pure sans GPU, la grande majorité des tests 
 | **Temps de compilation**    | Saccades à la première apparition d'un matériau                                       | Compilation asynchrone, matériau de repli, préchauffage des variantes connues                                                        |
 | **Coercions implicites**    | Pratiques mais sources d'erreurs                                                      | Politique stricte (§5.3), avec insertion assistée par l'éditeur                                                                      |
 
-Questions à trancher :
+Questions à trancher, avec les réponses provisoires retenues :
 
-1. **Où placer la frontière entre le moteur et l'utilisateur pour la partie vertex ?** Ma proposition : un squelette fourni par le moteur, avec `positionOffset` pour le déplacement, et `output.vertex` pour le contrôle complet.
+1. **Où placer la frontière entre le moteur et l'utilisateur pour la partie vertex ?** Ma proposition : un squelette fourni par le moteur, avec `positionOffset` pour le déplacement, et `output.vertex` pour le contrôle complet. C'est ce qui est implémenté.
+   _Réponse provisoire :_ un **système de graphes pour décrire les meshs** est à étudier. Le but est que les meshs soient, eux aussi, indépendants de la technologie sous-jacente. Le moteur doit se prêter aussi bien aux workflows de type chargement de scène → rendu qu'aux workflows de modélisation ou de génération procédurale.
 2. **Les modèles d'éclairage** : faut-il les exposer comme macros remplaçables par l'utilisateur (shading models personnalisés), ou les garder internes au moteur dans un premier temps ?
+   _Réponse provisoire :_ les modèles d'éclairage deviennent des **nœuds** (Phong, PBR metallic/roughness, specular/glossiness…). Le moteur fournit les modèles les plus courants, et l'utilisateur peut écrire son propre modèle avec le graphe.
 3. **`f16`** : à prendre en charge dès le départ, ou plus tard ? Il est optionnel en WebGPU (`shader-f16`), absent de WebGL2 (sauf précision `mediump`) et natif sur Metal et D3D12.
+   _Réponse provisoire :_ `f16` est pris en charge **de bout en bout autant que possible**, dès que la technologie sous-jacente le permet (capacités du backend, avec un repli explicite sinon).
 4. **Compute et render graph** : le même compilateur pourrait produire des compute shaders (une sortie `output.compute`), et un render graph pourrait orchestrer plusieurs passes (ombres, post-processing). Ce sont deux extensions naturelles, à concevoir après la phase 5.
+   _Réponse provisoire :_ le **render graph** et le **compute graph** sont les prochaines étapes, une fois le material graph terminé et jugé satisfaisant.
+
+---
+
+## 17. Écarts restants après la phase 5
+
+Les phases 1 à 5 sont livrées. Le backend WebGL2 (`@fdw/engine-webgl2`) rend les mêmes graphes que WebGPU, sans changement du graphe ni de l'IR : la suite de tests de rendu (`tests/rendering`) passe à l'identique sur Dawn et sur WebGL2 (Chromium headless, SwiftShader).
+
+Deux choix d'implémentation s'écartent de la proposition du §9.2 :
+
+- **Profondeur du clip space** : le vertex shader GLSL la remappe (`z = 2z - w`) au lieu d'une matrice de correction dans `CameraMath`. Le moteur garde une seule convention, [0, 1], et les mêmes primitives mathématiques (wgpu-matrix, déplacées dans `engine-backend`).
+- **Aplatissement des groupes** : `PhysicalLayoutStrategy.resolve()` garde les groupes ; c'est le pipeline qui attribue les points de binding des blocs uniform et les unités de texture après l'édition des liens (GLSL ES 3.00 n'a pas de qualificateur `binding`). Les échantillonneurs combinés sont déduits de l'IR (`combinedSamplers`) et liés au moment du draw, même quand la texture et le sampler sont dans des groupes différents.
+
+Les points suivants du design ne sont pas encore implémentés, ou seulement en partie. Ils sont à régler par la suite.
+
+| Sujet                                       | Référence | État actuel                                                                                                         | À faire                                                                                                                   |
+| ------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Fonctions `subgraph` et `native`            | §6.3      | Déclarées dans `NodeDefinition`, refusées par le compilateur                                                        | Émettre des fonctions dans l'IR et les générateurs ; refuser les nœuds `native` sans implémentation pour le langage cible |
+| Storage buffers                             | §5.1      | `input.storage` existe, la compilation renvoie « not supported yet »                                                | Layout, IR, générateurs, repli ou erreur explicite sur WebGL2                                                             |
+| Boucle sur les lumières, lumières multiples | §6.6      | Une seule lumière principale dans le bloc `frame`                                                                   | Construction `lightLoop` dans l'IR, tableau ou storage buffer de lumières                                                 |
+| Modèle PBR                                  | §6.4      | `pbr` déclaré, sans macro `lighting.pbr`                                                                            | Implémenter, puis passer les modèles d'éclairage en nœuds (§16, question 2)                                               |
+| `alphaMode: 'mask'`                         | §6.5      | Seuls `opaque` et `blend` existent                                                                                  | Seuil d'alpha (`discard`) et tri avec les opaques                                                                         |
+| Paramètres statiques du contexte            | §6.5      | `skinning`, `instancing`, `shadowPass` non fournis par le renderer                                                  | Les ajouter avec les fonctionnalités correspondantes (instancing, ombres)                                                 |
+| Transparence                                | §11.3     | Tri par objet, deux passes (faces arrière puis avant) pour les objets double face                                   | Exact pour les formes convexes seulement ; OIT à étudier                                                                  |
+| Validation du code généré en CI             | §15       | Le WGSL est validé par Dawn, le GLSL par Chromium (ANGLE), dans les tests de rendu                                  | Ajouter naga et `glslangValidator` pour des messages indépendants des pilotes                                             |
+| Variantes et compilation                    | §16       | Compilation asynchrone ; un objet est sauté tant que son pipeline n'est pas prêt                                    | Limite du nombre de variantes avec avertissement, matériau de repli, préchauffage                                         |
+| Débogage du code généré                     | §16       | Noms dérivés des labels, commentaires `// #id` du nœud d'origine (WGSL et GLSL)                                     | Source maps nœud ↔ ligne                                                                                                  |
+| `f16`                                       | §5.1, §16 | Le type existe, sans prise en charge de bout en bout                                                                | Capacité `shader-f16`, layout, générateurs (§16, question 3)                                                              |
+| `frag-coord` en WebGL2                      | §9.2      | `gl_FragCoord` a son origine en bas à gauche, celle de WGSL en haut à gauche                                        | Corriger y avec la hauteur de la cible (uniform du moteur)                                                                |
+| Rendu multi-échantillonné                   | §10.1     | `sampleCount` ignoré en WebGL2 ; contexte créé sans antialiasing                                                    | Renderbuffers multi-échantillonnés et résolution par `blitFramebuffer`                                                    |
+| Présentation WebGL2                         | §10.4     | Le contexte appartient à l'engine (OffscreenCanvas) ; chaque surface rend dans un framebuffer copié vers son canvas | Mesurer le coût de la copie (`transferToImageBitmap`) ; mode direct déjà possible en donnant le canvas à l'engine         |

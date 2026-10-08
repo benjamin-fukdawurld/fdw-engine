@@ -24,7 +24,8 @@
       "@fdw/engine-backend": ["packages/engine-backend/src/index.ts"],
       "@fdw/engine-core": ["packages/engine-core/src/index.ts"],
       "@fdw/engine-webgpu": ["packages/engine-webgpu/src/index.ts"],
-      "@fdw/engine-shader": ["packages/engine-shader/src/index.ts"]
+      "@fdw/engine-shader": ["packages/engine-shader/src/index.ts"],
+      "@fdw/engine-webgl2": ["packages/engine-webgl2/src/index.ts"]
     }
   }
 }

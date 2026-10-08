@@ -4,9 +4,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "npx nx run-many -t build --projects=engine-shader,engine-backend,engine-core,engine-webgpu",
+    "build": "npx nx run-many -t build --projects=engine-shader,engine-backend,engine-core,engine-webgpu,engine-webgl2",
     "serve": "npx nx serve demo",
-    "docs": "typedoc --options packages/engine-shader/typedoc.json && typedoc --options packages/engine-backend/typedoc.json && typedoc --options packages/engine-core/typedoc.json && typedoc --options packages/engine-webgpu/typedoc.json",
+    "docs": "typedoc --options packages/engine-shader/typedoc.json && typedoc --options packages/engine-backend/typedoc.json && typedoc --options packages/engine-core/typedoc.json && typedoc --options packages/engine-webgpu/typedoc.json && typedoc --options packages/engine-webgl2/typedoc.json",
     "test": "npx nx run-many -t test"
   },
   "private": true,
@@ -34,6 +34,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react-swc": "^4.3.0",
+    "@vitest/browser-playwright": "^4.1.7",
     "@vitest/coverage-v8": "~4.1.0",
     "@vitest/ui": "4.1.7",
     "@webgpu/types": "^0.1.64",
@@ -49,6 +50,7 @@
     "jsonc-eslint-parser": "^2.1.0",
     "node": "^24.8.0",
     "nx": "22.7.2",
+    "playwright": "^1.64.0",
     "postcss": "8.4.38",
     "prettier": "^2.6.2",
     "tailwindcss": "^4.3.0",

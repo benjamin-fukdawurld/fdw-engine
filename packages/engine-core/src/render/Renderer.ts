@@ -189,7 +189,11 @@ export class Renderer {
     const depth = this.depthTarget(target);
 
     const prepared = [...items]
-      .flatMap((item) => this.passes(item).map((cullMode) => this.prepare(item, surface, cullMode)))
+      .flatMap((item) =>
+        this.passes(item).map((cullMode) =>
+          this.prepare(item, surface, cullMode)
+        )
+      )
       .filter((entry): entry is PreparedItem => entry !== undefined);
     const cameraCache = this.cameraCache(camera);
     const ordered = this.sort(prepared, cameraCache);
@@ -236,6 +240,9 @@ export class Renderer {
       program = compile(material.graph, {
         vertexAttributes: semantics,
         features: material.features,
+        ...(this.backend.capabilities
+          ? { capabilities: this.backend.capabilities }
+          : {}),
         ...(this._registry ? { registry: this._registry } : {}),
       });
       byAttributes.set(key, program);

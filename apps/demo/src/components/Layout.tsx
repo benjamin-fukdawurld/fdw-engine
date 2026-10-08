@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { useEngine } from '../hooks/useEngine';
 import { useSurface } from '../hooks/useSurface';
 import { Engine, Surface } from '@fdw/engine-backend';
+import { backendLabels, getBackendName } from '../globals/backend';
 
 type Props = {
   children?: React.ReactNode;
@@ -13,9 +14,31 @@ type Props = {
     surface: Surface,
     canvas: HTMLCanvasElement
   ) => Promise<void>;
+  // The route only uses the engine API, and runs on every backend. Other
+  // routes use WebGPU directly.
+  portable?: boolean;
 };
 
-export default function Layout({ children, onSurfaceReady }: Props) {
+export default function Layout({ children, onSurfaceReady, portable }: Props) {
+  const backend = getBackendName();
+  if (!portable && backend !== 'webgpu') {
+    return (
+      <div className="h-full w-full flex flex-col">
+        <Header />
+        <main className="w-full bg-gray-100 flex-1 flex items-center justify-center text-gray-600">
+          This demo uses the WebGPU API directly: it does not run on{' '}
+          {backendLabels[backend]}.
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+  return (
+    <EngineLayout onSurfaceReady={onSurfaceReady}>{children}</EngineLayout>
+  );
+}
+
+function EngineLayout({ children, onSurfaceReady }: Omit<Props, 'portable'>) {
   const { engine, engineError } = useEngine();
   const { surface, isSurfaceReady, surfaceError, canvasRef, onCanvasReady } =
     useSurface(engine, engineError);

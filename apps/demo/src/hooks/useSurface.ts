@@ -1,5 +1,6 @@
 import { Engine, Surface } from '@fdw/engine-backend';
 import { WebGpuSurface } from '@fdw/engine-webgpu';
+import { WebGl2CanvasSurface, WebGl2Engine } from '@fdw/engine-webgl2';
 import { RefObject, useEffect, useRef, useState } from 'react';
 
 export type useSurfaceResult = {
@@ -41,7 +42,10 @@ export function useSurface(
       return;
     }
 
-    const surfaceInstance = new WebGpuSurface(canvasRef.current);
+    const surfaceInstance =
+      engine instanceof WebGl2Engine
+        ? new WebGl2CanvasSurface(canvasRef.current)
+        : new WebGpuSurface(canvasRef.current);
     surfaceInstance
       .init(engine)
       .then(() => {
