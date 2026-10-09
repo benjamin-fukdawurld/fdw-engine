@@ -70,6 +70,7 @@ export const std = {
   equal: functions.equal,
   notEqual: functions.notEqual,
   textureSample: functions.textureSample,
+  textureSampleLevel: functions.textureSampleLevel,
   vec2: functions.vec2,
   vec3: functions.vec3,
   vec4: functions.vec4,
@@ -106,8 +107,9 @@ export const stdConstants = {
 } as const;
 
 /**
- * The output node types: `output.surface`, and the raw `output.vertex` /
- * `output.fragment`.
+ * The output node types: `output.surface`, the raw `output.vertex` /
+ * `output.fragment`, and `output.compute` with the `write.storage` nodes of
+ * the compute graphs.
  *
  * @group Standard library
  */
@@ -115,6 +117,8 @@ export const stdOutputs = {
   surface: outputs.surface,
   vertex: outputs.vertex,
   fragment: outputs.fragment,
+  compute: outputs.compute,
+  writeStorage: outputs.writeStorage,
 } as const;
 
 /**

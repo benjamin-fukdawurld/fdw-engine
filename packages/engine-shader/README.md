@@ -202,6 +202,34 @@ g.surface({ baseColor: g.call(scale, { value: color }) });
 
 The compiler **inlines** each call: the program is the same as with the graph written in place, and the optimizations, the stages and the light loops apply through the function. A function graph can use resources (uniforms, textures), macros, lights and other functions; recursive functions are rejected. `build()` embeds the called functions in the `functions` section of the graph, so that a JSON graph compiles without registering them.
 
+## Compute graphs
+
+A compute graph is a graph ending with `output.compute` (the size of its workgroups) instead of a surface; it writes storage buffers declared with read-write access, with `write.storage` nodes:
+
+```ts
+const g = new GraphBuilder('scale');
+const index = g.builtin('global-invocation-id').swizzle('x');
+const input = g.storage('input', arrayType(BuiltinTypes.f32));
+const output = g.storage('output', arrayType(BuiltinTypes.f32), {
+  access: 'read-write',
+});
+g.write(output, {
+  index,
+  value: g.call(std.mul, {
+    a: g.call(std.index, { array: input, index }),
+    b: g.uniform('factor', BuiltinTypes.f32),
+  }),
+  when: g.call(std.less, {
+    a: index,
+    b: g.call(std.arrayLength, { array: input }),
+  }),
+});
+g.compute({ workgroupSize: [64, 1, 1] });
+const program = compile(g.build());
+```
+
+It compiles to a single `compute` stage of the IR, whose writes are results made after its body. The compiler rejects the nodes of the other stages (`std.textureSample` needs the derivatives of the fragment stage: use `std.textureSampleLevel`), reading a buffer the graph writes (threads run in any order), and writing a read-only buffer. A compute graph only has the slots it uses. Not available on WebGL2 (capability `compute`).
+
 ### Current limitations
 
 - At most 16 lights per frame, without shadows.

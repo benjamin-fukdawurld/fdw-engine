@@ -53,7 +53,10 @@ export function combinedSamplers(
       return op.binding;
     };
     for (const instruction of instructions) {
-      if (instruction.op.kind !== 'sample') {
+      if (
+        instruction.op.kind !== 'sample' &&
+        instruction.op.kind !== 'sample-level'
+      ) {
         continue;
       }
       const texture = bindingOf(instruction.args[0]);

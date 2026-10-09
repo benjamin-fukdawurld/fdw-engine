@@ -191,6 +191,19 @@ export function checkOutputNodes(
   if (outputs.length === 0) {
     return 'the graph has no output node';
   }
+  // A compute graph: one output.compute, and write.storage nodes.
+  const computes = outputs.filter((node) => node.type === 'output.compute');
+  const writes = outputs.filter((node) => node.type === 'write.storage');
+  if (computes.length > 0 || writes.length > 0) {
+    if (computes.length !== 1) {
+      return computes.length === 0
+        ? 'write.storage nodes belong to a compute graph: add an output.compute node'
+        : 'a compute graph has a single output.compute node';
+    }
+    return computes.length + writes.length === outputs.length
+      ? undefined
+      : 'a compute graph has no other outputs than output.compute and write.storage';
+  }
   // A function graph: function.output nodes only.
   const functionOutputs = outputs.filter(
     (node) => node.type === 'function.output'

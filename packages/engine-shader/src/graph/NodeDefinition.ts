@@ -38,7 +38,7 @@ export type NodeCategory = (typeof NodeCategoryNames)[number];
  *
  * @group Node definitions
  */
-export type ShaderStage = 'vertex' | 'fragment';
+export type ShaderStage = 'vertex' | 'fragment' | 'compute';
 
 /**
  * An input or output port of a node type.
@@ -167,6 +167,8 @@ export type IntrinsicOp =
   | 'construct'
   | 'convert'
   | 'texture-sample'
+  // Sampling at an explicit level of detail.
+  | 'texture-sample-level'
   // Component-wise comparisons, giving booleans.
   | 'less'
   | 'less-equal'

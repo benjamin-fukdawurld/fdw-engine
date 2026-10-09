@@ -12,7 +12,12 @@ import type { ShaderType } from '../types/ShaderType';
 import { stableStringify } from './hash';
 import type { WorkingGraph } from './WorkingGraph';
 
-const rootTypes = new Set(['output.vertex', 'output.fragment']);
+const rootTypes = new Set([
+  'output.vertex',
+  'output.fragment',
+  'output.compute',
+  'write.storage',
+]);
 
 /** Removes the nodes that do not contribute to the stage outputs. */
 export function eliminateDeadCode(graph: WorkingGraph): void {

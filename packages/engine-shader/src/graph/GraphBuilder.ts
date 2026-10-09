@@ -251,7 +251,11 @@ export class GraphBuilder {
       throw new GraphError(diagnostics);
     }
 
-    if (resolvedDefinition.id === 'function.output') {
+    const computeOutputs = ['output.compute', 'write.storage'];
+    if (computeOutputs.includes(resolvedDefinition.id)) {
+      // Several writes are allowed: the whole graph is checked on build.
+      this._outputTypes.push(resolvedDefinition.id);
+    } else if (resolvedDefinition.id === 'function.output') {
       if (this._outputTypes.some((type) => type !== 'function.output')) {
         throw new GraphError([
           {
@@ -275,8 +279,9 @@ export class GraphBuilder {
         ]);
       }
       const allowed =
-        outputs.length === 1 ||
-        (outputs[0] === 'output.fragment' && outputs[1] === 'output.vertex');
+        !this._outputTypes.some((type) => computeOutputs.includes(type)) &&
+        (outputs.length === 1 ||
+          (outputs[0] === 'output.fragment' && outputs[1] === 'output.vertex'));
       if (!allowed) {
         throw new GraphError([
           {
@@ -419,7 +424,16 @@ export class GraphBuilder {
    * stage), fragment coordinate and facing (fragment stage).
    */
   builtin(
-    builtin: 'vertex-index' | 'instance-index' | 'frag-coord' | 'front-facing'
+    builtin:
+      | 'vertex-index'
+      | 'instance-index'
+      | 'frag-coord'
+      | 'front-facing'
+      // Compute graphs.
+      | 'global-invocation-id'
+      | 'local-invocation-id'
+      | 'workgroup-id'
+      | 'num-workgroups'
   ): PortHandle {
     return this.call('input.builtin', {}, { params: { builtin } });
   }
@@ -500,6 +514,42 @@ export class GraphBuilder {
     this.node('output.surface', {
       params: { shadingModel },
       inputs: ports as NodeInputs,
+    });
+  }
+
+  /**
+   * Ends a compute graph: what it computes is written by its
+   * {@link GraphBuilder.write} calls.
+   *
+   * @param options.workgroupSize - Threads of a workgroup, in x, y and z
+   * (64 × 1 × 1 by default).
+   */
+  compute(
+    options: { workgroupSize?: readonly [number, number, number] } = {}
+  ): void {
+    this.node('output.compute', {
+      params: withDefined({ workgroupSize: options.workgroupSize }),
+    });
+  }
+
+  /**
+   * In a compute graph: array[index] = value, when `when` is true. The array
+   * is a storage buffer declared with read-write access.
+   */
+  write(
+    array: PortHandle,
+    {
+      index,
+      value,
+      when,
+    }: {
+      index: PortHandle | number;
+      value: PortHandle | ConstantValue;
+      when?: PortHandle;
+    }
+  ): void {
+    this.node('write.storage', {
+      inputs: { array, index, value, ...(when ? { when } : {}) },
     });
   }
 

@@ -12,6 +12,7 @@ import type {
   IrIntrinsic,
   IrOp,
   IrStageVariable,
+  IrWrite,
   ShaderModuleIR,
   ValueId,
 } from './ir';
@@ -348,6 +349,9 @@ function translateNode(
     case 'texture-sample':
       output('result', type, { kind: 'sample' }, args);
       return;
+    case 'texture-sample-level':
+      output('result', type, { kind: 'sample-level' }, args);
+      return;
     case 'index':
       output('result', type, { kind: 'index' }, args);
       return;
@@ -495,6 +499,86 @@ function translateStage(
       translate(context, builder, id, results);
     }
   }
+}
+
+// A compute graph: a single stage, without inputs nor varyings; its
+// write.storage nodes become the writes of the stage, in graph order.
+export function generateComputeIr({
+  graph,
+  nodes,
+  order,
+  types,
+}: {
+  graph: WorkingGraph;
+  nodes: ReadonlyMap<NodeId, ResolvedNode>;
+  order: readonly NodeId[];
+  types: ReadonlyMap<NodeId, NodeTypes>;
+}): ShaderModuleIR {
+  const usedPorts = new Map<NodeId, Set<string>>();
+  for (const edge of graph.edges) {
+    let ports = usedPorts.get(edge.from.node);
+    if (!ports) {
+      ports = new Set();
+      usedPorts.set(edge.from.node, ports);
+    }
+    ports.add(edge.from.port);
+  }
+  const context: StageContext = {
+    graph,
+    nodes,
+    order,
+    types,
+    loopBodies: new Set(),
+    usedPorts,
+  };
+  const builder = new StageBuilder(graph, types, new Map());
+  const writes: IrWrite[] = [];
+  let workgroupSize: [number, number, number] = [64, 1, 1];
+
+  for (const id of order) {
+    const resolved = nodes.get(id) as ResolvedNode;
+    const { node, inputs, params } = resolved;
+    if (node.type === 'output.compute') {
+      workgroupSize = params['workgroupSize'] as [number, number, number];
+      continue;
+    }
+    if (node.type !== 'write.storage') {
+      translate(context, builder, id, {});
+      continue;
+    }
+    const portTypes = types.get(id) as NodeTypes;
+    const value = (name: string) =>
+      builder.input(
+        node,
+        inputs.find((port) => port.name === name) as PortSchema,
+        portTypes.inputs[name]
+      );
+    const array = graph.inputSource(node, 'array');
+    const storage =
+      array && 'ref' in array ? graph.nodes.get(array.ref.node) : undefined;
+    const condition = value('when');
+    writes.push({
+      resource: storage?.params['name'] as string,
+      index: value('index') as ValueId,
+      value: value('value') as ValueId,
+      ...(condition === undefined ? {} : { condition }),
+    });
+  }
+
+  return {
+    name: graph.name,
+    entryPoints: [
+      {
+        stage: 'compute',
+        inputs: [],
+        outputs: [],
+        body: builder.body,
+        results: {},
+        workgroupSize,
+        writes,
+      },
+    ],
+  };
 }
 
 const clipPosition: IrStageVariable = {

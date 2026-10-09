@@ -1,5 +1,6 @@
 import { BuiltinTypes } from '../types/ShaderType';
 import { NodeDefinition, resolveParams } from '../graph/NodeDefinition';
+import { arrayElementOf, generic } from '../types/PortType';
 
 /**
  * The shading models of the standard library. Others can be registered with
@@ -49,6 +50,40 @@ export const surface: NodeDefinition = {
     ];
   },
   outputs: () => [],
+};
+
+/**
+ * The output of a compute graph: the size of its workgroups. What the graph
+ * computes is written by its write.storage nodes.
+ */
+export const compute: NodeDefinition = {
+  id: 'output.compute',
+  category: 'output',
+  params: {
+    workgroupSize: { kind: 'constant', default: [64, 1, 1] },
+  },
+  inputs: () => [],
+  outputs: () => [],
+  stage: () => 'compute',
+};
+
+/**
+ * Writes an element of a storage buffer, in a compute graph:
+ * array[index] = value, when `when` is true (or unconnected). The array is
+ * a storage buffer with read-write access. Writes are made after every
+ * computation of the thread, in the order of the graph.
+ */
+export const writeStorage: NodeDefinition = {
+  id: 'write.storage',
+  category: 'output',
+  inputs: () => [
+    { name: 'array', type: generic('A', 'array') },
+    { name: 'index', type: generic('I', 'integer') },
+    { name: 'value', type: arrayElementOf('A') },
+    { name: 'when', type: BuiltinTypes.bool, optional: true },
+  ],
+  outputs: () => [],
+  stage: () => 'compute',
 };
 
 /**

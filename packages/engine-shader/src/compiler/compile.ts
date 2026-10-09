@@ -22,10 +22,11 @@ import {
 } from '../types/ShaderType';
 import { hashString, stableStringify } from './hash';
 import type { ShaderModuleIR } from './ir';
-import { generateIr, lightLoopBodies } from './generateIr';
+import { generateComputeIr, generateIr, lightLoopBodies } from './generateIr';
 import {
   EngineSlots,
   engineUniformBlocks,
+  engineValueLocations,
   LogicalBinding,
   ProgramLayout,
   slotOrder,
@@ -171,6 +172,78 @@ function isSupportedType(type: ShaderType): boolean {
   }
 }
 
+const isCompute = (validation: GraphValidation): boolean =>
+  [...validation.nodes.values()].some(
+    ({ node }) => node.type === 'output.compute'
+  );
+
+// What compute graphs cannot do: stage-specific nodes, reading the buffers
+// they write (threads run in any order), writing read-only buffers.
+function checkCompute(
+  graph: WorkingGraph,
+  validation: GraphValidation,
+  diagnostics: Diagnostic[]
+): void {
+  const error = (node: NodeId, message: string) =>
+    diagnostics.push({ severity: 'error', node, message });
+  for (const { node, definition, params } of validation.nodes.values()) {
+    const stage = definition.stage?.(params);
+    if (stage === 'vertex' || stage === 'fragment') {
+      error(
+        node.id,
+        `${node.type} is only available in the ${stage} stage${
+          node.type === 'std.textureSample'
+            ? ': use std.textureSampleLevel'
+            : ''
+        }`
+      );
+    }
+    if (node.type === 'output.compute') {
+      const size = params['workgroupSize'];
+      if (
+        !Array.isArray(size) ||
+        size.length !== 3 ||
+        !size.every((n) => Number.isInteger(n) && n > 0)
+      ) {
+        error(node.id, 'workgroupSize must be three positive integers');
+      }
+    }
+    if (node.type === 'write.storage') {
+      const source = graph.inputSource(node, 'array');
+      const storage =
+        source && 'ref' in source
+          ? graph.nodes.get(source.ref.node)
+          : undefined;
+      if (storage?.type !== 'input.storage') {
+        error(node.id, 'write.storage writes a storage buffer (input.storage)');
+      } else if (storage.params['access'] !== 'read-write') {
+        error(
+          node.id,
+          `storage buffer "${storage.params['name']}" is read-only: declare it with read-write access to write it`
+        );
+      }
+    }
+    if (node.type === 'input.storage' && params['access'] === 'read-write') {
+      for (const edge of graph.edges) {
+        if (edge.from.node !== node.id) {
+          continue;
+        }
+        const consumer = graph.nodes.get(edge.to.node);
+        const allowed =
+          (consumer?.type === 'write.storage' && edge.to.port === 'array') ||
+          consumer?.type === 'std.arrayLength';
+        if (!allowed) {
+          error(
+            node.id,
+            `storage buffer "${params['name']}" is written by the graph: it cannot be read (threads run in any order)`
+          );
+          break;
+        }
+      }
+    }
+  }
+}
+
 // Checks what the current compiler does not support, or reserves.
 function checkSupport(
   validation: GraphValidation,
@@ -203,9 +276,9 @@ function checkSupport(
         );
         continue;
       }
-      if (params['access'] !== 'read') {
+      if (params['access'] !== 'read' && !isCompute(validation)) {
         error(
-          `storage buffer "${params['name']}": only read access is supported (writes come with compute graphs)`
+          `storage buffer "${params['name']}": only compute graphs write storage buffers, use read access`
         );
         continue;
       }
@@ -296,8 +369,12 @@ function checkSupport(
 
 // Built from the resolved parameters, so that the declared defaults (slot
 // 'material', dimension '2d'…) apply.
-function buildLayout(nodes: Iterable<ResolvedNode>): ProgramLayout {
-  const resources = [...nodes]
+function buildLayout(
+  nodes: Iterable<ResolvedNode>,
+  { usedSlotsOnly = false }: { usedSlotsOnly?: boolean } = {}
+): ProgramLayout {
+  const all = [...nodes];
+  const resources = all
     .filter(({ node }) => resourceTypes.has(node.type))
     .map(({ node, params }) => ({
       type: node.type,
@@ -305,7 +382,19 @@ function buildLayout(nodes: Iterable<ResolvedNode>): ProgramLayout {
       name: params['name'] as string,
       slot: params['slot'] as string,
     }));
-  const slots = slotOrder(resources.map((resource) => resource.slot));
+  // Materials always have the built-in slots, at fixed group indices shared
+  // by every program; compute graphs only have the slots they use.
+  const engineSlots = new Set(
+    all
+      .filter(({ node }) => node.type === 'input.engine')
+      .map(({ params }) => engineValueLocations[params['value'] as string].slot)
+  );
+  const slots = slotOrder(resources.map((resource) => resource.slot)).filter(
+    (slot) =>
+      !usedSlotsOnly ||
+      engineSlots.has(slot as never) ||
+      resources.some((resource) => resource.slot === slot)
+  );
 
   return {
     groups: slots.map((slot) => {
@@ -410,7 +499,11 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
 
   const outputs = [...graph.nodes.values()]
     .filter(
-      (node) => node.type === 'output.vertex' || node.type === 'output.fragment'
+      (node) =>
+        node.type === 'output.vertex' ||
+        node.type === 'output.fragment' ||
+        node.type === 'output.compute' ||
+        node.type === 'write.storage'
     )
     .map((node) => hashes.get(node.id) as string)
     .sort();
@@ -467,6 +560,15 @@ export function compile(
   }
 
   const diagnostics: Diagnostic[] = [];
+  const compute = isCompute(validation);
+  if (compute && !capabilities.compute) {
+    fail([
+      {
+        severity: 'error',
+        message: 'the backend has no compute shaders (WebGL2)',
+      },
+    ]);
+  }
   checkSupport(validation, diagnostics, capabilities);
   if (diagnostics.length > 0) {
     fail(diagnostics);
@@ -525,8 +627,31 @@ export function compile(
   if (diagnostics.length > 0) {
     fail(diagnostics);
   }
+  if (compute) {
+    checkCompute(working, lowered, diagnostics);
+    if (diagnostics.length > 0) {
+      fail(diagnostics);
+    }
+  }
   optimize(working, registry, lowered.order, lowered.types);
   const optimized = revalidate();
+
+  if (compute) {
+    return {
+      name: graph.name,
+      programKey: programKey(working, optimized.order),
+      variantKey,
+      module: generateComputeIr({
+        graph: working,
+        nodes: optimized.nodes,
+        order: optimized.order,
+        types: optimized.types,
+      }),
+      layout: buildLayout(optimized.nodes.values(), { usedSlotsOnly: true }),
+      vertexInputs: [],
+      diagnostics: warnings,
+    };
+  }
 
   // Per-light values only exist in the loop of a light.sum.
   for (const id of lightLoopBodies(working)) {

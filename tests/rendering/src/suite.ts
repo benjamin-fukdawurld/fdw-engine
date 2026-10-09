@@ -2,6 +2,7 @@ import type { GpuBuffer, RenderBackend, Surface } from '@fdw/engine-backend';
 import {
   arrayType,
   BuiltinTypes,
+  compile,
   defineFunction,
   GraphBuilder,
   std,
@@ -11,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BaseLight,
   Camera,
+  ComputeRunner,
   DirectionalLight,
   Material,
   Mesh,
@@ -445,6 +447,162 @@ export function describeRenderer(
       ]);
       // Two layers of 0.5 × blue over black: 0.75 × 255.
       expectColor(pixel(32, 32), [0, 0, 191, 255]);
+    });
+
+    describe('compute graphs', () => {
+      // output[i] = input[i] × factor, for i < arrayLength(input).
+      const scaleGraph = () => {
+        const g = new GraphBuilder('scale');
+        const index = g.builtin('global-invocation-id').swizzle('x');
+        const input = g.storage('input', arrayType(BuiltinTypes.f32));
+        const output = g.storage('output', arrayType(BuiltinTypes.f32), {
+          access: 'read-write',
+        });
+        g.write(output, {
+          index,
+          value: g.call(std.mul, {
+            a: g.call(std.index, { array: input, index }),
+            b: g.uniform('factor', BuiltinTypes.f32),
+          }),
+          when: g.call(std.less, {
+            a: index,
+            b: g.call(std.arrayLength, { array: input }),
+          }),
+        });
+        g.compute({ workgroupSize: [64, 1, 1] });
+        return g.build();
+      };
+
+      it('runs a compute graph, or reports that the backend cannot', async () => {
+        const compileScale = () =>
+          compile(scaleGraph(), { capabilities: backend.capabilities });
+        if (backend.capabilities?.compute === false) {
+          expect(compileScale).toThrow(/the backend has no compute shaders/);
+          return;
+        }
+        const values = Float32Array.from({ length: 100 }, (_, i) => i - 10);
+        const input = backend.buffers.create({
+          size: values.byteLength,
+          usage: ['storage', 'copy-dst'],
+          initialData: values,
+        });
+        const output = backend.buffers.create({
+          size: values.byteLength,
+          usage: ['storage', 'copy-src', 'copy-dst'],
+        });
+        const runner = new ComputeRunner(backend);
+        runner.dispatch(compileScale(), {
+          values: { input, output, factor: 2.5 },
+          workgroups: [Math.ceil(values.length / 64)],
+        });
+        expect([...new Float32Array(await output.read())]).toEqual(
+          [...values].map((value) => value * 2.5)
+        );
+        runner.destroy();
+      });
+
+      it('processes an image with a two-dimensional dispatch', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        // The luminance of each texel of a 4 × 4 image, in a buffer.
+        const g = new GraphBuilder('luminance');
+        const id = g.builtin('global-invocation-id');
+        const uv = g.call(std.div, {
+          a: g.call(std.add, {
+            a: g.call(
+              std.convert,
+              { value: id.swizzle('xy') },
+              { params: { to: BuiltinTypes.vec2f } }
+            ),
+            b: 0.5,
+          }),
+          b: 4,
+        });
+        const texel = g.call(std.textureSampleLevel, {
+          texture: g.texture('image'),
+          sampler: g.sampler('imageSampler'),
+          uv,
+        });
+        const output = g.storage('luminance', arrayType(BuiltinTypes.f32), {
+          access: 'read-write',
+        });
+        g.write(output, {
+          index: g.call(std.add, {
+            a: g.call(std.mul, { a: id.swizzle('y'), b: 4 }),
+            b: id.swizzle('x'),
+          }),
+          value: g.call(std.dot, {
+            a: texel.swizzle('rgb'),
+            b: [0.2126, 0.7152, 0.0722],
+          }),
+        });
+        g.compute({ workgroupSize: [4, 4, 1] });
+
+        const pixels = Uint8Array.from({ length: 64 }, (_, i) =>
+          i % 4 === 3 ? 255 : (i * 37) % 256
+        );
+        const image = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 4, height: 4 },
+          source: pixels,
+        });
+        const luminance = backend.buffers.create({
+          size: 64,
+          usage: ['storage', 'copy-src'],
+        });
+        const runner = new ComputeRunner(backend);
+        runner.dispatch(compile(g.build()), {
+          values: {
+            image,
+            imageSampler: backend.textures.createSampler({
+              minFilter: 'nearest',
+              magFilter: 'nearest',
+              mipmapFilter: 'nearest',
+            }),
+            luminance,
+          },
+          workgroups: [1, 1],
+        });
+        const result = new Float32Array(await luminance.read());
+        for (let i = 0; i < 16; i++) {
+          const [r, gr, b] = [0, 1, 2].map((c) => pixels[i * 4 + c] / 255);
+          expect(result[i]).toBeCloseTo(
+            0.2126 * r + 0.7152 * gr + 0.0722 * b,
+            5
+          );
+        }
+        runner.destroy();
+      });
+
+      it('samples textures at an explicit level in fragment shaders', async () => {
+        const g = new GraphBuilder('sampled at a level');
+        const texel = g.call(std.textureSampleLevel, {
+          texture: g.texture('map'),
+          sampler: g.sampler('mapSampler'),
+          uv: g.attribute('uv', BuiltinTypes.vec2f),
+          level: 0,
+        });
+        g.surface({ baseColor: texel.swizzle('rgb') });
+        const map = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 1, height: 1 },
+          source: new Uint8Array([0, 255, 128, 255]),
+        });
+        const pixel = await render([
+          {
+            mesh: quad(),
+            material: new Material({
+              graph: g.build(),
+              values: { map, mapSampler: backend.textures.createSampler() },
+            }),
+            transform: at(0),
+          },
+        ]);
+        expectColor(pixel(32, 32), [0, 255, 128, 255]);
+      });
     });
 
     describe('color management', () => {

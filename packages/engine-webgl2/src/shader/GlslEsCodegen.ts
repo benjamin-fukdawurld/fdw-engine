@@ -301,7 +301,8 @@ function emitInstructions(
         }
         break;
       }
-      case 'sample': {
+      case 'sample':
+      case 'sample-level': {
         const texture = arg(instruction, 0);
         const sampler = arg(instruction, 1);
         const combined = samplers.find(
@@ -312,9 +313,14 @@ function emitInstructions(
           throw new Error(`No combined sampler for ${texture} and ${sampler}`);
         }
         // Depth textures read as a float: the depth is the first component.
-        expression = `texture(${combined.name}, ${arg(instruction, 2)})${
-          type.kind === 'scalar' ? '.r' : ''
-        }`;
+        expression = `${
+          op.kind === 'sample-level'
+            ? `textureLod(${combined.name}, ${arg(instruction, 2)}, ${arg(
+                instruction,
+                3
+              )})`
+            : `texture(${combined.name}, ${arg(instruction, 2)})`
+        }${type.kind === 'scalar' ? '.r' : ''}`;
         break;
       }
       case 'construct':

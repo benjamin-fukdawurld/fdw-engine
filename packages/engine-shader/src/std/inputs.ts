@@ -106,6 +106,12 @@ const builtins: Record<string, { type: ShaderType; stage: ShaderStage }> = {
   'instance-index': { type: BuiltinTypes.u32, stage: 'vertex' },
   'frag-coord': { type: BuiltinTypes.vec4f, stage: 'fragment' },
   'front-facing': { type: BuiltinTypes.bool, stage: 'fragment' },
+  // Compute graphs: position of the thread in the grid, in its workgroup, of
+  // its workgroup, and the number of workgroups.
+  'global-invocation-id': { type: BuiltinTypes.vec3u, stage: 'compute' },
+  'local-invocation-id': { type: BuiltinTypes.vec3u, stage: 'compute' },
+  'workgroup-id': { type: BuiltinTypes.vec3u, stage: 'compute' },
+  'num-workgroups': { type: BuiltinTypes.vec3u, stage: 'compute' },
 };
 
 export const builtin: NodeDefinition = {

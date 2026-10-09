@@ -90,10 +90,10 @@ describe('storage buffers', () => {
     expect(() => compile(g.build())).toThrow(/must be a runtime-sized array/);
   });
 
-  it('only reads storage buffers for now', () => {
+  it('only lets compute graphs write storage buffers', () => {
     expect(() =>
       compile(paletteGraph(arrayType(BuiltinTypes.vec4f), 'read-write'))
-    ).toThrow(/only read access is supported/);
+    ).toThrow(/only compute graphs write storage buffers/);
   });
 
   it('rejects storage buffers on backends without them', () => {

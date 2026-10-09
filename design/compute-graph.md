@@ -192,7 +192,9 @@ Le compilateur réutilise ses passes : validation, macros et inlining, optimisat
 const g = new GraphBuilder('scale');
 const index = g.builtin('global-invocation-id').swizzle('x');
 const input = g.storage('input', arrayType(BuiltinTypes.f32));
-const output = g.storageOutput('output', arrayType(BuiltinTypes.f32));
+const output = g.storage('output', arrayType(BuiltinTypes.f32), {
+  access: 'read-write',
+});
 g.write(output, {
   index,
   value: g.call(std.mul, {
@@ -207,6 +209,12 @@ g.write(output, {
 });
 g.compute({ workgroupSize: [64, 1, 1] });
 const program = compile(g.build());
+
+new ComputeRunner(backend).dispatch(program, {
+  values: { input, output, factor: 2.5 },
+  workgroups: [Math.ceil(count / 64)],
+});
+const result = new Float32Array(await output.read());
 ```
 
 ### 6.7 Exécution
@@ -268,7 +276,7 @@ Les buffers gagnent l'usage `storage` (déjà déclaré dans l'API) et une relec
 
 ## 9. Plan d'implémentation
 
-_CG1 et CG2 faits._ CG2 inclut l'entry point `compute` de l'IR et le générateur WGSL, sans lesquels un pipeline de calcul ne pouvait pas être testé ; CG3 en est allégé d'autant.
+_CG1, CG2 et CG3 faits._ CG2 inclut l'entry point `compute` de l'IR et le générateur WGSL, sans lesquels un pipeline de calcul ne pouvait pas être testé. CG3 : `output.compute` (taille de workgroup), `write.storage` (port `array` relié au storage buffer écrit, pour que le type de la valeur soit vérifié), builtins de calcul, `std.textureSampleLevel` (aussi utilisable dans les matériaux), règles du §6.4, layout réduit aux slots utilisés, `ComputeRunner` pour le dispatch direct. Restent du §6.2 : les **storage textures** (`write.texture`, `std.textureLoad`), à faire avec le render graph ou quand un besoin apparaît.
 
 L'étape **RG1** du plan commun ([render graph §13](render-graph.md#13-plan-dimplémentation)) :
 

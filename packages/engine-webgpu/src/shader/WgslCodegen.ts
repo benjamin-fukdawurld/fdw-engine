@@ -284,6 +284,9 @@ function emitInstructions(
       case 'sample':
         expression = `textureSample(${args(instruction)})`;
         break;
+      case 'sample-level':
+        expression = `textureSampleLevel(${args(instruction)})`;
+        break;
       case 'construct':
       case 'convert':
         expression = `${wgslType(type)}(${args(instruction)})`;

@@ -208,6 +208,23 @@ export const textureSample = intrinsic(
   'fragment'
 );
 
+/**
+ * Samples a texture at an explicit level of detail (0 for the full
+ * resolution): available in every stage, where textureSample needs the
+ * derivatives of the fragment stage.
+ */
+export const textureSampleLevel = intrinsic(
+  'textureSampleLevel',
+  'texture-sample-level',
+  [
+    port('texture', BuiltinTypes.texture2d),
+    port('sampler', BuiltinTypes.sampler),
+    port('uv', BuiltinTypes.vec2f),
+    port('level', BuiltinTypes.f32, 0),
+  ],
+  BuiltinTypes.vec4f
+);
+
 export const vec2 = intrinsic(
   'vec2',
   'construct',
@@ -307,6 +324,7 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   equal,
   notEqual,
   textureSample,
+  textureSampleLevel,
   vec2,
   vec3,
   vec4,

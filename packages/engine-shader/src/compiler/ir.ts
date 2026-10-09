@@ -99,6 +99,8 @@ export type IrOp =
   | { readonly kind: 'select' }
   /** textureSample(texture, sampler, uv), implicit level of detail. */
   | { readonly kind: 'sample' }
+  /** textureSampleLevel(texture, sampler, uv, level): explicit level. */
+  | { readonly kind: 'sample-level' }
   /** A vector built from its arguments; a single scalar argument is a splat. */
   | { readonly kind: 'construct' }
   | { readonly kind: 'swizzle'; readonly components: string }
