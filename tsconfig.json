@@ -25,6 +25,9 @@
       "path": "./packages/demo-scenes"
     },
     {
+      "path": "./packages/engine-vulkan"
+    },
+    {
       "path": "./packages/engine-core"
     },
     {

@@ -1,11 +1,11 @@
+import { LogicalBinding, ShaderType, typeToString } from '@fdw/engine-shader';
 import type {
   PhysicalLayoutStrategy,
   PhysicalProgramLayout,
   PhysicalUniformBlock,
   PhysicalUniformMember,
   UniformValue,
-} from '@fdw/engine-backend';
-import { LogicalBinding, ShaderType, typeToString } from '@fdw/engine-shader';
+} from './PhysicalLayout';
 
 const scalars = ['f32', 'i32', 'u32', 'bool'];
 
@@ -27,7 +27,7 @@ function std140(type: ShaderType): { align: number; size: number } {
     return { align: 16, size: type.columns * 16 };
   }
   throw new Error(
-    `${typeToString(type)} is not supported in a GLSL uniform block`
+    `${typeToString(type)} is not supported in a std140 uniform block`
   );
 }
 
@@ -35,6 +35,14 @@ const alignTo = (offset: number, align: number) =>
   Math.ceil(offset / align) * align;
 
 const arrayStride = (element: ShaderType) => alignTo(std140(element).size, 16);
+
+// The stride of the elements of a storage buffer, with the std430 rules:
+// as std140, without rounding the array elements up to 16 bytes (a vec3
+// still takes 16).
+const storageStride = (element: ShaderType) => {
+  const { align, size } = std140(element);
+  return alignTo(size, align);
+};
 
 function uniformBlock(
   resource: Extract<LogicalBinding, { kind: 'uniform-block' }>
@@ -159,9 +167,13 @@ function writeUniform(
   }
 }
 
-// GLSL ES: the groups and bindings of the logical layout are kept, the
-// pipeline maps them to uniform buffer binding points and texture units.
-// Uniform blocks are laid out with the std140 rules.
+/**
+ * The layout of the GLSL family (OpenGL, WebGL2, Vulkan): the groups and
+ * bindings of the logical layout are kept as they are, uniform blocks are
+ * laid out with the std140 rules, storage buffers with the std430 ones.
+ * WebGL2 maps the groups and bindings to uniform buffer binding points and
+ * texture units; Vulkan uses them as descriptor sets and bindings.
+ */
 export const std140LayoutStrategy: PhysicalLayoutStrategy = {
   resolve(layout): PhysicalProgramLayout {
     return {
@@ -171,6 +183,14 @@ export const std140LayoutStrategy: PhysicalLayoutStrategy = {
         bindings: group.bindings.map((resource, binding) =>
           resource.kind === 'uniform-block'
             ? { binding, resource, block: uniformBlock(resource) }
+            : resource.kind === 'storage-buffer'
+            ? {
+                binding,
+                resource,
+                storage: {
+                  elementStride: storageStride(resource.type.element),
+                },
+              }
             : { binding, resource }
         ),
       })),

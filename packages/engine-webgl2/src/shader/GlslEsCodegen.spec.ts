@@ -1,4 +1,7 @@
-import type { PhysicalProgramLayout } from '@fdw/engine-backend';
+import {
+  PhysicalProgramLayout,
+  std140LayoutStrategy,
+} from '@fdw/engine-backend';
 import {
   BuiltinTypes,
   compile,
@@ -12,7 +15,6 @@ import {
 import { describe, expect, it } from 'vitest';
 import { combinedSamplers } from './combinedSamplers';
 import { GlslEsCodegen, glslSamplerType, glslType } from './GlslEsCodegen';
-import { std140LayoutStrategy } from './std140LayoutStrategy';
 
 const codegen = new GlslEsCodegen();
 

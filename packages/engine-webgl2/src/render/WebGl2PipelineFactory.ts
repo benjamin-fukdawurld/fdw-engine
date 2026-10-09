@@ -14,12 +14,12 @@ import {
   PrimitiveTopology,
   RenderPipelineDescriptor,
   VertexBufferLayout,
+  std140LayoutStrategy,
 } from '@fdw/engine-backend';
 import type { CompiledProgram } from '@fdw/engine-shader';
 import { GL, lazy } from '../gl';
 import { combinedSamplers } from '../shader/combinedSamplers';
 import { GlslEsCodegen, glslBlockName } from '../shader/GlslEsCodegen';
-import { std140LayoutStrategy } from '../shader/std140LayoutStrategy';
 
 // Where a resource of a bind group is found: group index and binding.
 interface BindingRef {

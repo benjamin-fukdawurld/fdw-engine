@@ -21,6 +21,9 @@
     },
     {
       "path": "../../packages/engine-backend"
+    },
+    {
+      "path": "../../packages/engine-vulkan"
     }
   ]
 }

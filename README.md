@@ -54,14 +54,14 @@ No graphics-API-specific code belongs in this layer.
 
 Each backend implements the abstract API for a given graphics technology and windowing system.
 
-| Backend              | Technology                 | Windowing         | Status      |
-| -------------------- | -------------------------- | ----------------- | ----------- |
-| `@fdw/engine-webgpu` | WebGPU                     | Browser (canvas)  | In progress |
-| `@fdw/engine-webgl2` | WebGL2                     | Browser (canvas)  | In progress |
-| `@fdw/engine-native` | WebGPU (Dawn), then Vulkan | Native (SDL3)     | In progress |
-| `@fdw/engine-vulkan` | Vulkan                     | Native (e.g. SDL) | Planned     |
-| —                    | DirectX 12                 | Native            | Planned     |
-| —                    | Metal                      | Native            | Planned     |
+| Backend              | Technology                 | Windowing        | Status      |
+| -------------------- | -------------------------- | ---------------- | ----------- |
+| `@fdw/engine-webgpu` | WebGPU                     | Browser (canvas) | In progress |
+| `@fdw/engine-webgl2` | WebGL2                     | Browser (canvas) | In progress |
+| `@fdw/engine-native` | WebGPU (Dawn), then Vulkan | Native (SDL3)    | In progress |
+| `@fdw/engine-vulkan` | Vulkan                     | Native (SDL3)    | In progress |
+| —                    | DirectX 12                 | Native           | Planned     |
+| —                    | Metal                      | Native           | Planned     |
 
 The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface` / `WebGpuOffscreenSurface`, the GPU implementations, and `WgslCodegen`, which generates WGSL from the programs compiled by `@fdw/engine-shader`. The WebGL2 backend provides the same for browsers without WebGPU, with `GlslEsCodegen` generating GLSL ES 3.00 from the same programs.
 
@@ -88,6 +88,7 @@ packages/
   engine-webgl2/        WebGL2 backend
   engine-shader/        Material graph: shader types, graph model, compiler
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)
+  engine-vulkan/        Vulkan backend: HLSL generator (compiled to SPIR-V by DXC)
   demo-scenes/          Scenes shared by the web and native demos
 tests/
   rendering/            Rendering tests shared by the backends (Dawn in Node, WebGL2 in headless Chromium)

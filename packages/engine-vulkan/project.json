@@ -1,0 +1,32 @@
+{
+  "name": "engine-vulkan",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-vulkan/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "test": {
+      "inputs": [
+        "default",
+        "^production",
+        {
+          "json": "{workspaceRoot}/tsconfig.json",
+          "fields": ["compilerOptions"]
+        },
+        {
+          "externalDependencies": ["vitest"]
+        },
+        {
+          "env": "CI"
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.js",
+          "transitive": true
+        },
+        {
+          "env": "VULKAN_SDK"
+        }
+      ]
+    }
+  }
+}

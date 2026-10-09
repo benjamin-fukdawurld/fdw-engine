@@ -27,7 +27,8 @@
       "@fdw/engine-shader": ["packages/engine-shader/src/index.ts"],
       "@fdw/engine-webgl2": ["packages/engine-webgl2/src/index.ts"],
       "@fdw/engine-native": ["packages/engine-native/src/index.ts"],
-      "@fdw/demo-scenes": ["packages/demo-scenes/src/index.ts"]
+      "@fdw/demo-scenes": ["packages/demo-scenes/src/index.ts"],
+      "@fdw/engine-vulkan": ["packages/engine-vulkan/src/index.ts"]
     }
   }
 }

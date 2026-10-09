@@ -45,7 +45,7 @@ engine-webgl2    ← concrete backend (this package)
 | Export                            | Description                                                                                                                                    |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GlslEsCodegen`                   | Implements `ShaderCodegen`: generates a vertex and a fragment shader in GLSL ES 3.00 from the IR of a program compiled by `@fdw/engine-shader` |
-| `std140LayoutStrategy`            | Implements `PhysicalLayoutStrategy`: uniform blocks laid out with the std140 rules                                                             |
+| `std140LayoutStrategy`            | Re-exported from `@fdw/engine-backend`, where it is shared with Vulkan: uniform blocks laid out with the std140 rules                          |
 | `combinedSamplers()`              | The (texture, sampler) pairs sampled by a program, each one a `sampler2D` of the generated code                                                |
 | `glslType()`, `glslSamplerType()` | GLSL names of shader types                                                                                                                     |
 

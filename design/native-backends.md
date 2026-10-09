@@ -138,7 +138,7 @@ Un **`HlslCodegen`**, à côté de `WgslCodegen` et `GlslEsCodegen`, qui produit
 - **Un module** avec les entry points (`vs_main`, `ps_main`, `cs_main`), comme le WGSL.
 - **Les ressources** : `cbuffer` pour les blocs d'uniforms, `Texture2D`, `SamplerState` et `SamplerComparisonState`, `StructuredBuffer` et `RWStructuredBuffer` pour les storage buffers. Les bindings Vulkan s'écrivent `[[vk::binding(b, set)]]`, ceux de Direct3D 12 `register(t0, space1)` : la `PhysicalLayoutStrategy` du backend les choisit.
 - **Les matrices** : `#pragma pack_matrix(column_major)`, et `mul(m, v)` pour garder la convention du moteur.
-- **Les layouts** : les `cbuffer` compilés pour Vulkan suivent par défaut le std140 assoupli de Vulkan. Les offsets sont vérifiés par réflexion du SPIR-V (SPIRV-Reflect ou spirv-cross) dans les tests, contre ceux de la `PhysicalLayoutStrategy`. C'est la même méthode que pour le mat3 en std140.
+- **Les layouts** : ceux de la famille GLSL, std140 pour les blocs d'uniforms et std430 pour les storage buffers (`std140LayoutStrategy`, partagée avec WebGL2 et déplacée dans `engine-backend`). Chaque membre porte son offset (`[[vk::offset]]`), et DXC compile avec `-fvk-use-gl-layout`. Les offsets sont vérifiés par réflexion du SPIR-V (spirv-cross) dans les tests, contre ceux de la `PhysicalLayoutStrategy`.
 - **Les points délicats** : le `discard` après tout le corps (comme en GLSL), la boucle `loop-sum`, `SampleCmpLevelZero` pour les ombres, l'axe Y (voir §8), la profondeur [0, 1] (Vulkan et Direct3D l'utilisent déjà).
 - **DXC** : le binaire officiel (`dxc -spirv -T vs_6_0 …`) en dépendance de développement pour les tests ; à l'exécution, l'addon Vulkan lie `libdxcompiler` et compile au moment de la création du pipeline. La précompilation des programmes reste pour la phase 7.
 
@@ -197,6 +197,22 @@ _N1 fait._
 - **Correction en route** : une relecture en cours quand le device est détruit (fermeture de la fenêtre) est abandonnée sans erreur.
 
 Le redimensionnement interactif et la fermeture se vérifient à la main sur la démo native.
+
+_N2 fait._
+
+- **`@fdw/engine-vulkan`** : `HlslCodegen` (HLSL 2021, Shader Model 6) et les outils du Vulkan SDK pour les tests et l'outillage (`compileHlsl`, `validateSpirv`, `reflectUniformBlocks`, `findTool` : DXC, spirv-val, spirv-cross trouvés par `VULKAN_SDK` ou le `PATH`).
+- **Choix du générateur** :
+  - ressources en `[[vk::binding(binding, set)]]` ; blocs d'uniforms en `ConstantBuffer<T>` avec des offsets explicites ; storage buffers en `StructuredBuffer` / `RWStructuredBuffer` (longueur par `GetDimensions`) ;
+  - `#pragma pack_matrix(column_major)` : les produits avec une matrice deviennent `mul`, les constantes de matrices sont écrites par lignes (les constructeurs HLSL prennent des lignes) ;
+  - `select(condition, ifTrue, ifFalse)` de HLSL 2021, `frac` et `lerp` pour `fract` et `mix` ;
+  - `SampleCmpLevelZero` pour les ombres, utilisable dans la boucle de lumières ;
+  - points d'entrée `vs_main`, `ps_main` (sans couleur pour les programmes depth-only) et `cs_main` ;
+  - varyings entiers en `nointerpolation`.
+  - HLSL n'a pas de valeur système pour le nombre de workgroups : sur Vulkan, le builtin SPIR-V est déclaré directement (`[[vk::ext_builtin_input(24)]]`). Direct3D 12 demandera un autre moyen (une constante du moteur).
+- **Tests** :
+  - sept programmes types (unlit, phong texturé avec tone mapping, pbr avec ombres, variante depth-only masquée, passe plein écran, kernel de calcul, étages bruts) sont compilés par DXC, validés par spirv-val, et leurs offsets comparés par réflexion ;
+  - surtout, **les 40 programmes distincts de la suite de rendu**, enregistrés pendant qu'elle tourne sur Dawn (`tests/rendering/src/hlsl.spec.ts`), passent par le même contrôle.
+  - Sans le Vulkan SDK, ces tests sont sautés ; le cache Nx des tests dépend de `VULKAN_SDK`.
 
 ## 11. Stratégie de test
 

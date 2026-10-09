@@ -1,0 +1,202 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`HlslCodegen > generates a complete program 1`] = `
+"// Generated from graph "textured phong". Do not edit.
+#pragma pack_matrix(column_major)
+
+struct FrameUniforms {
+  [[vk::offset(0)]] float4x4 u_viewProjection;
+  [[vk::offset(64)]] float4x4 u_view;
+  [[vk::offset(128)]] float4x4 u_projection;
+  [[vk::offset(192)]] float3 u_cameraPosition;
+  [[vk::offset(204)]] float u_time;
+  [[vk::offset(208)]] float u_exposure;
+  [[vk::offset(212)]] uint u_lightCount;
+  [[vk::offset(224)]] float4 u_lightPositions[16];
+  [[vk::offset(480)]] float4 u_lightAmbients[16];
+  [[vk::offset(736)]] float4 u_lightDiffuses[16];
+  [[vk::offset(992)]] float4 u_lightSpeculars[16];
+  [[vk::offset(1248)]] float4 u_lightAttenuations[16];
+  [[vk::offset(1504)]] float4 u_lightSpotDirections[16];
+  [[vk::offset(1760)]] float4 u_lightSpotCones[16];
+  [[vk::offset(2016)]] float4 u_lightShadows[16];
+  [[vk::offset(2272)]] float4 u_lightShadowRects[16];
+  [[vk::offset(2528)]] float4x4 u_lightShadowMatrices[16];
+};
+[[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms> frameUniforms;
+
+struct MaterialUniforms {
+  [[vk::offset(0)]] float u_shininess;
+  [[vk::offset(16)]] float3 u_tint;
+};
+[[vk::binding(0, 1)]] ConstantBuffer<MaterialUniforms> materialUniforms;
+
+[[vk::binding(1, 1)]] Texture2D<float4> t_map;
+
+[[vk::binding(2, 1)]] SamplerState s_mapSampler;
+
+struct ObjectUniforms {
+  [[vk::offset(0)]] float4x4 u_world;
+  [[vk::offset(64)]] float3x3 u_normalMatrix;
+};
+[[vk::binding(0, 2)]] ConstantBuffer<ObjectUniforms> objectUniforms;
+
+struct VertexInput {
+  [[vk::location(0)]] float3 a_position : ATTRIBUTE0;
+  [[vk::location(1)]] float3 a_normal : ATTRIBUTE1;
+  [[vk::location(2)]] float2 a_uv : ATTRIBUTE2;
+};
+
+struct Varyings {
+  float4 clipPosition : SV_Position;
+  [[vk::location(0)]] float2 v_uv : VARYING0;
+  [[vk::location(1)]] float3 v_transform3 : VARYING1;
+  [[vk::location(2)]] float4 v_transform : VARYING2;
+};
+
+Varyings vs_main(VertexInput input) {
+  const float4x4 v1 = objectUniforms.u_world; // #c2
+  const float4x4 v2 = frameUniforms.u_viewProjection; // #c4
+  const float3x3 v3 = objectUniforms.u_normalMatrix; // #c8
+  const float3 v4 = input.a_position;
+  const float v5 = 1.0;
+  const float4 v6 = float4(v4, v5); // #c1
+  const float3 v7 = input.a_normal;
+  const float3 v8 = mul(v3, v7); // #c9
+  const float4 v9 = mul(v1, v6); // #c3
+  const float4 v10 = mul(v2, v9); // #c5
+  const float2 v11 = input.a_uv;
+  Varyings result;
+  result.clipPosition = v10;
+  result.v_uv = v11;
+  result.v_transform3 = v8;
+  result.v_transform = v9;
+  return result;
+}
+
+float4 ps_main(Varyings input) : SV_Target0 {
+  const float3 v3_tint = materialUniforms.u_tint; // #n5
+  const float v4_shininess = materialUniforms.u_shininess; // #n7
+  const float v5 = frameUniforms.u_exposure; // #c12
+  const float3 v6 = frameUniforms.u_cameraPosition; // #c18
+  const float v7 = 1.0; // #c80
+  const float2 v8 = input.v_uv;
+  const float4 v9 = t_map.Sample(s_mapSampler, v8); // #n4
+  const float v10 = 1.0;
+  const float v11 = max(v4_shininess, v10); // #c22
+  const float3 v12 = v9.rgb;
+  const float3 v13 = (v12 * v3_tint); // #n6
+  const float3 v14 = input.v_transform3;
+  const float4 v15 = input.v_transform;
+  const float3 v16 = normalize(v14); // #c20
+  const float3 v17 = v15.xyz;
+  const float3 v18 = (v6 - v17); // #c27
+  const float3 v19 = normalize(v18); // #c30
+  const uint v20 = frameUniforms.u_lightCount;
+  float3 v93 = (float3)0;
+  for (uint v21 = 0u; v21 < v20; v21 = v21 + 1u) {
+    const float4 v23 = frameUniforms.u_lightPositions[v21];
+    const float4 v25 = frameUniforms.u_lightAmbients[v21];
+    const float3 v26 = v25.xyz;
+    const float4 v28 = frameUniforms.u_lightDiffuses[v21];
+    const float3 v29 = v28.xyz;
+    const float4 v31 = frameUniforms.u_lightSpeculars[v21];
+    const float3 v32 = v31.xyz;
+    const float4 v34 = frameUniforms.u_lightAttenuations[v21];
+    const float3 v35 = v34.xyz;
+    const float4 v37 = frameUniforms.u_lightSpotDirections[v21];
+    const float3 v38 = v37.xyz;
+    const float4 v40 = frameUniforms.u_lightSpotCones[v21];
+    const float2 v41 = v40.xy;
+    const float v42 = v41.x;
+    const float v43 = v41.y;
+    const float v44 = (v42 - v43); // #c23
+    const float3 v45 = float3(1.0, 1.0, 1.0);
+    const float3 v46 = (v32 * v45); // #c26
+    const float3 v47 = (v26 * v13); // #c24
+    const float3 v48 = (v29 * v13); // #c25
+    const float v49 = v23.w;
+    const float3 v50 = ((float3)v49);
+    const float3 v51 = (v17 * v50); // #c28
+    const float3 v52 = v23.xyz;
+    const float3 v53 = (v52 - v51); // #c31
+    const float3 v54 = normalize(v53); // #c32
+    const float v55 = length(v53); // #c33
+    const float3 v56 = float3(-1.0, -1.0, -1.0);
+    const float3 v57 = (v54 * v56); // #c34
+    const float v58 = dot(v16, v54); // #c35
+    const float v59 = v35.y;
+    const float v60 = (v59 * v55); // #c37
+    const float v61 = (v55 * v55); // #c38
+    const float v62 = dot(v57, v38); // #c39
+    const float3 v63 = reflect(v57, v16); // #c42
+    const float v64 = 0.0;
+    const float v65 = max(v58, v64); // #c40
+    const float v66 = 0.0;
+    const float v67 = step(v66, v58); // #c41
+    const float v68 = v35.x;
+    const float v69 = (v68 + v60); // #c43
+    const float v70 = v35.z;
+    const float v71 = (v70 * v61); // #c44
+    const float v72 = (v62 - v43); // #c45
+    const float v73 = dot(v19, v63); // #c47
+    const float3 v74 = ((float3)v65);
+    const float3 v75 = (v48 * v74); // #c46
+    const float v76 = (v69 + v71); // #c48
+    const float v77 = (v72 / v44); // #c49
+    const float v78 = 0.0;
+    const float v79 = max(v73, v78); // #c50
+    const float v80 = 1.0;
+    const float v81 = (v80 / v76); // #c51
+    const float v82 = saturate(v77); // #c52
+    const float v83 = pow(v79, v11); // #c53
+    const float v84 = (v81 * v82); // #c54
+    const float v85 = (v83 * v67); // #c55
+    const float v86 = (v84 * v7); // #c56
+    const float3 v87 = ((float3)v85);
+    const float3 v88 = (v46 * v87); // #c57
+    const float3 v89 = (v75 + v88); // #c58
+    const float3 v90 = ((float3)v86);
+    const float3 v91 = (v89 * v90); // #c59
+    const float3 v92 = (v47 + v91); // #c60
+    v93 = v93 + v92;
+  }
+  const float3 v94 = float3(0.0, 0.0, 0.0);
+  const float3 v95 = (v93 + v94); // #c62
+  const float v96 = 1.0;
+  const float4 v97 = float4(v95, v96); // #c63
+  const float3 v98 = v97.xyz;
+  const float3 v99 = ((float3)v5);
+  const float3 v100 = (v98 * v99); // #c13
+  const float3 v101 = float3(2.51, 2.51, 2.51);
+  const float3 v102 = (v100 * v101); // #c64
+  const float3 v103 = float3(2.43, 2.43, 2.43);
+  const float3 v104 = (v100 * v103); // #c65
+  const float3 v105 = float3(0.03, 0.03, 0.03);
+  const float3 v106 = (v102 + v105); // #c66
+  const float3 v107 = float3(0.59, 0.59, 0.59);
+  const float3 v108 = (v104 + v107); // #c67
+  const float3 v109 = (v100 * v106); // #c68
+  const float3 v110 = (v100 * v108); // #c69
+  const float3 v111 = float3(0.14, 0.14, 0.14);
+  const float3 v112 = (v110 + v111); // #c70
+  const float3 v113 = (v109 / v112); // #c71
+  const float3 v114 = saturate(v113); // #c72
+  const float3 v115 = saturate(v114); // #c73
+  const float3 v116 = float3(12.92, 12.92, 12.92);
+  const float3 v117 = (v115 * v116); // #c74
+  const float3 v118 = float3(0.4166666666666667, 0.4166666666666667, 0.4166666666666667);
+  const float3 v119 = pow(v115, v118); // #c75
+  const float3 v120 = float3(0.0031308, 0.0031308, 0.0031308);
+  const float3 v121 = step(v120, v115); // #c76
+  const float3 v122 = float3(1.055, 1.055, 1.055);
+  const float3 v123 = (v119 * v122); // #c77
+  const float3 v124 = float3(0.055, 0.055, 0.055);
+  const float3 v125 = (v123 - v124); // #c78
+  const float3 v126 = lerp(v117, v125, v121); // #c79
+  const float v127 = v97.w;
+  const float4 v128 = float4(v126, v127); // #c16
+  return v128;
+}
+"
+`;

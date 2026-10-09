@@ -1,32 +1,12 @@
-import { WebGpuEngine, WebGpuOffscreenSurface } from '@fdw/engine-webgpu';
 import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
-import { describeRenderer, RenderingFixture, size } from './suite';
+import { createDawnFixture, dawn } from './dawnFixture';
+import { describeRenderer } from './suite';
 
 // The shared rendering tests on WebGPU, with Dawn (the WebGPU implementation
 // of Chrome) running in Node. Skipped where Dawn cannot load.
-const dawn = await import('webgpu').catch(() => undefined);
-
-async function createFixture(): Promise<
-  RenderingFixture & { engine: WebGpuEngine }
-> {
-  Object.assign(globalThis, dawn!.globals);
-  const engine = new WebGpuEngine({ gpu: dawn!.create([]) });
-  await engine.init();
-  const surface = new WebGpuOffscreenSurface(size, size);
-  await surface.init(engine);
-  return {
-    engine,
-    backend: engine.backend!,
-    surface,
-    readPixels: () => surface.readPixels(),
-    destroy: async () => {
-      surface.destroy();
-      await engine.destroy();
-    },
-  };
-}
+const createFixture = () => createDawnFixture();
 
 describeRenderer('Renderer on WebGPU (Dawn)', createFixture, { skip: !dawn });
 

@@ -97,6 +97,7 @@ Interfaces between the backend-independent programs compiled by `@fdw/engine-sha
 | Export | Kind | Description |
 | --- | --- | --- |
 | `PhysicalLayoutStrategy` | interface | Resolves a logical `ProgramLayout` into binding numbers and uniform block offsets, following the rules of a backend |
+| `std140LayoutStrategy` | const | The layout of the GLSL family (WebGL2, Vulkan): std140 uniform blocks, std430 storage buffers, the groups and bindings kept |
 | `PhysicalProgramLayout`, `PhysicalBindGroup`, `PhysicalBinding`, `PhysicalUniformBlock` | type | The resolved layout |
 | `ShaderCodegen` | interface | Translates the IR of a program into the language of a backend |
 | `ShaderLanguage`, `ShaderSources` | type | Target languages and generated sources |
