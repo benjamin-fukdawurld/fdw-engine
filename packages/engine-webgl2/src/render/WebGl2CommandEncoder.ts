@@ -1,4 +1,5 @@
 import type {
+  GpuAttachmentTarget,
   GpuBindGroup,
   GpuBuffer,
   GpuCommandBuffer,
@@ -15,8 +16,17 @@ import { WebGl2Buffer } from '../gpu/WebGl2Buffer';
 import { WebGl2Sampler, WebGl2Texture } from '../gpu/WebGl2Texture';
 import { WebGl2BindGroup, WebGl2RenderPipeline } from './WebGl2PipelineFactory';
 import { WebGl2RenderTarget } from './WebGl2RenderTarget';
+import { FramebufferAttachment, framebufferFor } from '../gpu/framebuffers';
 
 type Command = (gl: WebGL2RenderingContext) => void;
+
+// A render target or a texture, as an attachment of a framebuffer.
+function attachment(target: unknown, what: string): FramebufferAttachment {
+  if (target instanceof WebGl2RenderTarget || target instanceof WebGl2Texture) {
+    return target;
+  }
+  throw new Error(`${what} was not created by the WebGL2 backend`);
+}
 
 function unwrap<T>(
   value: unknown,
@@ -285,14 +295,17 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       throw new Error('The WebGL2 backend renders to one color target');
     }
     const [color] = descriptor.colorAttachments;
-    const target = unwrap(color.target, WebGl2RenderTarget, 'The color target');
+    const target = attachment(color.target, 'The color target');
     const depth = descriptor.depthAttachment;
     const depthTarget = depth
-      ? unwrap(depth.target, WebGl2RenderTarget, 'The depth target')
+      ? attachment(depth.target, 'The depth target')
       : undefined;
 
     this._commands.push((gl) => {
-      gl.bindFramebuffer(GL.FRAMEBUFFER, target.framebuffer(depthTarget));
+      gl.bindFramebuffer(
+        GL.FRAMEBUFFER,
+        framebufferFor(gl, target, depthTarget)
+      );
       gl.viewport(0, 0, target.width, target.height);
       gl.disable(GL.SCISSOR_TEST);
       let mask = 0;
@@ -317,6 +330,66 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       }
     });
     return new WebGl2RenderPassEncoder(this._commands);
+  }
+
+  copyBufferToBuffer(
+    source: GpuBuffer,
+    sourceOffset: number,
+    destination: GpuBuffer,
+    destinationOffset: number,
+    size: number
+  ): void {
+    const from = unwrap(source, WebGl2Buffer, 'The source buffer');
+    const to = unwrap(destination, WebGl2Buffer, 'The destination buffer');
+    this._commands.push((gl) => {
+      gl.bindBuffer(GL.COPY_READ_BUFFER, from.buffer);
+      gl.bindBuffer(GL.COPY_WRITE_BUFFER, to.buffer);
+      gl.copyBufferSubData(
+        GL.COPY_READ_BUFFER,
+        GL.COPY_WRITE_BUFFER,
+        sourceOffset,
+        destinationOffset,
+        size
+      );
+    });
+  }
+
+  copyTextureToTexture(
+    source: GpuAttachmentTarget,
+    destination: GpuAttachmentTarget,
+    size: { readonly width: number; readonly height: number }
+  ): void {
+    const from = attachment(source, 'The source texture');
+    // A texture, or the texture of a color render target.
+    const to =
+      destination instanceof WebGl2RenderTarget
+        ? {
+            target: GL.TEXTURE_2D,
+            texture: destination.texture,
+            height: destination.height,
+          }
+        : unwrap(destination, WebGl2Texture, 'The destination texture');
+    this._commands.push((gl) => {
+      if (!to.texture) {
+        throw new Error('The destination of a copy must be a color texture');
+      }
+      // Read through a framebuffer of the source, written to the texture.
+      gl.bindFramebuffer(GL.READ_FRAMEBUFFER, framebufferFor(gl, from));
+      gl.bindTexture(to.target, to.texture);
+      // The top rows of the images: the last ones in storage, as OpenGL
+      // stores images bottom row first.
+      gl.copyTexSubImage2D(
+        to.target,
+        0,
+        0,
+        to.height - size.height,
+        0,
+        from.height - size.height,
+        size.width,
+        size.height
+      );
+      gl.bindFramebuffer(GL.READ_FRAMEBUFFER, null);
+    });
   }
 
   beginComputePass(): GpuComputePassEncoder {

@@ -1,4 +1,5 @@
 import type {
+  GpuAttachmentTarget,
   GpuBindGroup,
   GpuComputePassEncoder,
   GpuComputePipeline,
@@ -11,6 +12,7 @@ import type {
   RenderPassDescriptor,
 } from '@fdw/engine-backend';
 import { Buffer } from '../gpu/BufferFactory';
+import { Texture } from '../gpu/Texture';
 import {
   WebGpuBindGroup,
   WebGpuComputePipeline,
@@ -27,6 +29,30 @@ function unwrap<T>(
     throw new Error(`${what} was not created by the WebGPU backend`);
   }
   return value;
+}
+
+// The view rendered to, for a render target or a texture.
+function attachmentView(target: unknown, what: string): GPUTextureView {
+  if (target instanceof WebGpuRenderTarget) {
+    return target.view;
+  }
+  const texture = unwrap(target, Texture, what);
+  if (!texture.view) {
+    throw new Error(`${what} was destroyed`);
+  }
+  return texture.view;
+}
+
+// The texture behind a render target or a texture, for copies.
+function gpuTexture(target: unknown, what: string): GPUTexture {
+  const texture =
+    target instanceof WebGpuRenderTarget
+      ? target.texture
+      : unwrap(target, Texture, what).texture;
+  if (!texture) {
+    throw new Error(`${what} has no texture to copy (a canvas image?)`);
+  }
+  return texture;
 }
 
 class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
@@ -116,8 +142,7 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
     const pass = this._encoder.beginRenderPass({
       label: descriptor.label,
       colorAttachments: descriptor.colorAttachments.map((attachment) => ({
-        view: unwrap(attachment.target, WebGpuRenderTarget, 'The color target')
-          .view,
+        view: attachmentView(attachment.target, 'The color target'),
         loadOp: attachment.load,
         storeOp: 'store',
         clearValue: attachment.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },
@@ -125,8 +150,7 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
       ...(depth
         ? {
             depthStencilAttachment: {
-              view: unwrap(depth.target, WebGpuRenderTarget, 'The depth target')
-                .view,
+              view: attachmentView(depth.target, 'The depth target'),
               depthLoadOp: depth.load,
               depthStoreOp: 'store',
               depthClearValue: depth.clearValue ?? 1,
@@ -148,6 +172,34 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
   beginComputePass(label?: string): GpuComputePassEncoder {
     return new WebGpuComputePassEncoder(
       this._encoder.beginComputePass(label ? { label } : {})
+    );
+  }
+
+  copyBufferToBuffer(
+    source: GpuBuffer,
+    sourceOffset: number,
+    destination: GpuBuffer,
+    destinationOffset: number,
+    size: number
+  ): void {
+    this._encoder.copyBufferToBuffer(
+      unwrap(source, Buffer, 'The source buffer').buffer,
+      sourceOffset,
+      unwrap(destination, Buffer, 'The destination buffer').buffer,
+      destinationOffset,
+      size
+    );
+  }
+
+  copyTextureToTexture(
+    source: GpuAttachmentTarget,
+    destination: GpuAttachmentTarget,
+    size: { readonly width: number; readonly height: number }
+  ): void {
+    this._encoder.copyTextureToTexture(
+      { texture: gpuTexture(source, 'The source texture') },
+      { texture: gpuTexture(destination, 'The destination texture') },
+      [size.width, size.height]
     );
   }
 

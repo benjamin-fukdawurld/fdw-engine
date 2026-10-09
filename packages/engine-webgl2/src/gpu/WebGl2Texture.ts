@@ -13,6 +13,7 @@ import type {
 } from '@fdw/engine-backend';
 import { GL, lazy } from '../gl';
 import { glTextureFormat } from './formats';
+import { FramebufferAttachment, releaseFramebuffers } from './framebuffers';
 
 const textureTargets = lazy(
   (): Record<string, GLenum> => ({
@@ -29,7 +30,7 @@ export type WebGl2TextureSource = TexImageSource;
 const isImageSource = (source: unknown): source is TexImageSource =>
   typeof source === 'object' && source !== null && !ArrayBuffer.isView(source);
 
-export class WebGl2Texture implements GpuTexture {
+export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
   readonly target: GLenum;
   private _texture?: WebGLTexture;
 
@@ -60,6 +61,28 @@ export class WebGl2Texture implements GpuTexture {
     _gl.texParameteri(target, GL.TEXTURE_MAX_LEVEL, 0);
   }
 
+  get width(): number {
+    return this.dimensions.width;
+  }
+
+  get height(): number {
+    return this.dimensions.height ?? 1;
+  }
+
+  // Textures can be rendered to: the first level of a 2d texture.
+  attachTo(gl: WebGL2RenderingContext, point: GLenum): void {
+    if (this.target !== GL.TEXTURE_2D) {
+      throw new Error('Only 2d textures can be rendered to');
+    }
+    gl.framebufferTexture2D(
+      GL.FRAMEBUFFER,
+      point,
+      GL.TEXTURE_2D,
+      this.texture,
+      0
+    );
+  }
+
   get texture(): WebGLTexture {
     if (!this._texture) {
       throw new Error(`Texture "${this.label ?? '(unlabeled)'}" was destroyed`);
@@ -72,10 +95,14 @@ export class WebGl2Texture implements GpuTexture {
     const { format, type, bytesPerPixel } = glTextureFormat(this.format);
     const { width, height = 1, layers = 1 } = this.dimensions;
     gl.bindTexture(this.target, this.texture);
-    // Rows are tightly packed, images are uploaded as they are: no vertical
-    // flip, no premultiplication, as copyExternalImageToTexture in WebGPU.
+    // Rows are tightly packed, without premultiplication, as
+    // copyExternalImageToTexture in WebGPU. 2d textures are stored bottom row
+    // first, like the images OpenGL renders: the first row of the data goes
+    // last, and the shaders sample at (u, 1 - v) (see GlslEsCodegen). Uploaded
+    // and rendered textures then read the same way, with v pointing down as
+    // in WebGPU.
     gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
-    gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, this.target === GL.TEXTURE_2D);
     gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
     if (isImageSource(source)) {
@@ -146,6 +173,7 @@ export class WebGl2Texture implements GpuTexture {
   }
 
   destroy(): void {
+    releaseFramebuffers(this._gl, this);
     if (this._texture) {
       this._gl.deleteTexture(this._texture);
       this._texture = undefined;

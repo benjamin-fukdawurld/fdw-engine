@@ -21,6 +21,14 @@ export class Texture implements GpuTexture {
     this.dimensions = config.dimensions;
   }
 
+  get width(): number {
+    return this.dimensions.width;
+  }
+
+  get height(): number {
+    return this.dimensions.height ?? 1;
+  }
+
   get label(): string | undefined {
     return this._texture?.label;
   }

@@ -195,7 +195,7 @@ describe('GlslEsCodegen', () => {
     expect(fragment).toContain('precision highp sampler2D;');
     expect(fragment).toContain('uniform sampler2D ts0_map_mapSampler;');
     expect(fragment).toContain(
-      'vec4 v4_texel = texture(ts0_map_mapSampler, v3); // #n4'
+      'vec4 v4_texel = texture(ts0_map_mapSampler, vec2(v3.x, 1.0 - v3.y)); // #n4'
     );
     // Declared in both stages, as GLSL requires shared uniforms to match.
     expect(vertex).toContain('uniform sampler2D ts0_map_mapSampler;');

@@ -197,6 +197,8 @@ function fakeBackend() {
       beginComputePass: () => {
         throw new Error('no compute in the fake backend');
       },
+      copyBufferToBuffer: () => undefined,
+      copyTextureToTexture: () => undefined,
       beginRenderPass: () => ({
         setPipeline: (pipeline) => {
           pipelineLabel = pipeline.label ?? '';

@@ -413,6 +413,15 @@ Les pipelines et passes de calcul sont décrits dans le [compute graph](compute-
 
 ## 13. Plan d'implémentation
 
+_RG2 fait._ `RenderGraph` et `RenderGraphRunner` (`engine-core/src/graph`), avec deux ajustements par rapport au §6.4 :
+
+- l'exécution passe par un **`RenderGraphRunner`** de longue durée (`runner.execute(graph, { size })`), qui garde le pool de ressources et le cache de compilation d'une frame à l'autre ; le graphe, lui, est reconstruit à chaque frame ;
+- la déclaration d'une passe rend un objet : ses sorties (des handles typés) et sa fonction `execute`. `addRasterPass` rend les sorties, par exemple `opaque.color`.
+
+Une écriture qui efface (`load: 'clear'`) ne dépend pas de la version précédente, qui peut donc être supprimée par le culling ; une passe n'utilise une ressource qu'une fois. L'API abstraite a gagné les usages des textures (une texture peut être un attachment), les copies (`copyBufferToBuffer`, `copyTextureToTexture`) et la méthode optionnelle `transition()` ; les transitions initiales des ressources importées ne sont pas encore émises.
+
+**Orientation des images en WebGL2.** OpenGL stocke les images rendues de bas en haut. Pour que les images rendues et chargées se lisent de la même façon (ce que demandent les post-traitements), toutes les textures 2d de WebGL2 sont stockées de bas en haut : les chargements sont retournés (`UNPACK_FLIP_Y`), les shaders échantillonnent à `(u, 1 - v)`, et les copies prennent les dernières lignes du stockage. L'API garde la convention de WebGPU (v vers le bas, origine en haut à gauche).
+
 L'étape RG1 (storage buffers et calcul) est décrite dans le [compute graph](compute-graph.md#9-plan-dimplémentation). Les étapes du render graph :
 
 | Étape                                     | Contenu                                                                                                                                                                     | Critère de fin                                                                                  |

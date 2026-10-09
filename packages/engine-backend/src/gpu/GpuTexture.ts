@@ -59,11 +59,22 @@ export type GpuTextureDimensions = {
   layers?: number;
 };
 
+// How a texture can be used: sampled by shaders, written by compute stages,
+// rendered to, copied from or to.
+export type GpuTextureUsage =
+  | 'sampled'
+  | 'storage'
+  | 'render-attachment'
+  | 'copy-src'
+  | 'copy-dst';
+
 export interface GpuTextureConfiguration {
   label?: string;
   type: GpuTextureType;
   format: GpuTextureFormat;
   dimensions: GpuTextureDimensions;
+  // Defaults to sampled and copy-dst (and render-attachment for images).
+  usage?: readonly GpuTextureUsage[];
 }
 
 export interface GpuTexture extends Readonly<GpuTextureConfiguration> {

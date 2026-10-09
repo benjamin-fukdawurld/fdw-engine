@@ -42,7 +42,7 @@ layout(location = 0) out vec4 o_color;
 void main() {
   vec4 v3_tint = materialUniforms.u_tint; // #n5
   vec2 v4 = v_uv;
-  vec4 v5 = texture(ts0_diffuseMap_diffuseSampler, v4); // #n4
+  vec4 v5 = texture(ts0_diffuseMap_diffuseSampler, vec2(v4.x, 1.0 - v4.y)); // #n4
   vec4 v6_color = v5 * v3_tint; // #n6
   vec3 v7 = v6_color.rgb;
   float v8 = v6_color.a;

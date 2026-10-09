@@ -13,6 +13,8 @@ import {
   BaseLight,
   Camera,
   ComputeRunner,
+  RenderGraph,
+  RenderGraphRunner,
   DirectionalLight,
   Material,
   Mesh,
@@ -447,6 +449,64 @@ export function describeRenderer(
       ]);
       // Two layers of 0.5 × blue over black: 0.75 × 255.
       expectColor(pixel(32, 32), [0, 0, 191, 255]);
+    });
+
+    describe('render graph', () => {
+      it('renders into transient textures and copies them to the surface', async () => {
+        const runner = new RenderGraphRunner(backend);
+        const frame = (color: { r: number; g: number; b: number }) => {
+          const graph = new RenderGraph();
+          const backbuffer = graph.importTexture(
+            'backbuffer',
+            surface.getCurrentTarget()
+          );
+          // Half of the frame: the copy fills the top left quarter.
+          const half = graph.createTexture('half', {
+            format: 'rgba8unorm',
+            size: { relative: 0.5 },
+          });
+          const filled = graph.addRasterPass('fill', (pass) => ({
+            color: pass.writeColor(half, {
+              load: 'clear',
+              clearValue: { ...color, a: 1 },
+            }),
+            execute: () => undefined,
+          }));
+          // A clear of the surface, then the copy over it.
+          const cleared = graph.addRasterPass('clear', (pass) => ({
+            color: pass.writeColor(backbuffer, { load: 'clear' }),
+            execute: () => undefined,
+          }));
+          graph.addCopyPass('copy', (pass) => {
+            const source = pass.read(filled.color, 'copy-src');
+            const destination = pass.write(cleared.color, 'copy-dst');
+            return {
+              execute: (context) =>
+                context.encoder.copyTextureToTexture(
+                  context.texture(source),
+                  context.texture(destination),
+                  { width: size / 2, height: size / 2 }
+                ),
+            };
+          });
+          runner.execute(graph);
+        };
+        frame({ r: 1, g: 0, b: 0 });
+        let pixels = await fixture.readPixels();
+        const at = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        expect(at(8, 8)).toEqual([255, 0, 0, 255]);
+        expect(at(48, 48)).toEqual([0, 0, 0, 255]);
+
+        // The next frame reuses the compilation and the texture.
+        frame({ r: 0, g: 0, b: 1 });
+        pixels = await fixture.readPixels();
+        expect(at(8, 8)).toEqual([0, 0, 255, 255]);
+        expect(runner.compilations).toBe(1);
+        expect(runner.created).toBe(1);
+        runner.destroy();
+      });
     });
 
     describe('compute graphs', () => {

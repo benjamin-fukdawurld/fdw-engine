@@ -7,9 +7,21 @@ import {
   GpuTextureFactory,
   GpuTextureFormatName,
   GpuTextureFormatNames,
+  GpuTextureUsage,
 } from '@fdw/engine-backend';
 import { Texture } from './Texture';
 import { Sampler } from './Sampler';
+
+function textureUsageFlags(usage: readonly GpuTextureUsage[]): number {
+  const flags: Record<GpuTextureUsage, number> = {
+    sampled: GPUTextureUsage.TEXTURE_BINDING,
+    storage: GPUTextureUsage.STORAGE_BINDING,
+    'render-attachment': GPUTextureUsage.RENDER_ATTACHMENT,
+    'copy-src': GPUTextureUsage.COPY_SRC,
+    'copy-dst': GPUTextureUsage.COPY_DST,
+  };
+  return usage.reduce((all, name) => all | flags[name], 0);
+}
 
 // ImageBitmap only exists in browsers: guard the check for other runtimes.
 const isImageBitmap = (source: unknown): source is ImageBitmap =>
@@ -30,7 +42,8 @@ export class TextureFactory
       readwrite?: boolean;
     }
   ): GpuTexture {
-    const { type, format, dimensions, source, readwrite, label } = descriptor;
+    const { type, format, dimensions, source, readwrite, label, usage } =
+      descriptor;
     const { width, height = 1, layers = 1 } = dimensions;
 
     const textureDescriptor: GPUTextureDescriptor = {
@@ -41,8 +54,11 @@ export class TextureFactory
       },
       format: TextureFactory.textureFormatToGPUTextureFormat(format),
       usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
+        (usage
+          ? textureUsageFlags(usage)
+          : GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST) |
+        // Uploads need these.
+        (source ? GPUTextureUsage.COPY_DST : 0) |
         (readwrite || isImageBitmap(source)
           ? GPUTextureUsage.RENDER_ATTACHMENT
           : 0),

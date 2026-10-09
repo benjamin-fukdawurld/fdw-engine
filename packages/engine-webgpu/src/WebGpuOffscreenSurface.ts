@@ -58,7 +58,8 @@ export class WebGpuOffscreenSurface implements Surface {
         usage:
           GPUTextureUsage.RENDER_ATTACHMENT |
           GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.COPY_SRC,
+          GPUTextureUsage.COPY_SRC |
+          GPUTextureUsage.COPY_DST,
       });
       this._target = new WebGpuRenderTarget(
         texture.createView(),

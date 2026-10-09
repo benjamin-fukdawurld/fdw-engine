@@ -130,14 +130,18 @@ export interface GpuRenderTarget {
   readonly format: GpuTextureFormat;
 }
 
+// What a render pass draws into: a render target (a surface image) or a
+// texture created with the render-attachment usage.
+export type GpuAttachmentTarget = GpuRenderTarget | GpuTexture;
+
 export interface RenderPassColorAttachment {
-  readonly target: GpuRenderTarget;
+  readonly target: GpuAttachmentTarget;
   readonly load: 'clear' | 'load';
   readonly clearValue?: IColor;
 }
 
 export interface RenderPassDepthAttachment {
-  readonly target: GpuRenderTarget;
+  readonly target: GpuAttachmentTarget;
   readonly load: 'clear' | 'load';
   readonly clearValue?: number;
 }
@@ -172,8 +176,46 @@ export interface GpuComputePassEncoder {
 // Opaque recorded commands.
 export type GpuCommandBuffer = object;
 
+// How a pass uses a resource, for the synchronization of the explicit APIs
+// (Vulkan, Direct3D 12).
+export type ResourceUsage =
+  | 'color-attachment'
+  | 'depth-attachment'
+  | 'depth-read'
+  | 'sampled'
+  | 'storage-read'
+  | 'storage-write'
+  | 'uniform'
+  | 'vertex'
+  | 'index'
+  | 'indirect'
+  | 'copy-src'
+  | 'copy-dst';
+
+export interface ResourceTransition {
+  readonly resource: GpuAttachmentTarget | GpuBuffer;
+  readonly from: ResourceUsage;
+  readonly to: ResourceUsage;
+}
+
 export interface GpuCommandEncoder {
   beginRenderPass(descriptor: RenderPassDescriptor): GpuRenderPassEncoder;
+  copyBufferToBuffer(
+    source: GpuBuffer,
+    sourceOffset: number,
+    destination: GpuBuffer,
+    destinationOffset: number,
+    size: number
+  ): void;
+  // Copies the top left width × height texels of the first level.
+  copyTextureToTexture(
+    source: GpuAttachmentTarget,
+    destination: GpuAttachmentTarget,
+    size: { readonly width: number; readonly height: number }
+  ): void;
+  // Barriers before the next pass, on the backends with explicit
+  // synchronization; absent elsewhere.
+  transition?(transitions: readonly ResourceTransition[]): void;
   // Throws on backends without compute stages (capability 'compute').
   beginComputePass(label?: string): GpuComputePassEncoder;
   finish(): GpuCommandBuffer;

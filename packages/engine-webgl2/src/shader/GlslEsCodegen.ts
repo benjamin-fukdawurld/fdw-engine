@@ -312,14 +312,21 @@ function emitInstructions(
         if (!combined) {
           throw new Error(`No combined sampler for ${texture} and ${sampler}`);
         }
+        // 2d textures are stored bottom row first (see WebGl2Texture): v is
+        // flipped, to point down as in WebGPU.
+        const uv = arg(instruction, 2);
+        const coordinates =
+          combined.type.dimension === '2d'
+            ? `vec2(${uv}.x, 1.0 - ${uv}.y)`
+            : uv;
         // Depth textures read as a float: the depth is the first component.
         expression = `${
           op.kind === 'sample-level'
-            ? `textureLod(${combined.name}, ${arg(instruction, 2)}, ${arg(
+            ? `textureLod(${combined.name}, ${coordinates}, ${arg(
                 instruction,
                 3
               )})`
-            : `texture(${combined.name}, ${arg(instruction, 2)})`
+            : `texture(${combined.name}, ${coordinates})`
         }${type.kind === 'scalar' ? '.r' : ''}`;
         break;
       }

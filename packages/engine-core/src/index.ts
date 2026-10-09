@@ -3,3 +3,4 @@ export * from './Transform';
 export * from './light';
 export * from './render';
 export * from './compute';
+export * from './graph';
