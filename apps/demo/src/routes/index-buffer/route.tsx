@@ -95,7 +95,7 @@ const cubeIndices = new Uint16Array([
 ]);
 
 function RouteComponent() {
-  const [rotation, setRotation] = useState<[number, number]>([0, 0]);
+  const [rotation] = useState<[number, number]>([0, 0]);
 
   return (
     <Layout

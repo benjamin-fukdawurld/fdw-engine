@@ -445,6 +445,15 @@ describe('compile', () => {
       expect(compile(renamed).programKey).toBe(compile(graph).programKey);
     });
 
+    it('does not depend on the labels', () => {
+      const graph = texturedUnlit();
+      const relabeled: MaterialGraphData = {
+        ...graph,
+        nodes: graph.nodes.map((node) => ({ ...node, label: `l_${node.id}` })),
+      };
+      expect(compile(relabeled).programKey).toBe(compile(graph).programKey);
+    });
+
     it('changes with the structure of the graph', () => {
       const constant = (value: number) => {
         const g = new GraphBuilder('constant');

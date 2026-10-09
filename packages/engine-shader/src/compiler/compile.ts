@@ -37,7 +37,7 @@ import { WorkingGraph } from './WorkingGraph';
  *
  * @group Compilation
  */
-export const CompilerVersion = 2;
+export const CompilerVersion = 3;
 
 /**
  * Limits of the target backend that the compiler checks.
@@ -324,7 +324,8 @@ function buildLayout(nodes: Iterable<ResolvedNode>): ProgramLayout {
 
 // Merkle hash of the optimized graph: each node is hashed from its content
 // and the hashes of its sources. Independent of the node ids and of their
-// order, so that equivalent graphs get the same key.
+// order, and of the labels, which only name the values of the generated code:
+// equivalent graphs get the same key, and share their program.
 function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
   const hashes = new Map<NodeId, string>();
   for (const id of order) {
@@ -345,7 +346,6 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
           node.type,
           structuralParams(node),
           node.defaults ?? {},
-          node.label ?? '',
           inputs,
         ])
       )

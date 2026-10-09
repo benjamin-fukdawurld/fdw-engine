@@ -13,7 +13,7 @@ type Props = {
     engine: Engine,
     surface: Surface,
     canvas: HTMLCanvasElement
-  ) => Promise<void>;
+  ) => void | Promise<void>;
   // The route only uses the engine API, and runs on every backend. Other
   // routes use WebGPU directly.
   portable?: boolean;
