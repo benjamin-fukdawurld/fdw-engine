@@ -130,6 +130,8 @@ Deux replis pourront être étudiés plus tard :
 
 ### 6.1 Prérequis : les storage buffers
 
+_Fait (CG1)._ `input.storage` (tableau de taille dynamique de scalaires, vecteurs ou matrices, en lecture) est lu par `std.index` et `std.arrayLength` ; une contrainte générique `array` et le type dérivé `array-element-of` les typent, et les littéraux entiers d'un générique entier (l'index `0`) sont typés `u32`. Le layout physique donne le pas des éléments (règles du stockage WGSL : 4 pour un `f32`, 8 pour un `vec2`, 16 pour un `vec3`). WebGPU : `var<storage, read>`, binding `read-only-storage`. WebGL2 : capacité `storageBuffers: false`, la compilation et la création d'un buffer `storage` échouent avec un message clair. Un `GpuBuffer` est une valeur de matériau.
+
 C'est le chantier 4 du material graph ([§17.4](material-graph.md#174-storage-buffers)), première étape du compute graph :
 
 - `input.storage` lu par `std.index(buffer, index)` et `std.arrayLength(buffer)` ;

@@ -1,12 +1,17 @@
-import type { GpuSampler, GpuTexture, UniformValue } from '@fdw/engine-backend';
+import type {
+  GpuBuffer,
+  GpuSampler,
+  GpuTexture,
+  UniformValue,
+} from '@fdw/engine-backend';
 import type {
   ConstantValue,
   MaterialGraphData,
   StaticValue,
 } from '@fdw/engine-shader';
 
-// A uniform value, or a texture or sampler bound by name.
-export type MaterialValue = UniformValue | GpuTexture | GpuSampler;
+// A uniform value, or a texture, sampler or storage buffer bound by name.
+export type MaterialValue = UniformValue | GpuTexture | GpuSampler | GpuBuffer;
 
 export interface RenderState {
   // 'blend' draws the material after the opaque ones, back to front, with

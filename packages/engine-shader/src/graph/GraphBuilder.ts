@@ -364,7 +364,11 @@ export class GraphBuilder {
     );
   }
 
-  /** Reads a storage buffer. Not supported by the compiler yet. */
+  /**
+   * Reads a storage buffer: a runtime-sized array (`arrayType(element)`) of
+   * scalars, vectors or matrices, read with `std.index` and
+   * `std.arrayLength`. Read-only for now.
+   */
   storage(
     name: string,
     type: ShaderType,

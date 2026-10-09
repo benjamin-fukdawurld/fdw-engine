@@ -175,7 +175,10 @@ export type IntrinsicOp =
   | 'equal'
   | 'not-equal'
   // Sums its input over the lights of the frame (light.sum).
-  | 'light-sum';
+  | 'light-sum'
+  // array[index], and the number of elements of a runtime-sized array.
+  | 'index'
+  | 'array-length';
 
 /**
  * Code provided per shading language. Breaks portability: compilation fails

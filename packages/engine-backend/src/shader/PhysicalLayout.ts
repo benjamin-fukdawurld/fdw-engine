@@ -25,6 +25,9 @@ export interface PhysicalBinding {
   readonly resource: LogicalBinding;
   // For uniform blocks only.
   readonly block?: PhysicalUniformBlock;
+  // For storage buffers only: the distance in bytes between two elements of
+  // the array, to fill the buffer.
+  readonly storage?: { readonly elementStride: number };
 }
 
 export interface PhysicalBindGroup {

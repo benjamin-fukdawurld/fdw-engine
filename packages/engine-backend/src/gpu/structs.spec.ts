@@ -3,7 +3,8 @@ import type { GpuStructFieldBluePrint, StructBuildStrategy } from './GpuStruct';
 import type { GpuType } from './GpuType';
 import { StructBuilder, struct } from './structs';
 
-const align = (offset: number, alignment: number) => Math.ceil(offset / alignment) * alignment;
+const align = (offset: number, alignment: number) =>
+  Math.ceil(offset / alignment) * alignment;
 
 // A minimal strategy with natural alignment, to test the builder alone.
 const naturalStrategy: StructBuildStrategy = {
@@ -11,9 +12,11 @@ const naturalStrategy: StructBuildStrategy = {
   hasDynamicSize: () => undefined,
   validateFields: () => undefined,
   getFieldSize: (field) => ('size' in field.type ? field.type.size : 0),
-  getFieldAlignment: (field) => ('alignment' in field.type ? field.type.alignment : 1),
+  getFieldAlignment: (field) =>
+    'alignment' in field.type ? field.type.alignment : 1,
   getFieldOffset: ({ offset, alignment }) => align(offset, alignment),
-  getRuntimeSizeCallback: (blueprint: GpuStructFieldBluePrint) => () => blueprint.size,
+  getRuntimeSizeCallback: (blueprint: GpuStructFieldBluePrint) => () =>
+    blueprint.size,
   getWriteCallback: () => () => undefined,
   getSerializeCallback: (blueprint: GpuStructFieldBluePrint) => () =>
     blueprint.fields.map((field) => field.name).join(','),
@@ -44,7 +47,10 @@ describe('StructBuilder', () => {
   });
 
   it('builds structs that are not affected by later changes to the builder', () => {
-    const builder = new StructBuilder(naturalStrategy).withField({ name: 'a', type: f32 });
+    const builder = new StructBuilder(naturalStrategy).withField({
+      name: 'a',
+      type: f32,
+    });
     const built = builder.build();
     builder.withField({ name: 'b', type: vec3 });
 

@@ -1,4 +1,10 @@
-import { boolOf, elementOf, generic, PortType } from '../types/PortType';
+import {
+  arrayElementOf,
+  boolOf,
+  elementOf,
+  generic,
+  PortType,
+} from '../types/PortType';
 import { ShaderType, BuiltinTypes } from '../types/ShaderType';
 import type {
   FunctionDefinition,
@@ -57,6 +63,25 @@ export const abs = intrinsic('abs', 'abs', [port('x', numeric)], numeric);
 // Component-wise comparisons: bool for scalars, vecN<bool> for vectors.
 const comparison = (id: string, op: IntrinsicOp) =>
   intrinsic(id, op, [port('a', numeric), port('b', numeric)], boolOf('T'));
+
+const array = generic('A', 'array');
+const integer = generic('I', 'integer');
+
+/** An element of an array (a storage buffer): array[index]. */
+export const index = intrinsic(
+  'index',
+  'index',
+  [port('array', array), port('index', integer)],
+  arrayElementOf('A')
+);
+
+/** The number of elements of a runtime-sized array (a storage buffer). */
+export const arrayLength = intrinsic(
+  'arrayLength',
+  'array-length',
+  [port('array', array)],
+  BuiltinTypes.u32
+);
 
 export const less = comparison('less', 'less');
 export const lessEqual = comparison('lessEqual', 'less-equal');
@@ -273,6 +298,8 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   clamp,
   smoothstep,
   select,
+  index,
+  arrayLength,
   less,
   lessEqual,
   greater,

@@ -21,6 +21,8 @@ export const TypeConstraintNames = [
   'float-vector',
   // i32 / u32 scalars and vectors.
   'integer',
+  // Arrays (storage buffers).
+  'array',
 ] as const;
 /**
  * A constraint on the type bound to a generic:
@@ -28,7 +30,8 @@ export const TypeConstraintNames = [
  * - `numeric`: scalars and vectors, except `bool`;
  * - `float`: `f32` / `f16` scalars and vectors;
  * - `float-vector`: `f32` / `f16` vectors;
- * - `integer`: `i32` / `u32` scalars and vectors.
+ * - `integer`: `i32` / `u32` scalars and vectors;
+ * - `array`: arrays, read with `std.index`.
  *
  * @group Port types
  */
@@ -68,6 +71,17 @@ export type VectorOfPortType = {
 };
 
 /**
+ * The element type of an array generic: `vec4<f32>` for
+ * `T = array<vec4<f32>>`.
+ *
+ * @group Port types
+ */
+export type ArrayElementOfPortType = {
+  readonly kind: 'array-element-of';
+  readonly of: string;
+};
+
+/**
  * A boolean of the shape of a generic: `bool` for `T = f32`, `vec3<bool>`
  * for `T = vec3<f32>`. The result of a component-wise comparison.
  *
@@ -89,7 +103,8 @@ export type PortType =
   | GenericPortType
   | ElementOfPortType
   | VectorOfPortType
-  | BoolOfPortType;
+  | BoolOfPortType
+  | ArrayElementOfPortType;
 
 /**
  * Creates a generic port type.
@@ -129,6 +144,16 @@ export const vectorOf = (of: string, size: VectorSize): VectorOfPortType => ({
 });
 
 /**
+ * The element type of an array generic: `f32` for `T = array<f32>`.
+ *
+ * @group Port types
+ */
+export const arrayElementOf = (of: string): ArrayElementOfPortType => ({
+  kind: 'array-element-of',
+  of,
+});
+
+/**
  * A boolean of the shape of a generic: `vec3<bool>` for `T = vec3<f32>`.
  *
  * @group Port types
@@ -145,7 +170,8 @@ export function isConcretePortType(type: PortType): type is ShaderType {
     type.kind !== 'generic' &&
     type.kind !== 'element-of' &&
     type.kind !== 'vector-of' &&
-    type.kind !== 'bool-of'
+    type.kind !== 'bool-of' &&
+    type.kind !== 'array-element-of'
   );
 }
 
@@ -176,6 +202,9 @@ export function satisfiesConstraint(
 ): boolean {
   if (constraint === 'any') {
     return true;
+  }
+  if (constraint === 'array') {
+    return type.kind === 'array';
   }
 
   if (type.kind !== 'scalar' && type.kind !== 'vector') {
@@ -211,6 +240,8 @@ export function portTypeToString(type: PortType): string {
       return `vec${type.size}<element-of<${type.of}>>`;
     case 'bool-of':
       return `bool-of<${type.of}>`;
+    case 'array-element-of':
+      return `element-of-array<${type.of}>`;
     default:
       return typeToString(type);
   }

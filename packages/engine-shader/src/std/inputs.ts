@@ -45,7 +45,8 @@ export const uniform: NodeDefinition = {
 export const storage: NodeDefinition = {
   id: 'input.storage',
   category: 'input',
-  description: 'A storage buffer (struct or runtime-sized array).',
+  description:
+    'A storage buffer: a runtime-sized array, read with std.index and std.arrayLength.',
   params: {
     name: { kind: 'string', required: true },
     type: { kind: 'type', required: true },

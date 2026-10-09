@@ -1,5 +1,6 @@
-import type { RenderBackend, Surface } from '@fdw/engine-backend';
+import type { GpuBuffer, RenderBackend, Surface } from '@fdw/engine-backend';
 import {
+  arrayType,
   BuiltinTypes,
   defineFunction,
   GraphBuilder,
@@ -300,6 +301,48 @@ export function describeRenderer(
         { mesh: quad(), material, transform: at(0) },
       ]);
       expectColor(pixel(32, 32), [128, 0, 128, 255]);
+    });
+
+    it('reads storage buffers, where the backend has them', async () => {
+      const g = new GraphBuilder('palette');
+      const palette = g.storage('palette', arrayType(BuiltinTypes.vec4f));
+      // The last color of the palette.
+      g.surface({
+        baseColor: g
+          .call(std.index, {
+            array: palette,
+            index: g.call(std.sub, {
+              a: g.call(std.arrayLength, { array: palette }),
+              b: 1,
+            }),
+          })
+          .swizzle('rgb'),
+      });
+      const material = (values: Record<string, GpuBuffer> = {}) => [
+        {
+          mesh: quad(),
+          material: new Material({ graph: g.build(), values }),
+          transform: at(0),
+        },
+      ];
+      const create = () =>
+        backend.buffers.create({
+          size: 48,
+          usage: ['storage', 'copy-dst'],
+          initialData: new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0.5, 1, 1]),
+        });
+      if (backend.capabilities?.storageBuffers === false) {
+        // WebGL2: explicit errors, not a broken shader.
+        expect(create).toThrow(/no storage buffers/);
+        await expect(render(material())).rejects.toThrow(
+          /the backend has no storage buffers/
+        );
+        return;
+      }
+      expectColor(
+        (await render(material({ palette: create() })))(32, 32),
+        [0, 128, 255, 255]
+      );
     });
 
     it('blends transparent materials over the opaque ones', async () => {

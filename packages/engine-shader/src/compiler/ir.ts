@@ -98,8 +98,10 @@ export type IrOp =
   | { readonly kind: 'swizzle'; readonly components: string }
   /** Conversion of the scalar kind, component-wise for vectors. */
   | { readonly kind: 'convert' }
-  /** array[index]: an element of an array read from a uniform block. */
+  /** array[index]: an element of an array (uniform block member or storage buffer). */
   | { readonly kind: 'index' }
+  /** The number of elements of a runtime-sized array (a storage buffer). */
+  | { readonly kind: 'array-length' }
   /**
    * The only loop of the IR: the sum, for index from 0 to count - 1 (args[0],
    * a u32), of the value `result` computed by `body` from `index`. The body

@@ -285,6 +285,7 @@ function translateNode(
     }
     case 'input.texture':
     case 'input.sampler':
+    case 'input.storage':
       output('value', types.outputs['value'], {
         kind: 'load-resource',
         binding: params['name'] as string,
@@ -346,6 +347,12 @@ function translateNode(
       return;
     case 'texture-sample':
       output('result', type, { kind: 'sample' }, args);
+      return;
+    case 'index':
+      output('result', type, { kind: 'index' }, args);
+      return;
+    case 'array-length':
+      output('result', type, { kind: 'array-length' }, args);
       return;
     case 'less':
     case 'less-equal':

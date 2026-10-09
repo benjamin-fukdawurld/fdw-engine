@@ -7,6 +7,7 @@ import {
   ShaderModuleIR,
   std,
   stdLights,
+  arrayType,
   BuiltinTypes,
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
@@ -326,6 +327,32 @@ describe('WgslCodegen', () => {
     expect(fragment.indexOf('textureSample')).toBeLessThan(
       fragment.indexOf('discard')
     );
+  });
+
+  it('declares and reads storage buffers', () => {
+    const g = new GraphBuilder('palette');
+    const palette = g.storage('palette', arrayType(BuiltinTypes.vec4f));
+    g.surface({
+      baseColor: g
+        .call(std.index, {
+          array: palette,
+          index: g.call(std.sub, {
+            a: g.call(std.arrayLength, { array: palette }),
+            b: 1,
+          }),
+        })
+        .swizzle('rgb'),
+    });
+    const program = compile(g.build());
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    expect(code).toContain(
+      '@group(1) @binding(0) var<storage, read> b_palette: array<vec4<f32>>;'
+    );
+    expect(code).toMatch(/let v\d+: u32 = arrayLength\(&b_palette\);/);
+    expect(code).toMatch(/let v\d+: vec4<f32> = b_palette\[v\d+\];/);
   });
 
   it('generates a complete program', () => {

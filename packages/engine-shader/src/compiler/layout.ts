@@ -1,4 +1,5 @@
 import {
+  ArrayType,
   arrayType,
   BuiltinTypes,
   ShaderType,
@@ -27,6 +28,12 @@ export type LogicalBinding =
       readonly kind: 'texture';
       readonly name: string;
       readonly type: TextureType;
+    }
+  | {
+      /** A read-only storage buffer: a runtime-sized array. */
+      readonly kind: 'storage-buffer';
+      readonly name: string;
+      readonly type: ArrayType;
     }
   | {
       readonly kind: 'sampler';

@@ -126,3 +126,19 @@ describe('resolveNodeTypes', () => {
     expect(errors[0].message).toMatch(/cannot infer the type of T/);
   });
 });
+
+describe('integer literals', () => {
+  it('types integer literals of integer generics as u32, or i32 when negative', () => {
+    const integer = generic('I', 'integer');
+    const resolve = (value: number | number[]) =>
+      resolveNodeTypes({
+        inputs: [{ name: 'i', type: integer }],
+        outputs: [{ name: 'result', type: integer }],
+        connected: {},
+        defaults: { i: value },
+      }).types.outputs['result'];
+    expect(resolve(0)).toEqual(BuiltinTypes.u32);
+    expect(resolve(-1)).toEqual(BuiltinTypes.i32);
+    expect(resolve([1, 2])).toEqual({ kind: 'vector', size: 2, scalar: 'u32' });
+  });
+});

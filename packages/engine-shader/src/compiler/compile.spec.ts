@@ -379,9 +379,9 @@ describe('compile', () => {
   describe('unsupported or reserved features', () => {
     it.each([
       [
-        'storage buffers',
+        'storage buffers that are not arrays',
         (g: GraphBuilder) => g.storage('lights', BuiltinTypes.vec4f),
-        /storage buffers are not supported yet/,
+        /must be a runtime-sized array/,
       ],
       [
         'the engine slots',

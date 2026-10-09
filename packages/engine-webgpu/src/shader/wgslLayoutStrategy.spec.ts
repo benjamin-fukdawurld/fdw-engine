@@ -158,6 +158,34 @@ describe('wgslLayoutStrategy.writeUniform', () => {
     ]);
   });
 
+  it('gives the stride of the elements of storage arrays', () => {
+    const strides = [
+      BuiltinTypes.f32,
+      BuiltinTypes.vec2f,
+      BuiltinTypes.vec3f,
+      BuiltinTypes.vec4f,
+      BuiltinTypes.mat3f,
+    ].map((element) => {
+      const resolved = wgslLayoutStrategy.resolve({
+        groups: [
+          {
+            slot: 'material',
+            bindings: [
+              {
+                kind: 'storage-buffer',
+                name: 'values',
+                type: arrayType(element),
+              },
+            ],
+          },
+        ],
+      });
+      return resolved.groups[0].bindings[0].storage?.elementStride;
+    });
+    // Unlike uniform arrays, scalars and vec2 are not rounded up to 16.
+    expect(strides).toEqual([4, 8, 16, 16, 48]);
+  });
+
   it('rejects arrays whose stride is not a multiple of 16', () => {
     expect(() =>
       wgslLayoutStrategy.resolve({

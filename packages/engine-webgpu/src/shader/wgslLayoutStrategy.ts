@@ -52,6 +52,11 @@ function arrayStride(element: ShaderType): number {
   return stride;
 }
 
+function storageStride(element: ShaderType): number {
+  const { align, size } = uniformLayoutOf(element);
+  return roundUp(size, align);
+}
+
 function uniformBlock(
   resource: Extract<LogicalBinding, { kind: 'uniform-block' }>
 ): PhysicalUniformBlock {
@@ -178,7 +183,9 @@ function writeUniform(
 }
 
 // WGSL: one bind group per slot, bindings numbered in layout order, uniform
-// blocks laid out with the rules of the uniform address space.
+// blocks laid out with the rules of the uniform address space. Elements of
+// storage arrays are aligned like in the storage address space: a vec3 takes
+// 16 bytes, but scalars and vec2 are not rounded up to 16 as in uniforms.
 export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
   resolve(layout): PhysicalProgramLayout {
     return {
@@ -188,6 +195,14 @@ export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
         bindings: group.bindings.map((resource, binding) =>
           resource.kind === 'uniform-block'
             ? { binding, resource, block: uniformBlock(resource) }
+            : resource.kind === 'storage-buffer'
+            ? {
+                binding,
+                resource,
+                storage: {
+                  elementStride: storageStride(resource.type.element),
+                },
+              }
             : { binding, resource }
         ),
       })),

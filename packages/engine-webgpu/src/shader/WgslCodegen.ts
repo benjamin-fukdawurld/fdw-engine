@@ -132,6 +132,8 @@ function resourceIdentifier(resource: LogicalBinding): string {
       return `t_${resource.name}`;
     case 'sampler':
       return `s_${resource.name}`;
+    case 'storage-buffer':
+      return `b_${resource.name}`;
   }
 }
 
@@ -218,6 +220,10 @@ function emitInstructions(
       }
       case 'index':
         expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
+        break;
+      case 'array-length':
+        // Storage arrays are used inline: their expression is the variable.
+        expression = `arrayLength(&${arg(instruction, 0)})`;
         break;
       case 'constant':
         expression = literal(type, op.value);
@@ -328,6 +334,12 @@ export class WgslCodegen implements ShaderCodegen {
           );
         } else if (resource.kind === 'texture') {
           sections.push(`${location} var ${name}: ${wgslType(resource.type)};`);
+        } else if (resource.kind === 'storage-buffer') {
+          sections.push(
+            `${location} var<storage, read> ${name}: array<${wgslType(
+              resource.type.element
+            )}>;`
+          );
         } else {
           sections.push(
             `${location} var ${name}: ${

@@ -217,6 +217,9 @@ function emitInstructions(
       case 'index':
         expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
         break;
+      case 'array-length':
+        // The compiler rejects storage buffers for WebGL2 (capability).
+        throw new Error('GLSL ES 3.00 has no storage buffers');
       case 'constant':
         expression = literal(type, op.value);
         break;

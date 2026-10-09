@@ -12,6 +12,7 @@ import {
 } from '@fdw/engine-backend';
 import {
   GraphBuilder,
+  arrayType,
   engineUniformBlocks,
   MaterialGraphData,
   MaxLights,
@@ -413,6 +414,30 @@ describe('Renderer', () => {
     render(items);
     expect(materialGroups()).toHaveLength(2);
     expect(materialGroups()[1].entries[0].resource).toBe(other);
+  });
+
+  it('binds the storage buffers of the materials', () => {
+    const { render, log } = setup();
+    const g = new GraphBuilder('palette');
+    const palette = g.storage('palette', arrayType(BuiltinTypes.vec4f));
+    g.surface({
+      baseColor: g.call(std.index, { array: palette, index: 0 }).swizzle('rgb'),
+    });
+    const buffer = new FakeBuffer(32, 'palette');
+    render([
+      {
+        mesh: triangle(),
+        material: new Material({
+          graph: g.build(),
+          values: { palette: buffer },
+        }),
+        transform: transformAt(0),
+      },
+    ]);
+    const group = log.bindGroups.find((candidate) =>
+      candidate.entries.some((entry) => entry.resource === buffer)
+    );
+    expect(group?.entries).toEqual([{ binding: 0, resource: buffer }]);
   });
 
   it('reports a missing texture with the material name', () => {

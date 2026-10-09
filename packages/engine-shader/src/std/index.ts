@@ -23,7 +23,8 @@ export type { ShadingModel } from './outputs';
  * `fract`, `sqrt`, `sin`, `cos`, `pow`, `saturate`, `step`), vectors (`dot`,
  * `cross`, `length`, `normalize`, `reflect`), interpolation (`mix`, `clamp`,
  * `smoothstep`, `select`), comparisons (`less`, `lessEqual`, `greater`,
- * `greaterEqual`, `equal`, `notEqual`), textures (`textureSample`), construction (`vec2`,
+ * `greaterEqual`, `equal`, `notEqual`), arrays (`index`, `arrayLength`,
+ * for storage buffers), textures (`textureSample`), construction (`vec2`,
  * `vec3`, `vec4`, `extend`, `convert`), transforms (`transform`,
  * `transform3`) and `perFragment`.
  *
@@ -60,6 +61,8 @@ export const std = {
   clamp: functions.clamp,
   smoothstep: functions.smoothstep,
   select: functions.select,
+  index: functions.index,
+  arrayLength: functions.arrayLength,
   less: functions.less,
   lessEqual: functions.lessEqual,
   greater: functions.greater,

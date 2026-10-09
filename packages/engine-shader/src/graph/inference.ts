@@ -83,6 +83,10 @@ function resolvePortType(
       const kind: ScalarKind | undefined = bound && scalarKindOf(bound);
       return kind ? vec(type.size, kind) : undefined;
     }
+    case 'array-element-of': {
+      const bound = bindings.get(type.of);
+      return bound?.kind === 'array' ? bound.element : undefined;
+    }
     case 'bool-of': {
       const bound = bindings.get(type.of);
       if (bound?.kind === 'scalar') {
@@ -192,6 +196,22 @@ export function resolveNodeTypes({
       // Nothing connected: the type of the literals, vectors first.
       const literal = vectorLiteral ?? literals[0];
       bound = literal !== undefined ? literalType(literal) : undefined;
+      // Literals are floats, except for integer generics: the index of an
+      // array, written 0, is a u32 (an i32 when negative).
+      const values = literals.flatMap((value) =>
+        typeof value === 'number' ? [value] : Array.isArray(value) ? value : []
+      );
+      if (
+        generic.constraint === 'integer' &&
+        (bound?.kind === 'scalar' || bound?.kind === 'vector') &&
+        values.every(Number.isInteger)
+      ) {
+        const scalar = values.every((value) => value >= 0) ? 'u32' : 'i32';
+        bound =
+          bound.kind === 'scalar'
+            ? { kind: 'scalar', scalar }
+            : vec(bound.size, scalar);
+      }
     }
 
     if (!bound) {

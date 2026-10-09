@@ -5,6 +5,7 @@ import {
   MaterialGraphData,
   std,
   stdMacros,
+  arrayType,
   BuiltinTypes,
 } from '@fdw/engine-shader';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -156,6 +157,22 @@ const graphs: Record<string, () => MaterialGraphData> = {
       normal: g.call(stdMacros.normalMapping, {
         sample: sample.swizzle('rgb'),
       }),
+    });
+    return g.build();
+  },
+  'storage buffer': () => {
+    const g = new GraphBuilder('palette');
+    const palette = g.storage('palette', arrayType(BuiltinTypes.vec4f));
+    g.surface({
+      baseColor: g
+        .call(std.index, {
+          array: palette,
+          index: g.call(std.sub, {
+            a: g.call(std.arrayLength, { array: palette }),
+            b: 1,
+          }),
+        })
+        .swizzle('rgb'),
     });
     return g.build();
   },

@@ -1207,6 +1207,8 @@ _Fait._ Les ports d'un nœud peuvent dépendre du registre (`PortContext`) : ceu
 
 ### 17.4 Storage buffers
 
+_Fait (CG1)._ `input.storage` (tableau de taille dynamique de scalaires, vecteurs ou matrices, en lecture) est lu par `std.index` et `std.arrayLength` ; une contrainte générique `array` et le type dérivé `array-element-of` les typent, et les littéraux entiers d'un générique entier (l'index `0`) sont typés `u32`. Le layout physique donne le pas des éléments (règles du stockage WGSL : 4 pour un `f32`, 8 pour un `vec2`, 16 pour un `vec3`). WebGPU : `var<storage, read>`, binding `read-only-storage`. WebGL2 : capacité `storageBuffers: false`, la compilation et la création d'un buffer `storage` échouent avec un message clair. Un `GpuBuffer` est une valeur de matériau.
+
 - **Graphe** : `input.storage`, lu par `std.index(buffer, index)` ; longueur par `std.arrayLength`.
 - **Types** : tableaux de taille dynamique de scalaires, vecteurs et matrices ; les structures viendront ensuite.
 - **Layout** : ressource `storage-buffer` du `ProgramLayout` ; layout physique `std430` / WGSL `storage`.

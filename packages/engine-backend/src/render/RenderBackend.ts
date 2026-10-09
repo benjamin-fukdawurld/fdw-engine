@@ -10,10 +10,7 @@ import type {
   PhysicalProgramLayout,
   ShaderCodegen,
 } from '../shader';
-import type {
-  CompiledProgram,
-  CompilerCapabilities,
-} from '@fdw/engine-shader';
+import type { CompiledProgram, CompilerCapabilities } from '@fdw/engine-shader';
 import type { GpuTextureFormat } from '../gpu';
 import type {
   GpuBindGroup,

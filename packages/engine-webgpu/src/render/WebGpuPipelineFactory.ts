@@ -63,6 +63,12 @@ function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
         visibility,
         sampler: { type: resource.comparison ? 'comparison' : 'filtering' },
       };
+    case 'storage-buffer':
+      return {
+        binding: binding.binding,
+        visibility,
+        buffer: { type: 'read-only-storage' },
+      };
   }
 }
 

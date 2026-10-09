@@ -38,6 +38,7 @@ export class WebGl2RenderBackend implements RenderBackend {
     this.pipelines = new WebGl2PipelineFactory(gl);
     this.capabilities = {
       maxVaryings: gl.getParameter(GL.MAX_VARYING_VECTORS),
+      storageBuffers: false,
     };
   }
 
