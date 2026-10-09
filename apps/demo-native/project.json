@@ -1,0 +1,13 @@
+{
+  "name": "demo-native",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/demo-native/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "start": {
+      "command": "node --import jiti/register apps/demo-native/src/main.ts",
+      "dependsOn": [{ "projects": ["engine-native"], "target": "build-native" }]
+    }
+  }
+}

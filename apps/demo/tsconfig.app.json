@@ -42,13 +42,16 @@
       "path": "../../packages/engine-core/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-webgl2/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-webgpu/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-backend/tsconfig.lib.json"
+      "path": "../../packages/demo-scenes/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-webgl2/tsconfig.lib.json"
+      "path": "../../packages/engine-backend/tsconfig.lib.json"
     }
   ]
 }

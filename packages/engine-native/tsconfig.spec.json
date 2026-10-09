@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc/vitest",
+    "types": ["node", "vitest/importMeta", "vite/client", "@webgpu/types"]
+  },
+  "include": [
+    "vitest.config.mts",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.d.ts"
+  ],
+  "references": [{ "path": "./tsconfig.lib.json" }]
+}

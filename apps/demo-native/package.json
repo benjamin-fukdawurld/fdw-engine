@@ -1,0 +1,14 @@
+{
+  "name": "@fdw-engine/demo-native",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fdw/demo-scenes": "0.0.1",
+    "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-core": "0.0.1",
+    "@fdw/engine-native": "0.0.1",
+    "@fdw/engine-shader": "0.0.1",
+    "@fdw/engine-webgpu": "0.0.1"
+  }
+}

@@ -54,13 +54,14 @@ No graphics-API-specific code belongs in this layer.
 
 Each backend implements the abstract API for a given graphics technology and windowing system.
 
-| Backend              | Technology | Windowing         | Status      |
-| -------------------- | ---------- | ----------------- | ----------- |
-| `@fdw/engine-webgpu` | WebGPU     | Browser (canvas)  | In progress |
-| `@fdw/engine-webgl2` | WebGL2     | Browser (canvas)  | In progress |
-| `@fdw/engine-vulkan` | Vulkan     | Native (e.g. SDL) | Planned     |
-| —                    | DirectX 12 | Native            | Planned     |
-| —                    | Metal      | Native            | Planned     |
+| Backend              | Technology                 | Windowing         | Status      |
+| -------------------- | -------------------------- | ----------------- | ----------- |
+| `@fdw/engine-webgpu` | WebGPU                     | Browser (canvas)  | In progress |
+| `@fdw/engine-webgl2` | WebGL2                     | Browser (canvas)  | In progress |
+| `@fdw/engine-native` | WebGPU (Dawn), then Vulkan | Native (SDL3)     | In progress |
+| `@fdw/engine-vulkan` | Vulkan                     | Native (e.g. SDL) | Planned     |
+| —                    | DirectX 12                 | Native            | Planned     |
+| —                    | Metal                      | Native            | Planned     |
 
 The WebGPU backend provides `WebGpuEngine`, `WebGpuSurface` / `WebGpuOffscreenSurface`, the GPU implementations, and `WgslCodegen`, which generates WGSL from the programs compiled by `@fdw/engine-shader`. The WebGL2 backend provides the same for browsers without WebGPU, with `GlslEsCodegen` generating GLSL ES 3.00 from the same programs.
 
@@ -78,13 +79,16 @@ Materials are being redesigned as a backend-agnostic graph of typed nodes, compi
 
 ```
 apps/
-  demo/                 React + Vite demo application (WebGPU)
+  demo/                 React + Vite demo application (WebGPU, WebGL2)
+  demo-native/          The scenes of the demo in a native window (Node, Dawn)
 packages/
   engine-core/          Frontend: scene manipulation API
   engine-backend/       Abstract API
   engine-webgpu/        WebGPU backend
   engine-webgl2/        WebGL2 backend
   engine-shader/        Material graph: shader types, graph model, compiler
+  engine-native/        Native windows and surfaces (Node-API addon over SDL3)
+  demo-scenes/          Scenes shared by the web and native demos
 tests/
   rendering/            Rendering tests shared by the backends (Dawn in Node, WebGL2 in headless Chromium)
 design/                 Design proposals
@@ -113,6 +117,14 @@ npm run serve
 ```
 
 The demo contains a series of progressive examples (triangle, vertex/index buffers, uniforms, matrices, camera, textures, depth testing, face culling, OBJ/MTL model loading…) in [apps/demo/src/routes](apps/demo/src/routes).
+
+### Run the native demo
+
+The scenes of the demo in a native window, outside of the browser (Linux for now; needs CMake and a C/C++ compiler, and fetches SDL3 on the first build):
+
+```sh
+npx nx run demo-native:start -- shadows   # or pbr; Escape quits
+```
 
 ### Build the packages
 

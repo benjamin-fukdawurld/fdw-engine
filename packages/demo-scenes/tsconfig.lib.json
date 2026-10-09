@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/demo-scenes",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../engine-shader/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "demo-scenes",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/demo-scenes/src",
+  "projectType": "library",
+  "tags": []
+}

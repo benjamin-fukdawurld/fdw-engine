@@ -1,0 +1,19 @@
+{
+  "name": "engine-native",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-native/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "build-native": {
+      "command": "node scripts/build.mjs",
+      "options": { "cwd": "packages/engine-native" },
+      "cache": true,
+      "inputs": ["{projectRoot}/native/**/*", "{projectRoot}/scripts/**/*"],
+      "outputs": ["{projectRoot}/build/fdw_native.node"]
+    },
+    "test": {
+      "dependsOn": ["build-native"]
+    }
+  }
+}

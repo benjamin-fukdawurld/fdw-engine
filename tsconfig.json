@@ -7,6 +7,9 @@
       "path": "./apps/demo"
     },
     {
+      "path": "./apps/demo-native"
+    },
+    {
       "path": "./packages/engine-backend"
     },
     {
@@ -14,6 +17,12 @@
     },
     {
       "path": "./packages/engine-webgl2"
+    },
+    {
+      "path": "./packages/engine-native"
+    },
+    {
+      "path": "./packages/demo-scenes"
     },
     {
       "path": "./packages/engine-core"
