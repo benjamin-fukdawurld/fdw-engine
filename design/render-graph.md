@@ -272,7 +272,7 @@ Avec plusieurs passes, un même matériau est compilé **selon la passe** qui le
 | `gbuffer` (plus tard) | les entrées de la surface dans plusieurs attachments                                  | rendu différé                   |
 | `bsdf` (plus tard)    | surface et modèle d'éclairage en fonctions d'évaluation et de tirage                  | ray tracing                     |
 
-Le graphe du matériau ne change pas : c'est la séparation surface / éclairage ([évolutions §3](evolutions.md#3-contraintes-de-compatibilité-pour-les-prochaines-étapes)). Le paramètre `shadowPass` des [écarts du material graph](material-graph-gaps.md) est couvert par la cible `depth-only`.
+Le graphe du matériau ne change pas : c'est la séparation surface / éclairage ([évolutions §6](evolutions.md#6-contraintes-de-compatibilité-pour-les-prochaines-étapes)). Le paramètre `shadowPass` des [écarts du material graph](material-graph-gaps.md) est couvert par la cible `depth-only`.
 
 ---
 
@@ -329,7 +329,7 @@ g.fullscreen({
 Les passes reçoivent une **vue de scène** : les objets visibles depuis une caméra, regroupés par file (`opaque`, `masked`, `transparent`) et triés. Elle fournit les données de la scène sous deux formes :
 
 - **par objet**, comme aujourd'hui : un uniform par objet, un draw call par objet ;
-- **en tables** (plus tard) : un storage buffer de toutes les instances (transformations, identifiants de matériaux), et les matériaux dans des buffers indexés. C'est ce qu'il faut pour le rendu piloté par le GPU, le culling des lumières et le ray tracing ([évolutions §3, point 4](evolutions.md#3-contraintes-de-compatibilité-pour-les-prochaines-étapes)).
+- **en tables** (plus tard) : un storage buffer de toutes les instances (transformations, identifiants de matériaux), et les matériaux dans des buffers indexés. C'est ce qu'il faut pour le rendu piloté par le GPU, le culling des lumières et le ray tracing ([évolutions §6, point 4](evolutions.md#6-contraintes-de-compatibilité-pour-les-prochaines-étapes)).
 
 ### 10.3 Le graphe de la technique forward
 

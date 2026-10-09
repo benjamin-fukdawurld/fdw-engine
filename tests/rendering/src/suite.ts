@@ -924,6 +924,45 @@ export function describeRenderer(
         runner.destroy();
       });
 
+      it('dispatches as many workgroups as a buffer says', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        // 2 workgroups of 64: the first 128 values, not the next ones.
+        const values = Float32Array.from({ length: 200 }, (_, i) => i);
+        const input = backend.buffers.create({
+          size: values.byteLength,
+          usage: ['storage', 'copy-dst'],
+          initialData: values,
+        });
+        const output = backend.buffers.create({
+          size: values.byteLength,
+          usage: ['storage', 'copy-src', 'copy-dst'],
+        });
+        const counts = backend.buffers.create({
+          size: 16,
+          usage: ['indirect', 'copy-dst'],
+          // Offset 4: x, y, z.
+          initialData: new Uint32Array([0, 2, 1, 1]),
+        });
+        const runner = new ComputeRunner(backend);
+        runner.dispatch(
+          compile(scaleGraph(), { capabilities: backend.capabilities }),
+          {
+            values: { input, output, factor: 2 },
+            workgroups: { buffer: counts, offset: 4 },
+          }
+        );
+        const result = new Float32Array(await output.read());
+        expect(result[0]).toBe(0);
+        expect(result[127]).toBe(254);
+        expect(result[128]).toBe(0);
+        runner.destroy();
+        input.destroy();
+        output.destroy();
+        counts.destroy();
+      });
+
       it('processes an image with a two-dimensional dispatch', async () => {
         if (backend.capabilities?.compute === false) {
           return;

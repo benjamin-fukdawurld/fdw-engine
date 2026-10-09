@@ -56,7 +56,6 @@ export interface RenderTargetDescriptor {
   readonly label?: string;
 }
 
-// Everything a renderer needs from a backend, once its device is ready.
 /**
  * What a backend supports: the limits of the compiled programs, and the
  * formats it can render to beyond the 8 bits ones.
@@ -67,6 +66,7 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   readonly renderableFormats?: readonly GpuTextureFormat[];
 }
 
+// Everything a renderer needs from a backend, once its device is ready.
 export interface RenderBackend {
   readonly buffers: GpuBufferFactory;
   readonly textures: GpuTextureFactory<unknown> & GpuSamplerFactory;

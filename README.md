@@ -88,7 +88,7 @@ packages/
   engine-webgl2/        WebGL2 backend
   engine-shader/        Material graph: shader types, graph model, compiler
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)
-  engine-vulkan/        Vulkan backend: HLSL generator (compiled to SPIR-V by DXC)
+  engine-vulkan/        Vulkan backend (Node-API addon, HLSL compiled to SPIR-V by DXC)
   demo-scenes/          Scenes shared by the web and native demos
 tests/
   rendering/            Rendering tests shared by the backends (Dawn in Node, WebGL2 in headless Chromium)
@@ -124,7 +124,8 @@ The demo contains a series of progressive examples (triangle, vertex/index buffe
 The scenes of the demo in a native window, outside of the browser (Linux for now; needs CMake and a C/C++ compiler, and fetches SDL3 on the first build):
 
 ```sh
-npx nx run demo-native:start -- shadows   # or pbr; Escape quits
+npx nx run demo-native:start -- shadows            # or pbr, on WebGPU (Dawn); Escape quits
+npx nx run demo-native:start -- shadows --vulkan   # on Vulkan: needs the Vulkan SDK (source its setup-env.sh)
 ```
 
 ### Build the packages

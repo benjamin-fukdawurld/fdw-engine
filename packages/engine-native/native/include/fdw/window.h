@@ -101,6 +101,29 @@ FDW_API int fdw_window_present_rgba(fdw_window *window, const void *pixels,
 // or not (0).
 FDW_API int fdw_window_set_vsync(fdw_window *window, int32_t vsync);
 
+// The window system of a window and its native handles: what a graphics
+// API needs to present into it (a Vulkan surface…).
+typedef enum fdw_window_system {
+  FDW_WINDOW_SYSTEM_UNKNOWN = 0,
+  // display: Display*, window: the X11 Window (an XID).
+  FDW_WINDOW_SYSTEM_X11 = 1,
+  // display: wl_display*, window: wl_surface*.
+  FDW_WINDOW_SYSTEM_WAYLAND = 2,
+  // display: HINSTANCE, window: HWND.
+  FDW_WINDOW_SYSTEM_WIN32 = 3,
+  // window: NSWindow*.
+  FDW_WINDOW_SYSTEM_COCOA = 4,
+} fdw_window_system;
+
+typedef struct fdw_window_handle {
+  fdw_window_system system;
+  uint64_t display;
+  uint64_t window;
+} fdw_window_handle;
+
+FDW_API int fdw_window_native_handle(const fdw_window *window,
+                                     fdw_window_handle *handle);
+
 // Takes the next pending event of any window. Returns 1 with an event, 0
 // when there is none.
 FDW_API int fdw_poll_event(fdw_event *event);

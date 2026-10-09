@@ -174,6 +174,37 @@ int fdw_window_present_rgba(fdw_window *window, const void *pixels,
   return 0;
 }
 
+int fdw_window_native_handle(const fdw_window *window,
+                             fdw_window_handle *handle) {
+  *handle = {FDW_WINDOW_SYSTEM_UNKNOWN, 0, 0};
+  const SDL_PropertiesID properties = SDL_GetWindowProperties(window->window);
+  const auto pointer = [properties](const char *name) {
+    return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(
+        SDL_GetPointerProperty(properties, name, nullptr)));
+  };
+  if (void *display = SDL_GetPointerProperty(
+          properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr)) {
+    handle->system = FDW_WINDOW_SYSTEM_X11;
+    handle->display = reinterpret_cast<uintptr_t>(display);
+    handle->window = static_cast<uint64_t>(SDL_GetNumberProperty(
+        properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+  } else if (pointer(SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER)) {
+    handle->system = FDW_WINDOW_SYSTEM_WAYLAND;
+    handle->display = pointer(SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER);
+    handle->window = pointer(SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER);
+  } else if (pointer(SDL_PROP_WINDOW_WIN32_HWND_POINTER)) {
+    handle->system = FDW_WINDOW_SYSTEM_WIN32;
+    handle->display = pointer(SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER);
+    handle->window = pointer(SDL_PROP_WINDOW_WIN32_HWND_POINTER);
+  } else if (pointer(SDL_PROP_WINDOW_COCOA_WINDOW_POINTER)) {
+    handle->system = FDW_WINDOW_SYSTEM_COCOA;
+    handle->window = pointer(SDL_PROP_WINDOW_COCOA_WINDOW_POINTER);
+  } else {
+    return fail("Unknown window system");
+  }
+  return 0;
+}
+
 int fdw_poll_event(fdw_event *event) {
   SDL_Event e;
   while (SDL_PollEvent(&e)) {

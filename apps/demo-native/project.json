@@ -7,7 +7,12 @@
   "targets": {
     "start": {
       "command": "node --import jiti/register apps/demo-native/src/main.ts",
-      "dependsOn": [{ "projects": ["engine-native"], "target": "build-native" }]
+      "dependsOn": [
+        {
+          "projects": ["engine-native", "engine-vulkan"],
+          "target": "build-native"
+        }
+      ]
     }
   }
 }

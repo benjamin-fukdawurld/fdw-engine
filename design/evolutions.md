@@ -50,7 +50,34 @@ Trois niveaux d'ambition :
 
 Le chemin le plus réaliste est l'hybride, sur le backend Vulkan, après la phase 6.
 
-## 3. Contraintes de compatibilité pour les prochaines étapes
+## 3. Le rendu piloté par le GPU
+
+Avec les backends natifs et le compute graph, une partie du travail du CPU par objet peut passer au GPU :
+
+- **Culling et compaction sur le GPU** : une passe de calcul teste les objets contre le frustum (puis contre un Hi-Z pour l'occlusion), et écrit les draws visibles dans un buffer indirect (`drawIndexedIndirect`, `multiDrawIndirect`).
+- **Tables de la scène** : transformations et matériaux dans des storage buffers indexés (la vue de scène en tables du [render graph §10.2](render-graph.md#102-la-vue-de-scène)), un draw indirect par pipeline.
+- **Mesh shaders** (Vulkan, Direct3D 12) : géométrie découpée en meshlets, cull par meshlet.
+
+Pour les scènes de CAO et de BIM (des centaines de milliers d'objets), c'est la voie qui enlève le coût par objet du CPU, aujourd'hui de l'ordre de la microseconde. Compatibilité : les mêmes que pour le ray tracing (bindless, vue de scène en tables), plus les draws indirects dans l'API abstraite.
+
+## 4. La sortie HDR et les couleurs étendues
+
+La cible HDR du render graph (`rgba16float`) est aujourd'hui ramenée en 8 bits sRGB par la passe de tone mapping. Les écrans HDR et à large gamut peuvent recevoir plus :
+
+- **Swapchains HDR** : `rgba16float` en scRGB linéaire (Windows) ou `rgb10a2unorm` en HDR10 (PQ), par `VK_EXT_swapchain_colorspace` et les métadonnées `VK_EXT_hdr_metadata` ; côté web, `toneMapping: { mode: 'extended' }` du canvas WebGPU.
+- **La passe de sortie** devient un choix de l'encodage de l'écran (sRGB, scRGB, PQ) et d'une courbe adaptée à sa luminance.
+- **Gamut** : Display P3 et Rec. 2020, pour les textures et la sortie.
+
+Compatibilité : garder la séparation entre les couleurs linéaires de la scène et une passe de sortie unique, qui seule connaît l'écran.
+
+## 5. Le travail en parallèle sur le GPU
+
+- **Plusieurs files** : calcul asynchrone (culling, simulation) pendant le rendu, transferts sur une file dédiée. Le render graph sait déjà quelles passes dépendent de quelles autres ; il faudrait des sémaphores entre les files et des transferts de propriété des ressources.
+- **Enregistrement en parallèle** : les passes d'une frame enregistrées par plusieurs threads (workers et addon), utile quand les scènes deviennent grandes.
+
+Compatibilité : garder les dépendances explicites dans le render graph (usages déclarés), qui permettent ces découpages.
+
+## 6. Contraintes de compatibilité pour les prochaines étapes
 
 Pour garder ces évolutions possibles sans refonte :
 

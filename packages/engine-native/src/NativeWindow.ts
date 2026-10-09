@@ -1,6 +1,7 @@
 import {
   loadAddon,
   Modifiers,
+  NativeHandle,
   NativeAddon,
   RawWindowEvent,
   WindowFlags,
@@ -149,6 +150,14 @@ export class NativeWindow extends EventTarget {
     stride = width * 4
   ): void {
     this._addon.presentRgba(this.handle, pixels, width, height, stride);
+  }
+
+  /**
+   * The window system and the native handles of the window: what a graphics
+   * API needs to present into it (a Vulkan swapchain).
+   */
+  get nativeHandle(): NativeHandle {
+    return this._addon.nativeHandle(this.handle);
   }
 
   destroy(): void {

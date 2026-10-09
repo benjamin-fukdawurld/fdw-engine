@@ -53,6 +53,15 @@ export interface NativeAddon {
     stride: number
   ): void;
   pollEvents(): RawWindowEvent[];
+  // The window system and the native handles of a window.
+  nativeHandle(window: WindowHandle): NativeHandle;
+}
+
+/** The window system of a window and its native handles. */
+export interface NativeHandle {
+  readonly system: 'x11' | 'wayland' | 'win32' | 'cocoa' | 'unknown';
+  readonly display: bigint;
+  readonly window: bigint;
 }
 
 // The flags of createWindow (include/fdw/window.h).

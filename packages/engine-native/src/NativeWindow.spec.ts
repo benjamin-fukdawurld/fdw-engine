@@ -38,6 +38,7 @@ function fakeAddon() {
     presentRgba: (_, pixels, width, height, stride) =>
       calls.push(`present ${pixels.length} ${width}×${height} ${stride}`),
     pollEvents: () => queue.splice(0),
+    nativeHandle: () => ({ system: 'x11', display: 1n, window: 2n }),
   };
   return { addon, calls, queue };
 }

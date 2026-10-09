@@ -7,13 +7,49 @@
   "targets": {
     "build-native": {
       "command": "node scripts/build.mjs",
-      "options": { "cwd": "packages/engine-native" },
+      "options": {
+        "cwd": "packages/engine-native"
+      },
       "cache": true,
-      "inputs": ["{projectRoot}/native/**/*", "{projectRoot}/scripts/**/*"],
+      "inputs": [
+        "{projectRoot}/native/**/*",
+        "{projectRoot}/scripts/**/*",
+        "{workspaceRoot}/tools/native/**/*"
+      ],
       "outputs": ["{projectRoot}/build/fdw_native.node"]
     },
     "test": {
-      "dependsOn": ["build-native"]
+      "dependsOn": [
+        "build-native",
+        {
+          "projects": ["engine-vulkan"],
+          "target": "build-native"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^production",
+        {
+          "json": "{workspaceRoot}/tsconfig.json",
+          "fields": ["compilerOptions"]
+        },
+        {
+          "externalDependencies": ["vitest"]
+        },
+        {
+          "env": "CI"
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.js",
+          "transitive": true
+        },
+        {
+          "env": "VULKAN_SDK"
+        },
+        {
+          "env": "DISPLAY"
+        }
+      ]
     }
   }
 }

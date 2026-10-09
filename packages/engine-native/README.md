@@ -26,6 +26,7 @@ The native library has a C API (`native/include/fdw/window.h`), and the addon is
 | `NativeWindow`          | class    | A native window: `width` / `height` in pixels, `title`, `vsync`, `presentRgba()`, `destroy()`. Its events are DOM events (`NativeWindowEvent`): `close`, `resize`, `keydown` / `keyup` (`key`, `repeat`, modifiers), `pointermove` / `pointerdown` / `pointerup` / `wheel` (`x`, `y`, `button`, `dx`, `dy`) |
 | `runLoop`               | function | The render loop in place of `requestAnimationFrame`: dispatches the window events, calls the frame, waits for its `throttle`, lets the Node event loop run. Returns `{ stop(), done }`                                                                                                                      |
 | `DawnWindowSurface`     | class    | A `Surface` showing WebGPU (Dawn) frames in a `NativeWindow`, by copy: rendered into a texture, read back, shown by the window. `throttle()` bounds the frames in flight (2 by default). For development and tools: one copy and a frame or two of latency                                                  |
+| `VulkanWindowSurface`   | class    | A `Surface` presenting Vulkan frames into a `NativeWindow` created with `vulkan: true`, without copy: a swapchain (`@fdw/engine-vulkan`) recreated when the window is resized; `vsync` option. Needs no throttle: the swapchain sets the pace                                                               |
 | `createDawnEngine`      | function | A `WebGpuEngine` on Dawn (the `webgpu` package), whose WebGPU globals become globals                                                                                                                                                                                                                        |
 | `loadAddon`, `setAddon` | function | The addon, and its replacement in tests                                                                                                                                                                                                                                                                     |
 
@@ -56,4 +57,6 @@ surface.destroy();
 window.destroy();
 ```
 
-`apps/demo-native` runs the scenes of the demo this way: `npx nx run demo-native:start -- shadows` (or `pbr`).
+On Vulkan, the window is created with `vulkan: true` and presented through `VulkanWindowSurface`: `window.nativeHandle` gives the window system and its handles to the swapchain.
+
+`apps/demo-native` runs the scenes of the demo this way: `npx nx run demo-native:start -- shadows` (or `pbr`), on Dawn by default, on Vulkan with `--vulkan` (`--validation` for the validation layer, `--no-vsync` to measure).

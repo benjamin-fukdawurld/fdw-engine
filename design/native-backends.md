@@ -161,6 +161,54 @@ Un **`HlslCodegen`**, à côté de `WgslCodegen` et `GlslEsCodegen`, qui produit
 - **Axe Y** : le clip space de Vulkan a son y vers le bas. On le corrige par un viewport de hauteur négative (Vulkan 1.1), sans toucher aux shaders ni aux matrices.
 - **Validation** : les couches de validation de Vulkan sont activées en développement et dans les tests. Leurs messages font échouer les tests.
 
+### 8.1 Découpage de N3 (proposition)
+
+**Trois couches**, comme pour la fenêtre :
+
+| Couche                       | Rôle                                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `fdw_vulkan` (C++20, API C)  | Le travail Vulkan : contexte, mémoire, ressources, pipelines, rejeu des commandes, synchronisation, compilation HLSL → SPIR-V par la bibliothèque DXC. Poignées opaques, pas de type Vulkan dans l'API |
+| `fdw_vulkan.node` (C, N-API) | Une fine liaison, comme `fdw_native.node`                                                                                                                                                              |
+| `@fdw/engine-vulkan` (TS)    | `VulkanEngine`, `VulkanRenderBackend` (fabriques, `PipelineFactory`, encodeur de commandes), `VulkanOffscreenSurface` : l'API abstraite au-dessus de l'addon                                           |
+
+**Dépendances** : celles du Vulkan SDK, déjà requis pour DXC, et présent sur les trois plateformes : en-têtes Vulkan, volk (chargement des fonctions), VMA, `dxcapi.h`. La bibliothèque DXC (`libdxcompiler`) est chargée à l'exécution (`dlopen`), depuis le SDK ou à côté de l'addon. SDL3 reste récupéré par CMake, pour N4.
+
+**L'API C, par familles** (toutes les fonctions prennent le contexte) :
+
+- **Contexte** : création (validation activée ou non), choix du GPU (discret de préférence, Vulkan 1.3, dynamic rendering, synchronization2), une file graphique et calcul ; messages de validation récupérés par l'hôte, pour faire échouer les tests ; destruction.
+- **Buffers** : création (taille, usages), écriture (par un buffer de transfert, dans l'ordre de la file), relecture asynchrone (copie vers un buffer lisible, puis attente de sa fence par sondage depuis JavaScript).
+- **Textures et samplers** : création (format, dimensions, couches, échantillons, usages), chargement de données, vues ; samplers avec comparaison.
+- **Programmes et pipelines** :
+  - compilation HLSL → SPIR-V (bibliothèque DXC, arguments de `dxcArguments`) ;
+  - layouts de groupes (depuis la `PhysicalBindGroup`), layouts de pipelines ;
+  - pipelines de rendu (format des attachments pour le dynamic rendering, sommets, mélange, profondeur et biais, culling, échantillons ; viewport et scissor dynamiques) et de calcul.
+- **Groupes de ressources** : descriptor sets alloués dans des pools extensibles, libérables (les bind groups du `Renderer` vivent longtemps).
+- **Commandes** : l'encodeur TypeScript écrit les commandes d'une frame dans un `ArrayBuffer` compact (opérations et identifiants de ressources) ; `submit` le rejoue dans un `VkCommandBuffer`. Les opérations sont celles de l'API abstraite : passes de rendu (attachments, chargement, effacement, résolution), pipeline, groupes, sommets, index, draws, viewport, passes de calcul et dispatch (direct et indirect), copies, transitions.
+- **Frames** : deux au plus en vol ; une file de destruction diffère la libération des ressources jusqu'à la fin des frames qui les utilisent.
+
+**La synchronisation** : deux options étaient possibles. **Décision : A**, le suivi automatique dans l'addon.
+
+| Option                                          | Intérêt                                                                                                                                                                                                                                                                                                 | Coût                                                                                                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Suivi automatique dans l'addon** (proposé) | L'addon connaît le layout et le dernier accès de chaque texture et buffer, et insère les barrières nécessaires au début des passes : la sémantique de WebGPU, donc tout utilisateur de l'API abstraite (le `Renderer`, le `ComputeRunner`, les tests qui encodent à la main) fonctionne sans changement | Un peu de travail CPU par passe ; des barrières moins groupées que l'optimum                                                                                                          |
+| B. Seulement les transitions du render graph    | Les barrières calculées une fois par le graphe, groupées                                                                                                                                                                                                                                                | Tout ce qui n'est pas dans un graphe (copies, chargements, encodage manuel) doit déclarer ses transitions ; une erreur de déclaration donne un rendu faux ou une erreur de validation |
+
+Avec A, les transitions calculées par le render graph restent utiles : vérifiées contre le suivi en développement, puis employées pour grouper les barrières quand le profilage le demandera.
+
+**Choix de détail** (décidés) :
+
+- `depth24plus` devient `VK_FORMAT_D32_SFLOAT`, toujours disponible, alors que le D24 ne l'est pas partout. WebGPU autorise tout format d'au moins 24 bits.
+- Les écritures de buffers (`buffer.write`) gardent la sémantique de `queue.writeBuffer` de WebGPU : copiées dans un anneau de transfert, puis appliquées dans l'ordre de la file, avant les commandes du `submit` suivant.
+
+**Sous-étapes**, chacune avec ses tests :
+
+| Sous-étape               | Contenu                                                                                                     | Test                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| N3a. Contexte et buffers | Outillage CMake de l'addon, contexte, validation, buffers (écriture, relecture), couche TypeScript minimale | Aller-retour d'un buffer ; aucun message de validation                                  |
+| N3b. Textures et passes  | Textures, samplers, chargements, surface hors écran et relecture de pixels, passes d'effacement, copies     | Effacement d'une cible relu en pixels ; copies de textures                              |
+| N3c. Pipelines et draws  | DXC, pipelines, groupes, sommets, draws, suivi des barrières                                                | Premier triangle ; puis la suite de rendu, test après test                              |
+| N3d. Le reste de l'API   | Calcul (direct, indirect), multi-échantillonnage et résolution, biais de profondeur, viewports (ombres)     | **La suite de rendu partagée passe entièrement sur Vulkan, sans message de validation** |
+
 ## 9. Coût
 
 | Étape                     | Taille estimée | Ce qui coûte                                                                                                                                   |
@@ -213,6 +261,29 @@ _N2 fait._
   - sept programmes types (unlit, phong texturé avec tone mapping, pbr avec ombres, variante depth-only masquée, passe plein écran, kernel de calcul, étages bruts) sont compilés par DXC, validés par spirv-val, et leurs offsets comparés par réflexion ;
   - surtout, **les 40 programmes distincts de la suite de rendu**, enregistrés pendant qu'elle tourne sur Dawn (`tests/rendering/src/hlsl.spec.ts`), passent par le même contrôle.
   - Sans le Vulkan SDK, ces tests sont sautés ; le cache Nx des tests dépend de `VULKAN_SDK`.
+
+_N3 fait._ **La suite de rendu partagée passe entièrement sur Vulkan, couche de validation active, sans aucun message** (36 tests : surfaces et modèles d'éclairage, textures, transparence, render graph, HDR et post-traitements, MSAA, ombres, calcul direct et indirect). Sur la machine de développement : une NVIDIA RTX 2060 SUPER.
+
+- **La bibliothèque `fdw_vulkan`** (`native/`, C++20, API C de `include/fdw/vulkan.h`) :
+  - contexte : instance, choix du GPU (Vulkan 1.3, dynamic rendering, synchronization2, timeline semaphores), messages de validation ;
+  - mémoire par VMA ; Vulkan chargé par volk ;
+  - buffers, textures, samplers ; shaders compilés par la bibliothèque DXC chargée à l'exécution ; layouts de groupes, groupes (pools de descriptor sets extensibles), pipelines de rendu et de calcul ;
+  - les commandes d'une frame, un flux de mots de 32 bits rejoué au `submit` (un appel natif par soumission) ;
+  - les écritures (`buffer.write`, chargements de textures) et les relectures dans un command buffer de transfert, ordonné dans la file avant les commandes suivantes ;
+  - chaque soumission signale une valeur d'un timeline semaphore : destructions différées et relectures se règlent dessus.
+- **Le suivi des ressources (option A)** : chaque texture garde son layout et son dernier accès, chaque buffer son dernier accès. Les barrières des attachments, et celles des groupes, sommets et index d'une passe de rendu, sont placées avant elle, en parcourant ses commandes à l'avance ; celles d'un dispatch avant lui. Lectures après lectures sans barrière. Layouts génériques de synchronization2 (`ATTACHMENT_OPTIMAL`, `READ_ONLY_OPTIMAL`).
+- **Les conventions de WebGPU** : viewport de hauteur négative (y vers le haut en clip space, la face avant reste dans le sens trigonométrique) ; `depth24plus` en `D32_SFLOAT` ; images rangées à partir du haut.
+- **La couche TypeScript** : `VulkanEngine`, `VulkanDevice`, `VulkanRenderBackend` (fabriques, `VulkanPipelineFactory` qui génère le HLSL, encodeurs qui écrivent les commandes), `VulkanOffscreenSurface`.
+- **Construction** : `nx run engine-vulkan:build-native`, contre les en-têtes, volk, VMA et DXC du Vulkan SDK ; sans le SDK, l'addon n'est pas construit et ses tests sont sautés. Le script de construction des addons est commun (`tools/native/build-addon.mjs`).
+- **Corrections en route** : DXC traduit `discard` par `OpDemoteToHelperInvocation` pour Vulkan 1.3, d'où la fonctionnalité `shaderDemoteToHelperInvocation` à activer ; un rejeu interrompu par une erreur soumet ce qui a été enregistré, pour que l'état suivi reste celui du GPU.
+- **Simplifications, à reprendre si le profilage le demande** : un buffer de transfert par écriture (plutôt qu'un anneau) ; un descriptor set par groupe ; pas de cache de pipelines ; relectures attendues par sondage depuis JavaScript ; un seul niveau de mipmap ; les transitions calculées par le render graph ne sont pas encore utilisées.
+
+_N4 fait._ **La démo native tourne sur Vulkan, présentée par une swapchain, sans copie, à la cadence de l'écran** (`nx run demo-native:start -- shadows --vulkan`).
+
+- **Les fenêtres donnent leurs poignées natives** (`NativeWindow.nativeHandle` : système, display, fenêtre ; X11 et Wayland sous Linux, Win32 et Cocoa déclarés). Les deux addons restent indépendants : l'addon Vulkan crée la surface lui-même (`VK_KHR_xlib_surface`, `VK_KHR_wayland_surface`, `VK_KHR_win32_surface` selon la plateforme de compilation).
+- **La swapchain** (`VulkanSwapchain`, `VulkanWindowSurface`) : format 8 bits écrit tel quel (`bgra8unorm` ou `rgba8unorm`, le moteur encode les couleurs), FIFO avec la synchronisation verticale, mailbox ou immédiat sans elle ; recréée quand la taille de la fenêtre change ou qu'elle est périmée ; au plus deux frames en vol (attente sur le timeline semaphore). Les images sont des textures ordinaires du suivi : à l'acquisition, leur layout devient « non défini » et leur première utilisation attend le sémaphore d'acquisition, que la soumission suivante attend ; la présentation les fait passer au layout de présentation. Les transitions initiales des ressources importées, notées au [backlog](backlog.md#2-render-graph), sont ainsi couvertes par le suivi.
+- **Mesures** (RTX 2060 SUPER, scène des ombres en 1280 × 720 avec MSAA 4×) : 60 fps avec la synchronisation verticale ; sans elle, environ 1 900 fps sur Vulkan contre 590 sur Dawn avec la recopie.
+- **Tests** : une swapchain sur une fenêtre cachée (effacement relu avant présentation, frames du `Renderer` avec MSAA), validation active.
 
 ## 11. Stratégie de test
 

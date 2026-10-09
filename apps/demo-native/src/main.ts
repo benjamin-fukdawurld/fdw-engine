@@ -1,15 +1,22 @@
-// The demo scenes in a native window, outside of the browser: WebGPU on
-// Dawn, presented by copy (see design/native-backends.md).
+// The demo scenes in a native window, outside of the browser (see
+// design/native-backends.md):
+// - WebGPU on Dawn, presented by copy (default);
+// - Vulkan, presented by a swapchain (--vulkan), with the validation layer
+//   when the Vulkan SDK is set up (--validation).
 //
-// nx run demo-native:start [-- <scene>] [--frames <count>] [--hidden]
+// nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
+//   [--no-vsync] [--frames <count>] [--hidden]
 // Scenes: shadows (default), pbr. Escape or closing the window quits.
+import type { Engine, Surface } from '@fdw/engine-backend';
 import {
   createDawnEngine,
   DawnWindowSurface,
   NativeWindow,
   NativeWindowEvent,
   runLoop,
+  VulkanWindowSurface,
 } from '@fdw/engine-native';
+import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createPbrScene,
   createShadowsScene,
@@ -30,16 +37,46 @@ const name =
   args.find((arg) => !arg.startsWith('--') && arg in scenes) ?? 'shadows';
 // Stops after this many frames (tests, profiling).
 const maxFrames = Number(option('--frames') ?? Infinity);
+const vulkan = args.includes('--vulkan');
+const vsync = !args.includes('--no-vsync');
 
-const engine = await createDawnEngine();
-const title = `FdwEngine: ${name} (WebGPU, Dawn)`;
-const window = new NativeWindow({
-  title,
-  width: 1280,
-  height: 720,
-  hidden: args.includes('--hidden'),
-});
-const surface = new DawnWindowSurface(window);
+// The engine, the window and its surface for the chosen backend.
+let engine: Engine;
+let surface: Surface & { destroy(): void };
+let throttle: (() => Promise<void>) | undefined;
+let title: string;
+let window: NativeWindow;
+if (vulkan) {
+  const vulkanEngine = new VulkanEngine({
+    validation: args.includes('--validation'),
+    application: 'FdwEngine demo',
+  });
+  await vulkanEngine.init();
+  engine = vulkanEngine;
+  title = `FdwEngine: ${name} (Vulkan, ${vulkanEngine.device?.name})`;
+  window = new NativeWindow({
+    title,
+    width: 1280,
+    height: 720,
+    hidden: args.includes('--hidden'),
+    vulkan: true,
+  });
+  // The swapchain sets the pace: no throttle.
+  surface = new VulkanWindowSurface(window, { vsync });
+} else {
+  engine = await createDawnEngine();
+  title = `FdwEngine: ${name} (WebGPU, Dawn)`;
+  window = new NativeWindow({
+    title,
+    width: 1280,
+    height: 720,
+    hidden: args.includes('--hidden'),
+  });
+  const dawnSurface = new DawnWindowSurface(window);
+  window.vsync = vsync;
+  throttle = () => dawnSurface.throttle();
+  surface = dawnSurface;
+}
 await surface.init(engine);
 const backend = engine.backend;
 if (!backend) {
@@ -65,7 +102,7 @@ const loop = runLoop(
       loop.stop();
     }
   },
-  { throttle: () => surface.throttle() }
+  throttle ? { throttle } : {}
 );
 window.addEventListener('close', () => loop.stop());
 window.addEventListener('keydown', (event) => {
@@ -81,8 +118,14 @@ console.log(
     frames / seconds
   ).toFixed(1)} fps)`
 );
+if (engine instanceof VulkanEngine) {
+  const messages = engine.device?.takeMessages() ?? [];
+  if (messages.length > 0) {
+    console.log(`Vulkan validation:\n${messages.join('\n')}`);
+  }
+}
 scene.destroy();
-await surface.throttle();
+await throttle?.();
 surface.destroy();
 window.destroy();
 await engine.destroy();

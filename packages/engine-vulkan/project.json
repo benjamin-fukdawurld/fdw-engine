@@ -26,7 +26,24 @@
         {
           "env": "VULKAN_SDK"
         }
-      ]
+      ],
+      "dependsOn": ["build-native"]
+    },
+    "build-native": {
+      "command": "node scripts/build.mjs",
+      "options": {
+        "cwd": "packages/engine-vulkan"
+      },
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/native/**/*",
+        "{projectRoot}/scripts/**/*",
+        "{workspaceRoot}/tools/native/**/*",
+        {
+          "env": "VULKAN_SDK"
+        }
+      ],
+      "outputs": ["{projectRoot}/build/fdw_vulkan.node"]
     }
   }
 }

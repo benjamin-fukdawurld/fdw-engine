@@ -14,6 +14,9 @@
       "path": "../engine-core/tsconfig.lib.json"
     },
     {
+      "path": "../engine-vulkan/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-webgpu/tsconfig.lib.json"
     },
     {

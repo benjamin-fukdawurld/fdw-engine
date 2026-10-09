@@ -223,6 +223,34 @@ static napi_value js_present_rgba(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
+static const char *system_names[] = {"unknown", "x11", "wayland", "win32",
+                                     "cocoa"};
+
+// nativeHandle(window): { system, display, window }, the handles as bigints.
+static napi_value js_native_handle(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  CHECK(napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
+  fdw_window *window = window_arg(env, argv[0]);
+  if (!window) {
+    return NULL;
+  }
+  fdw_window_handle handle;
+  if (fdw_window_native_handle(window, &handle) != 0) {
+    return throw_last_error(env);
+  }
+  napi_value result, system, display, native;
+  CHECK(napi_create_object(env, &result));
+  CHECK(napi_create_string_utf8(env, system_names[handle.system],
+                                NAPI_AUTO_LENGTH, &system));
+  CHECK(napi_create_bigint_uint64(env, handle.display, &display));
+  CHECK(napi_create_bigint_uint64(env, handle.window, &native));
+  CHECK(napi_set_named_property(env, result, "system", system));
+  CHECK(napi_set_named_property(env, result, "display", display));
+  CHECK(napi_set_named_property(env, result, "window", native));
+  return result;
+}
+
 static const char *event_names[] = {
     "none",        "close",       "resize",    "keydown",   "keyup",
     "pointermove", "pointerdown", "pointerup", "wheel",
@@ -297,6 +325,8 @@ static napi_value init_module(napi_env env, napi_value exports) {
       {"presentRgba", NULL, js_present_rgba, NULL, NULL, NULL, napi_default,
        NULL},
       {"pollEvents", NULL, js_poll_events, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"nativeHandle", NULL, js_native_handle, NULL, NULL, NULL, napi_default,
        NULL},
   };
   if (napi_define_properties(env, exports,

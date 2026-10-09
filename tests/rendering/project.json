@@ -26,6 +26,12 @@
         {
           "env": "VULKAN_SDK"
         }
+      ],
+      "dependsOn": [
+        {
+          "projects": ["engine-vulkan"],
+          "target": "build-native"
+        }
       ]
     }
   }
