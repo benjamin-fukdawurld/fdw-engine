@@ -30,10 +30,12 @@ export type LogicalBinding =
       readonly type: TextureType;
     }
   | {
-      /** A read-only storage buffer: a runtime-sized array. */
+      /** A storage buffer: a runtime-sized array. */
       readonly kind: 'storage-buffer';
       readonly name: string;
       readonly type: ArrayType;
+      /** Written by compute stages only. */
+      readonly access: 'read' | 'read-write';
     }
   | {
       readonly kind: 'sampler';

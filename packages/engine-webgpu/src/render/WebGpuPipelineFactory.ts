@@ -1,4 +1,6 @@
 import {
+  ComputePipelineDescriptor,
+  GpuComputePipeline,
   GpuBindGroup,
   GpuBindGroupEntry,
   GpuBindGroupLayout,
@@ -25,6 +27,10 @@ export class WebGpuRenderPipeline implements GpuRenderPipeline {
   ) {}
 }
 
+export class WebGpuComputePipeline implements GpuComputePipeline {
+  constructor(readonly pipeline: GPUComputePipeline, readonly label?: string) {}
+}
+
 export class WebGpuBindGroupLayout implements GpuBindGroupLayout {
   constructor(readonly key: string, readonly layout: GPUBindGroupLayout) {}
 }
@@ -37,8 +43,11 @@ export class WebGpuBindGroup implements GpuBindGroup {
 }
 
 function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
-  // Programs do not say which stage reads which resource yet.
-  const visibility = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+  // Programs do not say which stage reads which resource yet: every stage
+  // that can see the resource does, so that groups are shared between render
+  // and compute pipelines.
+  const visibility =
+    GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE;
   const { resource } = binding;
   switch (resource.kind) {
     case 'uniform-block':
@@ -64,11 +73,18 @@ function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
         sampler: { type: resource.comparison ? 'comparison' : 'filtering' },
       };
     case 'storage-buffer':
-      return {
-        binding: binding.binding,
-        visibility,
-        buffer: { type: 'read-only-storage' },
-      };
+      return resource.access === 'read-write'
+        ? {
+            binding: binding.binding,
+            // Vertex stages cannot write storage buffers.
+            visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE,
+            buffer: { type: 'storage' },
+          }
+        : {
+            binding: binding.binding,
+            visibility,
+            buffer: { type: 'read-only-storage' },
+          };
   }
 }
 
@@ -168,6 +184,50 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
     );
   }
 
+  createComputePipeline(
+    descriptor: ComputePipelineDescriptor
+  ): WebGpuComputePipeline {
+    return new WebGpuComputePipeline(
+      this.device.createComputePipeline(this.describeCompute(descriptor)),
+      descriptor.label
+    );
+  }
+
+  async createComputePipelineAsync(
+    descriptor: ComputePipelineDescriptor
+  ): Promise<WebGpuComputePipeline> {
+    return new WebGpuComputePipeline(
+      await this.device.createComputePipelineAsync(
+        this.describeCompute(descriptor)
+      ),
+      descriptor.label
+    );
+  }
+
+  private describeCompute({
+    program,
+    label,
+  }: ComputePipelineDescriptor): GPUComputePipelineDescriptor {
+    if (
+      !program.module.entryPoints.some((entry) => entry.stage === 'compute')
+    ) {
+      throw new Error(`Program "${program.name}" has no compute stage`);
+    }
+    return {
+      label: label ?? program.name,
+      layout: this.pipelineLayout(program),
+      compute: { module: this.shaderModule(program), entryPoint: 'cs_main' },
+    };
+  }
+
+  private pipelineLayout(program: CompiledProgram): GPUPipelineLayout {
+    return this.device.createPipelineLayout({
+      bindGroupLayouts: this.resolveLayout(program).groups.map(
+        (group) => this.createBindGroupLayout(group).layout
+      ),
+    });
+  }
+
   private shaderModule(program: CompiledProgram): GPUShaderModule {
     let module = this._modules.get(program.programKey);
     if (!module) {
@@ -193,18 +253,13 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
   } {
     const { program, primitive, depthStencil, targets } = descriptor;
     const module = this.shaderModule(program);
-    const layout = this.resolveLayout(program);
     const buffers = matchVertexLayout(program.vertexInputs, descriptor.vertex);
 
     return {
       vertexBuffers: buffers.map((buffer) => buffer.buffer),
       gpuDescriptor: {
         label: descriptor.label ?? program.name,
-        layout: this.device.createPipelineLayout({
-          bindGroupLayouts: layout.groups.map(
-            (group) => this.createBindGroupLayout(group).layout
-          ),
-        }),
+        layout: this.pipelineLayout(program),
         vertex: {
           module,
           entryPoint: 'vs_main',

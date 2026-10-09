@@ -3,6 +3,7 @@ export type GpuBufferUsage =
   | 'storage'
   | 'vertex'
   | 'index'
+  | 'indirect'
   | 'copy-src'
   | 'copy-dst';
 
@@ -19,6 +20,10 @@ export interface GpuBuffer {
     dataOffset?: number,
     size?: number
   ): void;
+
+  // Reads the content of the buffer back, once the GPU commands submitted so
+  // far are done. The buffer needs the 'copy-src' usage.
+  read(offset?: number, size?: number): Promise<ArrayBuffer>;
 
   destroy(): void;
 }

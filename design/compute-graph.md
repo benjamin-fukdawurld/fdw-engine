@@ -268,13 +268,15 @@ Les buffers gagnent l'usage `storage` (déjà déclaré dans l'API) et une relec
 
 ## 9. Plan d'implémentation
 
+_CG1 et CG2 faits._ CG2 inclut l'entry point `compute` de l'IR et le générateur WGSL, sans lesquels un pipeline de calcul ne pouvait pas être testé ; CG3 en est allégé d'autant.
+
 L'étape **RG1** du plan commun ([render graph §13](render-graph.md#13-plan-dimplémentation)) :
 
-| Étape                                 | Contenu                                                                                                                                         | Critère de fin                                                                                     |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **CG1. Storage buffers** (chantier 4) | `input.storage`, `std.index`, `std.arrayLength`, layout `std430`, WGSL, binding `read-only-storage`, erreur WebGL2 ; lecture dans les matériaux | Rendu d'une palette lue dans un storage buffer sur Dawn ; erreur explicite sur WebGL2              |
-| **CG2. API de calcul**                | Pipelines et passes de calcul, dispatch, relecture de buffers ; implémentation WebGPU                                                           | Un dispatch d'un WGSL de test sur Dawn, résultat relu                                              |
-| **CG3. Compute graphs**               | `output.compute`, builtins de calcul, écritures dans l'IR, `textureSampleLevel`, règle lecture / écriture ; générateur WGSL                     | Le kernel de l'exemple (§6.6) et un traitement d'image exécutés sur Dawn, comparés à un calcul CPU |
+| Étape                                 | Contenu                                                                                                                                                                                                                                                | Critère de fin                                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| **CG1. Storage buffers** (chantier 4) | `input.storage`, `std.index`, `std.arrayLength`, layout `std430`, WGSL, binding `read-only-storage`, erreur WebGL2 ; lecture dans les matériaux                                                                                                        | Rendu d'une palette lue dans un storage buffer sur Dawn ; erreur explicite sur WebGL2              |
+| **CG2. API de calcul et IR**          | Pipelines et passes de calcul, dispatch (direct et indirect), relecture de buffers ; entry point `compute` de l'IR (taille de workgroup, builtins de calcul, écritures) ; générateur WGSL `cs_main` ; implémentation WebGPU, refus explicite en WebGL2 | Une IR de calcul écrite à la main exécutée sur Dawn, résultat relu et comparé à un calcul CPU      |
+| **CG3. Compute graphs**               | `output.compute`, builtins et nœuds d'écriture dans le graphe, compilation d'un graphe vers l'entry point `compute`, `textureSampleLevel`, règle lecture / écriture, API de dispatch direct (§6.7)                                                     | Le kernel de l'exemple (§6.6) et un traitement d'image exécutés sur Dawn, comparés à un calcul CPU |
 
 Les passes de calcul du render graph (RG2) utilisent ensuite ces programmes.
 

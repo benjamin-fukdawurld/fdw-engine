@@ -15,6 +15,7 @@ function usageFlags(): readonly [GpuBufferUsage, GPUBufferUsageFlags][] {
     ['uniform', GPUBufferUsage.UNIFORM],
     ['storage', GPUBufferUsage.STORAGE],
     ['vertex', GPUBufferUsage.VERTEX],
+    ['indirect', GPUBufferUsage.INDIRECT],
   ];
 }
 
@@ -124,6 +125,34 @@ export class Buffer implements FdGpuBuffer {
 
     const padded = padData(value, dataOffset, byteLength);
     this.device.queue.writeBuffer(this.buffer, offset, padded);
+  }
+
+  async read(offset = 0, size = this.size - offset): Promise<ArrayBuffer> {
+    if ((this.buffer.usage & GPUBufferUsage.COPY_SRC) === 0) {
+      throw new Error(
+        `Buffer "${
+          this.label ?? '(unlabeled)'
+        }" was not created with 'copy-src' usage and cannot be read back.`
+      );
+    }
+    // Copies are made by 4 bytes: the staging buffer covers the aligned range.
+    const start = Math.floor(offset / 4) * 4;
+    const end = Math.ceil((offset + size) / 4) * 4;
+    const staging = this.device.createBuffer({
+      label: `${this.label ?? 'buffer'} read back`,
+      size: end - start,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffer, start, staging, 0, end - start);
+    this.device.queue.submit([encoder.finish()]);
+    await staging.mapAsync(GPUMapMode.READ);
+    const data = staging
+      .getMappedRange()
+      .slice(offset - start, offset - start + size);
+    staging.unmap();
+    staging.destroy();
+    return data;
   }
 
   destroy(): void {

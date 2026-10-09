@@ -241,6 +241,8 @@ function emitInstructions(
             // Origin at the bottom left, where WGSL has it at the top left.
             expression = 'gl_FragCoord';
             break;
+          default:
+            throw new Error(`GLSL ES 3.00 has no ${op.builtin} (compute)`);
         }
         break;
       case 'load-resource':
@@ -359,6 +361,9 @@ export class GlslEsCodegen implements ShaderCodegen {
     const fragment = module.entryPoints.find(
       (entryPoint) => entryPoint.stage === 'fragment'
     );
+    if (module.entryPoints.some((entry) => entry.stage === 'compute')) {
+      throw new Error('GLSL ES 3.00 has no compute shaders');
+    }
     if (!vertex || !fragment) {
       throw new Error('A program needs a vertex and a fragment entry point');
     }

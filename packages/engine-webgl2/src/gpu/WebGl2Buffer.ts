@@ -19,6 +19,9 @@ function targetOf(usage: readonly GpuBufferUsage[]): GLenum {
   if (usage.includes('storage')) {
     throw new Error('WebGL2 has no storage buffers');
   }
+  if (usage.includes('indirect')) {
+    throw new Error('WebGL2 has no indirect commands');
+  }
   return GL.ARRAY_BUFFER;
 }
 
@@ -83,6 +86,15 @@ export class WebGl2Buffer implements GpuBuffer {
       offset,
       new Uint8Array(value, dataOffset, byteLength)
     );
+  }
+
+  // WebGL reads synchronously: the commands submitted so far are done when
+  // the read returns.
+  async read(offset = 0, size = this.size - offset): Promise<ArrayBuffer> {
+    const data = new Uint8Array(size);
+    this._gl.bindBuffer(GL.COPY_READ_BUFFER, this.buffer);
+    this._gl.getBufferSubData(GL.COPY_READ_BUFFER, offset, data);
+    return data.buffer;
   }
 
   destroy(): void {

@@ -3,6 +3,7 @@ import type {
   GpuBuffer,
   GpuCommandBuffer,
   GpuCommandEncoder,
+  GpuComputePassEncoder,
   GpuRenderPassEncoder,
   GpuRenderPipeline,
   IndexFormat,
@@ -316,6 +317,10 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       }
     });
     return new WebGl2RenderPassEncoder(this._commands);
+  }
+
+  beginComputePass(): GpuComputePassEncoder {
+    throw new Error('WebGL2 has no compute shaders');
   }
 
   finish(): GpuCommandBuffer {

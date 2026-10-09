@@ -10,13 +10,15 @@ export type ShaderLanguage =
   | 'spirv';
 
 export type ShaderSources =
-  // One module holding both entry points (WGSL, MSL, HLSL).
+  // One module holding the entry points (WGSL, MSL, HLSL): vertex and
+  // fragment, or compute.
   | {
       readonly kind: 'single-module';
       readonly code: string;
       readonly entryPoints: {
-        readonly vertex: string;
-        readonly fragment: string;
+        readonly vertex?: string;
+        readonly fragment?: string;
+        readonly compute?: string;
       };
     }
   // One source per stage (GLSL).

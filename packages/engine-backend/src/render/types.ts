@@ -89,7 +89,17 @@ export interface RenderPipelineDescriptor {
   readonly sampleCount?: number;
 }
 
+export interface ComputePipelineDescriptor {
+  readonly label?: string;
+  // A program with a compute stage.
+  readonly program: CompiledProgram;
+}
+
 // Opaque backend objects.
+export interface GpuComputePipeline {
+  readonly label?: string;
+}
+
 export interface GpuRenderPipeline {
   readonly label?: string;
   // For each vertex buffer slot of the pipeline, the index of the mesh
@@ -148,10 +158,23 @@ export interface GpuRenderPassEncoder {
   end(): void;
 }
 
+export interface GpuComputePassEncoder {
+  setPipeline(pipeline: GpuComputePipeline): void;
+  setBindGroup(index: number, group: GpuBindGroup): void;
+  // Runs the compute stage on x × y × z workgroups.
+  dispatchWorkgroups(x: number, y?: number, z?: number): void;
+  // The number of workgroups is read from a buffer (three u32), written by
+  // the GPU. The buffer needs the 'indirect' usage.
+  dispatchWorkgroupsIndirect(buffer: GpuBuffer, offset: number): void;
+  end(): void;
+}
+
 // Opaque recorded commands.
 export type GpuCommandBuffer = object;
 
 export interface GpuCommandEncoder {
   beginRenderPass(descriptor: RenderPassDescriptor): GpuRenderPassEncoder;
+  // Throws on backends without compute stages (capability 'compute').
+  beginComputePass(label?: string): GpuComputePassEncoder;
   finish(): GpuCommandBuffer;
 }

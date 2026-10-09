@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`WgslCodegen > generates a complete program 1`] = `
-"// Generated from material graph "textured-unlit". Do not edit.
+"// Generated from graph "textured-unlit". Do not edit.
 
 struct FrameUniforms {
   u_viewProjection: mat4x4<f32>,

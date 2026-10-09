@@ -41,6 +41,9 @@ class FakeBuffer implements GpuBuffer {
     this.writes++;
     this.data = value.slice(0);
   }
+  async read(): Promise<ArrayBuffer> {
+    return this.data.slice(0);
+  }
   destroy(): void {
     this.destroyed = true;
   }
@@ -167,6 +170,12 @@ function fakeBackend() {
           ).map((b) => b.buffer),
         };
       },
+      createComputePipeline: () => {
+        throw new Error('no compute in the fake backend');
+      },
+      createComputePipelineAsync: async () => {
+        throw new Error('no compute in the fake backend');
+      },
       createBindGroupLayout: (group) => ({
         key: JSON.stringify(group.bindings.map((b) => b.resource)),
       }),
@@ -185,6 +194,9 @@ function fakeBackend() {
       destroy: () => undefined,
     }),
     createCommandEncoder: () => ({
+      beginComputePass: () => {
+        throw new Error('no compute in the fake backend');
+      },
       beginRenderPass: () => ({
         setPipeline: (pipeline) => {
           pipelineLabel = pipeline.label ?? '';

@@ -150,6 +150,22 @@ const builtinParameters = {
     name: 'frontFacing',
     declaration: '@builtin(front_facing) frontFacing: bool',
   },
+  'global-invocation-id': {
+    name: 'globalInvocationId',
+    declaration: '@builtin(global_invocation_id) globalInvocationId: vec3<u32>',
+  },
+  'local-invocation-id': {
+    name: 'localInvocationId',
+    declaration: '@builtin(local_invocation_id) localInvocationId: vec3<u32>',
+  },
+  'workgroup-id': {
+    name: 'workgroupId',
+    declaration: '@builtin(workgroup_id) workgroupId: vec3<u32>',
+  },
+  'num-workgroups': {
+    name: 'numWorkgroups',
+    declaration: '@builtin(num_workgroups) numWorkgroups: vec3<u32>',
+  },
 } as const;
 
 function stageVariable(variable: IrStageVariable): string {
@@ -292,11 +308,110 @@ function emitInstructions(
   }
 }
 
-// Generates a WGSL module with a vs_main and an fs_main entry point.
+// Declares the resources of the layout; returns their identifiers in the
+// code, by binding name.
+function declareResources(
+  layout: PhysicalProgramLayout,
+  sections: string[]
+): Map<string, string> {
+  const resources = new Map<string, string>();
+  for (const group of layout.groups) {
+    for (const { binding, resource } of group.bindings) {
+      const location = `@group(${group.index}) @binding(${binding})`;
+      const name = resourceIdentifier(resource);
+      resources.set(resource.name, name);
+      if (resource.kind === 'uniform-block') {
+        const struct = structName(resource.name);
+        sections.push(
+          [
+            `struct ${struct} {`,
+            ...resource.members.map(
+              (member) =>
+                `  ${memberIdentifier(member.name)}: ${wgslType(member.type)},`
+            ),
+            '};',
+            `${location} var<uniform> ${name}: ${struct};`,
+          ].join('\n')
+        );
+      } else if (resource.kind === 'texture') {
+        sections.push(`${location} var ${name}: ${wgslType(resource.type)};`);
+      } else if (resource.kind === 'storage-buffer') {
+        sections.push(
+          `${location} var<storage, ${
+            resource.access === 'read-write' ? 'read_write' : 'read'
+          }> ${name}: array<${wgslType(resource.type.element)}>;`
+        );
+      } else {
+        sections.push(
+          `${location} var ${name}: ${
+            resource.comparison ? 'sampler_comparison' : 'sampler'
+          };`
+        );
+      }
+    }
+  }
+  return resources;
+}
+
+// A compute stage: the body, then the writes, in order.
+function emitCompute(
+  compute: IrEntryPoint,
+  resources: ReadonlyMap<string, string>
+): string {
+  const body = emitBody(compute, resources);
+  const [x, y, z] = compute.workgroupSize ?? [1, 1, 1];
+  const writes = (compute.writes ?? []).flatMap((write) => {
+    const target = resources.get(write.resource);
+    if (!target) {
+      throw new Error(`Binding "${write.resource}" is not in the layout`);
+    }
+    const statement = `${target}[${body.expressions.get(
+      write.index
+    )}] = ${body.expressions.get(write.value)};`;
+    return write.condition === undefined
+      ? [`  ${statement}`]
+      : [
+          `  if (${body.expressions.get(write.condition)}) {`,
+          `    ${statement}`,
+          '  }',
+        ];
+  });
+  const parameters = [...body.builtins].map(
+    (builtin) =>
+      builtinParameters[builtin as keyof typeof builtinParameters].declaration
+  );
+  return [
+    `@compute @workgroup_size(${x}, ${y}, ${z})`,
+    `fn cs_main(${parameters.join(', ')}) {`,
+    ...body.lines,
+    ...writes,
+    '}',
+  ].join('\n');
+}
+
+// Generates a WGSL module with a vs_main and an fs_main entry point, or a
+// cs_main one for a compute stage.
 export class WgslCodegen implements ShaderCodegen {
   readonly language = 'wgsl' as const;
 
   emit(module: ShaderModuleIR, layout: PhysicalProgramLayout): ShaderSources {
+    const sections: string[] = [
+      `// Generated from graph "${module.name}". Do not edit.`,
+    ];
+    const resources = declareResources(layout, sections);
+
+    const compute = module.entryPoints.find(
+      (entryPoint) => entryPoint.stage === 'compute'
+    );
+    if (compute) {
+      sections.push(emitCompute(compute, resources));
+      return {
+        kind: 'single-module',
+        code: `${sections.join('\n\n')}\n`,
+        entryPoints: { compute: 'cs_main' },
+      };
+    }
+
     const vertex = module.entryPoints.find(
       (entryPoint) => entryPoint.stage === 'vertex'
     );
@@ -304,52 +419,10 @@ export class WgslCodegen implements ShaderCodegen {
       (entryPoint) => entryPoint.stage === 'fragment'
     );
     if (!vertex || !fragment) {
-      throw new Error('A program needs a vertex and a fragment entry point');
+      throw new Error(
+        'A program needs a vertex and a fragment entry point, or a compute one'
+      );
     }
-
-    const sections: string[] = [
-      `// Generated from material graph "${module.name}". Do not edit.`,
-    ];
-
-    const resources = new Map<string, string>();
-    for (const group of layout.groups) {
-      for (const { binding, resource } of group.bindings) {
-        const location = `@group(${group.index}) @binding(${binding})`;
-        const name = resourceIdentifier(resource);
-        resources.set(resource.name, name);
-        if (resource.kind === 'uniform-block') {
-          const struct = structName(resource.name);
-          sections.push(
-            [
-              `struct ${struct} {`,
-              ...resource.members.map(
-                (member) =>
-                  `  ${memberIdentifier(member.name)}: ${wgslType(
-                    member.type
-                  )},`
-              ),
-              '};',
-              `${location} var<uniform> ${name}: ${struct};`,
-            ].join('\n')
-          );
-        } else if (resource.kind === 'texture') {
-          sections.push(`${location} var ${name}: ${wgslType(resource.type)};`);
-        } else if (resource.kind === 'storage-buffer') {
-          sections.push(
-            `${location} var<storage, read> ${name}: array<${wgslType(
-              resource.type.element
-            )}>;`
-          );
-        } else {
-          sections.push(
-            `${location} var ${name}: ${
-              resource.comparison ? 'sampler_comparison' : 'sampler'
-            };`
-          );
-        }
-      }
-    }
-
     if (vertex.inputs.length > 0) {
       sections.push(
         [

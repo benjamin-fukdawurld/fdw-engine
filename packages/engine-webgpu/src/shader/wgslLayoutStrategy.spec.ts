@@ -175,6 +175,7 @@ describe('wgslLayoutStrategy.writeUniform', () => {
                 kind: 'storage-buffer',
                 name: 'values',
                 type: arrayType(element),
+                access: 'read',
               },
             ],
           },

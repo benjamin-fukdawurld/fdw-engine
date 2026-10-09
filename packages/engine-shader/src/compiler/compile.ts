@@ -54,6 +54,8 @@ export interface CompilerCapabilities {
   readonly maxVaryings: number;
   /** Storage buffers (not in WebGL2). */
   readonly storageBuffers: boolean;
+  /** Compute stages (not in WebGL2). */
+  readonly compute: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export const defaultCompilerCapabilities: CompilerCapabilities = {
   /** WebGPU guaranteed limit (maxInterStageShaderVariables). */
   maxVaryings: 16,
   storageBuffers: true,
+  compute: true,
 };
 
 /**
@@ -367,6 +370,7 @@ function buildLayout(nodes: Iterable<ResolvedNode>): ProgramLayout {
           kind: 'storage-buffer',
           name,
           type: params['type'] as ArrayType,
+          access: params['access'] === 'read-write' ? 'read-write' : 'read',
         });
       }
       return { slot, bindings };

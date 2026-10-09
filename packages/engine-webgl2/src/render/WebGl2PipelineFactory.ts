@@ -5,6 +5,7 @@ import {
   GpuBindGroup,
   GpuBindGroupEntry,
   GpuBindGroupLayout,
+  GpuComputePipeline,
   GpuPipelineFactory,
   GpuRenderPipeline,
   matchVertexLayout,
@@ -230,6 +231,14 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
       linkedProgram = finish(glProgram);
     }
     return this.pipeline(descriptor, linkedProgram);
+  }
+
+  createComputePipeline(): GpuComputePipeline {
+    throw new Error('WebGL2 has no compute shaders');
+  }
+
+  async createComputePipelineAsync(): Promise<GpuComputePipeline> {
+    throw new Error('WebGL2 has no compute shaders');
   }
 
   async createRenderPipelineAsync(

@@ -37,6 +37,7 @@ An abstract rendering API modelled on WebGPU, which maps almost directly onto Vu
 | `GpuPipelineFactory` | interface | Physical layouts, render pipelines, bind group layouts (shared between equal groups) and bind groups |
 | `RenderPipelineDescriptor`, `PrimitiveState`, `DepthStencilState`, `ColorTargetState`, `BlendState` | type | Pipeline description; `alphaBlending` is the standard blend state |
 | `GpuCommandEncoder`, `GpuRenderPassEncoder`, `RenderPassDescriptor`, `GpuRenderTarget` | interface | Command recording and render targets |
+| `GpuComputePassEncoder`, `ComputePipelineDescriptor`, `GpuComputePipeline` | interface | Compute stages: `createComputePipeline()`, `beginComputePass()`, `dispatchWorkgroups()` (direct or indirect); refused on backends without the `compute` capability (WebGL2) |
 | `matchVertexLayout()`, `isVertexFormatCompatible()`, `meshSemantics()` | function | Matching of the program inputs with the mesh attributes, by semantic |
 
 ### GPU resources (`gpu/`)

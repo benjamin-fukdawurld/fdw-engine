@@ -35,6 +35,7 @@ describe('storage buffers', () => {
         kind: 'storage-buffer',
         name: 'palette',
         type: arrayType(BuiltinTypes.vec4f),
+        access: 'read',
       },
     ]);
   });

@@ -345,6 +345,26 @@ export function describeRenderer(
       );
     });
 
+    it('reads buffers back', async () => {
+      const buffer = backend.buffers.create({
+        size: 16,
+        usage: ['vertex', 'copy-src', 'copy-dst'],
+        initialData: new Float32Array([1, 2, 3, 4]),
+      });
+      expect([...new Float32Array(await buffer.read())]).toEqual([1, 2, 3, 4]);
+      expect([...new Float32Array(await buffer.read(8, 4))]).toEqual([3]);
+      buffer.destroy();
+    });
+
+    it('refuses compute stages where the backend has none', () => {
+      if (backend.capabilities?.compute !== false) {
+        return;
+      }
+      expect(() => backend.createCommandEncoder().beginComputePass()).toThrow(
+        /no compute shaders/
+      );
+    });
+
     it('blends transparent materials over the opaque ones', async () => {
       const opaque = new Material({
         graph: colorGraph(),

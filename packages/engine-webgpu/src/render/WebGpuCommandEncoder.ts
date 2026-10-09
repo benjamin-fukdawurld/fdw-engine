@@ -1,5 +1,7 @@
 import type {
   GpuBindGroup,
+  GpuComputePassEncoder,
+  GpuComputePipeline,
   GpuBuffer,
   GpuCommandBuffer,
   GpuCommandEncoder,
@@ -9,7 +11,11 @@ import type {
   RenderPassDescriptor,
 } from '@fdw/engine-backend';
 import { Buffer } from '../gpu/BufferFactory';
-import { WebGpuBindGroup, WebGpuRenderPipeline } from './WebGpuPipelineFactory';
+import {
+  WebGpuBindGroup,
+  WebGpuComputePipeline,
+  WebGpuRenderPipeline,
+} from './WebGpuPipelineFactory';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
 
 function unwrap<T>(
@@ -66,6 +72,38 @@ class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
   }
 }
 
+class WebGpuComputePassEncoder implements GpuComputePassEncoder {
+  constructor(private readonly _pass: GPUComputePassEncoder) {}
+
+  setPipeline(pipeline: GpuComputePipeline): void {
+    this._pass.setPipeline(
+      unwrap(pipeline, WebGpuComputePipeline, 'The pipeline').pipeline
+    );
+  }
+
+  setBindGroup(index: number, group: GpuBindGroup): void {
+    this._pass.setBindGroup(
+      index,
+      unwrap(group, WebGpuBindGroup, 'The bind group').group
+    );
+  }
+
+  dispatchWorkgroups(x: number, y = 1, z = 1): void {
+    this._pass.dispatchWorkgroups(x, y, z);
+  }
+
+  dispatchWorkgroupsIndirect(buffer: GpuBuffer, offset: number): void {
+    this._pass.dispatchWorkgroupsIndirect(
+      unwrap(buffer, Buffer, 'The indirect buffer').buffer,
+      offset
+    );
+  }
+
+  end(): void {
+    this._pass.end();
+  }
+}
+
 export class WebGpuCommandBuffer {
   constructor(readonly commands: GPUCommandBuffer) {}
 }
@@ -105,6 +143,12 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
         : {}),
     });
     return new WebGpuRenderPassEncoder(pass);
+  }
+
+  beginComputePass(label?: string): GpuComputePassEncoder {
+    return new WebGpuComputePassEncoder(
+      this._encoder.beginComputePass(label ? { label } : {})
+    );
   }
 
   finish(): GpuCommandBuffer {

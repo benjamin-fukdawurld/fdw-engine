@@ -13,6 +13,8 @@ import type {
 import type { CompiledProgram, CompilerCapabilities } from '@fdw/engine-shader';
 import type { GpuTextureFormat } from '../gpu';
 import type {
+  ComputePipelineDescriptor,
+  GpuComputePipeline,
   GpuBindGroup,
   GpuBindGroupEntry,
   GpuBindGroupLayout,
@@ -32,6 +34,13 @@ export interface GpuPipelineFactory {
   createRenderPipelineAsync(
     descriptor: RenderPipelineDescriptor
   ): Promise<GpuRenderPipeline>;
+  // Throws on backends without compute stages (capability 'compute').
+  createComputePipeline(
+    descriptor: ComputePipelineDescriptor
+  ): GpuComputePipeline;
+  createComputePipelineAsync(
+    descriptor: ComputePipelineDescriptor
+  ): Promise<GpuComputePipeline>;
   // Cached: equal groups give the same layout object.
   createBindGroupLayout(group: PhysicalBindGroup): GpuBindGroupLayout;
   createBindGroup(

@@ -24,7 +24,13 @@ export type IrBuiltin =
   | 'vertex-index'
   | 'instance-index'
   | 'frag-coord'
-  | 'front-facing';
+  | 'front-facing'
+  // Compute stage, vec3<u32>: position of the thread in the whole grid, in
+  // its workgroup, of its workgroup, and the number of workgroups.
+  | 'global-invocation-id'
+  | 'local-invocation-id'
+  | 'workgroup-id'
+  | 'num-workgroups';
 
 /**
  * Arithmetic operators.
@@ -152,13 +158,33 @@ export interface IrStageVariable {
 }
 
 /**
+ * A write of a compute stage: `resource[index] = value`, when `condition`
+ * (if any) is true. Writes are results of the stage, made in order after its
+ * body, which keeps no side effect.
+ *
+ * @group Intermediate representation
+ */
+export interface IrWrite {
+  /** Name of a read-write storage buffer of the layout. */
+  readonly resource: string;
+  /** Index of the element, a u32 or i32. */
+  readonly index: ValueId;
+  readonly value: ValueId;
+  /** A bool: the write is only made when true. */
+  readonly condition?: ValueId;
+}
+
+/**
  * A stage of a program.
  *
  * @group Intermediate representation
  */
 export interface IrEntryPoint {
-  readonly stage: 'vertex' | 'fragment';
-  /** Vertex attributes for the vertex stage, varyings for the fragment stage. */
+  readonly stage: 'vertex' | 'fragment' | 'compute';
+  /**
+   * Vertex attributes for the vertex stage, varyings for the fragment stage;
+   * none for the compute stage.
+   */
   readonly inputs: readonly IrStageVariable[];
   /**
    * Clip position and varyings for the vertex stage, color targets for the
@@ -176,11 +202,16 @@ export interface IrEntryPoint {
    * neighboring fragments).
    */
   readonly results: Readonly<Record<string, ValueId>>;
+  /** Compute stage: the number of threads of a workgroup, in x, y and z. */
+  readonly workgroupSize?: readonly [number, number, number];
+  /** Compute stage: the writes, made in order after the body. */
+  readonly writes?: readonly IrWrite[];
 }
 
 /**
  * The intermediate representation of a program: a straight list of typed
- * instructions per stage, in SSA form, translated by the code generators.
+ * instructions per stage, in SSA form, translated by the code generators. A
+ * program has a vertex and a fragment stage, or a single compute stage.
  *
  * @group Intermediate representation
  */

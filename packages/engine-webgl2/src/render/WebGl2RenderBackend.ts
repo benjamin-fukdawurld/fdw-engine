@@ -39,6 +39,7 @@ export class WebGl2RenderBackend implements RenderBackend {
     this.capabilities = {
       maxVaryings: gl.getParameter(GL.MAX_VARYING_VECTORS),
       storageBuffers: false,
+      compute: false,
     };
   }
 
