@@ -17,14 +17,15 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 
 ## Public API
 
-| Export             | Kind  | Description                                                                         |
-| ------------------ | ----- | ----------------------------------------------------------------------------------- |
-| `Transform`        | class | Position, rotation (quaternion) and scale of an object                              |
-| `Camera`           | class | Position, rotation and perspective / orthographic projection                        |
-| `BaseLight`        | class | Base class for lights: `ambient`, `diffuse` and `specular` colors                   |
-| `DirectionalLight` | class | Light with a `direction`                                                            |
-| `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation               |
-| `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles |
+| Export             | Kind  | Description                                                                                                          |
+| ------------------ | ----- | -------------------------------------------------------------------------------------------------------------------- |
+| `Transform`        | class | Position, rotation (quaternion) and scale of an object                                                               |
+| `Camera`           | class | Position, rotation and perspective / orthographic projection                                                         |
+| `BaseLight`        | class | Base class for lights: `ambient`, `diffuse` and `specular` colors                                                    |
+| `DirectionalLight` | class | Light with a `direction`; casts shadows with `castShadow` (see `ShadowOptions`)                                      |
+| `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation                                                |
+| `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles; casts shadows with `castShadow` |
+| `ShadowOptions`    | type  | `bias`, `normalBias` (in texels), `bounds` (the sphere covered by a directional light)                               |
 
 ### Rendering (`render/`)
 
@@ -75,7 +76,13 @@ The renderer caches everything it creates:
 - **Draw order**: opaque items grouped by pipeline then material, then transparent items back to front.
 - **Lights**: `render({ lights })` gives the lights of the frame — `DirectionalLight`, `PointLight` and `SpotLight` (cone from `innerCutoff` / `outerCutoff`, half-angles in degrees) — summed by the lit shading models. Up to 16 lights (`MaxLights`) are used.
 - **Colors**: the materials compute **linear** colors. Color textures are created in an `-srgb` format (`rgba8unorm-srgb`), decoded by the GPU; data textures (normal, roughness, specular maps) stay linear. `new Renderer(backend, { output: { toneMapping, encoding } })` chooses the tone mapping (`none` by default, `reinhard`, `aces`, `neutral`) and the encoding of the surface (`srgb` by default, `linear`); `render({ exposure })` multiplies the colors before the tone mapping.
-- **Render graph**: `RenderGraph` describes a frame as raster, compute and copy passes declaring the textures and buffers they read and write; `new RenderGraphRunner(backend).execute(graph)` culls the unused passes, orders the others, allocates the transient resources from a pool reused between frames, and caches the compilation by structure. See [design/render-graph.md](../../design/render-graph.md).
+- **Renderer on the render graph**: `render()` builds a graph each frame (the surface image, a transient depth buffer, an `opaque` pass and, when needed, a `transparent` one); `renderer.addScenePasses(graph, { items, camera, target, format })` adds these passes to your own graph and returns the color they write.
+- **HDR**: when the backend can render to `rgba16float` (`backend.capabilities.renderableFormats`), `render()` draws the scene in linear colors into a transient HDR target, where transparent materials blend exactly, then a `tone mapping` full screen pass applies the exposure, the tone mapping and the encoding. `new Renderer(backend, { hdr: false })` applies them in each material instead, as without the capability.
+- **Post-processing**: `renderer.addFullscreenPass(graph, name, { material, inputs, target, format })` draws a material whose graph ends with `output.fullscreen` over a target; `inputs` binds textures of the material to textures of the render graph (`{ source: scene }`), read with `builtin('screen-uv')`.
+- **Shadows**: directional and spot lights with `castShadow: true` cast shadows. Their shadow maps share an atlas (`new Renderer(backend, { shadowAtlasSize })`, 2048 by default) drawn by a `<scene> shadows` pass before the scene, with the depth-only variant of the materials; the phong and pbr shading models read it with a filtered comparison (PCF). A directional light covers the bounds of the items (or `shadow.bounds`), a spot its cone. Items with `castShadow: false` and transparent items cast none; `addScenePasses(graph, { shadows: false })` turns them off. Point lights cast no shadows yet.
+- **Multisampling**: `new Renderer(backend, { samples: 4 })` draws the scene into multisampled attachments, resolved into the target (the HDR texture or the surface).
+- **Views**: each `addScenePasses` of a graph (by its `name`), each shadow map and each full screen pass has its own frame uniforms: several cameras can be drawn in one graph.
+- **Render graph**: `RenderGraph` describes a frame as raster, compute and copy passes declaring the textures and buffers they read and write; `new RenderGraphRunner(backend).execute(graph)` culls the unused passes, orders the others, allocates the transient resources from a pool reused between frames and within a frame (a texture whose last pass is done serves a later one), and caches the compilation by structure. Multisampled textures (`sampleCount`) are resolved with `pass.resolveColor(texture)`; passes get the size of their textures with `context.size(handle)`; `graph.toDot()` describes the graph for Graphviz. See [design/render-graph.md](../../design/render-graph.md).
 - **Compute**: `new ComputeRunner(backend).dispatch(program, { values, workgroups })` runs a compiled compute graph outside of rendering (values by name: uniforms, textures, samplers, storage buffers); results are read back with `buffer.read()`.
 - **Asynchronous pipelines**: with `new Renderer(backend, { asyncPipelines: true })`, an item is skipped until its pipeline is ready instead of blocking the frame; `await renderer.whenReady()` waits for the pending ones.
 

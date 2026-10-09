@@ -57,6 +57,16 @@ export interface RenderTargetDescriptor {
 }
 
 // Everything a renderer needs from a backend, once its device is ready.
+/**
+ * What a backend supports: the limits of the compiled programs, and the
+ * formats it can render to beyond the 8 bits ones.
+ */
+export interface BackendCapabilities extends Partial<CompilerCapabilities> {
+  // Color formats usable as render pass attachments, besides rgba8unorm and
+  // the formats of the surfaces (e.g. rgba16float for HDR rendering).
+  readonly renderableFormats?: readonly GpuTextureFormat[];
+}
+
 export interface RenderBackend {
   readonly buffers: GpuBufferFactory;
   readonly textures: GpuTextureFactory<unknown> & GpuSamplerFactory;
@@ -69,7 +79,7 @@ export interface RenderBackend {
   readonly depthFormat: GpuTextureFormat;
   // Limits of the backend that the compiled programs must respect; the
   // guaranteed limits of WebGPU when absent.
-  readonly capabilities?: Partial<CompilerCapabilities>;
+  readonly capabilities?: BackendCapabilities;
   createRenderTarget(
     descriptor: RenderTargetDescriptor
   ): GpuRenderTarget & { destroy(): void };

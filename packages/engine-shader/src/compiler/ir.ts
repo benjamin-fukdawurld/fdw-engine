@@ -101,6 +101,12 @@ export type IrOp =
   | { readonly kind: 'sample' }
   /** textureSampleLevel(texture, sampler, uv, level): explicit level. */
   | { readonly kind: 'sample-level' }
+  /**
+   * textureSampleCompareLevel(texture, sampler, uv, depthRef): compares the
+   * reference with the depths of a depth texture around uv (filtered by a
+   * comparison sampler), at level 0. The fraction of them that pass.
+   */
+  | { readonly kind: 'sample-compare' }
   /** A vector built from its arguments; a single scalar argument is a splat. */
   | { readonly kind: 'construct' }
   | { readonly kind: 'swizzle'; readonly components: string }

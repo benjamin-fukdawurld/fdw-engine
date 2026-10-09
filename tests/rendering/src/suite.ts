@@ -509,6 +509,369 @@ export function describeRenderer(
       });
     });
 
+    describe('HDR and post-processing', () => {
+      const hdrCapable = () =>
+        backend.capabilities?.renderableFormats?.includes('rgba16float') ??
+        false;
+      const pixelsOf = async () => {
+        const pixels = await fixture.readPixels();
+        return (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+      };
+      // A full screen pass writing a graph to the surface.
+      const drawFullscreen = (
+        using: Renderer,
+        build: (g: GraphBuilder) => void,
+        values: ConstructorParameters<typeof Material>[0]['values'] = {}
+      ) => {
+        const g = new GraphBuilder('fullscreen');
+        build(g);
+        const graph = new RenderGraph();
+        using.addFullscreenPass(graph, 'fullscreen', {
+          material: new Material({ graph: g.build(), values }),
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        runner.destroy();
+      };
+
+      it('gives screen-uv from the top left corner, on every backend', async () => {
+        drawFullscreen(renderer, (g) => {
+          const uv = g.builtin('screen-uv');
+          g.fullscreen({
+            color: g.call(std.vec4, {
+              x: uv.swizzle('x'),
+              y: uv.swizzle('y'),
+              z: 0,
+              w: 1,
+            }),
+          });
+        });
+        const pixel = await pixelsOf();
+        // The center of pixel (x, y): ((x + 0.5) / size, (y + 0.5) / size).
+        const at = (x: number, y: number) => [
+          Math.round(((x + 0.5) / size) * 255),
+          Math.round(((y + 0.5) / size) * 255),
+          0,
+          255,
+        ];
+        for (const [x, y] of [
+          [0, 0],
+          [63, 0],
+          [0, 63],
+          [20, 40],
+        ]) {
+          expectColor(pixel(x, y), at(x, y));
+        }
+      });
+
+      it('post-processes the scene through textures of the render graph', async () => {
+        // The scene (red on the left) in a transient texture, then inverted.
+        const g = new GraphBuilder('invert');
+        const texel = g.call(std.textureSample, {
+          texture: g.texture('source'),
+          sampler: g.sampler('sourceSampler'),
+          uv: g.builtin('screen-uv'),
+        });
+        g.fullscreen({
+          color: g.call(std.extend, {
+            xyz: g.call(std.sub, { a: 1, b: texel.swizzle('rgb') }),
+            w: 1,
+          }),
+        });
+        const invert = new Material({
+          graph: g.build(),
+          values: { sourceSampler: backend.textures.createSampler() },
+        });
+        const runner = new RenderGraphRunner(backend);
+        const graph = new RenderGraph();
+        const scene = renderer.addScenePasses(graph, {
+          items: [
+            {
+              mesh: quad(),
+              material: new Material({ graph: colorGraph() }),
+              transform: at(-0.5),
+            },
+          ],
+          camera,
+          target: graph.createTexture('scene', { format: 'rgba8unorm' }),
+          format: 'rgba8unorm',
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        });
+        renderer.addFullscreenPass(graph, 'invert', {
+          material: invert,
+          inputs: { source: scene },
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        runner.execute(graph);
+        runner.destroy();
+        const pixel = await pixelsOf();
+        expectColor(pixel(16, 32), [0, 255, 255, 255]);
+        expectColor(pixel(48, 32), [255, 255, 255, 255]);
+        // Top half of the quad: the orientation is kept.
+        expectColor(pixel(16, 8), [255, 255, 255, 255]);
+      });
+
+      it('blends transparent materials in linear colors in HDR', async (context) => {
+        // White at alpha 0.5 over black, encoded in sRGB.
+        const items = () => [
+          {
+            mesh: quad(),
+            material: new Material({
+              graph: colorGraph(),
+              values: { color: [1, 1, 1, 0.5] },
+              renderState: { alphaMode: 'blend' },
+            }),
+            transform: at(0),
+          },
+        ];
+        const pixelWith = async (hdr: boolean) => {
+          const using = new Renderer(backend, { hdr });
+          const pixel = await render(items(), 0, [], using);
+          using.destroy();
+          return pixel(32, 32);
+        };
+        // Without HDR target, the encoded colors blend: 0.5 × 255.
+        expectColor(await pixelWith(false), [128, 128, 128, 255]);
+        context.skip(!hdrCapable(), 'no rgba16float render target');
+        // In HDR, the linear ones: 0.5, encoded as 188.
+        expectColor(await pixelWith(true), [188, 188, 188, 255]);
+      });
+
+      it('applies the same output in the materials and in the HDR pass', async (context) => {
+        context.skip(!hdrCapable(), 'no rgba16float render target');
+        const g = new GraphBuilder('gray');
+        g.surface({ baseColor: [1.5, 0.25, 0.04] });
+        const graph = g.build();
+        for (const toneMapping of ['none', 'reinhard', 'aces', 'neutral']) {
+          const pixels = [];
+          for (const hdr of [false, true]) {
+            const using = new Renderer(backend, {
+              hdr,
+              output: { toneMapping: toneMapping as 'aces' },
+            });
+            const pixel = await render(
+              [
+                {
+                  mesh: quad(),
+                  material: new Material({ graph }),
+                  transform: at(0),
+                },
+              ],
+              0,
+              [],
+              using,
+              0.8
+            );
+            using.destroy();
+            pixels.push(pixel(32, 32));
+          }
+          expectColor(pixels[1], pixels[0]);
+        }
+      });
+    });
+
+    describe('multisampling', () => {
+      // The lower left half of the view: its edge goes through the centers
+      // of the pixels (x, x).
+      const halfView = () =>
+        new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 12,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                ],
+              },
+            ],
+            vertexCount: 3,
+          },
+          vertices: [new Float32Array([-1, -1, 0, 1, -1, 0, -1, 1, 0])],
+        });
+      const edgePixel = async (samples: number, hdr: boolean) => {
+        const using = new Renderer(backend, {
+          samples,
+          hdr:
+            hdr &&
+            (backend.capabilities?.renderableFormats ?? []).includes(
+              'rgba16float'
+            ),
+          output: linearOutput,
+        });
+        const pixel = await render(
+          [
+            {
+              mesh: halfView(),
+              material: new Material({ graph: colorGraph() }),
+              transform: at(0),
+            },
+          ],
+          0,
+          [],
+          using
+        );
+        using.destroy();
+        return pixel;
+      };
+
+      it('smooths the edges with 4 samples per pixel', async () => {
+        for (const hdr of [false, true]) {
+          const pixel = await edgePixel(4, hdr);
+          // Inside and outside the triangle.
+          expectColor(pixel(10, 50), [255, 0, 0, 255]);
+          expectColor(pixel(50, 10), [0, 0, 0, 255]);
+          // On the edge: some of the samples.
+          const [red] = pixel(20, 20);
+          expect(red).toBeGreaterThan(30);
+          expect(red).toBeLessThan(225);
+        }
+        // Without multisampling, a pixel is in or out.
+        const [red] = (await edgePixel(1, false))(20, 20);
+        expect([0, 255]).toContain(red);
+      });
+    });
+
+    describe('shadows', () => {
+      // A square of the given half size facing the camera (normal +z), at
+      // depth z.
+      const square = (half: number, z: number) =>
+        new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 24,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                  { semantic: 'normal', format: 'float32x3', offset: 12 },
+                ],
+              },
+            ],
+            vertexCount: 4,
+            indexBuffer: { format: 'uint16', count: 6 },
+          },
+          vertices: [
+            new Float32Array(
+              [
+                [-1, -1],
+                [1, -1],
+                [1, 1],
+                [-1, 1],
+              ].flatMap(([x, y]) => [x * half, y * half, z, 0, 0, 1])
+            ),
+          ],
+          indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+      // White, diffuse only.
+      const white = () => {
+        const g = new GraphBuilder('white');
+        g.surface({
+          shadingModel: 'phong',
+          baseColor: [1, 1, 1],
+          specular: [0, 0, 0],
+        });
+        return new Material({ graph: g.build() });
+      };
+      const ambient = 0.1;
+      const byte = (value: number) => Math.round(Math.min(value, 1) * 255);
+      const gray = (value: number) => [
+        byte(value),
+        byte(value),
+        byte(value),
+        255,
+      ];
+      // A ground covering the view and a blocker of 0.5 × 0.5, 0.5 in front
+      // of it, centered on (x, y).
+      const scene = (x: number, y: number, castShadow = true) => [
+        { mesh: square(1, 0), material: white(), transform: at(0) },
+        {
+          mesh: square(0.25, 0.5),
+          material: white(),
+          transform: at(x, y),
+          castShadow,
+        },
+      ];
+      const sun = (direction: { x: number; y: number; z: number }) =>
+        new DirectionalLight({
+          direction,
+          ambient: { x: ambient, y: ambient, z: ambient },
+          diffuse: { x: 1, y: 1, z: 1 },
+          specular: { x: 0, y: 0, z: 0 },
+          castShadow: true,
+        });
+      // Lit by a light 45° from the normal.
+      const lit = gray(ambient + Math.SQRT1_2);
+      const shadowed = gray(ambient);
+
+      it('casts the shadows of directional lights', async () => {
+        // The light goes right and away: the shadow is 0.5 to the right of
+        // the blocker, around the center of the view.
+        const pixel = await render(scene(-0.5, 0), 0, [
+          sun({ x: 1, y: 0, z: -1 }),
+        ]);
+        expectColor(pixel(32, 32), shadowed);
+        expectColor(pixel(28, 36), shadowed);
+        // The blocker itself, and the ground around the shadow.
+        expectColor(pixel(16, 32), lit);
+        for (const [x, y] of [
+          [48, 32],
+          [60, 32],
+          [32, 8],
+          [32, 56],
+          [56, 56],
+          [4, 4],
+        ]) {
+          expectColor(pixel(x, y), lit);
+        }
+      });
+
+      it('keeps the orientation of the shadow maps on every backend', async () => {
+        // The light goes down: the shadow is 0.5 below the blocker.
+        const pixel = await render(scene(0, 0.5), 0, [
+          sun({ x: 0, y: -1, z: -1 }),
+        ]);
+        expectColor(pixel(32, 16), lit);
+        expectColor(pixel(32, 32), shadowed);
+        expectColor(pixel(32, 48), lit);
+        expectColor(pixel(12, 32), lit);
+      });
+
+      it('casts the shadows of spot lights', async () => {
+        // From (-2, 0, 2) towards the center: the shadow of the blocker
+        // grows to x in [-1/3, 1/3].
+        const light = new SpotLight({
+          position: { x: -2, y: 0, z: 2 },
+          direction: { x: 1, y: 0, z: -1 },
+          innerCutoff: 35,
+          outerCutoff: 40,
+          ambient: { x: ambient, y: ambient, z: ambient },
+          diffuse: { x: 1, y: 1, z: 1 },
+          specular: { x: 0, y: 0, z: 0 },
+          castShadow: true,
+        });
+        const pixel = await render(scene(-0.5, 0), 0, [light]);
+        expectColor(pixel(32, 32), shadowed);
+        expectColor(pixel(38, 26), shadowed);
+        // Lit ground right of the shadow: N·L from the light position.
+        const x = (52 + 0.5) / 32 - 1;
+        const nDotL = 2 / Math.hypot(x + 2, 2);
+        expectColor(pixel(52, 32), gray(ambient + nDotL));
+      });
+
+      it('only draws the casters in the shadow maps', async () => {
+        const pixel = await render(scene(-0.5, 0, false), 0, [
+          sun({ x: 1, y: 0, z: -1 }),
+        ]);
+        expectColor(pixel(32, 32), lit);
+      });
+    });
+
     describe('compute graphs', () => {
       // output[i] = input[i] × factor, for i < arrayLength(input).
       const scaleGraph = () => {

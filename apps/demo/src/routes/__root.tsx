@@ -78,6 +78,9 @@ function RouteComponent() {
                 <a className="text-sm text-center" href="/pbr">
                   PBR
                 </a>
+                <a className="text-sm text-center" href="/shadows">
+                  Shadows
+                </a>
               </div>
             )}
           </li>

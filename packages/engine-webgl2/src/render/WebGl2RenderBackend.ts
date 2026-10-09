@@ -1,4 +1,5 @@
 import {
+  BackendCapabilities,
   CameraMath,
   GpuCommandBuffer,
   GpuCommandEncoder,
@@ -7,7 +8,6 @@ import {
   TransformMath,
   wgpuMatrixPrimitives,
 } from '@fdw/engine-backend';
-import type { CompilerCapabilities } from '@fdw/engine-shader';
 import { GL } from '../gl';
 import { WebGl2BufferFactory } from '../gpu/WebGl2Buffer';
 import { WebGl2TextureFactory } from '../gpu/WebGl2Texture';
@@ -30,7 +30,7 @@ export class WebGl2RenderBackend implements RenderBackend {
   readonly cameraMath = cameraMath;
   readonly transformMath = transformMath;
   readonly depthFormat = 'depth24plus';
-  readonly capabilities: Partial<CompilerCapabilities>;
+  readonly capabilities: BackendCapabilities;
 
   constructor(readonly gl: WebGL2RenderingContext) {
     this.buffers = new WebGl2BufferFactory(gl);
@@ -40,6 +40,11 @@ export class WebGl2RenderBackend implements RenderBackend {
       maxVaryings: gl.getParameter(GL.MAX_VARYING_VECTORS),
       storageBuffers: false,
       compute: false,
+      // Float color attachments need EXT_color_buffer_float (enabled by
+      // getExtension), widely available on WebGL2.
+      renderableFormats: gl.getExtension('EXT_color_buffer_float')
+        ? ['rgba16float']
+        : [],
     };
   }
 

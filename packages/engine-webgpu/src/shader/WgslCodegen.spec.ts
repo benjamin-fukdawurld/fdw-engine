@@ -329,6 +329,57 @@ describe('WgslCodegen', () => {
     );
   });
 
+  it('compares depths with the shadow atlas, at level 0', () => {
+    const g = new GraphBuilder('lit');
+    g.surface({
+      shadingModel: 'phong',
+      baseColor: [1, 1, 1],
+      alpha: g.uniform('opacity', BuiltinTypes.f32),
+    });
+    const graph = g.build();
+    const options = { vertexAttributes: ['position', 'normal'] };
+    const program = compile(graph, { ...options, features: { shadows: true } });
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    expect(code).toContain(
+      '@group(0) @binding(1) var t_shadowMap: texture_depth_2d;'
+    );
+    expect(code).toContain(
+      '@group(0) @binding(2) var s_shadowSampler: sampler_comparison;'
+    );
+    // In the light loop: no uniformity requirement.
+    expect(
+      code.match(
+        /textureSampleCompareLevel\(t_shadowMap, s_shadowSampler, v\d+, v\d+\)/g
+      )
+    ).toHaveLength(9);
+  });
+
+  it('writes no color in depth-only programs', () => {
+    const g = new GraphBuilder('lit');
+    g.surface({
+      shadingModel: 'phong',
+      baseColor: [1, 1, 1],
+      alpha: g.uniform('opacity', BuiltinTypes.f32),
+    });
+    const graph = g.build();
+    const options = { vertexAttributes: ['position', 'normal'] };
+    const program = compile(graph, {
+      ...options,
+      features: { depthOnly: true, alphaMode: 'mask' },
+    });
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    const fragment = code.slice(code.indexOf('@fragment'));
+    expect(fragment).toMatch(/^@fragment\nfn fs_main\(in: Varyings\) \{/);
+    expect(fragment).toContain('discard;');
+    expect(fragment).not.toContain('return');
+  });
+
   it('declares and reads storage buffers', () => {
     const g = new GraphBuilder('palette');
     const palette = g.storage('palette', arrayType(BuiltinTypes.vec4f));

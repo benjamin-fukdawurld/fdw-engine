@@ -10,6 +10,7 @@ import type {
   IndexFormat,
   RenderPassDescriptor,
   VertexAttributeFormat,
+  RenderPassColorAttachment,
 } from '@fdw/engine-backend';
 import { GL } from '../gl';
 import { WebGl2Buffer } from '../gpu/WebGl2Buffer';
@@ -94,6 +95,12 @@ function applyPipeline(
     gl.depthMask(pipeline.depth.write);
   } else {
     gl.disable(GL.DEPTH_TEST);
+  }
+  if (pipeline.depth?.bias) {
+    gl.enable(GL.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(pipeline.depth.bias.slope, pipeline.depth.bias.constant);
+  } else {
+    gl.disable(GL.POLYGON_OFFSET_FILL);
   }
   if (pipeline.blend) {
     const { color, alpha } = pipeline.blend;
@@ -193,10 +200,26 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
   private readonly _vertexBuffers: (WebGl2Buffer | undefined)[] = [];
   private _indexBuffer?: { buffer: WebGl2Buffer; type: GLenum };
 
-  constructor(private readonly _commands: Command[]) {}
+  constructor(
+    private readonly _commands: Command[],
+    // Height of the attachments, to flip the viewports.
+    private readonly _height: number,
+    // A multisampled color attachment, resolved at the end of the pass.
+    private readonly _resolve?: {
+      readonly from: FramebufferAttachment;
+      readonly depth?: FramebufferAttachment;
+      readonly to: FramebufferAttachment;
+    }
+  ) {}
 
   setPipeline(pipeline: GpuRenderPipeline): void {
     this._pipeline = unwrap(pipeline, WebGl2RenderPipeline, 'The pipeline');
+  }
+
+  setViewport(x: number, y: number, width: number, height: number): void {
+    // OpenGL counts rows from the bottom.
+    const bottom = this._height - y - height;
+    this._commands.push((gl) => gl.viewport(x, bottom, width, height));
   }
 
   setBindGroup(index: number, group: GpuBindGroup): void {
@@ -250,8 +273,32 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
   }
 
   end(): void {
+    const resolve = this._resolve;
     this._commands.push((gl) => {
       gl.bindVertexArray(null);
+      if (resolve) {
+        // The samples averaged into the resolve target.
+        const { width, height } = resolve.to;
+        // Both created first: creating a framebuffer binds it.
+        const from = framebufferFor(gl, resolve.from, resolve.depth);
+        const to = framebufferFor(gl, resolve.to);
+        gl.bindFramebuffer(GL.READ_FRAMEBUFFER, from);
+        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, to);
+        gl.colorMask(true, true, true, true);
+        gl.blitFramebuffer(
+          0,
+          0,
+          width,
+          height,
+          0,
+          0,
+          width,
+          height,
+          GL.COLOR_BUFFER_BIT,
+          GL.NEAREST
+        );
+        gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      }
     });
   }
 
@@ -291,25 +338,34 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
   private readonly _commands: Command[] = [];
 
   beginRenderPass(descriptor: RenderPassDescriptor): GpuRenderPassEncoder {
-    if (descriptor.colorAttachments.length !== 1) {
+    if (descriptor.colorAttachments.length > 1) {
       throw new Error('The WebGL2 backend renders to one color target');
     }
-    const [color] = descriptor.colorAttachments;
-    const target = attachment(color.target, 'The color target');
+    // No color attachment: a depth-only pass.
+    const color = descriptor.colorAttachments[0] as
+      | RenderPassColorAttachment
+      | undefined;
+    const target = color
+      ? attachment(color.target, 'The color target')
+      : undefined;
     const depth = descriptor.depthAttachment;
     const depthTarget = depth
       ? attachment(depth.target, 'The depth target')
       : undefined;
+    const size = target ?? depthTarget;
+    if (!size) {
+      throw new Error('A render pass needs a color or a depth attachment');
+    }
 
     this._commands.push((gl) => {
       gl.bindFramebuffer(
         GL.FRAMEBUFFER,
         framebufferFor(gl, target, depthTarget)
       );
-      gl.viewport(0, 0, target.width, target.height);
+      gl.viewport(0, 0, size.width, size.height);
       gl.disable(GL.SCISSOR_TEST);
       let mask = 0;
-      if (color.load === 'clear') {
+      if (color?.load === 'clear') {
         const { r, g, b, a } = color.clearValue ?? { r: 0, g: 0, b: 0, a: 1 };
         gl.colorMask(true, true, true, true);
         gl.clearColor(r, g, b, a);
@@ -329,7 +385,16 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
         gl.clear(mask);
       }
     });
-    return new WebGl2RenderPassEncoder(this._commands);
+    const resolveTarget = color?.resolveTarget
+      ? attachment(color.resolveTarget, 'The resolve target')
+      : undefined;
+    return new WebGl2RenderPassEncoder(
+      this._commands,
+      size.height,
+      target && resolveTarget
+        ? { from: target, depth: depthTarget, to: resolveTarget }
+        : undefined
+    );
   }
 
   copyBufferToBuffer(

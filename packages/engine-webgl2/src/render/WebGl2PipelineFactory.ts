@@ -55,7 +55,12 @@ export class WebGl2RenderPipeline implements GpuRenderPipeline {
     readonly cullFace: GLenum | undefined,
     readonly frontFace: GLenum,
     readonly depth:
-      | { readonly write: boolean; readonly compare: GLenum }
+      | {
+          readonly write: boolean;
+          readonly compare: GLenum;
+          // polygonOffset(slope, constant), when not zero.
+          readonly bias?: { readonly slope: number; readonly constant: number };
+        }
       | undefined,
     readonly blend: WebGl2BlendState | undefined,
     readonly label?: string
@@ -392,6 +397,14 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         ? {
             write: depthStencil.depthWrite,
             compare: compareFunctions()[depthStencil.depthCompare],
+            ...(depthStencil.depthBias || depthStencil.depthBiasSlopeScale
+              ? {
+                  bias: {
+                    slope: depthStencil.depthBiasSlopeScale ?? 0,
+                    constant: depthStencil.depthBias ?? 0,
+                  },
+                }
+              : {}),
           }
         : undefined,
       blend ? blendState(blend) : undefined,

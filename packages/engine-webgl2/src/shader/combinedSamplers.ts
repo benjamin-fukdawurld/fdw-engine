@@ -17,6 +17,8 @@ export interface CombinedSampler {
   readonly texture: string;
   readonly sampler: string;
   readonly type: TextureType;
+  // A comparison sampler (shadow maps): a sampler2DShadow.
+  readonly comparison: boolean;
 }
 
 // The pairs sampled by a program, in order of first use (vertex stage
@@ -26,10 +28,13 @@ export function combinedSamplers(
   layout: PhysicalProgramLayout
 ): CombinedSampler[] {
   const textureTypes = new Map<string, TextureType>();
+  const comparisonSamplers = new Set<string>();
   for (const group of layout.groups) {
     for (const { resource } of group.bindings) {
       if (resource.kind === 'texture') {
         textureTypes.set(resource.name, resource.type);
+      } else if (resource.kind === 'sampler' && resource.comparison) {
+        comparisonSamplers.add(resource.name);
       }
     }
   }
@@ -55,7 +60,8 @@ export function combinedSamplers(
     for (const instruction of instructions) {
       if (
         instruction.op.kind !== 'sample' &&
-        instruction.op.kind !== 'sample-level'
+        instruction.op.kind !== 'sample-level' &&
+        instruction.op.kind !== 'sample-compare'
       ) {
         continue;
       }
@@ -75,6 +81,7 @@ export function combinedSamplers(
         texture,
         sampler,
         type,
+        comparison: comparisonSamplers.has(sampler),
       });
     }
   }

@@ -4,7 +4,7 @@ import { isFunctionDefinition, PortSchema } from '../graph/NodeDefinition';
 import { swizzleType } from '../graph/swizzle';
 import type { ResolvedNode } from '../graph/validateGraph';
 import type { ConstantValue } from '../types/ConstantValue';
-import { arrayType, BuiltinTypes, ShaderType } from '../types/ShaderType';
+import { BuiltinTypes, ShaderType } from '../types/ShaderType';
 import type {
   IrBuiltin,
   IrEntryPoint,
@@ -17,9 +17,10 @@ import type {
   ValueId,
 } from './ir';
 import {
+  engineResources,
   engineValueLocations,
+  lightArrayType,
   lightMembers,
-  MaxLights,
   uniformBlockName,
 } from './layout';
 import type { StagePlan } from './stages';
@@ -213,12 +214,13 @@ function translateCurrentLight(
     if (!usedPorts.has(port)) {
       continue;
     }
-    const array = builder.emit(arrayType(BuiltinTypes.vec4f, MaxLights), {
+    const elements = lightArrayType(type);
+    const array = builder.emit(elements, {
       kind: 'load-resource',
       binding: uniformBlockName('frame'),
       member,
     });
-    let value = builder.emit(BuiltinTypes.vec4f, { kind: 'index' }, [
+    let value = builder.emit(elements.element, { kind: 'index' }, [
       array,
       index,
     ]);
@@ -276,6 +278,14 @@ function translateNode(
       });
       return;
     case 'input.engine': {
+      const resource = engineResources[params['value'] as string];
+      if (resource) {
+        output('value', types.outputs['value'], {
+          kind: 'load-resource',
+          binding: resource.name,
+        });
+        return;
+      }
       const location = engineValueLocations[params['value'] as string];
       output('value', types.outputs['value'], {
         kind: 'load-resource',
@@ -304,14 +314,15 @@ function translateNode(
     case 'output.vertex':
       results['clipPosition'] = inputValues()[0];
       return;
-    case 'output.fragment': {
-      const [color, discard] = inputValues();
-      results['color'] = color;
-      if (discard !== undefined) {
-        results['discard'] = discard;
+    case 'output.fragment':
+      // color (absent in depth-only programs) and discard.
+      for (const port of inputs) {
+        const value = builder.input(node, port, types.inputs[port.name]);
+        if (value !== undefined) {
+          results[port.name] = value;
+        }
       }
       return;
-    }
   }
 
   if (
@@ -351,6 +362,9 @@ function translateNode(
       return;
     case 'texture-sample-level':
       output('result', type, { kind: 'sample-level' }, args);
+      return;
+    case 'texture-sample-compare':
+      output('result', type, { kind: 'sample-compare' }, args);
       return;
     case 'index':
       output('result', type, { kind: 'index' }, args);
@@ -665,7 +679,10 @@ export function generateIr({
     {
       stage: 'fragment',
       inputs: [clipPosition, ...varyings],
-      outputs: [{ name: 'color', type: BuiltinTypes.vec4f, location: 0 }],
+      outputs:
+        fragmentResults['color'] !== undefined
+          ? [{ name: 'color', type: BuiltinTypes.vec4f, location: 0 }]
+          : [],
       body: fragment.body,
       results: fragmentResults,
     },

@@ -96,8 +96,6 @@ export const uniformBlockName = (slot: string): string => `${slot}Uniforms`;
  */
 export const MaxLights = 16;
 
-const lightArray = arrayType(BuiltinTypes.vec4f, MaxLights);
-
 /**
  * The lights of the frame, in the 'frame' uniform block: one array of vec4
  * per property, indexed by light. Each output of the 'light.current' node
@@ -111,6 +109,14 @@ const lightArray = arrayType(BuiltinTypes.vec4f, MaxLights);
  * - spotDirection: direction the spot shines in.
  * - spotCone: cosines of the inner and outer angles of the cone; (-1, -2)
  *   lights every direction.
+ * - shadow: x = 1 when the light has a tile in the shadow atlas (0
+ *   otherwise), y = depth bias, z = normal offset (world units per unit of
+ *   clip w: per unit of distance for a spot), w = size of a texel of the
+ *   atlas in uv.
+ * - shadowRect: tile of the light in the shadow atlas, uv offset (xy) and
+ *   size (zw).
+ * - shadowMatrix: world to clip space of the light, for its shadow map
+ *   (the only matrix: one mat4 per light instead of a vec4).
  *
  * @group Program layout
  */
@@ -124,7 +130,19 @@ export const lightMembers: Readonly<
   attenuation: { member: 'lightAttenuations', type: BuiltinTypes.vec3f },
   spotDirection: { member: 'lightSpotDirections', type: BuiltinTypes.vec3f },
   spotCone: { member: 'lightSpotCones', type: BuiltinTypes.vec2f },
+  shadow: { member: 'lightShadows', type: BuiltinTypes.vec4f },
+  shadowRect: { member: 'lightShadowRects', type: BuiltinTypes.vec4f },
+  shadowMatrix: { member: 'lightShadowMatrices', type: BuiltinTypes.mat4f },
 };
+
+/**
+ * The array of the frame uniform block holding a light property: vec4 per
+ * light, or mat4 for matrices.
+ *
+ * @group Program layout
+ */
+export const lightArrayType = (type: ShaderType): ArrayType =>
+  arrayType(type.kind === 'matrix' ? type : BuiltinTypes.vec4f, MaxLights);
 
 /**
  * Members of the uniform blocks of the engine slots: a fixed contract.
@@ -147,9 +165,9 @@ export const engineUniformBlocks: Readonly<
     { name: 'exposure', type: BuiltinTypes.f32 },
     // Number of lights in the arrays below (see lightMembers).
     { name: 'lightCount', type: BuiltinTypes.u32 },
-    ...Object.values(lightMembers).map(({ member }) => ({
+    ...Object.values(lightMembers).map(({ member, type }) => ({
       name: member,
-      type: lightArray,
+      type: lightArrayType(type),
     })),
   ],
   object: [
@@ -177,6 +195,23 @@ export const engineValueLocations: Readonly<
   exposure: { slot: 'frame', member: 'exposure' },
   'object.world': { slot: 'object', member: 'world' },
   'object.normalMatrix': { slot: 'object', member: 'normalMatrix' },
+};
+
+/**
+ * Resources of the 'frame' slot provided by the engine and read with
+ * 'input.engine': the shadow atlas of the lights (a depth texture) and its
+ * comparison sampler. Only the programs reading them have them, after the
+ * uniform block of the slot.
+ *
+ * @group Program layout
+ */
+export const engineResources: Readonly<Record<string, LogicalBinding>> = {
+  shadowMap: {
+    kind: 'texture',
+    name: 'shadowMap',
+    type: BuiltinTypes.depthTexture2d,
+  },
+  shadowSampler: { kind: 'sampler', name: 'shadowSampler', comparison: true },
 };
 
 /**

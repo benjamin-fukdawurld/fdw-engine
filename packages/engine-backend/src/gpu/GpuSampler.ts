@@ -1,3 +1,5 @@
+import type { CompareFunction } from '../render/types';
+
 export const GpuTextureWrapModeNames = [
   'clamp-to-edge',
   'repeat',
@@ -12,6 +14,9 @@ export type GpuTextureFilterModeName =
 export type GpuTextureFilterMode = GpuTextureFilterModeName | (string & {});
 
 export type GpuSamplerConfiguration = {
+  // A comparison sampler (for depth textures, sampled with
+  // textureSampleCompare): how the reference is compared with the depths.
+  compare?: CompareFunction;
   label?: string;
   wrapModeS?: GpuTextureWrapMode;
   wrapModeT?: GpuTextureWrapMode;

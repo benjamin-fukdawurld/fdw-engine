@@ -429,6 +429,8 @@ export class GraphBuilder {
       | 'instance-index'
       | 'frag-coord'
       | 'front-facing'
+      // Graphs ending with output.fullscreen.
+      | 'screen-uv'
       // Compute graphs.
       | 'global-invocation-id'
       | 'local-invocation-id'
@@ -454,6 +456,8 @@ export class GraphBuilder {
       | 'object.normalMatrix'
       | 'time'
       | 'exposure'
+      | 'shadowMap'
+      | 'shadowSampler'
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }
@@ -515,6 +519,14 @@ export class GraphBuilder {
       params: { shadingModel },
       inputs: ports as NodeInputs,
     });
+  }
+
+  /**
+   * Ends a full screen pass (a post-processing effect): the color of each
+   * pixel, usually computed from `builtin('screen-uv')` and textures.
+   */
+  fullscreen({ color }: { color: PortHandle | ConstantValue }): void {
+    this.node('output.fullscreen', { inputs: { color } });
   }
 
   /**

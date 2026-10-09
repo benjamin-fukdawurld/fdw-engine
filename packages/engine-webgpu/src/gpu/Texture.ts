@@ -10,6 +10,7 @@ export class Texture implements GpuTexture {
   readonly type: GpuTextureType;
   readonly format: GpuTextureFormat;
   readonly dimensions: GpuTextureDimensions;
+  readonly sampleCount: number;
 
   _texture?: GPUTexture;
   private _view?: GPUTextureView;
@@ -19,6 +20,7 @@ export class Texture implements GpuTexture {
     this.type = config.type;
     this.format = config.format;
     this.dimensions = config.dimensions;
+    this.sampleCount = config.sampleCount ?? 1;
   }
 
   get width(): number {

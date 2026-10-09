@@ -18,6 +18,9 @@ struct FrameUniforms {
   u_lightAttenuations: array<vec4<f32>, 16>,
   u_lightSpotDirections: array<vec4<f32>, 16>,
   u_lightSpotCones: array<vec4<f32>, 16>,
+  u_lightShadows: array<vec4<f32>, 16>,
+  u_lightShadowRects: array<vec4<f32>, 16>,
+  u_lightShadowMatrices: array<mat4x4<f32>, 16>,
 };
 @group(0) @binding(0) var<uniform> frameUniforms: FrameUniforms;
 

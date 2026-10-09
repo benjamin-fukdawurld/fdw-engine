@@ -7,8 +7,12 @@ import {
   Vec3View,
 } from '@fdw/engine-backend';
 import { BaseLight } from './BaseLight';
+import type { ShadowCaster, ShadowCasterData, ShadowOptions } from './shadow';
 
-export class SpotLight extends BaseLight implements SpotLightSnapshot {
+export class SpotLight
+  extends BaseLight
+  implements SpotLightSnapshot, ShadowCaster
+{
   private _position: Vec3View;
   private _direction: Vec3View;
 
@@ -16,7 +20,11 @@ export class SpotLight extends BaseLight implements SpotLightSnapshot {
   private _cutoff: DataView<ArrayBuffer>;
 
   // Plain values: { position: { x, y, z }, ambient: … }.
-  constructor(data?: Partial<Omit<SpotLightData, 'type'>>) {
+  // Draws the items into a shadow map of the light (see ShadowOptions).
+  castShadow: boolean;
+  shadow: ShadowOptions;
+
+  constructor(data?: Partial<Omit<SpotLightData, 'type'>> & ShadowCasterData) {
     super(
       'spot',
       new ArrayBuffer(
@@ -31,6 +39,8 @@ export class SpotLight extends BaseLight implements SpotLightSnapshot {
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
     this._direction = new Vec3View(this._buffer, BaseLight.bufferSize + 3 * 4);
     this.direction = data?.direction ?? { x: 0, y: 0, z: -1 };
+    this.castShadow = data?.castShadow ?? false;
+    this.shadow = data?.shadow ?? {};
     this._attenuation = new DataView(
       this._buffer,
       BaseLight.bufferSize + 6 * 4,

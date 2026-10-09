@@ -37,6 +37,9 @@ export interface GraphTextureDescriptor {
   readonly format: GpuTextureFormat;
   // Defaults to the size of the frame.
   readonly size?: TextureSize;
+  // Samples per pixel of a multisampled attachment (4): it cannot be
+  // sampled, but resolved into a texture (see resolveColor). Default 1.
+  readonly sampleCount?: number;
   readonly label?: string;
 }
 
@@ -87,6 +90,8 @@ interface Attachment {
   readonly resource: number;
   readonly load: 'clear' | 'load';
   readonly clearValue?: IColor | number;
+  // The texture a multisampled color attachment is resolved into.
+  resolve?: number;
 }
 
 interface PassNode {
@@ -107,6 +112,8 @@ export interface PassContext {
   texture(handle: TextureHandle): GpuAttachmentTarget;
   // The buffer of a handle declared by the pass.
   buffer(handle: BufferHandle): GpuBuffer;
+  // The size of the texture of a handle declared by the pass, in pixels.
+  size(handle: TextureHandle): { width: number; height: number };
 }
 
 export interface RasterPassContext extends PassContext {
@@ -162,6 +169,29 @@ export class RasterPassBuilder extends PassBuilder {
       load === 'clear'
     ) as TextureHandle;
     this._pass.colors.push({ resource: handle.resource, load, clearValue });
+    return written;
+  }
+
+  /**
+   * Resolves the multisampled color attachment declared last into a
+   * texture, at the end of the pass: returns the version of the texture
+   * written (its whole content).
+   */
+  resolveColor(handle: TextureHandle): TextureHandle {
+    const color = this._pass.colors.at(-1);
+    if (!color || color.resolve !== undefined) {
+      throw new Error(
+        `Pass "${this._pass.name}" resolves "${handle.name}" without a color attachment to resolve`
+      );
+    }
+    const written = this._graph.access(
+      this._pass,
+      handle,
+      'color-attachment',
+      true,
+      true
+    ) as TextureHandle;
+    color.resolve = handle.resource;
     return written;
   }
 
@@ -225,6 +255,11 @@ export interface CompiledRenderGraph {
   >;
   // Transitions before each pass of the order, by position.
   readonly transitions: readonly (readonly CompiledTransition[])[];
+  // The transient resources whose lifetime starts at each position of the
+  // order, and those whose lifetime ends there: their memory can serve a
+  // later pass of the frame.
+  readonly acquires: readonly (readonly number[])[];
+  readonly releases: readonly (readonly number[])[];
 }
 
 export class RenderGraph {
@@ -347,6 +382,7 @@ export class RenderGraph {
         pass.kind,
         pass.name,
         pass.sideEffects,
+        pass.colors.map((color) => color.resolve ?? -1),
         pass.accesses.map((access) => [
           access.resource,
           access.version,
@@ -504,6 +540,13 @@ export class RenderGraph {
       }
     });
 
+    const acquires: number[][] = order.map(() => []);
+    const releases: number[][] = order.map(() => []);
+    for (const [id, { first, last }] of lifetimes) {
+      acquires[first].push(id);
+      releases[last].push(id);
+    }
+
     return {
       order,
       culled: passes
@@ -511,7 +554,94 @@ export class RenderGraph {
         .map((pass) => pass.name),
       lifetimes,
       transitions,
+      acquires,
+      releases,
     };
+  }
+
+  /**
+   * The size of a texture: its declared size (absolute or relative to the
+   * frame), the size of an imported texture; undefined for the frame size.
+   */
+  textureSize(handle: TextureHandle): TextureSize | undefined {
+    const resource = this._resources[handle.resource];
+    if (resource?.kind !== 'texture') {
+      throw new Error(`Unknown texture "${handle.name}"`);
+    }
+    if (resource.imported) {
+      const target = resource.imported as {
+        width?: number;
+        height?: number;
+        dimensions?: { width: number; height?: number };
+      };
+      return {
+        width: target.width ?? target.dimensions?.width ?? 1,
+        height: target.height ?? target.dimensions?.height ?? 1,
+      };
+    }
+    return resource.texture?.size;
+  }
+
+  /**
+   * The graph in the DOT language of Graphviz, for debugging: the passes
+   * (culled ones dashed), and the versions of the resources they read and
+   * write, with the usages.
+   */
+  toDot(compiled: CompiledRenderGraph = this.compile()): string {
+    const quote = (text: string) => `"${text.replace(/"/g, '\\"')}"`;
+    const kept = new Set(compiled.order);
+    const lines = [
+      'digraph "render graph" {',
+      '  rankdir=LR;',
+      '  node [fontname="sans-serif", fontsize=10];',
+      '  edge [fontname="sans-serif", fontsize=9];',
+    ];
+    const versions = new Set<string>();
+    const version = (resource: number, number: number) => {
+      const id = `r${resource}v${number}`;
+      if (!versions.has(id)) {
+        versions.add(id);
+        const node = this._resources[resource];
+        const shape = node.imported ? 'doubleoctagon' : 'ellipse';
+        lines.push(
+          `  ${id} [shape=${shape}, label=${quote(`${node.name} #${number}`)}];`
+        );
+      }
+      return id;
+    };
+    for (const pass of this._passes) {
+      const position = compiled.order.indexOf(pass.index);
+      lines.push(
+        `  p${pass.index} [shape=box, label=${quote(
+          position >= 0 ? `${position + 1}. ${pass.name}` : pass.name
+        )}${kept.has(pass.index) ? '' : ', style=dashed, color=gray'}];`
+      );
+      for (const access of pass.accesses) {
+        if (access.write) {
+          if (!access.discards && access.version > 1) {
+            lines.push(
+              `  ${version(access.resource, access.version - 1)} -> p${
+                pass.index
+              } [style=dotted];`
+            );
+          }
+          lines.push(
+            `  p${pass.index} -> ${version(
+              access.resource,
+              access.version
+            )} [label=${quote(access.usage)}];`
+          );
+        } else {
+          lines.push(
+            `  ${version(access.resource, access.version)} -> p${
+              pass.index
+            } [label=${quote(access.usage)}];`
+          );
+        }
+      }
+    }
+    lines.push('}');
+    return `${lines.join('\n')}\n`;
   }
 
   private addResource<K extends 'texture' | 'buffer'>(

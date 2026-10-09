@@ -38,6 +38,10 @@ export interface DepthStencilState {
   readonly format: GpuTextureFormat;
   readonly depthWrite: boolean;
   readonly depthCompare: CompareFunction;
+  // Offsets the depth written (shadow maps): a constant, in units of the
+  // smallest depth difference, plus a factor of the slope of the triangle.
+  readonly depthBias?: number;
+  readonly depthBiasSlopeScale?: number;
 }
 
 export type BlendFactor =
@@ -138,6 +142,9 @@ export interface RenderPassColorAttachment {
   readonly target: GpuAttachmentTarget;
   readonly load: 'clear' | 'load';
   readonly clearValue?: IColor;
+  // For a multisampled target: the texture its samples are averaged into
+  // at the end of the pass.
+  readonly resolveTarget?: GpuAttachmentTarget;
 }
 
 export interface RenderPassDepthAttachment {
@@ -159,6 +166,9 @@ export interface GpuRenderPassEncoder {
   setIndexBuffer(buffer: GpuBuffer, format: IndexFormat): void;
   draw(vertexCount: number, instanceCount?: number): void;
   drawIndexed(indexCount: number, instanceCount?: number): void;
+  // The rectangle drawn into, in pixels from the top left corner of the
+  // attachments (the whole attachments by default): a tile of an atlas.
+  setViewport(x: number, y: number, width: number, height: number): void;
   end(): void;
 }
 

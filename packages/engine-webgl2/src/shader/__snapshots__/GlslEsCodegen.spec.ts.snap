@@ -23,6 +23,9 @@ layout(std140) uniform FrameUniforms {
   vec4 u_lightAttenuations[16];
   vec4 u_lightSpotDirections[16];
   vec4 u_lightSpotCones[16];
+  vec4 u_lightShadows[16];
+  vec4 u_lightShadowRects[16];
+  mat4 u_lightShadowMatrices[16];
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {
@@ -75,6 +78,9 @@ layout(std140) uniform FrameUniforms {
   vec4 u_lightAttenuations[16];
   vec4 u_lightSpotDirections[16];
   vec4 u_lightSpotCones[16];
+  vec4 u_lightShadows[16];
+  vec4 u_lightShadowRects[16];
+  mat4 u_lightShadowMatrices[16];
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {

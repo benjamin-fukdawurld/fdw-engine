@@ -296,6 +296,8 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
                 format: depthStencil.format as GPUTextureFormat,
                 depthWriteEnabled: depthStencil.depthWrite,
                 depthCompare: depthStencil.depthCompare,
+                depthBias: depthStencil.depthBias ?? 0,
+                depthBiasSlopeScale: depthStencil.depthBiasSlopeScale ?? 0,
               },
             }
           : {}),

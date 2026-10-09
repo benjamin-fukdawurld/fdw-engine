@@ -58,6 +58,10 @@ function gpuTexture(target: unknown, what: string): GPUTexture {
 class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
   constructor(private readonly _pass: GPURenderPassEncoder) {}
 
+  setViewport(x: number, y: number, width: number, height: number): void {
+    this._pass.setViewport(x, y, width, height, 0, 1);
+  }
+
   setPipeline(pipeline: GpuRenderPipeline): void {
     this._pass.setPipeline(
       unwrap(pipeline, WebGpuRenderPipeline, 'The pipeline').pipeline
@@ -143,6 +147,14 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
       label: descriptor.label,
       colorAttachments: descriptor.colorAttachments.map((attachment) => ({
         view: attachmentView(attachment.target, 'The color target'),
+        ...(attachment.resolveTarget
+          ? {
+              resolveTarget: attachmentView(
+                attachment.resolveTarget,
+                'The resolve target'
+              ),
+            }
+          : {}),
         loadOp: attachment.load,
         storeOp: 'store',
         clearValue: attachment.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },

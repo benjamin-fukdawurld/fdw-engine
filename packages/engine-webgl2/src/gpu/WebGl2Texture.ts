@@ -1,4 +1,5 @@
 import type {
+  CompareFunction,
   GpuSampler,
   GpuSamplerConfiguration,
   GpuSamplerFactory,
@@ -33,13 +34,17 @@ const isImageSource = (source: unknown): source is TexImageSource =>
 export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
   readonly target: GLenum;
   private _texture?: WebGLTexture;
+  // Multisampled textures are renderbuffers: they can only be rendered to,
+  // then resolved (blitted) into a texture.
+  private _renderbuffer?: WebGLRenderbuffer;
 
   constructor(
     private readonly _gl: WebGL2RenderingContext,
     readonly type: GpuTextureType,
     readonly format: GpuTextureFormat,
     readonly dimensions: GpuTextureDimensions,
-    readonly label?: string
+    readonly label?: string,
+    readonly sampleCount = 1
   ) {
     const target = textureTargets()[type];
     if (target === undefined) {
@@ -48,6 +53,33 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     this.target = target;
     const { internalFormat } = glTextureFormat(format);
     const { width, height = 1, layers = 1 } = dimensions;
+
+    if (sampleCount > 1) {
+      if (target !== GL.TEXTURE_2D) {
+        throw new Error('Only 2d textures can be multisampled');
+      }
+      this._renderbuffer = _gl.createRenderbuffer();
+      _gl.bindRenderbuffer(GL.RENDERBUFFER, this._renderbuffer);
+      // The sample counts depend on the format (fewer for float formats on
+      // some devices): the closest supported one, at most the one asked.
+      const supported: Int32Array | null = _gl.getInternalformatParameter(
+        GL.RENDERBUFFER,
+        internalFormat,
+        GL.SAMPLES
+      );
+      const samples = Math.max(
+        ...[...(supported ?? [])].filter((count) => count <= sampleCount),
+        0
+      );
+      _gl.renderbufferStorageMultisample(
+        GL.RENDERBUFFER,
+        samples,
+        internalFormat,
+        width,
+        height
+      );
+      return;
+    }
 
     this._texture = _gl.createTexture();
     _gl.bindTexture(target, this._texture);
@@ -71,6 +103,15 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
 
   // Textures can be rendered to: the first level of a 2d texture.
   attachTo(gl: WebGL2RenderingContext, point: GLenum): void {
+    if (this._renderbuffer) {
+      gl.framebufferRenderbuffer(
+        GL.FRAMEBUFFER,
+        point,
+        GL.RENDERBUFFER,
+        this._renderbuffer
+      );
+      return;
+    }
     if (this.target !== GL.TEXTURE_2D) {
       throw new Error('Only 2d textures can be rendered to');
     }
@@ -84,6 +125,13 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
   }
 
   get texture(): WebGLTexture {
+    if (this._renderbuffer) {
+      throw new Error(
+        `Texture "${
+          this.label ?? '(unlabeled)'
+        }" is multisampled: resolve it into a texture to read it`
+      );
+    }
     if (!this._texture) {
       throw new Error(`Texture "${this.label ?? '(unlabeled)'}" was destroyed`);
     }
@@ -178,6 +226,10 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       this._gl.deleteTexture(this._texture);
       this._texture = undefined;
     }
+    if (this._renderbuffer) {
+      this._gl.deleteRenderbuffer(this._renderbuffer);
+      this._renderbuffer = undefined;
+    }
   }
 }
 
@@ -214,6 +266,20 @@ function minFilter(
     : GL.LINEAR_MIPMAP_LINEAR;
 }
 
+// GL comparison functions; GL is read on first use.
+const compareFunctions = lazy(
+  (): Record<CompareFunction, GLenum> => ({
+    never: GL.NEVER,
+    less: GL.LESS,
+    equal: GL.EQUAL,
+    'less-equal': GL.LEQUAL,
+    greater: GL.GREATER,
+    'not-equal': GL.NOTEQUAL,
+    'greater-equal': GL.GEQUAL,
+    always: GL.ALWAYS,
+  })
+);
+
 export class WebGl2Sampler implements GpuSampler {
   readonly wrapModeS: GpuTextureWrapMode;
   readonly wrapModeT: GpuTextureWrapMode;
@@ -222,6 +288,7 @@ export class WebGl2Sampler implements GpuSampler {
   readonly magFilter: GpuTextureFilterMode;
   readonly mipmapFilter: GpuTextureFilterMode;
   readonly maxAnisotropy: number;
+  readonly compare?: CompareFunction;
   readonly label?: string;
   private _sampler?: WebGLSampler;
 
@@ -252,6 +319,19 @@ export class WebGl2Sampler implements GpuSampler {
       GL.TEXTURE_MIN_FILTER,
       minFilter(this.minFilter, this.mipmapFilter)
     );
+    this.compare = config.compare;
+    if (config.compare) {
+      _gl.samplerParameteri(
+        sampler,
+        GL.TEXTURE_COMPARE_MODE,
+        GL.COMPARE_REF_TO_TEXTURE
+      );
+      _gl.samplerParameteri(
+        sampler,
+        GL.TEXTURE_COMPARE_FUNC,
+        compareFunctions()[config.compare]
+      );
+    }
     const anisotropic = _gl.getExtension('EXT_texture_filter_anisotropic');
     if (anisotropic && this.maxAnisotropy > 1) {
       _gl.samplerParameterf(
@@ -289,13 +369,14 @@ export class WebGl2TextureFactory
       readwrite?: boolean;
     }
   ): WebGl2Texture {
-    const { type, format, dimensions, source, label } = descriptor;
+    const { type, format, dimensions, source, label, sampleCount } = descriptor;
     const texture = new WebGl2Texture(
       this._gl,
       type,
       format,
       dimensions,
-      label
+      label,
+      sampleCount
     );
     if (source) {
       texture.upload(source);

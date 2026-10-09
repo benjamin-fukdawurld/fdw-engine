@@ -96,6 +96,7 @@ function litInputs(f: GraphBuilder) {
 function lightGeometry(
   f: GraphBuilder,
   position: PortHandle,
+  normal: PortHandle,
   light: Readonly<Record<string, PortHandle>>
 ) {
   // w = 1 for a point or spot light, 0 for a directional one:
@@ -140,7 +141,116 @@ function lightGeometry(
     }),
   });
 
-  return { l, attenuation, spot };
+  // The shadows of the light (1 without the 'shadows' feature).
+  const visibility = f.call(lights.shadow, { position, normal });
+
+  return {
+    l,
+    attenuation,
+    spot,
+    // What the direct light (not the ambient one) is multiplied by.
+    factor: f.call(functions.mul, {
+      a: f.call(functions.mul, { a: attenuation, b: spot }),
+      b: visibility,
+    }),
+  };
+}
+
+// The visibility of the light being summed at a point, read from its tile
+// of the shadow atlas (see the light.shadow macro): 1 when lit, 0 in
+// shadow. 3 × 3 comparisons one texel apart, each filtered over 2 × 2
+// texels by the comparison sampler, soften the edges (percentage-closer
+// filtering). Outside the shadow map, and for lights without shadows, the
+// point is lit.
+function shadowMap(registry: NodeRegistry): FunctionDefinition {
+  const f = new GraphBuilder('shadowMap', registry);
+  const position = f.functionInput('position', vec3);
+  const normal = f.functionInput('normal', vec3);
+  const { add, sub, mul, div, clamp, step, mix } = functions;
+  const light = f.node(lights.current);
+  const params = light['shadow'];
+  const rect = light['shadowRect'];
+  const toClip = (point: PortHandle) =>
+    f.call(functions.transform, {
+      matrix: light['shadowMatrix'],
+      vector: f.call(functions.extend, { xyz: point, w: 1 }),
+    });
+
+  // Normal offset against shadow acne, in proportion to the size of a texel
+  // at the point: constant for a directional light, growing with the
+  // distance (clip w) for a spot.
+  const offset = f.call(mul, {
+    a: params.swizzle('z'),
+    b: toClip(position).swizzle('w'),
+  });
+  const clip = toClip(
+    f.call(add, { a: position, b: f.call(mul, { a: normal, b: offset }) })
+  );
+  const ndc = f.call(div, {
+    a: clip.swizzle('xyz'),
+    b: clip.swizzle('w'),
+  });
+  // Clip space to the uv of the shadow map: v points down.
+  const uv = f.call(functions.vec2, {
+    x: f.call(add, { a: f.call(mul, { a: ndc.swizzle('x'), b: 0.5 }), b: 0.5 }),
+    y: f.call(sub, { a: 0.5, b: f.call(mul, { a: ndc.swizzle('y'), b: 0.5 }) }),
+  });
+  const depth = f.call(sub, { a: ndc.swizzle('z'), b: params.swizzle('y') });
+
+  // The uv in the atlas, kept inside the tile by the filter footprint.
+  const texel = params.swizzle('w');
+  const margin = f.call(mul, { a: texel, b: 1.5 });
+  const atlasUv = f.call(clamp, {
+    x: f.call(add, {
+      a: rect.swizzle('xy'),
+      b: f.call(mul, { a: uv, b: rect.swizzle('zw') }),
+    }),
+    low: f.call(add, { a: rect.swizzle('xy'), b: margin }),
+    high: f.call(sub, {
+      a: f.call(add, { a: rect.swizzle('xy'), b: rect.swizzle('zw') }),
+      b: margin,
+    }),
+  });
+  const shadowMapTexture = f.engine('shadowMap');
+  const shadowSampler = f.engine('shadowSampler');
+  let sum: PortHandle | undefined;
+  for (const dy of [-1, 0, 1]) {
+    for (const dx of [-1, 0, 1]) {
+      const sample = f.call(functions.textureSampleCompare, {
+        texture: shadowMapTexture,
+        sampler: shadowSampler,
+        uv:
+          dx === 0 && dy === 0
+            ? atlasUv
+            : f.call(add, {
+                a: atlasUv,
+                b: f.call(mul, { a: [dx, dy], b: texel }),
+              }),
+        depthRef: depth,
+      });
+      sum = sum ? f.call(add, { a: sum, b: sample }) : sample;
+    }
+  }
+  const filtered = f.call(div, { a: sum as PortHandle, b: 9 });
+
+  // 1 inside the shadow map (in front of the light, within its frustum), 0
+  // outside; times 1 for a light with a tile.
+  const inside = [
+    f.call(step, { edge: 0, x: uv.swizzle('x') }),
+    f.call(step, { edge: uv.swizzle('x'), x: 1 }),
+    f.call(step, { edge: 0, x: uv.swizzle('y') }),
+    f.call(step, { edge: uv.swizzle('y'), x: 1 }),
+    f.call(step, { edge: depth, x: 1 }),
+    f.call(step, { edge: 0, x: clip.swizzle('w') }),
+    params.swizzle('x'),
+  ].reduce((a, b) => f.call(mul, { a, b }));
+  f.functionOutput('visibility', f.call(mix, { a: 1, b: filtered, t: inside }));
+  return defineFunction(f.build(), {
+    id: 'light.shadowMap',
+    description:
+      'The visibility of the light being summed, from its tile of the shadow atlas.',
+    registry,
+  });
 }
 
 // Unlit: the base color, with its alpha.
@@ -160,7 +270,8 @@ function unlit(registry: NodeRegistry): FunctionDefinition {
 }
 
 // Phong lighting, summed over the lights of the frame:
-//   Σ (ambient + (diffuse + specular) × attenuation × spot) + emissive
+//   Σ (ambient + (diffuse + specular) × attenuation × spot × shadow)
+//   + emissive
 // The values that do not depend on the light (normal, view direction…) are
 // computed once, outside the loop.
 function phong(registry: NodeRegistry): FunctionDefinition {
@@ -180,7 +291,7 @@ function phong(registry: NodeRegistry): FunctionDefinition {
   });
 
   const light = f.node(lights.current);
-  const { l, attenuation, spot } = lightGeometry(f, position, light);
+  const { l, factor } = lightGeometry(f, position, n, light);
 
   const nDotL = f.call(functions.dot, { a: n, b: l });
   const diffuseFactor = f.call(functions.max, { a: nDotL, b: 0 });
@@ -214,7 +325,7 @@ function phong(registry: NodeRegistry): FunctionDefinition {
     a: ambient,
     b: f.call(functions.mul, {
       a: f.call(functions.add, { a: diffuse, b: specular }),
-      b: f.call(functions.mul, { a: attenuation, b: spot }),
+      b: factor,
     }),
   });
   const color = f.call(functions.add, {
@@ -286,7 +397,7 @@ function pbr(registry: NodeRegistry): FunctionDefinition {
 
   // Per light.
   const light = f.node(lights.current);
-  const { l, attenuation, spot } = lightGeometry(f, position, light);
+  const { l, factor } = lightGeometry(f, position, n, light);
   const h = f.call(normalize, { x: f.call(add, { a: l, b: v }) });
   const nDotL = f.call(max, { a: f.call(dot, { a: n, b: l }), b: 0 });
   const nDotH = f.call(max, { a: f.call(dot, { a: n, b: h }), b: 0 });
@@ -336,7 +447,7 @@ function pbr(registry: NodeRegistry): FunctionDefinition {
   });
   const radiance = f.call(mul, {
     a: light['diffuse'],
-    b: f.call(mul, { a: pi, b: f.call(mul, { a: attenuation, b: spot }) }),
+    b: f.call(mul, { a: pi, b: factor }),
   });
   const direct = f.call(mul, {
     a: f.call(mul, {
@@ -368,5 +479,5 @@ function pbr(registry: NodeRegistry): FunctionDefinition {
 export function createShadingModels(
   registry: NodeRegistry
 ): FunctionDefinition[] {
-  return [unlit(registry), phong(registry), pbr(registry)];
+  return [shadowMap(registry), unlit(registry), phong(registry), pbr(registry)];
 }

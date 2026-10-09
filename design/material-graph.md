@@ -1267,7 +1267,7 @@ Le tone mapping est une propriété de l'**image** (caméra, scène), pas du mat
 | B. Linéaire maintenant, tone mapping dans les shaders | Espaces des textures, encodage de la sortie ; opérateur et exposition choisis par le `Renderer` (feature pour l'opérateur, uniform du bloc `frame` pour l'exposition) | PBR juste ; les démos changent d'apparence ; le tone mapping passera dans une passe du render graph sans changer les matériaux |
 | C. Cible HDR et passe de post-traitement              | Comme B, avec une vraie passe de tone mapping                                                                                                                         | Transparents exacts ; demande le render graph                                                                                  |
 
-**Décision** : option **B** avec le chantier 3. L'option **C** (cible HDR et passe de tone mapping) est **à faire avec le render graph** ([écarts](material-graph-gaps.md)).
+**Décision** : option **B** avec le chantier 3. L'option **C** (cible HDR et passe de tone mapping) est **à faire avec le render graph** ([écarts](material-graph-gaps.md)). _Option C faite avec RG4_ ([render graph §13](render-graph.md#13-plan-dimplémentation)) : l'option B reste le repli des backends sans cible `rgba16float`.
 
 ---
 

@@ -12,6 +12,7 @@ export interface FramebufferAttachment {
 }
 
 const noDepth = {};
+const noColor = {};
 
 // Framebuffers by color attachment, then by depth attachment.
 const framebuffers = new WeakMap<object, WeakMap<object, WebGLFramebuffer>>();
@@ -23,27 +24,37 @@ const depthPoint = (format: GpuTextureFormat) =>
     ? GL.DEPTH_STENCIL_ATTACHMENT
     : GL.DEPTH_ATTACHMENT;
 
-// The framebuffer rendering to a color attachment and a depth attachment,
-// created on first use.
+// The framebuffer rendering to a color attachment and a depth attachment
+// (either can be absent), created on first use.
 export function framebufferFor(
   gl: WebGL2RenderingContext,
-  color: FramebufferAttachment,
+  color: FramebufferAttachment | undefined,
   depth?: FramebufferAttachment
 ): WebGLFramebuffer {
-  let byDepth = framebuffers.get(color);
-  if (!byDepth) {
-    byDepth = new WeakMap();
-    framebuffers.set(color, byDepth);
+  const first = color ?? depth;
+  if (!first) {
+    throw new Error('A framebuffer needs a color or a depth attachment');
   }
-  const key = depth ?? noDepth;
-  let framebuffer = byDepth.get(key);
+  let bySecond = framebuffers.get(first);
+  if (!bySecond) {
+    bySecond = new WeakMap();
+    framebuffers.set(first, bySecond);
+  }
+  const key = color ? depth ?? noDepth : noColor;
+  let framebuffer = bySecond.get(key);
   if (framebuffer) {
     return framebuffer;
   }
 
   framebuffer = gl.createFramebuffer();
   gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
-  color.attachTo(gl, GL.COLOR_ATTACHMENT0);
+  if (color) {
+    color.attachTo(gl, GL.COLOR_ATTACHMENT0);
+  } else {
+    // Depth only.
+    gl.drawBuffers([GL.NONE]);
+    gl.readBuffer(GL.NONE);
+  }
   if (depth) {
     depth.attachTo(gl, depthPoint(depth.format));
   }
@@ -51,13 +62,17 @@ export function framebufferFor(
   if (status !== GL.FRAMEBUFFER_COMPLETE) {
     gl.deleteFramebuffer(framebuffer);
     throw new Error(
-      `Framebuffer incomplete (0x${status.toString(16)}) for ${color.format}${
-        depth ? ` and ${depth.format}` : ''
-      }`
+      `Framebuffer incomplete (0x${status.toString(16)}) for ${[color, depth]
+        .filter((attachment) => attachment)
+        .map((attachment) => attachment?.format)
+        .join(' and ')}`
     );
   }
-  byDepth.set(key, framebuffer);
-  for (const attachment of depth ? [color, depth] : [color]) {
+  bySecond.set(key, framebuffer);
+  for (const attachment of [color, depth]) {
+    if (!attachment) {
+      continue;
+    }
     let set = attachedTo.get(attachment);
     if (!set) {
       set = new Set();

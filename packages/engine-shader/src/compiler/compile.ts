@@ -26,13 +26,14 @@ import { generateComputeIr, generateIr, lightLoopBodies } from './generateIr';
 import {
   EngineSlots,
   engineUniformBlocks,
+  engineResources,
   engineValueLocations,
   LogicalBinding,
   ProgramLayout,
   slotOrder,
   uniformBlockName,
 } from './layout';
-import { lowerSurface } from './lowering';
+import { lowerFullscreen, lowerSurface } from './lowering';
 import { expandMacros } from './macros';
 import { optimize, structuralParams } from './optimize';
 import { planStages } from './stages';
@@ -384,10 +385,15 @@ function buildLayout(
     }));
   // Materials always have the built-in slots, at fixed group indices shared
   // by every program; compute graphs only have the slots they use.
-  const engineSlots = new Set(
+  const engineValues = new Set(
     all
       .filter(({ node }) => node.type === 'input.engine')
-      .map(({ params }) => engineValueLocations[params['value'] as string].slot)
+      .map(({ params }) => params['value'] as string)
+  );
+  const engineSlots = new Set(
+    [...engineValues].map(
+      (value) => engineValueLocations[value]?.slot ?? 'frame'
+    )
   );
   const slots = slotOrder(resources.map((resource) => resource.slot)).filter(
     (slot) =>
@@ -407,6 +413,10 @@ function buildLayout(
               name: uniformBlockName(slot),
               members: engineUniformBlocks[slot],
             },
+            // The engine resources read by the program (frame only).
+            ...Object.entries(engineResources)
+              .filter(([value]) => slot === 'frame' && engineValues.has(value))
+              .map(([, binding]) => binding),
           ],
         };
       }
@@ -603,6 +613,7 @@ export function compile(
   // The surface lowering reads the 'alphaMode' feature.
   const working = new WorkingGraph(graph);
   lowerSurface(working, registry, diagnostics, feature);
+  lowerFullscreen(working, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);
   }

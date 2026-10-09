@@ -169,6 +169,8 @@ export type IntrinsicOp =
   | 'texture-sample'
   // Sampling at an explicit level of detail.
   | 'texture-sample-level'
+  // Depth comparison with a depth texture (shadow maps).
+  | 'texture-sample-compare'
   // Component-wise comparisons, giving booleans.
   | 'less'
   | 'less-equal'

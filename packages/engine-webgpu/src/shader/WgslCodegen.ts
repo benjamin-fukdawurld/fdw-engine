@@ -287,6 +287,9 @@ function emitInstructions(
       case 'sample-level':
         expression = `textureSampleLevel(${args(instruction)})`;
         break;
+      case 'sample-compare':
+        expression = `textureSampleCompareLevel(${args(instruction)})`;
+        break;
       case 'construct':
       case 'convert':
         expression = `${wgslType(type)}(${args(instruction)})`;
@@ -476,13 +479,16 @@ export class WgslCodegen implements ShaderCodegen {
             .declaration
       ),
     ];
-    const color = fragment.outputs[0];
+    // Depth-only programs have no color.
+    const color = fragment.outputs[0] as IrStageVariable | undefined;
     sections.push(
       [
         '@fragment',
-        `fn fs_main(${fragmentParameters.join(', ')}) -> @location(${
-          color.location
-        }) ${wgslType(color.type)} {`,
+        `fn fs_main(${fragmentParameters.join(', ')})${
+          color
+            ? ` -> @location(${color.location}) ${wgslType(color.type)}`
+            : ''
+        } {`,
         ...fragmentBody.lines,
         // After the whole body: every texture sample has run.
         ...(fragment.results['discard'] !== undefined
@@ -494,9 +500,13 @@ export class WgslCodegen implements ShaderCodegen {
               '  }',
             ]
           : []),
-        `  return ${fragmentBody.expressions.get(
-          fragment.results[color.name]
-        )};`,
+        ...(color
+          ? [
+              `  return ${fragmentBody.expressions.get(
+                fragment.results[color.name]
+              )};`,
+            ]
+          : []),
         '}',
       ].join('\n')
     );

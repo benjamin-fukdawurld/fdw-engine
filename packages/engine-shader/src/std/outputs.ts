@@ -98,11 +98,26 @@ export const vertex: NodeDefinition = {
   stage: () => 'vertex',
 };
 
+/**
+ * A full screen pass (a post-processing effect): the color of each pixel of
+ * the target. The compiler generates the vertex stage, a triangle covering
+ * the target without mesh; the 'screen-uv' builtin gives the coordinates of
+ * the pixel in the target.
+ */
+export const fullscreen: NodeDefinition = {
+  id: 'output.fullscreen',
+  category: 'output',
+  inputs: () => [{ name: 'color', type: BuiltinTypes.vec4f }],
+  outputs: () => [],
+};
+
 export const fragment: NodeDefinition = {
   id: 'output.fragment',
   category: 'output',
   inputs: () => [
-    { name: 'color', type: BuiltinTypes.vec4f },
+    // Without color, the fragment only writes its depth: depth-only passes
+    // (shadow maps, depth prepasses), drawn without color target.
+    { name: 'color', type: BuiltinTypes.vec4f, optional: true },
     // Abandons the fragment when true: neither color nor depth is written.
     { name: 'discard', type: BuiltinTypes.bool, optional: true },
   ],

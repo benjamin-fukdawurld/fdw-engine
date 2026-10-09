@@ -75,6 +75,9 @@ export interface GpuTextureConfiguration {
   dimensions: GpuTextureDimensions;
   // Defaults to sampled and copy-dst (and render-attachment for images).
   usage?: readonly GpuTextureUsage[];
+  // Samples per pixel (4) of a multisampled render attachment, resolved
+  // into a texture at the end of the passes. Default 1.
+  sampleCount?: number;
 }
 
 export interface GpuTexture extends Readonly<GpuTextureConfiguration> {

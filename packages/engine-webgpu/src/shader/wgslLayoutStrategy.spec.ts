@@ -84,8 +84,12 @@ describe('wgslLayoutStrategy', () => {
       ['lightAttenuations', 1248, 256],
       ['lightSpotDirections', 1504, 256],
       ['lightSpotCones', 1760, 256],
+      ['lightShadows', 2016, 256],
+      ['lightShadowRects', 2272, 256],
+      // Arrays of 16 mat4.
+      ['lightShadowMatrices', 2528, 1024],
     ]);
-    expect(block('frame').size).toBe(2016);
+    expect(block('frame').size).toBe(3552);
   });
 
   it('pads the mat3 columns of the object block', () => {

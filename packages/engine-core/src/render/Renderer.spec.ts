@@ -1,22 +1,8 @@
 import {
-  CameraMath,
-  GpuBindGroupEntry,
-  GpuBuffer,
-  GpuRenderTarget,
-  matchVertexLayout,
-  PhysicalLayoutStrategy,
-  RenderBackend,
-  RenderPipelineDescriptor,
-  Surface,
-  TransformMath,
-} from '@fdw/engine-backend';
-import {
   GraphBuilder,
   arrayType,
   engineUniformBlocks,
-  MaterialGraphData,
   MaxLights,
-  ShaderType,
   std,
   stdMacros,
   BuiltinTypes,
@@ -27,263 +13,18 @@ import { DirectionalLight, PointLight, SpotLight } from '../light';
 import { Transform } from '../Transform';
 import { Material, RenderState } from './Material';
 import { Mesh } from './Mesh';
+import { RenderGraph } from '../graph/RenderGraph';
+import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { Renderer } from './Renderer';
-
-// --- A fake backend recording what the renderer asks for ----------------------
-
-class FakeBuffer implements GpuBuffer {
-  readonly usage = [];
-  writes = 0;
-  data = new ArrayBuffer(0);
-  destroyed = false;
-  constructor(readonly size: number, readonly label?: string) {}
-  write(_: number, value: ArrayBuffer): void {
-    this.writes++;
-    this.data = value.slice(0);
-  }
-  async read(): Promise<ArrayBuffer> {
-    return this.data.slice(0);
-  }
-  destroy(): void {
-    this.destroyed = true;
-  }
-}
-
-const sizeOf = (type: ShaderType): number =>
-  type.kind === 'matrix'
-    ? 64
-    : type.kind === 'array'
-    ? sizeOf(type.element) * (type.length ?? 0)
-    : 16;
-
-// Every member in its own 16-byte slot (64 for matrices, 16 per element of
-// arrays), values as floats.
-const layoutStrategy: PhysicalLayoutStrategy = {
-  resolve: (layout) => ({
-    groups: layout.groups.map((group, index) => ({
-      index,
-      slot: group.slot,
-      bindings: group.bindings.map((resource, binding) => {
-        if (resource.kind !== 'uniform-block') {
-          return { binding, resource };
-        }
-        let offset = 0;
-        const members = resource.members.map((member) => {
-          const size = sizeOf(member.type);
-          const physical = {
-            name: member.name,
-            type: member.type,
-            offset,
-            size,
-          };
-          offset += size;
-          return physical;
-        });
-        return { binding, resource, block: { size: offset, members } };
-      }),
-    })),
-  }),
-  writeUniform: (view, member, value) => {
-    const values =
-      typeof value === 'number' || typeof value === 'boolean'
-        ? [Number(value)]
-        : Array.from(value);
-    values
-      .slice(0, member.size / 4)
-      .forEach((v, i) => view.setFloat32(member.offset + i * 4, v, true));
-  },
-};
-
-const translation = (position: ArrayLike<number>) => {
-  const matrix = new Float32Array(16);
-  [0, 5, 10, 15].forEach((i) => (matrix[i] = 1));
-  matrix.set([position[0], position[1], position[2]], 12);
-  return matrix;
-};
-
-const transformMath = {
-  getLocalMatrix: translation,
-  getInverseLocalMatrix: (matrix: Float32Array) => matrix,
-  getLocalNormalMatrix: () => new Float32Array(12),
-  getWorldMatrix: (local: Float32Array) => local,
-  getWorldNormalMatrix: (normal: Float32Array) => normal,
-  primitiveApis: {
-    mat4: { identity: () => translation([0, 0, 0]) },
-    mat3: { identity: () => new Float32Array(12) },
-  },
-} as unknown as TransformMath;
-
-const cameraMath = {
-  getViewMatrix: (position: ArrayLike<number>) =>
-    translation([-position[0], -position[1], -position[2]]),
-  getProjectionMatrix: () => translation([0, 0, 0]),
-  getViewProjectionMatrix: (view: Float32Array) => view,
-} as unknown as CameraMath;
-
-function fakeBackend() {
-  const log = {
-    buffers: [] as FakeBuffer[],
-    pipelines: [] as RenderPipelineDescriptor[],
-    bindGroups: [] as { key: string; entries: readonly GpuBindGroupEntry[] }[],
-    draws: [] as {
-      pipeline: string;
-      groups: Record<number, unknown>;
-      count: number;
-      indexed: boolean;
-    }[],
-    submits: 0,
-  };
-  let current: (typeof log.draws)[number] | undefined;
-  let boundGroups: Record<number, unknown> = {};
-  let pipelineLabel = '';
-
-  const backend: RenderBackend = {
-    buffers: {
-      create: ({ size, label }) => {
-        const buffer = new FakeBuffer(size, label);
-        log.buffers.push(buffer);
-        return buffer;
-      },
-    },
-    textures: {} as RenderBackend['textures'],
-    pipelines: {
-      codegen: {} as RenderBackend['pipelines']['codegen'],
-      layoutStrategy,
-      resolveLayout: (program) => layoutStrategy.resolve(program.layout),
-      createRenderPipeline: (descriptor) => {
-        log.pipelines.push(descriptor);
-        return {
-          label: descriptor.label,
-          vertexBuffers: matchVertexLayout(
-            descriptor.program.vertexInputs,
-            descriptor.vertex
-          ).map((b) => b.buffer),
-        };
-      },
-      createRenderPipelineAsync: async (descriptor) => {
-        log.pipelines.push(descriptor);
-        return {
-          label: descriptor.label,
-          vertexBuffers: matchVertexLayout(
-            descriptor.program.vertexInputs,
-            descriptor.vertex
-          ).map((b) => b.buffer),
-        };
-      },
-      createComputePipeline: () => {
-        throw new Error('no compute in the fake backend');
-      },
-      createComputePipelineAsync: async () => {
-        throw new Error('no compute in the fake backend');
-      },
-      createBindGroupLayout: (group) => ({
-        key: JSON.stringify(group.bindings.map((b) => b.resource)),
-      }),
-      createBindGroup: (layout, entries) => {
-        log.bindGroups.push({ key: layout.key, entries });
-        return { layout };
-      },
-    },
-    cameraMath,
-    transformMath,
-    depthFormat: 'depth24plus',
-    createRenderTarget: ({ width, height, format }) => ({
-      width,
-      height,
-      format,
-      destroy: () => undefined,
-    }),
-    createCommandEncoder: () => ({
-      beginComputePass: () => {
-        throw new Error('no compute in the fake backend');
-      },
-      copyBufferToBuffer: () => undefined,
-      copyTextureToTexture: () => undefined,
-      beginRenderPass: () => ({
-        setPipeline: (pipeline) => {
-          pipelineLabel = pipeline.label ?? '';
-          boundGroups = {};
-        },
-        setBindGroup: (index, group) => (boundGroups[index] = group),
-        setVertexBuffer: () => undefined,
-        setIndexBuffer: () => undefined,
-        draw: (count) => {
-          current = {
-            pipeline: pipelineLabel,
-            groups: { ...boundGroups },
-            count,
-            indexed: false,
-          };
-          log.draws.push(current);
-        },
-        drawIndexed: (count) => {
-          current = {
-            pipeline: pipelineLabel,
-            groups: { ...boundGroups },
-            count,
-            indexed: true,
-          };
-          log.draws.push(current);
-        },
-        end: () => undefined,
-      }),
-      finish: () => ({}),
-    }),
-    submit: () => log.submits++,
-  };
-  return { backend, log };
-}
-
-const target: GpuRenderTarget = { width: 4, height: 4, format: 'rgba8unorm' };
-const surface: Surface = {
-  width: 4,
-  height: 4,
-  format: 'rgba8unorm',
-  init: async () => undefined,
-  getCurrentTarget: () => target,
-  present: () => undefined,
-};
-
-// --- Scene helpers -------------------------------------------------------------
-
-const triangle = () =>
-  new Mesh({
-    description: {
-      vertexBuffers: [
-        {
-          stride: 20,
-          stepMode: 'vertex',
-          attributes: [
-            { semantic: 'position', format: 'float32x3', offset: 0 },
-            { semantic: 'uv', format: 'float32x2', offset: 12 },
-          ],
-        },
-      ],
-      vertexCount: 3,
-      indexBuffer: { format: 'uint16', count: 3 },
-    },
-    vertices: [new Float32Array(15)],
-    indices: new Uint16Array([0, 1, 2]),
-  });
-
-const colorGraph = (name = 'color'): MaterialGraphData => {
-  const g = new GraphBuilder(name);
-  g.surface({
-    baseColor: g.uniform('color', BuiltinTypes.vec3f, { default: [1, 0, 0] }),
-  });
-  return g.build();
-};
-
-const texturedGraph = (): MaterialGraphData => {
-  const g = new GraphBuilder('textured');
-  const texel = g.call(std.textureSample, {
-    texture: g.texture('map'),
-    sampler: g.sampler('mapSampler'),
-    uv: g.attribute('uv', BuiltinTypes.vec2f),
-  });
-  g.surface({ baseColor: texel.swizzle('rgb') });
-  return g.build();
-};
+import {
+  colorGraph,
+  fakeBackend,
+  FakeBuffer,
+  sizeOf,
+  surface,
+  texturedGraph,
+  triangle,
+} from '../testing/fakeBackend';
 
 const transformAt = (x: number, z = 0) =>
   new Transform({ position: { x, y: 0, z } });
@@ -386,7 +127,7 @@ describe('Renderer', () => {
     ];
     render(items);
     const buffer = log.buffers.find(
-      (b) => b.label === 'frame uniforms'
+      (b) => b.label === 'scene frame uniforms'
     ) as FakeBuffer;
     // viewProjection is the fake view: a translation by -position.
     expect(floatsOf(buffer)[14]).toBe(-10);
@@ -591,6 +332,386 @@ describe('Renderer', () => {
   });
 });
 
+describe('Renderer on the render graph', () => {
+  it('draws the transparent items in a second pass, only when there are some', () => {
+    const { render, log } = setup();
+    const opaque = new Material({ graph: colorGraph() });
+    render([{ mesh: triangle(), material: opaque, transform: transformAt(0) }]);
+    expect(log.renderPasses).toEqual(['scene opaque']);
+
+    const glass = new Material({
+      graph: colorGraph(),
+      renderState: { alphaMode: 'blend' },
+    });
+    render([
+      { mesh: triangle(), material: opaque, transform: transformAt(0) },
+      { mesh: triangle(), material: glass, transform: transformAt(1) },
+    ]);
+    expect(log.renderPasses).toEqual([
+      'scene opaque',
+      'scene opaque',
+      'scene transparent',
+    ]);
+  });
+
+  it('keeps its depth texture from frame to frame', () => {
+    const { render, log } = setup();
+    const items = [
+      {
+        mesh: triangle(),
+        material: new Material({ graph: colorGraph() }),
+        transform: transformAt(0),
+      },
+    ];
+    render(items);
+    render(items);
+    render(items);
+    expect(log.textures).toHaveLength(1);
+    expect(log.textures[0]).toMatchObject({
+      format: 'depth24plus',
+      dimensions: { width: 4, height: 4 },
+      usage: ['render-attachment'],
+    });
+  });
+
+  it('adds the scene passes to a render graph', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const graph = new RenderGraph();
+    const color = graph.createTexture('hdr', {
+      format: 'rgba16float',
+      size: { width: 8, height: 8 },
+    });
+    const scene = renderer.addScenePasses(graph, {
+      items: [
+        {
+          mesh: triangle(),
+          material: new Material({ graph: colorGraph() }),
+          transform: transformAt(0),
+        },
+      ],
+      camera: new Camera(),
+      target: color,
+      format: 'rgba16float',
+    });
+    graph.addCopyPass('capture', (pass) => {
+      pass.read(scene, 'copy-src');
+      pass.hasSideEffects();
+      return { execute: () => log.renderPasses.push('capture') };
+    });
+    new RenderGraphRunner(backend).execute(graph);
+    expect(log.renderPasses).toEqual(['scene opaque', 'capture']);
+    expect(log.draws).toHaveLength(1);
+  });
+});
+
+describe('Renderer, HDR', () => {
+  const hdrSetup = (
+    options: ConstructorParameters<typeof Renderer>[1] = {}
+  ) => {
+    const { backend, log } = fakeBackend({
+      renderableFormats: ['rgba16float'],
+    });
+    const renderer = new Renderer(backend, options);
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    const render = (items: Parameters<Renderer['render']>[0]['items']) =>
+      renderer.render({ items, camera, surface });
+    return { renderer, render, log, backend };
+  };
+  const item = (material = new Material({ graph: colorGraph() })) => ({
+    mesh: triangle(),
+    material,
+    transform: transformAt(0),
+  });
+
+  it('renders linear colors in an HDR target, then tone maps them', () => {
+    const { render, log } = hdrSetup({ output: { toneMapping: 'aces' } });
+    render([item()]);
+    expect(log.renderPasses).toEqual(['scene opaque', 'tone mapping']);
+    expect(log.textures.map((texture) => texture.format).sort()).toEqual([
+      'depth24plus',
+      'rgba16float',
+    ]);
+    const [scene, toneMapping] = log.pipelines;
+    expect(scene.targets).toEqual([
+      expect.objectContaining({ format: 'rgba16float' }),
+    ]);
+    // The materials write linear colors: no output variant.
+    expect(scene.program.variantKey).not.toHaveProperty('toneMapping', 'aces');
+    expect(toneMapping.label).toBe('tone mapping');
+    expect(toneMapping.targets).toEqual([{ format: 'rgba8unorm' }]);
+    expect(toneMapping.program.vertexInputs).toEqual([]);
+    // A triangle covering the target, without index nor vertex buffer.
+    expect(log.draws[1]).toMatchObject({
+      pipeline: 'tone mapping',
+      count: 3,
+      indexed: false,
+    });
+  });
+
+  it('applies the output in the materials when HDR is disabled', () => {
+    const { render, log } = hdrSetup({ hdr: false });
+    render([item()]);
+    expect(log.renderPasses).toEqual(['scene opaque']);
+    expect(log.pipelines[0].targets).toEqual([
+      expect.objectContaining({ format: 'rgba8unorm' }),
+    ]);
+  });
+
+  it('keeps its pipelines and bind groups from frame to frame', () => {
+    const { render, log } = hdrSetup();
+    const items = [item()];
+    render(items);
+    const pipelines = log.pipelines.length;
+    const bindGroups = log.bindGroups.length;
+    render(items);
+    render(items);
+    expect(log.pipelines).toHaveLength(pipelines);
+    // The pooled HDR texture does not change: no new bind group.
+    expect(log.bindGroups).toHaveLength(bindGroups);
+    expect(log.textures).toHaveLength(2);
+  });
+
+  it('adds full screen passes reading textures of the graph', () => {
+    const { renderer, log } = hdrSetup();
+    const g = new GraphBuilder('invert');
+    const texel = g.call(std.textureSample, {
+      texture: g.texture('source'),
+      sampler: g.sampler('sourceSampler'),
+      uv: g.builtin('screen-uv'),
+    });
+    g.fullscreen({
+      color: g.call(std.extend, {
+        xyz: g.call(std.sub, { a: 1, b: texel.swizzle('rgb') }),
+        w: 1,
+      }),
+    });
+    const invert = new Material({
+      graph: g.build(),
+      values: { sourceSampler: { destroy: () => undefined } },
+    });
+
+    const graph = new RenderGraph();
+    const size = { width: 8, height: 8 };
+    const color = graph.createTexture('color', { format: 'rgba8unorm', size });
+    const scene = renderer.addScenePasses(graph, {
+      items: [item()],
+      camera: new Camera(),
+      target: color,
+      format: 'rgba8unorm',
+    });
+    const inverted = renderer.addFullscreenPass(graph, 'invert', {
+      material: invert,
+      inputs: { source: scene },
+      target: graph.createTexture('inverted', { format: 'rgba8unorm', size }),
+      format: 'rgba8unorm',
+    });
+    graph.addCopyPass('capture', (pass) => {
+      pass.read(inverted, 'copy-src');
+      pass.hasSideEffects();
+      return { execute: () => log.renderPasses.push('capture') };
+    });
+    new RenderGraphRunner(renderer.backend).execute(graph);
+    expect(log.renderPasses).toEqual(['scene opaque', 'invert', 'capture']);
+    // The texture of the scene, sampled by the pass.
+    const sceneTexture = log.textures.find(
+      (texture) => texture.label === 'color'
+    );
+    expect(sceneTexture?.usage).toEqual(
+      expect.arrayContaining(['render-attachment', 'sampled'])
+    );
+    expect(invert.getValue('source')).toMatchObject({ label: 'color' });
+  });
+});
+
+describe('Renderer, shadows', () => {
+  // Lit, with a constant normal: the triangle has no normals.
+  const litGraph = () => {
+    const g = new GraphBuilder('lit');
+    g.surface({
+      shadingModel: 'phong',
+      baseColor: [1, 1, 1],
+      normal: [0, 0, 1],
+    });
+    return g.build();
+  };
+  const lit = (options: { castShadow?: boolean; blend?: boolean } = {}) => ({
+    mesh: triangle(),
+    material: new Material({
+      graph: litGraph(),
+      ...(options.blend
+        ? { renderState: { alphaMode: 'blend' as const } }
+        : {}),
+    }),
+    transform: transformAt(0),
+    ...(options.castShadow === undefined
+      ? {}
+      : { castShadow: options.castShadow }),
+  });
+  const shadowSetup = () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend, { shadowAtlasSize: 1024 });
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    return { renderer, log, camera };
+  };
+  const sun = () =>
+    new DirectionalLight({
+      direction: { x: 0, y: -1, z: 0 },
+      castShadow: true,
+    });
+
+  it('draws the shadow maps of the lights into the tiles of an atlas', () => {
+    const { renderer, log, camera } = shadowSetup();
+    renderer.render({
+      items: [lit()],
+      camera,
+      surface,
+      lights: [
+        sun(),
+        // Point lights cast no shadows.
+        new PointLight({ position: { x: 0, y: 1, z: 0 } }),
+        new SpotLight({
+          position: { x: 0, y: 5, z: 0 },
+          direction: { x: 0, y: -1, z: 0 },
+          castShadow: true,
+        }),
+      ],
+    });
+    expect(log.renderPasses).toEqual(['scene shadows', 'scene opaque']);
+    // Two lights: a 2 × 2 grid of tiles.
+    expect(log.viewports).toEqual([
+      [0, 0, 512, 512],
+      [512, 0, 512, 512],
+    ]);
+    const atlas = log.textures.find((t) => t.label === 'scene shadows atlas');
+    expect(atlas).toMatchObject({
+      format: 'depth24plus',
+      dimensions: { width: 1024, height: 1024 },
+    });
+    expect(atlas?.usage).toEqual(
+      expect.arrayContaining(['render-attachment', 'sampled'])
+    );
+    // Depth only, with a slope bias; the scene reads the atlas.
+    const [depthOnly, scene] = log.pipelines;
+    expect(depthOnly.targets).toEqual([]);
+    expect(depthOnly.depthStencil).toMatchObject({
+      depthBias: 2,
+      depthBiasSlopeScale: 2,
+    });
+    expect(depthOnly.program.variantKey).toMatchObject({ depthOnly: true });
+    expect(scene.program.variantKey).toMatchObject({ shadows: true });
+    // A draw per light in the shadow pass, then the scene.
+    expect(log.draws).toHaveLength(3);
+  });
+
+  it('writes the tiles and matrices of the lights in the frame uniforms', () => {
+    const { renderer, log, camera } = shadowSetup();
+    renderer.render({
+      items: [lit()],
+      camera,
+      surface,
+      lights: [new PointLight(), sun()],
+    });
+    const frame = log.buffers.find(
+      (b) => b.label === 'scene frame uniforms'
+    ) as FakeBuffer;
+    const floats = floatsOf(frame);
+    const index = (name: string) => {
+      let offset = 0;
+      for (const member of engineUniformBlocks.frame) {
+        if (member.name === name) {
+          return offset / 4;
+        }
+        offset += sizeOf(member.type);
+      }
+      throw new Error(name);
+    };
+    const vec4 = (name: string, light: number) =>
+      floats.slice(index(name) + light * 4, index(name) + light * 4 + 4);
+    // The point light has no tile; the sun has the whole atlas.
+    expect(vec4('lightShadows', 0)).toEqual([0, 0, 0, 0]);
+    expect(vec4('lightShadows', 1)[0]).toBe(1);
+    expect(vec4('lightShadows', 1)[3]).toBeCloseTo(1 / 1024);
+    expect(vec4('lightShadowRects', 1)).toEqual([0, 0, 1, 1]);
+  });
+
+  it('leaves out the items that do not cast shadows', () => {
+    const { renderer, log, camera } = shadowSetup();
+    renderer.render({
+      items: [lit(), lit({ castShadow: false }), lit({ blend: true })],
+      camera,
+      surface,
+      lights: [sun()],
+    });
+    // One caster, then three items in the scene.
+    expect(log.draws).toHaveLength(4);
+    expect(log.renderPasses).toEqual([
+      'scene shadows',
+      'scene opaque',
+      'scene transparent',
+    ]);
+  });
+
+  it('has no shadow pass without lights casting shadows', () => {
+    const { renderer, log, camera } = shadowSetup();
+    renderer.render({
+      items: [lit()],
+      camera,
+      surface,
+      lights: [new DirectionalLight()],
+    });
+    expect(log.renderPasses).toEqual(['scene opaque']);
+    expect(log.pipelines[0].program.variantKey).not.toHaveProperty(
+      'shadows',
+      true
+    );
+    // Shadows can be turned off per scene.
+    const graph = new RenderGraph();
+    renderer.addScenePasses(graph, {
+      items: [lit()],
+      camera,
+      lights: [sun()],
+      target: graph.importTexture('surface', surface.getCurrentTarget()),
+      format: surface.format,
+      shadows: false,
+    });
+    expect(graph.passes.map((pass) => pass.name)).toEqual(['scene opaque']);
+  });
+});
+
+describe('Renderer, views', () => {
+  it('gives each scene of a graph its own frame uniforms', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const graph = new RenderGraph();
+    const items = [
+      {
+        mesh: triangle(),
+        material: new Material({ graph: colorGraph() }),
+        transform: transformAt(0),
+      },
+    ];
+    for (const [name, x] of [
+      ['left', 1],
+      ['right', 2],
+    ] as const) {
+      renderer.addScenePasses(graph, {
+        items,
+        camera: new Camera({ position: { x, y: 0, z: 0 } }),
+        target: graph.createTexture(name, { format: 'rgba8unorm' }),
+        format: 'rgba8unorm',
+        name,
+      });
+    }
+    const frames = log.buffers.filter((b) =>
+      b.label?.endsWith('frame uniforms')
+    );
+    // The fake view matrix is a translation by -position: both cameras are
+    // kept until the graph runs.
+    expect(frames.map((buffer) => floatsOf(buffer)[12])).toEqual([-1, -2]);
+  });
+});
+
 describe('Renderer, phase 4', () => {
   // Float index of a member of the fake frame block.
   const frameIndex = (name: string) => {
@@ -611,7 +732,7 @@ describe('Renderer, phase 4', () => {
 
   const frameFloats = (log: ReturnType<typeof fakeBackend>['log']) =>
     floatsOf(
-      log.buffers.find((b) => b.label === 'frame uniforms') as FakeBuffer
+      log.buffers.find((b) => b.label?.endsWith('frame uniforms')) as FakeBuffer
     );
 
   it('writes the lights in the arrays of the frame uniforms', () => {
@@ -806,5 +927,52 @@ describe('Mesh', () => {
     expect(() => mesh.setVertices(1, new Float32Array(1))).toThrow(
       /no vertex buffer 1/
     );
+  });
+});
+
+describe('Renderer, multisampling', () => {
+  it('draws into multisampled attachments resolved into the target', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend, { samples: 4 });
+    const items = [
+      {
+        mesh: triangle(),
+        material: new Material({ graph: colorGraph() }),
+        transform: transformAt(0),
+      },
+    ];
+    renderer.render({ items, camera: new Camera(), surface });
+    expect(log.renderPasses).toEqual(['scene opaque']);
+    expect(
+      log.textures.map(({ label, format, sampleCount }) => [
+        label,
+        format,
+        sampleCount,
+      ])
+    ).toEqual([
+      ['scene multisampled color', 'rgba8unorm', 4],
+      ['scene depth', 'depth24plus', 4],
+    ]);
+    expect(log.pipelines[0].sampleCount).toBe(4);
+
+    // With transparent items, the second pass resolves.
+    const glass = new Material({
+      graph: colorGraph(),
+      renderState: { alphaMode: 'blend' },
+    });
+    const graph = new RenderGraph();
+    const target = graph.importTexture('surface', surface.getCurrentTarget());
+    renderer.addScenePasses(graph, {
+      items: [...items, { ...items[0], material: glass }],
+      camera: new Camera(),
+      target,
+      format: surface.format,
+    });
+    const compiled = graph.compile();
+    expect(compiled.order.map((index) => graph.passes[index].name)).toEqual([
+      'scene opaque',
+      'scene transparent',
+    ]);
+    expect(graph.toDot()).toContain('p1 -> r0v1 [label="color-attachment"];');
   });
 });

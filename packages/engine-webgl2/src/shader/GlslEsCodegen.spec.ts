@@ -146,6 +146,62 @@ describe('glslType', () => {
 });
 
 describe('GlslEsCodegen', () => {
+  it('compares depths with shadow samplers, at level 0', () => {
+    const g = new GraphBuilder('lit');
+    g.surface({
+      shadingModel: 'phong',
+      baseColor: [1, 1, 1],
+      alpha: g.uniform('opacity', BuiltinTypes.f32),
+    });
+    const graph = g.build();
+    const options = { vertexAttributes: ['position', 'normal'] };
+    const program = compile(graph, { ...options, features: { shadows: true } });
+    const layout = std140LayoutStrategy.resolve(program.layout);
+    expect(combinedSamplers(program.module, layout)).toEqual([
+      {
+        name: 'ts0_shadowMap_shadowSampler',
+        texture: 'shadowMap',
+        sampler: 'shadowSampler',
+        type: BuiltinTypes.depthTexture2d,
+        comparison: true,
+      },
+    ]);
+    const { fragment } = emit(program.module, layout);
+    expect(fragment).toContain('precision highp sampler2DShadow;');
+    expect(fragment).toContain(
+      'uniform sampler2DShadow ts0_shadowMap_shadowSampler;'
+    );
+    // The reference depth after the uv, whose v is flipped as for every 2d
+    // texture.
+    expect(fragment).toMatch(
+      /textureLod\(ts0_shadowMap_shadowSampler, vec3\(vec2\((v\d+)\.x, 1\.0 - \1\.y\), v\d+\), 0\.0\)/
+    );
+    expect(glslSamplerType(BuiltinTypes.depthTexture2d, true)).toBe(
+      'sampler2DShadow'
+    );
+  });
+
+  it('writes no color in depth-only programs', () => {
+    const g = new GraphBuilder('lit');
+    g.surface({
+      shadingModel: 'phong',
+      baseColor: [1, 1, 1],
+      alpha: g.uniform('opacity', BuiltinTypes.f32),
+    });
+    const graph = g.build();
+    const options = { vertexAttributes: ['position', 'normal'] };
+    const program = compile(graph, {
+      ...options,
+      features: { depthOnly: true },
+    });
+    const { fragment } = emit(
+      program.module,
+      std140LayoutStrategy.resolve(program.layout)
+    );
+    expect(fragment).not.toContain(' out ');
+    expect(fragment).toMatch(/void main\(\) \{\n\}/);
+  });
+
   it('writes typed literals', () => {
     const { fragment } = emit(
       fragmentModule([
@@ -189,6 +245,7 @@ describe('GlslEsCodegen', () => {
         texture: 'map',
         sampler: 'mapSampler',
         type: BuiltinTypes.texture2d,
+        comparison: false,
       },
     ]);
     const { vertex, fragment } = emit(module, textureLayout);

@@ -42,8 +42,16 @@ export class TextureFactory
       readwrite?: boolean;
     }
   ): GpuTexture {
-    const { type, format, dimensions, source, readwrite, label, usage } =
-      descriptor;
+    const {
+      type,
+      format,
+      dimensions,
+      source,
+      readwrite,
+      label,
+      usage,
+      sampleCount = 1,
+    } = descriptor;
     const { width, height = 1, layers = 1 } = dimensions;
 
     const textureDescriptor: GPUTextureDescriptor = {
@@ -53,6 +61,7 @@ export class TextureFactory
         depthOrArrayLayers: layers,
       },
       format: TextureFactory.textureFormatToGPUTextureFormat(format),
+      sampleCount,
       usage:
         (usage
           ? textureUsageFlags(usage)
@@ -93,6 +102,7 @@ export class TextureFactory
       format,
       dimensions,
       texture,
+      sampleCount,
     });
   }
 
@@ -105,6 +115,7 @@ export class TextureFactory
       minFilter: (descriptor?.minFilter ?? 'linear') as GPUFilterMode,
       mipmapFilter: (descriptor?.mipmapFilter ?? 'linear') as GPUFilterMode,
       maxAnisotropy: descriptor?.maxAnisotropy ?? 1,
+      ...(descriptor?.compare ? { compare: descriptor.compare } : {}),
     };
 
     return new Sampler({

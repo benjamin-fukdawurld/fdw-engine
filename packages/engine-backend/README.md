@@ -35,8 +35,9 @@ An abstract rendering API modelled on WebGPU, which maps almost directly onto Vu
 | --- | --- | --- |
 | `RenderBackend` | interface | Everything a renderer needs: buffer, texture and pipeline factories, math, render targets, command encoding and submission |
 | `GpuPipelineFactory` | interface | Physical layouts, render pipelines, bind group layouts (shared between equal groups) and bind groups |
-| `RenderPipelineDescriptor`, `PrimitiveState`, `DepthStencilState`, `ColorTargetState`, `BlendState` | type | Pipeline description; `alphaBlending` is the standard blend state |
-| `GpuCommandEncoder`, `GpuRenderPassEncoder`, `RenderPassDescriptor`, `GpuRenderTarget` | interface | Command recording and render targets |
+| `RenderPipelineDescriptor`, `PrimitiveState`, `DepthStencilState`, `ColorTargetState`, `BlendState` | type | Pipeline description (`targets: []` for depth-only passes, `depthBias` / `depthBiasSlopeScale`, `sampleCount`); `alphaBlending` is the standard blend state |
+| `GpuCommandEncoder`, `GpuRenderPassEncoder`, `RenderPassDescriptor`, `GpuRenderTarget` | interface | Command recording (`setViewport` for a tile of an atlas; passes without color attachment; `resolveTarget` of a multisampled color attachment) and render targets |
+| `BackendCapabilities` | type | The compiler capabilities, and `renderableFormats` (`rgba16float` for HDR) |
 | `GpuComputePassEncoder`, `ComputePipelineDescriptor`, `GpuComputePipeline` | interface | Compute stages: `createComputePipeline()`, `beginComputePass()`, `dispatchWorkgroups()` (direct or indirect); refused on backends without the `compute` capability (WebGL2) |
 | `matchVertexLayout()`, `isVertexFormatCompatible()`, `meshSemantics()` | function | Matching of the program inputs with the mesh attributes, by semantic |
 
@@ -47,9 +48,9 @@ An abstract rendering API modelled on WebGPU, which maps almost directly onto Vu
 | `GpuBuffer` / `GpuBufferFactory`         | interface | GPU buffer and its factory                               |
 | `GpuBufferUsage`, `GpuBufferUpdateFrequency` | type  | `uniform`, `storage`, `vertex`, `index`, `copy-src`, `copy-dst` · `static`, `dynamic`, `stream` |
 | `GpuTexture` / `GpuTextureFactory`       | interface | GPU texture and its factory                              |
-| `GpuTextureConfiguration`, `GpuTextureType`, `GpuTextureFormat` | type | Texture description (`2d`, `2d-array`, `3d`, `cube`, formats) |
+| `GpuTextureConfiguration`, `GpuTextureType`, `GpuTextureFormat` | type | Texture description (`2d`, `2d-array`, `3d`, `cube`, formats, usages, `sampleCount` of multisampled attachments) |
 | `GpuSampler` / `GpuSamplerFactory`       | interface | Texture sampler and its factory                          |
-| `GpuSamplerConfiguration`                | type      | Wrap / filter modes, anisotropy                          |
+| `GpuSamplerConfiguration`                | type      | Wrap / filter modes, anisotropy, `compare` (comparison samplers) |
 | `GpuShaderStageName`                     | type      | `vertex` · `fragment` · `compute`                        |
 
 ### GPU data layout (`gpu/`)

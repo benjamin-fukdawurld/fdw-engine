@@ -15,6 +15,7 @@ import { Route as TriangleStripRouteRouteImport } from './routes/triangle-strip/
 import { Route as TriangleHardColorRouteRouteImport } from './routes/triangle-hard-color/route'
 import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
 import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
+import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
 import { Route as PbrRouteRouteImport } from './routes/pbr/route'
 import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
 import { Route as MaterialGraphRouteRouteImport } from './routes/material-graph/route'
@@ -56,6 +57,11 @@ const TriangleRouteRoute = TriangleRouteRouteImport.update({
 const TexturedTriangleRouteRoute = TexturedTriangleRouteRouteImport.update({
   id: '/textured-triangle',
   path: '/textured-triangle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShadowsRouteRoute = ShadowsRouteRouteImport.update({
+  id: '/shadows',
+  path: '/shadows',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PbrRouteRoute = PbrRouteRouteImport.update({
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
   '/pbr': typeof PbrRouteRoute
+  '/shadows': typeof ShadowsRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
@@ -153,6 +160,7 @@ export interface FileRoutesByTo {
   '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
   '/pbr': typeof PbrRouteRoute
+  '/shadows': typeof ShadowsRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
   '/pbr': typeof PbrRouteRoute
+  '/shadows': typeof ShadowsRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
@@ -196,6 +205,7 @@ export interface FileRouteTypes {
     | '/material-graph'
     | '/matrix'
     | '/pbr'
+    | '/shadows'
     | '/textured-triangle'
     | '/triangle'
     | '/triangle-hard-color'
@@ -216,6 +226,7 @@ export interface FileRouteTypes {
     | '/material-graph'
     | '/matrix'
     | '/pbr'
+    | '/shadows'
     | '/textured-triangle'
     | '/triangle'
     | '/triangle-hard-color'
@@ -236,6 +247,7 @@ export interface FileRouteTypes {
     | '/material-graph'
     | '/matrix'
     | '/pbr'
+    | '/shadows'
     | '/textured-triangle'
     | '/triangle'
     | '/triangle-hard-color'
@@ -257,6 +269,7 @@ export interface RootRouteChildren {
   MaterialGraphRouteRoute: typeof MaterialGraphRouteRoute
   MatrixRouteRoute: typeof MatrixRouteRoute
   PbrRouteRoute: typeof PbrRouteRoute
+  ShadowsRouteRoute: typeof ShadowsRouteRoute
   TexturedTriangleRouteRoute: typeof TexturedTriangleRouteRoute
   TriangleRouteRoute: typeof TriangleRouteRoute
   TriangleHardColorRouteRoute: typeof TriangleHardColorRouteRoute
@@ -307,6 +320,13 @@ declare module '@tanstack/react-router' {
       path: '/textured-triangle'
       fullPath: '/textured-triangle'
       preLoaderRoute: typeof TexturedTriangleRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shadows': {
+      id: '/shadows'
+      path: '/shadows'
+      fullPath: '/shadows'
+      preLoaderRoute: typeof ShadowsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pbr': {
@@ -409,6 +429,7 @@ const rootRouteChildren: RootRouteChildren = {
   MaterialGraphRouteRoute: MaterialGraphRouteRoute,
   MatrixRouteRoute: MatrixRouteRoute,
   PbrRouteRoute: PbrRouteRoute,
+  ShadowsRouteRoute: ShadowsRouteRoute,
   TexturedTriangleRouteRoute: TexturedTriangleRouteRoute,
   TriangleRouteRoute: TriangleRouteRoute,
   TriangleHardColorRouteRoute: TriangleHardColorRouteRoute,

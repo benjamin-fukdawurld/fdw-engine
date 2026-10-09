@@ -366,3 +366,144 @@ describe('RenderGraphRunner', () => {
     void log;
   });
 });
+
+describe('RenderGraphRunner, memory and debugging', () => {
+  // a → b → c → backbuffer: the lifetimes of a and c do not overlap.
+  const chain = (log: { events: string[] }) => {
+    const graph = new RenderGraph();
+    const backbuffer = graph.importTexture('backbuffer', surface);
+    const texture = (name: string) =>
+      graph.createTexture(name, { format: 'rgba16float' });
+    let previous: ReturnType<typeof texture> | undefined;
+    const written: Record<string, ReturnType<typeof texture>> = {};
+    for (const name of ['a', 'b', 'c']) {
+      const source = previous;
+      previous = graph.addRasterPass(`draw ${name}`, (pass) => {
+        if (source) {
+          pass.read(source, 'sampled');
+        }
+        return {
+          color: pass.writeColor(texture(name), { load: 'clear' }),
+          execute: run(log, name),
+        };
+      }).color;
+      written[name] = previous;
+    }
+    const last = previous as ReturnType<typeof texture>;
+    graph.addRasterPass('present', (pass) => {
+      pass.read(last, 'sampled');
+      return {
+        color: pass.writeColor(backbuffer, { load: 'clear' }),
+        execute: run(log, 'present'),
+      };
+    });
+    return { graph, written };
+  };
+
+  it('reuses the memory of a resource for a later one of the frame', () => {
+    const { backend, log } = fakeBackend();
+    const runner = new RenderGraphRunner(backend);
+    const { graph, written } = chain(log);
+    const textures: Record<string, unknown> = {};
+    // Records the real textures through the context of the passes.
+    for (const pass of graph.passes) {
+      const execute = pass.execute as (context: never) => void;
+      pass.execute = (context: never) => {
+        const { texture } = context as {
+          texture: (handle: unknown) => unknown;
+        };
+        for (const [name, handle] of Object.entries(written)) {
+          try {
+            textures[name] = texture(handle);
+          } catch {
+            // Not declared by this pass.
+          }
+        }
+        execute(context);
+      };
+    }
+    const compiled = runner.execute(graph);
+    expect(compiled.acquires).toEqual([[1], [2], [3], []]);
+    expect(compiled.releases).toEqual([[], [1], [2], [3]]);
+    // a is free when c starts.
+    expect(runner.created).toBe(2);
+    expect(textures['c']).toBe(textures['a']);
+    expect(textures['b']).not.toBe(textures['a']);
+  });
+
+  it('gives the size of the textures to the passes', () => {
+    const { backend } = fakeBackend();
+    const graph = new RenderGraph();
+    const half = graph.createTexture('half', {
+      format: 'rgba8unorm',
+      size: { relative: 0.5 },
+    });
+    const sizes: unknown[] = [];
+    graph.addRasterPass('fill', (pass) => {
+      pass.hasSideEffects();
+      return {
+        color: pass.writeColor(half, { load: 'clear' }),
+        execute: (context) => sizes.push(context.size(half)),
+      };
+    });
+    expect(graph.textureSize(half)).toEqual({ relative: 0.5 });
+    new RenderGraphRunner(backend).execute(graph, {
+      size: { width: 64, height: 32 },
+    });
+    expect(sizes).toEqual([{ width: 32, height: 16 }]);
+  });
+
+  it('resolves multisampled attachments into textures', () => {
+    const { backend, log } = fakeBackend();
+    const graph = new RenderGraph();
+    const backbuffer = graph.importTexture('backbuffer', surface);
+    const samples = graph.createTexture('samples', {
+      format: 'rgba8unorm',
+      sampleCount: 4,
+    });
+    expect(graph.textureSize(backbuffer)).toEqual({ width: 64, height: 32 });
+    graph.addRasterPass('draw', (pass) => {
+      pass.writeColor(samples, { load: 'clear' });
+      return {
+        color: pass.resolveColor(backbuffer),
+        execute: run(log, 'draw'),
+      };
+    });
+    new RenderGraphRunner(backend).execute(graph);
+    expect(log.textures[0]).toMatchObject({
+      sampleCount: 4,
+      usage: ['render-attachment'],
+    });
+    expect(log.renderPasses[0].colorAttachments[0]).toMatchObject({
+      target: log.textures[0],
+      resolveTarget: surface,
+    });
+    // Nothing to resolve.
+    const wrong = new RenderGraph();
+    const texture = wrong.importTexture('backbuffer', surface);
+    expect(() =>
+      wrong.addRasterPass('draw', (pass) => ({
+        color: pass.resolveColor(texture),
+        execute: () => undefined,
+      }))
+    ).toThrow(/without a color attachment to resolve/);
+  });
+
+  it('describes the graph for Graphviz', () => {
+    const { graph } = chain({ events: [] });
+    const unused = graph.createTexture('unused', { format: 'rgba8unorm' });
+    graph.addRasterPass('culled', (pass) => ({
+      color: pass.writeColor(unused, { load: 'clear' }),
+      execute: () => undefined,
+    }));
+    const dot = graph.toDot();
+    expect(dot).toMatch(/^digraph "render graph" \{/);
+    expect(dot).toContain('p0 [shape=box, label="1. draw a"];');
+    expect(dot).toContain(
+      'p4 [shape=box, label="culled", style=dashed, color=gray];'
+    );
+    expect(dot).toContain('p0 -> r1v1 [label="color-attachment"];');
+    expect(dot).toContain('r1v1 -> p1 [label="sampled"];');
+    expect(dot).toContain('r0v1 [shape=doubleoctagon, label="backbuffer #1"];');
+  });
+});

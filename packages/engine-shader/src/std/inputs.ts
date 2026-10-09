@@ -106,6 +106,9 @@ const builtins: Record<string, { type: ShaderType; stage: ShaderStage }> = {
   'instance-index': { type: BuiltinTypes.u32, stage: 'vertex' },
   'frag-coord': { type: BuiltinTypes.vec4f, stage: 'fragment' },
   'front-facing': { type: BuiltinTypes.bool, stage: 'fragment' },
+  // Graphs ending with output.fullscreen: the coordinates of the pixel in the
+  // target, in [0, 1], origin at the top left on every backend.
+  'screen-uv': { type: BuiltinTypes.vec2f, stage: 'fragment' },
   // Compute graphs: position of the thread in the grid, in its workgroup, of
   // its workgroup, and the number of workgroups.
   'global-invocation-id': { type: BuiltinTypes.vec3u, stage: 'compute' },
@@ -138,6 +141,9 @@ const engineValues: Record<string, ShaderType> = {
   'object.normalMatrix': BuiltinTypes.mat3f,
   time: BuiltinTypes.f32,
   exposure: BuiltinTypes.f32,
+  // The shadow atlas of the lights, read by the light.shadow macro.
+  shadowMap: BuiltinTypes.depthTexture2d,
+  shadowSampler: BuiltinTypes.comparisonSampler,
 };
 
 export const engine: NodeDefinition = {

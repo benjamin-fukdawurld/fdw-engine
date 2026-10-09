@@ -225,6 +225,25 @@ export const textureSampleLevel = intrinsic(
   BuiltinTypes.vec4f
 );
 
+/**
+ * Compares a reference depth with the depths of a depth texture around uv:
+ * 1 where the reference passes the comparison of the sampler (for a shadow
+ * map, `less-equal`: the point is lit), 0 where it fails, and the fraction
+ * of the neighboring texels that pass with a linear comparison sampler.
+ * Available in every stage and in loops: the level is always 0.
+ */
+export const textureSampleCompare = intrinsic(
+  'textureSampleCompare',
+  'texture-sample-compare',
+  [
+    port('texture', BuiltinTypes.depthTexture2d),
+    port('sampler', BuiltinTypes.comparisonSampler),
+    port('uv', BuiltinTypes.vec2f),
+    port('depthRef', BuiltinTypes.f32),
+  ],
+  BuiltinTypes.f32
+);
+
 export const vec2 = intrinsic(
   'vec2',
   'construct',
@@ -325,6 +344,7 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   notEqual,
   textureSample,
   textureSampleLevel,
+  textureSampleCompare,
   vec2,
   vec3,
   vec4,

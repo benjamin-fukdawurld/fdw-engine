@@ -215,7 +215,8 @@ export function checkOutputNodes(
   }
   const types = outputs.map((node) => node.type).sort();
   if (
-    (types.length === 1 && types[0] === 'output.surface') ||
+    (types.length === 1 &&
+      (types[0] === 'output.surface' || types[0] === 'output.fullscreen')) ||
     (types.length === 2 &&
       types[0] === 'output.fragment' &&
       types[1] === 'output.vertex')

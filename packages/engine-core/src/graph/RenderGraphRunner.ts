@@ -90,24 +90,27 @@ export class RenderGraphRunner {
     const compiled = this.compile(graph);
     const size = options.size ?? this.frameSize(graph);
     const real = new Map<number, GraphResource>();
-    const allocated: { resource: number; key: string }[] = [];
+    const keys = new Map<number, string>();
     for (const resource of graph.resources) {
       if (resource.imported) {
         real.set(resource.id, resource.imported);
       }
     }
+    const byName = new Map(
+      graph.resources.map((resource) => [resource.name, resource.id])
+    );
 
     const encoder = this.backend.createCommandEncoder();
     compiled.order.forEach((index, position) => {
       const pass = graph.passes[index];
 
-      // Resources whose lifetime starts here.
-      for (const [id, lifetime] of compiled.lifetimes) {
-        if (lifetime.first === position) {
-          const key = this.poolKey(graph, id, lifetime.usages, size);
-          real.set(id, this.acquire(graph, id, key, lifetime.usages, size));
-          allocated.push({ resource: id, key });
-        }
+      // Resources whose lifetime starts here: from the pool, possibly
+      // released by an earlier pass of this frame.
+      for (const id of compiled.acquires[position]) {
+        const usages = compiled.lifetimes.get(id)?.usages ?? new Set();
+        const key = this.poolKey(graph, id, usages, size);
+        real.set(id, this.acquire(graph, id, key, usages, size));
+        keys.set(id, key);
       }
 
       const transitions = compiled.transitions[position];
@@ -116,7 +119,7 @@ export class RenderGraphRunner {
           transitions.map(
             (transition): ResourceTransition => ({
               resource: real.get(
-                graph.resources.findIndex((r) => r.name === transition.resource)
+                byName.get(transition.resource) as number
               ) as GraphResource,
               from: transition.from,
               to: transition.to,
@@ -138,6 +141,17 @@ export class RenderGraphRunner {
         backend: this.backend,
         texture: (handle) => lookup(handle) as GpuAttachmentTarget,
         buffer: (handle) => lookup(handle) as GpuBuffer,
+        size: (handle) => {
+          const target = lookup(handle) as {
+            width?: number;
+            height?: number;
+            dimensions?: { width: number; height?: number };
+          };
+          return {
+            width: target.width ?? target.dimensions?.width ?? 1,
+            height: target.height ?? target.dimensions?.height ?? 1,
+          };
+        },
       };
       const execute = pass.execute as unknown as (context: object) => void;
 
@@ -148,6 +162,13 @@ export class RenderGraphRunner {
             (color): RenderPassColorAttachment => ({
               target: real.get(color.resource) as GpuAttachmentTarget,
               load: color.load,
+              ...(color.resolve !== undefined
+                ? {
+                    resolveTarget: real.get(
+                      color.resolve
+                    ) as GpuAttachmentTarget,
+                  }
+                : {}),
               ...(color.clearValue !== undefined
                 ? { clearValue: color.clearValue as never }
                 : {}),
@@ -172,14 +193,15 @@ export class RenderGraphRunner {
       } else {
         execute({ ...base, encoder });
       }
+
+      // Resources whose lifetime ends here: back to the pool, where a later
+      // pass of the frame can take them (the commands run in order), as
+      // well as the next frames.
+      for (const id of compiled.releases[position]) {
+        this.release(keys.get(id) as string, real.get(id) as PooledResource);
+      }
     });
     this.backend.submit([encoder.finish()]);
-
-    // Back to the pool once the frame is recorded: the backends order the
-    // next uses after this submission.
-    for (const { resource, key } of allocated) {
-      this.release(key, real.get(resource) as PooledResource);
-    }
     this.endFrame();
     return compiled;
   }
@@ -258,6 +280,7 @@ export class RenderGraphRunner {
           'texture',
           resource.texture?.format,
           this.textureSize(graph, id, frame),
+          resource.texture?.sampleCount ?? 1,
           sorted,
         ])
       : JSON.stringify(['buffer', resource.buffer?.size, sorted]);
@@ -284,6 +307,9 @@ export class RenderGraphRunner {
         type: '2d',
         format: resource.texture?.format as string,
         dimensions: { width, height },
+        ...(resource.texture?.sampleCount
+          ? { sampleCount: resource.texture.sampleCount }
+          : {}),
         usage: [
           ...new Set(
             [...usages]

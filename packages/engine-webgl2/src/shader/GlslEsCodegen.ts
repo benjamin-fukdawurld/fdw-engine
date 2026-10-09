@@ -64,13 +64,20 @@ const samplerPrefixes = {
   uint: 'u',
 } as const;
 
-// The combined sampler type of a texture: sampler2D, usampler3D…
-export function glslSamplerType(type: TextureType): string {
+// The combined sampler type of a texture: sampler2D, usampler3D…, and
+// sampler2DShadow… with a comparison sampler.
+export function glslSamplerType(type: TextureType, comparison = false): string {
   const dimension = samplerDimensions[type.dimension];
-  if (!dimension || type.multisampled) {
-    throw new Error(`${typeToString(type)} cannot be sampled in GLSL ES 3.0`);
+  if (!dimension || type.multisampled || (comparison && dimension === '3D')) {
+    throw new Error(
+      `${typeToString(type)} cannot be sampled${
+        comparison ? ' with comparison' : ''
+      } in GLSL ES 3.0`
+    );
   }
-  return `${samplerPrefixes[type.sampleType]}sampler${dimension}`;
+  return comparison
+    ? `sampler${dimension}Shadow`
+    : `${samplerPrefixes[type.sampleType]}sampler${dimension}`;
 }
 
 function floatLiteral(value: number): string {
@@ -302,7 +309,8 @@ function emitInstructions(
         break;
       }
       case 'sample':
-      case 'sample-level': {
+      case 'sample-level':
+      case 'sample-compare': {
         const texture = arg(instruction, 0);
         const sampler = arg(instruction, 1);
         const combined = samplers.find(
@@ -319,6 +327,14 @@ function emitInstructions(
           combined.type.dimension === '2d'
             ? `vec2(${uv}.x, 1.0 - ${uv}.y)`
             : uv;
+        if (op.kind === 'sample-compare') {
+          // The reference depth is the last coordinate of shadow samplers.
+          expression = `textureLod(${combined.name}, vec3(${coordinates}, ${arg(
+            instruction,
+            3
+          )}), 0.0)`;
+          break;
+        }
         // Depth textures read as a float: the depth is the first component.
         expression = `${
           op.kind === 'sample-level'
@@ -383,7 +399,11 @@ export class GlslEsCodegen implements ShaderCodegen {
 
     const samplers = combinedSamplers(module, layout);
     const samplerTypes = [
-      ...new Set(samplers.map((sampler) => glslSamplerType(sampler.type))),
+      ...new Set(
+        samplers.map((sampler) =>
+          glslSamplerType(sampler.type, sampler.comparison)
+        )
+      ),
     ].sort();
 
     const header = [
@@ -420,7 +440,9 @@ export class GlslEsCodegen implements ShaderCodegen {
         samplers
           .map(
             (sampler) =>
-              `uniform ${glslSamplerType(sampler.type)} ${sampler.name};`
+              `uniform ${glslSamplerType(sampler.type, sampler.comparison)} ${
+                sampler.name
+              };`
           )
           .join('\n')
       );
@@ -456,7 +478,8 @@ export class GlslEsCodegen implements ShaderCodegen {
     ];
 
     const fragmentBody = emitBody(fragment, samplers);
-    const color = fragment.outputs[0];
+    // Depth-only programs have no color.
+    const color = fragment.outputs[0] as IrStageVariable | undefined;
     const fragmentSource = [
       header,
       ...resources,
@@ -464,9 +487,13 @@ export class GlslEsCodegen implements ShaderCodegen {
         ...fragment.inputs
           .filter((input) => !input.builtin)
           .map((input) => varying(input, 'in')),
-        `layout(location = ${color.location ?? 0}) out ${glslType(
-          color.type
-        )} o_${identifier(color.name)};`,
+        ...(color
+          ? [
+              `layout(location = ${color.location ?? 0}) out ${glslType(
+                color.type
+              )} o_${identifier(color.name)};`,
+            ]
+          : []),
       ].join('\n'),
       [
         'void main() {',
@@ -481,9 +508,13 @@ export class GlslEsCodegen implements ShaderCodegen {
               '  }',
             ]
           : []),
-        `  o_${identifier(color.name)} = ${fragmentBody.expressions.get(
-          fragment.results[color.name]
-        )};`,
+        ...(color
+          ? [
+              `  o_${identifier(color.name)} = ${fragmentBody.expressions.get(
+                fragment.results[color.name]
+              )};`,
+            ]
+          : []),
         '}',
       ].join('\n'),
     ];

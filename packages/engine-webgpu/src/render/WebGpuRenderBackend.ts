@@ -1,4 +1,5 @@
 import type {
+  BackendCapabilities,
   GpuCommandBuffer,
   GpuCommandEncoder,
   RenderBackend,
@@ -21,6 +22,9 @@ export class WebGpuRenderBackend implements RenderBackend {
   readonly cameraMath = cameraMath;
   readonly transformMath = transformMath;
   readonly depthFormat = 'depth24plus';
+  readonly capabilities: BackendCapabilities = {
+    renderableFormats: ['rgba16float'],
+  };
 
   constructor(readonly device: GPUDevice) {
     this.buffers = new BufferFactory(device);

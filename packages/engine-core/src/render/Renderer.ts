@@ -1,12 +1,15 @@
 import {
   alphaBlending,
   CameraCache,
+  GpuAttachmentTarget,
   GpuBindGroup,
   GpuBindGroupEntry,
+  GpuBindGroupLayout,
   GpuBuffer,
   GpuRenderPassEncoder,
+  GpuSampler,
+  GpuTextureFormat,
   GpuRenderPipeline,
-  GpuRenderTarget,
   IColor,
   IVec3,
   meshSemantics,
@@ -22,6 +25,8 @@ import {
 } from '@fdw/engine-backend';
 import {
   compile,
+  GraphBuilder,
+  std,
   CompiledProgram,
   MaterialGraphData,
   MaxLights,
@@ -29,15 +34,22 @@ import {
   ToneMapping,
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
+import { Transform } from '../Transform';
+import { RenderGraph, TextureHandle } from '../graph/RenderGraph';
+import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
-import type { Transform } from '../Transform';
+import { meshBounds, Sphere, transformSphere, unionSpheres } from './bounds';
 import { Material, MaterialValue } from './Material';
-import type { Mesh } from './Mesh';
+import { Mesh } from './Mesh';
+import { castsShadow, ShadowCameras, ShadowTile } from './shadows';
 
 export interface RenderItem {
   readonly mesh: Mesh;
   readonly material: Material;
   readonly transform: Transform;
+  // Drawn into the shadow maps of the lights. Default true; transparent
+  // items never cast shadows.
+  readonly castShadow?: boolean;
 }
 
 export interface RenderOptions {
@@ -50,8 +62,35 @@ export interface RenderOptions {
   // Multiplies the linear colors before the tone mapping. Defaults to 1.
   readonly exposure?: number;
   // Lights of the scene, summed by the lit shading models. Up to MaxLights
-  // (16) are used, the others are ignored.
+  // (16) are used, the others are ignored. Directional and spot lights with
+  // castShadow cast shadows.
   readonly lights?: readonly BaseLight[];
+}
+
+export interface ScenePassesOptions extends Omit<RenderOptions, 'surface'> {
+  // The color target, and its format.
+  readonly target: TextureHandle;
+  readonly format: GpuTextureFormat;
+  // Prefix of the names of the passes and resources: 'scene' by default.
+  // Each name has its own frame uniforms: give different names to the
+  // views of a graph (several cameras).
+  readonly name?: string;
+  // Writes the linear colors of the materials, without tone mapping nor
+  // encoding: for an HDR target, followed by a tone mapping pass.
+  readonly linear?: boolean;
+  // Draws the shadows of the lights that cast some. Default true.
+  readonly shadows?: boolean;
+}
+
+export interface FullscreenPassOptions {
+  // A material whose graph ends with output.fullscreen.
+  readonly material: Material;
+  // Textures of the graph bound to textures of the material, by name.
+  readonly inputs?: Readonly<Record<string, TextureHandle>>;
+  readonly target: TextureHandle;
+  readonly format: GpuTextureFormat;
+  readonly load?: 'clear' | 'load';
+  readonly clearColor?: IColor;
 }
 
 export interface RendererOptions {
@@ -66,6 +105,18 @@ export interface RendererOptions {
   // Create pipelines asynchronously: an item is skipped until its pipeline
   // is ready, instead of blocking the frame while it compiles.
   readonly asyncPipelines?: boolean;
+  // Renders the scene in linear colors in an HDR target (rgba16float), then
+  // applies the output (tone mapping, encoding) in a full screen pass, where
+  // transparent materials blend exactly. Defaults to true when the backend
+  // can render to rgba16float; otherwise the output is applied by each
+  // material.
+  readonly hdr?: boolean;
+  // The shadow maps of the lights share a square atlas of this size, in
+  // pixels, split in equal tiles. Default 2048.
+  readonly shadowAtlasSize?: number;
+  // Multisample antialiasing: the scene is drawn with this many samples per
+  // pixel (4), then resolved into its target. Default 1 (none).
+  readonly samples?: number;
 }
 
 type PipelineEntry =
@@ -85,6 +136,13 @@ interface UniformGroup {
   bindGroups: Map<string, GpuBindGroup>;
 }
 
+// The frame uniforms of a view (a camera: the scene, a shadow map…), and
+// the shadow atlas its programs read.
+interface FrameView extends UniformGroup {
+  readonly name: string;
+  shadowMap?: GpuAttachmentTarget;
+}
+
 interface ObjectState extends UniformGroup {
   cache: TransformCache;
   // Version of the world matrix last uploaded.
@@ -99,12 +157,39 @@ interface MaterialGroupState {
   resources: readonly unknown[];
 }
 
+// How a pass draws the items: the program variant and the pipeline state.
+interface PassVariant {
+  // The color format; the depth format for depth-only passes.
+  readonly format: GpuTextureFormat;
+  readonly cullMode: PrimitiveState['cullMode'];
+  // Linear colors, without the output (HDR target).
+  readonly linear: boolean;
+  // The lit materials read the shadow atlas.
+  readonly shadows: boolean;
+  // No color: the shadow maps.
+  readonly depthOnly: boolean;
+  // Samples per pixel of the attachments.
+  readonly samples: number;
+}
+
+interface PreparedPipeline {
+  // The features the entry was computed with.
+  readonly features: object;
+  readonly program: CompiledProgram;
+  readonly layout: PhysicalProgramLayout;
+  readonly pipelineKey: string;
+  // A number per pipeline key, to sort the items without comparing strings.
+  readonly pipelineId: number;
+}
+
 interface PreparedItem {
   readonly item: RenderItem;
   readonly program: CompiledProgram;
   readonly layout: PhysicalProgramLayout;
   readonly pipelineKey: string;
+  readonly pipelineId: number;
   readonly object: ObjectState;
+  readonly view: FrameView;
 }
 
 const normalized = ({ x, y, z }: Readonly<IVec3>): number[] => {
@@ -115,10 +200,19 @@ const normalized = ({ x, y, z }: Readonly<IVec3>): number[] => {
 // A cone lighting every direction: the spot factor is always 1.
 const noCone = [-1, -2, 0, 0];
 
+const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+// Directional, point and spot lights: the lights of the shading models.
+const isSupported = (light: BaseLight) =>
+  light instanceof DirectionalLight ||
+  light instanceof PointLight ||
+  light instanceof SpotLight;
+
 // The lights of the frame, in the light arrays of the frame uniforms (see
-// lightMembers in engine-shader): one vec4 per light and property.
+// lightMembers in engine-shader): one vec4 (or mat4) per light and property.
 function lightValues(
-  lights: readonly BaseLight[]
+  lights: readonly BaseLight[],
+  shadows: ReadonlyMap<BaseLight, ShadowTile> = new Map()
 ): Record<string, UniformValue> {
   const arrays: Record<string, number[]> = {
     lightPositions: [],
@@ -128,13 +222,13 @@ function lightValues(
     lightAttenuations: [],
     lightSpotDirections: [],
     lightSpotCones: [],
+    lightShadows: [],
+    lightShadowRects: [],
+    lightShadowMatrices: [],
   };
   const color = (value: Readonly<IVec3>) => [value.x, value.y, value.z, 0];
   let count = 0;
   for (const light of lights) {
-    if (count === MaxLights) {
-      break;
-    }
     let position: number[];
     let attenuation = [1, 0, 0, 0];
     let spotDirection = [0, 0, 0, 0];
@@ -163,6 +257,7 @@ function lightValues(
     } else {
       continue;
     }
+    const shadow = shadows.get(light);
     arrays['lightPositions'].push(...position);
     arrays['lightAmbients'].push(...color(light.ambient));
     arrays['lightDiffuses'].push(...color(light.diffuse));
@@ -170,13 +265,47 @@ function lightValues(
     arrays['lightAttenuations'].push(...attenuation);
     arrays['lightSpotDirections'].push(...spotDirection);
     arrays['lightSpotCones'].push(...cone);
+    arrays['lightShadows'].push(...(shadow?.shadow ?? [0, 0, 0, 0]));
+    arrays['lightShadowRects'].push(...(shadow?.rect ?? [0, 0, 0, 0]));
+    arrays['lightShadowMatrices'].push(...(shadow?.matrix ?? identity));
     count++;
   }
   return { lightCount: count, ...arrays };
 }
 
+const frameBlock = (
+  layout: PhysicalProgramLayout
+): PhysicalUniformBlock | undefined =>
+  layout.groups.find((group) => group.slot === 'frame')?.bindings[0]?.block;
+
+// The tone mapping operators of the standard library.
+const toneMappingFunctions: Record<string, string> = {
+  reinhard: 'color.toneMapReinhard',
+  aces: 'color.toneMapAces',
+  neutral: 'color.toneMapNeutral',
+};
+
 const isHandle = (value: MaterialValue | undefined): boolean =>
   typeof value === 'object' && value !== null && !('length' in value);
+
+// The world bounds of the items with positions.
+const sceneBounds = (
+  items: readonly RenderItem[],
+  objects: (transform: Transform) => ObjectState
+): Sphere | undefined =>
+  unionSpheres(
+    items.flatMap((item) => {
+      const local = meshBounds(item.mesh);
+      return local
+        ? [
+            transformSphere(
+              local,
+              objects(item.transform).cache.worldMatrix.value
+            ),
+          ]
+        : [];
+    })
+  );
 
 // Draws render items with their materials, on any backend. Programs,
 // pipelines, buffers and bind groups are created on first use and cached;
@@ -202,17 +331,53 @@ export class Renderer {
     Map<string, MaterialGroupState>
   >();
   private readonly _cameras = new WeakMap<Camera, CameraCache>();
-  private readonly _frame: UniformGroup = { bindGroups: new Map() };
-  private _depth?: GpuRenderTarget & { destroy(): void };
+  // Frame uniforms by view name: each scene, shadow map and full screen
+  // pass of a graph has its own, all written before the graph runs.
+  private readonly _views = new Map<string, FrameView>();
+  private readonly _runner: RenderGraphRunner;
+  private readonly _hdr: boolean;
+  private readonly _shadowAtlasSize: number;
+  private readonly _samples: number;
+  private readonly _shadowCameras: ShadowCameras;
+  private _shadowSampler?: GpuSampler;
+  private _toneMapping?: Material;
+  // The frame values of the last scene: what the full screen passes read.
+  private _frameValues: Record<string, UniformValue> = {
+    exposure: 1,
+    ...lightValues([]),
+  };
+  private readonly _fullscreenMesh = new Mesh({
+    label: 'fullscreen',
+    description: { vertexBuffers: [], vertexCount: 3 },
+    vertices: [],
+  });
+  private readonly _fullscreenTransform = new Transform();
+  private readonly _prepared = new WeakMap<
+    Material,
+    WeakMap<Mesh, Map<string, PreparedPipeline>>
+  >();
+  private readonly _pipelineIds = new Map<string, number>();
+  private readonly _groupLayouts = new WeakMap<
+    PhysicalBindGroup,
+    GpuBindGroupLayout
+  >();
 
   constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
     this._registry = options.registry;
     this._asyncPipelines = options.asyncPipelines ?? false;
+    this._runner = new RenderGraphRunner(backend);
+    this._hdr =
+      options.hdr ??
+      backend.capabilities?.renderableFormats?.includes('rgba16float') ??
+      false;
     this._output = {
       toneMapping: options.output?.toneMapping ?? 'none',
       outputEncoding: options.output?.encoding ?? 'srgb',
     };
+    this._shadowAtlasSize = options.shadowAtlasSize ?? 2048;
+    this._samples = options.samples ?? 1;
+    this._shadowCameras = new ShadowCameras(backend.cameraMath);
   }
 
   // Resolves when the pipelines being created asynchronously are ready.
@@ -224,63 +389,338 @@ export class Renderer {
     );
   }
 
-  render({
-    items,
-    camera,
-    surface,
-    clearColor,
-    time = 0,
-    exposure = 1,
-    lights = [],
-  }: RenderOptions): void {
-    const target = surface.getCurrentTarget();
-    const depth = this.depthTarget(target);
+  // Renders a frame to a surface: a render graph with the passes of the
+  // scene (see addScenePasses), executed and presented.
+  render({ surface, ...options }: RenderOptions): void {
+    const graph = new RenderGraph();
+    const target = graph.importTexture('surface', surface.getCurrentTarget());
+    if (this._hdr) {
+      // Linear colors in an HDR target, where transparent materials blend
+      // exactly, then tone mapped and encoded by a full screen pass.
+      const hdr = graph.createTexture('hdr', { format: 'rgba16float' });
+      const scene = this.addScenePasses(graph, {
+        ...options,
+        target: hdr,
+        format: 'rgba16float',
+        linear: true,
+      });
+      this.addFullscreenPass(graph, 'tone mapping', {
+        material: this.toneMappingMaterial(),
+        inputs: { hdr: scene },
+        target,
+        format: surface.format,
+      });
+    } else {
+      this.addScenePasses(graph, {
+        ...options,
+        target,
+        format: surface.format,
+      });
+    }
+    this._runner.execute(graph);
+    surface.present();
+  }
 
-    const prepared = [...items]
+  /**
+   * Adds to a render graph the passes drawing the scene into a color target:
+   * the shadow maps of the lights that cast shadows (when there are some),
+   * the opaque and masked items, with a transient depth buffer, then the
+   * transparent ones (only when there are some). With multisampling, they
+   * draw into transient multisampled attachments, resolved into the target
+   * by the last one. Returns the version of the color target they write.
+   */
+  addScenePasses(
+    graph: RenderGraph,
+    {
+      items,
+      camera,
+      target,
+      format,
+      clearColor,
+      time = 0,
+      exposure = 1,
+      lights = [],
+      name = 'scene',
+      linear = false,
+      shadows = true,
+    }: ScenePassesOptions
+  ): TextureHandle {
+    const list = [...items];
+    const used = lights.filter(isSupported).slice(0, MaxLights);
+    const casters = shadows ? used.filter(castsShadow) : [];
+    const shadowPass =
+      casters.length > 0 && this._shadowAtlasSize > 0
+        ? this.addShadowPass(graph, `${name} shadows`, list, casters)
+        : undefined;
+
+    const view = this.view(name);
+    const prepared = list
       .flatMap((item) =>
         this.passes(item).map((cullMode) =>
-          this.prepare(item, surface, cullMode)
+          this.prepare(
+            item,
+            {
+              format,
+              cullMode,
+              linear,
+              shadows: shadowPass !== undefined,
+              depthOnly: false,
+              samples: this._samples,
+            },
+            view
+          )
         )
       )
       .filter((entry): entry is PreparedItem => entry !== undefined);
     const cameraCache = this.cameraCache(camera);
     const ordered = this.sort(prepared, cameraCache);
-
-    const encoder = this.backend.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      label: 'main pass',
-      colorAttachments: [{ target, load: 'clear', clearValue: clearColor }],
-      depthAttachment: { target: depth, load: 'clear', clearValue: 1 },
-    });
-
+    const position = camera.position;
+    this._frameValues = {
+      viewProjection: cameraCache.viewProjectionMatrix.value,
+      view: cameraCache.viewMatrix.value,
+      projection: cameraCache.projectionMatrix.value,
+      cameraPosition: [position.x, position.y, position.z],
+      time,
+      exposure,
+      ...lightValues(
+        used,
+        new Map(shadowPass?.tiles.map((tile) => [tile.light, tile]))
+      ),
+    };
     if (ordered.length > 0) {
-      this.updateFrame(ordered[0].layout, cameraCache, time, exposure, lights);
+      this.writeView(view, ordered[0].layout, this._frameValues);
     }
-    for (const entry of ordered) {
-      this.draw(pass, entry);
-    }
+    const isTransparent = (entry: PreparedItem) =>
+      entry.item.material.renderState.alphaMode === 'blend';
+    const opaqueEntries = ordered.filter((entry) => !isTransparent(entry));
+    const transparentEntries = ordered.filter(isTransparent);
 
-    pass.end();
-    this.backend.submit([encoder.finish()]);
-    surface.present();
+    // The attachments have the size of the target.
+    const size = graph.textureSize(target);
+    const multisampled = this._samples > 1;
+    const attachment = (suffix: string, attachmentFormat: GpuTextureFormat) =>
+      graph.createTexture(`${name} ${suffix}`, {
+        format: attachmentFormat,
+        ...(size ? { size } : {}),
+        ...(multisampled ? { sampleCount: this._samples } : {}),
+      });
+    const depth = attachment('depth', this.backend.depthFormat);
+    const color = multisampled
+      ? attachment('multisampled color', format)
+      : target;
+    const last = transparentEntries.length === 0;
+    const opaque = graph.addRasterPass(`${name} opaque`, (pass) => {
+      const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+      const written = pass.writeColor(color, {
+        load: 'clear',
+        clearValue: clearColor,
+      });
+      return {
+        color: written,
+        resolved: multisampled && last ? pass.resolveColor(target) : written,
+        depth: pass.writeDepth(depth, { load: 'clear', clearValue: 1 }),
+        execute: ({ pass: encoder, texture }) => {
+          this.bindShadowMap(view, atlas && texture(atlas));
+          for (const entry of opaqueEntries) {
+            this.draw(encoder, entry);
+          }
+        },
+      };
+    });
+    if (last) {
+      return opaque.resolved;
+    }
+    // Over the opaque items, tested against their depth without writing it.
+    const transparent = graph.addRasterPass(`${name} transparent`, (pass) => {
+      pass.readDepth(opaque.depth);
+      const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+      const written = pass.writeColor(opaque.color, { load: 'load' });
+      return {
+        color: multisampled ? pass.resolveColor(target) : written,
+        execute: ({ pass: encoder, texture }) => {
+          this.bindShadowMap(view, atlas && texture(atlas));
+          for (const entry of transparentEntries) {
+            this.draw(encoder, entry);
+          }
+        },
+      };
+    });
+    return transparent.color;
+  }
+
+  /**
+   * Adds to a render graph a full screen pass (a post-processing effect): a
+   * material whose graph ends with output.fullscreen, drawn over the target,
+   * with textures of the graph as inputs. Returns the version of the target
+   * it writes.
+   */
+  addFullscreenPass(
+    graph: RenderGraph,
+    name: string,
+    {
+      material,
+      inputs = {},
+      target,
+      format,
+      load = 'clear',
+      clearColor,
+    }: FullscreenPassOptions
+  ): TextureHandle {
+    const view = this.view(name);
+    const prepared = this.prepareFullscreen(material, format, view);
+    // The frame values of the last scene (exposure…).
+    this.writeView(view, prepared.layout, this._frameValues);
+    return graph.addRasterPass(name, (pass) => {
+      const read = Object.entries(inputs).map(
+        ([input, handle]) => [input, pass.read(handle, 'sampled')] as const
+      );
+      return {
+        color: pass.writeColor(target, { load, clearValue: clearColor }),
+        execute: ({ pass: encoder, texture }) => {
+          for (const [input, handle] of read) {
+            const real = texture(handle) as MaterialValue;
+            // Pooled textures are stable: the bind group is rebuilt only
+            // when the texture changes.
+            if (material.getValue(input) !== real) {
+              material.setValue(input, real);
+            }
+          }
+          // Skipped while its pipeline is being created.
+          if ('pipeline' in (this._pipelines.get(prepared.pipelineKey) ?? {})) {
+            this.draw(encoder, prepared);
+          }
+        },
+      };
+    }).color;
   }
 
   destroy(): void {
-    this._frame.buffer?.destroy();
-    this._depth?.destroy();
+    for (const view of this._views.values()) {
+      view.buffer?.destroy();
+    }
+    this._views.clear();
+    this._shadowSampler?.destroy();
+    this._shadowSampler = undefined;
+    this._runner.destroy();
     this._pipelines.clear();
+  }
+
+  // --- Shadows -------------------------------------------------------------------
+
+  // The pass drawing the shadow maps of the lights into the tiles of an
+  // atlas: one depth-only draw of the casters per light, each with the
+  // frame uniforms of the light (its view projection).
+  private addShadowPass(
+    graph: RenderGraph,
+    name: string,
+    items: readonly RenderItem[],
+    lights: readonly (DirectionalLight | SpotLight)[]
+  ): { atlas: TextureHandle; tiles: ShadowTile[] } {
+    const format = this.backend.depthFormat;
+    const bounds = sceneBounds(items, (transform) =>
+      this.objectState(transform)
+    ) ?? { center: [0, 0, 0], radius: 1 };
+    const tiles = this._shadowCameras.tiles(
+      lights,
+      bounds,
+      this._shadowAtlasSize
+    );
+    const casters = items.filter(
+      (item) =>
+        item.castShadow !== false &&
+        item.material.renderState.alphaMode !== 'blend'
+    );
+    const draws = tiles.map((tile, index) => {
+      const view = this.view(`${name} ${index}`);
+      const entries = casters
+        .map((item) =>
+          this.prepare(
+            item,
+            {
+              format,
+              cullMode: item.material.renderState.doubleSided ? 'none' : 'back',
+              linear: false,
+              shadows: false,
+              depthOnly: true,
+              samples: 1,
+            },
+            view
+          )
+        )
+        .filter((entry): entry is PreparedItem => entry !== undefined)
+        .sort((a, b) => a.pipelineId - b.pipelineId);
+      if (entries.length > 0) {
+        this.writeView(view, entries[0].layout, {
+          viewProjection: tile.matrix,
+        });
+      }
+      return { tile, entries };
+    });
+
+    const atlas = graph.createTexture(`${name} atlas`, {
+      format,
+      size: { width: this._shadowAtlasSize, height: this._shadowAtlasSize },
+    });
+    const written = graph.addRasterPass(name, (pass) => ({
+      depth: pass.writeDepth(atlas, { load: 'clear', clearValue: 1 }),
+      execute: ({ pass: encoder }) => {
+        for (const { tile, entries } of draws) {
+          const { x, y, width, height } = tile.viewport;
+          encoder.setViewport(x, y, width, height);
+          for (const entry of entries) {
+            this.draw(encoder, entry);
+          }
+        }
+      },
+    }));
+    return { atlas: written.depth, tiles };
+  }
+
+  // The atlas read by the programs of a view, in this frame.
+  private bindShadowMap(
+    view: FrameView,
+    atlas: GpuAttachmentTarget | undefined
+  ): void {
+    if (atlas && view.shadowMap !== atlas) {
+      view.shadowMap = atlas;
+      view.bindGroups.clear();
+    }
+  }
+
+  // Filtered depth comparisons: the visibility is interpolated between
+  // texels.
+  private shadowSampler(): GpuSampler {
+    this._shadowSampler ??= this.backend.textures.createSampler({
+      label: 'shadow sampler',
+      compare: 'less-equal',
+      minFilter: 'linear',
+      magFilter: 'linear',
+      mipmapFilter: 'nearest',
+      wrapModeS: 'clamp-to-edge',
+      wrapModeT: 'clamp-to-edge',
+    });
+    return this._shadowSampler;
   }
 
   // --- Programs and pipelines --------------------------------------------------
 
-  private program(material: Material, mesh: Mesh): CompiledProgram {
+  private program(
+    material: Material,
+    mesh: Mesh,
+    variant?: PassVariant
+  ): CompiledProgram {
     const semantics = meshSemantics(mesh.description);
     // The alpha mode selects the variant of the surface: masked materials
     // discard their transparent fragments.
     const features = {
       ...material.features,
       alphaMode: material.renderState.alphaMode,
-      ...this._output,
+      ...(variant?.depthOnly
+        ? { depthOnly: true }
+        : variant?.linear
+        ? { toneMapping: 'none', outputEncoding: 'linear' }
+        : this._output),
+      ...(variant?.shadows ? { shadows: true } : {}),
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
       features
@@ -316,65 +756,203 @@ export class Renderer {
     return alphaMode === 'blend' ? ['front', 'back'] : ['none'];
   }
 
-  // Undefined while the pipeline of the item is being created.
-  private prepare(
-    item: RenderItem,
-    surface: Surface,
-    cullMode: PrimitiveState['cullMode']
-  ): PreparedItem | undefined {
-    const program = this.program(item.material, item.mesh);
-    const layout = this.backend.pipelines.resolveLayout(program);
-    const state = item.material.renderState;
-    const vertexKey = JSON.stringify(item.mesh.description.vertexBuffers);
-    const stateKey = JSON.stringify(state);
-    const pipelineKey = `${program.programKey}|${vertexKey}|${stateKey}|${cullMode}|${surface.format}|${this.backend.depthFormat}`;
-
-    if (!this._pipelines.has(pipelineKey)) {
-      const descriptor: RenderPipelineDescriptor = {
-        label: item.material.label ?? program.name,
-        program,
-        vertex: item.mesh.description,
-        primitive: {
-          topology: 'triangle-list',
-          cullMode,
-          frontFace: 'ccw',
-        },
-        depthStencil: {
-          format: this.backend.depthFormat,
-          depthWrite: state.depthTest && state.depthWrite,
-          depthCompare: state.depthTest ? 'less' : 'always',
-        },
-        targets: [
-          {
-            format: surface.format,
-            ...(state.alphaMode === 'blend' ? { blend: alphaBlending } : {}),
-          },
-        ],
-      };
+  // Creates a pipeline on first use, asynchronously if asked. Returns false
+  // while it is being created.
+  private ensurePipeline(
+    key: string,
+    descriptor: () => RenderPipelineDescriptor
+  ): boolean {
+    if (!this._pipelines.has(key)) {
       if (this._asyncPipelines) {
         const pending = this.backend.pipelines
-          .createRenderPipelineAsync(descriptor)
+          .createRenderPipelineAsync(descriptor())
           .then((pipeline) => {
-            this._pipelines.set(pipelineKey, { pipeline });
+            this._pipelines.set(key, { pipeline });
           });
-        this._pipelines.set(pipelineKey, { pending });
+        this._pipelines.set(key, { pending });
       } else {
-        this._pipelines.set(pipelineKey, {
-          pipeline: this.backend.pipelines.createRenderPipeline(descriptor),
+        this._pipelines.set(key, {
+          pipeline: this.backend.pipelines.createRenderPipeline(descriptor()),
         });
       }
     }
-    if ('pending' in (this._pipelines.get(pipelineKey) as PipelineEntry)) {
+    return 'pipeline' in (this._pipelines.get(key) as PipelineEntry);
+  }
+
+  // Undefined while the pipeline of the item is being created.
+  private prepare(
+    item: RenderItem,
+    variant: PassVariant,
+    view: FrameView
+  ): PreparedItem | undefined {
+    const { program, layout, pipelineKey, pipelineId } = this.preparedPipeline(
+      item,
+      variant
+    );
+    const state = item.material.renderState;
+    const ready = this.ensurePipeline(pipelineKey, () => ({
+      label: item.material.label ?? program.name,
+      program,
+      vertex: item.mesh.description,
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: variant.cullMode,
+        frontFace: 'ccw',
+      },
+      depthStencil: variant.depthOnly
+        ? {
+            format: variant.format,
+            depthWrite: true,
+            depthCompare: 'less',
+            // Against shadow acne on slopes, with the normal offset of the
+            // lookups.
+            depthBias: 2,
+            depthBiasSlopeScale: 2,
+          }
+        : {
+            format: this.backend.depthFormat,
+            depthWrite: state.depthTest && state.depthWrite,
+            depthCompare: state.depthTest ? 'less' : 'always',
+          },
+      targets: variant.depthOnly
+        ? []
+        : [
+            {
+              format: variant.format,
+              ...(state.alphaMode === 'blend' ? { blend: alphaBlending } : {}),
+            },
+          ],
+      ...(variant.samples > 1 ? { sampleCount: variant.samples } : {}),
+    }));
+    if (!ready) {
       return undefined;
     }
-
     return {
       item,
       program,
       layout,
       pipelineKey,
+      pipelineId,
       object: this.objectState(item.transform),
+      view,
     };
+  }
+
+  // The program, layout and pipeline key of a material and a mesh in a pass:
+  // computed once, then found by identity, as long as the features of the
+  // material do not change (its render state never does).
+  private preparedPipeline(
+    item: RenderItem,
+    variant: PassVariant
+  ): PreparedPipeline {
+    const { material, mesh } = item;
+    let byMesh = this._prepared.get(material);
+    if (!byMesh) {
+      byMesh = new WeakMap();
+      this._prepared.set(material, byMesh);
+    }
+    let byPass = byMesh.get(mesh);
+    if (!byPass) {
+      byPass = new Map();
+      byMesh.set(mesh, byPass);
+    }
+    const passKey = `${variant.cullMode}|${variant.format}|${variant.linear}|${variant.shadows}|${variant.depthOnly}|${variant.samples}`;
+    const cached = byPass.get(passKey);
+    if (cached && cached.features === material.features) {
+      return cached;
+    }
+
+    const program = this.program(material, mesh, variant);
+    const vertexKey = JSON.stringify(mesh.description.vertexBuffers);
+    const stateKey = JSON.stringify(material.renderState);
+    const pipelineKey = `${program.programKey}|${vertexKey}|${stateKey}|${
+      variant.cullMode
+    }|${variant.format}|${variant.depthOnly ? 'depth-only' : ''}|${
+      variant.samples
+    }|${this.backend.depthFormat}`;
+    let pipelineId = this._pipelineIds.get(pipelineKey);
+    if (pipelineId === undefined) {
+      pipelineId = this._pipelineIds.size;
+      this._pipelineIds.set(pipelineKey, pipelineId);
+    }
+    const prepared: PreparedPipeline = {
+      features: material.features,
+      program,
+      layout: this.backend.pipelines.resolveLayout(program),
+      pipelineKey,
+      pipelineId,
+    };
+    byPass.set(passKey, prepared);
+    return prepared;
+  }
+
+  // A full screen material: no mesh, no depth, no culling.
+  private prepareFullscreen(
+    material: Material,
+    format: GpuTextureFormat,
+    view: FrameView
+  ): PreparedItem {
+    const mesh = this._fullscreenMesh;
+    const program = this.program(material, mesh);
+    const pipelineKey = `fullscreen|${program.programKey}|${format}`;
+    this.ensurePipeline(pipelineKey, () => ({
+      label: material.label ?? program.name,
+      program,
+      vertex: mesh.description,
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none',
+        frontFace: 'ccw',
+      },
+      targets: [{ format }],
+    }));
+    return {
+      item: { mesh, material, transform: this._fullscreenTransform },
+      program,
+      layout: this.backend.pipelines.resolveLayout(program),
+      pipelineKey,
+      pipelineId: -1,
+      object: this.objectState(this._fullscreenTransform),
+      view,
+    };
+  }
+
+  // The material of the tone mapping pass of the HDR path: exposure, tone
+  // mapping and encoding, as chosen by the output options.
+  private toneMappingMaterial(): Material {
+    if (!this._toneMapping) {
+      const { toneMapping, outputEncoding } = this._output;
+      const g = new GraphBuilder('tone mapping');
+      const texel = g.call(std.textureSample, {
+        texture: g.texture('hdr'),
+        sampler: g.sampler('hdrSampler'),
+        uv: g.builtin('screen-uv'),
+      });
+      let rgb = texel.swizzle('rgb');
+      if (toneMapping !== 'none') {
+        rgb = g.call(toneMappingFunctions[toneMapping], {
+          color: g.call(std.mul, { a: rgb, b: g.engine('exposure') }),
+        });
+      }
+      if (outputEncoding === 'srgb') {
+        rgb = g.call('color.linearToSrgb', { color: rgb });
+      }
+      g.fullscreen({ color: g.call(std.extend, { xyz: rgb, w: 1 }) });
+      this._toneMapping = new Material({
+        graph: g.build(),
+        label: 'tone mapping',
+        values: {
+          hdrSampler: this.backend.textures.createSampler({
+            minFilter: 'nearest',
+            magFilter: 'nearest',
+            mipmapFilter: 'nearest',
+            wrapModeS: 'clamp-to-edge',
+            wrapModeT: 'clamp-to-edge',
+          }),
+        },
+      });
+    }
+    return this._toneMapping;
   }
 
   // Opaque and masked items first, grouped by pipeline then material to
@@ -396,7 +974,7 @@ export class Renderer {
 
     opaque.sort(
       (a, b) =>
-        a.pipelineKey.localeCompare(b.pipelineKey) ||
+        a.pipelineId - b.pipelineId ||
         materialIndex(a.item.material) - materialIndex(b.item.material)
     );
 
@@ -441,6 +1019,15 @@ export class Renderer {
     return state;
   }
 
+  private view(name: string): FrameView {
+    let view = this._views.get(name);
+    if (!view) {
+      view = { name, bindGroups: new Map() };
+      this._views.set(name, view);
+    }
+    return view;
+  }
+
   private writeBlock(
     block: PhysicalUniformBlock,
     valueOf: (name: string) => UniformValue | undefined
@@ -480,34 +1067,23 @@ export class Renderer {
     return created;
   }
 
-  private updateFrame(
+  // Writes the frame uniforms of a view. The views of a graph have their own
+  // buffers: they are all written before the graph runs.
+  private writeView(
+    view: FrameView,
     layout: PhysicalProgramLayout,
-    camera: CameraCache,
-    time: number,
-    exposure: number,
-    lights: readonly BaseLight[]
+    values: Readonly<Record<string, UniformValue>>
   ): void {
-    const group = layout.groups.find((candidate) => candidate.slot === 'frame');
-    const block = group?.bindings[0]?.block;
+    const block = frameBlock(layout);
     if (!block) {
       return;
     }
-    const position = camera.camera.position;
-    const values: Record<string, UniformValue> = {
-      viewProjection: camera.viewProjectionMatrix.value,
-      view: camera.viewMatrix.value,
-      projection: camera.projectionMatrix.value,
-      cameraPosition: [position.x, position.y, position.z],
-      time,
-      exposure,
-      ...lightValues(lights),
-    };
-    this._frame.block = block;
+    view.block = block;
     this.upload(
-      this._frame,
+      view,
       block,
       this.writeBlock(block, (name) => values[name]),
-      'frame uniforms'
+      `${view.name} frame uniforms`
     );
   }
 
@@ -532,16 +1108,47 @@ export class Renderer {
 
   // --- Bind groups -----------------------------------------------------------------
 
+  // The layout of a group of a program. Physical layouts are cached by
+  // program, so their groups are stable objects: a lookup, instead of asking
+  // the backend (which builds a key from the bindings) at every draw.
+  private bindGroupLayout(group: PhysicalBindGroup): GpuBindGroupLayout {
+    let layout = this._groupLayouts.get(group);
+    if (!layout) {
+      layout = this.backend.pipelines.createBindGroupLayout(group);
+      this._groupLayouts.set(group, layout);
+    }
+    return layout;
+  }
+
+  // The frame and object groups: their uniform buffer and, for the frame of
+  // the programs reading the shadows, the shadow atlas and its sampler.
   private sharedBindGroup(
-    state: UniformGroup,
+    state: UniformGroup & { shadowMap?: GpuAttachmentTarget },
     group: PhysicalBindGroup
   ): GpuBindGroup {
-    const layout = this.backend.pipelines.createBindGroupLayout(group);
+    const layout = this.bindGroupLayout(group);
     let bindGroup = state.bindGroups.get(layout.key);
     if (!bindGroup) {
-      bindGroup = this.backend.pipelines.createBindGroup(layout, [
-        { binding: 0, resource: state.buffer as GpuBuffer },
-      ]);
+      bindGroup = this.backend.pipelines.createBindGroup(
+        layout,
+        group.bindings.map(({ binding, resource }): GpuBindGroupEntry => {
+          if (resource.kind === 'uniform-block') {
+            return { binding, resource: state.buffer as GpuBuffer };
+          }
+          if (resource.kind === 'sampler') {
+            return { binding, resource: this.shadowSampler() };
+          }
+          if (!state.shadowMap) {
+            throw new Error(
+              `"${resource.name}" is read without shadows in the frame`
+            );
+          }
+          return {
+            binding,
+            resource: state.shadowMap as GpuBindGroupEntry['resource'],
+          };
+        })
+      );
       state.bindGroups.set(layout.key, bindGroup);
     }
     return bindGroup;
@@ -615,7 +1222,7 @@ export class Renderer {
       resources.some((resource, i) => resource !== state?.resources[i]);
     if (!state.bindGroup || resourcesChanged || bufferCreated) {
       state.bindGroup = this.backend.pipelines.createBindGroup(
-        this.backend.pipelines.createBindGroupLayout(group),
+        this.bindGroupLayout(group),
         entries
       );
       state.resources = resources;
@@ -662,7 +1269,7 @@ export class Renderer {
 
   private draw(
     pass: GpuRenderPassEncoder,
-    { item, program, layout, pipelineKey, object }: PreparedItem
+    { item, program, layout, pipelineKey, object, view }: PreparedItem
   ): void {
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
@@ -672,7 +1279,7 @@ export class Renderer {
     for (const group of layout.groups) {
       let bindGroup: GpuBindGroup | undefined;
       if (group.slot === 'frame') {
-        bindGroup = this.sharedBindGroup(this._frame, group);
+        bindGroup = this.sharedBindGroup(view, group);
       } else if (group.slot === 'object') {
         this.updateObject(
           object,
@@ -700,22 +1307,5 @@ export class Renderer {
     } else {
       pass.draw(item.mesh.description.vertexCount);
     }
-  }
-
-  private depthTarget(color: GpuRenderTarget): GpuRenderTarget {
-    if (
-      !this._depth ||
-      this._depth.width !== color.width ||
-      this._depth.height !== color.height
-    ) {
-      this._depth?.destroy();
-      this._depth = this.backend.createRenderTarget({
-        label: 'depth',
-        width: color.width,
-        height: color.height,
-        format: this.backend.depthFormat,
-      });
-    }
-    return this._depth;
   }
 }

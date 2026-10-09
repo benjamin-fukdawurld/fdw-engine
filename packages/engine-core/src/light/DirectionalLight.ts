@@ -5,15 +5,22 @@ import {
   Vec3View,
 } from '@fdw/engine-backend';
 import { BaseLight } from './BaseLight';
+import type { ShadowCaster, ShadowCasterData, ShadowOptions } from './shadow';
 
 export class DirectionalLight
   extends BaseLight
-  implements DirectionalLightSnapshot
+  implements DirectionalLightSnapshot, ShadowCaster
 {
   private _direction: Vec3View;
 
   // Plain values: { position: { x, y, z }, ambient: … }.
-  constructor(data?: Partial<Omit<DirectionalLightData, 'type'>>) {
+  // Draws the items into a shadow map of the light (see ShadowOptions).
+  castShadow: boolean;
+  shadow: ShadowOptions;
+
+  constructor(
+    data?: Partial<Omit<DirectionalLightData, 'type'>> & ShadowCasterData
+  ) {
     super(
       'directional',
       new ArrayBuffer(
@@ -23,6 +30,8 @@ export class DirectionalLight
     );
     this._direction = new Vec3View(this._buffer, BaseLight.bufferSize);
     this.direction = data?.direction ?? { x: 0, y: 0, z: -1 };
+    this.castShadow = data?.castShadow ?? false;
+    this.shadow = data?.shadow ?? {};
   }
 
   public get direction(): Readonly<Vec3View> {
