@@ -1,0 +1,144 @@
+---
+title: Post-processing
+description: Draw the scene into a texture of a render graph, then process it with a full screen pass.
+sidebar:
+  order: 4
+---
+
+import Example from '../../../components/Example.astro';
+
+The scene is drawn into a texture; a full screen pass then reads it, tones
+it in sepia and darkens its corners, into the canvas.
+
+<Example name="post-processing" />
+
+`renderer.render()` builds a small render graph every frame and runs it. To
+add passes, build the graph yourself: the renderer gives its passes to your
+graph, and a runner executes it.
+
+## The effect: a full screen material
+
+A post-processing effect is a material whose graph ends with `fullscreen()`
+instead of `surface()`. It computes the color of each pixel of the target;
+`builtin('screen-uv')` gives the position of the pixel, from (0, 0) at the
+top left to (1, 1) at the bottom right, on every backend.
+
+```ts
+const g = new GraphBuilder('sepia vignette');
+const uv = g.builtin('screen-uv');
+const color = g
+  .call(std.textureSample, {
+    texture: g.texture('scene'),
+    sampler: g.sampler('sceneSampler'),
+    uv,
+  })
+  .swizzle('rgb');
+
+const gray = g.call(std.dot, { a: color, b: [0.299, 0.587, 0.114] });
+const sepia = g.call(std.mul, { a: gray, b: [1.07, 0.74, 0.43] });
+const toned = g.call(std.mix, {
+  a: color,
+  b: sepia,
+  t: g.uniform('amount', BuiltinTypes.f32),
+});
+const distance = g.call(std.length, { x: g.call(std.sub, { a: uv, b: 0.5 }) });
+// 1 up to 0.3 from the center, 0 from 0.8.
+const vignette = g.call(std.sub, {
+  a: 1,
+  b: g.call(std.smoothstep, { low: 0.3, high: 0.8, x: distance }),
+});
+g.fullscreen({
+  color: g.call(std.extend, {
+    xyz: g.call(std.mul, { a: toned, b: vignette }),
+  }),
+});
+
+const effect = new Material({
+  graph: g.build(),
+  values: { sceneSampler: backend.textures.createSampler() },
+});
+```
+
+Its `scene` texture is not set here: the render graph binds it.
+
+## The frame as a render graph
+
+```ts
+const runner = new RenderGraphRunner(backend);
+
+onFrame(() => {
+  const graph = new RenderGraph();
+  const output = graph.importTexture('surface', surface.getCurrentTarget());
+  const scene = renderer.addScenePasses(graph, {
+    items,
+    camera,
+    lights: [sun],
+    target: graph.createTexture('scene', { format: 'rgba8unorm' }),
+    format: 'rgba8unorm',
+  });
+  renderer.addFullscreenPass(graph, 'sepia vignette', {
+    material: effect,
+    inputs: { scene },
+    target: output,
+    format: surface.format,
+  });
+  runner.execute(graph);
+  surface.present();
+});
+```
+
+- `importTexture` brings in a texture managed outside of the graph: the
+  image of the surface. Writing it is what the frame is for.
+- `createTexture` declares a **transient** texture: the runner allocates it
+  when the frame runs, from a pool. By default, it has the size of the frame,
+  the first imported texture.
+- `addScenePasses` adds the passes of the scene (shadows, opaque,
+  transparent) drawing into the target, and returns the **version** of the
+  target they write. A pass reading that version runs after them.
+- `addFullscreenPass` draws the effect; `inputs` binds its `scene` texture to
+  the texture written by the scene.
+- `runner.execute` compiles the graph — orders the passes, culls those whose
+  results nobody reads, allocates the textures — and records the frame.
+
+Building the graph every frame is cheap: its compilation is cached by
+structure, and its textures come back from the pool. Both are only redone
+when the structure changes (a pass added, the surface resized).
+
+## Chaining effects
+
+Each effect reads the version written by the one before:
+
+```ts
+const blurred = renderer.addFullscreenPass(graph, 'blur', {
+  material: blur,
+  inputs: { source: scene },
+  target: graph.createTexture('blurred', {
+    format: 'rgba8unorm',
+    size: { relative: 0.5 },
+  }),
+  format: 'rgba8unorm',
+});
+renderer.addFullscreenPass(graph, 'bloom', {
+  material: bloom,
+  inputs: { scene, blurred },
+  target: output,
+  format: surface.format,
+});
+```
+
+`size: { relative: 0.5 }` is half the size of the frame.
+
+:::note[Linear colors]
+Here the scene is encoded in sRGB as it is drawn, so the effect works on
+encoded colors. For effects that need light values (bloom, exposure), draw
+the scene with `linear: true` into an `rgba16float` texture, and apply the
+tone mapping in the last effect. `backend.capabilities.renderableFormats`
+says whether the backend can render to `rgba16float`.
+:::
+
+## Next
+
+- [Compute](/fdw-engine/tutorials/compute/): compute on the GPU, and use the
+  results in a material.
+- [Render graph guide](/fdw-engine/guides/render-graph/): raster, compute and
+  copy passes of your own.

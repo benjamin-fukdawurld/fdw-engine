@@ -1,0 +1,27 @@
+{
+  "name": "docs",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/docs/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "dev": {
+      "command": "astro dev",
+      "options": { "cwd": "apps/docs" },
+      "continuous": true
+    },
+    "build": {
+      "command": "astro build",
+      "options": { "cwd": "apps/docs" },
+      "cache": true,
+      "inputs": ["default", "^production"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "preview": {
+      "command": "astro preview",
+      "options": { "cwd": "apps/docs" },
+      "dependsOn": ["build"],
+      "continuous": true
+    }
+  }
+}

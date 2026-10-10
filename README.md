@@ -32,7 +32,7 @@ The engine is organized in three layers:
         │                 │                 │                │              │
 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌──────────────┐ ┌──────────┐
 │ engine-webgpu │ │ engine-webgl2 │ │ engine-vulkan │ │ engine-dx12  │ │ engine-  │
-│ (in progress) │ │ (in progress) │ │   (planned)   │ │  (planned)   │ │  metal…  │
+│ (in progress) │ │ (in progress) │ │ (in progress) │ │  (planned)   │ │  metal…  │
 └───────────────┘ └───────────────┘ └───────────────┘ └──────────────┘ └──────────┘
 ```
 
@@ -80,7 +80,8 @@ Materials are being redesigned as a backend-agnostic graph of typed nodes, compi
 ```
 apps/
   demo/                 React + Vite demo application (WebGPU, WebGL2)
-  demo-native/          The scenes of the demo in a native window (Node, Dawn)
+  demo-native/          The scenes of the demo in a native window (Node, Dawn, Vulkan)
+  docs/                 The developer documentation (Astro, Starlight): tutorials, guides, API
 packages/
   engine-core/          Frontend: scene manipulation API
   engine-backend/       Abstract API
@@ -142,13 +143,13 @@ npm test
 
 Tests use [Vitest](https://vitest.dev/). Each package has its own `vitest.config.mts`, and test files are `src/**/*.spec.ts` or `src/**/*.test.ts`. To test a single package, run `npx nx test engine-shader`, or `npx vitest --watch` from the package directory for watch mode.
 
-### Generate the documentation
+### Read the documentation
 
 ```sh
-npm run docs
+npx nx run docs:dev      # http://localhost:4321/fdw-engine/
 ```
 
-Documentation is generated with [TypeDoc](https://typedoc.org/) for each engine package.
+The developer documentation, in English and French: getting started, tutorials with live examples, guides, contributing, and the API reference generated from the sources with [TypeDoc](https://typedoc.org/). `npx nx run docs:build` builds the static site into `apps/docs/dist`.
 
 ## Usage example
 

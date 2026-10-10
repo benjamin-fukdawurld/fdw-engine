@@ -1,0 +1,115 @@
+---
+title: Lights and shadows
+description: PBR materials, a sun and a spot casting shadows, tone mapping and multisampling.
+sidebar:
+  order: 1
+---
+
+import Example from '../../../components/Example.astro';
+
+A small scene lit by two lights casting shadows: a sun, and a spot sweeping
+the ground. The objects use the PBR shading model, the frame is tone mapped
+and antialiased.
+
+<Example name="lights-and-shadows" />
+
+## PBR materials
+
+The `pbr` shading model follows glTF: a base color, a `metallic` factor (0
+for a dielectric, 1 for a metal) and a `roughness` (0 for a mirror, 1 for a
+matte surface). Declared as uniforms, they make **one graph for every
+object**: the materials only differ by their values, and share one program
+and one pipeline.
+
+```ts
+const g = new GraphBuilder('pbr');
+g.surface({
+  shadingModel: 'pbr',
+  baseColor: g.uniform('baseColor', BuiltinTypes.vec3f),
+  metallic: g.uniform('metallic', BuiltinTypes.f32),
+  roughness: g.uniform('roughness', BuiltinTypes.f32),
+});
+const graph = g.build();
+
+const gold = new Material({
+  graph,
+  values: { baseColor: [0.95, 0.65, 0.3], metallic: 1, roughness: 0.25 },
+});
+```
+
+The model also takes `emissive`, `normal` and `occlusion`. The `phong` model
+takes `specular` and `shininess` instead; `unlit` only the color.
+
+## Lights
+
+Three kinds of lights, each with an `ambient`, a `diffuse` and a `specular`
+color:
+
+- `DirectionalLight`: a `direction`, the same everywhere (the sun);
+- `PointLight`: a `position`, attenuated with the distance
+  (`constantAttenuation`, `linearAttenuation`, `quadraticAttenuation`);
+- `SpotLight`: a position, a direction, an attenuation, and a cone:
+  `innerCutoff` and `outerCutoff`, half-angles in degrees. The light fades
+  between them.
+
+```ts
+const spot = new SpotLight({
+  position: { x: 0, y: 5, z: 3 },
+  diffuse: { x: 0.4, y: 0.8, z: 1.6 },
+  innerCutoff: 20,
+  outerCutoff: 30,
+  quadraticAttenuation: 0.02,
+  castShadow: true,
+});
+```
+
+The lights of a frame are given to `render()`: `lights: [sun, spot]`. Up to
+16 are used. Colors above 1 are fine: the lighting is computed in linear
+values, and the tone mapping brings them back to the screen.
+
+## Shadows
+
+Directional and spot lights with `castShadow: true` cast shadows. The
+renderer draws a **shadow map** for each of them, before the scene, into an
+atlas shared by the lights (2048 × 2048 by default, `shadowAtlasSize` option
+of the renderer). The `phong` and `pbr` models read it, with a filtered
+comparison over 3 × 3 texels for soft edges.
+
+- A directional light covers the bounds of the items. For a large scene,
+  give it the region that matters: `shadow: { bounds: { center, radius } }`.
+- A spot covers its cone.
+- `castShadow: false` on a render item keeps it out of the shadow maps;
+  transparent items cast none.
+- `shadow: { normalBias, bias }` adjusts the offsets fighting shadow acne (a
+  surface shadowing itself): `normalBias` moves the points along their
+  normal, in texels of the shadow map (1 by default); `bias` lowers their
+  depth (0 by default). The defaults suit most scenes.
+
+Point lights cast no shadows yet.
+
+## Output: tone mapping and multisampling
+
+```ts
+const renderer = new Renderer(backend, {
+  output: { toneMapping: 'neutral', encoding: 'srgb' },
+  samples: 4,
+});
+```
+
+- `toneMapping` maps the linear colors, unbounded, into the range of the
+  screen: `reinhard`, `aces`, or `neutral` (Khronos PBR Neutral, which keeps
+  the base colors). `none` by default: the colors are clamped.
+  `render({ exposure })` multiplies the colors first.
+- `samples: 4` draws the scene with 4 samples per pixel, then resolves them:
+  smooth edges.
+
+When the backend can render to `rgba16float`, the scene is drawn in an HDR
+target, then tone mapped by a full screen pass. See
+[Colors and HDR](/fdw-engine/guides/colors-and-hdr/).
+
+## Next
+
+- [Textured materials](/fdw-engine/tutorials/materials/): textures, samplers,
+  and values changing over time.
+- [Lights and shadows guide](/fdw-engine/guides/lights-and-shadows/): how the
+  shadow maps are drawn and read.

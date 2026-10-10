@@ -27,6 +27,7 @@ Détails dans [render-graph.md §13](render-graph.md#13-plan-dimplémentation).
 
 Détails dans [compute-graph.md](compute-graph.md).
 
+- Un dispatch de compute graph dans une passe du render graph : `addComputePass` ne donne que l'encodeur, il faut aujourd'hui créer le pipeline et les bind groups à la main (ce que fait `ComputeRunner` hors du graphe). Une méthode `ComputeRunner.record(pass, program, dispatch)`, ou une `addComputeGraphPass`, comme `addFullscreenPass` pour les matériaux.
 - Storage textures (écriture d'images par les kernels).
 - Repli WebGL2 des storage buffers (texture de données lue par `texelFetch`).
 
@@ -63,7 +64,17 @@ Détails dans [native-backends.md](native-backends.md).
 - **Vulkan, fonctionnalités** : génération des mipmaps, textures de stockage, requêtes de timestamps (profilage GPU), `VK_EXT_swapchain_maintenance1` et `VK_KHR_present_wait` (latence et cadence des frames).
 - **La démo native** : contrôles de caméra au clavier et à la souris, choix de la scène et du backend à chaud.
 
-## 7. Plus loin
+## 7. Documentation
+
+Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en français) :
+
+- **Publication** : construire le site en CI et le publier (GitHub Pages, sous `/fdw-engine/`, déjà configuré dans `astro.config.mjs`).
+- **Vérifications en CI** : les liens internes (le plugin `starlight-links-validator`), et les exemples vivants rendus dans Chromium headless (WebGL2, et WebGPU par SwiftShader), avec une capture comparée à une référence.
+- **Contenu à venir** : le chargement de modèles (l'importeur OBJ de la démo), le scenegraph et le culling quand ils existeront, l'IBL ; une page de dépannage (WebGPU absent, addon introuvable, SDK Vulkan).
+- **Exemples** : un contrôle de caméra à la souris, et un bouton pour passer d'un backend à l'autre sans recharger la page.
+- La référence API n'est générée qu'en anglais (commentaires des sources) : les pages françaises y renvoient.
+
+## 8. Plus loin
 
 - Un très grand nombre de lumières, le ray tracing, le rendu piloté par le GPU, la sortie HDR et le travail en parallèle sur le GPU : [evolutions.md](evolutions.md).
 - La précompilation des programmes (phase 7 du material graph).

@@ -1,0 +1,152 @@
+---
+title: Textured materials
+description: Sample a texture in a material graph, and change the values of a material over time.
+sidebar:
+  order: 2
+---
+
+import Example from '../../../components/Example.astro';
+
+Two objects sharing one material graph: a checker texture, repeated over the
+surface and tinted. The sphere changes its tint every frame.
+
+<Example name="materials" />
+
+## Reading the mesh and the material
+
+A graph reads three kinds of inputs:
+
+- **attributes** of the mesh, by semantic: `g.attribute('uv', BuiltinTypes.vec2f)`;
+- **values** of the material: uniforms (`g.uniform`), textures
+  (`g.texture`), samplers (`g.sampler`), set by name on the material;
+- **engine values**: the camera, the transform of the object, the time
+  (`g.engine('time')`).
+
+Nodes combine them. `g.call(node, inputs)` adds a node and returns its
+output; numbers and arrays are accepted as constant inputs:
+
+```ts
+const g = new GraphBuilder('checker');
+const uv = g.call(std.mul, {
+  a: g.attribute('uv', BuiltinTypes.vec2f),
+  b: g.uniform('tiling', BuiltinTypes.f32, { default: 4 }),
+});
+const texel = g.call(std.textureSample, {
+  texture: g.texture('map'),
+  sampler: g.sampler('mapSampler'),
+  uv,
+});
+g.surface({
+  shadingModel: 'phong',
+  baseColor: g.call(std.mul, {
+    a: texel.swizzle('rgb'),
+    b: g.uniform('tint', BuiltinTypes.vec3f, { default: [1, 1, 1] }),
+  }),
+  shininess: 32,
+});
+```
+
+`swizzle('rgb')` takes components of a vector, as `.rgb` in a shader. The
+types are checked when each node is added: connecting a `vec4` where a
+`vec3` is expected throws at once, with the node and the port at fault. The
+only implicit conversion is from a scalar to a vector (the `f32` tiling
+times the `vec2` uv).
+
+## Textures and samplers
+
+The backend creates the GPU resources:
+
+```ts
+const map = backend.textures.createTexture({
+  type: '2d',
+  format: 'rgba8unorm-srgb',
+  dimensions: { width: 8, height: 8 },
+  source: pixels, // a Uint8Array, or an image
+});
+const mapSampler = backend.textures.createSampler({
+  wrapModeS: 'repeat',
+  wrapModeT: 'repeat',
+  minFilter: 'nearest',
+  magFilter: 'nearest',
+});
+```
+
+**Color textures use an `-srgb` format**: the GPU decodes them to linear
+colors as it samples them. Textures holding data (normal maps, roughness)
+use a linear format, `rgba8unorm`.
+
+## Values
+
+A material binds the graph to its values:
+
+```ts
+const ballMaterial = new Material({ graph, values: { map, mapSampler } });
+const boxMaterial = new Material({
+  graph,
+  values: { map, mapSampler, tiling: 2, tint: [1, 0.6, 0.2] },
+});
+```
+
+Uniforms left out take the `default` of the graph. Both materials use **the
+same program**: the program depends on the graph, not on the values.
+Changing a value writes a buffer on the next frame, and recompiles nothing:
+
+```ts
+ballMaterial.setValue('tint', [1, hue, 1 - hue]);
+```
+
+## Render state
+
+The `renderState` of a material sets how it is drawn:
+
+```ts
+new Material({
+  graph,
+  renderState: { alphaMode: 'blend', doubleSided: true },
+});
+```
+
+| Option        | Values                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `alphaMode`   | `opaque` (default); `mask`: fragments below the `alphaCutoff` value (0.5) are discarded; `blend`: drawn after the opaque items, back to front |
+| `doubleSided` | Draws both faces of the triangles                                                                                                             |
+| `depthTest`   | Tests the depth buffer (default true)                                                                                                         |
+| `depthWrite`  | Writes the depth buffer (default true, false for `blend`)                                                                                     |
+
+The alpha comes from the `alpha` input of the surface:
+`g.surface({ baseColor, alpha: texel.swizzle('a') })`.
+
+## Variants
+
+Some choices are better made when compiling: a texture that a material may
+or may not have, or an attribute that only some meshes have. **Features**
+select variants of a program, without branches in the shader:
+
+```ts
+const g = new GraphBuilder('maybe textured');
+g.parameter('useMap', false);
+const color = g.call(
+  stdMacros.staticSwitch,
+  {
+    ifTrue: texel.swizzle('rgb'),
+    ifFalse: g.uniform('color', BuiltinTypes.vec3f),
+  },
+  { params: { feature: 'useMap' } }
+);
+
+new Material({
+  graph,
+  features: { useMap: true },
+  values: { map, mapSampler },
+});
+```
+
+`macro.optionalAttribute` reads an attribute when the mesh has it, a
+fallback otherwise; `macro.normalMapping` perturbs the normal with a normal
+map when the mesh has tangents. The [Material graph guide](/fdw-engine/guides/material-graph/)
+lists the nodes and macros.
+
+## Next
+
+[A custom shading model](/fdw-engine/tutorials/custom-shading-model/): write
+the lighting itself, as a graph.

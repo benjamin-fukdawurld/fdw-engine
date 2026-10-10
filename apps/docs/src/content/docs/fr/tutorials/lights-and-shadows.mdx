@@ -1,0 +1,119 @@
+---
+title: Lumières et ombres
+description: Matériaux PBR, un soleil et un spot projetant des ombres, tone mapping et multiéchantillonnage.
+sidebar:
+  order: 1
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une petite scène éclairée par deux lumières qui projettent des ombres : un
+soleil, et un spot qui balaie le sol. Les objets utilisent le modèle
+d'éclairage PBR, l'image passe par un tone mapping et est anticrénelée.
+
+<Example name="lights-and-shadows" />
+
+## Matériaux PBR
+
+Le modèle d'éclairage `pbr` suit glTF : une couleur de base, un facteur
+`metallic` (0 pour un diélectrique, 1 pour un métal) et une `roughness` (0
+pour un miroir, 1 pour une surface mate). Déclarés comme uniforms, ils
+permettent d'avoir **un seul graphe pour tous les objets** : les matériaux ne
+diffèrent que par leurs valeurs, et partagent un même programme et un même
+pipeline.
+
+```ts
+const g = new GraphBuilder('pbr');
+g.surface({
+  shadingModel: 'pbr',
+  baseColor: g.uniform('baseColor', BuiltinTypes.vec3f),
+  metallic: g.uniform('metallic', BuiltinTypes.f32),
+  roughness: g.uniform('roughness', BuiltinTypes.f32),
+});
+const graph = g.build();
+
+const gold = new Material({
+  graph,
+  values: { baseColor: [0.95, 0.65, 0.3], metallic: 1, roughness: 0.25 },
+});
+```
+
+Le modèle accepte aussi `emissive`, `normal` et `occlusion`. Le modèle `phong`
+accepte à la place `specular` et `shininess` ; `unlit` uniquement la couleur.
+
+## Lumières
+
+Trois types de lumières, chacune avec une couleur `ambient`, `diffuse` et
+`specular` :
+
+- `DirectionalLight` : une `direction`, la même partout (le soleil) ;
+- `PointLight` : une `position`, atténuée avec la distance
+  (`constantAttenuation`, `linearAttenuation`, `quadraticAttenuation`) ;
+- `SpotLight` : une position, une direction, une atténuation et un cône :
+  `innerCutoff` et `outerCutoff`, des demi-angles en degrés. La lumière
+  s'estompe entre les deux.
+
+```ts
+const spot = new SpotLight({
+  position: { x: 0, y: 5, z: 3 },
+  diffuse: { x: 0.4, y: 0.8, z: 1.6 },
+  innerCutoff: 20,
+  outerCutoff: 30,
+  quadraticAttenuation: 0.02,
+  castShadow: true,
+});
+```
+
+Les lumières d'une image sont passées à `render()` : `lights: [sun, spot]`.
+Jusqu'à 16 sont prises en compte. Des couleurs supérieures à 1 ne posent pas
+de problème : l'éclairage est calculé en valeurs linéaires, et le tone mapping
+les ramène dans la plage de l'écran.
+
+## Ombres
+
+Les lumières directionnelles et les spots avec `castShadow: true` projettent
+des ombres. Le renderer dessine une **shadow map** pour chacune d'elles, avant
+la scène, dans un atlas partagé par les lumières (2048 × 2048 par défaut,
+option `shadowAtlasSize` du renderer). Les modèles `phong` et `pbr` la
+lisent, avec une comparaison filtrée sur 3 × 3 texels pour des bords doux.
+
+- Une lumière directionnelle couvre l'étendue des éléments. Pour une grande
+  scène, indiquez-lui la région qui compte :
+  `shadow: { bounds: { center, radius } }`.
+- Un spot couvre son cône.
+- `castShadow: false` sur un élément de rendu l'exclut des shadow maps ; les
+  éléments transparents n'en projettent pas.
+- `shadow: { normalBias, bias }` ajuste les décalages qui combattent le shadow
+  acne (une surface qui s'ombre elle-même) : `normalBias` déplace les points
+  le long de leur normale, en texels de la shadow map (1 par défaut) ; `bias`
+  diminue leur profondeur (0 par défaut). Les valeurs par défaut conviennent à
+  la plupart des scènes.
+
+Les lumières ponctuelles ne projettent pas encore d'ombres.
+
+## Sortie : tone mapping et multiéchantillonnage
+
+```ts
+const renderer = new Renderer(backend, {
+  output: { toneMapping: 'neutral', encoding: 'srgb' },
+  samples: 4,
+});
+```
+
+- `toneMapping` ramène les couleurs linéaires, non bornées, dans la plage de
+  l'écran : `reinhard`, `aces` ou `neutral` (Khronos PBR Neutral, qui
+  préserve les couleurs de base). `none` par défaut : les couleurs sont
+  écrêtées. `render({ exposure })` multiplie d'abord les couleurs.
+- `samples: 4` dessine la scène avec 4 échantillons par pixel, puis les
+  résout : des bords lisses.
+
+Lorsque le backend peut faire le rendu dans `rgba16float`, la scène est
+dessinée dans une cible HDR, puis passe par le tone mapping dans une passe
+plein écran. Voir [Couleurs et HDR](/fdw-engine/fr/guides/colors-and-hdr/).
+
+## Pour aller plus loin
+
+- [Matériaux texturés](/fdw-engine/fr/tutorials/materials/) : textures,
+  samplers, et valeurs qui évoluent dans le temps.
+- [Guide des lumières et ombres](/fdw-engine/fr/guides/lights-and-shadows/) :
+  comment les shadow maps sont dessinées et lues.

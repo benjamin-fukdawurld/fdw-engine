@@ -4,3 +4,7 @@
 /.nx/cache
 /.nx/workspace-data# CMake builds of the native addons
 /packages/*/build
+/apps/docs/dist
+/apps/docs/.astro
+/apps/docs/out-tsc
+/apps/docs/src/content/docs/api

@@ -1,0 +1,137 @@
+---
+title: Compute
+description: Compute the heights of a grid on the GPU with a compute graph, and read them in a material.
+sidebar:
+  order: 5
+---
+
+import Example from '../../../components/Example.astro';
+
+A grid of 96 × 96 vertices, whose heights are computed on the GPU every
+frame by a compute graph, then read by the material of the grid.
+
+<Example name="compute-waves" />
+
+:::caution[WebGPU and Vulkan]
+Compute shaders are not available on WebGL2. The example reports it when the
+page runs on WebGL2: open it in a browser with WebGPU.
+:::
+
+## A compute graph
+
+A compute graph uses the same nodes as a material, but ends with `compute()`,
+and writes **storage buffers** instead of returning a color. It runs one
+thread per item of work, in workgroups: here one thread per vertex, in
+workgroups of 8 × 8.
+
+```ts
+const c = new GraphBuilder('ripples');
+const id = c.builtin('global-invocation-id');
+const point = c.call(
+  std.convert,
+  { value: id.swizzle('xy') },
+  { params: { to: BuiltinTypes.vec2f } }
+);
+const distance = c.call(std.length, {
+  x: c.call(std.sub, { a: point, b: (side - 1) / 2 }),
+});
+const wave = c.call(std.sin, {
+  x: c.call(std.sub, {
+    a: c.call(std.mul, { a: distance, b: 0.35 }),
+    b: c.call(std.mul, { a: c.uniform('time', BuiltinTypes.f32), b: 3 }),
+  }),
+});
+
+const heights = c.storage('heights', arrayType(BuiltinTypes.f32), {
+  access: 'read-write',
+});
+c.write(heights, {
+  index: c.call(std.add, {
+    a: c.call(std.mul, { a: id.swizzle('y'), b: side }),
+    b: id.swizzle('x'),
+  }),
+  value: c.call(std.mul, { a: wave, b: 0.08 }),
+});
+c.compute({ workgroupSize: [8, 8, 1] });
+
+const ripples = compile(c.build(), { capabilities: backend.capabilities });
+```
+
+- `global-invocation-id` is the index of the thread, in x, y and z (`u32`);
+  `std.convert` turns it into floats.
+- `c.storage(name, arrayType(element))` declares a buffer: an array whose
+  size is set by the buffer. `access: 'read-write'` lets the graph write it.
+- `c.write(array, { index, value, when })` writes an element; `when`, a
+  boolean, guards the threads beyond the end of the array.
+
+Compiled with the capabilities of the backend, the graph fails with a clear
+message on a backend without compute.
+
+The compiler refuses what cannot work in a compute shader:
+`std.textureSample` (it needs the derivatives of a fragment shader: use
+`std.textureSampleLevel`), and reading a buffer the graph writes, since the
+threads run in any order.
+
+## Running it
+
+```ts
+const buffer = backend.buffers.create({
+  size: side * side * 4,
+  usage: ['storage'],
+});
+const compute = new ComputeRunner(backend);
+
+onFrame((time) => {
+  compute.dispatch(ripples, {
+    values: { heights: buffer, time },
+    workgroups: [side / 8, side / 8],
+  });
+  renderer.render({ items, camera, surface });
+});
+```
+
+`dispatch` binds the values by name — uniforms, textures, samplers, storage
+buffers — and submits `workgroups` groups of threads. The GPU runs the
+submissions in order: the frame drawn next sees the new heights.
+
+`workgroups` can also be a buffer written by the GPU,
+`{ buffer, offset }`, holding three `u32`: an indirect dispatch.
+
+To read results on the CPU, give the buffer the `copy-src` usage and
+`await buffer.read()`, which resolves with an `ArrayBuffer`.
+
+## Reading the buffer in a material
+
+A material reads a storage buffer the same way, without the write access.
+Here each vertex reads its height, by its index, and moves up by it:
+
+```ts
+const g = new GraphBuilder('water');
+const height = g.call(std.index, {
+  array: g.storage('heights', arrayType(BuiltinTypes.f32)),
+  index: g.builtin('vertex-index'),
+});
+g.surface({
+  positionOffset: g.call(std.vec3, { y: height }),
+  baseColor: g.call(std.mix, {
+    a: [0.02, 0.15, 0.35],
+    b: [0.5, 0.85, 1],
+    t: g.call(std.saturate, {
+      x: g.call(std.add, { a: g.call(std.mul, { a: height, b: 6 }), b: 0.5 }),
+    }),
+  }),
+});
+const material = new Material({
+  graph: g.build(),
+  values: { heights: buffer },
+});
+```
+
+`positionOffset` moves the vertices, in the space of the object. The height
+is read by the vertex stage, then interpolated for the color: the compiler
+places each computation in the stage where its inputs are available.
+
+## Next
+
+[Compute guide](/fdw-engine/guides/compute/): compute passes in a render
+graph, and the rules of storage buffers.

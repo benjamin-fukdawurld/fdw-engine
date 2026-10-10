@@ -121,7 +121,7 @@ const sources = new WgslCodegen().emit(program.module, layout);
 The compiler runs these passes:
 
 1. **Validation** of the graph, then of what the compiler supports.
-2. **Lowering** of `output.surface`: standard vertex stage (object → world → clip space) and shading model, ending with `output.vertex` and `output.fragment`. `output.fullscreen` is lowered to a triangle covering the target, computed from `vertex-index`, and `screen-uv` to its interpolated coordinates (origin at the top left on every backend).
+2. **Lowering** of `output.surface`: standard vertex stage (object → world → clip space) and shading model, ending with `output.vertex` and `output.fragment`. `output.fullscreen` is lowered to a triangle covering the target, computed from `vertex-index`, and `screen-uv` to its interpolated coordinates (origin at the top left on every backend), read per fragment: what depends on them is computed per pixel.
 3. **Optimizations**: dead code elimination (unused resources included), constant folding (f32 scalars and vectors), common subexpression elimination.
 4. **Frequency analysis**: each value is constant, per draw (uniforms, textures, engine values), per vertex or per fragment. Per-vertex values used by the fragment stage are computed as early as possible and interpolated through varyings (flat for integers); constant and uniform values are recomputed in each stage; values that cannot be interpolated (bool, matrices) are computed in the fragment stage.
 5. **Layout**: `frame` (group 0), `material` (group 1), `object` (group 2), then custom slots sorted by name. Within a slot: one uniform block, then textures and samplers, each sorted by name.
@@ -235,9 +235,9 @@ It compiles to a single `compute` stage of the IR, whose writes are results made
 
 ### Current limitations
 
-- At most 16 lights per frame, without shadows.
+- At most 16 lights per frame; shadows for directional and spot lights only.
 - No image-based lighting (IBL) yet: the ambient term of the lit models is a constant color per light.
-- Tone mapping is applied per material, before blending: slightly wrong for transparent materials until the render graph brings a post-processing pass.
+- Without an HDR target (`rgba16float`), tone mapping is applied per material, before blending: slightly wrong for transparent materials.
 - Storage buffers are read-only runtime-sized arrays of scalars, vectors and matrices (no structs), not available on WebGL2; no array or struct uniforms in materials (the engine uses arrays for the lights); no `f16`.
 - Function inputs have concrete types (no generics yet); functions are inlined, not emitted as functions of the target language; no native functions.
 - `textureSample` only takes 2D textures.

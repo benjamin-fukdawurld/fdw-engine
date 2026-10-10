@@ -1,0 +1,187 @@
+---
+title: Votre première scène
+description: Un cube éclairé qui tourne dans un canvas, pas à pas.
+sidebar:
+  order: 3
+---
+
+import Example from '../../../../components/Example.astro';
+
+Cette page dessine un cube, éclairé par le soleil, qui tourne devant la
+caméra :
+
+<Example name="first-scene" />
+
+Les exemples de cette documentation sont des fonctions qui reçoivent un
+backend, une surface et une boucle d'images de la part de la page. La fin de
+cette page montre la même scène sous forme d'application autonome, avec le
+moteur initialisé à la main.
+
+## Le matériau
+
+Un matériau est décrit par un **graphe** : des nœuds qui calculent les
+propriétés d'une surface, et se terminent par `surface()`. Ici, la surface a
+une seule propriété, sa couleur, et elle est éclairée par le modèle de Phong :
+
+```ts
+const g = new GraphBuilder('orange');
+g.surface({
+  shadingModel: 'phong',
+  baseColor: g.uniform('color', BuiltinTypes.vec3f, {
+    default: [1, 0.45, 0.1],
+  }),
+});
+const material = new Material({ graph: g.build() });
+```
+
+`g.uniform()` déclare une valeur du matériau : `material.setValue('color',
+[0, 0.5, 1])` la modifie à tout moment, sans recompiler le shader. Le graphe
+est compilé pour le backend lorsque le matériau est dessiné pour la première
+fois.
+
+Les couleurs sont **linéaires** : le moteur les encode pour l'écran (sRGB) à
+la fin. Voir [Couleurs et HDR](/fdw-engine/fr/guides/colors-and-hdr/).
+
+## Le mesh
+
+Un `Mesh` est la géométrie côté CPU : des vertex buffers, organisés comme
+l'indique sa `description`, et des indices optionnels. Chaque attribut a une
+**sémantique** (`position`, `normal`, `uv`, `color`, `tangent`…) : les
+programmes compilés trouvent leurs entrées par sémantique, et non par position
+dans le buffer.
+
+```ts
+const cube = new Mesh({
+  description: {
+    vertexBuffers: [
+      {
+        stride: 24,
+        stepMode: 'vertex',
+        attributes: [
+          { semantic: 'position', format: 'float32x3', offset: 0 },
+          { semantic: 'normal', format: 'float32x3', offset: 12 },
+        ],
+      },
+    ],
+    vertexCount: 24,
+    indexBuffer: { format: 'uint16', count: indices.length },
+  },
+  vertices: [new Float32Array(vertices)],
+  indices: new Uint16Array(indices),
+});
+```
+
+Les buffers GPU sont créés lorsque le mesh est dessiné pour la première fois.
+Les faces sont orientées dans le sens antihoraire vues de l'extérieur : les
+faces arrière sont éliminées, sauf si le matériau est `doubleSided`.
+
+:::tip
+Les tutoriels suivants utilisent `createCube()` et `createSphere()` de
+`@fdw/demo-scenes`, les scènes partagées par les démos : elles construisent
+les meshes de la même façon, avec des positions, des normales et des uv.
+:::
+
+## La scène
+
+Un `Transform` place un objet (position, rotation sous forme de quaternion,
+échelle), une `Camera` regarde le long de son axe −z, et une
+`DirectionalLight` éclaire selon sa direction :
+
+```ts
+const transform = new Transform();
+const camera = new Camera({
+  position: { x: 0, y: 0, z: 3 },
+  projection: {
+    type: 'perspective',
+    fov: 45,
+    aspect: 16 / 9,
+    near: 0.1,
+    far: 100,
+  },
+});
+const sun = new DirectionalLight({ direction: { x: -1, y: -1, z: -1 } });
+```
+
+Les setters acceptent des valeurs partielles : `transform.position = { y: 2 }`
+conserve `x` et `z`. Chaque modification incrémente une version, que le
+renderer surveille pour ne mettre à jour que ce qui a changé.
+
+## Le rendu
+
+Un `Renderer` dessine des **render items** — un mesh, un matériau, une
+transformation — sur un backend :
+
+```ts
+const renderer = new Renderer(backend);
+
+onFrame((time) => {
+  // A quaternion: a turn of `time` radians around the (1, 1, 0) axis.
+  const s = Math.sin(time / 2) / Math.SQRT2;
+  transform.rotation = { x: s, y: s, z: 0, w: Math.cos(time / 2) };
+  renderer.render({
+    items: [{ mesh: cube, material, transform }],
+    camera,
+    surface,
+    lights: [sun],
+    clearColor: { r: 0.05, g: 0.06, b: 0.08, a: 1 },
+  });
+});
+```
+
+`render()` dessine l'image et la présente. Le renderer met en cache ce qu'il
+crée : les programmes, les pipelines, les buffers. La première image compile,
+les suivantes n'écrivent que les valeurs qui ont changé.
+
+## Sous forme d'application
+
+En dehors de cette documentation, l'application crée elle-même le moteur et
+la surface. Le moteur est le device d'un backend ; la surface est l'endroit où
+vont les images, ici un canvas.
+
+```ts
+import type { Engine, Surface } from '@fdw/engine-backend';
+import { Renderer } from '@fdw/engine-core';
+import { WebGl2CanvasSurface, WebGl2Engine } from '@fdw/engine-webgl2';
+import { WebGpuEngine, WebGpuSurface } from '@fdw/engine-webgpu';
+
+const canvas = document.querySelector('canvas')!;
+
+// WebGPU when the browser has it, WebGL2 otherwise.
+let engine: Engine;
+let surface: Surface;
+try {
+  engine = new WebGpuEngine();
+  await engine.init();
+  surface = new WebGpuSurface(canvas);
+} catch {
+  engine = new WebGl2Engine();
+  await engine.init();
+  surface = new WebGl2CanvasSurface(canvas);
+}
+await surface.init(engine);
+
+const renderer = new Renderer(engine.backend!);
+// … the material, the mesh and the scene, as above …
+
+const start = performance.now();
+const frame = () => {
+  const time = (performance.now() - start) / 1000;
+  // … animate, then renderer.render({ … }) …
+  requestAnimationFrame(frame);
+};
+requestAnimationFrame(frame);
+```
+
+La surface effectue le rendu à la taille du canvas, en pixels : mettez à jour
+`canvas.width` et `canvas.height` lorsqu'il est redimensionné, et gardez
+l'`aspect` de la caméra en accord.
+
+Rien d'autre que ces quelques lignes ne dépend du backend : les mêmes
+matériaux, meshes et renderer fonctionnent sur WebGPU, WebGL2 et Vulkan.
+
+## Et ensuite
+
+- [Éclairage et ombres](/fdw-engine/fr/tutorials/lights-and-shadows/) : des
+  matériaux PBR, plusieurs lumières, des ombres et du tone mapping.
+- [Fenêtre native](/fdw-engine/fr/getting-started/native/) : la même scène
+  dans Node, sur Dawn ou Vulkan.

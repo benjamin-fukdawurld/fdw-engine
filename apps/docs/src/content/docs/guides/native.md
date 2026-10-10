@@ -1,0 +1,95 @@
+---
+title: Native
+description: How the engine runs in Node, presents into native windows, and drives Vulkan.
+sidebar:
+  order: 7
+---
+
+Outside of the browser, the engine runs in **Node**, with native code in
+**addons**. The TypeScript of the engine is unchanged: only the engine and
+the surface are native.
+
+## The layers
+
+```
+@fdw/engine-native (TS) ──► fdw_native.node (C, Node-API) ──► fdw_window (C++, C API) ──► SDL3
+@fdw/engine-vulkan (TS) ──► fdw_vulkan.node (C, Node-API) ──► fdw_vulkan (C++20, C API) ──► Vulkan, DXC
+```
+
+- The **libraries** (`fdw_window`, `fdw_vulkan`) do the work, behind a C
+  API (`native/include/fdw/*.h`). Another host — a native application, a
+  FFI — can use them without Node.
+- The **addons** are thin Node-API bindings, in C. Node-API has a stable
+  ABI: an addon built once runs on every Node version.
+- Everything is built by CMake, in C++20, for portability. Linux is
+  supported today.
+
+## Windows and the loop
+
+`NativeWindow` is an SDL3 window. Its events are DOM events
+(`NativeWindowEvent`): `close`, `resize`, `keydown`, `keyup`, `pointermove`,
+`pointerdown`, `pointerup`, `wheel`. `width` and `height` are in pixels;
+`title` and `vsync` can change at any time.
+
+`runLoop(frame, { throttle })` replaces `requestAnimationFrame`: each turn
+dispatches the events of the windows, calls `frame(now)`, waits for
+`throttle()` if given, then yields to the Node event loop, so that promises,
+timers and I/O run between frames. It returns `{ stop(), done }`.
+
+## Dawn: presentation by copy
+
+`createDawnEngine()` returns a `WebGpuEngine` on [Dawn](https://dawn.googlesource.com/dawn),
+through the `webgpu` npm package. Dawn from npm cannot present into a
+window, so `DawnWindowSurface`:
+
+1. renders the frame into a texture;
+2. copies it into a buffer, read back asynchronously;
+3. gives the pixels to the window, which shows them.
+
+A ring of readback buffers keeps the GPU busy; `throttle()` bounds the frames
+in flight (2). The cost is a copy and a frame or two of latency: fine for
+tools and development, not for a game. Building Dawn with its own
+swapchain would remove it.
+
+## Vulkan
+
+`@fdw/engine-vulkan` implements the `RenderBackend` on Vulkan 1.3:
+
+- **Shaders**: the programs are generated in HLSL (Shader Model 6, HLSL 2021) by `HlslCodegen`, then compiled to SPIR-V by DXC, loaded at run time.
+- **Commands**: the encoders write the commands of a frame as 32-bit words;
+  `submit` replays them into a command buffer in a single native call.
+- **Synchronization**: as in WebGPU, the library tracks how each texture
+  and buffer was last used, and inserts the barriers: before a render pass
+  for its attachments and resources (its commands are read ahead), before
+  each dispatch for its groups.
+- **Writes**: `buffer.write` and texture uploads follow WebGPU's
+  `queue.writeBuffer`: copied at once, applied in queue order before the
+  next commands.
+- **Submissions** are ordered by a timeline semaphore; destroyed resources
+  are released once the GPU is done with them.
+- **Memory** is allocated with VMA, the Vulkan functions loaded with volk.
+
+`VulkanWindowSurface` presents through a **swapchain**: FIFO with `vsync`,
+mailbox or immediate without; recreated when the window is resized; at
+most two frames in flight. The window gives its native handles (X11,
+Wayland, Win32, Cocoa) to the surface.
+
+`new VulkanEngine({ validation: true })` enables the Khronos validation
+layer when it is installed; `engine.device.takeMessages()` returns its
+messages since the last call.
+
+## Environment variables
+
+| Variable               | Effect                                                            |
+| ---------------------- | ----------------------------------------------------------------- |
+| `VULKAN_SDK`           | Set by the SDK's `setup-env.sh`: needed to build the Vulkan addon |
+| `FDW_DXC_LIBRARY`      | The DXC library to load (`libdxcompiler`)                         |
+| `FDW_NATIVE_ADDON`     | Loads the window addon from another path                          |
+| `FDW_VULKAN_ADDON`     | Loads the Vulkan addon from another path                          |
+| `NODE_API_INCLUDE_DIR` | The Node-API headers used to build the addons                     |
+
+## Further
+
+The design, its alternatives (Deno, Electron, a native host) and the
+follow-ups — Windows and macOS, prebuilt addons, Direct3D 12 — are in
+`design/native-backends.md` (in French).

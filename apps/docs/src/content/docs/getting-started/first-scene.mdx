@@ -1,0 +1,183 @@
+---
+title: Your first scene
+description: A lit cube turning in a canvas, step by step.
+sidebar:
+  order: 3
+---
+
+import Example from '../../../components/Example.astro';
+
+This page draws a cube, lit by the sun, turning in front of the camera:
+
+<Example name="first-scene" />
+
+The examples of this documentation are functions receiving a backend, a
+surface and a frame loop from the page. The end of this page shows the same
+scene as a standalone application, with the engine set up by hand.
+
+## The material
+
+A material is described by a **graph**: nodes computing the properties of a
+surface, ending with `surface()`. Here, the surface has one property, its
+color, and is lit by the Phong model:
+
+```ts
+const g = new GraphBuilder('orange');
+g.surface({
+  shadingModel: 'phong',
+  baseColor: g.uniform('color', BuiltinTypes.vec3f, {
+    default: [1, 0.45, 0.1],
+  }),
+});
+const material = new Material({ graph: g.build() });
+```
+
+`g.uniform()` declares a value of the material: `material.setValue('color',
+[0, 0.5, 1])` changes it at any time, without recompiling the shader. The
+graph is compiled for the backend when the material is first drawn.
+
+Colors are **linear**: the engine encodes them for the screen (sRGB) at the
+end. See [Colors and HDR](/fdw-engine/guides/colors-and-hdr/).
+
+## The mesh
+
+A `Mesh` is the geometry on the CPU side: vertex buffers, laid out as its
+`description` says, and optional indices. Each attribute has a **semantic**
+(`position`, `normal`, `uv`, `color`, `tangent`…): the compiled programs find
+their inputs by semantic, not by position in the buffer.
+
+```ts
+const cube = new Mesh({
+  description: {
+    vertexBuffers: [
+      {
+        stride: 24,
+        stepMode: 'vertex',
+        attributes: [
+          { semantic: 'position', format: 'float32x3', offset: 0 },
+          { semantic: 'normal', format: 'float32x3', offset: 12 },
+        ],
+      },
+    ],
+    vertexCount: 24,
+    indexBuffer: { format: 'uint16', count: indices.length },
+  },
+  vertices: [new Float32Array(vertices)],
+  indices: new Uint16Array(indices),
+});
+```
+
+The GPU buffers are created when the mesh is first drawn. The faces are
+counter-clockwise seen from outside: the back faces are culled, unless the
+material is `doubleSided`.
+
+:::tip
+The next tutorials use `createCube()` and `createSphere()` from
+`@fdw/demo-scenes`, the scenes shared by the demos: they build meshes the
+same way, with positions, normals and uvs.
+:::
+
+## The scene
+
+A `Transform` places an object (position, rotation as a quaternion, scale), a
+`Camera` looks down its −z axis, and a `DirectionalLight` shines along its
+direction:
+
+```ts
+const transform = new Transform();
+const camera = new Camera({
+  position: { x: 0, y: 0, z: 3 },
+  projection: {
+    type: 'perspective',
+    fov: 45,
+    aspect: 16 / 9,
+    near: 0.1,
+    far: 100,
+  },
+});
+const sun = new DirectionalLight({ direction: { x: -1, y: -1, z: -1 } });
+```
+
+Setters take partial values: `transform.position = { y: 2 }` keeps `x` and `z`.
+Every change increments a version, which the renderer watches to update only
+what changed.
+
+## Rendering
+
+A `Renderer` draws **render items** — a mesh, a material, a transform — on a
+backend:
+
+```ts
+const renderer = new Renderer(backend);
+
+onFrame((time) => {
+  // A quaternion: a turn of `time` radians around the (1, 1, 0) axis.
+  const s = Math.sin(time / 2) / Math.SQRT2;
+  transform.rotation = { x: s, y: s, z: 0, w: Math.cos(time / 2) };
+  renderer.render({
+    items: [{ mesh: cube, material, transform }],
+    camera,
+    surface,
+    lights: [sun],
+    clearColor: { r: 0.05, g: 0.06, b: 0.08, a: 1 },
+  });
+});
+```
+
+`render()` draws the frame and presents it. The renderer caches what it
+creates: the programs, the pipelines, the buffers. The first frame compiles,
+the next ones only write the values that changed.
+
+## As an application
+
+Outside of this documentation, the application creates the engine and the
+surface itself. The engine is the device of a backend; the surface is where
+the frames go, here a canvas.
+
+```ts
+import type { Engine, Surface } from '@fdw/engine-backend';
+import { Renderer } from '@fdw/engine-core';
+import { WebGl2CanvasSurface, WebGl2Engine } from '@fdw/engine-webgl2';
+import { WebGpuEngine, WebGpuSurface } from '@fdw/engine-webgpu';
+
+const canvas = document.querySelector('canvas')!;
+
+// WebGPU when the browser has it, WebGL2 otherwise.
+let engine: Engine;
+let surface: Surface;
+try {
+  engine = new WebGpuEngine();
+  await engine.init();
+  surface = new WebGpuSurface(canvas);
+} catch {
+  engine = new WebGl2Engine();
+  await engine.init();
+  surface = new WebGl2CanvasSurface(canvas);
+}
+await surface.init(engine);
+
+const renderer = new Renderer(engine.backend!);
+// … the material, the mesh and the scene, as above …
+
+const start = performance.now();
+const frame = () => {
+  const time = (performance.now() - start) / 1000;
+  // … animate, then renderer.render({ … }) …
+  requestAnimationFrame(frame);
+};
+requestAnimationFrame(frame);
+```
+
+The surface renders at the size of the canvas, in pixels: set `canvas.width`
+and `canvas.height` when it is resized, and keep the `aspect` of the camera
+in step.
+
+Nothing but these few lines depends on the backend: the same materials,
+meshes and renderer run on WebGPU, WebGL2 and Vulkan.
+
+## Next
+
+- [Lights and shadows](/fdw-engine/tutorials/lights-and-shadows/): PBR
+  materials, several lights, shadows and tone mapping.
+- [Native window](/fdw-engine/getting-started/native/): the same scene in
+  Node, on Dawn or Vulkan.

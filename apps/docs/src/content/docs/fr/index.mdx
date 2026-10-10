@@ -1,0 +1,47 @@
+---
+title: FdwEngine
+description: Un moteur 3D multi-backend en TypeScript.
+template: splash
+hero:
+  tagline: Un moteur 3D multi-backend en TypeScript, du navigateur jusqu'à Vulkan en natif.
+  actions:
+    - text: Commencer
+      link: /fdw-engine/fr/getting-started/introduction/
+      icon: right-arrow
+    - text: Tutoriels
+      link: /fdw-engine/fr/tutorials/lights-and-shadows/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import Example from '../../../components/Example.astro';
+
+<Example name="first-scene" code={false} />
+
+<CardGrid>
+  <Card title="Une scène, tous les backends" icon="laptop">
+    WebGPU et WebGL2 dans le navigateur, Dawn et Vulkan 1.3 dans une fenêtre
+    native : les mêmes matériaux, les mêmes meshes et le même renderer.
+  </Card>
+  <Card title="Des matériaux sous forme de graphes" icon="puzzle">
+    Des nœuds typés, vérifiés au fur et à mesure de leur construction, compilés
+    en WGSL, GLSL et HLSL. Unlit, Phong, PBR, ou votre propre modèle d'ombrage.
+  </Card>
+  <Card title="Un render graph" icon="random">
+    Les passes déclarent ce qu'elles lisent et écrivent : le moteur les ordonne,
+    élimine celles qui sont inutiles et réutilise leurs textures. Ombres, HDR,
+    post-traitement.
+  </Card>
+  <Card title="Compute" icon="rocket">
+    Des graphes de calcul écrits avec les mêmes nœuds, qui écrivent dans des
+    storage buffers lus par les matériaux.
+  </Card>
+</CardGrid>
+
+## Par où commencer
+
+- [Votre première scène](/fdw-engine/fr/getting-started/first-scene/), pas à pas.
+- Les [tutoriels](/fdw-engine/fr/tutorials/lights-and-shadows/), chacun avec un
+  exemple interactif.
+- Les [guides](/fdw-engine/fr/guides/material-graph/), pour comprendre chaque partie.
+- [Contribuer](/fdw-engine/fr/contributing/architecture/) au moteur.

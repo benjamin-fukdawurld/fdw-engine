@@ -91,10 +91,14 @@ export function lowerFullscreen(
       ),
     }
   );
+  // Interpolated, then read per fragment: the uv is linear over the
+  // triangle, but what depends on it rarely is (a vignette, a distortion),
+  // and the vertices are far outside of the target.
+  const fragmentUv = graph.addNode('std.perFragment', {}, { value: out(uv) });
   for (const node of screenUvs) {
     graph.redirectPort(
       { node: node.id, port: 'value' },
-      { ref: { node: uv, port: 'result' } }
+      { ref: { node: fragmentUv, port: 'result' } }
     );
     graph.removeNode(node.id);
   }

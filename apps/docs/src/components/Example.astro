@@ -1,0 +1,49 @@
+---
+// A live example: its canvas, then its source. The code shown is the code
+// that runs: both come from src/examples/<name>.ts.
+import { Code } from '@astrojs/starlight/components';
+
+interface Props {
+  // The file of src/examples, without its extension.
+  name: string;
+  // Shows the source under the canvas. Default true.
+  code?: boolean;
+}
+
+const { name, code = true } = Astro.props;
+const sources = import.meta.glob<string>('../examples/*.ts', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+const source = sources[`../examples/${name}.ts`];
+if (source === undefined) {
+  throw new Error(`No example named "${name}" in src/examples`);
+}
+---
+
+<div class="fdw-example" data-example={name}>
+  <canvas></canvas>
+  <p class="fdw-example-status">…</p>
+</div>
+{code && <Code code={source} lang="ts" title={`${name}.ts`} />}
+
+<script>
+  import { startExample, type Example } from '../examples/runtime';
+
+  const examples = import.meta.glob<{ default: Example }>([
+    '../examples/*.ts',
+    '!../examples/runtime.ts',
+  ]);
+
+  for (const element of document.querySelectorAll<HTMLElement>(
+    '[data-example]'
+  )) {
+    const load = examples[`../examples/${element.dataset['example']}.ts`];
+    const canvas = element.querySelector('canvas');
+    const status = element.querySelector<HTMLElement>('.fdw-example-status');
+    if (load && canvas && status) {
+      load().then((module) => startExample(canvas, status, module.default));
+    }
+  }
+</script>

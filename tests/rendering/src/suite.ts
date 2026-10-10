@@ -568,6 +568,33 @@ export function describeRenderer(
         }
       });
 
+      it('computes the functions of screen-uv per pixel', async () => {
+        // The distance to the center: not linear in the uv, wrong if it
+        // were interpolated from the vertices of the triangle.
+        drawFullscreen(renderer, (g) => {
+          const distance = g.call(std.length, {
+            x: g.call(std.sub, { a: g.builtin('screen-uv'), b: 0.5 }),
+          });
+          g.fullscreen({
+            color: g.call(std.vec4, { x: distance, w: 1 }),
+          });
+        });
+        const pixel = await pixelsOf();
+        const at = (x: number, y: number) => {
+          const u = (x + 0.5) / size - 0.5;
+          const v = (y + 0.5) / size - 0.5;
+          return [Math.round(Math.hypot(u, v) * 255), 0, 0, 255];
+        };
+        for (const [x, y] of [
+          [32, 32],
+          [0, 0],
+          [63, 10],
+          [20, 50],
+        ]) {
+          expectColor(pixel(x, y), at(x, y));
+        }
+      });
+
       it('post-processes the scene through textures of the render graph', async () => {
         // The scene (red on the left) in a transient texture, then inverted.
         const g = new GraphBuilder('invert');

@@ -62,6 +62,32 @@ describe('output.fullscreen', () => {
     expect(fragment.outputs).toHaveLength(1);
   });
 
+  it('computes what depends on screen-uv per fragment', () => {
+    // A vignette: not linear in the uv, so it cannot be interpolated from
+    // the vertices of the triangle, far outside of the target.
+    const g = new GraphBuilder('vignette');
+    const distance = g.call(std.length, {
+      x: g.call(std.sub, { a: g.builtin('screen-uv'), b: 0.5 }),
+    });
+    const vignette = g.call(std.smoothstep, {
+      low: 0.3,
+      high: 0.8,
+      x: distance,
+    });
+    g.fullscreen({
+      color: g.call(std.vec4, { x: vignette, y: vignette, z: vignette, w: 1 }),
+    });
+    const program = compile(g.build());
+    const intrinsics = (stage: IrEntryPoint['stage']) =>
+      entryPoint(program, stage).body.flatMap((i) =>
+        i.op.kind === 'intrinsic' ? [i.op.name] : []
+      );
+    expect(intrinsics('vertex')).not.toContain('length');
+    expect(intrinsics('fragment')).toEqual(
+      expect.arrayContaining(['length', 'smoothstep'])
+    );
+  });
+
   it('rejects screen-uv outside full screen graphs', () => {
     const g = new GraphBuilder('surface');
     const uv = g.builtin('screen-uv');

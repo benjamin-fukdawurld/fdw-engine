@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "types": ["node", "@webgpu/types"]
+  },
+  "include": ["../../packages/*/src/**/*.ts"],
+  "exclude": [
+    "../../packages/*/src/**/*.spec.ts",
+    "../../packages/*/src/**/*.bench.ts",
+    "../../packages/*/src/testing/**"
+  ]
+}

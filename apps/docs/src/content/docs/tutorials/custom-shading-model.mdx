@@ -1,0 +1,137 @@
+---
+title: A custom shading model
+description: Write toon shading as a graph, and use it as a shading model.
+sidebar:
+  order: 3
+---
+
+import Example from '../../../components/Example.astro';
+
+A shading model turns the properties of a surface into a color, from the
+lights of the frame. `unlit`, `phong` and `pbr` come with the engine; this
+page writes another one, **toon shading**: the light received, rounded down
+to a few flat bands.
+
+<Example name="toon-shading" />
+
+## A model is a function graph
+
+A **function graph** is a graph used as a node: its `functionInput`s are the
+inputs of the node, its `functionOutput`s its outputs. A shading model is a
+function graph with:
+
+- the inputs of the surface it accepts: here `baseColor`, `bands`, `normal`;
+- a `worldPosition` input, of type `vec4`;
+- a single `color` output, of type `vec4`.
+
+```ts
+const registry = createStandardRegistry();
+const f = new GraphBuilder('toon', registry);
+const baseColor = f.functionInput('baseColor', BuiltinTypes.vec3f, {
+  default: [1, 1, 1],
+});
+const bands = f.functionInput('bands', BuiltinTypes.f32, { default: 3 });
+const normal = f.functionInput('normal', BuiltinTypes.vec3f);
+const position = f.functionInput('worldPosition', BuiltinTypes.vec4f);
+```
+
+An input without default must be connected, except `normal`: when a surface
+leaves it out, the model gets the interpolated normal of the mesh.
+
+## Summing the lights
+
+`light.current` is the light being summed, and `light.sum` adds up its
+`value` input over the lights of the frame. Everything between them is
+computed once per light, in a loop the compiler generates:
+
+```ts
+const light = f.node(stdLights.current);
+// The direction to the light: position.w is 0 for a directional light,
+// whose position is the direction it comes from.
+const toLight = f.call(std.normalize, {
+  x: f.call(std.sub, {
+    a: light.position.swizzle('xyz'),
+    b: f.call(std.mul, {
+      a: position.swizzle('xyz'),
+      b: light.position.swizzle('w'),
+    }),
+  }),
+});
+// The intensity of the light: the mean of its diffuse color.
+const intensity = f.call(std.dot, {
+  a: light.diffuse,
+  b: [1 / 3, 1 / 3, 1 / 3],
+});
+const received = f.call(stdLights.sum, {
+  value: f.call(std.mul, {
+    a: f.call(std.max, {
+      a: f.call(std.dot, {
+        a: f.call(std.normalize, { x: normal }),
+        b: toLight,
+      }),
+      b: 0,
+    }),
+    b: intensity,
+  }),
+});
+```
+
+`light.current` also gives the colors of the light (`ambient`, `diffuse`,
+`specular`), its `attenuation` factors and its spot cone. `light.shadow`
+gives its visibility at a point, from the shadow maps: multiply the light
+by it to receive shadows.
+
+## The bands, and the color
+
+```ts
+const level = f.call(std.div, {
+  a: f.call(std.floor, {
+    x: f.call(std.mul, { a: f.call(std.saturate, { x: received }), b: bands }),
+  }),
+  b: bands,
+});
+f.functionOutput(
+  'color',
+  f.call(std.extend, {
+    xyz: f.call(std.mul, {
+      a: baseColor,
+      b: f.call(std.mix, { a: 0.25, b: 1, t: level }),
+    }),
+    w: 1,
+  })
+);
+registry.register(defineShadingModel('toon', f.build()));
+```
+
+`defineShadingModel` checks the contract (the `worldPosition` input, the
+`color` output) and names the node `lighting.toon`.
+
+## Using it
+
+The surface of a material names the model; its inputs are now those of the
+model, checked like any other node:
+
+```ts
+const g = new GraphBuilder('cartoon', registry);
+g.surface({
+  shadingModel: 'toon',
+  baseColor: g.uniform('color', BuiltinTypes.vec3f),
+  bands: g.uniform('bands', BuiltinTypes.f32),
+});
+
+const renderer = new Renderer(backend, { registry });
+```
+
+`g.build()` embeds the function graphs the material calls, so a material
+saved as JSON compiles without registering them again. The renderer gets the
+registry too, for the node types it compiles.
+
+The compiler inlines the function: the program is the one you would get with
+the nodes written in the material, optimized the same way. The tone mapping
+and the encoding of the output apply after the model, as for the standard
+ones.
+
+## Next
+
+[Post-processing](/fdw-engine/tutorials/post-processing/): draw the scene into
+a texture, and process it with a full screen pass.
