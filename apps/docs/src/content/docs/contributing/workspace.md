@@ -63,9 +63,9 @@ package imported but not declared loses its reference.
 
 Create `packages/<name>/` with a `package.json` (name `@fdw/<name>`,
 `exports` pointing to `./src/index.ts`, with the `@fdw-engine/source`
-condition), a `project.json`, the tsconfig files, `vitest.config.mts`,
-`typedoc.json` and a `README.md`. Copy an existing package such as
-`engine-webgl2`; a package with build outputs (a native addon) adds an
-`eslint.config.mjs` ignoring them. Then add its path to `tsconfig.base.json`, run
-`npm install` and `npx nx sync`, and add it to the entry points of the API
-reference in `apps/docs/astro.config.mjs`.
+condition), a `project.json`, the tsconfig files, `vitest.config.mts` and a
+`README.md`. Copy an existing package such as `engine-webgl2`; a package
+with build outputs (a native addon) adds an `eslint.config.mjs` ignoring
+them. Then add its path to `tsconfig.base.json`, run `npm install` and
+`npx nx sync`, and add it to the entry points of the API reference in
+`apps/docs/astro.config.mjs`.

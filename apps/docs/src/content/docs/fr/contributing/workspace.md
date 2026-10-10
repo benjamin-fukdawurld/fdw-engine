@@ -65,7 +65,7 @@ paquet importé mais non déclaré perd sa référence.
 Créez `packages/<name>/` avec un `package.json` (nom `@fdw/<name>`,
 `exports` pointant vers `./src/index.ts`, avec la condition
 `@fdw-engine/source`), un `project.json`, les fichiers tsconfig,
-`vitest.config.mts`, `typedoc.json` et un `README.md`. Copiez un paquet
+`vitest.config.mts` et un `README.md`. Copiez un paquet
 existant comme `engine-webgl2` ; un paquet qui produit des sorties de build
 (un addon natif) ajoute un `eslint.config.mjs` qui les ignore. Ajoutez
 ensuite son chemin à `tsconfig.base.json`, lancez `npm install` et
