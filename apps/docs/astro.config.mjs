@@ -19,6 +19,25 @@ const packages = [
   'engine-vulkan',
 ];
 
+// The sidebar group of the API reference. starlight-typedoc replaces its
+// placeholder with a group of its own, without translations: this plugin,
+// run after it, adds them.
+const apiLabel = 'API reference';
+const apiLabelTranslations = {
+  name: 'fdw-api-label-translations',
+  hooks: {
+    'config:setup'({ config, updateConfig }) {
+      updateConfig({
+        sidebar: config.sidebar?.map((item) =>
+          item.label === apiLabel
+            ? { ...item, translations: { fr: 'Référence API' } }
+            : item
+        ),
+      });
+    },
+  },
+};
+
 export default defineConfig({
   site: 'https://benjamin-fukdawurld.github.io',
   base: '/fdw-engine',
@@ -47,13 +66,14 @@ export default defineConfig({
           ),
           tsconfig: './tsconfig.typedoc.json',
           output: 'api',
-          sidebar: { label: 'API reference', collapsed: true },
+          sidebar: { label: apiLabel, collapsed: true },
           typeDoc: {
             excludePrivate: true,
             excludeInternal: true,
             skipErrorChecking: true,
           },
         }),
+        apiLabelTranslations,
       ],
       sidebar: [
         {

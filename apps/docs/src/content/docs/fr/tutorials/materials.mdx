@@ -129,7 +129,12 @@ dans le shader :
 ```ts
 const g = new GraphBuilder('maybe textured');
 g.parameter('useMap', false);
-const color = g.call(
+const texel = g.call(std.textureSample, {
+  texture: g.texture('map'),
+  sampler: g.sampler('mapSampler'),
+  uv: g.attribute('uv', BuiltinTypes.vec2f),
+});
+const baseColor = g.call(
   stdMacros.staticSwitch,
   {
     ifTrue: texel.swizzle('rgb'),
@@ -137,12 +142,17 @@ const color = g.call(
   },
   { params: { feature: 'useMap' } }
 );
+g.surface({ shadingModel: 'phong', baseColor });
+const graph = g.build();
 
-new Material({
+// Two programs: the textured one, and one without the texture nor its
+// sampler, removed with the branch not taken.
+const textured = new Material({
   graph,
   features: { useMap: true },
   values: { map, mapSampler },
 });
+const plain = new Material({ graph, values: { color: [0.8, 0.2, 0.1] } });
 ```
 
 `macro.optionalAttribute` lit un attribut lorsque le mesh le possède, et une
