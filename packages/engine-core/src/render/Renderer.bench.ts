@@ -14,7 +14,14 @@ import { Renderer } from './Renderer';
 // CPU cost of a frame of the Renderer, without GPU: the fake backend records
 // nothing. Programs and pipelines are compiled before measuring.
 
-const scene = (count: number, materials: number, shadows = false) => {
+// Objects on the x axis, `spacing` apart, centered on the camera: the fake
+// camera sees 1000 units on each side.
+const scene = (
+  count: number,
+  materials: number,
+  shadows = false,
+  spacing = 1
+) => {
   const { backend } = fakeBackend();
   const renderer = new Renderer(backend);
   const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
@@ -26,7 +33,9 @@ const scene = (count: number, materials: number, shadows = false) => {
   const items = Array.from({ length: count }, (_, i) => ({
     mesh,
     material: shared[i % materials],
-    transform: new Transform({ position: { x: i, y: 0, z: 0 } }),
+    transform: new Transform({
+      position: { x: (i - count / 2) * spacing, y: 0, z: 0 },
+    }),
   }));
   // A sun casting shadows: a shadow pass drawing every item once more.
   const lights = shadows
@@ -63,4 +72,8 @@ describe('Renderer.render', () => {
 
   const { render: shadowed } = scene(1000, 1, true);
   bench('1000 objects, static, sun with shadows', shadowed);
+
+  // A large list: each item is tested against the frustum.
+  const { render: culled } = scene(10_000, 1, false, 2);
+  bench('10 000 objects in a list, 1000 visible', culled);
 });

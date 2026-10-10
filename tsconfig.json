@@ -38,6 +38,12 @@
     },
     {
       "path": "./apps/docs"
+    },
+    {
+      "path": "./packages/engine-geometry"
+    },
+    {
+      "path": "./packages/engine-scene"
     }
   ]
 }

@@ -897,6 +897,42 @@ export function describeRenderer(
         ]);
         expectColor(pixel(32, 32), lit);
       });
+
+      it('draws the shadows of the casters out of view that fall in it', async () => {
+        // The camera at z = 5 sees from z = 4.9 down. A blocker behind it,
+        // at z = 6, shadows the center of the ground; another one, out of
+        // the view on the side, shadows nothing the camera sees.
+        const items = [
+          { mesh: square(1, 0), material: white(), transform: at(0) },
+          { mesh: square(0.25, 6), material: white(), transform: at(0) },
+          { mesh: square(0.25, 0.5), material: white(), transform: at(5) },
+        ];
+        const pixel = await render(items, 0, [sun({ x: 0, y: 0, z: -1 })]);
+        // Lit straight on: 1 + ambient, saturated.
+        expectColor(pixel(32, 32), shadowed);
+        expectColor(pixel(8, 8), gray(1));
+        // The ground only is visible; the ground and the blocker above it
+        // are drawn into the shadow map, not the one on the side.
+        expect(renderer.stats.get('scene')).toEqual(
+          expect.objectContaining({ visible: 1, shadowMaps: 1, casters: 2 })
+        );
+      });
+
+      it('leaves out the lights that cannot reach the view', async () => {
+        const lamp = (x: number) =>
+          new PointLight({
+            position: { x, y: 0, z: 1 },
+            ambient: { x: 0, y: 0, z: 0 },
+            diffuse: { x: 1, y: 1, z: 1 },
+            specular: { x: 0, y: 0, z: 0 },
+            quadraticAttenuation: 1,
+          });
+        // Reaches 16 units: the one at x = 30 lights nothing visible.
+        const pixel = await render(scene(5, 5), 0, [lamp(0), lamp(30)]);
+        expect(renderer.stats.get('scene')?.lights).toBe(1);
+        // Above the center, 1 away: N·L = 1, attenuation 1 / (1 + 1).
+        expectColor(pixel(32, 32), gray(0.5));
+      });
     });
 
     describe('compute graphs', () => {

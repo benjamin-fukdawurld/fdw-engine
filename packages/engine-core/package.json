@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "dependencies": {
     "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-geometry": "0.0.1",
     "@fdw/engine-shader": "0.0.1",
     "tslib": "^2.3.0"
   },
@@ -14,6 +15,11 @@
       "@fdw-engine/source": "./src/index.ts",
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./testing": {
+      "@fdw-engine/source": "./src/testing/fakeBackend.ts",
+      "types": "./src/testing/fakeBackend.ts",
+      "default": "./src/testing/fakeBackend.ts"
     }
   }
 }

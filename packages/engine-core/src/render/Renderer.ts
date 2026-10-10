@@ -12,6 +12,8 @@ import {
   GpuRenderPipeline,
   IColor,
   IVec3,
+  Mat3,
+  Mat4,
   meshSemantics,
   PhysicalBindGroup,
   PhysicalProgramLayout,
@@ -23,6 +25,7 @@ import {
   TransformCache,
   UniformValue,
 } from '@fdw/engine-backend';
+import { Aabb, Frustum, transformAabb } from '@fdw/engine-geometry';
 import {
   compile,
   GraphBuilder,
@@ -38,22 +41,26 @@ import { Transform } from '../Transform';
 import { RenderGraph, TextureHandle } from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
-import { meshBounds, Sphere, transformSphere, unionSpheres } from './bounds';
+import { meshBox } from './bounds';
+import { lightRange } from './lightRange';
 import { Material, MaterialValue } from './Material';
 import { Mesh } from './Mesh';
+import {
+  AllLayers,
+  Renderable,
+  RenderSource,
+  WorldTransform,
+} from './RenderSource';
 import { castsShadow, ShadowCameras, ShadowTile } from './shadows';
 
-export interface RenderItem {
-  readonly mesh: Mesh;
-  readonly material: Material;
-  readonly transform: Transform;
-  // Drawn into the shadow maps of the lights. Default true; transparent
-  // items never cast shadows.
-  readonly castShadow?: boolean;
-}
-
 export interface RenderOptions {
-  readonly items: Iterable<RenderItem>;
+  // What to draw: a source queried for each view (a scene graph), or a list
+  // of items, culled one by one.
+  readonly source?: RenderSource;
+  readonly items?: Iterable<Renderable>;
+  // The layers seen by the camera: the items of a source whose layers do
+  // not intersect them are not drawn. Default: all.
+  readonly layers?: number;
   readonly camera: Camera;
   readonly surface: Surface;
   readonly clearColor?: IColor;
@@ -61,10 +68,25 @@ export interface RenderOptions {
   readonly time?: number;
   // Multiplies the linear colors before the tone mapping. Defaults to 1.
   readonly exposure?: number;
-  // Lights of the scene, summed by the lit shading models. Up to MaxLights
-  // (16) are used, the others are ignored. Directional and spot lights with
-  // castShadow cast shadows.
+  // Lights of the scene, summed by the lit shading models; defaults to the
+  // lights of the source. Only those that can light what the camera sees
+  // are used, up to MaxLights (16), the strongest first. Directional and
+  // spot lights with castShadow cast shadows.
   readonly lights?: readonly BaseLight[];
+}
+
+/** What a view of the last frame drew: see Renderer.stats. */
+export interface ViewStats {
+  // The items the source gave for the camera.
+  readonly visible: number;
+  // The draws of the scene passes (a double-sided transparent item is
+  // drawn twice).
+  readonly drawn: number;
+  // The lights used: those that can light what the camera sees.
+  readonly lights: number;
+  readonly shadowMaps: number;
+  // The draws into the shadow maps.
+  readonly casters: number;
 }
 
 export interface ScenePassesOptions extends Omit<RenderOptions, 'surface'> {
@@ -143,10 +165,21 @@ interface FrameView extends UniformGroup {
   shadowMap?: GpuAttachmentTarget;
 }
 
+// The world matrix of an item, from its Transform or given by its source,
+// with what the renderer derives from it.
 interface ObjectState extends UniformGroup {
-  cache: TransformCache;
+  matrix(): Mat4;
+  normalMatrix(): Mat3;
+  // The version of the world matrix.
+  current(): number;
   // Version of the world matrix last uploaded.
   version: number;
+  // The world bounds of the mesh, for the version of the matrix and of the
+  // mesh they were computed with.
+  readonly bounds: Aabb;
+  boundsVersion: number;
+  boundsMesh?: Mesh;
+  boundsMeshVersion: number;
 }
 
 interface MaterialGroupState {
@@ -183,7 +216,7 @@ interface PreparedPipeline {
 }
 
 interface PreparedItem {
-  readonly item: RenderItem;
+  readonly item: Renderable;
   readonly program: CompiledProgram;
   readonly layout: PhysicalProgramLayout;
   readonly pipelineKey: string;
@@ -288,24 +321,25 @@ const toneMappingFunctions: Record<string, string> = {
 const isHandle = (value: MaterialValue | undefined): boolean =>
   typeof value === 'object' && value !== null && !('length' in value);
 
-// The world bounds of the items with positions.
-const sceneBounds = (
-  items: readonly RenderItem[],
-  objects: (transform: Transform) => ObjectState
-): Sphere | undefined =>
-  unionSpheres(
-    items.flatMap((item) => {
-      const local = meshBounds(item.mesh);
-      return local
-        ? [
-            transformSphere(
-              local,
-              objects(item.transform).cache.worldMatrix.value
-            ),
-          ]
-        : [];
-    })
+// A sphere containing a box.
+const sphereOf = (box: Aabb) => ({
+  center: box.center() as [number, number, number],
+  radius: Math.hypot(...box.halfExtents()),
+});
+
+// The squared distance from a point to a box.
+function distanceToBox2(
+  { x, y, z }: Readonly<IVec3>,
+  { min, max }: Aabb
+): number {
+  const d = (value: number, low: number, high: number) =>
+    value < low ? low - value : value > high ? value - high : 0;
+  return (
+    d(x, min[0], max[0]) ** 2 +
+    d(y, min[1], max[1]) ** 2 +
+    d(z, min[2], max[2]) ** 2
   );
+}
 
 // Draws render items with their materials, on any backend. Programs,
 // pipelines, buffers and bind groups are created on first use and cached;
@@ -325,7 +359,8 @@ export class Renderer {
     readonly outputEncoding: 'srgb' | 'linear';
   };
   private readonly _meshes = new WeakMap<Mesh, GpuMesh>();
-  private readonly _objects = new WeakMap<Transform, ObjectState>();
+  // By Transform, or by the world transform of the items that give one.
+  private readonly _objects = new WeakMap<object, ObjectState>();
   private readonly _materials = new WeakMap<
     Material,
     Map<string, MaterialGroupState>
@@ -339,6 +374,9 @@ export class Renderer {
   private readonly _shadowAtlasSize: number;
   private readonly _samples: number;
   private readonly _shadowCameras: ShadowCameras;
+  // The frustum of each view, reused from frame to frame.
+  private readonly _frustums = new Map<string, Frustum>();
+  private readonly _stats = new Map<string, ViewStats>();
   private _shadowSampler?: GpuSampler;
   private _toneMapping?: Material;
   // The frame values of the last scene: what the full screen passes read.
@@ -389,6 +427,14 @@ export class Renderer {
     );
   }
 
+  /**
+   * What each view of the last frames drew, by name (`scene` for render()):
+   * items visible to the camera, draws, lights, shadow maps and their draws.
+   */
+  get stats(): ReadonlyMap<string, ViewStats> {
+    return this._stats;
+  }
+
   // Renders a frame to a surface: a render graph with the passes of the
   // scene (see addScenePasses), executed and presented.
   render({ surface, ...options }: RenderOptions): void {
@@ -428,29 +474,66 @@ export class Renderer {
    * transparent ones (only when there are some). With multisampling, they
    * draw into transient multisampled attachments, resolved into the target
    * by the last one. Returns the version of the color target they write.
+   *
+   * Only what the camera can see is drawn: the items the source gives for
+   * its frustum, the lights that can light them, and the shadow casters
+   * whose shadows can fall on them.
    */
   addScenePasses(
     graph: RenderGraph,
     {
-      items,
+      source,
+      items = [],
+      layers = AllLayers,
       camera,
       target,
       format,
       clearColor,
       time = 0,
       exposure = 1,
-      lights = [],
+      lights,
       name = 'scene',
       linear = false,
       shadows = true,
     }: ScenePassesOptions
   ): TextureHandle {
-    const list = [...items];
-    const used = lights.filter(isSupported).slice(0, MaxLights);
-    const casters = shadows ? used.filter(castsShadow) : [];
+    const from = source ?? this.listSource(items);
+    const cameraCache = this.cameraCache(camera);
+    const frustum = this.frustum(name).setFromMatrix(
+      cameraCache.viewProjectionMatrix.value
+    );
+    // What the camera sees, and the bounds of these receivers.
+    const list: Renderable[] = [];
+    const receivers = Aabb.empty();
+    from.query(
+      frustum,
+      layers,
+      (item) => {
+        list.push(item);
+        const bounds = this.worldBounds(item);
+        if (bounds) {
+          receivers.union(bounds);
+        }
+      },
+      'camera'
+    );
+    const reaching = this.reachingLights(
+      lights ?? [...(from.lights?.() ?? [])],
+      frustum
+    );
+    const used = this.strongestLights(reaching, receivers);
+    const casters =
+      shadows && !receivers.isEmpty() ? used.filter(castsShadow) : [];
     const shadowPass =
       casters.length > 0 && this._shadowAtlasSize > 0
-        ? this.addShadowPass(graph, `${name} shadows`, list, casters)
+        ? this.addShadowPass(
+            graph,
+            `${name} shadows`,
+            from,
+            layers,
+            casters,
+            receivers
+          )
         : undefined;
 
     const view = this.view(name);
@@ -472,8 +555,14 @@ export class Renderer {
         )
       )
       .filter((entry): entry is PreparedItem => entry !== undefined);
-    const cameraCache = this.cameraCache(camera);
     const ordered = this.sort(prepared, cameraCache);
+    this._stats.set(name, {
+      visible: list.length,
+      drawn: ordered.length,
+      lights: used.length,
+      shadowMaps: shadowPass?.tiles.length ?? 0,
+      casters: shadowPass?.casters ?? 0,
+    });
     const position = camera.position;
     this._frameValues = {
       viewProjection: cameraCache.viewProjectionMatrix.value,
@@ -605,33 +694,160 @@ export class Renderer {
     this._pipelines.clear();
   }
 
+  // --- Views and culling -----------------------------------------------------------
+
+  // A list of items as a source: each item tested against the frustum with
+  // its world bounds. Items without positions are always drawn.
+  private listSource(items: Iterable<Renderable>): RenderSource {
+    const list = [...items];
+    return {
+      query: (frustum, _layers, visit) => {
+        for (const item of list) {
+          const bounds = this.worldBounds(item);
+          if (!bounds || frustum.classifyAabb(bounds) !== 'outside') {
+            visit(item);
+          }
+        }
+      },
+      bounds: (out) => {
+        out.makeEmpty();
+        for (const item of list) {
+          const bounds = this.worldBounds(item);
+          if (bounds) {
+            out.union(bounds);
+          }
+        }
+        return out;
+      },
+    };
+  }
+
+  private frustum(name: string): Frustum {
+    let frustum = this._frustums.get(name);
+    if (!frustum) {
+      frustum = new Frustum();
+      this._frustums.set(name, frustum);
+    }
+    return frustum;
+  }
+
+  // The world bounds of an item: given by its source, or its mesh bounds
+  // transformed by its world matrix, recomputed when one of them changes.
+  private worldBounds(item: Renderable): Aabb | undefined {
+    if (item.bounds) {
+      return item.bounds;
+    }
+    const state = this.objectState(item);
+    const version = state.current();
+    if (
+      state.boundsVersion !== version ||
+      state.boundsMesh !== item.mesh ||
+      state.boundsMeshVersion !== item.mesh.version
+    ) {
+      const box = meshBox(item.mesh);
+      if (box) {
+        transformAabb(box, state.matrix(), state.bounds);
+      } else {
+        state.bounds.makeEmpty();
+      }
+      state.boundsVersion = version;
+      state.boundsMesh = item.mesh;
+      state.boundsMeshVersion = item.mesh.version;
+    }
+    return state.bounds.isEmpty() ? undefined : state.bounds;
+  }
+
+  // The lights that can light something in the frustum: every directional
+  // light, and the point and spot lights whose range reaches it.
+  private reachingLights(
+    lights: readonly BaseLight[],
+    frustum: Frustum
+  ): BaseLight[] {
+    return lights.filter((light) => {
+      if (!isSupported(light)) {
+        return false;
+      }
+      if (light instanceof DirectionalLight) {
+        return true;
+      }
+      const range = lightRange(light);
+      if (range === Infinity) {
+        return true;
+      }
+      const { x, y, z } = (light as PointLight | SpotLight).position;
+      return range > 0 && frustum.intersectsSphere([x, y, z], range);
+    });
+  }
+
+  // Up to MaxLights lights: the directional ones, then the others by the
+  // light they give to the nearest point of the receivers.
+  private strongestLights(lights: BaseLight[], receivers: Aabb): BaseLight[] {
+    if (lights.length <= MaxLights) {
+      return lights;
+    }
+    const strength = (light: BaseLight) => {
+      if (light instanceof DirectionalLight) {
+        return Infinity;
+      }
+      const { constantAttenuation, linearAttenuation, quadraticAttenuation } =
+        light as PointLight | SpotLight;
+      const d2 = receivers.isEmpty()
+        ? 0
+        : distanceToBox2((light as PointLight | SpotLight).position, receivers);
+      const { x, y, z } = light.diffuse;
+      return (
+        Math.max(x, y, z) /
+        (constantAttenuation +
+          linearAttenuation * Math.sqrt(d2) +
+          quadraticAttenuation * d2)
+      );
+    };
+    return lights
+      .map((light) => ({ light, strength: strength(light) }))
+      .sort((a, b) => b.strength - a.strength)
+      .slice(0, MaxLights)
+      .map(({ light }) => light);
+  }
+
   // --- Shadows -------------------------------------------------------------------
 
   // The pass drawing the shadow maps of the lights into the tiles of an
   // atlas: one depth-only draw of the casters per light, each with the
-  // frame uniforms of the light (its view projection).
+  // frame uniforms of the light (its view projection). A shadow map covers
+  // the receivers (what the camera sees); its casters are the items of the
+  // source in its frustum, which reaches towards the light.
   private addShadowPass(
     graph: RenderGraph,
     name: string,
-    items: readonly RenderItem[],
-    lights: readonly (DirectionalLight | SpotLight)[]
-  ): { atlas: TextureHandle; tiles: ShadowTile[] } {
+    source: RenderSource,
+    layers: number,
+    lights: readonly (DirectionalLight | SpotLight)[],
+    receivers: Aabb
+  ): { atlas: TextureHandle; tiles: ShadowTile[]; casters: number } {
     const format = this.backend.depthFormat;
-    const bounds = sceneBounds(items, (transform) =>
-      this.objectState(transform)
-    ) ?? { center: [0, 0, 0], radius: 1 };
     const tiles = this._shadowCameras.tiles(
       lights,
-      bounds,
+      sphereOf(receivers),
+      source.bounds?.(new Aabb()),
       this._shadowAtlasSize
     );
-    const casters = items.filter(
-      (item) =>
-        item.castShadow !== false &&
-        item.material.renderState.alphaMode !== 'blend'
-    );
+    let casterCount = 0;
     const draws = tiles.map((tile, index) => {
       const view = this.view(`${name} ${index}`);
+      const casters: Renderable[] = [];
+      source.query(
+        this.frustum(`${name} ${index}`).setFromMatrix(tile.matrix),
+        layers,
+        (item) => {
+          if (
+            item.castShadow !== false &&
+            item.material.renderState.alphaMode !== 'blend'
+          ) {
+            casters.push(item);
+          }
+        },
+        'shadow'
+      );
       const entries = casters
         .map((item) =>
           this.prepare(
@@ -654,6 +870,7 @@ export class Renderer {
           viewProjection: tile.matrix,
         });
       }
+      casterCount += entries.length;
       return { tile, entries };
     });
 
@@ -673,7 +890,7 @@ export class Renderer {
         }
       },
     }));
-    return { atlas: written.depth, tiles };
+    return { atlas: written.depth, tiles, casters: casterCount };
   }
 
   // The atlas read by the programs of a view, in this frame.
@@ -748,7 +965,7 @@ export class Renderer {
   // A double-sided transparent item is drawn twice: its back faces, then its
   // front faces, so that they blend in the right order (exact for convex
   // shapes). The sort keeps the two passes in this order.
-  private passes(item: RenderItem): PrimitiveState['cullMode'][] {
+  private passes(item: Renderable): PrimitiveState['cullMode'][] {
     const { alphaMode, doubleSided } = item.material.renderState;
     if (!doubleSided) {
       return ['back'];
@@ -781,7 +998,7 @@ export class Renderer {
 
   // Undefined while the pipeline of the item is being created.
   private prepare(
-    item: RenderItem,
+    item: Renderable,
     variant: PassVariant,
     view: FrameView
   ): PreparedItem | undefined {
@@ -833,7 +1050,7 @@ export class Renderer {
       layout,
       pipelineKey,
       pipelineId,
-      object: this.objectState(item.transform),
+      object: this.objectState(item),
       view,
     };
   }
@@ -842,7 +1059,7 @@ export class Renderer {
   // computed once, then found by identity, as long as the features of the
   // material do not change (its render state never does).
   private preparedPipeline(
-    item: RenderItem,
+    item: Renderable,
     variant: PassVariant
   ): PreparedPipeline {
     const { material, mesh } = item;
@@ -906,13 +1123,14 @@ export class Renderer {
       },
       targets: [{ format }],
     }));
+    const item = { mesh, material, transform: this._fullscreenTransform };
     return {
-      item: { mesh, material, transform: this._fullscreenTransform },
+      item,
       program,
       layout: this.backend.pipelines.resolveLayout(program),
       pipelineKey,
       pipelineId: -1,
-      object: this.objectState(this._fullscreenTransform),
+      object: this.objectState(item),
       view,
     };
   }
@@ -980,7 +1198,7 @@ export class Renderer {
 
     const position = camera.camera.position;
     const distance = (entry: PreparedItem) => {
-      const world = entry.object.cache.worldMatrix.value;
+      const world = entry.object.matrix();
       return Math.hypot(
         world[12] - position.x,
         world[13] - position.y,
@@ -1003,20 +1221,77 @@ export class Renderer {
     return cache;
   }
 
-  private objectState(transform: Transform): ObjectState {
-    let state = this._objects.get(transform);
+  private objectState(item: Renderable): ObjectState {
+    const world = 'world' in item ? item.world : undefined;
+    const transform = 'transform' in item ? item.transform : undefined;
+    const key = world ?? transform;
+    if (!key) {
+      throw new Error(
+        `Render item of "${
+          item.mesh.label ?? 'mesh'
+        }" without transform nor world matrix`
+      );
+    }
+    let state = this._objects.get(key);
     if (!state) {
-      state = {
-        cache: new TransformCache({
-          transform,
-          transformMath: this.backend.transformMath,
-        }),
-        version: -1,
-        bindGroups: new Map(),
-      };
-      this._objects.set(transform, state);
+      state = world
+        ? this.worldState(world)
+        : this.transformState(transform as Transform);
+      this._objects.set(key, state);
     }
     return state;
+  }
+
+  private transformState(transform: Transform): ObjectState {
+    const cache = new TransformCache({
+      transform,
+      transformMath: this.backend.transformMath,
+    });
+    // The version of the transform first: a counter, where the version of
+    // the cached matrix walks its dependencies. Asked for each item at each
+    // frame by the culling.
+    let transformVersion = -1;
+    let worldVersion = -1;
+    return {
+      matrix: () => cache.worldMatrix.value,
+      normalMatrix: () => cache.worldNormalMatrix.value,
+      current: () => {
+        if (transform.version !== transformVersion) {
+          transformVersion = transform.version;
+          worldVersion = cache.worldMatrix.version;
+        }
+        return worldVersion;
+      },
+      version: -1,
+      bindGroups: new Map(),
+      bounds: new Aabb(),
+      boundsVersion: -1,
+      boundsMeshVersion: -1,
+    };
+  }
+
+  // A world matrix given by the source: its normal matrix is derived here,
+  // when its version changes.
+  private worldState(world: WorldTransform): ObjectState {
+    const math = this.backend.transformMath;
+    let normal: Mat3 | undefined;
+    let normalVersion = -1;
+    return {
+      matrix: () => world.matrix,
+      normalMatrix: () => {
+        if (!normal || normalVersion !== world.version) {
+          normal = math.getLocalNormalMatrix(world.matrix);
+          normalVersion = world.version;
+        }
+        return normal;
+      },
+      current: () => world.version,
+      version: -1,
+      bindGroups: new Map(),
+      bounds: new Aabb(),
+      boundsVersion: -1,
+      boundsMeshVersion: -1,
+    };
   }
 
   private view(name: string): FrameView {
@@ -1089,13 +1364,13 @@ export class Renderer {
 
   private updateObject(state: ObjectState, block: PhysicalUniformBlock): void {
     // Reading the version recomputes the matrices if the transform changed.
-    const version = state.cache.worldMatrix.version;
+    const version = state.current();
     if (state.buffer && state.version === version) {
       return;
     }
     const values: Record<string, UniformValue> = {
-      world: state.cache.worldMatrix.value,
-      normalMatrix: state.cache.worldNormalMatrix.value,
+      world: state.matrix(),
+      normalMatrix: state.normalMatrix(),
     };
     this.upload(
       state,

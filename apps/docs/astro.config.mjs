@@ -11,6 +11,8 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 // The packages of the API reference.
 const packages = [
   'engine-core',
+  'engine-geometry',
+  'engine-scene',
   'engine-shader',
   'engine-backend',
   'engine-webgpu',

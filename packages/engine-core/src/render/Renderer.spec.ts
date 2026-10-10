@@ -129,12 +129,13 @@ describe('Renderer', () => {
     const buffer = log.buffers.find(
       (b) => b.label === 'scene frame uniforms'
     ) as FakeBuffer;
-    // viewProjection is the fake view: a translation by -position.
-    expect(floatsOf(buffer)[14]).toBe(-10);
+    // viewProjection: the fake projection of a translation by -position,
+    // whose depth is 0.5 + 0.0005 z.
+    expect(floatsOf(buffer)[14]).toBeCloseTo(0.505, 6);
 
     camera.position = { z: 3 };
     render(items);
-    expect(floatsOf(buffer)[14]).toBe(-3);
+    expect(floatsOf(buffer)[14]).toBeCloseTo(0.5015, 6);
   });
 
   it('binds textures and rebuilds the bind group when one changes', () => {
@@ -706,9 +707,12 @@ describe('Renderer, views', () => {
     const frames = log.buffers.filter((b) =>
       b.label?.endsWith('frame uniforms')
     );
-    // The fake view matrix is a translation by -position: both cameras are
-    // kept until the graph runs.
-    expect(frames.map((buffer) => floatsOf(buffer)[12])).toEqual([-1, -2]);
+    // The fake view matrix is a translation by -position, scaled by the
+    // fake projection: both cameras are kept until the graph runs.
+    expect(frames.map((buffer) => floatsOf(buffer)[12])).toEqual([
+      expect.closeTo(-0.001, 6),
+      expect.closeTo(-0.002, 6),
+    ]);
   });
 });
 

@@ -109,11 +109,50 @@ const transformMath = {
   },
 } as unknown as TransformMath;
 
+// The projection of every fake camera: orthographic, 2000 units wide and
+// deep, looking down -z with the depth from 0 to 1. Large enough for the
+// objects of the tests, real enough for the culling.
+export const fakeProjection = Float32Array.of(
+  0.001,
+  0,
+  0,
+  0,
+  0,
+  0.001,
+  0,
+  0,
+  0,
+  0,
+  -0.0005,
+  0,
+  0,
+  0,
+  0.5,
+  1
+);
+
+// a × b, column-major.
+const multiply = (a: Float32Array, b: Float32Array) => {
+  const out = new Float32Array(16);
+  for (let column = 0; column < 4; column++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        sum += a[k * 4 + row] * b[column * 4 + k];
+      }
+      out[column * 4 + row] = sum;
+    }
+  }
+  return out;
+};
+
+// The view is a translation by -position (no rotation).
 const cameraMath = {
   getViewMatrix: (position: ArrayLike<number>) =>
     translation([-position[0], -position[1], -position[2]]),
-  getProjectionMatrix: () => translation([0, 0, 0]),
-  getViewProjectionMatrix: (view: Float32Array) => view,
+  getProjectionMatrix: () => fakeProjection,
+  getViewProjectionMatrix: (view: Float32Array, projection: Float32Array) =>
+    multiply(projection, view),
 } as unknown as CameraMath;
 
 export function fakeBackend(capabilities?: BackendCapabilities) {

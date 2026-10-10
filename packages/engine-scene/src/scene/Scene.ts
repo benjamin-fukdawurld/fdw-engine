@@ -1,0 +1,820 @@
+import type { IQuat, IVec3, Mat4 } from '@fdw/engine-backend';
+import {
+  AllLayers,
+  BaseLight,
+  Camera,
+  DirectionalLight,
+  Material,
+  Mesh,
+  meshBox,
+  PointLight,
+  Renderable,
+  SpotLight,
+  WorldRenderItem,
+} from '@fdw/engine-core';
+import {
+  Aabb,
+  Frustum,
+  intersects,
+  Octree,
+  Ray,
+  transformAabb,
+  Volume,
+} from '@fdw/engine-geometry';
+import { World } from '../ecs/World';
+import { composeAt, premultiplyAt, rotationOf } from './matrices';
+import type { SceneGraph } from './contracts';
+import { Node } from './Node';
+
+/** The bits of NodeState.flags. Zero is the default of every flag. */
+export const NodeFlags = {
+  // Hidden, with its descendants.
+  Hidden: 1,
+  // Does not move: indexed once, in the static index.
+  Static: 2,
+  // A good occluder (a wall, a building), for the occlusion culling.
+  Occluder: 4,
+  // The world matrix needs to be recomputed.
+  Stale: 8,
+  // In the list of the changes to apply before the next query.
+  Queued: 16,
+  // Hidden by itself or by an ancestor: computed with the world matrix.
+  HiddenInTree: 32,
+} as const;
+
+/** What a node is created with. */
+export interface NodeOptions {
+  readonly name?: string;
+  readonly position?: Partial<IVec3>;
+  readonly rotation?: Partial<IQuat>;
+  readonly scale?: Partial<IVec3>;
+  // The layers of the node: the views whose layers intersect them see it.
+  // Default: all.
+  readonly layers?: number;
+  readonly visible?: boolean;
+  readonly static?: boolean;
+  readonly occluder?: boolean;
+}
+
+/** Options of the queries of the application. */
+export interface QueryOptions {
+  // The layers to search: the nodes whose layers intersect them. Default: all.
+  readonly layers?: number;
+  // Include the hidden nodes. Default false.
+  readonly hidden?: boolean;
+}
+
+/**
+ * A stage of the visibility of the camera queries, after the frustum: the
+ * occlusion culling (see design/scenegraph.md §10).
+ */
+export interface OcclusionCuller {
+  // Whether a node retained by the frustum may be visible.
+  visible(scene: Scene, entity: number): boolean;
+}
+
+const None = -1;
+
+/**
+ * A scene: entities of a World, in a hierarchy, with a local transform and a
+ * world matrix, drawn by a Renderer as a RenderSource. Its entities are
+ * handled by systems through the columns of its components, or as nodes
+ * (`scene.root`, `node.add()`).
+ *
+ * World matrices, bounds and the spatial indices are kept up to date by
+ * invalidation: changing the transform of an entity marks its branch as
+ * stale; a world matrix is recomputed when read, and every query (the
+ * rendering, a raycast) first applies the pending changes.
+ */
+export class Scene implements SceneGraph {
+  readonly world: World;
+  /** Local position, rotation (quaternion) and scale. */
+  readonly Transform;
+  /** The world matrix (derived), and its version. */
+  readonly WorldMatrix;
+  /** Parent, first child, next and previous siblings: entities, or -1. */
+  readonly Hierarchy;
+  /** NodeFlags, layers, the last camera query that kept it, a name (label). */
+  readonly NodeState;
+  /**
+   * A mesh drawn with a material; its world bounds (derived), the bounds
+   * table of the GPU culling to come. `noShadow`: 1 to cast no shadow. An
+   * optional Volume, for the queries.
+   */
+  readonly MeshRenderer;
+  /** A light following the entity: position, and direction along its -z. */
+  readonly Light;
+  /** A camera following the entity: position and rotation. */
+  readonly CameraView;
+
+  readonly root: Node;
+
+  /** Called before a camera query keeps a node: the occlusion culling. */
+  occlusion?: OcclusionCuller;
+
+  private readonly _dynamic = new Octree<number>();
+  private readonly _static = new Octree<number>();
+  // The roots of the branches changed since the last flush.
+  private _changes: number[] = [];
+  // Static renderers not indexed yet: indexed at once, at the next flush.
+  private _pendingStatic: number[] = [];
+  private readonly _nodes: (Node | undefined)[] = [];
+  private _cameraQueries = 0;
+  private _warnedStatic = false;
+  private readonly _box = new Aabb();
+  private readonly _meshRenderers;
+  private readonly _lights;
+
+  constructor() {
+    const world = new World();
+    this.world = world;
+    this.Transform = world.defineComponent('transform', {
+      position: ['f32', 3],
+      rotation: ['f32', 4],
+      scale: ['f32', 3],
+    });
+    this.WorldMatrix = world.defineComponent('world matrix', {
+      matrix: ['f32', 16],
+      version: 'u32',
+    });
+    this.Hierarchy = world.defineComponent('hierarchy', {
+      parent: 'i32',
+      first: 'i32',
+      next: 'i32',
+      previous: 'i32',
+    });
+    this.NodeState = world.defineComponent('node state', {
+      flags: 'u8',
+      layers: 'u32',
+      lastVisible: 'u32',
+      label: 'ref',
+    });
+    this.MeshRenderer = world.defineComponent('mesh renderer', {
+      mesh: 'ref',
+      material: 'ref',
+      noShadow: 'u8',
+      volume: 'ref',
+      bounds: ['f32', 6],
+      // The versions of the world matrix and of the mesh of the bounds.
+      boundsVersion: 'u32',
+      meshVersion: 'u32',
+      // The render item, and where the entity is indexed: 0 nowhere, 1 in
+      // the dynamic index, 2 in the static one.
+      item: 'ref',
+      indexed: 'u8',
+    });
+    this.Light = world.defineComponent('light', { light: 'ref' });
+    this.CameraView = world.defineComponent('camera view', { camera: 'ref' });
+    this._meshRenderers = world.query(this.MeshRenderer);
+    this._lights = world.query(this.Light);
+
+    world.onAdded(this.MeshRenderer, (entity) => {
+      this.MeshRenderer.item[entity] = this.createItem(entity);
+      this.MeshRenderer.boundsVersion[entity] = 0xffffffff;
+      this.queue(entity);
+    });
+    world.onRemoved(this.MeshRenderer, (entity) => this.unindex(entity));
+    world.onAdded(this.Light, (entity) => this.queue(entity));
+    world.onAdded(this.CameraView, (entity) => this.queue(entity));
+
+    this.root = this.node(this.create(None, { name: 'root' }));
+  }
+
+  // --- Entities ------------------------------------------------------------------
+
+  /**
+   * Creates an entity of the scene, child of `parent` (the root by
+   * default): the entity level of `node.add()`.
+   */
+  create(parent: number = this.root.entity, options: NodeOptions = {}): number {
+    const { world, Transform, NodeState } = this;
+    const entity = world.create();
+    world.add(entity, Transform);
+    const { position, rotation, scale } = options;
+    const p = Transform.position;
+    const r = Transform.rotation;
+    const s = Transform.scale;
+    p[entity * 3] = position?.x ?? 0;
+    p[entity * 3 + 1] = position?.y ?? 0;
+    p[entity * 3 + 2] = position?.z ?? 0;
+    r[entity * 4] = rotation?.x ?? 0;
+    r[entity * 4 + 1] = rotation?.y ?? 0;
+    r[entity * 4 + 2] = rotation?.z ?? 0;
+    r[entity * 4 + 3] = rotation?.w ?? 1;
+    s[entity * 3] = scale?.x ?? 1;
+    s[entity * 3 + 1] = scale?.y ?? 1;
+    s[entity * 3 + 2] = scale?.z ?? 1;
+    world.add(entity, this.WorldMatrix);
+    world.add(entity, this.Hierarchy, {
+      parent: None,
+      first: None,
+      next: None,
+      previous: None,
+    });
+    world.add(entity, NodeState, {
+      flags:
+        (options.visible === false ? NodeFlags.Hidden : 0) |
+        (options.static ? NodeFlags.Static : 0) |
+        (options.occluder ? NodeFlags.Occluder : 0),
+      layers: options.layers ?? AllLayers,
+      label: options.name ?? '',
+    });
+    if (parent !== None) {
+      this.link(entity, parent);
+    }
+    this.touch(entity);
+    return entity;
+  }
+
+  /** Destroys an entity and its descendants. */
+  destroy(entity: number): void {
+    this.flush();
+    const { Hierarchy } = this;
+    for (let child = Hierarchy.first[entity]; child !== None; ) {
+      const next = Hierarchy.next[child];
+      this.destroy(child);
+      child = next;
+    }
+    this.unlink(entity);
+    this._nodes[entity] = undefined;
+    this.world.destroy(entity);
+  }
+
+  /** Moves an entity under another parent, keeping its local transform. */
+  setParent(entity: number, parent: number): void {
+    for (let p = parent; p !== None; p = this.Hierarchy.parent[p]) {
+      if (p === entity) {
+        throw new Error('An entity cannot be moved under itself');
+      }
+    }
+    this.unlink(entity);
+    this.link(entity, parent);
+    this.touch(entity);
+  }
+
+  /** The node of an entity: its handle, the same object for each call. */
+  node(entity: number): Node {
+    let node = this._nodes[entity];
+    if (!node) {
+      if (!this.world.isAlive(entity)) {
+        throw new Error(`Entity ${entity} is not alive`);
+      }
+      node = new Node(this, entity, this.world.generation(entity));
+      this._nodes[entity] = node;
+    }
+    return node;
+  }
+
+  // --- Invalidation ------------------------------------------------------------
+
+  /**
+   * Signals that the transform, the parent or the visibility of an entity
+   * changed: the world matrices of its branch are stale, and the indices
+   * will be updated before the next query. Systems writing the Transform
+   * columns directly call it once per entity they moved.
+   */
+  touch(entity: number): void {
+    const flags = this.NodeState.flags;
+    const parent = this.Hierarchy.parent[entity];
+    // Already stale with its parent: its branch is queued already.
+    if (
+      flags[entity] & NodeFlags.Stale &&
+      parent !== None &&
+      flags[parent] & NodeFlags.Stale
+    ) {
+      return;
+    }
+    this.markStale(entity);
+    this.queue(entity);
+  }
+
+  // Marks a branch stale, down to the entities already stale: their own
+  // branches are.
+  private markStale(entity: number): void {
+    const { flags } = this.NodeState;
+    flags[entity] |= NodeFlags.Stale;
+    for (
+      let child = this.Hierarchy.first[entity];
+      child !== None;
+      child = this.Hierarchy.next[child]
+    ) {
+      if (!(flags[child] & NodeFlags.Stale)) {
+        this.markStale(child);
+      }
+    }
+  }
+
+  private queue(entity: number): void {
+    const { flags } = this.NodeState;
+    if (!(flags[entity] & NodeFlags.Queued)) {
+      flags[entity] |= NodeFlags.Queued;
+      this._changes.push(entity);
+    }
+  }
+
+  /**
+   * Computes the world matrix of an entity if it is stale (and those of
+   * its stale ancestors first). Its 16 values are then in
+   * `WorldMatrix.matrix`, from entity × 16.
+   */
+  updateWorld(entity: number): void {
+    const { flags } = this.NodeState;
+    if (!(flags[entity] & NodeFlags.Stale)) {
+      return;
+    }
+    const parent = this.Hierarchy.parent[entity];
+    if (parent !== None) {
+      this.updateWorld(parent);
+    }
+    const { Transform, WorldMatrix } = this;
+    const matrix = WorldMatrix.matrix;
+    composeAt(
+      matrix,
+      entity * 16,
+      Transform.position,
+      entity * 3,
+      Transform.rotation,
+      entity * 4,
+      Transform.scale,
+      entity * 3
+    );
+    let hidden = flags[entity] & NodeFlags.Hidden;
+    if (parent !== None) {
+      premultiplyAt(matrix, parent * 16, matrix, entity * 16);
+      hidden |= flags[parent] & NodeFlags.HiddenInTree;
+    }
+    flags[entity] =
+      (flags[entity] & ~(NodeFlags.Stale | NodeFlags.HiddenInTree)) |
+      (hidden ? NodeFlags.HiddenInTree : 0);
+    WorldMatrix.version[entity]++;
+  }
+
+  /**
+   * Applies the pending changes: world matrices, bounds and index entries
+   * of the changed branches, lights and cameras following them. Called by
+   * every query; call it to apply them at a chosen time.
+   */
+  flush(): void {
+    if (this._changes.length > 0) {
+      const changes = this._changes;
+      this._changes = [];
+      for (const entity of changes) {
+        if (this.world.isAlive(entity)) {
+          this.NodeState.flags[entity] &= ~NodeFlags.Queued;
+          this.applyBranch(entity);
+        }
+      }
+    }
+    if (this._pendingStatic.length > 0) {
+      const pending = this._pendingStatic;
+      this._pendingStatic = [];
+      this._static.insertAll(this.staticEntries(pending));
+    }
+  }
+
+  // The static renderers waiting for the index, with their bounds: one box,
+  // reused (the index copies them).
+  private *staticEntries(pending: number[]): Iterable<readonly [number, Aabb]> {
+    const box = new Aabb();
+    const entry: [number, Aabb] = [0, box];
+    for (const entity of pending) {
+      if (
+        this.MeshRenderer.indexed[entity] === 2 &&
+        !this._static.has(entity)
+      ) {
+        entry[0] = entity;
+        this.readBounds(entity, box);
+        yield entry;
+      }
+    }
+  }
+
+  private applyBranch(entity: number): void {
+    this.updateWorld(entity);
+    const { MeshRenderer, Light, CameraView } = this;
+    if (MeshRenderer.has(entity)) {
+      this.updateBounds(entity);
+    }
+    if (Light.has(entity)) {
+      this.follow(entity, Light.light[entity] as BaseLight);
+    }
+    if (CameraView.has(entity)) {
+      this.follow(entity, CameraView.camera[entity] as Camera);
+    }
+    for (
+      let child = this.Hierarchy.first[entity];
+      child !== None;
+      child = this.Hierarchy.next[child]
+    ) {
+      this.applyBranch(child);
+    }
+  }
+
+  // The world bounds of a renderer, and its place in the indices.
+  private updateBounds(entity: number): void {
+    const { MeshRenderer, WorldMatrix } = this;
+    const mesh = MeshRenderer.mesh[entity] as Mesh;
+    const version = WorldMatrix.version[entity];
+    if (
+      MeshRenderer.boundsVersion[entity] === version &&
+      MeshRenderer.meshVersion[entity] === mesh.version &&
+      MeshRenderer.indexed[entity] !== 0
+    ) {
+      return;
+    }
+    MeshRenderer.boundsVersion[entity] = version;
+    MeshRenderer.meshVersion[entity] = mesh.version;
+    const box = this._box;
+    const local = meshBox(mesh);
+    if (local) {
+      transformAabb(local, this.worldMatrixView(entity), box);
+    } else {
+      // No positions: a point at the origin of the entity.
+      const m = WorldMatrix.matrix;
+      const o = entity * 16;
+      box.setFrom(
+        [m[o + 12], m[o + 13], m[o + 14]],
+        [m[o + 12], m[o + 13], m[o + 14]]
+      );
+    }
+    const b = MeshRenderer.bounds;
+    const o = entity * 6;
+    b[o] = box.min[0];
+    b[o + 1] = box.min[1];
+    b[o + 2] = box.min[2];
+    b[o + 3] = box.max[0];
+    b[o + 4] = box.max[1];
+    b[o + 5] = box.max[2];
+    const item = MeshRenderer.item[entity] as SceneItem;
+    item.bounds.copyFrom(box);
+
+    const isStatic = this.NodeState.flags[entity] & NodeFlags.Static;
+    const indexed = MeshRenderer.indexed[entity];
+    if (isStatic) {
+      if (indexed === 2) {
+        // Indexed at the end of the flush, if not yet.
+        if (this._static.has(entity)) {
+          this.warnStaticMove();
+          this._static.update(entity, box);
+        }
+      } else {
+        if (indexed === 1) {
+          this._dynamic.remove(entity);
+        }
+        MeshRenderer.indexed[entity] = 2;
+        this._pendingStatic.push(entity);
+      }
+    } else if (indexed === 1) {
+      this._dynamic.update(entity, box);
+    } else {
+      if (indexed === 2) {
+        this._static.remove(entity);
+      }
+      this._dynamic.insert(entity, box);
+      MeshRenderer.indexed[entity] = 1;
+    }
+  }
+
+  private warnStaticMove(): void {
+    if (!this._warnedStatic) {
+      this._warnedStatic = true;
+      console.warn(
+        'A static node moved: its index is updated, at a cost. Static nodes are meant not to move.'
+      );
+    }
+  }
+
+  private unindex(entity: number): void {
+    const indexed = this.MeshRenderer.indexed[entity];
+    if (indexed === 1) {
+      this._dynamic.remove(entity);
+    } else if (indexed === 2) {
+      // Removed from the static index, or from those waiting for it.
+      if (!this._static.remove(entity)) {
+        this._pendingStatic = this._pendingStatic.filter((e) => e !== entity);
+      }
+    }
+    this.MeshRenderer.indexed[entity] = 0;
+  }
+
+  // A light or a camera at the position of the entity, looking along its -z.
+  private follow(entity: number, object: BaseLight | Camera): void {
+    const m = this.WorldMatrix.matrix;
+    const o = entity * 16;
+    const position = { x: m[o + 12], y: m[o + 13], z: m[o + 14] };
+    if (object instanceof Camera) {
+      object.position = position;
+      object.rotation = rotationOf(m, o);
+      return;
+    }
+    if (object instanceof PointLight || object instanceof SpotLight) {
+      object.position = position;
+    }
+    if (object instanceof DirectionalLight || object instanceof SpotLight) {
+      object.direction = { x: -m[o + 8], y: -m[o + 9], z: -m[o + 10] };
+    }
+  }
+
+  // --- Reading -----------------------------------------------------------------
+
+  /**
+   * The world matrix of an entity, up to date: a view on its row of the
+   * WorldMatrix column (replaced if the column grows).
+   */
+  worldMatrix(entity: number): Float32Array {
+    this.updateWorld(entity);
+    return this.worldMatrixView(entity);
+  }
+
+  private worldMatrixView(entity: number): Float32Array {
+    return this.WorldMatrix.matrix.subarray(entity * 16, entity * 16 + 16);
+  }
+
+  /** The world bounds of a renderer, written into `out`, after the pending changes. */
+  bounds(out: Aabb): Aabb;
+  bounds(out: Aabb, entity: number): Aabb;
+  bounds(out: Aabb, entity?: number): Aabb {
+    this.flush();
+    if (entity === undefined) {
+      // The bounds of everything: a RenderSource for the shadows.
+      out.makeEmpty();
+      const box = new Aabb();
+      if (this._dynamic.size > 0) {
+        out.union(this._dynamic.bounds(box));
+      }
+      if (this._static.size > 0) {
+        out.union(this._static.bounds(box));
+      }
+      return out;
+    }
+    return this.readBounds(entity, out);
+  }
+
+  private readBounds(entity: number, out: Aabb): Aabb {
+    const b = this.MeshRenderer.bounds;
+    const o = entity * 6;
+    return out.setFrom(
+      [b[o], b[o + 1], b[o + 2]],
+      [b[o + 3], b[o + 4], b[o + 5]]
+    );
+  }
+
+  /** The nodes marked as occluders, for the occlusion culling. */
+  occluders(): number[] {
+    this.flush();
+    return [...this._meshRenderers.entities].filter(
+      (entity) => this.NodeState.flags[entity] & NodeFlags.Occluder
+    );
+  }
+
+  /** The number of camera queries so far: the frame of NodeState.lastVisible. */
+  get cameraQueries(): number {
+    return this._cameraQueries;
+  }
+
+  // --- RenderSource --------------------------------------------------------------
+
+  query(
+    frustum: Frustum,
+    layers: number,
+    visit: (item: Renderable) => void,
+    view: 'camera' | 'shadow'
+  ): void {
+    this.flush();
+    const camera = view === 'camera';
+    if (camera) {
+      this._cameraQueries++;
+    }
+    const { flags, layers: layerColumn, lastVisible } = this.NodeState;
+    const items = this.MeshRenderer.item;
+    const occlusion = camera ? this.occlusion : undefined;
+    const emit = (entity: number) => {
+      if (
+        flags[entity] & NodeFlags.HiddenInTree ||
+        !(layerColumn[entity] & layers) ||
+        (occlusion && !occlusion.visible(this, entity))
+      ) {
+        return;
+      }
+      if (camera) {
+        lastVisible[entity] = this._cameraQueries;
+      }
+      visit(items[entity] as SceneItem);
+    };
+    this._static.queryFrustum(frustum, emit);
+    this._dynamic.queryFrustum(frustum, emit);
+  }
+
+  lights(): BaseLight[] {
+    this.flush();
+    const lights: BaseLight[] = [];
+    for (const entity of this._lights.entities) {
+      if (!(this.NodeState.flags[entity] & NodeFlags.HiddenInTree)) {
+        lights.push(this.Light.light[entity] as BaseLight);
+      }
+    }
+    return lights;
+  }
+
+  // --- Queries of the application ---------------------------------------------
+
+  /**
+   * The renderers whose bounds the ray crosses (then their volume, if they
+   * have one), nearest first. `visit` returns false to stop.
+   */
+  raycastEntities(
+    ray: Ray,
+    visit: (entity: number, distance: number) => boolean | void,
+    options: QueryOptions = {},
+    maxDistance = Infinity
+  ): void {
+    this.flush();
+    const hits: { entity: number; distance: number }[] = [];
+    const collect = (entity: number, distance: number) => {
+      if (this.selected(entity, options)) {
+        const volume = this.MeshRenderer.volume[entity] as Volume | undefined;
+        const exact = volume ? volume.raycast(ray) : distance;
+        if (exact !== undefined && exact <= maxDistance) {
+          hits.push({ entity, distance: exact });
+        }
+      }
+    };
+    this._static.raycast(ray, collect, maxDistance);
+    this._dynamic.raycast(ray, collect, maxDistance);
+    hits.sort((a, b) => a.distance - b.distance);
+    for (const { entity, distance } of hits) {
+      if (visit(entity, distance) === false) {
+        return;
+      }
+    }
+  }
+
+  /**
+   * The renderers whose bounds (then their volume, if they have one)
+   * intersect a volume. `visit` returns false to stop.
+   */
+  queryVolumeEntities(
+    volume: Volume,
+    visit: (entity: number) => boolean | void,
+    options: QueryOptions = {}
+  ): void {
+    this.flush();
+    let stopped = false;
+    const check = (entity: number) => {
+      if (!this.selected(entity, options)) {
+        return true;
+      }
+      const own = this.MeshRenderer.volume[entity] as Volume | undefined;
+      if (own && !intersects(own, volume)) {
+        return true;
+      }
+      if (visit(entity) === false) {
+        stopped = true;
+        return false;
+      }
+      return true;
+    };
+    this._static.queryVolume(volume, check);
+    if (!stopped) {
+      this._dynamic.queryVolume(volume, check);
+    }
+  }
+
+  /** raycastEntities(), with nodes. */
+  raycast(
+    ray: Ray,
+    visit: (node: Node, distance: number) => boolean | void,
+    options: QueryOptions = {},
+    maxDistance = Infinity
+  ): void {
+    this.raycastEntities(
+      ray,
+      (entity, distance) => visit(this.node(entity), distance),
+      options,
+      maxDistance
+    );
+  }
+
+  /** queryVolumeEntities(), with nodes. */
+  queryVolume(
+    volume: Volume,
+    visit: (node: Node) => boolean | void,
+    options: QueryOptions = {}
+  ): void {
+    this.queryVolumeEntities(
+      volume,
+      (entity) => visit(this.node(entity)),
+      options
+    );
+  }
+
+  /** The first node of a name, in depth-first order. */
+  find(name: string): Node | undefined {
+    let found: Node | undefined;
+    this.root.traverse((node) => {
+      if (!found && node.name === name) {
+        found = node;
+      }
+    });
+    return found;
+  }
+
+  private selected(
+    entity: number,
+    { layers = AllLayers, hidden = false }: QueryOptions
+  ): boolean {
+    return (
+      (hidden || !(this.NodeState.flags[entity] & NodeFlags.HiddenInTree)) &&
+      (this.NodeState.layers[entity] & layers) !== 0
+    );
+  }
+
+  // --- Hierarchy -------------------------------------------------------------------
+
+  private link(entity: number, parent: number): void {
+    const { Hierarchy } = this;
+    const first = Hierarchy.first[parent];
+    Hierarchy.parent[entity] = parent;
+    Hierarchy.previous[entity] = None;
+    Hierarchy.next[entity] = first;
+    if (first !== None) {
+      Hierarchy.previous[first] = entity;
+    }
+    Hierarchy.first[parent] = entity;
+  }
+
+  private unlink(entity: number): void {
+    const { Hierarchy } = this;
+    const parent = Hierarchy.parent[entity];
+    if (parent === None) {
+      return;
+    }
+    const previous = Hierarchy.previous[entity];
+    const next = Hierarchy.next[entity];
+    if (previous !== None) {
+      Hierarchy.next[previous] = next;
+    } else {
+      Hierarchy.first[parent] = next;
+    }
+    if (next !== None) {
+      Hierarchy.previous[next] = previous;
+    }
+    Hierarchy.parent[entity] = None;
+    Hierarchy.next[entity] = None;
+    Hierarchy.previous[entity] = None;
+  }
+
+  // --- Render items ------------------------------------------------------------------
+
+  private createItem(entity: number): SceneItem {
+    return new SceneItem(this, entity);
+  }
+}
+
+/**
+ * The render item of a renderer entity, created once: its world matrix is
+ * a view on the WorldMatrix column, its bounds those computed by the scene.
+ */
+export class SceneItem implements WorldRenderItem {
+  readonly bounds = new Aabb();
+  readonly world: ItemWorld;
+
+  constructor(private readonly _scene: Scene, readonly entity: number) {
+    this.world = new ItemWorld(_scene, entity);
+  }
+
+  get mesh(): Mesh {
+    return this._scene.MeshRenderer.mesh[this.entity] as Mesh;
+  }
+
+  get material(): Material {
+    return this._scene.MeshRenderer.material[this.entity] as Material;
+  }
+
+  get castShadow(): boolean {
+    return this._scene.MeshRenderer.noShadow[this.entity] === 0;
+  }
+}
+
+// The world matrix of an item: a view on its row of the WorldMatrix column,
+// made again when the column grows.
+class ItemWorld {
+  private _view?: Float32Array;
+
+  constructor(
+    private readonly _scene: Scene,
+    private readonly _entity: number
+  ) {}
+
+  get matrix(): Mat4 {
+    const column = this._scene.WorldMatrix.matrix;
+    if (!this._view || this._view.buffer !== column.buffer) {
+      this._view = column.subarray(this._entity * 16, this._entity * 16 + 16);
+    }
+    return this._view;
+  }
+
+  get version(): number {
+    return this._scene.WorldMatrix.version[this._entity];
+  }
+}

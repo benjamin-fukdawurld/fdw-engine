@@ -1,4 +1,5 @@
 import { CameraCache, CameraMath, IVec3 } from '@fdw/engine-backend';
+import type { Aabb } from '@fdw/engine-geometry';
 import { Camera } from '../Camera';
 import { BaseLight, DirectionalLight, SpotLight } from '../light';
 import type { Sphere } from './bounds';
@@ -130,9 +131,15 @@ export class ShadowCameras {
    * The tiles of the lights in a square atlas of `atlasSize` pixels: a grid
    * of equal tiles, filled row by row.
    */
+  /**
+   * `receivers` is what the camera sees: the shadow maps cover it. `scene`,
+   * the bounds of everything, says how far towards the light casters can
+   * be.
+   */
   tiles(
     lights: readonly (DirectionalLight | SpotLight)[],
-    bounds: Sphere,
+    receivers: Sphere,
+    scene: Aabb | undefined,
     atlasSize: number
   ): ShadowTile[] {
     const columns = Math.ceil(Math.sqrt(lights.length));
@@ -141,7 +148,7 @@ export class ShadowCameras {
     return lights.map((light, index) => {
       const x = (index % columns) * size;
       const y = Math.floor(index / columns) * size;
-      const { matrix, normalOffset } = this.view(light, bounds, size);
+      const { matrix, normalOffset } = this.view(light, receivers, scene, size);
       return {
         light,
         viewport: { x, y, width: size, height: size },
@@ -161,7 +168,8 @@ export class ShadowCameras {
   // map (at unit distance for a spot, whose texels grow with the distance).
   private view(
     light: DirectionalLight | SpotLight,
-    scene: Sphere,
+    receivers: Sphere,
+    scene: Aabb | undefined,
     size: number
   ): { matrix: Float32Array; normalOffset: number } {
     let entry = this._cameras.get(light);
@@ -182,8 +190,14 @@ export class ShadowCameras {
             ],
             radius: light.shadow.bounds.radius,
           }
-        : scene;
-      const radius = Math.max(bounds.radius, 1e-3);
+        : receivers;
+      // The radius by steps of about 19 % (2^¼): the texels keep their size
+      // while the visible region changes a little, and the shadows do not
+      // shimmer as the camera moves.
+      const radius = Math.max(
+        2 ** (Math.ceil(Math.log2(Math.max(bounds.radius, 1e-3)) * 4) / 4),
+        1e-3
+      );
       // A camera at the origin, looking along the light: the bounds, in its
       // space, give the box of the orthographic projection. Its center
       // moves by whole texels, so that the shadows do not shimmer when the
@@ -195,6 +209,12 @@ export class ShadowCameras {
       const cy = snap(dot(bounds.center, axes.y));
       // In front of the camera: along -z.
       const depth = -dot(bounds.center, axes.z);
+      // Towards the light, as far as the scene goes: the casters of the
+      // shadows falling on the receivers. Without the scene bounds, a few
+      // times the radius.
+      const towardsLight = scene
+        ? Math.max(radius, depth + supportAlong(scene, axes.z))
+        : 4 * radius;
       setIfChanged(
         camera,
         { x: 0, y: 0, z: 0 },
@@ -205,23 +225,23 @@ export class ShadowCameras {
           right: cx + radius,
           bottom: cy - radius,
           top: cy + radius,
-          near: depth - radius * 1.01,
+          near: depth - towardsLight * 1.01,
           far: depth + radius * 1.01,
         }
       );
       normalOffset = texel;
     } else {
-      // A perspective camera at the spot, covering its cone; near and far
-      // planes around the scene.
+      // A perspective camera at the spot, covering its cone, as far as the
+      // receivers; the casters can be anywhere between them and the spot.
       const fov = Math.min(2 * light.outerCutoff + 4, 160);
       const { x, y, z } = light.position;
       const distance = Math.hypot(
-        scene.center[0] - x,
-        scene.center[1] - y,
-        scene.center[2] - z
+        receivers.center[0] - x,
+        receivers.center[1] - y,
+        receivers.center[2] - z
       );
-      const far = Math.max(distance + scene.radius, 1e-2);
-      const near = Math.max(far * 0.002, distance - scene.radius);
+      const far = Math.max(distance + receivers.radius, 1e-2);
+      const near = far * 0.002;
       setIfChanged(camera, { x, y, z }, lookRotation(light.direction), {
         type: 'perspective',
         fov,
@@ -261,4 +281,13 @@ function setIfChanged(
   if (JSON.stringify(camera.projection) !== JSON.stringify(projection)) {
     camera.projection = projection;
   }
+}
+
+// The largest value of dot(p, axis) over the points p of a box.
+function supportAlong({ min, max }: Aabb, axis: readonly number[]): number {
+  let sum = 0;
+  for (let i = 0; i < 3; i++) {
+    sum += axis[i] * (axis[i] >= 0 ? max[i] : min[i]);
+  }
+  return sum;
 }

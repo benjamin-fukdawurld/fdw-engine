@@ -4,6 +4,8 @@ Les sujets mis de côté pendant le material graph, le compute graph et le rende
 
 ## 1. Scène : meshes, scenegraph et culling (prévu)
 
+Le design du scenegraph, du frustum culling, de l'octree et des objets statiques est dans [scenegraph.md](scenegraph.md).
+
 Le moteur ne connaît aujourd'hui que des `RenderItem` à plat (`{ mesh, material, transform }`), donnés à chaque frame. Il faudra :
 
 - **Une API de scenegraph minimaliste**, utilisable aussi bien pour un jeu que pour de la CAO, du BIM ou de la visualisation : une hiérarchie de nœuds avec leurs transformations, des objets qui portent un mesh et un matériau, des bornes par nœud. Elle doit rester petite : pas de logique de jeu, pas de format de fichier imposé. Les besoins de la CAO et du BIM pèsent sur le design : très grand nombre d'objets, identifiants stables pour la sélection, hiérarchies profondes, mises à jour partielles, précision des grandes coordonnées.
@@ -11,6 +13,13 @@ Le moteur ne connaît aujourd'hui que des `RenderItem` à plat (`{ mesh, materia
 - **Le frustum culling** : ne pas préparer ni dessiner les objets hors du champ, grâce aux bornes de la hiérarchie. Il servira aussi aux tuiles d'ombre (un culling par lumière).
 - **Le culling sur le GPU** ensuite, avec des draws indirects ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), quand le nombre d'objets le demande.
 - **L'occlusion culling**, peut-être : ne pas dessiner ce qui est caché par d'autres objets (Hi-Z construit par une passe de calcul, ou requêtes d'occlusion). Décisif pour la CAO et le BIM (bâtiments, assemblages), où l'essentiel de la scène est caché.
+
+Fait (voir le plan du design) : la géométrie (`engine-geometry` : volumes, GJK, octree), le culling des vues dans le `Renderer`, le cœur ECS et la scène (`engine-scene`). Reste :
+
+- **Création en lot** des entités de la scène, écrivant directement les colonnes : 100 000 nœuds statiques coûtent aujourd'hui 485 ms par la façade, dont 100 ms d'octree.
+- **Le package `engine-occlusion`** : Hi-Z sur le GPU (relecture ou pilotée par le GPU, à choisir), le CPU en repli ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)).
+- **Batching statique et instancing**, à partir des entités statiques.
+- **Événements de la scène** pour les éditeurs (ce qui a changé), et un BVH pour les scènes statiques de CAO et de BIM.
 
 La vue de scène du render graph ([render-graph §10.2](render-graph.md#102-la-vue-de-scène)) en est le point d'entrée : les passes reçoivent déjà les objets visibles d'une caméra, triés.
 
