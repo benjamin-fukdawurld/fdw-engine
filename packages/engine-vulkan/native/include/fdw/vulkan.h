@@ -349,6 +349,30 @@ fdw_vk_swapchain_image(const fdw_vk_swapchain *swapchain, uint32_t index);
 FDW_VK_API int fdw_vk_swapchain_present(fdw_vk_context *context,
                                         fdw_vk_swapchain *swapchain);
 
+// --- Timestamps --------------------------------------------------------------------
+
+// Timestamp queries, to measure the GPU duration of commands: written by
+// FDW_VK_CMD_WRITE_TIMESTAMP, reset by FDW_VK_CMD_RESET_QUERIES, read
+// without waiting.
+typedef struct fdw_vk_query_pool fdw_vk_query_pool;
+
+// Whether the queue of the context writes timestamps.
+FDW_VK_API int fdw_vk_timestamps_supported(const fdw_vk_context *context);
+// A pool of `count` timestamp queries; NULL on error (see
+// fdw_vk_last_error).
+FDW_VK_API fdw_vk_query_pool *fdw_vk_query_pool_create(fdw_vk_context *context,
+                                                       uint32_t count);
+// Destroyed once the GPU no longer uses it.
+FDW_VK_API void fdw_vk_query_pool_destroy(fdw_vk_context *context,
+                                          fdw_vk_query_pool *pool);
+FDW_VK_API uint32_t fdw_vk_query_pool_id(const fdw_vk_query_pool *pool);
+// The timestamps of queries [first, first + count), in nanoseconds, without
+// waiting: returns 1 when all of them are available, 0 when some are not
+// yet (`nanoseconds` is then unspecified), -1 on error.
+FDW_VK_API int fdw_vk_query_pool_read(fdw_vk_context *context,
+                                      fdw_vk_query_pool *pool, uint32_t first,
+                                      uint32_t count, double *nanoseconds);
+
 // --- Commands --------------------------------------------------------------------
 
 // The commands of a submission: 32-bit words, each command an opcode then
@@ -386,6 +410,11 @@ enum {
   FDW_VK_CMD_DISPATCH = 14,
   // buffer (three u32: x, y, z), offset (64).
   FDW_VK_CMD_DISPATCH_INDIRECT = 15,
+  // Outside of the passes. pool, first, count: before writing them again.
+  FDW_VK_CMD_RESET_QUERIES = 16,
+  // Outside of the passes. pool, index: the time when the commands before
+  // are complete.
+  FDW_VK_CMD_WRITE_TIMESTAMP = 17,
 };
 
 // Records the commands into a command buffer, with the barriers the

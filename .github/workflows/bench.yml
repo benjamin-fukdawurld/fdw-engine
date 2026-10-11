@@ -1,0 +1,71 @@
+# The benchmarks (design/ci.md §5): those of the change and those of its
+# base, measured in the same job, on the same machine, compared in the
+# summary of the run. Informative: a shared runner is noisy, the job never
+# fails on a slower benchmark. The results of main are kept as artifacts,
+# for the trend.
+name: Benchmarks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # The base: the target of the pull request, or the previous commit of
+      # main.
+      - name: Base
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base=${BASE:-$(git rev-parse HEAD~1)}
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git rev-parse HEAD~1)
+          fi
+          echo "Base: $base"
+          git worktree add "$RUNNER_TEMP/base" "$base"
+          (cd "$RUNNER_TEMP/base" && npm ci)
+
+      # The base first, then the change, with the tools of the change.
+      - name: Measure
+        run: |
+          node tools/bench/run.mjs "$RUNNER_TEMP/bench-base.json" --root "$RUNNER_TEMP/base"
+          node tools/bench/run.mjs bench.json
+
+      - name: Compare
+        run: |
+          node tools/bench/compare.mjs "$RUNNER_TEMP/bench-base.json" bench.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results of main
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.sha }}
+          path: bench.json
+          retention-days: 90

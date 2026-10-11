@@ -53,12 +53,12 @@ Deux jobs Linux en parallèle :
 
 ## 5. Les mesures
 
-**Les benchmarks** (`*.bench.ts` : renderer, render graph, scène, ECS, géométrie, compilation). Les runners partagés sont bruyants : une mesure isolée d'un jour à l'autre ne veut rien dire. `bench.yml` mesure donc **la branche et `main` dans le même job**, sur la même machine, et compare : une régression au-delà d'un seuil (20 % par défaut, réglable par benchmark) est signalée dans le résumé du job, sans le faire échouer. L'historique (un fichier JSON par exécution sur `main`, en artefact) donne la tendance.
+**Les benchmarks** (`*.bench.ts` : renderer, render graph, scène, ECS, géométrie, compilation). Les runners partagés sont bruyants : une mesure isolée d'un jour à l'autre ne veut rien dire. `bench.yml` mesure donc **le changement et sa base dans le même job**, sur la même machine : la base (la cible de la pull request, ou le commit précédent de `main`) dans un worktree, avec les outils du changement. `tools/bench/run.mjs` lance les benchmarks de chaque package et en tire un JSON compact ; `tools/bench/compare.mjs` compare deux de ces fichiers en un tableau, dans le résumé du job. Un benchmark est signalé plus lent (ou plus rapide) au-delà de 20 % **et** de la somme des marges d'erreur des deux mesures ; le job n'échoue jamais pour autant. Deux exécutions du même code restent sous 7 % d'écart sur un poste. Les résultats de `main` sont gardés 90 jours en artefact, pour la tendance.
 
 **Le profilage GPU**, pour P1 et la suite :
 
-- les **requêtes de timestamps** dans les backends : la fonctionnalité `timestamp-query` de WebGPU (Dawn, et Chrome quand elle est permise), `vkCmdWriteTimestamp` en Vulkan ; WebGL2 a `EXT_disjoint_timer_query_webgl2`, inégalement disponible ;
-- le render graph mesure chacune de ses passes quand c'est demandé ; `renderer.stats` donne leurs durées GPU (en millisecondes, avec une frame de retard) à côté des compteurs actuels ;
+- **une durée par passe**, l'abstraction commune : WebGPU n'écrit de timestamps qu'au début et à la fin d'une passe (`timestampWrites`), et WebGL2 ne mesure que des durées. Chaque backend propose un minuteur de passes (`createPassTimer`), absent où le GPU ne mesure pas : la fonctionnalité `timestamp-query` en WebGPU (demandée à la création du device quand l'adaptateur l'a), deux timestamps autour de la passe en Vulkan (deux commandes du flux natif, hors des passes : `RESET_QUERIES` et `WRITE_TIMESTAMP`), une requête `TIME_ELAPSED` en WebGL2 (`EXT_disjoint_timer_query_webgl2`) ;
+- **le render graph mesure ses passes** avec l'option `timing` du `RenderGraphRunner` : `runner.passTimes` donne la durée GPU de chaque passe de rendu et de calcul, en millisecondes, par nom. Les résultats arrivent quelques frames plus tard, lus sans attendre (trois jeux de requêtes en vol). C'est le runner, pas `renderer.stats`, qui les porte : les passes appartiennent au graphe ;
 - c'est un outil de poste : en CI, les GPU sont logiciels, leurs temps ne disent rien du matériel.
 
 ## 6. Le flux de travail

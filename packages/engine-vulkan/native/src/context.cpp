@@ -349,6 +349,10 @@ int choosePhysicalDevice(fdw_vk_context *context) {
     const VkQueueFlags needed = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
     if ((families[i].queueFlags & needed) == needed) {
       context->queueFamily = i;
+      context->timestampValidBits = families[i].timestampValidBits;
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(chosen, &properties);
+      context->timestampPeriod = properties.limits.timestampPeriod;
       return 0;
     }
   }
@@ -501,6 +505,11 @@ void fdw_vk_context_destroy(fdw_vk_context *context) {
       delete sampler;
     }
     context->samplers.clear();
+    for (auto &[id, pool] : context->queryPools) {
+      vkDestroyQueryPool(context->device, pool->pool, nullptr);
+      delete pool;
+    }
+    context->queryPools.clear();
     if (context->timeline) {
       vkDestroySemaphore(context->device, context->timeline, nullptr);
     }

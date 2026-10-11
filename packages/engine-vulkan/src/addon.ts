@@ -12,6 +12,7 @@ export type GroupLayoutHandle = { readonly __groupLayout: unique symbol };
 export type GroupHandle = { readonly __group: unique symbol };
 export type PipelineHandle = { readonly __pipeline: unique symbol };
 export type SwapchainHandle = { readonly __swapchain: unique symbol };
+export type QueryPoolHandle = { readonly __queryPool: unique symbol };
 
 /**
  * A native window, as NativeWindow.nativeHandle of @fdw/engine-native gives
@@ -136,6 +137,20 @@ export interface VulkanAddon {
   ): SamplerHandle;
   destroySampler(sampler: SamplerHandle): void;
   samplerId(sampler: SamplerHandle): number;
+  // Whether the queue writes timestamps.
+  timestampsSupported(context: ContextHandle): boolean;
+  // A pool of `count` timestamp queries.
+  createQueryPool(context: ContextHandle, count: number): QueryPoolHandle;
+  destroyQueryPool(pool: QueryPoolHandle): void;
+  queryPoolId(pool: QueryPoolHandle): number;
+  // The timestamps of queries [first, first + count), in nanoseconds, into
+  // `nanoseconds`, without waiting: whether all were available.
+  readQueryPool(
+    pool: QueryPoolHandle,
+    first: number,
+    count: number,
+    nanoseconds: Float64Array
+  ): boolean;
 
   // Replays the commands (Commands) and submits them.
   submit(context: ContextHandle, words: Uint32Array): void;
@@ -230,6 +245,8 @@ export const Commands = {
   endComputePass: 13,
   dispatch: 14,
   dispatchIndirect: 15,
+  resetQueries: 16,
+  writeTimestamp: 17,
 } as const;
 
 let addon: VulkanAddon | undefined;

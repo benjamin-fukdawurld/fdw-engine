@@ -533,6 +533,32 @@ int copyTexture(Replay &replay) {
   return 0;
 }
 
+// Resets timestamp queries, or writes one: the time when the commands
+// before it are complete.
+int queryCommand(Replay &replay, uint32_t opcode) {
+  int status = 0;
+  Reader &reader = replay.reader;
+  fdw_vk_query_pool *pool =
+      find(replay.context->queryPools, reader.word(), "query pool", &status);
+  const uint32_t first = reader.word();
+  const uint32_t count =
+      opcode == FDW_VK_CMD_RESET_QUERIES ? reader.word() : 1;
+  if (!pool) {
+    return status;
+  }
+  if (first + count > pool->count) {
+    return fail("Queries out of the pool");
+  }
+  if (opcode == FDW_VK_CMD_RESET_QUERIES) {
+    vkCmdResetQueryPool(replay.commands, pool->pool, first, count);
+  } else {
+    vkCmdWriteTimestamp2(replay.commands,
+                         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, pool->pool,
+                         first);
+  }
+  return 0;
+}
+
 int replayCommands(Replay &replay) {
   while (!replay.reader.done()) {
     const uint32_t opcode = replay.reader.word();
@@ -562,6 +588,13 @@ int replayCommands(Replay &replay) {
         return fail("No compute pass to end");
       }
       replay.inComputePass = false;
+      break;
+    case FDW_VK_CMD_RESET_QUERIES:
+    case FDW_VK_CMD_WRITE_TIMESTAMP:
+      if (replay.inRenderPass || replay.inComputePass) {
+        return fail("Timestamps are outside of the passes");
+      }
+      status = queryCommand(replay, opcode);
       break;
     case FDW_VK_CMD_COPY_BUFFER:
       status = copyBuffer(replay);

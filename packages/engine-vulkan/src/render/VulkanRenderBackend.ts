@@ -7,6 +7,7 @@ import {
   RenderTargetDescriptor,
   TransformMath,
   wgpuMatrixPrimitives,
+  GpuPassTimer,
 } from '@fdw/engine-backend';
 import { loadVulkanAddon } from '../addon';
 import { VulkanTexture, VulkanTextureFactory } from '../gpu/VulkanTexture';
@@ -16,6 +17,7 @@ import {
   VulkanCommandBuffer,
   VulkanCommandEncoder,
 } from './VulkanCommandEncoder';
+import { VulkanPassTimer } from './VulkanPassTimer';
 import { VulkanPipelineFactory } from './VulkanPipelineFactory';
 
 // The conventions of WebGPU: depth in [0, 1], y up in clip space (the
@@ -63,6 +65,14 @@ export class VulkanRenderBackend implements RenderBackend {
 
   createCommandEncoder(): GpuCommandEncoder {
     return new VulkanCommandEncoder();
+  }
+
+  // Where the queue writes timestamps.
+  createPassTimer(capacity: number): GpuPassTimer | undefined {
+    const addon = loadVulkanAddon();
+    return addon.timestampsSupported(this.device.context)
+      ? new VulkanPassTimer(addon, this.device.context, capacity)
+      : undefined;
   }
 
   submit(commands: readonly GpuCommandBuffer[]): void {

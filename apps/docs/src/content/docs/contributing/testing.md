@@ -73,9 +73,22 @@ The `test` targets depend on `build-native`, and their inputs include
 
 ## Benchmarks
 
-`*.bench.ts` files measure the CPU cost of the renderer and the render
-graph on the fake backend: `npx vitest bench` in `packages/engine-core`.
-Run them before and after a change on a hot path.
+`*.bench.ts` files measure the CPU cost of the renderer, the render graph,
+the scene, the ECS, the geometry and the shader compiler, on the fake
+backend: `npx vitest bench` in a package. Run them before and after a
+change on a hot path:
+
+```sh
+npm run bench                                  # every package: bench.json
+git stash && npm run bench -- base.json && git stash pop
+npm run bench:compare -- base.json bench.json  # a table of the changes
+```
+
+On every pull request, the **Benchmarks** workflow does the same on the
+CI: the change and its base measured in the same job, compared in the
+summary of the run. A benchmark is marked slower or faster beyond 20 % and
+beyond the margins of error of both measures. The runners are shared and
+noisy: the workflow never fails, the table is a hint to look closer.
 
 ## Continuous integration
 

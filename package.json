@@ -10,7 +10,9 @@
     "test": "npx nx run-many -t test",
     "format": "git ls-files -z | xargs -0 prettier --write --ignore-unknown",
     "format:check": "git ls-files -z | xargs -0 prettier --check --ignore-unknown",
-    "docs:links": "node tools/docs/check-links.mjs apps/docs/dist"
+    "docs:links": "node tools/docs/check-links.mjs apps/docs/dist",
+    "bench": "node tools/bench/run.mjs",
+    "bench:compare": "node tools/bench/compare.mjs"
   },
   "private": true,
   "devDependencies": {

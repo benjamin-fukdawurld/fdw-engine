@@ -155,3 +155,29 @@ versions des ressources entre elles.
 ```ts
 console.log(graph.toDot()); // dot -Tsvg frame.dot > frame.svg
 ```
+
+### Temps GPU des passes
+
+Avec l'option `timing`, le runner mesure la durée GPU de chaque passe de
+rendu et de calcul :
+
+```ts
+const runner = new RenderGraphRunner(backend, { timing: true });
+// Every frame:
+runner.execute(graph);
+for (const [pass, milliseconds] of runner.passTimes) {
+  console.log(pass, milliseconds.toFixed(3));
+}
+```
+
+- Le GPU répond avec quelques frames de retard : `passTimes` donne la
+  dernière frame mesurée, et est vide au début. Il n'attend jamais le GPU.
+- Deux passes du même nom s'additionnent.
+- Là où le GPU ne peut pas mesurer, `passTimes` reste vide : WebGPU
+  nécessite la feature `timestamp-query` (demandée par `WebGpuEngine`
+  lorsque l'adaptateur la possède), WebGL2 l'extension
+  `EXT_disjoint_timer_query_webgl2` ; Vulkan mesure lorsque sa queue écrit
+  des timestamps.
+- Un backend fournit les mesures via `createPassTimer(capacity)` : une
+  passe à laquelle on donne `timing: { timer, index }` est mesurée dans cet
+  emplacement.
