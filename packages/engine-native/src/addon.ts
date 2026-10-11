@@ -15,7 +15,10 @@ export interface RawWindowEvent {
     | 'pointermove'
     | 'pointerdown'
     | 'pointerup'
-    | 'wheel';
+    | 'wheel'
+    | 'gamepadconnected'
+    | 'gamepaddisconnected'
+    | 'blur';
   readonly window: number;
   readonly width?: number;
   readonly height?: number;
@@ -25,7 +28,11 @@ export interface RawWindowEvent {
   readonly dy?: number;
   readonly button?: number;
   readonly key?: string;
+  // The physical position of the key, as the `code` of the DOM.
+  readonly code?: string;
   readonly repeat?: number;
+  // The id of the gamepad of a gamepad event.
+  readonly gamepad?: number;
   readonly modifiers?: number;
 }
 
@@ -55,6 +62,15 @@ export interface NativeAddon {
   pollEvents(): RawWindowEvent[];
   // The window system and the native handles of a window.
   nativeHandle(window: WindowHandle): NativeHandle;
+  // The ids of the gamepads connected.
+  gamepads(): number[];
+  // The name of a gamepad, its buttons (17) and axes (4) written in the
+  // standard layout; undefined when it is not connected.
+  gamepadState(
+    id: number,
+    buttons: Float32Array,
+    axes: Float32Array
+  ): string | undefined;
 }
 
 /** The window system of a window and its native handles. */

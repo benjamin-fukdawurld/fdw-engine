@@ -254,6 +254,7 @@ static napi_value js_native_handle(napi_env env, napi_callback_info info) {
 static const char *event_names[] = {
     "none",        "close",       "resize",    "keydown",   "keyup",
     "pointermove", "pointerdown", "pointerup", "wheel",
+    "gamepadconnected", "gamepaddisconnected", "blur",
 };
 
 static napi_status set_number(napi_env env, napi_value object,
@@ -272,7 +273,7 @@ static napi_value js_poll_events(napi_env env, napi_callback_info info) {
   fdw_event event;
   uint32_t count = 0;
   while (fdw_poll_event(&event)) {
-    napi_value object, type, key;
+    napi_value object, type, key, code;
     CHECK(napi_create_object(env, &object));
     CHECK(napi_create_string_utf8(env, event_names[event.type],
                                   NAPI_AUTO_LENGTH, &type));
@@ -287,6 +288,8 @@ static napi_value js_poll_events(napi_env env, napi_callback_info info) {
     case FDW_EVENT_KEY_UP:
       CHECK(napi_create_string_utf8(env, event.key, NAPI_AUTO_LENGTH, &key));
       CHECK(napi_set_named_property(env, object, "key", key));
+      CHECK(napi_create_string_utf8(env, event.code, NAPI_AUTO_LENGTH, &code));
+      CHECK(napi_set_named_property(env, object, "code", code));
       CHECK(set_number(env, object, "repeat", event.repeat));
       CHECK(set_number(env, object, "modifiers", event.modifiers));
       break;
@@ -301,12 +304,64 @@ static napi_value js_poll_events(napi_env env, napi_callback_info info) {
       CHECK(set_number(env, object, "button", event.button));
       CHECK(set_number(env, object, "modifiers", event.modifiers));
       break;
+    case FDW_EVENT_GAMEPAD_ADDED:
+    case FDW_EVENT_GAMEPAD_REMOVED:
+      CHECK(set_number(env, object, "gamepad", event.gamepad));
+      break;
     default:
       break;
     }
     CHECK(napi_set_element(env, result, count++, object));
   }
   return result;
+}
+
+// gamepads(): the ids of the gamepads connected.
+static napi_value js_gamepads(napi_env env, napi_callback_info info) {
+  (void)info;
+  uint32_t ids[16];
+  const int32_t count = fdw_gamepads(ids, 16);
+  napi_value result;
+  CHECK(napi_create_array(env, &result));
+  for (int32_t i = 0; i < count && i < 16; i++) {
+    napi_value id;
+    CHECK(napi_create_uint32(env, ids[i], &id));
+    CHECK(napi_set_element(env, result, (uint32_t)i, id));
+  }
+  return result;
+}
+
+// gamepadState(id, buttons, axes): the name of a gamepad, its buttons and
+// axes written into two Float32Arrays; undefined when not connected.
+static napi_value js_gamepad_state(napi_env env, napi_callback_info info) {
+  size_t argc = 3;
+  napi_value argv[3];
+  CHECK(napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
+  uint32_t id = 0;
+  CHECK(napi_get_value_uint32(env, argv[0], &id));
+  fdw_gamepad_state state;
+  if (fdw_gamepad_read(id, &state) != 0) {
+    return undefined(env);
+  }
+  napi_value arrays[2] = {argv[1], argv[2]};
+  const float *values[2] = {state.buttons, state.axes};
+  const size_t counts[2] = {FDW_GAMEPAD_BUTTONS, FDW_GAMEPAD_AXES};
+  for (int a = 0; a < 2; a++) {
+    napi_typedarray_type type;
+    size_t length = 0;
+    void *data = NULL;
+    CHECK(napi_get_typedarray_info(env, arrays[a], &type, &length, &data, NULL,
+                                   NULL));
+    if (type != napi_float32_array) {
+      napi_throw_type_error(env, NULL, "Expected Float32Arrays");
+      return NULL;
+    }
+    memcpy(data, values[a],
+           (length < counts[a] ? length : counts[a]) * sizeof(float));
+  }
+  napi_value name;
+  CHECK(napi_create_string_utf8(env, state.name, NAPI_AUTO_LENGTH, &name));
+  return name;
 }
 
 static napi_value init_module(napi_env env, napi_value exports) {
@@ -327,6 +382,9 @@ static napi_value init_module(napi_env env, napi_value exports) {
       {"pollEvents", NULL, js_poll_events, NULL, NULL, NULL, napi_default,
        NULL},
       {"nativeHandle", NULL, js_native_handle, NULL, NULL, NULL, napi_default,
+       NULL},
+      {"gamepads", NULL, js_gamepads, NULL, NULL, NULL, napi_default, NULL},
+      {"gamepadState", NULL, js_gamepad_state, NULL, NULL, NULL, napi_default,
        NULL},
   };
   if (napi_define_properties(env, exports,

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Engine, Surface } from '@fdw/engine-backend';
+import { WebInputSource } from '@fdw/engine-input-web';
 import Layout from './Layout';
 import type { Scene, SceneFactory } from '@fdw/demo-scenes';
 
 // A route showing a scene of @fdw/demo-scenes, rendered every animation frame on
-// any backend. The scenes read the keyboard and the mouse of the window, and
-// show their information in a corner.
+// any backend. The scenes read the keyboard and the mouse of the window, the
+// gamepads, and show their information in a corner.
 export default function SceneLayout({ scene }: { scene: SceneFactory }) {
   const frameRef = useRef<number | undefined>(undefined);
   const sceneRef = useRef<Scene | undefined>(undefined);
@@ -40,7 +41,7 @@ export default function SceneLayout({ scene }: { scene: SceneFactory }) {
         return;
       }
       const created = scene(backend, surface, {
-        input: window,
+        input: new WebInputSource(window),
         info: (text) => {
           infoRef.current = text;
         },

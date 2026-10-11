@@ -1,13 +1,14 @@
 import { Camera } from '@fdw/engine-core';
+import { FakeInputSource, Input } from '@fdw/engine-input';
 import { Scene } from '@fdw/engine-scene';
 import { followAspect, SceneFactory } from '../scene';
-import { pointerOnPlane } from './aim';
+import { mazeActions } from './controls';
+import { Aim } from './aim';
 import { Exploration } from './exploration';
 import { FixedStep } from './fixedStep';
 import { Flashlight } from './flashlight';
 import { FollowCamera } from './followCamera';
 import { MazeGame } from './game';
-import { Input } from './input';
 import { MazeMap } from './map';
 import { Player } from './player';
 import { TopViewLayer } from './topView';
@@ -34,7 +35,9 @@ export const createMazeStep4: SceneFactory = (
     wall.attach(Solid);
   }
 
-  const input = new Input(context.input ?? new EventTarget());
+  // No source: an input nobody drives.
+  const input = new Input(context.input ?? new FakeInputSource());
+  const actions = mazeActions(input);
   const player = new Player(scene, Solid, level.cellCenter(0, 0), {
     sphere,
     cube,
@@ -52,7 +55,8 @@ export const createMazeStep4: SceneFactory = (
     },
   });
   const eye = scene.root.add({ name: 'camera' }).setCamera(camera);
-  const follow = new FollowCamera(eye, input);
+  const follow = new FollowCamera(eye, actions);
+  const aimer = new Aim();
   // The marker of the player in the top view of the culling (C).
   const marker = scene.root
     .add({ name: 'marker', layers: TopViewLayer, scale: { x: 3, y: 3, z: 3 } })
@@ -81,28 +85,35 @@ export const createMazeStep4: SceneFactory = (
     frame: (time) => {
       const dt = Math.min(time - last, 0.1);
       last = time;
+      // The events since the previous frame.
+      input.update();
       followAspect(camera, surface);
-      if (input.pressed('f')) {
+      if (actions.button('flashlight').pressed) {
         flashlight.on = !flashlight.on;
       }
-      if (input.pressed('c')) {
+      if (actions.button('culling').pressed) {
         showCulling = !showCulling;
       }
-      if (input.pressed('m')) {
+      if (actions.button('map').pressed) {
         map.zoom = map.zoom === undefined ? 16 : undefined;
       }
-      if (input.pressed('r') && game.state !== 'playing') {
+      if (actions.button('restart').pressed && game.state !== 'playing') {
         game.reset();
       }
-      const aim = input.pointerMoved
-        ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)
-        : undefined;
+      const aim = aimer.update(
+        input,
+        actions,
+        eye,
+        camera,
+        player.position,
+        follow.yaw
+      );
       // The logic, at a fixed step.
       loop.advance(dt, (step) => {
         if (game.state !== 'playing') {
           return;
         }
-        player.update(step, input, follow.yaw, aim);
+        player.update(step, actions, follow.yaw, aim);
         exploration.walk(player.position);
         lightTime += step;
         if (lightTime >= lightPeriod && flashlight.on) {

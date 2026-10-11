@@ -14,7 +14,9 @@ view in the corner shows what the camera retains: only that is drawn.
 <Example name="maze-1" code={false} />
 
 Click the maze, then: **W A S D** or the arrows to move, **Q** and **E** to
-turn, the **wheel** to climb or descend, **Shift** to go faster.
+turn, the **wheel** to climb or descend, **Shift** to go faster. With a
+gamepad: the left stick to move (pressed to go faster), the bumpers to
+turn, the pad up and down to climb or descend.
 
 ## 1. Generating the maze
 
@@ -99,34 +101,51 @@ Three choices matter here:
   the hierarchy (`level.walls.children` lists the walls) without costing
   anything to draw.
 
-## 3. The keyboard and the mouse
+## 3. The keyboard, the mouse and the gamepad
 
-The game reads its input from an `EventTarget`: the canvas in a page, the
-window in the demo, a `NativeWindow` in Node. Key names differ — `ArrowUp`
-in a browser, `Up` with SDL — and are normalized:
+The game reads its input with `@fdw/engine-input`. Where the events come
+from is given by the page or the application — a `WebInputSource` over the
+canvas, a `NativeInputSource` over a native window — and the game builds
+an `Input` on it:
 
-```ts title="maze/input.ts"
-export class Input {
-  constructor(target: EventTarget) {
-    listen('keydown', (event) => this._down.add(normalizeKey(event.key)));
-    listen('keyup', (event) => this._down.delete(normalizeKey(event.key)));
-    listen(
-      'wheel',
-      (event) =>
-        (this._wheel += event.dy !== undefined ? -event.dy * 100 : event.deltaY)
-    );
-  }
-
-  isDown(...keys: string[]): boolean;
-  /** -1, 0 or 1: input.axis(['s', 'down'], ['w', 'up']). */
-  axis(negative: readonly string[], positive: readonly string[]): number;
-  takeWheel(): number;
-}
+```ts title="maze/step1.ts"
+const input = new Input(context.input ?? new FakeInputSource());
+const actions = mazeActions(input);
 ```
 
-The game asks for the state each frame, rather than reacting to each
-event: moving while a key is down is then a matter of multiplying a speed
-by the time of the frame.
+The code of the game does not read keys: it reads **actions**, declared
+once with their bindings — the keyboard, and the gamepad:
+
+```ts title="maze/controls.ts"
+move: {
+  type: 'vector',
+  bindings: [
+    { up: 'key:KeyW', down: 'key:KeyS', left: 'key:KeyA', right: 'key:KeyD' },
+    { up: 'key:ArrowUp', down: 'key:ArrowDown', left: 'key:ArrowLeft', right: 'key:ArrowRight' },
+    'gamepad:leftStick',
+  ],
+},
+turn: {
+  type: 'axis',
+  bindings: [
+    { negative: 'key:KeyE', positive: 'key:KeyQ' },
+    { negative: 'gamepad:rightShoulder', positive: 'gamepad:leftShoulder' },
+  ],
+},
+```
+
+- `KeyW` is a **position** on the keyboard, not a letter: on an AZERTY
+  keyboard, the same key is Z, and the game is played with ZQSD without
+  configuration.
+- `move` is a vector, x to the right and y forward, of length 0 to 1: four
+  keys, or a stick. The strongest binding wins.
+
+Each frame starts with `input.update()`: it applies the events received
+since the previous frame and reads the gamepads, then the state stays the
+same for the frame. Moving while a key is down is then a matter of
+multiplying a speed by the time of the frame.
+
+See [Input](/fdw-engine/guides/input/) for the whole API.
 
 ## 4. The camera
 
@@ -135,13 +154,14 @@ node, looking along its −z axis. The fly camera moves the node:
 
 ```ts title="maze/flyCamera.ts"
 update(dt: number): void {
-  const speed = (input.isDown('shift') ? 3 : 1) * (5 + this.height) * dt;
-  const forward = input.axis(['s', 'down'], ['w', 'up']);
-  const right = input.axis(['a', 'left'], ['d', 'right']);
+  const speed = (actions.button('run').down ? 3 : 1) * (5 + this.height) * dt;
+  const { x: right, y: forward } = actions.vector('move');
   this.x += (right * cos - forward * sin) * speed;
   this.z += (-right * sin - forward * cos) * speed;
-  this.yaw += input.axis(['e'], ['q']) * 1.5 * dt;
-  this.height *= Math.exp(input.takeWheel() * 0.001);
+  this.yaw += actions.axis('turn') * 1.5 * dt;
+  // A notch of the wheel: 10 %; the pad held: twice as high per second.
+  const zoom = actions.axis('zoomStep') * 0.1 + actions.axis('zoom') * dt;
+  this.height *= Math.exp(zoom);
   this._node.transform.position = { x: this.x, y: this.height, z: this.z };
   this._node.transform.rotation = multiply(around('y', this.yaw), around('x', this.pitch));
 }

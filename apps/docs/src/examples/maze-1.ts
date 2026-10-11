@@ -1,4 +1,5 @@
 import { createMazeStep1 } from '@fdw/demo-scenes';
+import { WebInputSource } from '@fdw/engine-input-web';
 import type { Example } from './runtime';
 
 // Step 1 of the maze game, in the page: the canvas receives the keyboard
@@ -23,8 +24,9 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   canvas.addEventListener('pointerdown', () => canvas.focus());
 
   const game = createMazeStep1(backend, surface, {
-    input: canvas,
-    info: (text) => info(`${text} · click, then WASD, Q/E, wheel`),
+    input: new WebInputSource(canvas),
+    info: (text) =>
+      info(`${text} · click, then WASD, Q/E, wheel, or a gamepad`),
   });
   onFrame((time) => game.frame(time));
 };

@@ -39,6 +39,16 @@ function fakeAddon() {
       calls.push(`present ${pixels.length} ${width}×${height} ${stride}`),
     pollEvents: () => queue.splice(0),
     nativeHandle: () => ({ system: 'x11', display: 1n, window: 2n }),
+    // One gamepad, id 7, its south button down and its left stick right.
+    gamepads: () => [7],
+    gamepadState: (id, buttons, axes) => {
+      if (id !== 7) {
+        return undefined;
+      }
+      buttons[0] = 1;
+      axes[0] = 1;
+      return 'Pad';
+    },
   };
   return { addon, calls, queue };
 }
@@ -104,6 +114,41 @@ describe('NativeWindow', () => {
     ]);
     // The size follows the window.
     expect([right.width, right.height]).toEqual([640, 480]);
+    left.destroy();
+    right.destroy();
+  });
+
+  it('gives the key codes, and the gamepads to every window', () => {
+    const { addon, queue } = fakeAddon();
+    setAddon(addon);
+    expect(NativeWindow.gamepads()).toEqual([]);
+    const left = new NativeWindow();
+    const right = new NativeWindow();
+    const received: string[] = [];
+    for (const window of [left, right]) {
+      for (const type of ['keydown', 'gamepadconnected']) {
+        window.addEventListener(type, (event) => {
+          const e = event as NativeWindowEvent;
+          received.push(`${e.type} ${e.code}${e.gamepad}`);
+        });
+      }
+    }
+    queue.push(
+      { type: 'keydown', window: left.id, key: 'Z', code: 'KeyW' },
+      { type: 'gamepadconnected', window: 0, gamepad: 7 }
+    );
+    NativeWindow.pollEvents();
+    expect(received).toEqual([
+      'keydown KeyW-1',
+      'gamepadconnected 7',
+      'gamepadconnected 7',
+    ]);
+    const buttons = new Float32Array(17);
+    const axes = new Float32Array(4);
+    expect(NativeWindow.gamepads()).toEqual([7]);
+    expect(NativeWindow.readGamepad(7, buttons, axes)).toBe('Pad');
+    expect([buttons[0], axes[0]]).toEqual([1, 1]);
+    expect(NativeWindow.readGamepad(3, buttons, axes)).toBeUndefined();
     left.destroy();
     right.destroy();
   });

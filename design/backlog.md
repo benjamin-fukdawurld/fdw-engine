@@ -54,7 +54,7 @@ Détails dans [material-graph-gaps.md](material-graph-gaps.md) et [material-grap
 
 ## 5. Performance
 
-- WebGPU est plus lent que WebGL2 dans Chrome sur la démo. C'est probablement lié à Chrome, et ce n'est pas une priorité. Si l'écart devient gênant, profiler d'abord les écritures de buffer et les bind groups par objet.
+- WebGPU est plus lent que WebGL2 dans Chrome sur la démo. C'est probablement lié à Chrome, et ce n'est pas une priorité. Si l'écart devient gênant, profiler d'abord les écritures de buffer et les bind groups par objet. Confirmé sur le jeu du labyrinthe (L4) : peu d'images par seconde en WebGPU dans le navigateur, alors que WebGL2 et le même backend sur Dawn natif sont rapides. Le code TypeScript est le même : c'est le coût de chaque appel dans le navigateur (passage d'un processus à l'autre) qui se multiplie par le nombre d'appels par objet. Pistes : regrouper les uniforms d'objets dans un seul buffer écrit une fois par frame (offsets dynamiques), moins de `setBindGroup`, l'instancing.
 - Le coût CPU par objet du `Renderer` se voit sur le labyrinthe (étape L1 du jeu) : environ 800 objets visibles et 2900 projeteurs d'ombre par frame, 89 images par seconde sur Vulkan. Pistes : la distance d'ombre (ou des cascades), l'instancing des murs, et le coût par objet lui-même ([material-graph-v2 §2](material-graph-v2.md#2-mesures-de-performance)) : réutiliser les buffers d'uniforms CPU, alléger les vérifications des valeurs en cache.
 
 ## 6. Backends natifs : les suites de la phase 6
@@ -87,7 +87,7 @@ Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en fran�
 ## 8. Le jeu de démonstration et l'entrée
 
 - **Murs transparents** : rendre semi-transparents (0 < alpha < 1) les murs entre la caméra et le personnage, qui peuvent le cacher ([scenegraph §11](scenegraph.md#11-les-démos)). Un rayon ou un volume de la caméra au personnage trouve ces murs ; leur matériau passe en `blend`, avec un alpha qui revient en douceur quand ils ne cachent plus rien.
-- **Gestion des entrées, manettes comprises**, à faire après les démos : une API **générale**, pensée pour n'importe quelle application du moteur (jeu, outil, visualiseur, éditeur), pas pour le labyrinthe seul. Une API abstraite (clavier, souris, manettes, actions nommées et leurs liaisons, configurables par l'application) et deux implémentations, web (événements DOM, Gamepad API) et native (SDL3 : clavier, souris, `SDL_Gamepad`) : probablement un package pour l'API et un par implémentation, comme pour les backends de rendu. L'`Input` du jeu (`demo-scenes/src/maze/input.ts`) en est une ébauche, à remplacer par cette API une fois écrite.
+- **Gestion des entrées, manettes comprises** : _faite_ ([input.md](input.md)) — `engine-input`, `engine-input-web`, `engine-input-native`, le labyrinthe jouable à la manette. Restent hors du périmètre : les vibrations, le verrouillage du pointeur, les contextes d'actions, le texte saisi (input.md §6).
 
 - **Un ordonnanceur de systèmes ECS** (`Scheduler` dans `engine-scene`) : des systèmes ordonnés, une boucle à pas fixe pour la logique, le rendu à la cadence de l'écran. Pour L4, les systèmes sont de simples fonctions `(world, dt) => void` de la démo, et le pas fixe un petit helper : à étudier quand une deuxième application en aura besoin, en gardant l'ECS agnostique (CAO, BIM, jeu).
 

@@ -1,10 +1,11 @@
 import { Camera } from '@fdw/engine-core';
+import { FakeInputSource, Input } from '@fdw/engine-input';
 import { Scene } from '@fdw/engine-scene';
 import { followAspect, SceneFactory } from '../scene';
-import { pointerOnPlane } from './aim';
+import { mazeActions } from './controls';
+import { Aim } from './aim';
 import { Flashlight } from './flashlight';
 import { FollowCamera } from './followCamera';
-import { Input } from './input';
 import { Player } from './player';
 import { TopViewLayer } from './topView';
 import { MazeView } from './view';
@@ -27,7 +28,9 @@ export const createMazeStep3: SceneFactory = (
     wall.attach(Solid);
   }
 
-  const input = new Input(context.input ?? new EventTarget());
+  // No source: an input nobody drives.
+  const input = new Input(context.input ?? new FakeInputSource());
+  const actions = mazeActions(input);
   const player = new Player(scene, Solid, level.cellCenter(0, 0), {
     sphere,
     cube,
@@ -45,7 +48,8 @@ export const createMazeStep3: SceneFactory = (
     },
   });
   const eye = scene.root.add({ name: 'camera' }).setCamera(camera);
-  const follow = new FollowCamera(eye, input);
+  const follow = new FollowCamera(eye, actions);
+  const aimer = new Aim();
   const marker = scene.root
     .add({ name: 'marker', layers: TopViewLayer, scale: { x: 3, y: 3, z: 3 } })
     .setMesh(sphere, surfaceMaterial([1, 0.3, 0.1], 0.5), {
@@ -61,16 +65,24 @@ export const createMazeStep3: SceneFactory = (
     frame: (time) => {
       const dt = Math.min(time - last, 0.1);
       last = time;
+      // The events since the previous frame.
+      input.update();
       followAspect(camera, surface);
       // F switches the flashlight, once per press.
-      if (input.pressed('f')) {
+      if (actions.button('flashlight').pressed) {
         flashlight.on = !flashlight.on;
       }
-      // The character faces the point of the ground under the pointer.
-      const aim = input.pointerMoved
-        ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)
-        : undefined;
-      player.update(dt, input, follow.yaw, aim);
+      // The character faces the point of the ground under the pointer, or
+      // the direction of the right stick.
+      const aim = aimer.update(
+        input,
+        actions,
+        eye,
+        camera,
+        player.position,
+        follow.yaw
+      );
+      player.update(dt, actions, follow.yaw, aim);
       follow.update(dt, player.position);
       marker.transform.position = {
         x: player.position.x,

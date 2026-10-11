@@ -16,7 +16,9 @@ seul cela est dessiné.
 
 Cliquez sur le labyrinthe, puis : **W A S D** ou les flèches pour vous
 déplacer, **Q** et **E** pour tourner, la **molette** pour monter ou
-descendre, **Maj** pour aller plus vite.
+descendre, **Maj** pour aller plus vite. Avec une manette : le stick gauche
+pour vous déplacer (enfoncé pour aller plus vite), les bumpers pour tourner,
+la croix directionnelle, haut et bas, pour monter ou descendre.
 
 ## 1. Générer le labyrinthe
 
@@ -105,35 +107,51 @@ Trois choix comptent ici :
   la hiérarchie (`level.walls.children` liste les murs) sans rien coûter au
   dessin.
 
-## 3. Le clavier et la souris
+## 3. Le clavier, la souris et la manette
 
-Le jeu lit ses entrées depuis un `EventTarget` : le canvas dans une page, la
-fenêtre dans la démo, une `NativeWindow` dans Node. Les noms des touches
-diffèrent — `ArrowUp` dans un navigateur, `Up` avec SDL — et sont
-normalisés :
+Le jeu lit ses entrées avec `@fdw/engine-input`. L'origine des événements
+est donnée par la page ou l'application — un `WebInputSource` sur le
+canvas, un `NativeInputSource` sur une fenêtre native — et le jeu construit
+un `Input` dessus :
 
-```ts title="maze/input.ts"
-export class Input {
-  constructor(target: EventTarget) {
-    listen('keydown', (event) => this._down.add(normalizeKey(event.key)));
-    listen('keyup', (event) => this._down.delete(normalizeKey(event.key)));
-    listen(
-      'wheel',
-      (event) =>
-        (this._wheel += event.dy !== undefined ? -event.dy * 100 : event.deltaY)
-    );
-  }
-
-  isDown(...keys: string[]): boolean;
-  /** -1, 0 or 1: input.axis(['s', 'down'], ['w', 'up']). */
-  axis(negative: readonly string[], positive: readonly string[]): number;
-  takeWheel(): number;
-}
+```ts title="maze/step1.ts"
+const input = new Input(context.input ?? new FakeInputSource());
+const actions = mazeActions(input);
 ```
 
-Le jeu demande l'état à chaque frame, plutôt que de réagir à chaque
-événement : se déplacer tant qu'une touche est enfoncée revient alors à
-multiplier une vitesse par la durée de la frame.
+Le code du jeu ne lit pas de touches : il lit des **actions**, déclarées
+une fois avec leurs liaisons — le clavier, et la manette :
+
+```ts title="maze/controls.ts"
+move: {
+  type: 'vector',
+  bindings: [
+    { up: 'key:KeyW', down: 'key:KeyS', left: 'key:KeyA', right: 'key:KeyD' },
+    { up: 'key:ArrowUp', down: 'key:ArrowDown', left: 'key:ArrowLeft', right: 'key:ArrowRight' },
+    'gamepad:leftStick',
+  ],
+},
+turn: {
+  type: 'axis',
+  bindings: [
+    { negative: 'key:KeyE', positive: 'key:KeyQ' },
+    { negative: 'gamepad:rightShoulder', positive: 'gamepad:leftShoulder' },
+  ],
+},
+```
+
+- `KeyW` est une **position** sur le clavier, pas une lettre : sur un
+  clavier AZERTY, la même touche est Z, et le jeu se joue avec ZQSD sans
+  configuration.
+- `move` est un vecteur, x vers la droite et y vers l'avant, de longueur 0
+  à 1 : quatre touches, ou un stick. La liaison la plus forte l'emporte.
+
+Chaque frame commence par `input.update()` : il applique les événements
+reçus depuis la frame précédente et lit les manettes, puis l'état reste le
+même pendant la frame. Se déplacer tant qu'une touche est enfoncée revient
+alors à multiplier une vitesse par la durée de la frame.
+
+Voir [Entrées](/fdw-engine/fr/guides/input/) pour l'ensemble de l'API.
 
 ## 4. La caméra
 
@@ -142,13 +160,14 @@ nœud, en regardant le long de son axe −z. La caméra libre déplace le nœud 
 
 ```ts title="maze/flyCamera.ts"
 update(dt: number): void {
-  const speed = (input.isDown('shift') ? 3 : 1) * (5 + this.height) * dt;
-  const forward = input.axis(['s', 'down'], ['w', 'up']);
-  const right = input.axis(['a', 'left'], ['d', 'right']);
+  const speed = (actions.button('run').down ? 3 : 1) * (5 + this.height) * dt;
+  const { x: right, y: forward } = actions.vector('move');
   this.x += (right * cos - forward * sin) * speed;
   this.z += (-right * sin - forward * cos) * speed;
-  this.yaw += input.axis(['e'], ['q']) * 1.5 * dt;
-  this.height *= Math.exp(input.takeWheel() * 0.001);
+  this.yaw += actions.axis('turn') * 1.5 * dt;
+  // A notch of the wheel: 10 %; the pad held: twice as high per second.
+  const zoom = actions.axis('zoomStep') * 0.1 + actions.axis('zoom') * dt;
+  this.height *= Math.exp(zoom);
   this._node.transform.position = { x: this.x, y: this.height, z: this.z };
   this._node.transform.rotation = multiply(around('y', this.yaw), around('x', this.pitch));
 }

@@ -32,6 +32,12 @@
     },
     {
       "path": "../../packages/demo-scenes/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input-web/tsconfig.lib.json"
     }
   ]
 }

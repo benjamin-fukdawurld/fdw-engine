@@ -1,8 +1,9 @@
 import { Camera } from '@fdw/engine-core';
+import { FakeInputSource, Input } from '@fdw/engine-input';
 import { Scene } from '@fdw/engine-scene';
 import { followAspect, SceneFactory } from '../scene';
+import { mazeActions } from './controls';
 import { FlyCamera } from './flyCamera';
-import { Input } from './input';
 import { TopViewLayer } from './topView';
 import { MazeView } from './view';
 import { createMazeWorld, surfaceMaterial } from './world';
@@ -30,10 +31,12 @@ export const createMazeStep1: SceneFactory = (
       far: 120,
     },
   });
-  const input = new Input(context.input ?? new EventTarget());
+  // No source: an input nobody drives.
+  const input = new Input(context.input ?? new FakeInputSource());
+  const actions = mazeActions(input);
   const fly = new FlyCamera(
     scene.root.add({ name: 'camera' }).setCamera(camera),
-    input
+    actions
   );
   // Where the camera is, for the top view only.
   const marker = scene.root
@@ -51,6 +54,8 @@ export const createMazeStep1: SceneFactory = (
     frame: (time) => {
       const dt = Math.min(time - last, 0.1);
       last = time;
+      // The events since the previous frame.
+      input.update();
       fly.update(dt);
       marker.transform.position = { x: fly.x, y: 1, z: fly.z };
       followAspect(camera, surface);

@@ -15,7 +15,8 @@ Close to the ground, the camera sees a few dozen nodes of the 4700.
 
 Click the maze, then: **W A S D** or the arrows to walk, **Shift** to run,
 **Q** and **E** to turn the camera around the character, the **wheel** to
-bring it closer or further.
+bring it closer or further. With a gamepad: the left stick to walk (pressed
+to run), the bumpers to turn, the pad up and down to zoom.
 
 ## 1. Sharing the world between the steps
 
@@ -55,7 +56,7 @@ const player = new Player(scene, Solid, level.cellCenter(0, 0), {
 });
 const follow = new FollowCamera(
   scene.root.add({ name: 'camera' }).setCamera(camera),
-  input
+  actions
 );
 const view = new MazeView(backend, scene, level);
 ```
@@ -141,14 +142,14 @@ scene.queryVolumeEntities(probe, (entity) => {
 
 ## 5. Walking relative to the camera
 
-W goes away from the camera, whatever the camera's direction: the keys are
-turned by the yaw of the camera before moving the character.
+W, or the left stick pushed up, goes away from the camera, whatever the
+camera's direction: the `move` action is turned by the yaw of the camera
+before moving the character.
 
 ```ts title="maze/player.ts"
-const forward = input.axis(['s', 'down'], ['w', 'up']);
-const right = input.axis(['a', 'left'], ['d', 'right']);
-const dx = (right * cos - forward * sin) / length;
-const dz = (-right * sin - forward * cos) / length;
+const { x: right, y: forward } = actions.vector('move');
+const dx = right * cos - forward * sin;
+const dz = -right * sin - forward * cos;
 this.position.x += dx * speed * dt;
 this.position.z += dz * speed * dt;
 // Turn towards the movement, by the shortest way round.
@@ -157,7 +158,9 @@ delta = Math.atan2(Math.sin(delta), Math.cos(delta));
 this.heading += delta * Math.min(1, 12 * dt);
 ```
 
-Dividing by `length` keeps the speed the same along a diagonal. The heading
+The action is of length 0 to 1: four keys are normalized, so that the
+diagonal is not faster, and a stick half pushed walks half as fast. The
+heading
 follows the movement smoothly; `atan2(sin, cos)` brings the difference
 between −π and π, so that the character never turns the long way round.
 

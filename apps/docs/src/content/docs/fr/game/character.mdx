@@ -15,7 +15,9 @@ sol, la caméra voit quelques dizaines de nœuds sur les 4700.
 
 Cliquez sur le labyrinthe, puis : **W A S D** ou les flèches pour marcher,
 **Maj** pour courir, **Q** et **E** pour faire tourner la caméra autour du
-personnage, la **molette** pour la rapprocher ou l'éloigner.
+personnage, la **molette** pour la rapprocher ou l'éloigner. Avec une
+manette : le stick gauche pour marcher (enfoncé pour courir), les bumpers
+pour tourner, la croix directionnelle, haut et bas, pour zoomer.
 
 ## 1. Partager le monde entre les étapes
 
@@ -56,7 +58,7 @@ const player = new Player(scene, Solid, level.cellCenter(0, 0), {
 });
 const follow = new FollowCamera(
   scene.root.add({ name: 'camera' }).setCamera(camera),
-  input
+  actions
 );
 const view = new MazeView(backend, scene, level);
 ```
@@ -143,14 +145,14 @@ scene.queryVolumeEntities(probe, (entity) => {
 
 ## 5. Marcher par rapport à la caméra
 
-W éloigne de la caméra, quelle que soit la direction de la caméra : les
-touches sont tournées du lacet de la caméra avant de déplacer le personnage.
+W, ou le stick gauche poussé vers le haut, éloigne de la caméra, quelle que
+soit la direction de la caméra : l'action `move` est tournée du lacet de la
+caméra avant de déplacer le personnage.
 
 ```ts title="maze/player.ts"
-const forward = input.axis(['s', 'down'], ['w', 'up']);
-const right = input.axis(['a', 'left'], ['d', 'right']);
-const dx = (right * cos - forward * sin) / length;
-const dz = (-right * sin - forward * cos) / length;
+const { x: right, y: forward } = actions.vector('move');
+const dx = right * cos - forward * sin;
+const dz = -right * sin - forward * cos;
 this.position.x += dx * speed * dt;
 this.position.z += dz * speed * dt;
 // Turn towards the movement, by the shortest way round.
@@ -159,7 +161,9 @@ delta = Math.atan2(Math.sin(delta), Math.cos(delta));
 this.heading += delta * Math.min(1, 12 * dt);
 ```
 
-Diviser par `length` garde la même vitesse en diagonale. L'orientation suit
+L'action est de longueur 0 à 1 : quatre touches sont normalisées, de sorte
+que la diagonale ne soit pas plus rapide, et un stick à moitié poussé fait
+marcher deux fois moins vite. L'orientation suit
 le mouvement en douceur ; `atan2(sin, cos)` ramène la différence entre −π et
 π, de sorte que le personnage ne tourne jamais par le plus long côté.
 

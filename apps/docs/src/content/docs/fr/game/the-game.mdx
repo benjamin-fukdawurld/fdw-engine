@@ -20,7 +20,10 @@ demeure dans le brouillard.
 Cliquez sur le labyrinthe, puis : **W A S D** pour marcher, la **souris**
 pour viser, **F** pour la lampe torche, **M** pour passer la carte des
 environs au labyrinthe entier, **R** pour rejouer. **C** affiche, à la place
-de la carte, la vue du dessus du culling des étapes précédentes.
+de la carte, la vue du dessus du culling des étapes précédentes. Avec une
+manette : le stick gauche pour marcher, le stick droit pour viser, la
+gâchette droite pour la lampe torche, Back pour la carte, Start pour
+rejouer.
 
 ## 1. La logique à pas fixe
 
@@ -52,7 +55,7 @@ frame.
 
 ```ts title="maze/step4.ts"
 loop.advance(dt, (step) => {
-  player.update(step, input, follow.yaw, aim);
+  player.update(step, actions, follow.yaw, aim);
   exploration.walk(player.position);
   game.update(step);
 });
@@ -315,6 +318,29 @@ l'image, de sorte que la texture ne change pas pour lui. Les gemmes et la
 sortie, une fois leurs cellules découvertes, sont des marques dessinées dans
 l'image.
 
+## 8. Jouer avec une manette
+
+Rien dans le jeu ne connaît la manette : il lit des actions, et les actions
+de `maze/controls.ts` lient la manette aussi bien que le clavier. Une
+manette branchée joue aussitôt, dans une page ou dans une fenêtre native :
+
+| Action       | Clavier, souris      | Manette                           |
+| ------------ | -------------------- | --------------------------------- |
+| `move`       | WASD, flèches        | Stick gauche                      |
+| `run`        | Maj                  | Stick gauche enfoncé              |
+| `aim`        | La souris            | Stick droit                       |
+| `turn`       | Q, E                 | Bumpers                           |
+| `zoom`       | Molette (`zoomStep`) | Croix directionnelle, haut et bas |
+| `flashlight` | F                    | Gâchette droite, X (`west`)       |
+| `map`        | M                    | Back                              |
+| `restart`    | R                    | Start                             |
+
+La visée suit le périphérique utilisé en dernier : bouger la souris vise le
+pointeur, pousser le stick droit vise dans sa direction (voir l'étape 3). Le
+zoom est fait de deux actions : la molette tourne par crans, une fois,
+tandis que la croix est maintenue — une vitesse, multipliée par la durée de
+la frame.
+
 ## Ce que nous avons
 
 - Une logique de jeu à pas fixe, le rendu au rythme de l'écran.
@@ -326,7 +352,7 @@ l'image.
 - Des matériaux non éclairés, visibles dans le noir.
 - Une carte révélée par l'exploration, dessinée sur le CPU et envoyée au GPU
   seulement lorsqu'elle change.
+- Le clavier, la souris et la manette, à travers les mêmes actions.
 
 Quelques idées laissées pour plus tard : des murs entre la caméra et le
-personnage qui deviennent transparents, la manette, et un ordonnanceur de
-systèmes.
+personnage qui deviennent transparents, et un ordonnanceur de systèmes.

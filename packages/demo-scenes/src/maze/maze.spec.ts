@@ -1,11 +1,12 @@
 import { Camera, Material } from '@fdw/engine-core';
 import { colorGraph } from '@fdw/engine-core/testing';
+import { FakeInputSource, Input } from '@fdw/engine-input';
 import { Scene } from '@fdw/engine-scene';
 import { describe, expect, it } from 'vitest';
 import { createCube, createSphere } from '../geometry';
-import { pointerOnPlane } from './aim';
+import { Aim, pointerOnPlane } from './aim';
+import { mazeActions } from './controls';
 import { resolveCircle } from './collisions';
-import { Input, normalizeKey } from './input';
 import { EnemyState, MazeGame } from './game';
 import { Exploration } from './exploration';
 import { FixedStep } from './fixedStep';
@@ -89,32 +90,71 @@ describe('buildLevel', () => {
   });
 });
 
-describe('normalizeKey', () => {
-  it('gives the same names in a browser and with SDL', () => {
-    expect(
-      ['w', 'W', 'ArrowUp', 'Up', ' ', 'Space', 'Left Shift', 'Shift'].map(
-        normalizeKey
-      )
-    ).toEqual(['w', 'w', 'up', 'up', 'space', 'space', 'shift', 'shift']);
-  });
-});
+// The actions of the game, driven by the test; and actions nobody drives.
+const controls = () => {
+  const source = new FakeInputSource();
+  const input = new Input(source);
+  return { source, input, actions: mazeActions(input) };
+};
+const idle = () => controls().actions;
 
-describe('Input', () => {
-  it('keeps a press until it is read, even released before', () => {
-    const keys = new EventTarget();
-    const input = new Input(keys);
-    const key = (type: string, name: string) =>
-      keys.dispatchEvent(Object.assign(new Event(type), { key: name }));
-    key('keydown', 'M');
-    key('keyup', 'M');
-    expect(input.isDown('m')).toBe(false);
-    expect(input.pressed('m')).toBe(true);
-    expect(input.pressed('m')).toBe(false);
-    // Held down: the repeats are not new presses.
-    key('keydown', 'f');
-    key('keydown', 'f');
-    expect(input.pressed('f')).toBe(true);
-    expect(input.pressed('f')).toBe(false);
+describe('mazeActions', () => {
+  it('binds the keys by position, and the gamepad', () => {
+    const { source, input, actions } = controls();
+    // The key at the place of W: Z on an AZERTY keyboard.
+    source.keyDown('KeyW', 'z');
+    source.keyDown('ShiftLeft', 'Shift');
+    input.update();
+    expect(actions.vector('move')).toEqual({ x: 0, y: 1 });
+    expect(actions.button('run').down).toBe(true);
+    source.keyUp('KeyW', 'z');
+    source.keyUp('ShiftLeft', 'Shift');
+    const pad = source.connectGamepad();
+    source.setAxis(pad, 'leftX', 1);
+    source.setButton(pad, 'rightTrigger', 1);
+    source.setButton(pad, 'leftShoulder', 1);
+    input.update();
+    expect(actions.vector('move')).toEqual({ x: 1, y: 0 });
+    expect(actions.button('flashlight').pressed).toBe(true);
+    expect(actions.axis('turn')).toBe(1);
+  });
+
+  it('aims with the mouse or the right stick, the one used last', () => {
+    const { source, input, actions } = controls();
+    const camera = new Camera({
+      projection: {
+        type: 'perspective',
+        fov: 90,
+        aspect: 1,
+        near: 0.1,
+        far: 50,
+      },
+    });
+    // A camera 10 units up, looking straight down (its -z is -y).
+    const eye = {
+      worldMatrix: [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 10, 0, 1],
+    };
+    const aim = new Aim();
+    const around = { x: 0, z: 0 };
+    input.update();
+    expect(aim.update(input, actions, eye, camera, around, 0)).toBeUndefined();
+    // The pointer at the center: the point under the camera.
+    source.sink?.pointerMove(0.5, 0.5);
+    input.update();
+    const point = aim.update(input, actions, eye, camera, around, 0);
+    expect(point?.x).toBeCloseTo(0, 5);
+    expect(point?.z).toBeCloseTo(0, 5);
+    // The right stick pushed up: forward, -z when the camera has no yaw.
+    const pad = source.connectGamepad();
+    source.setAxis(pad, 'rightY', -1);
+    input.update();
+    const ahead = aim.update(input, actions, eye, camera, around, 0);
+    expect(ahead?.x).toBeCloseTo(0, 5);
+    expect(ahead?.z).toBeCloseTo(-3, 5);
+    // Released: nothing aims, until the pointer moves again.
+    source.setAxis(pad, 'rightY', 0);
+    input.update();
+    expect(aim.update(input, actions, eye, camera, around, 0)).toBeUndefined();
   });
 });
 
@@ -149,8 +189,7 @@ describe('collisions', () => {
 
   it('stops a character walking into a wall', () => {
     const { scene, Solid, material } = setup();
-    const keys = new EventTarget();
-    const input = new Input(keys);
+    const { source, input, actions } = controls();
     const player = new Player(
       scene,
       Solid,
@@ -161,9 +200,10 @@ describe('collisions', () => {
         body: material,
       }
     );
-    keys.dispatchEvent(Object.assign(new Event('keydown'), { key: 'w' }));
+    source.keyDown('KeyW');
+    input.update();
     for (let i = 0; i < 120; i++) {
-      player.update(1 / 60, input, 0);
+      player.update(1 / 60, actions, 0);
     }
     // Forward is -z: stopped by the wall, facing it.
     expect(player.position.z).toBeCloseTo(player.radius, 3);
@@ -285,7 +325,7 @@ describe('Exploration', () => {
     const flashlight = new Flashlight(player.node);
     // Facing +x, along the first corridor.
     player.heading = -Math.PI / 2;
-    player.update(0, new Input(new EventTarget()), 0);
+    player.update(0, idle(), 0);
     const exploration = new Exploration(level);
     exploration.light(scene, Solid, flashlight.beam);
     // 1 to 3 lit; 6 and 7 in the cone, behind the wall; 0 under the light.
@@ -316,7 +356,7 @@ describe('MazeGame', () => {
       const { x, z } = centerOf(cell);
       player.position.x = x;
       player.position.z = z;
-      player.update(0, new Input(new EventTarget()), 0);
+      player.update(0, idle(), 0);
     };
     return { ...parts, flashlight, game, centerOf, goTo };
   };
@@ -373,7 +413,7 @@ describe('MazeGame', () => {
       -(x - player.position.x),
       -(z - player.position.z)
     );
-    player.update(0, new Input(new EventTarget()), 0);
+    player.update(0, idle(), 0);
     game.update(0.1);
     expect(game.Enemy.state[enemy]).toBe(EnemyState.Dazzled);
     // Once the dazzle is over and the beam off, it catches the player.

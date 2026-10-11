@@ -1,11 +1,12 @@
 import type { Node } from '@fdw/engine-scene';
-import type { Input } from './input';
+import type { ActionMap } from '@fdw/engine-input';
 import { multiplyQuat, rotationAround } from './quaternions';
 
 /**
- * A camera flying above a level, looking down at an angle: WASD or the
- * arrows move it, Q and E turn it, the wheel changes its height, Shift
- * goes faster. It moves the node of the camera.
+ * A camera flying above a level, looking down at an angle, driven by the
+ * actions of the game (see mazeActions): `move` moves it, `turn` turns it,
+ * `zoom` and `zoomStep` change its height, `run` goes faster. It moves the
+ * node of the camera.
  */
 export class FlyCamera {
   x = 0;
@@ -17,7 +18,7 @@ export class FlyCamera {
 
   constructor(
     private readonly _node: Node,
-    private readonly _input: Input,
+    private readonly _actions: ActionMap,
     private readonly _limits: { minHeight: number; maxHeight: number } = {
       minHeight: 4,
       maxHeight: 80,
@@ -27,22 +28,20 @@ export class FlyCamera {
   }
 
   update(dt: number): void {
-    const input = this._input;
-    const speed = (input.isDown('shift') ? 3 : 1) * (5 + this.height) * dt;
+    const actions = this._actions;
+    const speed = (actions.button('run').down ? 3 : 1) * (5 + this.height) * dt;
     // Forward is -z, turned by the yaw.
-    const forward = input.axis(['s', 'down'], ['w', 'up']);
-    const right = input.axis(['a', 'left'], ['d', 'right']);
+    const { x: right, y: forward } = actions.vector('move');
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     this.x += (right * cos - forward * sin) * speed;
     this.z += (-right * sin - forward * cos) * speed;
-    this.yaw += input.axis(['e'], ['q']) * 1.5 * dt;
+    this.yaw += actions.axis('turn') * 1.5 * dt;
+    // A notch of the wheel: 10 %; the pad held: twice as high per second.
+    const zoom = actions.axis('zoomStep') * 0.1 + actions.axis('zoom') * dt;
     this.height = Math.min(
       this._limits.maxHeight,
-      Math.max(
-        this._limits.minHeight,
-        this.height * Math.exp(input.takeWheel() * 0.001)
-      )
+      Math.max(this._limits.minHeight, this.height * Math.exp(zoom))
     );
     this.apply();
   }

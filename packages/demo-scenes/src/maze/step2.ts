@@ -1,8 +1,9 @@
 import { Camera } from '@fdw/engine-core';
+import { FakeInputSource, Input } from '@fdw/engine-input';
 import { Scene } from '@fdw/engine-scene';
 import { followAspect, SceneFactory } from '../scene';
+import { mazeActions } from './controls';
 import { FollowCamera } from './followCamera';
-import { Input } from './input';
 import { Player } from './player';
 import { TopViewLayer } from './topView';
 import { MazeView } from './view';
@@ -27,7 +28,9 @@ export const createMazeStep2: SceneFactory = (
     wall.attach(Solid);
   }
 
-  const input = new Input(context.input ?? new EventTarget());
+  // No source: an input nobody drives.
+  const input = new Input(context.input ?? new FakeInputSource());
+  const actions = mazeActions(input);
   const player = new Player(scene, Solid, level.cellCenter(0, 0), {
     sphere,
     cube,
@@ -46,7 +49,7 @@ export const createMazeStep2: SceneFactory = (
   });
   const follow = new FollowCamera(
     scene.root.add({ name: 'camera' }).setCamera(camera),
-    input
+    actions
   );
   // The character, seen from above: too small at the scale of the top view.
   const marker = scene.root
@@ -64,7 +67,9 @@ export const createMazeStep2: SceneFactory = (
     frame: (time) => {
       const dt = Math.min(time - last, 0.1);
       last = time;
-      player.update(dt, input, follow.yaw);
+      // The events since the previous frame.
+      input.update();
+      player.update(dt, actions, follow.yaw);
       follow.update(dt, player.position);
       marker.transform.position = {
         x: player.position.x,

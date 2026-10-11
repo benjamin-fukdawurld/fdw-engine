@@ -28,8 +28,16 @@ the surface are native.
 
 `NativeWindow` is an SDL3 window. Its events are DOM events
 (`NativeWindowEvent`): `close`, `resize`, `keydown`, `keyup`, `pointermove`,
-`pointerdown`, `pointerup`, `wheel`. `width` and `height` are in pixels;
+`pointerdown`, `pointerup`, `wheel`, `blur` (the keyboard focus was lost),
+and `gamepadconnected`, `gamepaddisconnected`, sent to every window. The
+key events give `key` (the name of the key in the layout) and `code` (its
+position, as the `code` of the DOM). `width` and `height` are in pixels;
 `title` and `vsync` can change at any time.
+
+The gamepads are read when needed: `NativeWindow.gamepads()` lists them,
+`NativeWindow.readGamepad(id, buttons, axes)` reads one in the standard
+layout of the Gamepad API. `NativeInputSource` of `@fdw/engine-input-native`
+uses them: see [Input](/fdw-engine/guides/input/).
 
 `runLoop(frame, { throttle })` replaces `requestAnimationFrame`: each turn
 dispatches the events of the windows, calls `frame(now)`, waits for

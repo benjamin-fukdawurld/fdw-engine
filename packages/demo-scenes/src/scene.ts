@@ -1,5 +1,6 @@
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import type { Camera } from '@fdw/engine-core';
+import type { InputSource } from '@fdw/engine-input';
 
 // A demo scene, independent of where it runs: a browser canvas (the routes)
 // or a native window (apps/demo-native).
@@ -11,9 +12,9 @@ export interface Scene {
 
 /** What a scene can use from where it runs, besides the backend and the surface. */
 export interface SceneContext {
-  // The target of the keyboard and mouse events: a browser window, a
-  // canvas, a native window.
-  readonly input?: EventTarget;
+  // Where the keyboard, mouse and gamepad come from: a WebInputSource over a
+  // canvas or a browser window, a NativeInputSource over a native window.
+  readonly input?: InputSource;
   // Shows a line of information (statistics): an overlay, a window title.
   readonly info?: (text: string) => void;
 }

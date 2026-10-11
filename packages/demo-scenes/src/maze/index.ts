@@ -1,6 +1,6 @@
 export * from './maze';
 export * from './level';
-export * from './input';
+export * from './controls';
 export * from './quaternions';
 export * from './flyCamera';
 export * from './followCamera';

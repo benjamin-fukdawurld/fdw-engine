@@ -15,7 +15,8 @@ black — and is not drawn at all: of the 4700 nodes, a few dozen are.
 
 Click the maze, then: **W A S D** to walk, the **mouse** to aim, **F** to
 switch the flashlight on and off, **Q** and **E** to turn the camera, the
-**wheel** to bring it closer or further.
+**wheel** to bring it closer or further. With a gamepad: the left stick to
+walk, the right stick to aim, the right trigger (or X) for the flashlight.
 
 ## 1. Turning the sun off
 
@@ -79,17 +80,17 @@ this.glow = new PointLight({
 character.add({ name: 'glow', position: { y: 1.6 } }).setLight(this.glow);
 ```
 
-F switches the beam, once per press. The input remembers the presses
-until they are read: a press shorter than a frame is not lost, and the
-repeats of a key held down are not new presses.
+F, or the right trigger, switches the beam, once per press: `pressed` is
+true for the frame of the press. A press shorter than a frame is not lost,
+and the repeats of a key held down are not new presses.
 
 ```ts title="maze/step3.ts"
-if (input.pressed('f')) {
+if (actions.button('flashlight').pressed) {
   flashlight.on = !flashlight.on; // shows or hides the node of the beam
 }
 ```
 
-## 3. Aiming with the mouse
+## 3. Aiming with the mouse or the stick
 
 The character faces the point of the ground under the pointer. The input
 gives the pointer from 0 to 1 over the surface, from the top left — the
@@ -118,14 +119,34 @@ movement in step 2; it walks with the keys, relative to the camera, while
 facing elsewhere:
 
 ```ts title="maze/step3.ts"
-const aim = input.pointerMoved
-  ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)
-  : undefined;
-player.update(dt, input, follow.yaw, aim);
+const aim = aimer.update(
+  input,
+  actions,
+  eye,
+  camera,
+  player.position,
+  follow.yaw
+);
+player.update(dt, actions, follow.yaw, aim);
 ```
 
-Before the mouse first moves, there is no aim: the character faces where
-it walks.
+`Aim` follows the device used last. When the pointer moves, the aim is the
+point of the ground under it; when the right stick is pushed, the aim is a
+point a few units away in its direction, turned by the camera as the
+movement is:
+
+```ts title="maze/aim.ts"
+const { x, y } = actions.vector('aim'); // the right stick
+if (Math.hypot(x, y) > 0.3) {
+  return {
+    x: around.x + (x * cos - y * sin) * 3,
+    z: around.z + (-x * sin - y * cos) * 3,
+  };
+}
+```
+
+Before the mouse first moves, or with the stick released, there is no
+aim: the character faces where it walks.
 
 ## 4. Drawing only what is lit
 

@@ -19,7 +19,9 @@ was discovered, the rest stays in the fog.
 Click the maze, then: **W A S D** to walk, the **mouse** to aim, **F** for
 the flashlight, **M** to switch the map between the surroundings and the
 whole maze, **R** to play again. **C** shows the top view of the culling of
-the previous steps instead of the map.
+the previous steps instead of the map. With a gamepad: the left stick to
+walk, the right stick to aim, the right trigger for the flashlight, Back
+for the map, Start to play again.
 
 ## 1. The logic at a fixed step
 
@@ -50,7 +52,7 @@ character every frame.
 
 ```ts title="maze/step4.ts"
 loop.advance(dt, (step) => {
-  player.update(step, input, follow.yaw, aim);
+  player.update(step, actions, follow.yaw, aim);
   exploration.walk(player.position);
   game.update(step);
 });
@@ -302,6 +304,28 @@ The player moves at every frame: it is a uniform, not a pixel of the
 picture, so the texture does not change for it. The gems and the exit,
 once their cells are discovered, are marks drawn into the picture.
 
+## 8. Playing with a gamepad
+
+Nothing of the game knows the gamepad: it reads actions, and the actions
+of `maze/controls.ts` bind the gamepad as well as the keyboard. A gamepad
+plugged in plays at once, in a page or in a native window:
+
+| Action       | Keyboard, mouse    | Gamepad                   |
+| ------------ | ------------------ | ------------------------- |
+| `move`       | WASD, arrows       | Left stick                |
+| `run`        | Shift              | Left stick pressed        |
+| `aim`        | The mouse          | Right stick               |
+| `turn`       | Q, E               | Bumpers                   |
+| `zoom`       | Wheel (`zoomStep`) | Pad up and down           |
+| `flashlight` | F                  | Right trigger, X (`west`) |
+| `map`        | M                  | Back                      |
+| `restart`    | R                  | Start                     |
+
+The aim follows the device used last: moving the mouse aims at the
+pointer, pushing the right stick aims in its direction (see step 3). The
+zoom is two actions: the wheel turns by notches, once, while the pad is
+held — a speed, multiplied by the time of the frame.
+
 ## What we have
 
 - Game logic at a fixed step, the rendering at the rate of the screen.
@@ -312,6 +336,7 @@ once their cells are discovered, are marks drawn into the picture.
 - Unlit materials, seen in the dark.
 - A map revealed by exploration, drawn on the CPU and uploaded only when it
   changes.
+- The keyboard, the mouse and the gamepad, through the same actions.
 
 Some ideas left for later: walls between the camera and the character
-becoming transparent, the gamepad, and a scheduler of systems.
+becoming transparent, and a scheduler of systems.

@@ -17,6 +17,7 @@ import {
   runLoop,
   VulkanWindowSurface,
 } from '@fdw/engine-native';
+import { NativeInputSource } from '@fdw/engine-input-native';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createMazeStep1,
@@ -95,7 +96,7 @@ if (!backend) {
 // The information of the scene, shown in the title with the frame rate.
 let info = '';
 const scene = scenes[name](backend, surface, {
-  input: window,
+  input: new NativeInputSource(window),
   info: (text) => {
     info = text;
   },

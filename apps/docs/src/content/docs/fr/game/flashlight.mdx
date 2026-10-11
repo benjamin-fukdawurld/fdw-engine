@@ -17,7 +17,8 @@ dizaines le sont.
 Cliquez sur le labyrinthe, puis : **W A S D** pour marcher, la **souris**
 pour viser, **F** pour allumer et éteindre la lampe torche, **Q** et **E**
 pour faire tourner la caméra, la **molette** pour la rapprocher ou
-l'éloigner.
+l'éloigner. Avec une manette : le stick gauche pour marcher, le stick droit
+pour viser, la gâchette droite (ou X) pour la lampe torche.
 
 ## 1. Éteindre le soleil
 
@@ -83,18 +84,18 @@ this.glow = new PointLight({
 character.add({ name: 'glow', position: { y: 1.6 } }).setLight(this.glow);
 ```
 
-F allume ou éteint le faisceau, une fois par appui. L'entrée garde les
-appuis jusqu'à ce qu'ils soient lus : un appui plus court qu'une frame
-n'est pas perdu, et les répétitions d'une touche maintenue ne sont pas de
-nouveaux appuis.
+F, ou la gâchette droite, allume ou éteint le faisceau, une fois par
+appui : `pressed` est vrai pendant la frame de l'appui. Un appui plus court
+qu'une frame n'est pas perdu, et les répétitions d'une touche maintenue ne
+sont pas de nouveaux appuis.
 
 ```ts title="maze/step3.ts"
-if (input.pressed('f')) {
+if (actions.button('flashlight').pressed) {
   flashlight.on = !flashlight.on; // shows or hides the node of the beam
 }
 ```
 
-## 3. Viser à la souris
+## 3. Viser à la souris ou au stick
 
 Le personnage regarde le point du sol sous le pointeur. L'entrée donne le
 pointeur de 0 à 1 sur la surface, depuis le coin supérieur gauche — de la
@@ -123,14 +124,34 @@ mouvement à l'étape 2 ; il marche avec les touches, par rapport à la caméra,
 tout en regardant ailleurs :
 
 ```ts title="maze/step3.ts"
-const aim = input.pointerMoved
-  ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)
-  : undefined;
-player.update(dt, input, follow.yaw, aim);
+const aim = aimer.update(
+  input,
+  actions,
+  eye,
+  camera,
+  player.position,
+  follow.yaw
+);
+player.update(dt, actions, follow.yaw, aim);
 ```
 
-Avant le premier mouvement de la souris, il n'y a pas de visée : le
-personnage regarde là où il marche.
+`Aim` suit le périphérique utilisé en dernier. Lorsque le pointeur bouge,
+la visée est le point du sol sous celui-ci ; lorsque le stick droit est
+poussé, la visée est un point à quelques unités dans sa direction, tourné
+par la caméra comme l'est le mouvement :
+
+```ts title="maze/aim.ts"
+const { x, y } = actions.vector('aim'); // the right stick
+if (Math.hypot(x, y) > 0.3) {
+  return {
+    x: around.x + (x * cos - y * sin) * 3,
+    z: around.z + (-x * sin - y * cos) * 3,
+  };
+}
+```
+
+Avant le premier mouvement de la souris, ou stick relâché, il n'y a pas de
+visée : le personnage regarde là où il marche.
 
 ## 4. Ne dessiner que ce qui est éclairé
 

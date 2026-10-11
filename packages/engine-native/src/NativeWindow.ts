@@ -23,15 +23,19 @@ export interface NativeWindowOptions {
 
 /**
  * An event of a native window, with the fields of its DOM counterpart:
- * `width` and `height` for 'resize'; `key`, `repeat` and the modifiers for
- * the key events; `x`, `y` (pixels from the top left corner), `button`,
- * `dx`, `dy` and the modifiers for the pointer and wheel events.
+ * `width` and `height` for 'resize'; `key`, `code` (the physical position
+ * of the key, as the `code` of the DOM: `KeyW`, `ArrowUp`), `repeat` and the
+ * modifiers for the key events; `x`, `y` (pixels from the top left corner),
+ * `button`, `dx`, `dy` and the modifiers for the pointer and wheel events;
+ * `gamepad` (its id) for 'gamepadconnected' and 'gamepaddisconnected'.
  */
 export class NativeWindowEvent extends Event {
   readonly width: number;
   readonly height: number;
   readonly key: string;
+  readonly code: string;
   readonly repeat: boolean;
+  readonly gamepad: number;
   readonly x: number;
   readonly y: number;
   readonly dx: number;
@@ -47,7 +51,9 @@ export class NativeWindowEvent extends Event {
     this.width = raw.width ?? 0;
     this.height = raw.height ?? 0;
     this.key = raw.key ?? '';
+    this.code = raw.code ?? '';
     this.repeat = (raw.repeat ?? 0) !== 0;
+    this.gamepad = raw.gamepad ?? -1;
     this.x = raw.x ?? 0;
     this.y = raw.y ?? 0;
     this.dx = raw.dx ?? 0;
@@ -68,7 +74,9 @@ const windows = new Map<number, NativeWindow>();
 /**
  * A native window (SDL3), outside of the browser. Its events ('close',
  * 'resize', 'keydown', 'keyup', 'pointermove', 'pointerdown', 'pointerup',
- * 'wheel') are dispatched by NativeWindow.pollEvents(), called by runLoop.
+ * 'wheel', 'blur' when the keyboard focus is lost, and 'gamepadconnected',
+ * 'gamepaddisconnected', sent to every window) are dispatched by
+ * NativeWindow.pollEvents(), called by runLoop.
  * Closing it is up to the application: listen to 'close' and call destroy().
  */
 export class NativeWindow extends EventTarget {
@@ -113,8 +121,36 @@ export class NativeWindow extends EventTarget {
     }
     const addon = loadAddon();
     for (const raw of addon.pollEvents()) {
-      windows.get(raw.window)?.receive(raw);
+      if (raw.window === 0) {
+        // Not tied to a window: a gamepad.
+        windows.forEach((window) => window.receive(raw));
+      } else {
+        windows.get(raw.window)?.receive(raw);
+      }
     }
+  }
+
+  /**
+   * The ids of the gamepads connected, while a window is open: they are
+   * opened as their events are polled.
+   */
+  static gamepads(): number[] {
+    return windows.size === 0 ? [] : loadAddon().gamepads();
+  }
+
+  /**
+   * Reads a gamepad, in the standard layout of the Gamepad API: its 17
+   * buttons (0 to 1) and 4 axes (-1 to 1, y downwards) written into the
+   * arrays. Returns its name, or undefined when it is not connected.
+   */
+  static readGamepad(
+    id: number,
+    buttons: Float32Array,
+    axes: Float32Array
+  ): string | undefined {
+    return windows.size === 0
+      ? undefined
+      : loadAddon().gamepadState(id, buttons, axes);
   }
 
   // The size in pixels: the size of the images presented.

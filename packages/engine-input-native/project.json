@@ -1,0 +1,7 @@
+{
+  "name": "engine-input-native",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-input-native/src",
+  "projectType": "library",
+  "tags": []
+}

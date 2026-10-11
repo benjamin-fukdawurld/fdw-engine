@@ -40,6 +40,12 @@ typedef enum fdw_event_type {
   FDW_EVENT_POINTER_DOWN,
   FDW_EVENT_POINTER_UP,
   FDW_EVENT_WHEEL,
+  // A gamepad was connected (opened: see fdw_gamepad_read), or
+  // disconnected. Not tied to a window: `window` is 0.
+  FDW_EVENT_GAMEPAD_ADDED,
+  FDW_EVENT_GAMEPAD_REMOVED,
+  // The window lost the keyboard focus: the keys held are released.
+  FDW_EVENT_FOCUS_LOST,
 } fdw_event_type;
 
 // Modifier keys, in fdw_event.modifiers.
@@ -70,9 +76,32 @@ typedef struct fdw_event {
   char key[32];
   int32_t repeat;
   uint32_t modifiers;
+  // Key events: the physical position of the key, named as the `code` of
+  // the DOM ("KeyW", "ArrowUp", "ShiftLeft"); empty when unknown.
+  char code[32];
+  // Gamepad events: the id of the gamepad.
+  uint32_t gamepad;
 } fdw_event;
 
-// Initializes the video subsystem. Returns 0, or -1 (see fdw_last_error).
+// The buttons and axes of a gamepad, in the standard layout of the Gamepad
+// API (the order of its standard mapping).
+enum {
+  FDW_GAMEPAD_BUTTONS = 17,
+  FDW_GAMEPAD_AXES = 4,
+};
+
+typedef struct fdw_gamepad_state {
+  char name[64];
+  // From 0 to 1: south, east, west, north, left and right shoulders, left
+  // and right triggers (analog), back, start, left and right sticks, the
+  // pad up, down, left, right, guide.
+  float buttons[FDW_GAMEPAD_BUTTONS];
+  // From -1 to 1, y positive downwards: left x, left y, right x, right y.
+  float axes[FDW_GAMEPAD_AXES];
+} fdw_gamepad_state;
+
+// Initializes the video and gamepad subsystems. Returns 0, or -1 (see
+// fdw_last_error).
 FDW_API int fdw_init(void);
 // Releases what fdw_init initialized.
 FDW_API void fdw_quit(void);
@@ -127,6 +156,13 @@ FDW_API int fdw_window_native_handle(const fdw_window *window,
 // Takes the next pending event of any window. Returns 1 with an event, 0
 // when there is none.
 FDW_API int fdw_poll_event(fdw_event *event);
+
+// The ids of the gamepads connected, in `ids` (up to `capacity`): returns
+// how many there are. Gamepads are opened as their FDW_EVENT_GAMEPAD_ADDED
+// events are polled.
+FDW_API int32_t fdw_gamepads(uint32_t *ids, int32_t capacity);
+// The state of a gamepad now. Returns 0, or -1 when it is not connected.
+FDW_API int fdw_gamepad_read(uint32_t id, fdw_gamepad_state *state);
 
 #ifdef __cplusplus
 }

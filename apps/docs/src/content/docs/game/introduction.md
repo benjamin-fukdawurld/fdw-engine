@@ -27,10 +27,11 @@ The code of the game is in `packages/demo-scenes/src/maze/`, shared by:
 - the pages of this tutorial, where each step runs live.
 
 A step is a `SceneFactory`: a function receiving the backend, the surface,
-and a context — where the keyboard and mouse events come from, and where to
-show a line of information — and returning a `frame(time)` function. The
-same function runs in a page, in the demo and in a native window: the
-events of a native window are DOM events too.
+and a context — where the keyboard, mouse and gamepad come from (an
+[input source](/fdw-engine/guides/input/)), and where to show a line of
+information — and returning a `frame(time)` function. The same function
+runs in a page, in the demo and in a native window: only the source
+differs, `WebInputSource` or `NativeInputSource`.
 
 ```ts
 export const createMazeStep1: SceneFactory = (

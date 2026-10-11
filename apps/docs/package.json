@@ -9,6 +9,8 @@
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-geometry": "0.0.1",
+    "@fdw/engine-input": "0.0.1",
+    "@fdw/engine-input-web": "0.0.1",
     "@fdw/engine-scene": "0.0.1",
     "@fdw/engine-shader": "0.0.1",
     "@fdw/engine-webgl2": "0.0.1",

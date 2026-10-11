@@ -1,7 +1,7 @@
 import type { Material, Mesh } from '@fdw/engine-core';
 import type { ComponentStore, Node, Scene } from '@fdw/engine-scene';
 import { resolveCircle } from './collisions';
-import type { Input } from './input';
+import type { ActionMap } from '@fdw/engine-input';
 
 /** The character: a node moved by the keyboard, colliding with the walls. */
 export class Player {
@@ -12,6 +12,7 @@ export class Player {
   heading = 0;
   readonly radius = 0.35;
   readonly speed = 4;
+  private readonly _move = { x: 0, y: 0 };
 
   constructor(
     private readonly _scene: Scene,
@@ -39,26 +40,25 @@ export class Player {
   }
 
   /**
-   * Moves the character along the keys, relative to the direction the
-   * camera looks at (`cameraYaw`), then out of the walls. It faces where it
-   * goes, or the point `aim` when given (the pointer on the ground).
+   * Moves the character along the `move` action (keys or stick), relative
+   * to the direction the camera looks at (`cameraYaw`), then out of the
+   * walls. It faces where it goes, or the point `aim` when given.
    */
   update(
     dt: number,
-    input: Input,
+    actions: ActionMap,
     cameraYaw: number,
     aim?: { readonly x: number; readonly z: number }
   ): void {
-    const forward = input.axis(['s', 'down'], ['w', 'up']);
-    const right = input.axis(['a', 'left'], ['d', 'right']);
+    // Of length 0 to 1: a stick half pushed walks half as fast.
+    const { x: right, y: forward } = actions.vector('move', this._move);
     if (forward !== 0 || right !== 0) {
-      // The keys in the frame of the camera, then in the world.
-      const length = Math.hypot(forward, right);
+      // In the frame of the camera, then in the world.
       const sin = Math.sin(cameraYaw);
       const cos = Math.cos(cameraYaw);
-      const dx = (right * cos - forward * sin) / length;
-      const dz = (-right * sin - forward * cos) / length;
-      const run = input.isDown('shift') ? 1.8 : 1;
+      const dx = right * cos - forward * sin;
+      const dz = -right * sin - forward * cos;
+      const run = actions.button('run').down ? 1.8 : 1;
       this.position.x += dx * this.speed * run * dt;
       this.position.z += dz * this.speed * run * dt;
       if (!aim) {

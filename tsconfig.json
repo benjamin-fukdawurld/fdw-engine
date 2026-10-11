@@ -44,6 +44,15 @@
     },
     {
       "path": "./packages/engine-scene"
+    },
+    {
+      "path": "./packages/engine-input"
+    },
+    {
+      "path": "./packages/engine-input-web"
+    },
+    {
+      "path": "./packages/engine-input-native"
     }
   ]
 }
