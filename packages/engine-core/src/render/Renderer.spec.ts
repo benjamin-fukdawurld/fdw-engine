@@ -980,3 +980,101 @@ describe('Renderer, multisampling', () => {
     expect(graph.toDot()).toContain('p1 -> r0v1 [label="color-attachment"];');
   });
 });
+
+// What reaches the pass encoder: the state already bound by the previous
+// draw must not be sent again.
+describe('Renderer, state bound on the pass', () => {
+  const shared = (count: number, mesh: Mesh, material: Material) =>
+    Array.from({ length: count }, (_, i) => ({
+      mesh,
+      material,
+      transform: transformAt(i),
+    }));
+
+  it('binds the pipeline, frame, material and mesh once for items sharing them', () => {
+    const { render, log } = setup();
+    const count = 5;
+    render(shared(count, triangle(), new Material({ graph: colorGraph() })));
+
+    // Every group once, except the object one: each item has its own.
+    const groups = Object.keys(log.draws[0].groups).length;
+    expect(log.draws).toHaveLength(count);
+    expect(log.calls).toEqual({
+      setPipeline: 1,
+      setBindGroup: groups - 1 + count,
+      setVertexBuffer: 1,
+      setIndexBuffer: 1,
+    });
+  });
+
+  it('still gives every draw its complete state', () => {
+    const { render, log } = setup();
+    const count = 4;
+    render(shared(count, triangle(), new Material({ graph: colorGraph() })));
+
+    const [first] = log.draws;
+    for (const draw of log.draws) {
+      expect(Object.keys(draw.groups)).toEqual(Object.keys(first.groups));
+      // The frame and material groups are the same objects for all the draws…
+      expect(draw.groups[0]).toBe(first.groups[0]);
+      expect(draw.groups[1]).toBe(first.groups[1]);
+    }
+    // …and each item has the group of its own object.
+    expect(new Set(log.draws.map((draw) => draw.groups[2])).size).toBe(count);
+  });
+
+  it('binds the groups again after a change of pipeline', () => {
+    const { render, log } = setup();
+    const mesh = triangle();
+    const transform = transformAt(0);
+    render([
+      { mesh, material: new Material({ graph: colorGraph() }), transform },
+      {
+        mesh,
+        material: new Material({
+          graph: colorGraph(),
+          renderState: { doubleSided: true },
+        }),
+        transform,
+      },
+    ]);
+
+    // Another pipeline can have other layouts: even the frame and object
+    // groups, the same objects in both draws, are bound again.
+    const groups = Object.keys(log.draws[0].groups).length;
+    expect(log.pipelines).toHaveLength(2);
+    expect(log.calls.setPipeline).toBe(2);
+    expect(log.calls.setBindGroup).toBe(2 * groups);
+    expect(Object.keys(log.draws[1].groups)).toHaveLength(groups);
+  });
+
+  it('binds the vertex and index buffers again when the mesh changes', () => {
+    const { render, log } = setup();
+    const material = new Material({ graph: colorGraph() });
+    render([
+      ...shared(2, triangle(), material),
+      ...shared(2, triangle(), material),
+    ]);
+
+    const groups = Object.keys(log.draws[0].groups).length;
+    expect(log.calls.setPipeline).toBe(1);
+    expect(log.calls.setVertexBuffer).toBe(2);
+    expect(log.calls.setIndexBuffer).toBe(2);
+    expect(log.calls.setBindGroup).toBe(groups - 1 + 4);
+  });
+
+  it('does not carry the bound state from a frame to the next', () => {
+    const { render, log } = setup();
+    const items = shared(3, triangle(), new Material({ graph: colorGraph() }));
+    render(items);
+    render(items);
+
+    // Each frame has its own pass encoder: everything is bound again.
+    expect(log.draws).toHaveLength(6);
+    expect(log.calls.setPipeline).toBe(2);
+    expect(log.calls.setVertexBuffer).toBe(2);
+    expect(Object.keys(log.draws[3].groups)).toEqual(
+      Object.keys(log.draws[0].groups)
+    );
+  });
+});

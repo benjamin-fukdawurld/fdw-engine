@@ -170,6 +170,12 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     textures: [] as GpuTextureConfiguration[],
     renderPasses: [] as string[],
     viewports: [] as number[][],
+    calls: {
+      setPipeline: 0,
+      setBindGroup: 0,
+      setVertexBuffer: 0,
+      setIndexBuffer: 0,
+    },
   };
   let current: (typeof log.draws)[number] | undefined;
   let boundGroups: Record<number, unknown> = {};
@@ -258,12 +264,22 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         log.renderPasses.push(descriptor.label ?? '');
         return {
           setPipeline: (pipeline) => {
+            log.calls.setPipeline++;
             pipelineLabel = pipeline.label ?? '';
             boundGroups = {};
           },
-          setBindGroup: (index, group) => (boundGroups[index] = group),
-          setVertexBuffer: () => undefined,
-          setIndexBuffer: () => undefined,
+          setBindGroup: (index, group) => {
+            log.calls.setBindGroup++;
+            return (boundGroups[index] = group);
+          },
+          setVertexBuffer: () => {
+            log.calls.setVertexBuffer++;
+            return undefined;
+          },
+          setIndexBuffer: () => {
+            log.calls.setIndexBuffer++;
+            return undefined;
+          },
           setViewport: (x, y, width, height) =>
             log.viewports.push([x, y, width, height]),
           draw: (count) => {
