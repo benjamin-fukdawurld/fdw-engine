@@ -3,6 +3,7 @@ import {
   CameraMath,
   GpuCommandBuffer,
   GpuCommandEncoder,
+  GpuPassTimer,
   RenderBackend,
   RenderTargetDescriptor,
   TransformMath,
@@ -15,6 +16,7 @@ import {
   WebGl2CommandBuffer,
   WebGl2CommandEncoder,
 } from './WebGl2CommandEncoder';
+import { TimerQueryExtension, WebGl2PassTimer } from './WebGl2PassTimer';
 import { WebGl2PipelineFactory } from './WebGl2PipelineFactory';
 import { WebGl2RenderTarget } from './WebGl2RenderTarget';
 
@@ -55,6 +57,16 @@ export class WebGl2RenderBackend implements RenderBackend {
     label,
   }: RenderTargetDescriptor): WebGl2RenderTarget {
     return new WebGl2RenderTarget(this.gl, width, height, format, label);
+  }
+
+  // Where the browser gives the timer queries.
+  createPassTimer(capacity: number): GpuPassTimer | undefined {
+    const extension = this.gl.getExtension(
+      'EXT_disjoint_timer_query_webgl2'
+    ) as TimerQueryExtension | null;
+    return extension
+      ? new WebGl2PassTimer(this.gl, extension, capacity)
+      : undefined;
   }
 
   createCommandEncoder(): GpuCommandEncoder {

@@ -16,6 +16,7 @@ import { GL } from '../gl';
 import { WebGl2Buffer } from '../gpu/WebGl2Buffer';
 import { WebGl2Sampler, WebGl2Texture } from '../gpu/WebGl2Texture';
 import { WebGl2BindGroup, WebGl2RenderPipeline } from './WebGl2PipelineFactory';
+import { WebGl2PassTimer } from './WebGl2PassTimer';
 import { WebGl2RenderTarget } from './WebGl2RenderTarget';
 import { FramebufferAttachment, framebufferFor } from '../gpu/framebuffers';
 
@@ -209,7 +210,9 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
       readonly from: FramebufferAttachment;
       readonly depth?: FramebufferAttachment;
       readonly to: FramebufferAttachment;
-    }
+    },
+    // Recorded after the pass: the end of its timer query.
+    private readonly _onEnd?: Command
   ) {}
 
   setPipeline(pipeline: GpuRenderPipeline): void {
@@ -300,6 +303,9 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
         gl.bindFramebuffer(GL.FRAMEBUFFER, null);
       }
     });
+    if (this._onEnd) {
+      this._commands.push(this._onEnd);
+    }
   }
 
   private state(): DrawState {
@@ -357,6 +363,17 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       throw new Error('A render pass needs a color or a depth attachment');
     }
 
+    // A measured pass: a timer query around its commands.
+    const timer = descriptor.timing
+      ? unwrap(descriptor.timing.timer, WebGl2PassTimer, 'The pass timer')
+      : undefined;
+    const query = descriptor.timing
+      ? timer?.query(descriptor.timing.index)
+      : undefined;
+    if (timer && query) {
+      this._commands.push((gl) => gl.beginQuery(timer.target, query));
+    }
+
     this._commands.push((gl) => {
       gl.bindFramebuffer(
         GL.FRAMEBUFFER,
@@ -393,7 +410,8 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       size.height,
       target && resolveTarget
         ? { from: target, depth: depthTarget, to: resolveTarget }
-        : undefined
+        : undefined,
+      timer && query ? (gl) => gl.endQuery(timer.target) : undefined
     );
   }
 

@@ -2,9 +2,11 @@ import type {
   GpuAttachmentTarget,
   GpuBuffer,
   GpuBufferUsage,
+  GpuPassTimer,
   GpuTexture,
   GpuTextureUsage,
   RenderBackend,
+  PassTiming,
   RenderPassColorAttachment,
   ResourceTransition,
   ResourceUsage,
@@ -53,7 +55,13 @@ export interface RenderGraphRunnerOptions {
   readonly keepFrames?: number;
   // Compiled graphs kept in the cache.
   readonly cacheSize?: number;
+  // Measures the GPU duration of the render and compute passes, where the
+  // backend can (see passTimes). Default false.
+  readonly timing?: boolean;
 }
+
+// The frames whose pass names are kept, waiting for their measures.
+const TimedFrames = 8;
 
 /**
  * Executes render graphs, frame after frame: compiles them (with a cache by
@@ -66,6 +74,11 @@ export class RenderGraphRunner {
   private readonly _keepFrames: number;
   private readonly _cacheSize: number;
   private _frame = 0;
+  private readonly _timing: boolean;
+  private _timer?: GpuPassTimer;
+  // The names of the measured passes of the recent frames, by slot.
+  private readonly _timedPasses = new Map<number, string[]>();
+  private _passTimes = new Map<string, number>();
   // Statistics, for tests and diagnostics.
   compilations = 0;
   created = 0;
@@ -76,6 +89,29 @@ export class RenderGraphRunner {
   ) {
     this._keepFrames = options.keepFrames ?? 3;
     this._cacheSize = options.cacheSize ?? 16;
+    this._timing = options.timing ?? false;
+  }
+
+  /**
+   * The GPU durations of the passes of a recent frame, in milliseconds, by
+   * pass name, with the `timing` option. The GPU answers a few frames late:
+   * empty at first, and where the backend cannot measure.
+   */
+  get passTimes(): ReadonlyMap<string, number> {
+    const times = this._timer?.read();
+    const names = times && this._timedPasses.get(times.frame);
+    if (times && names) {
+      const result = new Map<string, number>();
+      names.forEach((name, slot) => {
+        const duration = times.durations[slot];
+        if (!Number.isNaN(duration)) {
+          // Two passes of the same name: their sum.
+          result.set(name, (result.get(name) ?? 0) + duration);
+        }
+      });
+      this._passTimes = result;
+    }
+    return this._passTimes;
   }
 
   /**
@@ -101,6 +137,16 @@ export class RenderGraphRunner {
     );
 
     const encoder = this.backend.createCommandEncoder();
+    const timer = this.timer(graph);
+    const timed: string[] = [];
+    // The measure of a pass, when the frame is timed.
+    const timing = (name: string): PassTiming | undefined => {
+      if (!timer) {
+        return undefined;
+      }
+      timed.push(name);
+      return { timer, index: timed.length - 1 };
+    };
     compiled.order.forEach((index, position) => {
       const pass = graph.passes[index];
 
@@ -183,11 +229,15 @@ export class RenderGraphRunner {
                 },
               }
             : {}),
+          timing: timing(pass.name),
         });
         execute({ ...base, pass: renderPass });
         renderPass.end();
       } else if (pass.kind === 'compute') {
-        const computePass = encoder.beginComputePass(pass.name);
+        const computePass = encoder.beginComputePass(
+          pass.name,
+          timing(pass.name)
+        );
         execute({ ...base, pass: computePass });
         computePass.end();
       } else {
@@ -201,6 +251,11 @@ export class RenderGraphRunner {
         this.release(keys.get(id) as string, real.get(id) as PooledResource);
       }
     });
+    if (timer) {
+      timer.resolve(encoder, this._frame);
+      this._timedPasses.set(this._frame, timed);
+      this._timedPasses.delete(this._frame - TimedFrames);
+    }
     this.backend.submit([encoder.finish()]);
     this.endFrame();
     return compiled;
@@ -208,6 +263,8 @@ export class RenderGraphRunner {
 
   /** Destroys the pooled resources. */
   destroy(): void {
+    this._timer?.destroy();
+    this._timer = undefined;
     for (const entries of this._free.values()) {
       for (const entry of entries) {
         entry.resource.destroy();
@@ -215,6 +272,24 @@ export class RenderGraphRunner {
     }
     this._free.clear();
     this._compiled.clear();
+  }
+
+  // The timer of a frame, large enough for the passes of the graph; none
+  // without the timing option, or where the backend cannot measure.
+  private timer(graph: RenderGraph): GpuPassTimer | undefined {
+    if (!this._timing || !this.backend.createPassTimer) {
+      return undefined;
+    }
+    const passes = graph.passes.filter(
+      (pass) => pass.kind === 'raster' || pass.kind === 'compute'
+    ).length;
+    if (!this._timer || this._timer.capacity < passes) {
+      // Larger: the measures in flight are lost.
+      this._timer?.destroy();
+      this._timedPasses.clear();
+      this._timer = this.backend.createPassTimer(Math.max(passes, 16));
+    }
+    return this._timer;
   }
 
   private compile(graph: RenderGraph): CompiledRenderGraph {

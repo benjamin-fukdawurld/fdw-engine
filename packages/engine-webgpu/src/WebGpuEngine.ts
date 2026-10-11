@@ -43,7 +43,12 @@ export class WebGpuEngine extends EventTarget implements Engine {
         throw new Error('Failed to get GPU adapter');
       }
       this.adapter = adapter;
-      this.device = await adapter.requestDevice();
+      // Timestamps, to measure the passes, where the adapter has them.
+      this.device = await adapter.requestDevice({
+        requiredFeatures: adapter.features.has('timestamp-query')
+          ? ['timestamp-query']
+          : [],
+      });
       this.backend = new WebGpuRenderBackend(this.device);
     } catch (error) {
       this.adapter = undefined;
