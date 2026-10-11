@@ -23,6 +23,7 @@ import {
   RenderPipelineDescriptor,
   Surface,
   UniformValue,
+  IndexFormat,
 } from '@fdw/engine-backend';
 import { Aabb, Frustum, transformAabb } from '@fdw/engine-geometry';
 import {
@@ -235,6 +236,14 @@ interface PreparedItem {
   readonly pipelineId: number;
   readonly object: ObjectState;
   readonly view: FrameView;
+}
+
+interface BoundState {
+  pipeline?: GpuRenderPipeline;
+  groups: (GpuBindGroup | undefined)[];
+  vertexBuffers: (GpuBuffer | undefined)[];
+  indexBuffer?: GpuBuffer;
+  indexFormat?: IndexFormat;
 }
 
 const normalized = ({ x, y, z }: Readonly<IVec3>): number[] => {
@@ -467,6 +476,8 @@ export class Renderer {
     PhysicalBindGroup,
     GpuBindGroupLayout
   >();
+
+  private readonly _bound = new WeakMap<GpuRenderPassEncoder, BoundState>();
 
   constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
@@ -1683,7 +1694,13 @@ export class Renderer {
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
     ).pipeline;
-    pass.setPipeline(pipeline);
+
+    const state = this.boundState(pass);
+    if (state.pipeline !== pipeline) {
+      pass.setPipeline(pipeline);
+      state.pipeline = pipeline;
+      state.groups = [];
+    }
 
     for (const group of layout.groups) {
       let bindGroup: GpuBindGroup | undefined;
@@ -1698,23 +1715,42 @@ export class Renderer {
       } else {
         bindGroup = this.materialBindGroup(item.material, program, group);
       }
-      if (bindGroup) {
+      if (bindGroup && state.groups[group.index] !== bindGroup) {
         pass.setBindGroup(group.index, bindGroup);
+        state.groups[group.index] = bindGroup;
       }
     }
 
     const mesh = this.gpuMesh(item.mesh);
-    pipeline.vertexBuffers.forEach((meshBuffer, slot) =>
-      pass.setVertexBuffer(slot, mesh.vertexBuffers[meshBuffer])
-    );
+    pipeline.vertexBuffers.forEach((meshBuffer, slot) => {
+      const buffer = mesh.vertexBuffers[meshBuffer];
+      if (state.vertexBuffers[slot] !== buffer) {
+        pass.setVertexBuffer(slot, buffer);
+        state.vertexBuffers[slot] = buffer;
+      }
+    });
     if (mesh.indexBuffer && item.mesh.indices) {
-      pass.setIndexBuffer(
-        mesh.indexBuffer,
-        item.mesh.description.indexBuffer?.format ?? 'uint32'
-      );
+      const format = item.mesh.description.indexBuffer?.format ?? 'uint32';
+      if (
+        state.indexBuffer !== mesh.indexBuffer ||
+        state.indexFormat !== format
+      ) {
+        pass.setIndexBuffer(mesh.indexBuffer, format);
+        state.indexBuffer = mesh.indexBuffer;
+        state.indexFormat = format;
+      }
       pass.drawIndexed(item.mesh.indices.length);
     } else {
       pass.draw(item.mesh.description.vertexCount);
     }
+  }
+
+  private boundState(pass: GpuRenderPassEncoder): BoundState {
+    let state = this._bound.get(pass);
+    if (!state) {
+      state = { groups: [], vertexBuffers: [] };
+      this._bound.set(pass, state);
+    }
+    return state;
   }
 }
