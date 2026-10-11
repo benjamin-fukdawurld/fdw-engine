@@ -36,7 +36,7 @@ Deux jobs Linux en parallèle :
    - construit les addons (`engine-native`, `engine-vulkan`) ;
    - lance les tests des packages natifs et la suite de rendu : Vulkan sur lavapipe, Dawn, HLSL (DXC et spirv-val), WebGL2 dans Chromium avec SwiftShader.
 
-**Quels projets.** Les projets qui ont besoin du GPU, d'un SDK ou d'un écran portent le tag `gpu` (`engine-native`, `engine-vulkan`, `rendering-tests`) : `check` les exclut (`nx affected --exclude=tag:gpu`), `native` ne lance qu'eux, et seulement s'ils sont touchés par le changement (`nx show projects --affected --projects tag:gpu`). Sinon `native` s'arrête tout de suite, en succès : le statut reste exigible pour fusionner. Les fenêtres tournent dans un écran virtuel (Xvfb).
+**Quels projets.** Les projets qui ont besoin du GPU, d'un SDK ou d'un écran portent le tag `gpu` (`engine-webgpu`, pour ses tests sur Dawn, `engine-native`, `engine-vulkan`, `rendering-tests`) : `check` les exclut (`nx affected --exclude=tag:gpu`), `native` ne lance qu'eux, et seulement s'ils sont touchés par le changement (`nx show projects --affected --projects tag:gpu`). Sinon `native` s'arrête tout de suite, en succès : le statut reste exigible pour fusionner. Les fenêtres tournent dans un écran virtuel (Xvfb).
 
 **Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,window` fait échouer les tests quand une suite exigée ne peut pas tourner : `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`, appelée par chaque suite. WebGL2 n'en a pas besoin : sans Chromium, sa suite échoue déjà.
 

@@ -10,10 +10,12 @@ import {
 } from '@fdw/engine-shader';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebGpuEngine } from '../WebGpuEngine';
+import { canRun } from '@fdw/engine-backend/testing';
 
 // Validates the generated WGSL and the pipelines with Dawn, the WebGPU
 // implementation of Chrome, running in Node. Skipped where Dawn cannot load.
 const dawn = await import('webgpu').catch(() => undefined);
+const ready = canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load');
 
 const mesh: MeshDescription = {
   vertexBuffers: [
@@ -196,7 +198,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
   },
 };
 
-describe.skipIf(!dawn)('generated WGSL, validated by Dawn', () => {
+describe.skipIf(!ready)('generated WGSL, validated by Dawn', () => {
   let engine: WebGpuEngine;
 
   beforeAll(async () => {
