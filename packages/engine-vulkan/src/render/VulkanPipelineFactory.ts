@@ -38,6 +38,8 @@ const bindingKind = (resource: LogicalBinding): number => {
       return resource.access === 'read-write'
         ? BindingKinds.storageReadWrite
         : BindingKinds.storageRead;
+    case 'object-table':
+      throw new Error('Object tables are not supported by this backend yet');
   }
 };
 

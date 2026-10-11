@@ -28,6 +28,8 @@ export interface PhysicalBinding {
   // For storage buffers only: the distance in bytes between two elements of
   // the array, to fill the buffer.
   readonly storage?: { readonly elementStride: number };
+  // For object tables only: the layout of a row (objectRowLayout).
+  readonly objectRow?: PhysicalUniformBlock;
 }
 
 export interface PhysicalBindGroup {

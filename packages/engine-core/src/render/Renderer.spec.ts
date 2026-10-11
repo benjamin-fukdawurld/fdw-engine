@@ -333,6 +333,85 @@ describe('Renderer', () => {
   });
 });
 
+describe('Renderer, object table', () => {
+  const tabled = () => {
+    const { backend, log } = fakeBackend({
+      maxVaryings: 16,
+      storageBuffers: true,
+      compute: true,
+      objectTable: true,
+    });
+    const renderer = new Renderer(backend);
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    const render = (items: Parameters<Renderer['render']>[0]['items']) =>
+      renderer.render({ items, camera, surface });
+    return { render, log };
+  };
+
+  it('draws each object as an instance of the table, its group bound once', () => {
+    const { render, log } = tabled();
+    const material = new Material({ graph: colorGraph() });
+    const items = [-1, 0, 1].map((x) => ({
+      mesh: triangle(),
+      material,
+      transform: transformAt(x),
+    }));
+    render(items);
+    expect(log.objectTables).toHaveLength(1);
+    expect(log.draws.map((draw) => draw.firstInstance)).toEqual([0, 1, 2]);
+    // No buffer per object.
+    expect(log.buffers.filter((b) => b.label === 'object uniforms')).toEqual(
+      []
+    );
+    // The three rows in one write, then the instances of the pass.
+    expect(log.rowWrites).toEqual([{ first: 0, bytes: 3 * 112 }]);
+    expect(log.instanceWrites).toEqual([{ first: 0, count: 3 }]);
+    expect([...log.lastInstances].sort()).toEqual([0, 1, 2]);
+    const objectGroups = new Set(log.draws.map((draw) => draw.groups[2]));
+    expect(objectGroups.size).toBe(1);
+  });
+
+  it('grows the table, every row written in the new one', () => {
+    const { render, log } = tabled();
+    const material = new Material({ graph: colorGraph() });
+    const items = Array.from({ length: 300 }, (_, i) => ({
+      mesh: triangle(),
+      material,
+      transform: transformAt(i / 100 - 1.5),
+    }));
+    render(items);
+    // The first table, then a larger one for 300 objects.
+    expect(log.objectTables.length).toBeGreaterThan(0);
+    const last = log.objectTables.at(-1) as { rows: number; instances: number };
+    expect(last.rows).toBeGreaterThanOrEqual(300);
+    expect(last.instances).toBeGreaterThanOrEqual(300);
+    expect(log.rowWrites.at(-1)).toEqual({ first: 0, bytes: 300 * 112 });
+    expect(log.draws.map((draw) => draw.firstInstance)).toEqual(
+      items.map((_, i) => i)
+    );
+  });
+
+  it('rewrites only the rows of the objects that moved', () => {
+    const { render, log } = tabled();
+    const material = new Material({ graph: colorGraph() });
+    const transforms = [0, 1, 2].map((x) => transformAt(x));
+    const items = transforms.map((transform) => ({
+      mesh: triangle(),
+      material,
+      transform,
+    }));
+    render(items);
+    log.rowWrites.length = 0;
+    render(items);
+    expect(log.rowWrites).toEqual([]);
+    transforms[1].position = { x: 5 };
+    render(items);
+    expect(log.rowWrites).toEqual([{ first: 1, bytes: 112 }]);
+    // Each frame starts its instances over.
+    expect(log.instanceWrites.at(-1)).toEqual({ first: 0, count: 3 });
+  });
+});
+
 describe('Renderer on the render graph', () => {
   it('draws the transparent items in a second pass, only when there are some', () => {
     const { render, log } = setup();

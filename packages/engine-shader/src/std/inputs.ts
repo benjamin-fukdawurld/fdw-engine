@@ -104,6 +104,9 @@ export const samplerInput: NodeDefinition = {
 const builtins: Record<string, { type: ShaderType; stage: ShaderStage }> = {
   'vertex-index': { type: BuiltinTypes.u32, stage: 'vertex' },
   'instance-index': { type: BuiltinTypes.u32, stage: 'vertex' },
+  // The row of the object drawn in the object table (backends with the
+  // objectTable capability).
+  'object-index': { type: BuiltinTypes.u32, stage: 'vertex' },
   'frag-coord': { type: BuiltinTypes.vec4f, stage: 'fragment' },
   'front-facing': { type: BuiltinTypes.bool, stage: 'fragment' },
   // Graphs ending with output.fullscreen: the coordinates of the pixel in the
@@ -144,6 +147,35 @@ const engineValues: Record<string, ShaderType> = {
   // The shadow atlas of the lights, read by the light.shadow macro.
   shadowMap: BuiltinTypes.depthTexture2d,
   shadowSampler: BuiltinTypes.comparisonSampler,
+};
+
+// The members of a row of the object table.
+const objectMembers: Record<string, ShaderType> = {
+  world: BuiltinTypes.mat4f,
+  normalMatrix: BuiltinTypes.mat3f,
+};
+
+/**
+ * A member of a row of the object table: what input.engine `object.world`
+ * and `object.normalMatrix` become on the backends with the objectTable
+ * capability, reading the row `index` (input.builtin `object-index`).
+ * Produced by the compiler; a graph has no reason to use it.
+ */
+export const object: NodeDefinition = {
+  id: 'input.object',
+  category: 'input',
+  description: 'A member of the row of the object drawn, in the object table.',
+  params: {
+    member: {
+      kind: 'string',
+      values: Object.keys(objectMembers),
+      required: true,
+    },
+  },
+  inputs: () => [{ name: 'index', type: BuiltinTypes.u32 }],
+  outputs: (params) => [
+    { name: 'value', type: objectMembers[params['member'] as string] },
+  ],
 };
 
 export const engine: NodeDefinition = {

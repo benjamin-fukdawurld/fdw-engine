@@ -18,6 +18,7 @@ import { Sampler } from '../gpu/Sampler';
 import { Texture } from '../gpu/Texture';
 import { WgslCodegen } from '../shader/WgslCodegen';
 import { wgslLayoutStrategy } from '../shader/wgslLayoutStrategy';
+import { WebGpuObjectTable } from './WebGpuObjectTable';
 
 export class WebGpuRenderPipeline implements GpuRenderPipeline {
   constructor(
@@ -40,6 +41,20 @@ export class WebGpuBindGroup implements GpuBindGroup {
     readonly layout: WebGpuBindGroupLayout,
     readonly group: GPUBindGroup
   ) {}
+}
+
+// The entries of a binding: one, or two for an object table (the rows, then
+// the row of each instance).
+function layoutEntries(binding: PhysicalBinding): GPUBindGroupLayoutEntry[] {
+  if (binding.resource.kind === 'object-table') {
+    const visibility = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+    return [0, 1].map((offset) => ({
+      binding: binding.binding + offset,
+      visibility,
+      buffer: { type: 'read-only-storage' },
+    }));
+  }
+  return [layoutEntry(binding)];
 }
 
 function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
@@ -72,6 +87,8 @@ function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
         visibility,
         sampler: { type: resource.comparison ? 'comparison' : 'filtering' },
       };
+    case 'object-table':
+      throw new Error('An object table has two entries: see layoutEntries');
     case 'storage-buffer':
       return resource.access === 'read-write'
         ? {
@@ -125,7 +142,7 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
   }
 
   createBindGroupLayout(group: PhysicalBindGroup): WebGpuBindGroupLayout {
-    const entries = group.bindings.map(layoutEntry);
+    const entries = group.bindings.flatMap(layoutEntries);
     const key = JSON.stringify(entries);
     let layout = this._bindGroupLayouts.get(key);
     if (!layout) {
@@ -154,10 +171,20 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
       layout,
       this.device.createBindGroup({
         layout: layout.layout,
-        entries: entries.map((entry) => ({
-          binding: entry.binding,
-          resource: bindingResource(entry),
-        })),
+        entries: entries.flatMap((entry): GPUBindGroupEntry[] =>
+          entry.resource instanceof WebGpuObjectTable
+            ? [
+                {
+                  binding: entry.binding,
+                  resource: { buffer: entry.resource.rowBuffer },
+                },
+                {
+                  binding: entry.binding + 1,
+                  resource: { buffer: entry.resource.instanceBuffer },
+                },
+              ]
+            : [{ binding: entry.binding, resource: bindingResource(entry) }]
+        ),
       })
     );
   }

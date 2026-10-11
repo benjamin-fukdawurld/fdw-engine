@@ -124,7 +124,35 @@ export interface GpuBindGroup {
 
 export interface GpuBindGroupEntry {
   readonly binding: number;
-  readonly resource: GpuBuffer | GpuTexture | GpuSampler;
+  readonly resource: GpuBuffer | GpuTexture | GpuSampler | GpuObjectTable;
+}
+
+/**
+ * The table of the objects drawn (the 'object-table' binding of the
+ * programs): a row per object, and the row of each instance drawn. The
+ * instance i of a draw reads the row instances[firstInstance + i]. Rows are
+ * stable (rewritten when the object changes), the instances follow the
+ * order of the draws. Created by RenderBackend.createObjectTable, in the
+ * memory the backend chooses (storage buffers, data textures); the bytes
+ * of a row follow objectRowLayout.
+ */
+export interface GpuObjectTable {
+  // How many rows and instances it holds.
+  readonly rows: number;
+  readonly instances: number;
+  // Writes rows from `firstRow`: whole rows, rowStride bytes each.
+  writeRows(firstRow: number, data: ArrayBufferView<ArrayBuffer>): void;
+  // Writes the rows of instances from `firstInstance`.
+  writeInstances(firstInstance: number, rows: Uint32Array<ArrayBuffer>): void;
+  destroy(): void;
+}
+
+export interface ObjectTableDescriptor {
+  readonly rows: number;
+  readonly instances: number;
+  // Bytes per row (objectRowLayout).
+  readonly rowStride: number;
+  readonly label?: string;
 }
 
 // A texture that can be rendered to: a surface image or an offscreen target.
@@ -196,8 +224,18 @@ export interface GpuRenderPassEncoder {
   setBindGroup(index: number, group: GpuBindGroup): void;
   setVertexBuffer(slot: number, buffer: GpuBuffer): void;
   setIndexBuffer(buffer: GpuBuffer, format: IndexFormat): void;
-  draw(vertexCount: number, instanceCount?: number): void;
-  drawIndexed(indexCount: number, instanceCount?: number): void;
+  // `firstInstance`: the first instance, in the instances of the object
+  // table (see GpuObjectTable).
+  draw(
+    vertexCount: number,
+    instanceCount?: number,
+    firstInstance?: number
+  ): void;
+  drawIndexed(
+    indexCount: number,
+    instanceCount?: number,
+    firstInstance?: number
+  ): void;
   // The rectangle drawn into, in pixels from the top left corner of the
   // attachments (the whole attachments by default): a tile of an atlas.
   setViewport(x: number, y: number, width: number, height: number): void;

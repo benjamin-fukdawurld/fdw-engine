@@ -302,6 +302,14 @@ function translateNode(
         binding: params['name'] as string,
       });
       return;
+    case 'input.object':
+      output(
+        'value',
+        types.outputs['value'],
+        { kind: 'load-object', member: params['member'] as string },
+        inputValues()
+      );
+      return;
     case 'input.builtin':
       output('value', types.outputs['value'], {
         kind: 'load-builtin',

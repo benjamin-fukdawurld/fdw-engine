@@ -20,9 +20,11 @@ import type {
   GpuBindGroupLayout,
   GpuCommandBuffer,
   GpuCommandEncoder,
+  GpuObjectTable,
   GpuPassTimer,
   GpuRenderPipeline,
   GpuRenderTarget,
+  ObjectTableDescriptor,
   RenderPipelineDescriptor,
 } from './types';
 
@@ -85,6 +87,9 @@ export interface RenderBackend {
     descriptor: RenderTargetDescriptor
   ): GpuRenderTarget & { destroy(): void };
   createCommandEncoder(): GpuCommandEncoder;
+  // An object table, on the backends whose programs read the object data
+  // from it (the objectTable capability).
+  createObjectTable?(descriptor: ObjectTableDescriptor): GpuObjectTable;
   // A timer of `capacity` passes; absent, or undefined, where the GPU cannot
   // measure (see GpuPassTimer).
   createPassTimer?(capacity: number): GpuPassTimer | undefined;

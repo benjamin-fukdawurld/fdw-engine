@@ -91,12 +91,12 @@ class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
     );
   }
 
-  draw(vertexCount: number, instanceCount = 1): void {
-    this._pass.draw(vertexCount, instanceCount);
+  draw(vertexCount: number, instanceCount = 1, firstInstance = 0): void {
+    this._pass.draw(vertexCount, instanceCount, 0, firstInstance);
   }
 
-  drawIndexed(indexCount: number, instanceCount = 1): void {
-    this._pass.drawIndexed(indexCount, instanceCount);
+  drawIndexed(indexCount: number, instanceCount = 1, firstInstance = 0): void {
+    this._pass.drawIndexed(indexCount, instanceCount, 0, 0, firstInstance);
   }
 
   end(): void {

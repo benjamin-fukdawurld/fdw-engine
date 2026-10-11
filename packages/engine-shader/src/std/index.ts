@@ -95,6 +95,7 @@ export const stdInputs = {
   sampler: inputs.samplerInput,
   builtin: inputs.builtin,
   engine: inputs.engine,
+  object: inputs.object,
 } as const;
 
 /**

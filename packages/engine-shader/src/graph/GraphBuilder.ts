@@ -427,6 +427,7 @@ export class GraphBuilder {
     builtin:
       | 'vertex-index'
       | 'instance-index'
+      | 'object-index'
       | 'frag-coord'
       | 'front-facing'
       // Graphs ending with output.fullscreen.

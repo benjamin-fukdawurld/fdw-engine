@@ -20,9 +20,14 @@ const scene = (
   count: number,
   materials: number,
   shadows = false,
-  spacing = 1
+  spacing = 1,
+  objectTable = false
 ) => {
-  const { backend } = fakeBackend();
+  const { backend } = fakeBackend(
+    objectTable
+      ? { maxVaryings: 16, storageBuffers: true, compute: true, objectTable }
+      : undefined
+  );
   const renderer = new Renderer(backend);
   const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
   const mesh = triangle();
@@ -76,4 +81,26 @@ describe('Renderer.render', () => {
   // A large list: each item is tested against the frustum.
   const { render: culled } = scene(10_000, 1, false, 2);
   bench('10 000 objects in a list, 1000 visible', culled);
+});
+
+// The same frames, the object data in a table (the backends with the
+// objectTable capability).
+describe('Renderer.render, object table', () => {
+  for (const count of [1, 100, 1000]) {
+    const { render } = scene(count, 1, false, 1, true);
+    bench(`${count} objects, static`, render);
+  }
+
+  const moving = scene(1000, 1, false, 1, true);
+  let time = 0;
+  bench('1000 objects, moving', () => {
+    time++;
+    for (const item of moving.items) {
+      item.transform.position = { y: Math.sin(time) };
+    }
+    moving.render();
+  });
+
+  const { render: shadowed } = scene(1000, 1, true, 1, true);
+  bench('1000 objects, static, sun with shadows', shadowed);
 });

@@ -376,6 +376,81 @@ describe('compile', () => {
     });
   });
 
+  describe('object table', () => {
+    const tabled = { capabilities: { objectTable: true } };
+
+    it('reads the object values from the table, at the row of the object', () => {
+      const program = compile(texturedUnlit(), tabled);
+      expect(program.layout.groups[2]).toEqual({
+        slot: 'object',
+        bindings: [
+          {
+            kind: 'object-table',
+            name: 'objects',
+            members: [
+              { name: 'world', type: BuiltinTypes.mat4f },
+              { name: 'normalMatrix', type: BuiltinTypes.mat3f },
+            ],
+          },
+        ],
+      });
+      const vertex = stage(program, 'vertex');
+      const [index] = ops(vertex, 'load-builtin').filter(
+        (instruction) =>
+          instruction.op.kind === 'load-builtin' &&
+          instruction.op.builtin === 'object-index'
+      );
+      const [world] = ops(vertex, 'load-object');
+      expect(world.op).toEqual({ kind: 'load-object', member: 'world' });
+      expect(world.args).toEqual([index.id]);
+      expect(
+        ops(vertex, 'load-resource').filter(
+          (instruction) =>
+            instruction.op.kind === 'load-resource' &&
+            instruction.op.binding === 'objectUniforms'
+        )
+      ).toEqual([]);
+      // The fragment does not read the object: no varying for its row.
+      expect(stage(program, 'fragment').inputs).not.toContainEqual(
+        expect.objectContaining({ type: BuiltinTypes.u32 })
+      );
+    });
+
+    it('gives the row to the fragment stage as a flat varying', () => {
+      const g = new GraphBuilder('object origin');
+      // The origin of the object, read per fragment.
+      const origin = g.call(std.transform, {
+        matrix: g.engine('object.world'),
+        vector: g.constant(BuiltinTypes.vec4f, [0, 0, 0, 1]),
+      });
+      g.surface({ baseColor: origin.swizzle('xyz') });
+      const program = compile(g.build(), tabled);
+      const fragment = stage(program, 'fragment');
+      const row = fragment.inputs.find(
+        (input) => input.type === BuiltinTypes.u32
+      );
+      expect(row).toEqual(expect.objectContaining({ interpolation: 'flat' }));
+      const [world] = ops(fragment, 'load-object');
+      const [load] = ops(fragment, 'load-input').filter(
+        (instruction) =>
+          instruction.op.kind === 'load-input' &&
+          instruction.op.input === row?.name
+      );
+      expect(world.args).toEqual([load.id]);
+    });
+
+    it('keeps the uniform block without the capability', () => {
+      const program = compile(texturedUnlit());
+      expect(program.layout.groups[2].bindings[0]).toEqual(
+        expect.objectContaining({
+          kind: 'uniform-block',
+          name: 'objectUniforms',
+        })
+      );
+      expect(ops(stage(program, 'vertex'), 'load-object')).toEqual([]);
+    });
+  });
+
   describe('unsupported or reserved features', () => {
     it.each([
       [

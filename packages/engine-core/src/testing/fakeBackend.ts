@@ -1,5 +1,6 @@
 import {
   BackendCapabilities,
+  ObjectTableDescriptor,
   CameraMath,
   GpuBindGroupEntry,
   GpuBuffer,
@@ -158,6 +159,11 @@ const cameraMath = {
 export function fakeBackend(capabilities?: BackendCapabilities) {
   const log = {
     buffers: [] as FakeBuffer[],
+    objectTables: [] as { rows: number; instances: number }[],
+    rowWrites: [] as { first: number; bytes: number }[],
+    instanceWrites: [] as { first: number; count: number }[],
+    // A view of the rows of the last write: read it right after the frame.
+    lastInstances: new Uint32Array() as Uint32Array,
     pipelines: [] as RenderPipelineDescriptor[],
     bindGroups: [] as { key: string; entries: readonly GpuBindGroupEntry[] }[],
     draws: [] as {
@@ -165,6 +171,8 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       groups: Record<number, unknown>;
       count: number;
       indexed: boolean;
+      instances?: number;
+      firstInstance?: number;
     }[],
     submits: 0,
     textures: [] as GpuTextureConfiguration[],
@@ -248,6 +256,26 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     transformMath,
     depthFormat: 'depth24plus',
     capabilities,
+    // With the objectTable capability: a table recording its writes.
+    ...(capabilities?.objectTable
+      ? {
+          createObjectTable: ({ rows, instances }: ObjectTableDescriptor) => {
+            log.objectTables.push({ rows, instances });
+            return {
+              rows,
+              instances,
+              writeRows: (first: number, data: ArrayBufferView) =>
+                log.rowWrites.push({ first, bytes: data.byteLength }),
+              // The rows of the last write; the count of every write.
+              writeInstances: (first: number, rows: Uint32Array) => {
+                log.instanceWrites.push({ first, count: rows.length });
+                log.lastInstances = rows;
+              },
+              destroy: () => undefined,
+            };
+          },
+        }
+      : {}),
     createRenderTarget: ({ width, height, format }) => ({
       width,
       height,
@@ -282,21 +310,25 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           },
           setViewport: (x, y, width, height) =>
             log.viewports.push([x, y, width, height]),
-          draw: (count) => {
+          draw: (count, instances = 1, firstInstance = 0) => {
             current = {
               pipeline: pipelineLabel,
               groups: { ...boundGroups },
               count,
               indexed: false,
+              instances,
+              firstInstance,
             };
             log.draws.push(current);
           },
-          drawIndexed: (count) => {
+          drawIndexed: (count, instances = 1, firstInstance = 0) => {
             current = {
               pipeline: pipelineLabel,
               groups: { ...boundGroups },
               count,
               indexed: true,
+              instances,
+              firstInstance,
             };
             log.draws.push(current);
           },

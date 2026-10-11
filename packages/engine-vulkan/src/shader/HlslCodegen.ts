@@ -175,7 +175,24 @@ function resourceIdentifier(resource: LogicalBinding): string {
       return `s_${resource.name}`;
     case 'storage-buffer':
       return `b_${resource.name}`;
+    case 'object-table':
+      return resource.name;
   }
+}
+
+// The second buffer of an object table: the row of each instance.
+const instancesIdentifier = (table: string) => `${table}Instances`;
+
+// The key of the object table in the identifiers of the resources.
+const ObjectTableKey = '#object-table';
+
+// The identifier of the object table of the layout.
+function objectTable(resources: ReadonlyMap<string, string>): string {
+  const table = resources.get(ObjectTableKey);
+  if (!table) {
+    throw new Error('The layout has no object table');
+  }
+  return table;
 }
 
 // The builtins read by the stages: parameters of the entry points, with
@@ -305,6 +322,13 @@ function emitInstructions(
         if (op.builtin === 'frag-coord') {
           // In a pixel shader, SV_Position is the fragment coordinate.
           expression = 'input.clipPosition';
+        } else if (op.builtin === 'object-index') {
+          // SV_InstanceID is the InstanceIndex of Vulkan: it includes the
+          // first instance of the draw.
+          builtins.add('instance-index');
+          expression = `${instancesIdentifier(objectTable(resources))}[${
+            builtinParameters['instance-index'].name
+          }]`;
         } else if (op.builtin === 'num-workgroups') {
           builtins.add(op.builtin);
           expression = numWorkgroups.name;
@@ -396,6 +420,12 @@ function emitInstructions(
       case 'convert':
         expression = `((${hlslType(type)})${arg(instruction, 0)})`;
         break;
+      case 'load-object':
+        expression = `${objectTable(resources)}[${arg(
+          instruction,
+          0
+        )}].${memberIdentifier(op.member)}`;
+        break;
       case 'swizzle':
         expression = `${arg(instruction, 0)}.${op.components}`;
         break;
@@ -429,6 +459,13 @@ function declareResources(
       const location = `[[vk::binding(${physical.binding}, ${group.index})]]`;
       const name = resourceIdentifier(resource);
       resources.set(resource.name, name);
+      if (resource.kind === 'object-table') {
+        resources.set(ObjectTableKey, name);
+        sections.push(
+          declareObjectTable(physical, location, name, group.index)
+        );
+        continue;
+      }
       sections.push(declareResource(physical, location, name));
     }
   }
@@ -471,7 +508,38 @@ function declareResource(
           ? 'RWStructuredBuffer'
           : 'StructuredBuffer'
       }<${hlslType(resource.type.element)}> ${name};`;
+    case 'object-table':
+      throw new Error('An object table is declared by declareObjectTable');
   }
+}
+
+// An object table: the rows, then the row of each instance at the next
+// binding, as structured buffers (storage buffers in SPIR-V).
+function declareObjectTable(
+  { resource, binding, objectRow }: PhysicalBinding,
+  location: string,
+  name: string,
+  group: number
+): string {
+  if (!objectRow) {
+    throw new Error(`Object table "${resource.name}" has no row layout`);
+  }
+  const struct = `${structName(resource.name)}Row`;
+  return [
+    `struct ${struct} {`,
+    ...objectRow.members.map(
+      (member) =>
+        `  [[vk::offset(${member.offset})]] ${declaration(
+          member.type,
+          memberIdentifier(member.name)
+        )};`
+    ),
+    '};',
+    `${location} StructuredBuffer<${struct}> ${name};`,
+    `[[vk::binding(${
+      binding + 1
+    }, ${group})]] StructuredBuffer<uint> ${instancesIdentifier(name)};`,
+  ].join('\n');
 }
 
 // A member of the input or output struct of a stage.

@@ -23,6 +23,9 @@ export type ValueId = number;
 export type IrBuiltin =
   | 'vertex-index'
   | 'instance-index'
+  // The row of the object drawn in the object table (vertex stage; the
+  // fragment stage receives it as a flat varying).
+  | 'object-index'
   | 'frag-coord'
   | 'front-facing'
   // Compute stage, vec3<u32>: position of the thread in the whole grid, in
@@ -86,6 +89,11 @@ export type IrOp =
   /** A stage input: vertex attribute or varying. */
   | { readonly kind: 'load-input'; readonly input: string }
   | { readonly kind: 'load-builtin'; readonly builtin: IrBuiltin }
+  /**
+   * A member of a row of the object table (the 'object-table' binding of
+   * the layout): args[0] is the row, a u32.
+   */
+  | { readonly kind: 'load-object'; readonly member: string }
   /** A binding of the ProgramLayout, or a member of a uniform block. */
   | {
       readonly kind: 'load-resource';

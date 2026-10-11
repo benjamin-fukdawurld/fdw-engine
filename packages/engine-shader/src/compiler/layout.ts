@@ -41,6 +41,20 @@ export type LogicalBinding =
       readonly kind: 'sampler';
       readonly name: string;
       readonly comparison: boolean;
+    }
+  | {
+      /**
+       * The table of the objects drawn: a row per object (the members), and
+       * the row of each instance drawn. An instance reads the row
+       * instances[firstInstance + instance] (see input.object). Each backend
+       * chooses the memory: storage buffers, data textures.
+       */
+      readonly kind: 'object-table';
+      readonly name: string;
+      readonly members: readonly {
+        readonly name: string;
+        readonly type: ShaderType;
+      }[];
     };
 
 /**
@@ -80,6 +94,14 @@ export const BuiltinSlots = ['frame', 'material', 'object'] as const;
  * @group Program layout
  */
 export const EngineSlots = ['frame', 'object'] as const;
+
+/**
+ * Name of the object table, in the 'object' slot of the backends with the
+ * objectTable capability.
+ *
+ * @group Program layout
+ */
+export const ObjectTableName = 'objects';
 
 /**
  * Name of the uniform block of a slot: `materialUniforms`…
