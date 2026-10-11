@@ -7,7 +7,10 @@
     "build": "npx nx run-many -t build",
     "serve": "npx nx serve demo",
     "docs": "npx nx run docs:dev",
-    "test": "npx nx run-many -t test"
+    "test": "npx nx run-many -t test",
+    "format": "git ls-files -z | xargs -0 prettier --write --ignore-unknown",
+    "format:check": "git ls-files -z | xargs -0 prettier --check --ignore-unknown",
+    "docs:links": "node tools/docs/check-links.mjs apps/docs/dist"
   },
   "private": true,
   "devDependencies": {

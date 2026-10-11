@@ -14,6 +14,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { createDawnFixture, dawn } from './dawnFixture';
 import { describeRenderer } from './suite';
+import { canRun } from '@fdw/engine-backend/testing';
 
 // Every program of the rendering suite in HLSL: the suite runs on Dawn
 // while recording the programs of the pipelines it creates; each one is
@@ -27,7 +28,11 @@ const sdk = !!(
   findTool('spirv-val') &&
   findTool('spirv-cross')
 );
-const skip = !dawn || !sdk;
+const skip = !canRun(
+  'hlsl',
+  !!dawn && sdk,
+  'needs Dawn and the Vulkan SDK (dxc, spirv-val, spirv-cross)'
+);
 
 const programs = new Map<string, CompiledProgram>();
 

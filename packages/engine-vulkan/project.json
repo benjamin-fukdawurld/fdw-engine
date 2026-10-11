@@ -3,7 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/engine-vulkan/src",
   "projectType": "library",
-  "tags": [],
+  "tags": ["gpu"],
   "targets": {
     "test": {
       "inputs": [

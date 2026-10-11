@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebGpuEngine } from '../WebGpuEngine';
 import { WgslCodegen } from './WgslCodegen';
 import { wgslLayoutStrategy } from './wgslLayoutStrategy';
+import { canRun } from '@fdw/engine-backend/testing';
 
 // Compute stages, written directly in IR (the compute graphs compile to it):
 // output[i] = input[i] × factor, for i < arrayLength(input).
@@ -145,8 +146,9 @@ describe('WGSL compute stages', () => {
 // Runs the compute stage with Dawn, the WebGPU implementation of Chrome, in
 // Node. Skipped where Dawn cannot load.
 const dawn = await import('webgpu').catch(() => undefined);
+const ready = canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load');
 
-describe.skipIf(!dawn)('compute stages on WebGPU (Dawn)', () => {
+describe.skipIf(!ready)('compute stages on WebGPU (Dawn)', () => {
   let engine: WebGpuEngine;
 
   beforeAll(async () => {

@@ -2,10 +2,15 @@ import { existsSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { addonPath } from './addon';
 import { VulkanDevice } from './VulkanDevice';
+import { canRun } from '@fdw/engine-backend/testing';
 
 // On the GPU, with the validation layer when the Vulkan SDK is set up:
 // when the addon is built (it needs the SDK).
-const built = existsSync(addonPath());
+const built = canRun(
+  'vulkan',
+  existsSync(addonPath()),
+  'the Vulkan addon is not built (VULKAN_SDK)'
+);
 
 describe.skipIf(!built)('VulkanDevice', () => {
   let device: VulkanDevice;

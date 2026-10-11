@@ -16,20 +16,20 @@ engine-webgpu    ← concrete backend (this package)
 
 ### Engine & surface
 
-| Export                | Kind  | Description                                                                      |
-| --------------------- | ----- | -------------------------------------------------------------------------------- |
-| `WebGpuEngine`        | class | Implements `Engine`: requests the `GPUAdapter` / `GPUDevice`, manages the lifecycle and exposes the `backend` once ready. Accepts a `gpu` option to run outside a browser (e.g. Dawn for Node) |
-| `WebGpuSurface`       | class | Implements `Surface` on top of an `HTMLCanvasElement` (`GPUCanvasContext`)       |
-| `WebGpuOffscreenSurface` | class | Implements `Surface` with a texture: render-to-texture, screenshots, headless tests (`readPixels()`) |
-| `WebGpuSurfaceConfig` | type  | Surface options: `alphaMode`, `clearColor`                                       |
+| Export                   | Kind  | Description                                                                                                                                                                                    |
+| ------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WebGpuEngine`           | class | Implements `Engine`: requests the `GPUAdapter` / `GPUDevice`, manages the lifecycle and exposes the `backend` once ready. Accepts a `gpu` option to run outside a browser (e.g. Dawn for Node) |
+| `WebGpuSurface`          | class | Implements `Surface` on top of an `HTMLCanvasElement` (`GPUCanvasContext`)                                                                                                                     |
+| `WebGpuOffscreenSurface` | class | Implements `Surface` with a texture: render-to-texture, screenshots, headless tests (`readPixels()`)                                                                                           |
+| `WebGpuSurfaceConfig`    | type  | Surface options: `alphaMode`, `clearColor`                                                                                                                                                     |
 
 ### Rendering (`render/`)
 
-| Export | Description |
-| --- | --- |
-| `WebGpuRenderBackend` | Implements `RenderBackend`: buffer, texture and pipeline factories, math, render targets, command encoding |
-| `WebGpuPipelineFactory` | Implements `GpuPipelineFactory`: WGSL generation, shader modules and bind group layouts cached, explicit pipeline layouts |
-| `WebGpuCommandEncoder`, `WebGpuRenderTarget` | Command recording and render targets |
+| Export                                       | Description                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `WebGpuRenderBackend`                        | Implements `RenderBackend`: buffer, texture and pipeline factories, math, render targets, command encoding                |
+| `WebGpuPipelineFactory`                      | Implements `GpuPipelineFactory`: WGSL generation, shader modules and bind group layouts cached, explicit pipeline layouts |
+| `WebGpuCommandEncoder`, `WebGpuRenderTarget` | Command recording and render targets                                                                                      |
 
 ### GPU resources (`gpu/`)
 
@@ -45,27 +45,27 @@ engine-webgpu    ← concrete backend (this package)
 
 Implementations of the abstract layout API following WGSL alignment rules:
 
-| Export                                                    | Description                                          |
-| --------------------------------------------------------- | ---------------------------------------------------- |
-| `uniformLayout`, `uniformWriters`, `uniformSerializers`   | Layout, binary writer and WGSL declaration per primitive |
-| `uniformPrimitives`, `uniformArrays`                      | Ready-to-use `GpuType`s and `GpuArray`s              |
-| `uniformStructBuildStrategy`, `storageStructBuildStrategy` | Struct rules for uniform and storage buffers        |
-| `uniformStructBuilder()`, `storageStruct()`               | Build a `GpuStruct` for a uniform / storage buffer   |
+| Export                                                     | Description                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------- |
+| `uniformLayout`, `uniformWriters`, `uniformSerializers`    | Layout, binary writer and WGSL declaration per primitive |
+| `uniformPrimitives`, `uniformArrays`                       | Ready-to-use `GpuType`s and `GpuArray`s                  |
+| `uniformStructBuildStrategy`, `storageStructBuildStrategy` | Struct rules for uniform and storage buffers             |
+| `uniformStructBuilder()`, `storageStruct()`                | Build a `GpuStruct` for a uniform / storage buffer       |
 
 ### Math (`math/`)
 
-| Export                                         | Description                                                           |
-| ---------------------------------------------- | --------------------------------------------------------------------- |
-| `vec2`, `vec3`, `vec4`, `quat`, `mat3`, `mat4` | Math primitives implementing the abstract `*Api` contracts            |
-| `transformMath`, `cameraMath`                  | `TransformMath` / `CameraMath` instances built on these primitives    |
+| Export                                         | Description                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------ |
+| `vec2`, `vec3`, `vec4`, `quat`, `mat3`, `mat4` | Math primitives implementing the abstract `*Api` contracts         |
+| `transformMath`, `cameraMath`                  | `TransformMath` / `CameraMath` instances built on these primitives |
 
 ### Shaders (`shader/`)
 
-| Export          | Description                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------- |
-| `WgslCodegen` | Implements `ShaderCodegen`: generates a WGSL module (`vs_main`, `fs_main`) from the IR of a program compiled by `@fdw/engine-shader` |
-| `wgslLayoutStrategy` | Implements `PhysicalLayoutStrategy`: one bind group per slot, uniform blocks laid out with the WGSL uniform address space rules |
-| `wgslType()` | WGSL name of a shader type |
+| Export               | Description                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `WgslCodegen`        | Implements `ShaderCodegen`: generates a WGSL module (`vs_main`, `fs_main`) from the IR of a program compiled by `@fdw/engine-shader` |
+| `wgslLayoutStrategy` | Implements `PhysicalLayoutStrategy`: one bind group per slot, uniform blocks laid out with the WGSL uniform address space rules      |
+| `wgslType()`         | WGSL name of a shader type                                                                                                           |
 
 ## Usage
 

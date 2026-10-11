@@ -5,6 +5,7 @@ import {
   VulkanOffscreenSurface,
 } from '@fdw/engine-vulkan';
 import { describeRenderer, RenderingFixture, size } from './suite';
+import { canRun } from '@fdw/engine-backend/testing';
 
 // The shared rendering tests on Vulkan, through the native library of
 // @fdw/engine-vulkan, with the validation layer: any message fails the
@@ -46,5 +47,9 @@ async function createFixture(): Promise<RenderingFixture> {
 }
 
 describeRenderer('Renderer on Vulkan', createFixture, {
-  skip: !existsSync(addonPath()),
+  skip: !canRun(
+    'vulkan',
+    existsSync(addonPath()),
+    'the Vulkan addon is not built (VULKAN_SDK)'
+  ),
 });

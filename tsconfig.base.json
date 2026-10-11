@@ -5,10 +5,7 @@
     "emitDeclarationOnly": true,
     "importHelpers": true,
     "isolatedModules": true,
-    "lib": [
-      "es2022",
-      "DOM"
-    ],
+    "lib": ["es2022", "DOM"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "noEmitOnError": true,
@@ -19,56 +16,24 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "es2022",
-    "customConditions": [
-      "@fdw-engine/source"
-    ],
+    "customConditions": ["@fdw-engine/source"],
     "baseUrl": ".",
     "paths": {
-      "@/components/ui/*": [
-        "packages/ui/src/components/ui/*"
-      ],
-      "@/lib/*": [
-        "packages/ui/src/lib/*"
-      ],
-      "@fdw/engine-backend": [
-        "packages/engine-backend/src/index.ts"
-      ],
-      "@fdw/engine-core": [
-        "packages/engine-core/src/index.ts"
-      ],
-      "@fdw/engine-webgpu": [
-        "packages/engine-webgpu/src/index.ts"
-      ],
-      "@fdw/engine-shader": [
-        "packages/engine-shader/src/index.ts"
-      ],
-      "@fdw/engine-webgl2": [
-        "packages/engine-webgl2/src/index.ts"
-      ],
-      "@fdw/engine-native": [
-        "packages/engine-native/src/index.ts"
-      ],
-      "@fdw/demo-scenes": [
-        "packages/demo-scenes/src/index.ts"
-      ],
-      "@fdw/engine-vulkan": [
-        "packages/engine-vulkan/src/index.ts"
-      ],
-      "@fdw/engine-geometry": [
-        "packages/engine-geometry/src/index.ts"
-      ],
-      "@fdw/engine-scene": [
-        "packages/engine-scene/src/index.ts"
-      ],
-      "@fdw/engine-input": [
-        "packages/engine-input/src/index.ts"
-      ],
-      "@fdw/engine-input-web": [
-        "packages/engine-input-web/src/index.ts"
-      ],
-      "@fdw/engine-input-native": [
-        "packages/engine-input-native/src/index.ts"
-      ]
+      "@/components/ui/*": ["packages/ui/src/components/ui/*"],
+      "@/lib/*": ["packages/ui/src/lib/*"],
+      "@fdw/engine-backend": ["packages/engine-backend/src/index.ts"],
+      "@fdw/engine-core": ["packages/engine-core/src/index.ts"],
+      "@fdw/engine-webgpu": ["packages/engine-webgpu/src/index.ts"],
+      "@fdw/engine-shader": ["packages/engine-shader/src/index.ts"],
+      "@fdw/engine-webgl2": ["packages/engine-webgl2/src/index.ts"],
+      "@fdw/engine-native": ["packages/engine-native/src/index.ts"],
+      "@fdw/demo-scenes": ["packages/demo-scenes/src/index.ts"],
+      "@fdw/engine-vulkan": ["packages/engine-vulkan/src/index.ts"],
+      "@fdw/engine-geometry": ["packages/engine-geometry/src/index.ts"],
+      "@fdw/engine-scene": ["packages/engine-scene/src/index.ts"],
+      "@fdw/engine-input": ["packages/engine-input/src/index.ts"],
+      "@fdw/engine-input-web": ["packages/engine-input-web/src/index.ts"],
+      "@fdw/engine-input-native": ["packages/engine-input-native/src/index.ts"]
     }
   }
 }

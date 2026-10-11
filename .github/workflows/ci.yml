@@ -1,0 +1,176 @@
+# The checks of every pull request and of main (design/ci.md §3): the
+# format, typecheck, lint and tests of the projects affected by the change
+# (`check`), then the native addons and the rendering suite on software GPUs
+# (`native`): Vulkan on lavapipe, Dawn, HLSL through DXC, WebGL2 in
+# Chromium with SwiftShader.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new run on the same branch cancels the previous one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  VULKAN_SDK_VERSION: 1.4.363.0
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # nx affected compares with the base of the change.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # NX_BASE and NX_HEAD: the last successful run on main, or the base of
+      # the pull request.
+      - uses: nrwl/nx-set-shas@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: nx-check-${{ runner.os }}-${{ github.sha }}
+          restore-keys: nx-check-${{ runner.os }}-
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Typecheck and lint
+        run: npx nx affected -t typecheck lint
+
+      # The projects tagged gpu (the native addons, the rendering suite) run
+      # in the native job.
+      - name: Tests
+        run: npx nx affected -t test --exclude=tag:gpu
+
+  native:
+    name: Native and rendering
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      # A suite that cannot run fails instead of being skipped.
+      FDW_REQUIRE_SUITES: vulkan,dawn,hlsl,window
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - uses: nrwl/nx-set-shas@v4
+
+      # The affected projects tagged gpu: the rest of the job only runs when
+      # there are some.
+      - name: Affected GPU projects
+        id: affected
+        run: |
+          projects=$(npx nx show projects --affected --projects 'tag:gpu' --json | jq -r 'join(",")')
+          echo "projects=$projects" >> "$GITHUB_OUTPUT"
+          echo "Affected: ${projects:-none}"
+
+      # lavapipe (the software Vulkan of Mesa) and the Vulkan loader; Xvfb
+      # for the windows; the headers SDL builds its X11 video with; ccache.
+      - name: System packages
+        if: steps.affected.outputs.projects != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mesa-vulkan-drivers libvulkan1 xvfb ccache \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev \
+            libgbm-dev libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
+            libdecor-0-dev libudev-dev
+
+      # DXC, spirv-val, spirv-cross and the validation layers.
+      - name: Vulkan SDK (cache)
+        if: steps.affected.outputs.projects != ''
+        id: vulkan-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/vulkan/${{ env.VULKAN_SDK_VERSION }}
+          key: vulkan-sdk-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Vulkan SDK (download)
+        if: steps.affected.outputs.projects != '' && steps.vulkan-sdk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/vulkan
+          base=https://sdk.lunarg.com/sdk/download/$VULKAN_SDK_VERSION/linux
+          curl -fsSL -o /tmp/vulkan-sdk.tar.xz \
+            "$base/vulkansdk-linux-x86_64-$VULKAN_SDK_VERSION.tar.xz" ||
+          curl -fsSL -o /tmp/vulkan-sdk.tar.xz "$base/vulkan_sdk.tar.xz"
+          tar -xJf /tmp/vulkan-sdk.tar.xz -C ~/vulkan
+
+      # The variables of setup-env.sh, for the next steps.
+      - name: Vulkan SDK (environment)
+        if: steps.affected.outputs.projects != ''
+        run: |
+          source ~/vulkan/$VULKAN_SDK_VERSION/setup-env.sh
+          {
+            echo "VULKAN_SDK=$VULKAN_SDK"
+            echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+            echo "VK_ADD_LAYER_PATH=$VK_ADD_LAYER_PATH"
+          } >> "$GITHUB_ENV"
+          echo "$VULKAN_SDK/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        if: steps.affected.outputs.projects != ''
+        with:
+          path: .nx/cache
+          key: nx-native-${{ runner.os }}-${{ github.sha }}
+          restore-keys: nx-native-${{ runner.os }}-
+
+      # The CMake builds of the addons (SDL and the other fetched
+      # dependencies), and the compiler cache.
+      - uses: actions/cache@v4
+        if: steps.affected.outputs.projects != ''
+        with:
+          path: |
+            packages/engine-native/build
+            packages/engine-vulkan/build
+            ~/.cache/ccache
+          key: native-build-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('packages/*/native/**', 'tools/native/**') }}
+          restore-keys: native-build-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}-
+
+      - name: Chromium (cache)
+        if: steps.affected.outputs.projects != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Chromium
+        if: steps.affected.outputs.projects != ''
+        run: npx playwright install --with-deps chromium
+
+      # In a virtual display, for the windows.
+      - name: Tests
+        if: steps.affected.outputs.projects != ''
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          PROJECTS: ${{ steps.affected.outputs.projects }}
+        run: xvfb-run -a npx nx run-many -t test --projects="$PROJECTS"

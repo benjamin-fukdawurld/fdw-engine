@@ -3,14 +3,17 @@ import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { createDawnFixture, dawn } from './dawnFixture';
 import { describeRenderer } from './suite';
+import { canRun } from '@fdw/engine-backend/testing';
 
 // The shared rendering tests on WebGPU, with Dawn (the WebGPU implementation
 // of Chrome) running in Node. Skipped where Dawn cannot load.
 const createFixture = () => createDawnFixture();
 
-describeRenderer('Renderer on WebGPU (Dawn)', createFixture, { skip: !dawn });
+const ready = canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load');
 
-describe.skipIf(!dawn)('WebGPU validation (Dawn)', () => {
+describeRenderer('Renderer on WebGPU (Dawn)', createFixture, { skip: !ready });
+
+describe.skipIf(!ready)('WebGPU validation (Dawn)', () => {
   it('reports no validation error', async () => {
     const fixture = await createFixture();
     const { engine, backend, surface } = fixture;
