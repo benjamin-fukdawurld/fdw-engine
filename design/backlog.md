@@ -91,7 +91,43 @@ Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en fran�
 
 - **Un ordonnanceur de systèmes ECS** (`Scheduler` dans `engine-scene`) : des systèmes ordonnés, une boucle à pas fixe pour la logique, le rendu à la cadence de l'écran. Pour L4, les systèmes sont de simples fonctions `(world, dt) => void` de la démo, et le pas fixe un petit helper : à étudier quand une deuxième application en aura besoin, en gardant l'ECS agnostique (CAO, BIM, jeu).
 
-## 9. Plus loin
+## 9. Vers un middleware de création 3D
+
+Le plan qui ordonne ces chantiers avec ceux des sections précédentes est dans [roadmap.md](roadmap.md).
+
+L'objectif : que le moteur devienne les fondations d'un middleware de création de contenu 3D, des briques que les utilisateurs assemblent pour leurs applications (jeux, outils, CAO). Chaque brique a son design, validé avant l'implémentation.
+
+- **Contrôleurs de caméra** : des « agents » généralistes qui déplacent une caméra de façon naturelle et configurable, pour plusieurs usages :
+
+  - vue subjective (FPS) ;
+  - troisième personne (TPS), avec un bras à ressort et des collisions ;
+  - stratégie et tower defense (comme Age of Empires) ;
+  - vue isométrique ;
+  - orbite, panoramique et zoom vers le curseur (CAO) ;
+  - vol libre.
+
+  L'application décide comment elle relie ses entrées (les actions d'`engine-input`) aux intentions de la caméra : avancer, tourner, zoomer, orbiter. Des **contraintes** composables limitent les mouvements : un plan XZ seulement (tower defense, isométrique), des bornes, des distances et des angles minimum et maximum, les collisions. Les mouvements sont lissés (ressorts amortis), et l'on passe d'une caméra à l'autre en transition. Les `FlyCamera` et `FollowCamera` du labyrinthe en sont des ébauches.
+
+- **Import de ressources** : un système abstrait pour charger des modèles, des images, des sons et d'autres ressources :
+
+  - des chargeurs enregistrés par type ;
+  - un chargement asynchrone, annulable, avec sa progression ;
+  - un cache et des poignées partagées ;
+  - les dépendances entre ressources (un glTF et ses textures) ;
+  - des sources multiples : URL, fichiers, archives ;
+  - le rechargement à chaud.
+
+  Formats d'abord visés : les images (navigateur et natif) et glTF 2.0 (meshes, matériaux PBR vers le material graph, squelettes, animations). Les sons supposent un **moteur audio**, qui n'existe pas encore : WebAudio dans le navigateur, une bibliothèque native (SDL3 audio ou miniaudio).
+
+- **Animation squelettique et animation graph** : le skinning dans le renderer, les clips (glTF), puis un graph d'animation : machines à états, mélanges (blend trees), couches, événements.
+- **Graphs de comportement** (comme les blueprints d'Unreal) : de la logique écrite en graphs, avec un flux d'exécution déclenché par des événements et un flux de données. Le material graph a déjà l'infrastructure d'un graph typé (nœuds, ports, types, sérialisation) : un cœur de graph commun aux matériaux, aux animations et aux comportements est à étudier. Les comportements s'appuieraient sur les systèmes de l'ECS (voir l'ordonnanceur, §8). Un éditeur visuel viendra plus tard.
+- **L'éditeur** : l'application de modélisation devient la base de l'éditeur du middleware (scènes, ressources, matériaux, animations, comportements).
+- **Démos à venir** :
+  1. **Un FPS minimaliste**. Il a besoin du contrôleur de caméra FPS, du verrouillage du pointeur (input §6), de collisions d'une capsule contre le décor, et de tirs par rayons.
+  2. **Un jeu à la troisième personne** : le joueur combat des ennemis à l'épée dans une forêt. Il a besoin du contrôleur TPS, de l'import glTF, de l'animation squelettique et de l'animation graph, de l'instancing pour la forêt, et de volumes d'attaque.
+  3. **Une application de modélisation 3D**, dans l'esprit de FreeCAD : dessiner une esquisse 2D, puis lui appliquer des opérations (extrusion, révolution autour d'un axe…). C'est le projet final. Elle a besoin d'un noyau géométrique (profils 2D, extrusion, révolution, triangulation des faces ; plus tard les booléens) **derrière une API abstraite** : l'utilisateur branche le moteur géométrique de son choix, et le projet n'a pas de grosse dépendance en dur (OpenCascade en WASM, par exemple, serait un moteur parmi d'autres, pas une dépendance du moteur), de contraintes d'esquisse, d'un arbre d'historique paramétrique, de la sélection et de gizmos, d'un système de commandes avec annuler et refaire, et d'une interface.
+
+## 10. Plus loin
 
 - Un très grand nombre de lumières, le ray tracing, le rendu piloté par le GPU, la sortie HDR et le travail en parallèle sur le GPU : [evolutions.md](evolutions.md).
 - La précompilation des programmes (phase 7 du material graph).
