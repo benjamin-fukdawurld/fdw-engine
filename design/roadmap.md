@@ -35,7 +35,7 @@ Les phases sont dans l'ordre de leurs dépendances (§4). Certaines peuvent se c
 
 ### P0. Socle
 
-_En cours_, sur la branche `FDW-P0` : le design est dans [ci.md](ci.md).
+_Faite_ (branches `FDW-P0` et `FDW-P0-2`) : le design et ce qui a été fait sont dans [ci.md](ci.md).
 
 Avant d'optimiser et d'ajouter des briques, que chaque changement soit vérifié automatiquement.
 

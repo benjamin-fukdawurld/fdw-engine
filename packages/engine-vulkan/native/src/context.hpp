@@ -124,6 +124,12 @@ struct fdw_vk_pipeline {
   VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 };
 
+struct fdw_vk_query_pool {
+  uint32_t id = 0;
+  VkQueryPool pool = VK_NULL_HANDLE;
+  uint32_t count = 0;
+};
+
 struct fdw_vk_context {
   VkInstance instance = VK_NULL_HANDLE;
   VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
@@ -133,6 +139,10 @@ struct fdw_vk_context {
   std::string deviceName;
   VkDevice device = VK_NULL_HANDLE;
   uint32_t queueFamily = 0;
+  // The bits of the timestamps of the queue (0: none), and nanoseconds per
+  // tick.
+  uint32_t timestampValidBits = 0;
+  float timestampPeriod = 0;
   VkQueue queue = VK_NULL_HANDLE;
   VmaAllocator allocator = nullptr;
   VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -159,6 +169,7 @@ struct fdw_vk_context {
   std::map<uint32_t, fdw_vk_group_layout *> groupLayouts;
   std::map<uint32_t, fdw_vk_group *> groups;
   std::map<uint32_t, fdw_vk_pipeline *> pipelines;
+  std::map<uint32_t, fdw_vk_query_pool *> queryPools;
   std::set<fdw_vk_shader *> shaders;
   // The descriptor pools: a new one when the last is full.
   std::vector<VkDescriptorPool> descriptorPools;

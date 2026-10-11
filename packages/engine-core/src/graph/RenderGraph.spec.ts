@@ -274,6 +274,50 @@ describe('RenderGraphRunner', () => {
     expect(present.colorAttachments[0].target).toBe(surface);
   });
 
+  it('measures the passes where the backend can, a few frames late', () => {
+    const { backend, log } = fakeBackend();
+    // Without the option, or without a timer: nothing measured.
+    const untimed = new RenderGraphRunner(backend);
+    untimed.execute(twoPasses(log));
+    expect(log.renderPasses[0].timing).toBeUndefined();
+    expect(untimed.passTimes.size).toBe(0);
+
+    // A timer answering two frames late: the render pass took 1.5 ms, the
+    // presentation 0.25 ms.
+    const frames: number[] = [];
+    const created: number[] = [];
+    Object.assign(backend, {
+      createPassTimer: (capacity: number) => {
+        created.push(capacity);
+        return {
+          capacity,
+          resolve: (_encoder: unknown, frame: number) => frames.push(frame),
+          read: () =>
+            frames.length < 3
+              ? undefined
+              : {
+                  frame: frames[frames.length - 3],
+                  durations: Float64Array.from([1.5, 0.25]),
+                },
+          destroy: () => undefined,
+        };
+      },
+    });
+    const runner = new RenderGraphRunner(backend, { timing: true });
+    log.renderPasses.length = 0;
+    runner.execute(twoPasses(log));
+    expect(log.renderPasses.map((pass) => pass.timing?.index)).toEqual([0, 1]);
+    expect(runner.passTimes.size).toBe(0);
+    runner.execute(twoPasses(log));
+    runner.execute(twoPasses(log));
+    expect([...runner.passTimes]).toEqual([
+      ['render', 1.5],
+      ['present', 0.25],
+    ]);
+    // One timer, reused from frame to frame.
+    expect(created).toEqual([16]);
+  });
+
   it('creates the transient resources with the union of their usages', () => {
     const { backend, log } = fakeBackend();
     new RenderGraphRunner(backend).execute(twoPasses(log));

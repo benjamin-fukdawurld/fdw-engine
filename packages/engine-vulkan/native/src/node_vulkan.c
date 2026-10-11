@@ -234,12 +234,13 @@ typedef enum object_kind {
   LAYOUT,
   GROUP,
   PIPELINE,
-  SWAPCHAIN
+  SWAPCHAIN,
+  QUERY_POOL
 } object_kind;
 
 static const char *kind_names[] = {"buffer",       "texture", "sampler",
                                    "shader",       "group layout", "group",
-                                   "pipeline",     "swapchain"};
+                                   "pipeline",     "swapchain", "query pool"};
 
 static void finalize_object(napi_env env, void *data, void *hint) {
   (void)hint;
@@ -329,6 +330,9 @@ static napi_value destroy_object(napi_env env, napi_callback_info info,
     case SWAPCHAIN:
       fdw_vk_swapchain_destroy(handle->owner->context, handle->object);
       break;
+    case QUERY_POOL:
+      fdw_vk_query_pool_destroy(handle->owner->context, handle->object);
+      break;
     }
   }
   handle->object = NULL;
@@ -356,6 +360,8 @@ static napi_value object_id(napi_env env, napi_callback_info info,
     return number(env, fdw_vk_group_id(handle->object));
   case PIPELINE:
     return number(env, fdw_vk_pipeline_id(handle->object));
+  case QUERY_POOL:
+    return number(env, fdw_vk_query_pool_id(handle->object));
   case SHADER:
   case SWAPCHAIN:
     break;
@@ -496,6 +502,70 @@ static napi_value js_destroy_texture(napi_env env, napi_callback_info info) {
 
 static napi_value js_texture_id(napi_env env, napi_callback_info info) {
   return object_id(env, info, TEXTURE);
+}
+
+// timestampsSupported(context): whether the queue writes timestamps.
+static napi_value js_timestamps_supported(napi_env env,
+                                          napi_callback_info info) {
+  ARGS(1);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  napi_value result;
+  CHECK(napi_get_boolean(env, fdw_vk_timestamps_supported(context) != 0,
+                         &result));
+  return result;
+}
+
+// createQueryPool(context, count): a pool of timestamp queries.
+static napi_value js_create_query_pool(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  context_handle *owner = owner_arg(env, argv[0]);
+  if (!owner) {
+    return NULL;
+  }
+  fdw_vk_query_pool *pool = fdw_vk_query_pool_create(
+      owner->context, (uint32_t)number_arg(env, argv[1]));
+  if (!pool) {
+    return throw_last_error(env);
+  }
+  return wrap_object(env, argv[0], owner, QUERY_POOL, pool);
+}
+
+static napi_value js_destroy_query_pool(napi_env env,
+                                        napi_callback_info info) {
+  return destroy_object(env, info, QUERY_POOL);
+}
+
+static napi_value js_query_pool_id(napi_env env, napi_callback_info info) {
+  return object_id(env, info, QUERY_POOL);
+}
+
+// readQueryPool(pool, first, count, nanoseconds): the timestamps into a
+// Float64Array, without waiting; whether all of them were available.
+static napi_value js_read_query_pool(napi_env env, napi_callback_info info) {
+  ARGS(4);
+  object_handle *handle = object_arg(env, argv[0], QUERY_POOL);
+  void *data = NULL;
+  size_t length = 0;
+  if (!handle || bytes_arg(env, argv[3], &data, &length) != 0) {
+    return NULL;
+  }
+  const uint32_t count = (uint32_t)number_arg(env, argv[2]);
+  if (length < count * sizeof(double)) {
+    napi_throw_range_error(env, NULL, "The array is too small");
+    return NULL;
+  }
+  const int ready = fdw_vk_query_pool_read(
+      handle->owner->context, handle->object,
+      (uint32_t)number_arg(env, argv[1]), count, (double *)data);
+  if (ready < 0) {
+    return throw_last_error(env);
+  }
+  napi_value result;
+  CHECK(napi_get_boolean(env, ready == 1, &result));
+  return result;
 }
 
 // writeTexture(texture, data): every layer, rows from the top.
@@ -1068,6 +1138,11 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("readReady", js_read_ready),
       EXPORT("readTake", js_read_take),
       EXPORT("bufferId", js_buffer_id),
+      EXPORT("timestampsSupported", js_timestamps_supported),
+      EXPORT("createQueryPool", js_create_query_pool),
+      EXPORT("destroyQueryPool", js_destroy_query_pool),
+      EXPORT("queryPoolId", js_query_pool_id),
+      EXPORT("readQueryPool", js_read_query_pool),
       EXPORT("createTexture", js_create_texture),
       EXPORT("destroyTexture", js_destroy_texture),
       EXPORT("textureId", js_texture_id),

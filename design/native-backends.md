@@ -259,7 +259,7 @@ _N2 fait._
   - HLSL n'a pas de valeur système pour le nombre de workgroups : sur Vulkan, le builtin SPIR-V est déclaré directement (`[[vk::ext_builtin_input(24)]]`). Direct3D 12 demandera un autre moyen (une constante du moteur).
 - **Tests** :
   - sept programmes types (unlit, phong texturé avec tone mapping, pbr avec ombres, variante depth-only masquée, passe plein écran, kernel de calcul, étages bruts) sont compilés par DXC, validés par spirv-val, et leurs offsets comparés par réflexion ;
-  - surtout, **les 40 programmes distincts de la suite de rendu**, enregistrés pendant qu'elle tourne sur Dawn (`tests/rendering/src/hlsl.spec.ts`), passent par le même contrôle.
+  - surtout, **les 40 programmes distincts de la suite de rendu**, enregistrés pendant qu'elle tourne sur Dawn (`tests/rendering/src/programs.spec.ts`, anciennement `hlsl.spec.ts`), passent par le même contrôle.
   - Sans le Vulkan SDK, ces tests sont sautés ; le cache Nx des tests dépend de `VULKAN_SDK`.
 
 _N3 fait._ **La suite de rendu partagée passe entièrement sur Vulkan, couche de validation active, sans aucun message** (36 tests : surfaces et modèles d'éclairage, textures, transparence, render graph, HDR et post-traitements, MSAA, ombres, calcul direct et indirect). Sur la machine de développement : une NVIDIA RTX 2060 SUPER.

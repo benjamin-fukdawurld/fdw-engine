@@ -20,6 +20,7 @@ import type {
   GpuBindGroupLayout,
   GpuCommandBuffer,
   GpuCommandEncoder,
+  GpuPassTimer,
   GpuRenderPipeline,
   GpuRenderTarget,
   RenderPipelineDescriptor,
@@ -84,5 +85,8 @@ export interface RenderBackend {
     descriptor: RenderTargetDescriptor
   ): GpuRenderTarget & { destroy(): void };
   createCommandEncoder(): GpuCommandEncoder;
+  // A timer of `capacity` passes; absent, or undefined, where the GPU cannot
+  // measure (see GpuPassTimer).
+  createPassTimer?(capacity: number): GpuPassTimer | undefined;
   submit(commands: readonly GpuCommandBuffer[]): void;
 }

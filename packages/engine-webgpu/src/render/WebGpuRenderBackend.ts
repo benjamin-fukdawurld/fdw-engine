@@ -2,6 +2,7 @@ import type {
   BackendCapabilities,
   GpuCommandBuffer,
   GpuCommandEncoder,
+  GpuPassTimer,
   RenderBackend,
   RenderTargetDescriptor,
 } from '@fdw/engine-backend';
@@ -12,6 +13,7 @@ import {
   WebGpuCommandBuffer,
   WebGpuCommandEncoder,
 } from './WebGpuCommandEncoder';
+import { WebGpuPassTimer } from './WebGpuPassTimer';
 import { WebGpuPipelineFactory } from './WebGpuPipelineFactory';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
 
@@ -60,16 +62,27 @@ export class WebGpuRenderBackend implements RenderBackend {
     return new WebGpuCommandEncoder(this.device.createCommandEncoder());
   }
 
+  // Where the device has the timestamp-query feature (WebGpuEngine asks for
+  // it when the adapter has it).
+  createPassTimer(capacity: number): GpuPassTimer | undefined {
+    return this.device.features.has('timestamp-query')
+      ? new WebGpuPassTimer(this.device, capacity)
+      : undefined;
+  }
+
   submit(commands: readonly GpuCommandBuffer[]): void {
-    this.device.queue.submit(
-      commands.map((command) => {
-        if (!(command instanceof WebGpuCommandBuffer)) {
-          throw new Error(
-            'The command buffer was not created by the WebGPU backend'
-          );
-        }
-        return command.commands;
-      })
-    );
+    const buffers = commands.map((command) => {
+      if (!(command instanceof WebGpuCommandBuffer)) {
+        throw new Error(
+          'The command buffer was not created by the WebGPU backend'
+        );
+      }
+      return command;
+    });
+    this.device.queue.submit(buffers.map((buffer) => buffer.commands));
+    // The measures can be read back now.
+    for (const buffer of buffers) {
+      buffer.timers.forEach((timer) => timer.submitted());
+    }
   }
 }

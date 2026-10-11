@@ -157,6 +157,38 @@ export interface RenderPassDescriptor {
   readonly label?: string;
   readonly colorAttachments: readonly RenderPassColorAttachment[];
   readonly depthAttachment?: RenderPassDepthAttachment;
+  // Measures the GPU duration of the pass (see GpuPassTimer).
+  readonly timing?: PassTiming;
+}
+
+/**
+ * Measures the GPU duration of passes: a pass given `{ timer, index }` is
+ * measured into slot `index` (below `capacity`). After the passes of a
+ * frame, resolve(encoder, frame) records the measures into the command
+ * encoder, tagged with a number of the frame; read() then gives, without
+ * waiting, the durations of the latest frame whose results arrived (a few
+ * frames late), or undefined. Created by RenderBackend.createPassTimer,
+ * where the GPU can measure: timestamps in WebGPU (feature
+ * `timestamp-query`) and Vulkan, timer queries in WebGL2
+ * (`EXT_disjoint_timer_query_webgl2`).
+ */
+export interface GpuPassTimer {
+  readonly capacity: number;
+  resolve(encoder: GpuCommandEncoder, frame: number): void;
+  // The durations in milliseconds, by slot (NaN for a slot not measured),
+  // and the frame they come from.
+  read(): PassTimes | undefined;
+  destroy(): void;
+}
+
+export interface PassTimes {
+  readonly frame: number;
+  readonly durations: Float64Array;
+}
+
+export interface PassTiming {
+  readonly timer: GpuPassTimer;
+  readonly index: number;
 }
 
 export interface GpuRenderPassEncoder {
@@ -227,6 +259,6 @@ export interface GpuCommandEncoder {
   // synchronization; absent elsewhere.
   transition?(transitions: readonly ResourceTransition[]): void;
   // Throws on backends without compute stages (capability 'compute').
-  beginComputePass(label?: string): GpuComputePassEncoder;
+  beginComputePass(label?: string, timing?: PassTiming): GpuComputePassEncoder;
   finish(): GpuCommandBuffer;
 }

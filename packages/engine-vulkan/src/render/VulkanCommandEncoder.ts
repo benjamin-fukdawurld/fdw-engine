@@ -9,6 +9,7 @@ import type {
   GpuRenderPassEncoder,
   GpuRenderPipeline,
   IndexFormat,
+  PassTiming,
   RenderPassDescriptor,
 } from '@fdw/engine-backend';
 import { Commands } from '../addon';
@@ -19,6 +20,7 @@ import {
   VulkanComputePipeline,
   VulkanRenderPipeline,
 } from './VulkanPipelineFactory';
+import { VulkanPassTimer } from './VulkanPassTimer';
 
 // The commands of a submission, as 32-bit words (see FDW_VK_CMD_* of
 // include/fdw/vulkan.h): replayed by the native library at submit.
@@ -82,7 +84,11 @@ export class VulkanCommandBuffer {
 }
 
 class VulkanRenderPassEncoder implements GpuRenderPassEncoder {
-  constructor(private readonly _writer: CommandWriter) {}
+  constructor(
+    private readonly _writer: CommandWriter,
+    // Written after the pass: the timestamp of its end.
+    private readonly _onEnd?: () => void
+  ) {}
 
   setPipeline(pipeline: GpuRenderPipeline): void {
     this._writer
@@ -133,11 +139,16 @@ class VulkanRenderPassEncoder implements GpuRenderPassEncoder {
 
   end(): void {
     this._writer.word(Commands.endRenderPass);
+    this._onEnd?.();
   }
 }
 
 class VulkanComputePassEncoder implements GpuComputePassEncoder {
-  constructor(private readonly _writer: CommandWriter) {}
+  constructor(
+    private readonly _writer: CommandWriter,
+    // Written after the pass: the timestamp of its end.
+    private readonly _onEnd?: () => void
+  ) {}
 
   setPipeline(pipeline: GpuComputePipeline): void {
     this._writer
@@ -165,6 +176,7 @@ class VulkanComputePassEncoder implements GpuComputePassEncoder {
 
   end(): void {
     this._writer.word(Commands.endComputePass);
+    this._onEnd?.();
   }
 }
 
@@ -175,6 +187,7 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
 
   beginRenderPass(descriptor: RenderPassDescriptor): GpuRenderPassEncoder {
     const writer = this._writer;
+    const onEnd = this.timestamp(descriptor.timing);
     writer
       .word(Commands.beginRenderPass)
       .word(descriptor.colorAttachments.length);
@@ -194,12 +207,29 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
       .word(target(depth?.target, 'The depth target'))
       .word(depth?.load === 'load' ? 1 : 0)
       .real(depth?.clearValue ?? 1);
-    return new VulkanRenderPassEncoder(writer);
+    return new VulkanRenderPassEncoder(writer, onEnd);
   }
 
-  beginComputePass(): GpuComputePassEncoder {
+  beginComputePass(
+    _label?: string,
+    timing?: PassTiming
+  ): GpuComputePassEncoder {
+    const onEnd = this.timestamp(timing);
     this._writer.word(Commands.beginComputePass);
-    return new VulkanComputePassEncoder(this._writer);
+    return new VulkanComputePassEncoder(this._writer, onEnd);
+  }
+
+  // A measured pass: the timestamp of its beginning, now (before the pass),
+  // and what writes the one of its end.
+  private timestamp(timing: PassTiming | undefined): (() => void) | undefined {
+    if (!timing) {
+      return undefined;
+    }
+    const timer = unwrap(timing.timer, VulkanPassTimer, 'The pass timer');
+    if (!timer.write(this._writer, timing.index, false)) {
+      return undefined;
+    }
+    return () => timer.write(this._writer, timing.index, true);
   }
 
   copyBufferToBuffer(

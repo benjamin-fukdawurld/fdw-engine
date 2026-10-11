@@ -9,6 +9,7 @@ import type {
   GpuRenderPassEncoder,
   GpuRenderPipeline,
   IndexFormat,
+  PassTiming,
   RenderPassDescriptor,
 } from '@fdw/engine-backend';
 import { Buffer } from '../gpu/BufferFactory';
@@ -18,6 +19,7 @@ import {
   WebGpuComputePipeline,
   WebGpuRenderPipeline,
 } from './WebGpuPipelineFactory';
+import { WebGpuPassTimer } from './WebGpuPassTimer';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
 
 function unwrap<T>(
@@ -135,16 +137,40 @@ class WebGpuComputePassEncoder implements GpuComputePassEncoder {
 }
 
 export class WebGpuCommandBuffer {
-  constructor(readonly commands: GPUCommandBuffer) {}
+  constructor(
+    readonly commands: GPUCommandBuffer,
+    // The pass timers resolved into it: told once it is submitted.
+    readonly timers: ReadonlySet<WebGpuPassTimer> = new Set()
+  ) {}
+}
+
+// The timestamp writes of a measured pass.
+function timestampWrites(timing: PassTiming | undefined): {
+  timestampWrites?: GPURenderPassTimestampWrites;
+} {
+  if (!timing) {
+    return {};
+  }
+  const timer = unwrap(timing.timer, WebGpuPassTimer, 'The pass timer');
+  return { timestampWrites: timer.timestampWrites(timing.index) };
 }
 
 export class WebGpuCommandEncoder implements GpuCommandEncoder {
+  /** The pass timers resolved into this encoder. */
+  readonly timers = new Set<WebGpuPassTimer>();
+
   constructor(private readonly _encoder: GPUCommandEncoder) {}
+
+  /** The WebGPU encoder. */
+  get gpu(): GPUCommandEncoder {
+    return this._encoder;
+  }
 
   beginRenderPass(descriptor: RenderPassDescriptor): GpuRenderPassEncoder {
     const depth = descriptor.depthAttachment;
     const pass = this._encoder.beginRenderPass({
       label: descriptor.label,
+      ...timestampWrites(descriptor.timing),
       colorAttachments: descriptor.colorAttachments.map((attachment) => ({
         view: attachmentView(attachment.target, 'The color target'),
         ...(attachment.resolveTarget
@@ -181,9 +207,12 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
     return new WebGpuRenderPassEncoder(pass);
   }
 
-  beginComputePass(label?: string): GpuComputePassEncoder {
+  beginComputePass(label?: string, timing?: PassTiming): GpuComputePassEncoder {
     return new WebGpuComputePassEncoder(
-      this._encoder.beginComputePass(label ? { label } : {})
+      this._encoder.beginComputePass({
+        ...(label ? { label } : {}),
+        ...timestampWrites(timing),
+      })
     );
   }
 
@@ -216,6 +245,6 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
   }
 
   finish(): GpuCommandBuffer {
-    return new WebGpuCommandBuffer(this._encoder.finish());
+    return new WebGpuCommandBuffer(this._encoder.finish(), this.timers);
   }
 }

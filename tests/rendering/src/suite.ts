@@ -681,6 +681,46 @@ export function describeRenderer(
         expectColor(pixel(16, 8), [255, 255, 255, 255]);
       });
 
+      it('measures the GPU time of the passes, where the backend can', async (context) => {
+        const probe = backend.createPassTimer?.(1);
+        if (!probe) {
+          context.skip();
+          return;
+        }
+        probe.destroy();
+        const runner = new RenderGraphRunner(backend, { timing: true });
+        const items = [
+          {
+            mesh: quad(),
+            material: new Material({ graph: colorGraph() }),
+            transform: at(0),
+          },
+        ];
+        // The measures arrive a few frames late.
+        let times = runner.passTimes;
+        for (let frame = 0; frame < 20 && times.size === 0; frame++) {
+          const graph = new RenderGraph();
+          renderer.addScenePasses(graph, {
+            items,
+            camera,
+            target: graph.importTexture('surface', surface.getCurrentTarget()),
+            format: surface.format,
+          });
+          runner.execute(graph);
+          // Waits for the GPU.
+          await fixture.readPixels();
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          times = runner.passTimes;
+        }
+        runner.destroy();
+        expect(times.size).toBeGreaterThan(0);
+        for (const [name, milliseconds] of times) {
+          expect(name).not.toBe('');
+          expect(milliseconds).toBeGreaterThanOrEqual(0);
+          expect(milliseconds).toBeLessThan(1000);
+        }
+      });
+
       it('blends transparent materials in linear colors in HDR', async (context) => {
         // White at alpha 0.5 over black, encoded in sRGB.
         const items = () => [

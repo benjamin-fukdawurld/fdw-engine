@@ -1,5 +1,7 @@
-# The documentation (design/ci.md §4): built and its links checked on every
-# pull request, published on GitHub Pages from main.
+# The documentation (design/ci.md §4): built, its links checked and its live
+# examples compared to their reference images on every pull request,
+# published on GitHub Pages from main. Run by hand with update-screenshots,
+# it renders new references on the CI machine, as an artifact.
 name: Documentation
 
 on:
@@ -7,6 +9,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      update-screenshots:
+        description: Render new reference images of the examples
+        type: boolean
+        default: false
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -44,6 +51,38 @@ jobs:
 
       - name: Links
         run: node tools/docs/check-links.mjs apps/docs/dist
+
+      - name: Chromium (cache)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Each example on WebGL2 and WebGPU (SwiftShader), its clock stopped,
+      # compared to apps/docs/tests/screenshots.
+      - name: Examples
+        env:
+          UPDATE: ${{ inputs.update-screenshots && '--update-snapshots' || '' }}
+        run: npx nx run docs:visual -- $UPDATE
+
+      - name: Report of the examples
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-report
+          path: |
+            apps/docs/playwright-report
+            apps/docs/out-tsc/playwright
+
+      - name: New reference images
+        if: inputs.update-screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-images
+          path: apps/docs/tests/screenshots
 
       - name: Upload the site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

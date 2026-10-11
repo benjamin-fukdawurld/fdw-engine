@@ -10,7 +10,9 @@
     "test": "npx nx run-many -t test",
     "format": "git ls-files -z | xargs -0 prettier --write --ignore-unknown",
     "format:check": "git ls-files -z | xargs -0 prettier --check --ignore-unknown",
-    "docs:links": "node tools/docs/check-links.mjs apps/docs/dist"
+    "docs:links": "node tools/docs/check-links.mjs apps/docs/dist",
+    "bench": "node tools/bench/run.mjs",
+    "bench:compare": "node tools/bench/compare.mjs"
   },
   "private": true,
   "devDependencies": {
@@ -25,6 +27,7 @@
     "@nx/vite": "22.7.2",
     "@nx/vitest": "22.7.2",
     "@nx/web": "22.7.2",
+    "@playwright/test": "^1.64.0",
     "@swc-node/register": "1.11.1",
     "@swc/cli": "~0.8.0",
     "@swc/core": "1.15.8",

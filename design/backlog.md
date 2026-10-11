@@ -48,7 +48,7 @@ Détails dans [material-graph-gaps.md](material-graph-gaps.md) et [material-grap
 - **Éclairage par environnement (IBL)** : cubemap, irradiance, specular préfiltré, table BRDF. C'est l'écart le plus visible.
 - Fonctions : entrées génériques, puis de vraies fonctions dans le code généré.
 - `f16` de bout en bout, `frag-coord` en WebGL2, structures dans les storage buffers.
-- Outils : validation du code généré en CI (_en cours, P0_ : le WGSL par Tint dans Dawn, le GLSL ES par `glslangValidator`, le HLSL par DXC ; naga écarté, voir [ci.md §3](ci.md#3-ciyml--les-vérifications)), source maps nœud ↔ ligne, limite du nombre de variantes et préchauffage.
+- Outils : validation du code généré en CI (_fait, P0_ : le WGSL par Tint dans Dawn, le GLSL ES par `glslangValidator`, le HLSL par DXC ; naga écarté, voir [ci.md §3](ci.md#3-ciyml--les-vérifications)), source maps nœud ↔ ligne, limite du nombre de variantes et préchauffage.
 - Transparence indépendante de l'ordre (OIT), à étudier.
 - Constantes répétées dans le code généré.
 
@@ -63,7 +63,7 @@ Détails dans [native-backends.md](native-backends.md).
 
 - **Plateformes** : Windows (lien de l'addon avec `node.lib`, surface Win32, DXC du SDK) et macOS (Vulkan par MoltenVK, surface Metal par `SDL_Metal_CreateView` ; ou Dawn construit). Construire et tester sur ces plateformes en CI.
 - **Binaires précompilés** des addons par plateforme (prebuildify ou équivalent), pour installer sans CMake ni compilateur ; application en un seul exécutable (Single Executable Applications de Node).
-- **Tests sans GPU** : la suite de rendu sur lavapipe (Vulkan logiciel de Mesa) en CI. _En cours : P0_ ([ci.md §3](ci.md#3-ciyml--les-vérifications)).
+- **Tests sans GPU** : la suite de rendu sur lavapipe (Vulkan logiciel de Mesa) en CI. _Fait : P0_ ([ci.md §3](ci.md#3-ciyml--les-vérifications)).
 - **N5** : Dawn sans copie (construire Dawn), Direct3D 12 avec le même HLSL (le nombre de workgroups devra venir d'une constante du moteur).
 - **Vulkan, performances** (à mesurer d'abord) :
   - un anneau de transfert plutôt qu'un buffer par écriture ;
@@ -78,8 +78,8 @@ Détails dans [native-backends.md](native-backends.md).
 
 Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en français) :
 
-- **Publication** : construire le site en CI et le publier (GitHub Pages, sous `/fdw-engine/`, déjà configuré dans `astro.config.mjs`). _En cours : P0_ ([ci.md §4](ci.md#4-docsyml--la-documentation)).
-- **Vérifications en CI** : les liens internes (le plugin `starlight-links-validator`), et les exemples vivants rendus dans Chromium headless (WebGL2, et WebGPU par SwiftShader), avec une capture comparée à une référence. _En cours : P0._
+- **Publication** : construire le site en CI et le publier (GitHub Pages, sous `/fdw-engine/`, déjà configuré dans `astro.config.mjs`). _Fait : P0_ ([ci.md §4](ci.md#4-docsyml--la-documentation)).
+- **Vérifications en CI** : les liens internes (le plugin `starlight-links-validator`), et les exemples vivants rendus dans Chromium headless (WebGL2, et WebGPU par SwiftShader), avec une capture comparée à une référence. _Fait : P0._
 - **Contenu à venir** : le chargement de modèles (l'importeur OBJ de la démo), le scenegraph et le culling quand ils existeront, l'IBL ; une page de dépannage (WebGPU absent, addon introuvable, SDK Vulkan).
 - **Exemples** : un contrôle de caméra à la souris, et un bouton pour passer d'un backend à l'autre sans recharger la page.
 - La référence API n'est générée qu'en anglais (commentaires des sources) : les pages françaises y renvoient.

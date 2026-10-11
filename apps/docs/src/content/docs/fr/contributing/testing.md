@@ -38,23 +38,30 @@ it('computes the functions of screen-uv per pixel', async () => {
 });
 ```
 
-| Fichier                  | Backend                                | Nécessite                                        |
-| ------------------------ | -------------------------------------- | ------------------------------------------------ |
-| `dawn.spec.ts`           | WebGPU sur Dawn, dans Node             | le paquet `webgpu` (installé)                    |
-| `webgl2.browser.spec.ts` | WebGL2, dans Chromium headless         | `npx playwright install chromium-headless-shell` |
-| `vulkan.spec.ts`         | Vulkan, avec la couche de validation   | le SDK Vulkan, et l’addon compilé                |
-| `hlsl.spec.ts`           | Chaque programme de la suite, via HLSL | le SDK Vulkan (DXC, spirv-val, spirv-cross)      |
+| Fichier                  | Backend                                             | Nécessite                                                     |
+| ------------------------ | --------------------------------------------------- | ------------------------------------------------------------- |
+| `dawn.spec.ts`           | WebGPU sur Dawn, dans Node                          | le paquet `webgpu` (installé)                                 |
+| `webgl2.browser.spec.ts` | WebGL2, dans Chromium headless                      | `npx playwright install chromium-headless-shell`              |
+| `vulkan.spec.ts`         | Vulkan, avec la couche de validation                | le SDK Vulkan, et l’addon compilé                             |
+| `programs.spec.ts`       | Chaque programme de la suite, en HLSL et en GLSL ES | le SDK Vulkan (DXC, spirv-val, spirv-cross, glslangValidator) |
 
 ```sh
-source <sdk>/setup-env.sh     # for the Vulkan and HLSL tests
+source <sdk>/setup-env.sh     # for the Vulkan, HLSL and GLSL tests
 npx nx test rendering-tests
 ```
 
-Sans le SDK, les tests Vulkan et HLSL sont ignorés, pas en échec. Sur
-Vulkan, un test échoue si la couche de validation signale quoi que ce soit.
-`hlsl.spec.ts` enregistre les programmes compilés par la suite, compile
-chacun d’eux avec DXC, valide le SPIR-V avec `spirv-val`, et compare les
-offsets des uniforms du layout avec la réflexion de `spirv-cross`.
+Sans le SDK, les tests Vulkan, HLSL et GLSL sont ignorés, pas en échec —
+sauf s’ils sont requis (voir
+[Intégration continue](#intégration-continue)). Sur Vulkan, un test échoue
+si la couche de validation signale quoi que ce soit. `programs.spec.ts`
+enregistre les programmes compilés par la suite, puis :
+
+- compile chacun d’eux en HLSL avec DXC, valide le SPIR-V avec
+  `spirv-val`, et compare les offsets des uniforms du layout avec la
+  réflexion de `spirv-cross` ;
+- génère ceux que WebGL2 peut exécuter (pas d’étage compute, pas de
+  storage buffer) en GLSL ES 3.00, puis les valide et les lie avec
+  `glslangValidator`, plus strict que les compilateurs des navigateurs.
 
 Les tests de pixels vérifient des valeurs **exactes** là où le GPU les
 calcule exactement (effacements, couleurs non éclairées), et des
@@ -70,13 +77,88 @@ incluent `VULKAN_SDK` : Nx les relance quand le SDK change.
 
 ## Benchmarks
 
-Les fichiers `*.bench.ts` mesurent le coût CPU du renderer et du render
-graph sur le faux backend : `npx vitest bench` dans `packages/engine-core`.
-Lancez-les avant et après une modification sur un chemin critique.
+Les fichiers `*.bench.ts` mesurent le coût CPU du renderer, du render
+graph, de la scène, de l’ECS, de la géométrie et du compilateur de
+shaders, sur le faux backend : `npx vitest bench` dans un paquet.
+Lancez-les avant et après une modification sur un chemin critique :
+
+```sh
+npm run bench                                  # every package: bench.json
+git stash && npm run bench -- base.json && git stash pop
+npm run bench:compare -- base.json bench.json  # a table of the changes
+```
+
+Sur chaque pull request, le workflow **Benchmarks** fait de même dans la
+CI : la modification et sa base mesurées dans le même job, comparées dans
+le résumé de l’exécution. Un benchmark est marqué plus lent ou plus rapide
+au-delà de 20 % et au-delà des marges d’erreur des deux mesures. Les
+runners sont partagés et bruités : le workflow n’échoue jamais, le tableau
+est un indice pour regarder de plus près.
+
+## Intégration continue
+
+Chaque pull request s’exécute sur GitHub Actions (`.github/workflows/`),
+et doit être au vert pour être fusionnée dans `main` :
+
+| Vérification              | Ce qu’elle exécute                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Check`                   | Le formatage, puis typecheck, lint et tests des projets affectés par la modification                               |
+| `Native and rendering`    | Les projets marqués `gpu`, lorsqu’ils sont affectés : les addons, Dawn et la suite de rendu, sur des GPU logiciels |
+| `Build the documentation` | Le site, et ses liens et ancres internes                                                                           |
+
+Les runners n’ont pas de GPU : Vulkan s’exécute sur **lavapipe** (le
+Vulkan logiciel de Mesa), WebGL2 dans Chromium sur **SwiftShader**, les
+fenêtres dans un écran virtuel (Xvfb). Les projets qui ont besoin d’un
+GPU, d’un SDK ou d’un écran portent le tag `gpu` (`engine-webgpu`,
+`engine-native`, `engine-vulkan`, `rendering-tests`).
+
+Sur un poste de travail, une suite dont le GPU, le SDK, l’addon ou l’écran
+manque est ignorée. Dans la CI, `FDW_REQUIRE_SUITES` liste les suites qui
+doivent s’exécuter (`vulkan,dawn,hlsl,glsl,window`) : une suite absente
+échoue au lieu de passer silencieusement. Une nouvelle suite de ce type
+appelle `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`.
+
+Pour exécuter les suites GPU comme la CI, sur lavapipe :
+
+```sh
+source <sdk>/setup-env.sh
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json \
+FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window \
+npx nx run-many -t test -p tag:gpu
+```
+
+### Les images de référence des exemples
+
+Chaque exemple interactif de la documentation est rendu dans Chromium
+headless, sur WebGL2 et sur WebGPU, tous deux sur SwiftShader, et son
+canvas comparé à une image de référence (`apps/docs/tests/screenshots/`) :
+
+```sh
+npx nx run docs:visual                         # builds the site, compares
+npx nx run docs:visual -- --update-snapshots   # writes new references
+```
+
+Les exemples s’exécutent avec leur horloge arrêtée et s’arrêtent après
+quelques frames (`?time=1.5&frames=10`) : l’image est la même à chaque
+exécution. Un exemple qui nécessite des compute shaders affiche à la place
+son message sur WebGL2.
+
+Quand une modification change ce qu’un exemple dessine, mettez à jour ses
+références, regardez-les, et commitez-les avec la modification. Si la CI
+rend un peu différemment de votre machine, lancez à la main le workflow
+**Documentation** avec **update-screenshots** : il rend les références sur
+la machine de la CI et les fournit sous forme d’artefact. Quand une
+comparaison échoue, le rapport avec les images de la différence est un
+artefact de l’exécution.
 
 ## Avant de soumettre
 
+Travaillez sur une branche, et ouvrez une pull request : `main` ne reçoit
+que des pull requests squashées.
+
 ```sh
+npm run format:check         # or npm run format, to fix it
 npx nx affected -t typecheck lint test
 npx nx run docs:build        # if the documentation changed
+npm run docs:links           # then its links
 ```
