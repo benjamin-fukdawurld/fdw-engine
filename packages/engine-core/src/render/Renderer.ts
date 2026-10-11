@@ -47,6 +47,7 @@ import { lightRange } from './lightRange';
 import { lightReaches } from './lightVolumes';
 import { Material, MaterialValue } from './Material';
 import { Mesh } from './Mesh';
+import { ObjectRows, RowSource } from './ObjectRows';
 import {
   AllLayers,
   Renderable,
@@ -177,7 +178,7 @@ interface FrameView extends UniformGroup {
 
 // The world matrix of an item, from its Transform or given by its source,
 // with what the renderer derives from it.
-interface ObjectState extends UniformGroup {
+interface ObjectState extends UniformGroup, RowSource {
   matrix(): Mat4;
   normalMatrix(): Mat3;
   // The version of the world matrix.
@@ -245,6 +246,9 @@ interface BoundState {
   indexBuffer?: GpuBuffer;
   indexFormat?: IndexFormat;
 }
+
+// The object state of an entry: the source of its row in the object table.
+const objectOf = (entry: PreparedItem): ObjectState => entry.object;
 
 const normalized = ({ x, y, z }: Readonly<IVec3>): number[] => {
   const length = Math.hypot(x, y, z) || 1;
@@ -478,9 +482,20 @@ export class Renderer {
   >();
 
   private readonly _bound = new WeakMap<GpuRenderPassEncoder, BoundState>();
+  // The object table, on the backends whose programs read it (objectTable
+  // capability); its bind groups by layout key, with the version of the
+  // table they were made for.
+  private readonly _objectRows?: ObjectRows;
+  private readonly _objectGroups = new Map<
+    string,
+    { version: number; bindGroup: GpuBindGroup }
+  >();
 
   constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
+    this._objectRows = backend.capabilities?.objectTable
+      ? new ObjectRows(backend)
+      : undefined;
     this._registry = options.registry;
     this._asyncPipelines = options.asyncPipelines ?? false;
     this._runner = new RenderGraphRunner(backend);
@@ -577,6 +592,7 @@ export class Renderer {
       cullUnlit = false,
     }: ScenePassesOptions
   ): TextureHandle {
+    this._objectRows?.beginFrame();
     const from = source ?? this.listSource(items);
     const cameraCache = this.cameraCache(camera);
     const frustum = this.frustum(name).setFromMatrix(
@@ -711,9 +727,7 @@ export class Renderer {
         depth: pass.writeDepth(depth, { load: 'clear', clearValue: 1 }),
         execute: ({ pass: encoder, texture }) => {
           this.bindShadowMap(view, atlas && texture(atlas));
-          for (const entry of opaqueEntries) {
-            this.draw(encoder, entry);
-          }
+          this.drawAll(encoder, opaqueEntries);
         },
       };
     });
@@ -729,9 +743,7 @@ export class Renderer {
         color: multisampled ? pass.resolveColor(target) : written,
         execute: ({ pass: encoder, texture }) => {
           this.bindShadowMap(view, atlas && texture(atlas));
-          for (const entry of transparentEntries) {
-            this.draw(encoder, entry);
-          }
+          this.drawAll(encoder, transparentEntries);
         },
       };
     });
@@ -757,6 +769,7 @@ export class Renderer {
       blend = false,
     }: FullscreenPassOptions
   ): TextureHandle {
+    this._objectRows?.beginFrame();
     const view = this.view(name);
     const prepared = this.prepareFullscreen(material, format, view, blend);
     // The frame values of the last scene (exposure…).
@@ -778,7 +791,7 @@ export class Renderer {
           }
           // Skipped while its pipeline is being created.
           if ('pipeline' in (this._pipelines.get(prepared.pipelineKey) ?? {})) {
-            this.draw(encoder, prepared);
+            this.drawAll(encoder, [prepared]);
           }
         },
       };
@@ -793,6 +806,8 @@ export class Renderer {
     this._shadowSampler?.destroy();
     this._shadowSampler = undefined;
     this._runner.destroy();
+    this._objectRows?.destroy();
+    this._objectGroups.clear();
     this._pipelines.clear();
   }
 
@@ -986,9 +1001,7 @@ export class Renderer {
         for (const { tile, entries } of draws) {
           const { x, y, width, height } = tile.viewport;
           encoder.setViewport(x, y, width, height);
-          for (const entry of entries) {
-            this.draw(encoder, entry);
-          }
+          this.drawAll(encoder, entries);
         }
       },
     }));
@@ -1687,9 +1700,21 @@ export class Renderer {
     return gpu;
   }
 
+  // Draws entries in order: with an object table, their instances first.
+  private drawAll(
+    pass: GpuRenderPassEncoder,
+    entries: readonly PreparedItem[]
+  ): void {
+    const first = this._objectRows
+      ? this._objectRows.instances(entries, objectOf)
+      : 0;
+    entries.forEach((entry, i) => this.draw(pass, entry, first + i));
+  }
+
   private draw(
     pass: GpuRenderPassEncoder,
-    { item, program, layout, pipelineKey, object, view }: PreparedItem
+    { item, program, layout, pipelineKey, object, view }: PreparedItem,
+    instance: number
   ): void {
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
@@ -1706,6 +1731,11 @@ export class Renderer {
       let bindGroup: GpuBindGroup | undefined;
       if (group.slot === 'frame') {
         bindGroup = this.sharedBindGroup(view, group);
+      } else if (
+        group.slot === 'object' &&
+        group.bindings[0]?.resource.kind === 'object-table'
+      ) {
+        bindGroup = this.objectTableBindGroup(group);
       } else if (group.slot === 'object') {
         this.updateObject(
           object,
@@ -1739,10 +1769,32 @@ export class Renderer {
         state.indexBuffer = mesh.indexBuffer;
         state.indexFormat = format;
       }
-      pass.drawIndexed(item.mesh.indices.length);
+      pass.drawIndexed(item.mesh.indices.length, 1, instance);
     } else {
-      pass.draw(item.mesh.description.vertexCount);
+      pass.draw(item.mesh.description.vertexCount, 1, instance);
     }
+  }
+
+  // The bind group of the object table, for a layout of the 'object' group:
+  // made again when the table grows.
+  private objectTableBindGroup(group: PhysicalBindGroup): GpuBindGroup {
+    const rows = this._objectRows;
+    if (!rows) {
+      throw new Error('The programs read an object table the renderer has not');
+    }
+    const layout = this.bindGroupLayout(group);
+    const table = rows.table;
+    let cached = this._objectGroups.get(layout.key);
+    if (!cached || cached.version !== rows.version) {
+      cached = {
+        version: rows.version,
+        bindGroup: this.backend.pipelines.createBindGroup(layout, [
+          { binding: group.bindings[0].binding, resource: table },
+        ]),
+      };
+      this._objectGroups.set(layout.key, cached);
+    }
+    return cached.bindGroup;
   }
 
   private boundState(pass: GpuRenderPassEncoder): BoundState {

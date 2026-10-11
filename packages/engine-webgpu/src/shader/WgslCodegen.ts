@@ -134,8 +134,13 @@ function resourceIdentifier(resource: LogicalBinding): string {
       return `s_${resource.name}`;
     case 'storage-buffer':
       return `b_${resource.name}`;
+    case 'object-table':
+      return resource.name;
   }
 }
+
+// The second buffer of an object table: the row of each instance.
+const instancesIdentifier = (table: string) => `${table}Instances`;
 
 const builtinParameters = {
   'vertex-index': {
@@ -248,7 +253,13 @@ function emitInstructions(
         expression = `in.${op.input}`;
         break;
       case 'load-builtin':
-        if (op.builtin === 'frag-coord') {
+        if (op.builtin === 'object-index') {
+          // The row of the instance: instance_index includes firstInstance.
+          builtins.add('instance-index');
+          expression = `${instancesIdentifier(objectTable(resources))}[${
+            builtinParameters['instance-index'].name
+          }]`;
+        } else if (op.builtin === 'frag-coord') {
           // In a fragment shader, the position builtin is the fragment
           // coordinate.
           expression = 'in.clipPosition';
@@ -267,6 +278,12 @@ function emitInstructions(
           : binding;
         break;
       }
+      case 'load-object':
+        expression = `${objectTable(resources)}[${arg(
+          instruction,
+          0
+        )}].${memberIdentifier(op.member)}`;
+        break;
       case 'binary':
       case 'compare':
         // Comparisons are component-wise for vectors in WGSL.
@@ -314,6 +331,18 @@ function emitInstructions(
   }
 }
 
+// The key of the object table in the identifiers of the resources.
+const ObjectTableKey = '#object-table';
+
+// The identifier of the object table of the layout.
+function objectTable(resources: ReadonlyMap<string, string>): string {
+  const table = resources.get(ObjectTableKey);
+  if (!table) {
+    throw new Error('The layout has no object table');
+  }
+  return table;
+}
+
 // Declares the resources of the layout; returns their identifiers in the
 // code, by binding name.
 function declareResources(
@@ -337,6 +366,24 @@ function declareResources(
             ),
             '};',
             `${location} var<uniform> ${name}: ${struct};`,
+          ].join('\n')
+        );
+      } else if (resource.kind === 'object-table') {
+        // The rows, then the row of each instance, at the next binding.
+        const struct = `${structName(resource.name)}Row`;
+        resources.set(ObjectTableKey, name);
+        sections.push(
+          [
+            `struct ${struct} {`,
+            ...resource.members.map(
+              (member) =>
+                `  ${memberIdentifier(member.name)}: ${wgslType(member.type)},`
+            ),
+            '};',
+            `${location} var<storage, read> ${name}: array<${struct}>;`,
+            `@group(${group.index}) @binding(${
+              binding + 1
+            }) var<storage, read> ${instancesIdentifier(name)}: array<u32>;`,
           ].join('\n')
         );
       } else if (resource.kind === 'texture') {

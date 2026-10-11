@@ -1,4 +1,5 @@
-import type {
+import {
+  objectRowLayout,
   PhysicalLayoutStrategy,
   PhysicalProgramLayout,
   PhysicalUniformBlock,
@@ -195,6 +196,13 @@ export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
         bindings: group.bindings.map((resource, binding) =>
           resource.kind === 'uniform-block'
             ? { binding, resource, block: uniformBlock(resource) }
+            : resource.kind === 'object-table'
+            ? // Two bindings (rows, instances): alone in its group.
+              {
+                binding,
+                resource,
+                objectRow: objectRowLayout(resource.members),
+              }
             : resource.kind === 'storage-buffer'
             ? {
                 binding,

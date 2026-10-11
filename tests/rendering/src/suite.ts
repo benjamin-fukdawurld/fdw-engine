@@ -182,6 +182,29 @@ export function describeRenderer(
       expectColor(pixel(48, 32), [0, 0, 0, 255]);
     });
 
+    it('reads the data of the object drawn in the fragment stage', async () => {
+      // Red where the origin of the object is right of the center.
+      const g = new GraphBuilder('object origin');
+      const origin = g.call(std.transform, {
+        matrix: g.engine('object.world'),
+        vector: g.constant(BuiltinTypes.vec4f, [0, 0, 0, 1]),
+      });
+      g.surface({
+        baseColor: g.call(std.vec3, {
+          x: g.call(std.step, { edge: 0, x: origin.swizzle('x') }),
+          y: 0,
+          z: 0,
+        }),
+      });
+      const material = new Material({ graph: g.build() });
+      const pixel = await render([
+        { mesh: quad(), material, transform: at(-0.5) },
+        { mesh: quad(), material, transform: at(0.5) },
+      ]);
+      expectColor(pixel(16, 32), [0, 0, 0, 255]);
+      expectColor(pixel(48, 32), [255, 0, 0, 255]);
+    });
+
     it('applies new uniform values and transforms on the next frame', async () => {
       const material = new Material({ graph: colorGraph() });
       const transform = at(-0.5);

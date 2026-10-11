@@ -59,6 +59,19 @@ function uniformBlock(
   return { size: Math.max(16, alignTo(offset, 16)), members };
 }
 
+/**
+ * The layout of a row of an object table, the same on every backend: the
+ * members laid out as a std140 uniform block (a mat3 as three columns of
+ * vec4), the row size a multiple of 16 bytes. For the world and normal
+ * matrices: 112 bytes, the layout of the object uniform block and of the
+ * blocks of a TransformPool, so that rows are copied as they are.
+ */
+export function objectRowLayout(
+  members: readonly { readonly name: string; readonly type: ShaderType }[]
+): PhysicalUniformBlock {
+  return uniformBlock({ kind: 'uniform-block', name: 'row', members });
+}
+
 function writeScalar(
   target: DataView,
   offset: number,
@@ -183,6 +196,12 @@ export const std140LayoutStrategy: PhysicalLayoutStrategy = {
         bindings: group.bindings.map((resource, binding) =>
           resource.kind === 'uniform-block'
             ? { binding, resource, block: uniformBlock(resource) }
+            : resource.kind === 'object-table'
+            ? {
+                binding,
+                resource,
+                objectRow: objectRowLayout(resource.members),
+              }
             : resource.kind === 'storage-buffer'
             ? {
                 binding,

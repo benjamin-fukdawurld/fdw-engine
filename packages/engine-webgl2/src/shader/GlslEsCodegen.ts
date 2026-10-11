@@ -161,6 +161,8 @@ const vectorComparisons = {
 } as const;
 
 interface BodyState {
+  // The object table of the layout, if any.
+  readonly table?: ObjectTableCode;
   readonly lines: string[];
   readonly expressions: Map<number, string>;
   readonly instructions: Map<number, IrInstruction>;
@@ -173,12 +175,14 @@ const valueName = (instruction: IrInstruction) =>
 
 function emitBody(
   entryPoint: IrEntryPoint,
-  samplers: readonly CombinedSampler[]
+  samplers: readonly CombinedSampler[],
+  table?: ObjectTableCode
 ): BodyState {
   const state: BodyState = {
     lines: [],
     expressions: new Map(),
     instructions: new Map(),
+    table,
   };
   emitInstructions(entryPoint.body, samplers, state, '  ');
   return state;
@@ -247,6 +251,13 @@ function emitInstructions(
           case 'frag-coord':
             // Origin at the bottom left, where WGSL has it at the top left.
             expression = 'gl_FragCoord';
+            break;
+          case 'object-index':
+            // No base instance in WebGL2: the backend sets the first
+            // instance of each draw in a uniform.
+            expression = `${objectTableCode(state).instances}(${
+              ObjectTableNames.firstInstance
+            } + uint(gl_InstanceID))`;
             break;
           default:
             throw new Error(`GLSL ES 3.00 has no ${op.builtin} (compute)`);
@@ -350,6 +361,12 @@ function emitInstructions(
       case 'convert':
         expression = `${glslType(type)}(${args(instruction)})`;
         break;
+      case 'load-object':
+        expression = objectTableCode(state).member(
+          op.member,
+          arg(instruction, 0)
+        );
+        break;
       case 'swizzle':
         expression = `${arg(instruction, 0)}.${op.components}`;
         break;
@@ -380,6 +397,94 @@ function varying(variable: IrStageVariable, direction: 'in' | 'out'): string {
 //   after linking (GLSL ES 3.00 has no binding qualifiers).
 // - The clip space depth of the engine is [0, 1]; the vertex shader remaps it
 //   to the [-1, 1] range of OpenGL.
+/**
+ * The names of the object table in GLSL ES (WebGL2): two data textures, the
+ * rows (RGBA32F, a row on consecutive texels) and the row of each instance
+ * (R32UI), ObjectTableWidth texels wide; and the first instance of the draw,
+ * a uniform set by the backend, which has no base instance.
+ */
+export const ObjectTableNames = {
+  rows: 'objects',
+  instances: 'objectsInstances',
+  firstInstance: 'objectsFirstInstance',
+} as const;
+
+/** The width of the textures of an object table, in texels. */
+export const ObjectTableWidth = 2048;
+
+// The code reading the object table of a program.
+interface ObjectTableCode {
+  readonly declarations: string;
+  // The function giving the row of an instance.
+  readonly instances: string;
+  // A member of the row `row`.
+  member(name: string, row: string): string;
+}
+
+function objectTableCode(state: BodyState): ObjectTableCode {
+  if (!state.table) {
+    throw new Error('The layout has no object table');
+  }
+  return state.table;
+}
+
+function objectTable(
+  layout: PhysicalProgramLayout
+): ObjectTableCode | undefined {
+  const binding = layout.groups
+    .flatMap((group) => group.bindings)
+    .find((candidate) => candidate.resource.kind === 'object-table');
+  const row = binding?.objectRow;
+  if (!binding || !row) {
+    return undefined;
+  }
+  const { rows, instances, firstInstance } = ObjectTableNames;
+  const texels = row.size / 16;
+  const width = `${ObjectTableWidth}u`;
+  const declarations = [
+    `uniform highp sampler2D ${rows};`,
+    `uniform highp usampler2D ${instances};`,
+    `uniform uint ${firstInstance};`,
+    '',
+    `// The texel k of a row: ${texels} texels per row, ${ObjectTableWidth} per line.`,
+    `vec4 ${rows}Texel(uint row, uint k) {`,
+    `  uint t = row * ${texels}u + k;`,
+    `  return texelFetch(${rows}, ivec2(int(t % ${width}), int(t / ${width})), 0);`,
+    '}',
+    '',
+    `uint ${instances}Row(uint instance) {`,
+    `  return texelFetch(${instances}, ivec2(int(instance % ${width}), int(instance / ${width})), 0).x;`,
+    '}',
+  ].join('\n');
+  return {
+    declarations,
+    instances: `${instances}Row`,
+    member: (name, row) => {
+      const member = binding.objectRow?.members.find(
+        (candidate) => candidate.name === name
+      );
+      if (!member) {
+        throw new Error(`The object table has no member "${name}"`);
+      }
+      const first = member.offset / 16;
+      const texel = (k: number) => `${rows}Texel(${row}, ${first + k}u)`;
+      const { type } = member;
+      if (type.kind === 'matrix' && type.columns === 4 && type.rows === 4) {
+        return `mat4(${[0, 1, 2, 3].map(texel).join(', ')})`;
+      }
+      if (type.kind === 'matrix' && type.columns === 3 && type.rows === 3) {
+        return `mat3(${[0, 1, 2].map((k) => `${texel(k)}.xyz`).join(', ')})`;
+      }
+      if (type.kind === 'vector' && type.size === 4) {
+        return texel(0);
+      }
+      throw new Error(
+        `Object table members of type ${glslType(type)} are not supported`
+      );
+    },
+  };
+}
+
 export class GlslEsCodegen implements ShaderCodegen {
   readonly language = 'glsl-es-300' as const;
 
@@ -448,7 +553,11 @@ export class GlslEsCodegen implements ShaderCodegen {
       );
     }
 
-    const vertexBody = emitBody(vertex, samplers);
+    const table = objectTable(layout);
+    if (table) {
+      resources.push(table.declarations);
+    }
+    const vertexBody = emitBody(vertex, samplers, table);
     const vertexOutputs = vertex.outputs.filter((output) => !output.builtin);
     const vertexSource = [
       header,
@@ -477,7 +586,7 @@ export class GlslEsCodegen implements ShaderCodegen {
       ].join('\n'),
     ];
 
-    const fragmentBody = emitBody(fragment, samplers);
+    const fragmentBody = emitBody(fragment, samplers, table);
     // Depth-only programs have no color.
     const color = fragment.outputs[0] as IrStageVariable | undefined;
     const fragmentSource = [

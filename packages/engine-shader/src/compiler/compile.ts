@@ -29,6 +29,7 @@ import {
   engineResources,
   engineValueLocations,
   LogicalBinding,
+  ObjectTableName,
   ProgramLayout,
   slotOrder,
   uniformBlockName,
@@ -58,6 +59,11 @@ export interface CompilerCapabilities {
   readonly storageBuffers: boolean;
   /** Compute stages (not in WebGL2). */
   readonly compute: boolean;
+  /**
+   * The object data in a table indexed per instance (an 'object-table'
+   * binding), instead of a uniform block per object. Default false.
+   */
+  readonly objectTable?: boolean;
 }
 
 /**
@@ -368,11 +374,49 @@ function checkSupport(
   }
 }
 
+// Replaces the input.engine reads of the object values with input.object
+// reads of the object table, at the row given by the object-index builtin.
+// Returns whether the graph changed.
+function useObjectTable(graph: WorkingGraph): boolean {
+  const reads = [...graph.nodes.values()].filter(
+    (node) =>
+      node.type === 'input.engine' &&
+      engineValueLocations[node.params['value'] as string]?.slot === 'object'
+  );
+  if (reads.length === 0) {
+    return false;
+  }
+  const index = graph.addNode(
+    'input.builtin',
+    { builtin: 'object-index' },
+    {},
+    'objectIndex'
+  );
+  for (const read of reads) {
+    const location = engineValueLocations[read.params['value'] as string];
+    const object = graph.addNode(
+      'input.object',
+      { member: location.member },
+      { index: { ref: { node: index, port: 'value' } } },
+      read.label
+    );
+    graph.redirectPort(
+      { node: read.id, port: 'value' },
+      { ref: { node: object, port: 'value' } }
+    );
+    graph.removeNode(read.id);
+  }
+  return true;
+}
+
 // Built from the resolved parameters, so that the declared defaults (slot
 // 'material', dimension '2d'…) apply.
 function buildLayout(
   nodes: Iterable<ResolvedNode>,
-  { usedSlotsOnly = false }: { usedSlotsOnly?: boolean } = {}
+  {
+    usedSlotsOnly = false,
+    objectTable = false,
+  }: { usedSlotsOnly?: boolean; objectTable?: boolean } = {}
 ): ProgramLayout {
   const all = [...nodes];
   const resources = all
@@ -404,6 +448,18 @@ function buildLayout(
 
   return {
     groups: slots.map((slot) => {
+      if (slot === 'object' && objectTable) {
+        return {
+          slot,
+          bindings: [
+            {
+              kind: 'object-table',
+              name: ObjectTableName,
+              members: engineUniformBlocks.object,
+            },
+          ],
+        };
+      }
       if (slot === 'frame' || slot === 'object') {
         return {
           slot,
@@ -644,7 +700,13 @@ export function compile(
       fail(diagnostics);
     }
   }
-  optimize(working, registry, lowered.order, lowered.types);
+  // The object values read from the table: input.engine becomes
+  // input.object, at the row of the object drawn.
+  const tabled =
+    !compute && capabilities.objectTable && useObjectTable(working)
+      ? revalidate()
+      : lowered;
+  optimize(working, registry, tabled.order, tabled.types);
   const optimized = revalidate();
 
   if (compute) {
@@ -721,7 +783,9 @@ export function compile(
     programKey: programKey(working, optimized.order),
     variantKey,
     module,
-    layout: buildLayout(optimized.nodes.values()),
+    layout: buildLayout(optimized.nodes.values(), {
+      objectTable: capabilities.objectTable ?? false,
+    }),
     vertexInputs: plan.attributes.map(({ semantic, type, location, name }) => ({
       semantic,
       type,

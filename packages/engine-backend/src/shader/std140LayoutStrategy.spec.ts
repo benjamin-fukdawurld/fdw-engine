@@ -1,6 +1,6 @@
 import { BuiltinTypes, ShaderType } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
-import { std140LayoutStrategy } from './std140LayoutStrategy';
+import { objectRowLayout, std140LayoutStrategy } from './std140LayoutStrategy';
 
 const block = (members: { name: string; type: ShaderType }[]) => {
   const layout = std140LayoutStrategy.resolve({
@@ -100,5 +100,21 @@ describe('std140LayoutStrategy', () => {
     std140LayoutStrategy.writeUniform(data, members[1], true);
     expect(data.getInt32(0, true)).toBe(-3);
     expect(data.getUint32(4, true)).toBe(1);
+  });
+});
+
+describe('objectRowLayout', () => {
+  it('lays a row out as the object uniform block: 112 bytes', () => {
+    const row = objectRowLayout([
+      { name: 'world', type: BuiltinTypes.mat4f },
+      { name: 'normalMatrix', type: BuiltinTypes.mat3f },
+    ]);
+    expect(row.size).toBe(112);
+    expect(
+      row.members.map(({ name, offset, size }) => [name, offset, size])
+    ).toEqual([
+      ['world', 0, 64],
+      ['normalMatrix', 64, 48],
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import type {
   GpuCommandBuffer,
   GpuCommandEncoder,
   GpuPassTimer,
+  ObjectTableDescriptor,
   RenderBackend,
   RenderTargetDescriptor,
 } from '@fdw/engine-backend';
@@ -13,6 +14,7 @@ import {
   WebGpuCommandBuffer,
   WebGpuCommandEncoder,
 } from './WebGpuCommandEncoder';
+import { WebGpuObjectTable } from './WebGpuObjectTable';
 import { WebGpuPassTimer } from './WebGpuPassTimer';
 import { WebGpuPipelineFactory } from './WebGpuPipelineFactory';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
@@ -26,6 +28,8 @@ export class WebGpuRenderBackend implements RenderBackend {
   readonly depthFormat = 'depth24plus';
   readonly capabilities: BackendCapabilities = {
     renderableFormats: ['rgba16float'],
+    // The object data in a table of storage buffers.
+    objectTable: true,
   };
 
   constructor(readonly device: GPUDevice) {
@@ -60,6 +64,10 @@ export class WebGpuRenderBackend implements RenderBackend {
 
   createCommandEncoder(): GpuCommandEncoder {
     return new WebGpuCommandEncoder(this.device.createCommandEncoder());
+  }
+
+  createObjectTable(descriptor: ObjectTableDescriptor): WebGpuObjectTable {
+    return new WebGpuObjectTable(this.device, descriptor);
   }
 
   // Where the device has the timestamp-query feature (WebGpuEngine asks for
