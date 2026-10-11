@@ -89,6 +89,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'tutorials' } }],
         },
         {
+          label: 'Making a game',
+          translations: { fr: 'Créer un jeu' },
+          items: [{ autogenerate: { directory: 'game' } }],
+        },
+        {
           label: 'Guides',
           translations: { fr: 'Guides' },
           items: [{ autogenerate: { directory: 'guides' } }],

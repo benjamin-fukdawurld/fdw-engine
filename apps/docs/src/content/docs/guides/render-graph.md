@@ -81,7 +81,8 @@ real resources, `context.size(handle)` the size of a texture.
 
 The `Renderer` adds its passes to a graph:
 
-- `addScenePasses(graph, { items, camera, lights, target, format })`: the
+- `addScenePasses(graph, { source, camera, target, format })` (or `items`
+  instead of `source`, and `lights`, `layers`): the
   shadow maps, the opaque and the transparent items, drawing into
   `target`. Returns the version of `target` they write. `name` (default
   `scene`) separates several views of a graph: each name has its own frame

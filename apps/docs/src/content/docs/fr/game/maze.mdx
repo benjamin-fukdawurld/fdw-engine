@@ -1,0 +1,242 @@
+---
+title: 'Étape 1 : le labyrinthe'
+description: Générer un labyrinthe, le construire dans une scène, le survoler, et voir ce que la caméra retient.
+sidebar:
+  order: 2
+---
+
+import Example from '../../../../components/Example.astro';
+
+La première étape construit le monde du jeu : un labyrinthe de 48 × 48
+cellules, généré à partir d'une graine, environ 4700 nœuds. Une caméra le
+survole, et une vue de dessus dans le coin montre ce que la caméra retient :
+seul cela est dessiné.
+
+<Example name="maze-1" code={false} />
+
+Cliquez sur le labyrinthe, puis : **W A S D** ou les flèches pour vous
+déplacer, **Q** et **E** pour tourner, la **molette** pour monter ou
+descendre, **Maj** pour aller plus vite.
+
+## 1. Générer le labyrinthe
+
+Un labyrinthe est une grille de cellules, chacune avec quatre murs. Le
+générateur parcourt la grille en profondeur d'abord — le « recursive
+backtracker » : depuis une cellule, il va vers une voisine au hasard pas
+encore visitée et ouvre le mur qui les sépare ; lorsqu'il ne reste aucune
+voisine, il revient en arrière. Chaque cellule est alors atteignable, par un
+seul chemin.
+
+```ts title="maze/maze.ts"
+export const Wall = { North: 1, East: 2, South: 4, West: 8 } as const;
+
+export function generateMaze(width: number, height: number, seed = 1): Maze {
+  const random = seededRandom(seed);
+  const cells = new Uint8Array(width * height).fill(15); // four walls each
+  const visited = new Uint8Array(width * height);
+  const stack = [0];
+  visited[0] = 1;
+  while (stack.length > 0) {
+    const cell = stack[stack.length - 1];
+    const x = cell % width;
+    const z = Math.floor(cell / width);
+    const open = directions.filter(({ dx, dz }) => /* inside, not visited */);
+    if (open.length === 0) {
+      stack.pop(); // a dead end: back
+      continue;
+    }
+    const { dx, dz, wall, opposite } = open[Math.floor(random() * open.length)];
+    const next = (z + dz) * width + x + dx;
+    cells[cell] &= ~wall; // open the wall on both sides
+    cells[next] &= ~opposite;
+    visited[next] = 1;
+    stack.push(next);
+  }
+  return { width, height, cells };
+}
+```
+
+Les murs sont des bits d'un `Uint8Array` : compacts, et rapides à tester. Le
+générateur aléatoire a une graine (`seededRandom()`, un mulberry32) : la même
+graine donne le même labyrinthe, ce qui compte pour les tests et pour
+partager un niveau.
+
+## 2. Construire le niveau
+
+Chaque cellule devient une dalle de sol ; chaque côté fermé, un mur. Les deux
+sont des cubes, mis à l'échelle :
+
+```ts title="maze/level.ts"
+const floorGroup = scene.root.add({ name: 'floor', static: true });
+const wallGroup = scene.root.add({ name: 'walls', static: true });
+for (let z = 0; z < maze.height; z++) {
+  for (let x = 0; x < maze.width; x++) {
+    const { x: cx, z: cz } = cellCenter(x, z);
+    floorGroup
+      .add({
+        position: { x: cx, y: -0.05, z: cz },
+        scale: { x: cellSize, y: 0.1, z: cellSize },
+        static: true,
+      })
+      .setMesh(cube, floor);
+    // The north and west walls of each cell, the south and east ones on
+    // the last row and column: each wall once.
+    for (const { bit, dx, dz, along } of sides) {
+      if (walls & bit) {
+        wallGroup
+          .add({ position, scale, static: true, occluder: true })
+          .setMesh(cube, wall);
+      }
+    }
+  }
+}
+```
+
+Trois choix comptent ici :
+
+- **Nœuds statiques.** Le niveau ne bouge jamais : `static: true` indique à
+  la scène de calculer ces nœuds une seule fois, et de les indexer tous d'un
+  coup dans un index spatial qui leur est propre (un octree construit de haut
+  en bas), à la première frame.
+- **Occluders.** Les murs cachent ce qui se trouve derrière eux :
+  `occluder: true` les marque pour l'occlusion culling à venir. Ils ne
+  changent encore rien.
+- **Groupes.** `floor` et `walls` sont des nœuds sans mesh : ils organisent
+  la hiérarchie (`level.walls.children` liste les murs) sans rien coûter au
+  dessin.
+
+## 3. Le clavier et la souris
+
+Le jeu lit ses entrées depuis un `EventTarget` : le canvas dans une page, la
+fenêtre dans la démo, une `NativeWindow` dans Node. Les noms des touches
+diffèrent — `ArrowUp` dans un navigateur, `Up` avec SDL — et sont
+normalisés :
+
+```ts title="maze/input.ts"
+export class Input {
+  constructor(target: EventTarget) {
+    listen('keydown', (event) => this._down.add(normalizeKey(event.key)));
+    listen('keyup', (event) => this._down.delete(normalizeKey(event.key)));
+    listen(
+      'wheel',
+      (event) =>
+        (this._wheel += event.dy !== undefined ? -event.dy * 100 : event.deltaY)
+    );
+  }
+
+  isDown(...keys: string[]): boolean;
+  /** -1, 0 or 1: input.axis(['s', 'down'], ['w', 'up']). */
+  axis(negative: readonly string[], positive: readonly string[]): number;
+  takeWheel(): number;
+}
+```
+
+Le jeu demande l'état à chaque frame, plutôt que de réagir à chaque
+événement : se déplacer tant qu'une touche est enfoncée revient alors à
+multiplier une vitesse par la durée de la frame.
+
+## 4. La caméra
+
+La caméra est un nœud de la scène : `setCamera(camera)` lui fait suivre le
+nœud, en regardant le long de son axe −z. La caméra libre déplace le nœud :
+
+```ts title="maze/flyCamera.ts"
+update(dt: number): void {
+  const speed = (input.isDown('shift') ? 3 : 1) * (5 + this.height) * dt;
+  const forward = input.axis(['s', 'down'], ['w', 'up']);
+  const right = input.axis(['a', 'left'], ['d', 'right']);
+  this.x += (right * cos - forward * sin) * speed;
+  this.z += (-right * sin - forward * cos) * speed;
+  this.yaw += input.axis(['e'], ['q']) * 1.5 * dt;
+  this.height *= Math.exp(input.takeWheel() * 0.001);
+  this._node.transform.position = { x: this.x, y: this.height, z: this.z };
+  this._node.transform.rotation = multiply(around('y', this.yaw), around('x', this.pitch));
+}
+```
+
+La rotation est un lacet (autour de la verticale) puis un tangage (vers le
+bas) : le produit de deux quaternions. La vitesse croît avec la hauteur, de
+sorte que le labyrinthe défile au même rythme quel que soit le zoom.
+
+## 5. Le rendu : la vue principale
+
+`renderer.render({ source: scene, … })` suffirait pour une vue. La vue de
+dessus en demande une seconde dans la même frame, donc la frame est un render
+graph :
+
+```ts title="maze/view.ts"
+const graph = new RenderGraph();
+const output = graph.importTexture('surface', surface.getCurrentTarget());
+const main = renderer.addScenePasses(graph, {
+  source: scene,
+  camera,
+  layers: ~TopViewLayer, // everything but the marker of the top view
+  target: output,
+  format: surface.format,
+});
+topView.add(graph, main, surface);
+runner.execute(graph);
+surface.present();
+```
+
+Le renderer demande à la scène ce qui se trouve dans le frustum de la
+caméra : sur les 4700 nœuds, quelques centaines. La ligne sous le canvas
+indique combien, et combien sont dessinés dans la shadow map du soleil —
+seulement ceux dont les ombres peuvent tomber dans la vue.
+
+## 6. La vue de dessus
+
+La vue de dessus dessine le niveau vu d'en haut, avec une caméra
+orthographique, mais seulement les nœuds que la caméra principale a retenus.
+La scène mémorise, sur chaque nœud, la dernière requête de caméra qui l'a
+gardé (`NodeState.lastVisible`) ; la vue de dessus donne au renderer une
+source qui filtre selon cette valeur :
+
+```ts title="maze/topView.ts"
+const { lastVisible, layers } = scene.NodeState;
+this._source = {
+  query: (frustum, mask, visit) =>
+    scene.query(
+      frustum,
+      mask,
+      (item) => {
+        const entity = item.entity;
+        if (
+          lastVisible[entity] === this._stamp ||
+          layers[entity] === TopViewLayer
+        ) {
+          visit(item);
+        }
+      },
+      'shadow'
+    ), // not a camera query: it must not change what was retained
+  lights: () => scene.lights(),
+};
+```
+
+La vue de dessus est dessinée dans une petite texture, puis par-dessus la vue
+principale par une passe plein écran qui ne couvre qu'un coin de l'écran : un
+matériau qui lit la texture dans un rectangle, transparent ailleurs, mélangé
+(`blend: true`) :
+
+```ts
+const local = (uv - rect.xy) / rect.zw; // where the pixel is in the rectangle
+const inside =
+  step(0, local.x) * step(local.x, 1) * step(0, local.y) * step(local.y, 1);
+color = vec4(texel.rgb * inside, max(inside, frame * 0.8));
+```
+
+Le repère de la caméra est une sphère sur une couche qui lui est propre
+(`TopViewLayer`) : la vue principale, dont les couches sont `~TopViewLayer`,
+ne la voit pas.
+
+## Ce que nous avons
+
+- Un monde de milliers de nœuds statiques, indexés une seule fois, et
+  dessinés seulement là où regarde la caméra.
+- Une frame composée de deux vues dans un render graph, assemblées par une
+  passe plein écran mélangée.
+- Des entrées qui fonctionnent de la même façon dans une page, dans la démo
+  et dans une fenêtre native.
+
+L'étape suivante place un personnage dans le labyrinthe.

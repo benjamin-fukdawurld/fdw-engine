@@ -18,10 +18,26 @@ pouvant dépasser 1. Une lumière ponctuelle ou un spot est atténué par
 `1 / (constant + linear × d + quadratic × d²)` ; un spot s'estompe de son
 angle intérieur à son angle extérieur.
 
-Les lumières sont passées à chaque frame : `render({ lights })`, ou
-`addScenePasses(graph, { lights })`. Les 16 premières (`MaxLights`) sont
-utilisées. Leurs valeurs vont dans les uniforms `frame`, écrits une fois par
-frame et par vue.
+Les lumières sont passées à chaque frame — `render({ lights })`, ou
+`addScenePasses(graph, { lights })` — ou viennent de la source (les lumières
+attachées aux nœuds d'une scène). Leurs valeurs vont dans les uniforms
+`frame`, écrits une fois par frame et par vue.
+
+## Seulement ce que voit la caméra
+
+Une lumière ne coûte rien lorsqu'elle ne peut changer aucun pixel de la vue :
+
+- une lumière directionnelle éclaire toujours la vue ;
+- une lumière ponctuelle ou un spot n'est utilisé que si sa **portée**
+  atteint le frustum de la caméra. Sa portée est la distance où son
+  atténuation tombe sous 1/256 de sa couleur la plus forte
+  (`lightRange(light)`) ; une lumière sans atténuation atteint tout ;
+- parmi les lumières restantes, 16 au plus (`MaxLights`) sont utilisées : les
+  directionnelles, puis les autres selon la lumière qu'elles apportent à ce
+  que voit la caméra.
+
+`renderer.stats.get('scene')` donne, pour la dernière frame, le nombre de
+lumières utilisées, de shadow maps et d'objets projetant des ombres dessinés.
 
 ## Comment les modèles les utilisent
 
@@ -55,11 +71,18 @@ ombres. Chaque frame, alors :
 Les caméras des lumières :
 
 - Une **lumière directionnelle** voit la scène avec une projection
-  orthographique, couvrant une sphère : les limites des éléments, ou
-  `shadow.bounds`. Sa position est alignée sur les texels de sa tuile, de
-  sorte que les ombres ne scintillent pas lorsque la scène bouge. Des limites
-  plus petites donnent des ombres plus nettes.
-- Un **spot** voit son cône, avec une projection en perspective.
+  orthographique, couvrant **ce que voit la caméra** (les limites des
+  éléments visibles), ou `shadow.bounds`. Sa taille change par paliers, et sa
+  position par texels entiers, de sorte que les ombres ne scintillent pas
+  lorsque la caméra bouge.
+- Un **spot** voit son cône, jusqu'à ce que voit la caméra, avec une
+  projection en perspective.
+
+Les deux s'étendent **vers la lumière** aussi loin que va la scène : un arbre
+hors de la vue dont l'ombre tombe dans la vue la projette ; un objet dont
+l'ombre tombe hors de la vue n'est pas dessiné dans la shadow map. Une
+lumière n'a de shadow map que si elle est utilisée, et si quelque chose est
+visible.
 
 Ce qui projette des ombres :
 

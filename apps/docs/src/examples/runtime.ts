@@ -9,11 +9,15 @@ import { WebGpuEngine, WebGpuSurface } from '@fdw/engine-webgpu';
 export interface ExampleContext {
   readonly backend: RenderBackend;
   readonly surface: Surface;
+  // The canvas: focusable, for the examples that read the keyboard.
+  readonly canvas: HTMLCanvasElement;
   // 'WebGPU' or 'WebGL2'.
   readonly backendName: string;
   // Calls `frame` on every animation frame while the example is visible,
   // with the time in seconds since its start.
   onFrame(frame: (time: number) => void): void;
+  // Shows a line of information under the canvas, after the backend.
+  info(text: string): void;
 }
 
 /** An example: sets up its scene, then renders it in onFrame. */
@@ -68,13 +72,17 @@ export async function startExample(
     await surface.init(engine);
 
     const frames: ((time: number) => void)[] = [];
+    status.textContent = name;
     await example({
       backend,
       surface,
+      canvas,
       backendName: name,
       onFrame: (frame) => frames.push(frame),
+      info: (text) => {
+        status.textContent = `${name} · ${text}`;
+      },
     });
-    status.textContent = name;
 
     // Only while visible: a page can hold many examples.
     let visible = false;

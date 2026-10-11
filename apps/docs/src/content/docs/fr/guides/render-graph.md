@@ -86,8 +86,8 @@ texture.
 
 Le `Renderer` ajoute ses passes à un graphe :
 
-- `addScenePasses(graph, { items, camera, lights, target, format })` : les
-  shadow maps, les éléments opaques et transparents, dessinés dans `target`.
+- `addScenePasses(graph, { source, camera, target, format })` (ou `items`
+  à la place de `source`, et `lights`, `layers`) : les shadow maps, les éléments opaques et transparents, dessinés dans `target`.
   Renvoie la version de `target` qu'elles écrivent. `name` (par défaut
   `scene`) distingue plusieurs vues d'un même graphe : chaque nom a ses
   propres uniforms de frame, de sorte que deux caméras peuvent être dessinées

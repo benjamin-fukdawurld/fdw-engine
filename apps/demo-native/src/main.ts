@@ -6,7 +6,8 @@
 //
 // nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden]
-// Scenes: shadows (default), pbr. Escape or closing the window quits.
+// Scenes: shadows (default), pbr, maze (maze-1 for its first step).
+// Escape or closing the window quits.
 import type { Engine, Surface } from '@fdw/engine-backend';
 import {
   createDawnEngine,
@@ -18,6 +19,8 @@ import {
 } from '@fdw/engine-native';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
+  createMazeStep1,
+  createMazeStep2,
   createPbrScene,
   createShadowsScene,
   SceneFactory,
@@ -26,6 +29,9 @@ import {
 const scenes: Record<string, SceneFactory> = {
   shadows: createShadowsScene,
   pbr: createPbrScene,
+  // The game: its last step, and the steps before.
+  maze: createMazeStep2,
+  'maze-1': createMazeStep1,
 };
 
 const args = process.argv.slice(2);
@@ -82,7 +88,14 @@ const backend = engine.backend;
 if (!backend) {
   throw new Error('The engine is not ready');
 }
-const scene = scenes[name](backend, surface);
+// The information of the scene, shown in the title with the frame rate.
+let info = '';
+const scene = scenes[name](backend, surface, {
+  input: window,
+  info: (text) => {
+    info = text;
+  },
+});
 
 const start = performance.now();
 let frames = 0;
@@ -94,7 +107,9 @@ const loop = runLoop(
     frames++;
     framesThisSecond++;
     if (now - second >= 1000) {
-      window.title = `${title}, ${framesThisSecond} fps, ${window.width} × ${window.height}`;
+      window.title = `${title}, ${framesThisSecond} fps, ${window.width} × ${
+        window.height
+      }${info ? `, ${info}` : ''}`;
       second = now;
       framesThisSecond = 0;
     }

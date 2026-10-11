@@ -1,39 +1,69 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Engine, Surface } from '@fdw/engine-backend';
 import Layout from './Layout';
 import type { Scene, SceneFactory } from '@fdw/demo-scenes';
 
 // A route showing a scene of @fdw/demo-scenes, rendered every animation frame on
-// any backend.
+// any backend. The scenes read the keyboard and the mouse of the window, and
+// show their information in a corner.
 export default function SceneLayout({ scene }: { scene: SceneFactory }) {
   const frameRef = useRef<number | undefined>(undefined);
   const sceneRef = useRef<Scene | undefined>(undefined);
+  // The information of the scene, written at every frame, shown a few times
+  // per second: a state changed at every frame would render the route at
+  // every frame.
+  const infoRef = useRef('');
+  const [info, setInfo] = useState('');
 
-  // Stop rendering when leaving the route.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const interval = setInterval(() => setInfo(infoRef.current), 250);
+    // Stop rendering when leaving the route.
+    return () => {
+      clearInterval(interval);
       if (frameRef.current !== undefined) {
         cancelAnimationFrame(frameRef.current);
       }
       sceneRef.current?.destroy();
+      sceneRef.current = undefined;
+    };
+  }, []);
+
+  // Stable: Layout calls it again whenever it changes.
+  const onSurfaceReady = useCallback(
+    async (engine: Engine, surface: Surface) => {
+      const backend = engine.backend;
+      if (!backend) {
+        throw new Error('The engine is not ready');
+      }
+      // One scene per surface, even if called again.
+      if (sceneRef.current) {
+        return;
+      }
+      const created = scene(backend, surface, {
+        input: window,
+        info: (text) => {
+          infoRef.current = text;
+        },
+      });
+      sceneRef.current = created;
+      const start = performance.now();
+      const frame = () => {
+        created.frame((performance.now() - start) / 1000);
+        frameRef.current = requestAnimationFrame(frame);
+      };
+      frameRef.current = requestAnimationFrame(frame);
     },
-    []
+    [scene]
   );
 
-  const onSurfaceReady = async (engine: Engine, surface: Surface) => {
-    const backend = engine.backend;
-    if (!backend) {
-      throw new Error('The engine is not ready');
-    }
-    const created = scene(backend, surface);
-    sceneRef.current = created;
-    const start = performance.now();
-    const frame = () => {
-      created.frame((performance.now() - start) / 1000);
-      frameRef.current = requestAnimationFrame(frame);
-    };
-    frameRef.current = requestAnimationFrame(frame);
-  };
-
-  return <Layout onSurfaceReady={onSurfaceReady} portable />;
+  return (
+    <>
+      <Layout onSurfaceReady={onSurfaceReady} portable />
+      {info && (
+        <div className="fixed bottom-4 right-4 rounded bg-black/60 px-3 py-1 text-sm text-white">
+          {info}
+        </div>
+      )}
+    </>
+  );
 }

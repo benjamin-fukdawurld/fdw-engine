@@ -1,0 +1,183 @@
+---
+title: Scene graph
+description: La scène, son cœur ECS, ses transformations et leur invalidation, ses index, et la façon dont le renderer la dessine.
+sidebar:
+  order: 9
+---
+
+`@fdw/engine-scene` donne une scène au moteur : des entités dans une
+hiérarchie, avec des transformations, dessinées par le `Renderer` en tant
+que source, et répondant à des requêtes spatiales. Son cœur est un **ECS**,
+avec les **nœuds** comme façade.
+
+## Deux points d'entrée
+
+| Entrée       | Pour                                                              | Ressemble à                                 |
+| ------------ | ----------------------------------------------------------------- | ------------------------------------------- |
+| **Nœuds**    | Éditeurs, CAO, BIM, jeux avec quelques centaines d'objets mobiles | `player.transform.position = { x: 2 }`      |
+| **Systèmes** | Des milliers d'objets mis à jour à chaque frame                   | `data[e * stride + position] += speed * dt` |
+
+Les deux travaillent sur les mêmes données : un nœud est une poignée sur une
+entité.
+
+## Nœuds
+
+```ts
+const scene = new Scene();
+const player = scene.root
+  .add({ name: 'player', position: { y: 1 } })
+  .setMesh(body, skin);
+const lamp = player
+  .add({ position: { y: 1.5 } })
+  .setLight(new SpotLight({ castShadow: true }));
+const eye = player.add({ position: { y: 12, z: 6 } }).setCamera(camera);
+```
+
+| Membre                                           | Rôle                                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `transform`                                      | Un `Transform`, relatif au parent                                                       |
+| `worldMatrix`, `worldPosition`                   | À jour à la lecture                                                                     |
+| `parent`, `children`, `add()`, `remove()`        | La hiérarchie ; `add(node)` déplace un nœud sous celui-ci                               |
+| `setMesh()`, `setLight()`, `setCamera()`         | Attachent un mesh et un matériau, une lumière, une caméra                               |
+| `attach(component, values)`, `has()`, `detach()` | Vos propres composants                                                                  |
+| `visible`                                        | Les nœuds cachés ne sont pas dessinés, ni leurs descendants                             |
+| `layers`                                         | Un masque de 32 bits : une vue ne voit que les nœuds dont les layers croisent les siens |
+| `static`, `occluder`                             | Voir ci-dessous                                                                         |
+| `name`, `id`, `traverse()`                       | `scene.find(name)` trouve un nœud                                                       |
+
+Un nœud dont l'entité a été supprimée lève une erreur à l'usage :
+`node.alive` l'indique.
+
+## Transformations et invalidation
+
+Les transformations d'une scène sont des blocs de son `TransformPool`
+(`scene.transforms`), indexés par entité : valeurs locales, matrice monde,
+matrice des normales. `node.transform` est un `Transform` sur le bloc de son
+entité, la même classe que partout ailleurs dans le moteur.
+
+Rien n'est à mettre à jour à la main :
+
+1. Modifier une transformation (ou déplacer un nœud, le cacher)
+   **invalide** sa branche : les matrices monde en dessous sont périmées.
+   Invalider dix fois le même nœud dans une frame ne coûte qu'une fois.
+2. Une matrice monde est **recalculée à la lecture**, et celles de ses
+   ancêtres périmés d'abord.
+3. Chaque requête de la scène — le rendu, un raycast — applique d'abord les
+   changements en attente (`scene.flush()`) : matrices monde, englobants,
+   index spatiaux, les lumières et caméras qui suivent des nœuds.
+
+La matrice des normales est calculée plus tard encore, uniquement pour les
+objets dessinés.
+
+## Nœuds statiques et occluders
+
+- Un nœud **statique** ne bouge pas. La scène le calcule une fois, et
+  indexe tous les nœuds statiques d'un coup dans un index qui leur est
+  propre, construit de haut en bas. En déplacer un reste possible, mais a
+  un coût ; la scène avertit une fois.
+- Un **occluder** (un mur, un bâtiment) est un nœud qui en cache d'autres :
+  l'occlusion culling à venir partira d'eux. `scene.occluders()` les liste.
+
+## La scène comme source
+
+```ts
+renderer.render({ source: scene, camera, surface, layers: 0b01 });
+```
+
+Pour chaque vue — la caméra, chaque shadow map — le renderer demande à la
+scène ce qui se trouve dans son frustum. La scène répond à partir de ses
+deux octrees lâches, statique et dynamique, sans tester chaque nœud. Une
+requête de caméra enregistre aussi sur chaque nœud la dernière requête qui
+l'a retenu (`NodeState.lastVisible`), et passe par `scene.occlusion`
+lorsqu'il est défini : l'étape où un occlusion culling viendra se brancher,
+appliquée aux seules requêtes de caméra, jamais aux projeteurs d'ombre.
+
+## Requêtes
+
+| Requête                                      | Renvoie                                                         |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| `scene.raycast(ray, visit, options, max)`    | Les nœuds touchés par le rayon, du plus proche au plus lointain |
+| `scene.queryVolume(volume, visit, options)`  | Les nœuds qui croisent un `Volume` quelconque                   |
+| `raycastEntities()`, `queryVolumeEntities()` | La même chose, avec des entités, pour les systèmes              |
+
+Elles testent les englobants des meshes, puis le `volume` passé à
+`setMesh()` s'il y en a un. `options` filtre par `layers`, et inclut les
+nœuds cachés avec `hidden: true`. `visit` renvoie false pour s'arrêter.
+
+## Le cœur ECS
+
+La scène est construite sur un `World`, utilisable seul :
+
+```ts
+const world = scene.world;
+const Velocity = world.defineComponent('velocity', {
+  x: 'f32',
+  y: 'f32',
+  z: 'f32',
+});
+const Path = world.defineComponent('path', { points: 'ref', speed: 'f32' });
+
+world.add(enemy.entity, Velocity, { x: 1 });
+
+const moving = world.query(Velocity, not(Path));
+function move(dt: number) {
+  const { data } = scene.transforms;
+  const { stride, position } = TransformLayout;
+  for (const e of moving) {
+    data[e * stride + position] += Velocity.x[e] * dt;
+    scene.transforms.touch(e);
+  }
+}
+```
+
+- Les **entités** sont des nombres, des indices dans les colonnes. Un
+  indice détruit est réutilisé plus tard ; sa génération change, ce que
+  vérifient les nœuds.
+- Les **composants** ont un schéma de champs typés — `f32`, `f64`, `i8`…
+  `u32`, `ref` pour un objet, `['f32', 3]` pour un vecteur. Chaque champ est
+  une **colonne** : un tableau typé indexé par entité (`Velocity.x[e]`). Les
+  colonnes sont remplacées quand le monde grandit : lisez-les là où elles
+  sont utilisées.
+- Les **requêtes** (`world.query(A, B, not(C))`) restent à jour à mesure
+  que des composants sont ajoutés et retirés. `entities` et `count` sont le
+  moyen le plus rapide de les parcourir ; retirez des composants en les
+  parcourant à rebours.
+- **Écouteurs** : `world.onAdded()`, `world.onRemoved()`.
+- Les **systèmes** sont de simples fonctions : le cœur n'impose aucun
+  ordonnanceur.
+
+Les composants de la scène, pour les systèmes : `Hierarchy` (parent, premier
+enfant, frères), `NodeState` (drapeaux, layers, dernière visibilité, nom),
+`MeshRenderer` (mesh, matériau, `noShadow`, volume, englobant monde — la
+table des englobants du GPU culling à venir), `Light`, `CameraView`. Leurs
+drapeaux valent 0 par défaut : `noShadow` plutôt que `castShadow`.
+
+## Autres scènes
+
+`SceneNode` et `SceneGraph` décrivent une scène indépendamment de celle-ci,
+et le renderer ne connaît que `RenderSource`. Une scène d'instances CAO, ou
+l'ECS d'un moteur de jeu, peut être dessinée par le renderer en
+implémentant `RenderSource` :
+
+```ts
+interface RenderSource {
+  query(
+    frustum: Frustum,
+    layers: number,
+    visit: (item: Renderable) => void,
+    view: 'camera' | 'shadow'
+  ): void;
+  lights?(): Iterable<BaseLight>;
+  bounds?(out: Aabb): Aabb;
+}
+```
+
+Une liste d'éléments est aussi une source : `render({ items })` teste
+chaque élément contre le frustum.
+
+## Coûts
+
+Sur 10 000 nœuds dont 1000 visibles : une requête de caméra prend environ
+0,06 ms, déplacer 1000 nœuds puis faire une requête 0,7 ms, une frame du
+renderer 1,9 ms (contre 18 ms sans culling). Créer 100 000 nœuds statiques
+et les indexer prend environ 0,5 s.

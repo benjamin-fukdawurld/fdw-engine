@@ -1,0 +1,233 @@
+---
+title: 'Step 1: the maze'
+description: Generate a maze, build it in a scene, fly over it, and see what the camera retains.
+sidebar:
+  order: 2
+---
+
+import Example from '../../../components/Example.astro';
+
+The first step builds the world of the game: a maze of 48 × 48 cells,
+generated from a seed, about 4700 nodes. A camera flies over it, and a top
+view in the corner shows what the camera retains: only that is drawn.
+
+<Example name="maze-1" code={false} />
+
+Click the maze, then: **W A S D** or the arrows to move, **Q** and **E** to
+turn, the **wheel** to climb or descend, **Shift** to go faster.
+
+## 1. Generating the maze
+
+A maze is a grid of cells, each with four walls. The generator walks the
+grid depth first — the "recursive backtracker": from a cell, it goes to a
+random neighbor not visited yet and opens the wall between them; when no
+neighbor is left, it goes back. Every cell is then reachable, by a single
+path.
+
+```ts title="maze/maze.ts"
+export const Wall = { North: 1, East: 2, South: 4, West: 8 } as const;
+
+export function generateMaze(width: number, height: number, seed = 1): Maze {
+  const random = seededRandom(seed);
+  const cells = new Uint8Array(width * height).fill(15); // four walls each
+  const visited = new Uint8Array(width * height);
+  const stack = [0];
+  visited[0] = 1;
+  while (stack.length > 0) {
+    const cell = stack[stack.length - 1];
+    const x = cell % width;
+    const z = Math.floor(cell / width);
+    const open = directions.filter(({ dx, dz }) => /* inside, not visited */);
+    if (open.length === 0) {
+      stack.pop(); // a dead end: back
+      continue;
+    }
+    const { dx, dz, wall, opposite } = open[Math.floor(random() * open.length)];
+    const next = (z + dz) * width + x + dx;
+    cells[cell] &= ~wall; // open the wall on both sides
+    cells[next] &= ~opposite;
+    visited[next] = 1;
+    stack.push(next);
+  }
+  return { width, height, cells };
+}
+```
+
+The walls are bits of a `Uint8Array`: compact, and quick to test. The
+random generator is seeded (`seededRandom()`, a mulberry32): the same seed
+gives the same maze, which matters for tests and for sharing a level.
+
+## 2. Building the level
+
+Each cell becomes a floor tile; each closed side, a wall. Both are cubes,
+scaled:
+
+```ts title="maze/level.ts"
+const floorGroup = scene.root.add({ name: 'floor', static: true });
+const wallGroup = scene.root.add({ name: 'walls', static: true });
+for (let z = 0; z < maze.height; z++) {
+  for (let x = 0; x < maze.width; x++) {
+    const { x: cx, z: cz } = cellCenter(x, z);
+    floorGroup
+      .add({
+        position: { x: cx, y: -0.05, z: cz },
+        scale: { x: cellSize, y: 0.1, z: cellSize },
+        static: true,
+      })
+      .setMesh(cube, floor);
+    // The north and west walls of each cell, the south and east ones on
+    // the last row and column: each wall once.
+    for (const { bit, dx, dz, along } of sides) {
+      if (walls & bit) {
+        wallGroup
+          .add({ position, scale, static: true, occluder: true })
+          .setMesh(cube, wall);
+      }
+    }
+  }
+}
+```
+
+Three choices matter here:
+
+- **Static nodes.** The level never moves: `static: true` tells the scene
+  to compute these nodes once, and to index them all at once in a spatial
+  index of their own (an octree built top down), at the first frame.
+- **Occluders.** The walls hide what is behind them: `occluder: true`
+  marks them for the occlusion culling to come. They change nothing yet.
+- **Groups.** `floor` and `walls` are nodes without mesh: they organize
+  the hierarchy (`level.walls.children` lists the walls) without costing
+  anything to draw.
+
+## 3. The keyboard and the mouse
+
+The game reads its input from an `EventTarget`: the canvas in a page, the
+window in the demo, a `NativeWindow` in Node. Key names differ — `ArrowUp`
+in a browser, `Up` with SDL — and are normalized:
+
+```ts title="maze/input.ts"
+export class Input {
+  constructor(target: EventTarget) {
+    listen('keydown', (event) => this._down.add(normalizeKey(event.key)));
+    listen('keyup', (event) => this._down.delete(normalizeKey(event.key)));
+    listen(
+      'wheel',
+      (event) =>
+        (this._wheel += event.dy !== undefined ? -event.dy * 100 : event.deltaY)
+    );
+  }
+
+  isDown(...keys: string[]): boolean;
+  /** -1, 0 or 1: input.axis(['s', 'down'], ['w', 'up']). */
+  axis(negative: readonly string[], positive: readonly string[]): number;
+  takeWheel(): number;
+}
+```
+
+The game asks for the state each frame, rather than reacting to each
+event: moving while a key is down is then a matter of multiplying a speed
+by the time of the frame.
+
+## 4. The camera
+
+The camera is a node of the scene: `setCamera(camera)` makes it follow the
+node, looking along its −z axis. The fly camera moves the node:
+
+```ts title="maze/flyCamera.ts"
+update(dt: number): void {
+  const speed = (input.isDown('shift') ? 3 : 1) * (5 + this.height) * dt;
+  const forward = input.axis(['s', 'down'], ['w', 'up']);
+  const right = input.axis(['a', 'left'], ['d', 'right']);
+  this.x += (right * cos - forward * sin) * speed;
+  this.z += (-right * sin - forward * cos) * speed;
+  this.yaw += input.axis(['e'], ['q']) * 1.5 * dt;
+  this.height *= Math.exp(input.takeWheel() * 0.001);
+  this._node.transform.position = { x: this.x, y: this.height, z: this.z };
+  this._node.transform.rotation = multiply(around('y', this.yaw), around('x', this.pitch));
+}
+```
+
+The rotation is a yaw (around the vertical) then a pitch (downwards): the
+product of two quaternions. The speed grows with the height, so that the
+maze scrolls at the same pace whatever the zoom.
+
+## 5. Rendering: the main view
+
+`renderer.render({ source: scene, … })` would be enough for one view. The
+top view needs a second one in the same frame, so the frame is a render
+graph:
+
+```ts title="maze/view.ts"
+const graph = new RenderGraph();
+const output = graph.importTexture('surface', surface.getCurrentTarget());
+const main = renderer.addScenePasses(graph, {
+  source: scene,
+  camera,
+  layers: ~TopViewLayer, // everything but the marker of the top view
+  target: output,
+  format: surface.format,
+});
+topView.add(graph, main, surface);
+runner.execute(graph);
+surface.present();
+```
+
+The renderer asks the scene what is in the frustum of the camera: of the
+4700 nodes, a few hundred. The line under the canvas shows how many, and
+how many are drawn into the shadow map of the sun — only those whose
+shadows can fall in view.
+
+## 6. The top view
+
+The top view draws the level from above, with an orthographic camera, but
+only the nodes the main camera retained. The scene remembers, on each
+node, the last camera query that kept it (`NodeState.lastVisible`); the
+top view gives the renderer a source that filters on it:
+
+```ts title="maze/topView.ts"
+const { lastVisible, layers } = scene.NodeState;
+this._source = {
+  query: (frustum, mask, visit) =>
+    scene.query(
+      frustum,
+      mask,
+      (item) => {
+        const entity = item.entity;
+        if (
+          lastVisible[entity] === this._stamp ||
+          layers[entity] === TopViewLayer
+        ) {
+          visit(item);
+        }
+      },
+      'shadow'
+    ), // not a camera query: it must not change what was retained
+  lights: () => scene.lights(),
+};
+```
+
+The top view is drawn into a small texture, then over the main view by a
+full screen pass that only covers a corner of the screen: a material
+reading the texture in a rectangle, transparent elsewhere, blended
+(`blend: true`):
+
+```ts
+const local = (uv - rect.xy) / rect.zw; // where the pixel is in the rectangle
+const inside =
+  step(0, local.x) * step(local.x, 1) * step(0, local.y) * step(local.y, 1);
+color = vec4(texel.rgb * inside, max(inside, frame * 0.8));
+```
+
+The marker of the camera is a sphere on a layer of its own
+(`TopViewLayer`): the main view, whose layers are `~TopViewLayer`, does not
+see it.
+
+## What we have
+
+- A world of thousands of static nodes, indexed once, and drawn only where
+  the camera looks.
+- A frame made of two views in a render graph, composited with a blended
+  full screen pass.
+- Input that works the same in a page, in the demo and in a native window.
+
+The next step puts a character in the maze.

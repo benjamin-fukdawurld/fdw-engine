@@ -8,28 +8,27 @@ sidebar:
 ## Les paquets
 
 ```
-                     engine-shader            material graph, compiler, IR
-                          ▲
-        ┌─────────────────┼───────────────────┐
-        │                 │                   │
-  engine-backend ◄── engine-core          (codegens)
-        ▲                                     │
-        ├──────────────┬──────────────┬───────┘
-  engine-webgpu   engine-webgl2   engine-vulkan
-        ▲                              ▲
-        └────────── engine-native ─────┘
+engine-scene    ──► engine-core, engine-geometry
+engine-core     ──► engine-backend, engine-shader, engine-geometry
+engine-webgpu   ─┐
+engine-webgl2   ─┼► engine-backend ──► engine-shader
+engine-vulkan   ─┘
+engine-native   ──► engine-webgpu, engine-vulkan
+engine-shader, engine-geometry: no dependency
 ```
 
-| Paquet           | Contenu                                                                                                         | Dépend de                         |
-| ---------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `engine-shader`  | Types, modèle de graphe, bibliothèque standard, validation, compilateur vers une IR                             | rien                              |
-| `engine-backend` | L’API abstraite : `Engine`, `Surface`, `RenderBackend`, ressources GPU, mathématiques, layouts, `ShaderCodegen` | `engine-shader` (types)           |
-| `engine-core`    | Objets de scène, `Material`, `Mesh`, `Renderer`, `RenderGraph`, `ComputeRunner`                                 | `engine-backend`, `engine-shader` |
-| `engine-webgpu`  | Backend WebGPU, `WgslCodegen`                                                                                   | `engine-backend`                  |
-| `engine-webgl2`  | Backend WebGL2, `GlslEsCodegen`                                                                                 | `engine-backend`                  |
-| `engine-vulkan`  | Backend Vulkan (addon Node), `HlslCodegen`                                                                      | `engine-backend`                  |
-| `engine-native`  | Fenêtres natives, la boucle, surfaces de fenêtre Dawn et Vulkan (addon Node)                                    | `engine-webgpu`, `engine-vulkan`  |
-| `demo-scenes`    | Scènes et maillages partagés par les démos                                                                      | `engine-core`                     |
+| Paquet            | Contenu                                                                                                                  | Dépend de                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `engine-geometry` | Volumes, intersections (GJK), rayons, index spatiaux (octree)                                                            | rien                                                 |
+| `engine-shader`   | Types, modèle de graphe, bibliothèque standard, validation, compilateur vers une IR                                      | rien                                                 |
+| `engine-backend`  | L’API abstraite : `Engine`, `Surface`, `RenderBackend`, ressources GPU, mathématiques, layouts, `ShaderCodegen`          | `engine-shader` (types)                              |
+| `engine-core`     | Objets de scène, `Transform` et son pool, `Material`, `Mesh`, `Renderer`, `RenderSource`, `RenderGraph`, `ComputeRunner` | `engine-backend`, `engine-shader`, `engine-geometry` |
+| `engine-webgpu`   | Backend WebGPU, `WgslCodegen`                                                                                            | `engine-backend`                                     |
+| `engine-webgl2`   | Backend WebGL2, `GlslEsCodegen`                                                                                          | `engine-backend`                                     |
+| `engine-vulkan`   | Backend Vulkan (addon Node), `HlslCodegen`                                                                               | `engine-backend`                                     |
+| `engine-native`   | Fenêtres natives, la boucle, surfaces de fenêtre Dawn et Vulkan (addon Node)                                             | `engine-webgpu`, `engine-vulkan`                     |
+| `engine-scene`    | La scène : un noyau ECS, des nœuds, un pool de transformations, des octrees ; une `RenderSource`                         | `engine-core`, `engine-geometry`                     |
+| `demo-scenes`     | Scènes et maillages partagés par les démos                                                                               | `engine-core`                                        |
 
 Les règles :
 
@@ -47,24 +46,28 @@ Les règles :
 
 `renderer.render({ items, camera, surface, lights })` :
 
-1. **Graphe.** Le renderer construit un render graph : l’image de la
-   surface, une passe d’ombres si des lumières projettent des ombres, les
-   passes opaque et transparente, et la passe de tone mapping sur les
-   backends HDR.
-2. **Préparation.** Pour chaque élément, le renderer trouve son
+1. **Culling.** Le renderer demande à sa source (une scène, ou une liste
+   d’éléments) ce qui se trouve dans le frustum de la caméra, garde les
+   lumières qui l’atteignent, puis redemande les objets projetant des ombres
+   de chaque shadow map.
+2. **Graphe.** Il construit un render graph : l’image de la surface, une
+   passe d’ombres si des lumières projettent des ombres, les passes opaque et
+   transparente, et la passe de tone mapping sur les backends HDR.
+3. **Préparation.** Pour chaque élément, le renderer trouve son
    **programme** (compilé une fois par graphe, fonctionnalités, attributs du
    maillage) et son **pipeline** (une fois par programme, layout de
    sommets, état de rendu, formats des cibles), et met à jour les buffers
    GPU dont la version a changé : le maillage, les uniforms `object`
-   (transformation), les uniforms `material`. Les uniforms `frame` (caméra,
-   temps, lumières) sont écrits une fois par vue.
-3. **Compilation.** Le runner compile le graphe, ou le trouve dans son
+   (copiés depuis le bloc de la transformation dans son pool), les uniforms
+   `material`. Les uniforms `frame` (caméra, temps, lumières) sont écrits une
+   fois par vue.
+4. **Compilation.** Le runner compile le graphe, ou le trouve dans son
    cache : ordre, élimination, durées de vie, transitions.
-4. **Enregistrement.** Dans un seul command encoder, chaque passe : les
+5. **Enregistrement.** Dans un seul command encoder, chaque passe : les
    ressources transitoires issues du pool, le pass encoder, son `execute`
    (les draws, triés par pipeline et par matériau, les transparents de
    l’arrière vers l’avant).
-5. **Soumission** et `surface.present()`.
+6. **Soumission** et `surface.present()`.
 
 ## Du graphe au shader
 

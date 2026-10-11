@@ -81,6 +81,9 @@ function RouteComponent() {
                 <a className="text-sm text-center" href="/shadows">
                   Shadows
                 </a>
+                <a className="text-sm text-center" href="/maze">
+                  Maze
+                </a>
               </div>
             )}
           </li>

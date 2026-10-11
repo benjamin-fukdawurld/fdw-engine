@@ -10,10 +10,17 @@
       "path": "../engine-shader/tsconfig.lib.json"
     },
     {
+      "path": "../engine-scene/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-geometry/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-core/tsconfig.lib.json"
     },
     {
       "path": "../engine-backend/tsconfig.lib.json"
     }
-  ]
+  ],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"]
 }

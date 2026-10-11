@@ -18,9 +18,25 @@ possibly above 1. A point or spot light is attenuated by
 `1 / (constant + linear × d + quadratic × d²)`; a spot fades from its inner
 to its outer angle.
 
-The lights are given to each frame: `render({ lights })`, or
-`addScenePasses(graph, { lights })`. The first 16 (`MaxLights`) are used.
-Their values go into the `frame` uniforms, written once per frame and view.
+The lights are given to each frame — `render({ lights })`, or
+`addScenePasses(graph, { lights })` — or come from the source (the lights
+attached to the nodes of a scene). Their values go into the `frame`
+uniforms, written once per frame and view.
+
+## Only what the camera sees
+
+A light costs nothing when it cannot change a pixel of the view:
+
+- a directional light always lights the view;
+- a point or spot light is used only if its **range** reaches the frustum
+  of the camera. Its range is where its attenuation falls below 1/256 of
+  its strongest color (`lightRange(light)`); a light without attenuation
+  reaches everything;
+- of the lights left, 16 at most (`MaxLights`) are used: the directional
+  ones, then the others by the light they give to what the camera sees.
+
+`renderer.stats.get('scene')` gives, for the last frame, the number of
+lights used, of shadow maps and of shadow casters drawn.
 
 ## How the models use them
 
@@ -50,10 +66,16 @@ frame then:
 The cameras of the lights:
 
 - A **directional light** sees the scene with an orthographic projection,
-  covering a sphere: the bounds of the items, or `shadow.bounds`. Its
-  position is snapped to the texels of its tile, so the shadows do not
-  shimmer as the scene moves. Smaller bounds give sharper shadows.
-- A **spot light** sees its cone, with a perspective projection.
+  covering **what the camera sees** (the bounds of the visible items), or
+  `shadow.bounds`. Its size changes by steps, and its position by whole
+  texels, so the shadows do not shimmer as the camera moves.
+- A **spot light** sees its cone, as far as what the camera sees, with a
+  perspective projection.
+
+Both reach **towards the light** as far as the scene goes: a tree out of
+view whose shadow falls in view casts it; an object whose shadow falls out
+of view is not drawn into the shadow map. A light only has a shadow map if
+it is used, and if something is visible.
 
 What casts shadows:
 

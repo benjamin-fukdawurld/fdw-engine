@@ -1,0 +1,197 @@
+---
+title: 'Step 2: the character'
+description: Put a character in the maze, move it with the keyboard, collide with the walls, follow it with the camera.
+sidebar:
+  order: 3
+---
+
+import Example from '../../../components/Example.astro';
+
+The maze gets a character. It walks with the keyboard, slides along the
+walls instead of going through them, and the camera follows it from above.
+Close to the ground, the camera sees a few dozen nodes of the 4700.
+
+<Example name="maze-2" code={false} />
+
+Click the maze, then: **W A S D** or the arrows to walk, **Shift** to run,
+**Q** and **E** to turn the camera around the character, the **wheel** to
+bring it closer or further.
+
+## 1. Sharing the world between the steps
+
+Step 1 built the level and the sun, and rendered the main view and the top
+view. Step 2 needs both: they move to two modules, used by every step.
+
+```ts title="maze/world.ts"
+export function createMazeWorld(scene: Scene, seed = 7): MazeWorld {
+  const cube = createCube();
+  const sphere = createSphere(24, 12);
+  const level = buildLevel(scene, generateMaze(48, 48, seed), {
+    cube,
+    floor,
+    wall,
+  });
+  scene.root.add({ name: 'sun', rotation }).setLight(sun);
+  return { level, cube, sphere, sun };
+}
+```
+
+```ts title="maze/view.ts"
+export class MazeView {
+  /** Renders a frame and presents it: returns what the main view drew. */
+  render(surface: Surface, camera: Camera): ViewStats | undefined;
+}
+```
+
+A step is then only what it adds:
+
+```ts title="maze/step2.ts"
+const scene = new Scene();
+const { level, cube, sphere } = createMazeWorld(scene);
+const player = new Player(scene, Solid, level.cellCenter(0, 0), {
+  sphere,
+  cube,
+  body,
+});
+const follow = new FollowCamera(
+  scene.root.add({ name: 'camera' }).setCamera(camera),
+  input
+);
+const view = new MazeView(backend, scene, level);
+```
+
+## 2. A character made of nodes
+
+The character is a node, which moves and turns, with two children: a body
+(a sphere, stretched) and a nose (a small cube in front), which shows where
+it faces.
+
+```ts title="maze/player.ts"
+this.node = scene.root.add({ name: 'player', position: this.position });
+this.node
+  .add({
+    name: 'body',
+    position: { y: 0.4 },
+    scale: { x: 0.7, y: 0.8, z: 0.7 },
+  })
+  .setMesh(sphere, body);
+this.node
+  .add({
+    name: 'nose',
+    position: { y: 0.55, z: -0.35 },
+    scale: { x: 0.15, y: 0.15, z: 0.25 },
+  })
+  .setMesh(cube, body);
+```
+
+The game only moves and turns `this.node`: the children follow, placed in
+its space. The nose is at −z, the direction the character faces when it is
+not turned.
+
+## 3. What is solid: a component of the game
+
+The character must not walk through the walls. Which nodes are walls is
+the game's business, not the engine's: the game defines a **component** in
+the ECS of the scene, and gives it to the walls.
+
+```ts title="maze/step2.ts"
+const Solid = scene.world.defineComponent('solid', {});
+for (const wall of level.walls.children) {
+  wall.attach(Solid);
+}
+```
+
+A component without fields is a tag: `Solid.has(entity)` tells whether an
+entity has it. Later, enemies or doors can be solid too, without the
+collision code changing.
+
+## 4. Colliding with the walls
+
+Each frame, the character moves, then gets out of the walls it overlaps. Seen
+from above, it is a circle; a wall, a rectangle. The scene finds the walls
+near it with a query:
+
+```ts title="maze/collisions.ts"
+probe.center = [position.x, position.y, position.z];
+probe.radius = radius; // a Sphere around the character
+scene.queryVolumeEntities(probe, (entity) => {
+  if (!solid.has(entity)) {
+    return; // the floor
+  }
+  scene.bounds(box, entity);
+  // The point of the box nearest to the center, in the plane.
+  const nx = clamp(position.x, box.min[0], box.max[0]);
+  const nz = clamp(position.z, box.min[2], box.max[2]);
+  const distance = Math.hypot(position.x - nx, position.z - nz);
+  if (distance < radius) {
+    // Away from the nearest point, to the radius.
+    position.x = nx + ((position.x - nx) / distance) * radius;
+    position.z = nz + ((position.z - nz) / distance) * radius;
+  }
+});
+```
+
+- The query goes through the static octree of the scene: a handful of
+  walls are tested, not 2400.
+- The circle is pushed **along the shortest way out**: perpendicular to the
+  wall. Its movement along the wall is kept, so the character **slides**
+  along it instead of stopping dead.
+- In a corner, leaving a wall can push into the other one: the code makes
+  up to three passes.
+
+## 5. Walking relative to the camera
+
+W goes away from the camera, whatever the camera's direction: the keys are
+turned by the yaw of the camera before moving the character.
+
+```ts title="maze/player.ts"
+const forward = input.axis(['s', 'down'], ['w', 'up']);
+const right = input.axis(['a', 'left'], ['d', 'right']);
+const dx = (right * cos - forward * sin) / length;
+const dz = (-right * sin - forward * cos) / length;
+this.position.x += dx * speed * dt;
+this.position.z += dz * speed * dt;
+// Turn towards the movement, by the shortest way round.
+let delta = Math.atan2(-dx, -dz) - this.heading;
+delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+this.heading += delta * Math.min(1, 12 * dt);
+```
+
+Dividing by `length` keeps the speed the same along a diagonal. The heading
+follows the movement smoothly; `atan2(sin, cos)` brings the difference
+between −π and π, so that the character never turns the long way round.
+
+## 6. A camera that follows
+
+The camera stays behind and above the character, at a distance, and
+catches up with it smoothly:
+
+```ts title="maze/followCamera.ts"
+const back = Math.cos(this.pitch) * this.distance;
+const wanted = {
+  x: target.x + Math.sin(this.yaw) * back,
+  y: target.y - Math.sin(this.pitch) * this.distance,
+  z: target.z + Math.cos(this.yaw) * back,
+};
+// A fraction of the way each frame, the same whatever the frame rate.
+const follow = 1 - Math.exp(-8 * dt);
+position.x += (wanted.x - position.x) * follow;
+```
+
+`1 − e^(−k·dt)` is the right fraction for a frame of any length: two frames
+of 8 ms move the camera as much as one of 16 ms. The camera looks down
+steeply (72°): a wall then hides little behind it.
+
+## What we have
+
+- A character built from nodes, moved and turned as a whole.
+- Collisions found by a query of the scene, filtered by a component of the
+  game, and resolved so that the character slides along the walls.
+- A camera following it, close enough that a few dozen nodes are drawn.
+
+When the character stands just behind a wall, on the side of the camera,
+the wall still hides it: turning the camera (Q, E) shows it again. Making
+the walls between the camera and the character transparent is a classic
+answer, for a later step.
+
+The next step turns the lights off, and gives the character a flashlight.

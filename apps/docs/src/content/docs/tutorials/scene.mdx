@@ -1,0 +1,119 @@
+---
+title: A scene
+description: Build a scene of thousands of objects with nodes, and let the renderer draw only what the camera sees.
+sidebar:
+  order: 6
+---
+
+import Example from '../../../components/Example.astro';
+
+A forest of 4000 trees, each a trunk and a crown, with birds flying between
+them and a camera flying over. The line under the canvas shows how many
+objects are drawn: only those the camera sees.
+
+<Example name="scene-forest" />
+
+## Nodes
+
+A `Scene` (from `@fdw/engine-scene`) is a hierarchy of **nodes**. A node has
+a transform, relative to its parent, and things attached to it: a mesh with
+a material, a light, a camera.
+
+```ts
+const scene = new Scene();
+const trunk = scene.root
+  .add({ position: { x: 4, y: 2 }, scale: { x: 0.4, y: 4, z: 0.4 } })
+  .setMesh(cube, bark);
+trunk
+  .add({ position: { y: 0.6 }, scale: { x: 6, y: 0.5, z: 6 } })
+  .setMesh(sphere, leaves);
+```
+
+- `add()` creates a child, with an optional name, position, rotation,
+  scale, layers, visibility.
+- `setMesh(mesh, material)` draws a mesh at the node; `setLight(light)` and
+  `setCamera(camera)` attach a light or a camera, which then follow the
+  node: position, and direction along its −z axis.
+- A child is placed in the space of its parent: the crown above follows the
+  trunk, its scale included.
+
+## Static nodes
+
+```ts
+scene.root.add({ position, scale, static: true }).setMesh(cube, bark);
+```
+
+A **static** node does not move: the scene computes it once, and indexes
+all the static nodes at once, in a spatial index of their own. A level, a
+building, a terrain are static; the characters and the projectiles are not.
+A static node can still move, at a cost: the scene warns once.
+
+## Moving nodes
+
+```ts
+bird.transform.position = { y: 8 + Math.sin(time * 2 + i) * 2 };
+```
+
+`node.transform` is a `Transform`, the same class as everywhere in the
+engine. Changing it is all there is to do: the scene recomputes the world
+matrices of the branch when they are read, and moves the node in its index
+before the next query. There is no `update()` to call.
+
+## Drawing the scene
+
+```ts
+renderer.render({ source: scene, camera, surface });
+```
+
+The scene is a **source** for the renderer: for each view, the renderer
+asks it what is in its frustum. The scene answers from its spatial indices,
+without testing every node. The lights come from the scene too, and only
+those that can light what the camera sees are used; each shadow map draws
+only the objects whose shadows can fall in view.
+
+`renderer.stats` says what the last frame drew:
+
+```ts
+const { visible, drawn, lights, shadowMaps, casters } =
+  renderer.stats.get('scene')!;
+```
+
+## Queries
+
+The same indices answer the questions of the application: what does a ray
+hit, what is near a point.
+
+```ts
+scene.raycast(new Ray(origin, direction), (node, distance) => {
+  select(node);
+  return false; // the nearest one only
+});
+scene.queryVolume(new Sphere(position, 5), (node) => {
+  near.push(node);
+});
+```
+
+Queries test the bounds of the meshes, then the `volume` given to
+`setMesh()`, when there is one (a capsule for a character).
+
+## Systems
+
+For thousands of objects updated each frame, the nodes can be skipped: the
+scene is an ECS, and its transforms are blocks of a pool.
+
+```ts
+const { data } = scene.transforms;
+const { stride, position } = TransformLayout;
+for (const { entity } of birds) {
+  data[entity * stride + position + 1] = 8 + Math.sin(time * 2 + entity) * 2;
+  scene.transforms.touch(entity);
+}
+```
+
+See the [Scene graph guide](/fdw-engine/guides/scene-graph/) for the
+components, the queries of the ECS and the invalidation.
+
+## Next
+
+The [game tutorial](/fdw-engine/game/maze/) builds a small game on a scene,
+step by step.

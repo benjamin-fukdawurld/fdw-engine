@@ -1,0 +1,123 @@
+---
+title: Une scène
+description: Construire une scène de milliers d'objets avec des nœuds, et laisser le renderer ne dessiner que ce que voit la caméra.
+sidebar:
+  order: 6
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une forêt de 4000 arbres, chacun avec un tronc et une couronne, avec des
+oiseaux volant entre eux et une caméra qui les survole. La ligne sous le
+canvas indique combien d'objets sont dessinés : seulement ceux que voit la
+caméra.
+
+<Example name="scene-forest" />
+
+## Nœuds
+
+Une `Scene` (de `@fdw/engine-scene`) est une hiérarchie de **nœuds**. Un
+nœud a une transformation, relative à son parent, et des éléments qui lui
+sont attachés : un mesh avec un matériau, une lumière, une caméra.
+
+```ts
+const scene = new Scene();
+const trunk = scene.root
+  .add({ position: { x: 4, y: 2 }, scale: { x: 0.4, y: 4, z: 0.4 } })
+  .setMesh(cube, bark);
+trunk
+  .add({ position: { y: 0.6 }, scale: { x: 6, y: 0.5, z: 6 } })
+  .setMesh(sphere, leaves);
+```
+
+- `add()` crée un enfant, avec en option un nom, une position, une
+  rotation, une échelle, des layers, une visibilité.
+- `setMesh(mesh, material)` dessine un mesh au nœud ; `setLight(light)` et
+  `setCamera(camera)` attachent une lumière ou une caméra, qui suivent alors
+  le nœud : position, et direction selon son axe −z.
+- Un enfant est placé dans l'espace de son parent : la couronne ci-dessus
+  suit le tronc, échelle comprise.
+
+## Nœuds statiques
+
+```ts
+scene.root.add({ position, scale, static: true }).setMesh(cube, bark);
+```
+
+Un nœud **statique** ne bouge pas : la scène le calcule une fois, et indexe
+tous les nœuds statiques d'un coup, dans un index spatial qui leur est
+propre. Un niveau, un bâtiment, un terrain sont statiques ; les personnages
+et les projectiles ne le sont pas. Un nœud statique peut quand même bouger,
+mais a un coût : la scène avertit une fois.
+
+## Déplacer des nœuds
+
+```ts
+bird.transform.position = { y: 8 + Math.sin(time * 2 + i) * 2 };
+```
+
+`node.transform` est un `Transform`, la même classe que partout ailleurs
+dans le moteur. Le modifier suffit : la scène recalcule les matrices monde
+de la branche à leur lecture, et déplace le nœud dans son index avant la
+requête suivante. Il n'y a pas d'`update()` à appeler.
+
+## Dessiner la scène
+
+```ts
+renderer.render({ source: scene, camera, surface });
+```
+
+La scène est une **source** pour le renderer : pour chaque vue, le renderer
+lui demande ce qui se trouve dans son frustum. La scène répond à partir de
+ses index spatiaux, sans tester chaque nœud. Les lumières viennent aussi de
+la scène, et seules celles qui peuvent éclairer ce que voit la caméra sont
+utilisées ; chaque shadow map ne dessine que les objets dont les ombres
+peuvent tomber dans le champ.
+
+`renderer.stats` indique ce que la dernière frame a dessiné :
+
+```ts
+const { visible, drawn, lights, shadowMaps, casters } =
+  renderer.stats.get('scene')!;
+```
+
+## Requêtes
+
+Les mêmes index répondent aux questions de l'application : que touche un
+rayon, qu'y a-t-il près d'un point.
+
+```ts
+scene.raycast(new Ray(origin, direction), (node, distance) => {
+  select(node);
+  return false; // the nearest one only
+});
+scene.queryVolume(new Sphere(position, 5), (node) => {
+  near.push(node);
+});
+```
+
+Les requêtes testent les englobants des meshes, puis le `volume` passé à
+`setMesh()`, s'il y en a un (une capsule pour un personnage).
+
+## Systèmes
+
+Pour des milliers d'objets mis à jour à chaque frame, les nœuds peuvent être
+contournés : la scène est un ECS, et ses transformations sont des blocs d'un
+pool.
+
+```ts
+const { data } = scene.transforms;
+const { stride, position } = TransformLayout;
+for (const { entity } of birds) {
+  data[entity * stride + position + 1] = 8 + Math.sin(time * 2 + entity) * 2;
+  scene.transforms.touch(entity);
+}
+```
+
+Voir le [guide du scene graph](/fdw-engine/fr/guides/scene-graph/) pour les
+composants, les requêtes de l'ECS et l'invalidation.
+
+## Pour aller plus loin
+
+Le [tutoriel du jeu](/fdw-engine/fr/game/maze/) construit pas à pas un petit
+jeu sur une scène.

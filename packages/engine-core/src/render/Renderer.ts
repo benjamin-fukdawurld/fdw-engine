@@ -113,6 +113,9 @@ export interface FullscreenPassOptions {
   readonly format: GpuTextureFormat;
   readonly load?: 'clear' | 'load';
   readonly clearColor?: IColor;
+  // Blends the color over the target by its alpha (with load: 'load'): an
+  // overlay covering part of the screen, transparent elsewhere.
+  readonly blend?: boolean;
 }
 
 export interface RendererOptions {
@@ -347,6 +350,18 @@ function matchesPool(block: PhysicalUniformBlock): boolean {
   return matches;
 }
 
+// Clips a box to the bounds of a frustum.
+function clipToFrustum(box: Aabb, frustum: Frustum): void {
+  if (box.isEmpty()) {
+    return;
+  }
+  const bounds = frustum.bounds(new Aabb());
+  for (let axis = 0; axis < 3; axis++) {
+    box.min[axis] = Math.max(box.min[axis], bounds.min[axis]);
+    box.max[axis] = Math.min(box.max[axis], bounds.max[axis]);
+  }
+}
+
 // A sphere containing a box.
 const sphereOf = (box: Aabb) => ({
   center: box.center() as [number, number, number],
@@ -543,6 +558,9 @@ export class Renderer {
       },
       'camera'
     );
+    // What the camera sees of them: a large item (a ground) reaches beyond
+    // the frustum, its shadows there are not seen.
+    clipToFrustum(receivers, frustum);
     const reaching = this.reachingLights(
       lights ?? [...(from.lights?.() ?? [])],
       frustum
@@ -679,10 +697,11 @@ export class Renderer {
       format,
       load = 'clear',
       clearColor,
+      blend = false,
     }: FullscreenPassOptions
   ): TextureHandle {
     const view = this.view(name);
-    const prepared = this.prepareFullscreen(material, format, view);
+    const prepared = this.prepareFullscreen(material, format, view, blend);
     // The frame values of the last scene (exposure…).
     this.writeView(view, prepared.layout, this._frameValues);
     return graph.addRasterPass(name, (pass) => {
@@ -1133,11 +1152,12 @@ export class Renderer {
   private prepareFullscreen(
     material: Material,
     format: GpuTextureFormat,
-    view: FrameView
+    view: FrameView,
+    blend: boolean
   ): PreparedItem {
     const mesh = this._fullscreenMesh;
     const program = this.program(material, mesh);
-    const pipelineKey = `fullscreen|${program.programKey}|${format}`;
+    const pipelineKey = `fullscreen|${program.programKey}|${format}|${blend}`;
     this.ensurePipeline(pipelineKey, () => ({
       label: material.label ?? program.name,
       program,
@@ -1147,7 +1167,7 @@ export class Renderer {
         cullMode: 'none',
         frontFace: 'ccw',
       },
-      targets: [{ format }],
+      targets: [{ format, ...(blend ? { blend: alphaBlending } : {}) }],
     }));
     const item = { mesh, material, transform: this._fullscreenTransform };
     return {

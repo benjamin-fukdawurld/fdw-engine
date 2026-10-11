@@ -556,8 +556,8 @@ Ce qu'un jeu demande en plus, à construire au fil des démos : une boucle à pa
 - **S4. Cœur ECS** _(fait)_ (`engine-scene`) : `World`, entités et générations, `defineComponent` et colonnes typées, ensembles creux, requêtes. Tests, bench (création, ajout, retrait, parcours).
 - **S5. Scène et façade** _(fait)_ (`engine-scene`) : colonnes de la hiérarchie et de la transformation, composants `MeshRenderer`, `Light`, `CameraView`, invalidation par bits « périmé », liste des changements et effets, calques, identifiants, recherche, requêtes ; façade `Node` et interfaces `SceneNode`, `SceneGraph` ; `Scene` comme `RenderSource`.
 - **S6. Statique et prémices de l'occlusion** _(fait, avec S5 ; la table des bornes est la colonne `MeshRenderer.bounds`)_ : entités statiques et octree statique, `occluder`, table des bornes, `lastVisibleFrame`, l'étape `OcclusionCuller`.
-- **S7. Documentation** : guides « Geometry » et « Scene graph » (cœur ECS, façade, invalidation), tutoriel avec exemple vivant, en anglais et en français ; README des packages.
-- **L1 à L4. Les démos du labyrinthe** (§11), une par une, chacune vérifiée avant la suivante.
+- **S7. Documentation** _(fait ; plus le tutoriel « Créer un jeu », écrit au fil des démos)_ : guides « Geometry » et « Scene graph » (cœur ECS, façade, invalidation), tutoriel avec exemple vivant, en anglais et en français ; README des packages.
+- **L1 à L4. Les démos du labyrinthe** (§11), une par une, chacune vérifiée avant la suivante, chacune avec sa page du tutoriel. _L1 et L2 faites_ (`packages/demo-scenes/src/maze/`, route `maze` de la démo pour la dernière étape, `demo-native -- maze`, `-- maze-1` pour la première). Noté pour une étape suivante : rendre transparents les murs entre la caméra et le personnage, qui peuvent le cacher.
 - **Ensuite** : le design de `engine-occlusion` (§5.5), le batching statique et l'instancing.
 
 ## 14. Stratégie de test

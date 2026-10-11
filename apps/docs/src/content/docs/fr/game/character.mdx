@@ -1,0 +1,204 @@
+---
+title: 'Étape 2 : le personnage'
+description: Placer un personnage dans le labyrinthe, le déplacer au clavier, le faire heurter les murs, le suivre avec la caméra.
+sidebar:
+  order: 3
+---
+
+import Example from '../../../../components/Example.astro';
+
+Le labyrinthe reçoit un personnage. Il marche au clavier, glisse le long des
+murs au lieu de les traverser, et la caméra le suit depuis le dessus. Près du
+sol, la caméra voit quelques dizaines de nœuds sur les 4700.
+
+<Example name="maze-2" code={false} />
+
+Cliquez sur le labyrinthe, puis : **W A S D** ou les flèches pour marcher,
+**Maj** pour courir, **Q** et **E** pour faire tourner la caméra autour du
+personnage, la **molette** pour la rapprocher ou l'éloigner.
+
+## 1. Partager le monde entre les étapes
+
+L'étape 1 construisait le niveau et le soleil, et dessinait la vue principale
+et la vue de dessus. L'étape 2 a besoin des deux : ils passent dans deux
+modules, utilisés par chaque étape.
+
+```ts title="maze/world.ts"
+export function createMazeWorld(scene: Scene, seed = 7): MazeWorld {
+  const cube = createCube();
+  const sphere = createSphere(24, 12);
+  const level = buildLevel(scene, generateMaze(48, 48, seed), {
+    cube,
+    floor,
+    wall,
+  });
+  scene.root.add({ name: 'sun', rotation }).setLight(sun);
+  return { level, cube, sphere, sun };
+}
+```
+
+```ts title="maze/view.ts"
+export class MazeView {
+  /** Renders a frame and presents it: returns what the main view drew. */
+  render(surface: Surface, camera: Camera): ViewStats | undefined;
+}
+```
+
+Une étape n'est alors que ce qu'elle ajoute :
+
+```ts title="maze/step2.ts"
+const scene = new Scene();
+const { level, cube, sphere } = createMazeWorld(scene);
+const player = new Player(scene, Solid, level.cellCenter(0, 0), {
+  sphere,
+  cube,
+  body,
+});
+const follow = new FollowCamera(
+  scene.root.add({ name: 'camera' }).setCamera(camera),
+  input
+);
+const view = new MazeView(backend, scene, level);
+```
+
+## 2. Un personnage fait de nœuds
+
+Le personnage est un nœud, qui se déplace et tourne, avec deux enfants : un
+corps (une sphère, étirée) et un nez (un petit cube à l'avant), qui montre
+dans quelle direction il regarde.
+
+```ts title="maze/player.ts"
+this.node = scene.root.add({ name: 'player', position: this.position });
+this.node
+  .add({
+    name: 'body',
+    position: { y: 0.4 },
+    scale: { x: 0.7, y: 0.8, z: 0.7 },
+  })
+  .setMesh(sphere, body);
+this.node
+  .add({
+    name: 'nose',
+    position: { y: 0.55, z: -0.35 },
+    scale: { x: 0.15, y: 0.15, z: 0.25 },
+  })
+  .setMesh(cube, body);
+```
+
+Le jeu ne fait que déplacer et tourner `this.node` : les enfants suivent,
+placés dans son espace. Le nez est en −z, la direction vers laquelle regarde
+le personnage lorsqu'il n'est pas tourné.
+
+## 3. Ce qui est solide : un composant du jeu
+
+Le personnage ne doit pas traverser les murs. Savoir quels nœuds sont des
+murs est l'affaire du jeu, pas du moteur : le jeu définit un **composant**
+dans l'ECS de la scène, et le donne aux murs.
+
+```ts title="maze/step2.ts"
+const Solid = scene.world.defineComponent('solid', {});
+for (const wall of level.walls.children) {
+  wall.attach(Solid);
+}
+```
+
+Un composant sans champs est une étiquette : `Solid.has(entity)` indique si
+une entité la possède. Plus tard, des ennemis ou des portes pourront eux
+aussi être solides, sans que le code de collision change.
+
+## 4. Heurter les murs
+
+À chaque frame, le personnage se déplace, puis sort des murs qu'il
+chevauche. Vu de dessus, c'est un cercle ; un mur, un rectangle. La scène
+trouve les murs proches de lui avec une requête :
+
+```ts title="maze/collisions.ts"
+probe.center = [position.x, position.y, position.z];
+probe.radius = radius; // a Sphere around the character
+scene.queryVolumeEntities(probe, (entity) => {
+  if (!solid.has(entity)) {
+    return; // the floor
+  }
+  scene.bounds(box, entity);
+  // The point of the box nearest to the center, in the plane.
+  const nx = clamp(position.x, box.min[0], box.max[0]);
+  const nz = clamp(position.z, box.min[2], box.max[2]);
+  const distance = Math.hypot(position.x - nx, position.z - nz);
+  if (distance < radius) {
+    // Away from the nearest point, to the radius.
+    position.x = nx + ((position.x - nx) / distance) * radius;
+    position.z = nz + ((position.z - nz) / distance) * radius;
+  }
+});
+```
+
+- La requête passe par l'octree statique de la scène : une poignée de murs
+  sont testés, pas 2400.
+- Le cercle est repoussé **par le plus court chemin pour sortir** :
+  perpendiculairement au mur. Son mouvement le long du mur est conservé, de
+  sorte que le personnage **glisse** le long de celui-ci au lieu de s'arrêter
+  net.
+- Dans un coin, sortir d'un mur peut pousser dans l'autre : le code fait
+  jusqu'à trois passes.
+
+## 5. Marcher par rapport à la caméra
+
+W éloigne de la caméra, quelle que soit la direction de la caméra : les
+touches sont tournées du lacet de la caméra avant de déplacer le personnage.
+
+```ts title="maze/player.ts"
+const forward = input.axis(['s', 'down'], ['w', 'up']);
+const right = input.axis(['a', 'left'], ['d', 'right']);
+const dx = (right * cos - forward * sin) / length;
+const dz = (-right * sin - forward * cos) / length;
+this.position.x += dx * speed * dt;
+this.position.z += dz * speed * dt;
+// Turn towards the movement, by the shortest way round.
+let delta = Math.atan2(-dx, -dz) - this.heading;
+delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+this.heading += delta * Math.min(1, 12 * dt);
+```
+
+Diviser par `length` garde la même vitesse en diagonale. L'orientation suit
+le mouvement en douceur ; `atan2(sin, cos)` ramène la différence entre −π et
+π, de sorte que le personnage ne tourne jamais par le plus long côté.
+
+## 6. Une caméra qui suit
+
+La caméra reste derrière et au-dessus du personnage, à distance, et le
+rattrape en douceur :
+
+```ts title="maze/followCamera.ts"
+const back = Math.cos(this.pitch) * this.distance;
+const wanted = {
+  x: target.x + Math.sin(this.yaw) * back,
+  y: target.y - Math.sin(this.pitch) * this.distance,
+  z: target.z + Math.cos(this.yaw) * back,
+};
+// A fraction of the way each frame, the same whatever the frame rate.
+const follow = 1 - Math.exp(-8 * dt);
+position.x += (wanted.x - position.x) * follow;
+```
+
+`1 − e^(−k·dt)` est la bonne fraction pour une frame de durée quelconque :
+deux frames de 8 ms déplacent la caméra autant qu'une seule de 16 ms. La
+caméra regarde fortement vers le bas (72°) : un mur cache alors peu de chose
+derrière lui.
+
+## Ce que nous avons
+
+- Un personnage construit à partir de nœuds, déplacé et tourné d'un seul
+  bloc.
+- Des collisions trouvées par une requête de la scène, filtrées par un
+  composant du jeu, et résolues de sorte que le personnage glisse le long des
+  murs.
+- Une caméra qui le suit, assez proche pour que quelques dizaines de nœuds
+  soient dessinés.
+
+Lorsque le personnage se tient juste derrière un mur, du côté de la caméra,
+le mur le cache encore : tourner la caméra (Q, E) le montre de nouveau.
+Rendre transparents les murs situés entre la caméra et le personnage est une
+réponse classique, pour une étape ultérieure.
+
+L'étape suivante éteint les lumières, et donne au personnage une lampe
+torche.

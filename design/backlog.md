@@ -16,6 +16,7 @@ Le moteur ne connaît aujourd'hui que des `RenderItem` à plat (`{ mesh, materia
 
 Fait (voir le plan du design) : la géométrie (`engine-geometry` : volumes, GJK, octree), le culling des vues dans le `Renderer`, le cœur ECS et la scène (`engine-scene`). Reste :
 
+- **Le coût d'un déplacement de nœud** par la façade : environ 90 ns de plus par nœud depuis le pool de transforms (0,58 → 0,67 ms pour 1 000 nœuds, [scenegraph §16.4](scenegraph.md#164-résultats)). Pistes : alléger la chaîne `Transform` → pool → scène (notification), ou des écritures groupées.
 - **Création en lot** des entités de la scène, écrivant directement les colonnes : 100 000 nœuds statiques coûtent aujourd'hui 485 ms par la façade, dont 100 ms d'octree.
 - **Le package `engine-occlusion`** : Hi-Z sur le GPU (relecture ou pilotée par le GPU, à choisir), le CPU en repli ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)).
 - **Batching statique et instancing**, à partir des entités statiques.
@@ -54,7 +55,7 @@ Détails dans [material-graph-gaps.md](material-graph-gaps.md) et [material-grap
 ## 5. Performance
 
 - WebGPU est plus lent que WebGL2 dans Chrome sur la démo. C'est probablement lié à Chrome, et ce n'est pas une priorité. Si l'écart devient gênant, profiler d'abord les écritures de buffer et les bind groups par objet.
-- Le coût CPU par objet du `Renderer` ([material-graph-v2 §2](material-graph-v2.md#2-mesures-de-performance)) : réutiliser les buffers d'uniforms CPU, alléger les vérifications des valeurs en cache.
+- Le coût CPU par objet du `Renderer` se voit sur le labyrinthe (étape L1 du jeu) : environ 800 objets visibles et 2900 projeteurs d'ombre par frame, 89 images par seconde sur Vulkan. Pistes : la distance d'ombre (ou des cascades), l'instancing des murs, et le coût par objet lui-même ([material-graph-v2 §2](material-graph-v2.md#2-mesures-de-performance)) : réutiliser les buffers d'uniforms CPU, alléger les vérifications des valeurs en cache.
 
 ## 6. Backends natifs : les suites de la phase 6
 
@@ -83,7 +84,12 @@ Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en fran�
 - **Exemples** : un contrôle de caméra à la souris, et un bouton pour passer d'un backend à l'autre sans recharger la page.
 - La référence API n'est générée qu'en anglais (commentaires des sources) : les pages françaises y renvoient.
 
-## 8. Plus loin
+## 8. Le jeu de démonstration et l'entrée
+
+- **Murs transparents** : rendre semi-transparents (0 < alpha < 1) les murs entre la caméra et le personnage, qui peuvent le cacher ([scenegraph §11](scenegraph.md#11-les-démos)). Un rayon ou un volume de la caméra au personnage trouve ces murs ; leur matériau passe en `blend`, avec un alpha qui revient en douceur quand ils ne cachent plus rien.
+- **Gestion des entrées, manettes comprises**, à faire après les démos : une API abstraite (clavier, souris, manettes, actions nommées et leurs liaisons) et deux implémentations, web (événements DOM, Gamepad API) et native (SDL3 : clavier, souris, `SDL_Gamepad`). Probablement un package pour l'API et un par implémentation, comme pour les backends de rendu ; l'`Input` du jeu (`demo-scenes/src/maze/input.ts`) en est l'ébauche.
+
+## 9. Plus loin
 
 - Un très grand nombre de lumières, le ray tracing, le rendu piloté par le GPU, la sortie HDR et le travail en parallèle sur le GPU : [evolutions.md](evolutions.md).
 - La précompilation des programmes (phase 7 du material graph).

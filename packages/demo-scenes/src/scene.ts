@@ -9,7 +9,20 @@ export interface Scene {
   destroy(): void;
 }
 
-export type SceneFactory = (backend: RenderBackend, surface: Surface) => Scene;
+/** What a scene can use from where it runs, besides the backend and the surface. */
+export interface SceneContext {
+  // The target of the keyboard and mouse events: a browser window, a
+  // canvas, a native window.
+  readonly input?: EventTarget;
+  // Shows a line of information (statistics): an overlay, a window title.
+  readonly info?: (text: string) => void;
+}
+
+export type SceneFactory = (
+  backend: RenderBackend,
+  surface: Surface,
+  context?: SceneContext
+) => Scene;
 
 // Keeps the aspect of a perspective camera equal to the one of the surface,
 // whose size can change (a resized window).

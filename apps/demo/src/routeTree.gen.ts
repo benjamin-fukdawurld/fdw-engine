@@ -17,6 +17,7 @@ import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
 import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
 import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
 import { Route as PbrRouteRouteImport } from './routes/pbr/route'
+import { Route as MazeRouteRouteImport } from './routes/maze/route'
 import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
 import { Route as MaterialGraphRouteRouteImport } from './routes/material-graph/route'
 import { Route as LoadingModelRouteRouteImport } from './routes/loading-model/route'
@@ -67,6 +68,11 @@ const ShadowsRouteRoute = ShadowsRouteRouteImport.update({
 const PbrRouteRoute = PbrRouteRouteImport.update({
   id: '/pbr',
   path: '/pbr',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MazeRouteRoute = MazeRouteRouteImport.update({
+  id: '/maze',
+  path: '/maze',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MatrixRouteRoute = MatrixRouteRouteImport.update({
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/loading-model': typeof LoadingModelRouteRoute
   '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
+  '/maze': typeof MazeRouteRoute
   '/pbr': typeof PbrRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByTo {
   '/loading-model': typeof LoadingModelRouteRoute
   '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
+  '/maze': typeof MazeRouteRoute
   '/pbr': typeof PbrRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/loading-model': typeof LoadingModelRouteRoute
   '/material-graph': typeof MaterialGraphRouteRoute
   '/matrix': typeof MatrixRouteRoute
+  '/maze': typeof MazeRouteRoute
   '/pbr': typeof PbrRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/loading-model'
     | '/material-graph'
     | '/matrix'
+    | '/maze'
     | '/pbr'
     | '/shadows'
     | '/textured-triangle'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/loading-model'
     | '/material-graph'
     | '/matrix'
+    | '/maze'
     | '/pbr'
     | '/shadows'
     | '/textured-triangle'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/loading-model'
     | '/material-graph'
     | '/matrix'
+    | '/maze'
     | '/pbr'
     | '/shadows'
     | '/textured-triangle'
@@ -268,6 +280,7 @@ export interface RootRouteChildren {
   LoadingModelRouteRoute: typeof LoadingModelRouteRoute
   MaterialGraphRouteRoute: typeof MaterialGraphRouteRoute
   MatrixRouteRoute: typeof MatrixRouteRoute
+  MazeRouteRoute: typeof MazeRouteRoute
   PbrRouteRoute: typeof PbrRouteRoute
   ShadowsRouteRoute: typeof ShadowsRouteRoute
   TexturedTriangleRouteRoute: typeof TexturedTriangleRouteRoute
@@ -334,6 +347,13 @@ declare module '@tanstack/react-router' {
       path: '/pbr'
       fullPath: '/pbr'
       preLoaderRoute: typeof PbrRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/maze': {
+      id: '/maze'
+      path: '/maze'
+      fullPath: '/maze'
+      preLoaderRoute: typeof MazeRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/matrix': {
@@ -428,6 +448,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoadingModelRouteRoute: LoadingModelRouteRoute,
   MaterialGraphRouteRoute: MaterialGraphRouteRoute,
   MatrixRouteRoute: MatrixRouteRoute,
+  MazeRouteRoute: MazeRouteRoute,
   PbrRouteRoute: PbrRouteRoute,
   ShadowsRouteRoute: ShadowsRouteRoute,
   TexturedTriangleRouteRoute: TexturedTriangleRouteRoute,
