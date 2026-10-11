@@ -189,6 +189,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         log.textures.push(descriptor);
         return { ...descriptor, destroy: () => undefined };
       },
+      writeTexture: () => undefined,
       createSampler: () => ({ destroy: () => undefined }),
     } as RenderBackend['textures'],
     pipelines: {

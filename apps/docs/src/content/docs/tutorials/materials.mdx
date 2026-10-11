@@ -75,6 +75,14 @@ const mapSampler = backend.textures.createSampler({
 colors as it samples them. Textures holding data (normal maps, roughness)
 use a linear format, `rgba8unorm`.
 
+A texture can be rewritten later, all of it, with the same layout as
+`source` — the frames submitted before see the old content, those after,
+the new one:
+
+```ts
+backend.textures.writeTexture(map, pixels);
+```
+
 ## Values
 
 A material binds the graph to its values:

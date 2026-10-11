@@ -1,0 +1,332 @@
+---
+title: 'Étape 4 : le jeu'
+description: Des gemmes à ramasser dans le noir, des ennemis qui errent dans le labyrinthe, des lignes de vue, et une carte de ce qui a été découvert.
+sidebar:
+  order: 5
+---
+
+import Example from '../../../../components/Example.astro';
+
+Le labyrinthe devient un jeu. Huit gemmes sont cachées dans ses culs-de-sac ;
+une fois toutes ramassées, la sortie s'ouvre, dans le coin opposé. Des
+ennemis errent dans les couloirs : lorsqu'ils voient le personnage, ils le
+poursuivent, et le toucher met fin à la partie. La lampe torche est à la fois
+une aide et un danger : elle trouve les gemmes et éblouit les ennemis, mais
+elle se voit de loin. Une carte montre ce qui a été découvert, le reste
+demeure dans le brouillard.
+
+<Example name="maze-4" code={false} />
+
+Cliquez sur le labyrinthe, puis : **W A S D** pour marcher, la **souris**
+pour viser, **F** pour la lampe torche, **M** pour passer la carte des
+environs au labyrinthe entier, **R** pour rejouer. **C** affiche, à la place
+de la carte, la vue du dessus du culling des étapes précédentes.
+
+## 1. La logique à pas fixe
+
+Jusqu'ici, chaque frame déplaçait le personnage de la durée de la frame. La
+logique du jeu s'exécute désormais par **pas fixes** de 1/60 s, autant que la
+frame en contient :
+
+```ts title="maze/fixedStep.ts"
+advance(dt: number, update: (step: number) => void): void {
+  this._pending = Math.min(this._pending + dt, this.step * this.maxSteps);
+  while (this._pending >= this.step - 1e-9) {
+    update(this.step);
+    this._pending -= this.step;
+  }
+}
+```
+
+- Le jeu est le même à 30 ou à 144 images par seconde : un ennemi parcourt
+  la même distance à chaque pas, une collision est testée aux mêmes endroits.
+- Après une longue frame (un onglet en arrière-plan), cinq pas au plus
+  s'exécutent : le jeu ralentit plutôt que d'exécuter des centaines de pas
+  d'un coup.
+- `1e-9` : en virgule flottante, 0.05 + 0.05 est un rien inférieur à 0.1.
+  Sans cette tolérance, un pas serait perdu, puis deux s'exécuteraient à la
+  frame suivante.
+
+Le rendu reste au rythme de l'écran : la caméra suit le personnage à chaque
+frame.
+
+```ts title="maze/step4.ts"
+loop.advance(dt, (step) => {
+  player.update(step, input, follow.yaw, aim);
+  exploration.walk(player.position);
+  game.update(step);
+});
+follow.update(dt, player.position);
+```
+
+## 2. Gemmes et ennemis : des composants du jeu
+
+Les étapes 2 et 3 utilisaient un composant sans champs, `Solid`. Le jeu en
+définit deux autres, avec des **colonnes** :
+
+```ts title="maze/game.ts"
+const gemSchema = { cell: 'i32' } as const;
+const enemySchema = {
+  state: 'u8', // Wander, Chase or Dazzled
+  from: 'i32', // walking from the center of a cell…
+  to: 'i32', // …to the center of the next
+  previous: 'i32',
+  progress: 'f32',
+  timer: 'f32',
+  seen: 'i32', // where it last saw the player
+  eyes: 'ref', // the nodes of its eyes
+} as const;
+
+this.Gem = world.defineComponent('gem', gemSchema);
+this.Enemy = world.defineComponent('enemy', enemySchema);
+```
+
+Chaque champ est un tableau typé, indexé par entité : `Enemy.state[entity]`
+lit l'état d'un ennemi. Une colonne `ref` contient n'importe quelle valeur
+JavaScript.
+
+Les entités sont construites avec des nœuds — une gemme est un nœud avec un
+maillage, un ennemi un nœud avec un corps et deux yeux — et le composant est
+donné au nœud :
+
+```ts title="maze/game.ts"
+this._scene.root
+  .add({ name: 'gem', position, scale })
+  .setMesh(this._meshes.cube, this._gemMaterial)
+  .attach(this.Gem, { cell });
+```
+
+La façade des nœuds construit ; les colonnes calculent. Ce sont deux vues des
+mêmes entités.
+
+## 3. Les systèmes
+
+Un **système** est une fonction qui parcourt les entités d'un composant, et
+lit et écrit ses colonnes. Le jeu en a cinq, exécutés dans l'ordre à chaque
+pas :
+
+```ts title="maze/game.ts"
+update(step: number): void {
+  this._sightTime += step;
+  if (this._sightTime >= sightPeriod) {
+    this.sight(this._sightTime); // what the enemies see, 10 times per second
+    this._sightTime = 0;
+  }
+  this.walk(step); // the enemies move
+  this.spin(); // the gems turn
+  this.collect(); // the gems the player touches
+  this.catchPlayer(); // an enemy touching the player
+  this.escape(); // the player on the open exit
+}
+```
+
+Le moteur n'a ni type de système ni ordonnanceur : ici, ce sont des méthodes
+du jeu, appelées dans l'ordre que choisit le jeu. Un ordonnanceur (systèmes
+ordonnés, pas fixe) pourra venir plus tard, lorsqu'une deuxième application
+en aura besoin.
+
+## 4. Marcher dans le labyrinthe
+
+Les ennemis ne heurtent pas les murs : ils parcourent le **graphe** du
+labyrinthe, du centre d'une cellule au centre d'une voisine ouverte. À leur
+arrivée, ils choisissent la cellule suivante :
+
+```ts title="maze/game.ts"
+progress[entity] += (chasing ? chaseSpeed : wanderSpeed) * step;
+if (progress[entity] >= 1) {
+  previous[entity] = from[entity];
+  from[entity] = to[entity];
+  progress[entity] = 0;
+  to[entity] = chasing
+    ? nextStep(maze, from[entity], seen[entity])
+    : this.wanderFrom(from[entity], previous[entity]);
+}
+```
+
+- En errant, un ennemi prend une voisine ouverte au hasard, mais pas la
+  cellule d'où il vient, sauf dans un cul-de-sac : il suit les couloirs au
+  lieu de trembler sur place.
+- En poursuite, il fait le premier pas du plus court chemin vers l'endroit
+  où il a vu le joueur pour la dernière fois. `nextStep` parcourt le
+  labyrinthe en largeur depuis le but, puis choisit la voisine la plus
+  proche de celui-ci :
+
+```ts title="maze/paths.ts"
+const distances = distancesFrom(maze, to);
+let best = from;
+for (const next of openNeighbors(maze, from)) {
+  if (
+    distances[next] >= 0 &&
+    (best === from || distances[next] < distances[best])
+  ) {
+    best = next;
+  }
+}
+```
+
+Le même parcours place le jeu : la sortie est la cellule la plus éloignée du
+départ, les gemmes vont dans des culs-de-sac à au moins douze pas, les
+ennemis à vingt.
+
+## 5. Les lignes de vue
+
+Un ennemi voit le joueur lorsque rien de solide ne se trouve entre eux. Un
+**rayon** de la scène le dit, des yeux de l'ennemi jusqu'au joueur :
+
+```ts title="maze/sight.ts"
+scene.raycastEntities(
+  ray,
+  (entity) => {
+    if (solid.has(entity)) {
+      clear = false;
+      return false; // the nearest solid hit is enough
+    }
+    return true; // the floor, a character: go on
+  },
+  {},
+  distance
+);
+```
+
+Le rayon passe par l'octree statique : quelques murs sont testés, pas 2400.
+Les intersections arrivent de la plus proche à la plus lointaine ; la
+première qui est solide arrête le parcours.
+
+```ts title="maze/game.ts"
+const range = beam ? sightOfLight : sightInDark;
+if (distance < range && clearLine(scene, solid, eye, target)) {
+  state[entity] = EnemyState.Chase;
+  seen[entity] = this._exploration.cellAt(player.x, player.z);
+  timer[entity] = memory;
+}
+```
+
+- Dans le noir, un ennemi voit le joueur à quatre unités ; lampe torche
+  allumée, à quatorze.
+- Hors de vue, un ennemi en poursuite continue jusqu'au dernier endroit où
+  il a vu le joueur, puis abandonne au bout de quatre secondes.
+- La vue s'exécute dix fois par seconde, pas à chaque pas : quelques rayons
+  par ennemi et par seconde suffisent pour une réaction, et ne coûtent rien.
+
+**Le faisceau éblouit.** Un ennemi dans le cône du faisceau, assez proche et
+en ligne de vue, s'arrête deux secondes, et ne peut attraper personne :
+
+```ts title="maze/game.ts"
+if (
+  beam &&
+  inCone(beam, eye, dazzleReach) &&
+  clearLine(this._scene, this._solid, beam.position, eye)
+) {
+  this.setEnemyState(entity, EnemyState.Dazzled);
+  timer[entity] = dazzleTime;
+}
+```
+
+`inCone` compare l'angle entre l'axe du spot et l'ennemi à l'angle extérieur
+de la lumière : l'éblouissement suit le faisceau que voit le joueur.
+
+Avant de lire la position de la lumière, le système appelle
+`scene.flush()` : une lumière suit son nœud lorsque la scène applique ses
+changements en attente, et le personnage s'est déplacé pendant le pas.
+
+## 6. Des yeux dans le noir
+
+Les corps des ennemis sont éclairés : dans le noir, ils sont noirs. Leurs
+yeux, non :
+
+```ts title="maze/game.ts"
+function glowMaterial(color: [number, number, number]): Material {
+  const g = new GraphBuilder('glow');
+  g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f) });
+  return new Material({ graph: g.build(), values: { color } });
+}
+```
+
+Une surface sans modèle d'éclairage est **non éclairée** (unlit) : sa
+couleur ne dépend pas des lumières. Avec `cullUnlit`, de tels objets sont
+toujours dessinés — qu'une lumière les atteigne ou non — de sorte que les
+yeux brillent partout où se trouve un ennemi, un avertissement avant que le
+faisceau ne le trouve. Éblouis, ils deviennent blancs : les nœuds des yeux
+reçoivent un autre matériau. La dalle de sortie est elle aussi non éclairée,
+rouge tant qu'il reste des gemmes, verte une fois ouverte.
+
+## 7. La carte et son brouillard
+
+La carte montre les cellules que le joueur a découvertes. Une cellule est
+découverte lorsque le joueur la traverse ou passe à côté, ou lorsque le
+faisceau l'éclaire :
+
+```ts title="maze/exploration.ts"
+// The center of the cell, half a wall high.
+const target = { x: tx, y: 0.5, z: tz };
+if (inCone(spot, target, reach) && clearLine(scene, solid, origin, target)) {
+  this.discover(cell);
+}
+```
+
+Les deux mêmes tests que pour l'éblouissement : dans le cône, et en vue.
+Seules les cellules pas encore découvertes, autour de la lumière, sont
+testées, dix fois par seconde.
+
+**L'image de la carte** est dessinée sur le CPU : quatre pixels par cellule,
+une ligne pour les murs, le sol entre les deux ; du brouillard ailleurs.
+48 × 48 cellules donnent une image de 193 × 193 pixels, un mot de 32 bits
+par pixel :
+
+```ts title="maze/map.ts"
+pixels.fill(fog);
+// The floors of the discovered cells, then their walls.
+if (walls & Wall.North) {
+  fill(x0, z0, x0 + n, z0, wall);
+}
+```
+
+Elle n'est redessinée que lorsque l'exploration change, et écrite dans une
+texture avec `writeTexture` :
+
+```ts title="maze/map.ts"
+if (this._version !== this._exploration.version) {
+  this.draw();
+  this._backend.textures.writeTexture(this._texture, this._bytes);
+  this._version = this._exploration.version;
+}
+```
+
+Dessiner les nœuds découverts vus du dessus, comme le fait la vue du dessus
+du culling, coûterait un draw par nœud : jusqu'à 4700 une fois le labyrinthe
+exploré. L'image coûte **un seul draw**, quelle que soit la part découverte.
+
+Une passe plein écran l'affiche dans le coin. Son matériau lit une fenêtre
+de l'image, qui suit le joueur (16 cellules de large), ou le labyrinthe
+entier avec M ; le joueur est dessiné par-dessus, un point et un plus petit
+devant lui :
+
+```ts title="maze/map.ts"
+// The part of the picture shown: x, y, then its size, in uv.
+const window = g.uniform('window', BuiltinTypes.vec4f);
+const uv = g.call(std.add, {
+  a: window.swizzle('xy'),
+  b: g.call(std.mul, { a: local, b: window.swizzle('zw') }),
+});
+```
+
+Le joueur se déplace à chaque frame : c'est un uniform, pas un pixel de
+l'image, de sorte que la texture ne change pas pour lui. Les gemmes et la
+sortie, une fois leurs cellules découvertes, sont des marques dessinées dans
+l'image.
+
+## Ce que nous avons
+
+- Une logique de jeu à pas fixe, le rendu au rythme de l'écran.
+- Des gemmes et des ennemis en tant qu'entités, construits avec des nœuds,
+  mis à jour par des systèmes sur les colonnes de leurs composants.
+- Des ennemis qui parcourent le graphe du labyrinthe, et poursuivent par ses
+  plus courts chemins.
+- Des lignes de vue avec des rayons de la scène, à travers son octree.
+- Des matériaux non éclairés, visibles dans le noir.
+- Une carte révélée par l'exploration, dessinée sur le CPU et envoyée au GPU
+  seulement lorsqu'elle change.
+
+Quelques idées laissées pour plus tard : des murs entre la caméra et le
+personnage qui deviennent transparents, la manette, et un ordonnanceur de
+systèmes.

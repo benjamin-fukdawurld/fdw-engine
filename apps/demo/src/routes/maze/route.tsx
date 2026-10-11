@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import SceneLayout from '../../components/SceneLayout';
-import { createMazeStep3 } from '@fdw/demo-scenes';
+import { createMazeStep4 } from '@fdw/demo-scenes';
 
 export const Route = createFileRoute('/maze')({
-  component: () => <SceneLayout scene={createMazeStep3} />,
+  component: () => <SceneLayout scene={createMazeStep4} />,
 });

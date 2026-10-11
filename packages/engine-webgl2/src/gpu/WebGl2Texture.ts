@@ -384,6 +384,10 @@ export class WebGl2TextureFactory
     return texture;
   }
 
+  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
+    (texture as WebGl2Texture).upload(data);
+  }
+
   createSampler(descriptor?: GpuSamplerConfiguration): GpuSampler {
     return new WebGl2Sampler(this._gl, descriptor);
   }

@@ -79,15 +79,14 @@ this.glow = new PointLight({
 character.add({ name: 'glow', position: { y: 1.6 } }).setLight(this.glow);
 ```
 
-F switches the beam, once per press: the frame remembers whether the key
-was already down.
+F switches the beam, once per press. The input remembers the presses
+until they are read: a press shorter than a frame is not lost, and the
+repeats of a key held down are not new presses.
 
 ```ts title="maze/step3.ts"
-const pressed = input.isDown('f');
-if (pressed && !toggled) {
+if (input.pressed('f')) {
   flashlight.on = !flashlight.on; // shows or hides the node of the beam
 }
-toggled = pressed;
 ```
 
 ## 3. Aiming with the mouse
@@ -169,5 +168,5 @@ view.
 See [Lights and shadows](/fdw-engine/guides/lights-and-shadows/) for how the
 renderer chooses the lights and the shadow casters of a view.
 
-The next step makes a game of it: things to collect, enemies wandering, and
-lines of sight.
+The [next step](/fdw-engine/game/the-game/) makes a game of it: gems to
+collect, enemies wandering, lines of sight, and a map.

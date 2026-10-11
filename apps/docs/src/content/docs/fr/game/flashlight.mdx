@@ -83,15 +83,15 @@ this.glow = new PointLight({
 character.add({ name: 'glow', position: { y: 1.6 } }).setLight(this.glow);
 ```
 
-F allume ou éteint le faisceau, une fois par appui : la frame se souvient si
-la touche était déjà enfoncée.
+F allume ou éteint le faisceau, une fois par appui. L'entrée garde les
+appuis jusqu'à ce qu'ils soient lus : un appui plus court qu'une frame
+n'est pas perdu, et les répétitions d'une touche maintenue ne sont pas de
+nouveaux appuis.
 
 ```ts title="maze/step3.ts"
-const pressed = input.isDown('f');
-if (pressed && !toggled) {
+if (input.pressed('f')) {
   flashlight.on = !flashlight.on; // shows or hides the node of the beam
 }
-toggled = pressed;
 ```
 
 ## 3. Viser à la souris
@@ -175,5 +175,5 @@ Voir [Lumières et ombres](/fdw-engine/fr/guides/lights-and-shadows/) pour
 la façon dont le renderer choisit les lumières et les objets projetant des
 ombres d'une vue.
 
-L'étape suivante en fait un jeu : des objets à ramasser, des ennemis qui
-errent, et des lignes de vue.
+L'[étape suivante](/fdw-engine/fr/game/the-game/) en fait un jeu : des
+gemmes à ramasser, des ennemis qui errent, des lignes de vue, et une carte.

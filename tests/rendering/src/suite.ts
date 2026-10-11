@@ -222,6 +222,44 @@ export function describeRenderer(
       expectColor(pixel(56, 56), [128, 128, 128, 255]);
     });
 
+    it('rewrites textures between frames', async () => {
+      // Created black, drawn, then rewritten: white, blue / green, red.
+      const map = backend.textures.createTexture({
+        type: '2d',
+        format: 'rgba8unorm',
+        dimensions: { width: 2, height: 2 },
+        source: new Uint8Array(16),
+      });
+      const mapSampler = backend.textures.createSampler({
+        minFilter: 'nearest',
+        magFilter: 'nearest',
+        mipmapFilter: 'nearest',
+      });
+      const material = new Material({
+        graph: texturedGraph(),
+        values: { map, mapSampler, tint: [1, 1, 1] },
+      });
+      const items = [
+        {
+          mesh: quad(),
+          material,
+          transform: new Transform({ scale: { x: 2, y: 2, z: 1 } }),
+        },
+      ];
+      expectColor((await render(items))(8, 8), [0, 0, 0, 255]);
+      backend.textures.writeTexture(
+        map,
+        new Uint8Array([
+          255, 255, 255, 255, 0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255,
+        ])
+      );
+      const pixel = await render(items);
+      expectColor(pixel(8, 8), [255, 255, 255, 255]);
+      expectColor(pixel(56, 8), [0, 0, 255, 255]);
+      expectColor(pixel(8, 56), [0, 255, 0, 255]);
+      expectColor(pixel(56, 56), [255, 0, 0, 255]);
+    });
+
     it('passes the engine time to the materials', async () => {
       const material = new Material({ graph: timeGraph() });
       const items = [{ mesh: quad(), material, transform: at(0) }];

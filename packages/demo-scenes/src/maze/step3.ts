@@ -56,7 +56,6 @@ export const createMazeStep3: SceneFactory = (
   const nodes =
     level.maze.width * level.maze.height + level.walls.children.length;
   let last = 0;
-  let toggled = false;
 
   return {
     frame: (time) => {
@@ -64,11 +63,9 @@ export const createMazeStep3: SceneFactory = (
       last = time;
       followAspect(camera, surface);
       // F switches the flashlight, once per press.
-      const pressed = input.isDown('f');
-      if (pressed && !toggled) {
+      if (input.pressed('f')) {
         flashlight.on = !flashlight.on;
       }
-      toggled = pressed;
       // The character faces the point of the ground under the pointer.
       const aim = input.pointerMoved
         ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)

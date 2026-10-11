@@ -25,6 +25,9 @@ export function normalizeKey(key: string): string {
  */
 export class Input {
   private readonly _down = new Set<string>();
+  // The keys pressed since they were last read by `pressed`: a press
+  // shorter than a frame is not lost.
+  private readonly _presses = new Set<string>();
   private _wheel = 0;
   // In [0, 1] over the element or window receiving the events, from the
   // top left: the same in a browser and in a native window.
@@ -38,7 +41,12 @@ export class Input {
       this._remove.push(() => target.removeEventListener(type, listener));
     };
     listen('keydown', (event) => {
-      this._down.add(normalizeKey((event as KeyboardEvent).key));
+      const key = normalizeKey((event as KeyboardEvent).key);
+      // Not the repeats of a key held down.
+      if (!this._down.has(key)) {
+        this._presses.add(key);
+      }
+      this._down.add(key);
     });
     listen('keyup', (event) => {
       this._down.delete(normalizeKey((event as KeyboardEvent).key));
@@ -72,6 +80,14 @@ export class Input {
 
   isDown(...keys: string[]): boolean {
     return keys.some((key) => this._down.has(key));
+  }
+
+  /**
+   * Whether a key was pressed since the last call for it: once per press,
+   * even released before the frame.
+   */
+  pressed(key: string): boolean {
+    return this._presses.delete(key);
   }
 
   /** -1, 0 or 1: the axis of two sets of keys (`axis(['s'], ['w'])`). */

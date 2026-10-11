@@ -77,6 +77,14 @@ en couleurs linéaires au moment de l'échantillonnage. Les textures contenant
 des données (normal maps, roughness) utilisent un format linéaire,
 `rgba8unorm`.
 
+Une texture peut être réécrite plus tard, entièrement, avec la même
+disposition que `source` — les frames soumises avant voient l'ancien
+contenu, celles d'après, le nouveau :
+
+```ts
+backend.textures.writeTexture(map, pixels);
+```
+
 ## Valeurs
 
 Un matériau associe le graphe à ses valeurs :

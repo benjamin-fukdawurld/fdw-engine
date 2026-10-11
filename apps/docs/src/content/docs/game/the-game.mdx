@@ -1,0 +1,317 @@
+---
+title: 'Step 4: the game'
+description: Gems to collect in the dark, enemies wandering the maze, lines of sight, and a map of what was discovered.
+sidebar:
+  order: 5
+---
+
+import Example from '../../../components/Example.astro';
+
+The maze becomes a game. Eight gems are hidden in its dead ends; once they
+are all collected, the exit opens, in the far corner. Enemies wander the
+corridors: when they see the character, they chase it, and touching it
+ends the game. The flashlight is both a help and a danger: it finds the
+gems and dazzles the enemies, but it is seen from afar. A map shows what
+was discovered, the rest stays in the fog.
+
+<Example name="maze-4" code={false} />
+
+Click the maze, then: **W A S D** to walk, the **mouse** to aim, **F** for
+the flashlight, **M** to switch the map between the surroundings and the
+whole maze, **R** to play again. **C** shows the top view of the culling of
+the previous steps instead of the map.
+
+## 1. The logic at a fixed step
+
+Until now, each frame moved the character by the time of the frame. The
+game logic now runs by **fixed steps** of 1/60 s, as many as the frame
+holds:
+
+```ts title="maze/fixedStep.ts"
+advance(dt: number, update: (step: number) => void): void {
+  this._pending = Math.min(this._pending + dt, this.step * this.maxSteps);
+  while (this._pending >= this.step - 1e-9) {
+    update(this.step);
+    this._pending -= this.step;
+  }
+}
+```
+
+- The game is the same at 30 or at 144 frames per second: an enemy covers
+  the same distance per step, a collision is tested at the same places.
+- After a long frame (a tab in the background), at most five steps run: the
+  game slows down rather than running hundreds of steps at once.
+- `1e-9`: in floating point, 0.05 + 0.05 is a hair less than 0.1. Without
+  this tolerance, a step would be lost, then two would run in the next
+  frame.
+
+The rendering stays at the rate of the screen: the camera follows the
+character every frame.
+
+```ts title="maze/step4.ts"
+loop.advance(dt, (step) => {
+  player.update(step, input, follow.yaw, aim);
+  exploration.walk(player.position);
+  game.update(step);
+});
+follow.update(dt, player.position);
+```
+
+## 2. Gems and enemies: components of the game
+
+Steps 2 and 3 used a component without fields, `Solid`. The game defines
+two more, with **columns**:
+
+```ts title="maze/game.ts"
+const gemSchema = { cell: 'i32' } as const;
+const enemySchema = {
+  state: 'u8', // Wander, Chase or Dazzled
+  from: 'i32', // walking from the center of a cell…
+  to: 'i32', // …to the center of the next
+  previous: 'i32',
+  progress: 'f32',
+  timer: 'f32',
+  seen: 'i32', // where it last saw the player
+  eyes: 'ref', // the nodes of its eyes
+} as const;
+
+this.Gem = world.defineComponent('gem', gemSchema);
+this.Enemy = world.defineComponent('enemy', enemySchema);
+```
+
+Each field is a typed array, indexed by entity: `Enemy.state[entity]`
+reads the state of an enemy. A `ref` column holds any JavaScript value.
+
+The entities are built with nodes — a gem is a node with a mesh, an enemy a
+node with a body and two eyes — and the component is given to the node:
+
+```ts title="maze/game.ts"
+this._scene.root
+  .add({ name: 'gem', position, scale })
+  .setMesh(this._meshes.cube, this._gemMaterial)
+  .attach(this.Gem, { cell });
+```
+
+The node façade builds; the columns compute. Both are views of the same
+entities.
+
+## 3. Systems
+
+A **system** is a function that goes through the entities of a component,
+and reads and writes its columns. The game has five, run in order at each
+step:
+
+```ts title="maze/game.ts"
+update(step: number): void {
+  this._sightTime += step;
+  if (this._sightTime >= sightPeriod) {
+    this.sight(this._sightTime); // what the enemies see, 10 times per second
+    this._sightTime = 0;
+  }
+  this.walk(step); // the enemies move
+  this.spin(); // the gems turn
+  this.collect(); // the gems the player touches
+  this.catchPlayer(); // an enemy touching the player
+  this.escape(); // the player on the open exit
+}
+```
+
+The engine has no system type and no scheduler: here they are methods of
+the game, called in the order the game chooses. A scheduler (ordered
+systems, the fixed step) may come later, once a second application needs
+one.
+
+## 4. Walking through the maze
+
+The enemies do not collide with walls: they walk the **graph** of the
+maze, from the center of a cell to the center of an open neighbor. When
+they arrive, they choose the next cell:
+
+```ts title="maze/game.ts"
+progress[entity] += (chasing ? chaseSpeed : wanderSpeed) * step;
+if (progress[entity] >= 1) {
+  previous[entity] = from[entity];
+  from[entity] = to[entity];
+  progress[entity] = 0;
+  to[entity] = chasing
+    ? nextStep(maze, from[entity], seen[entity])
+    : this.wanderFrom(from[entity], previous[entity]);
+}
+```
+
+- Wandering, an enemy takes a random open neighbor, but not the cell it
+  comes from, unless it is in a dead end: it goes along the corridors
+  instead of shaking on the spot.
+- Chasing, it takes the first step of the shortest path to where it last
+  saw the player. `nextStep` walks the maze breadth first from the goal,
+  then picks the neighbor closest to it:
+
+```ts title="maze/paths.ts"
+const distances = distancesFrom(maze, to);
+let best = from;
+for (const next of openNeighbors(maze, from)) {
+  if (
+    distances[next] >= 0 &&
+    (best === from || distances[next] < distances[best])
+  ) {
+    best = next;
+  }
+}
+```
+
+The same walk places the game: the exit is the cell farthest from the
+start, gems go in dead ends at least twelve steps away, enemies twenty.
+
+## 5. Lines of sight
+
+An enemy sees the player when nothing solid stands between them. A **ray**
+of the scene answers that, from the eyes of the enemy to the player:
+
+```ts title="maze/sight.ts"
+scene.raycastEntities(
+  ray,
+  (entity) => {
+    if (solid.has(entity)) {
+      clear = false;
+      return false; // the nearest solid hit is enough
+    }
+    return true; // the floor, a character: go on
+  },
+  {},
+  distance
+);
+```
+
+The ray goes through the static octree: a few walls are tested, not 2400.
+The hits come nearest first; the first solid one stops the walk.
+
+```ts title="maze/game.ts"
+const range = beam ? sightOfLight : sightInDark;
+if (distance < range && clearLine(scene, solid, eye, target)) {
+  state[entity] = EnemyState.Chase;
+  seen[entity] = this._exploration.cellAt(player.x, player.z);
+  timer[entity] = memory;
+}
+```
+
+- In the dark, an enemy sees the player four units away; with the
+  flashlight on, fourteen.
+- Out of sight, a chasing enemy goes on to the last place it saw the
+  player, then gives up after four seconds.
+- Sight runs ten times per second, not at every step: a few rays per enemy
+  and per second are enough for a reaction, and cost nothing.
+
+**The beam dazzles.** An enemy in the cone of the beam, close enough and in
+its line of sight, stops for two seconds, and cannot catch anyone:
+
+```ts title="maze/game.ts"
+if (
+  beam &&
+  inCone(beam, eye, dazzleReach) &&
+  clearLine(this._scene, this._solid, beam.position, eye)
+) {
+  this.setEnemyState(entity, EnemyState.Dazzled);
+  timer[entity] = dazzleTime;
+}
+```
+
+`inCone` compares the angle between the axis of the spot and the enemy with
+the outer cutoff of the light: the dazzle follows the beam the player sees.
+
+Before reading the position of the light, the system calls
+`scene.flush()`: a light follows its node when the scene applies its
+pending changes, and the character moved during the step.
+
+## 6. Eyes in the dark
+
+The bodies of the enemies are lit: in the dark, they are black. Their eyes
+are not:
+
+```ts title="maze/game.ts"
+function glowMaterial(color: [number, number, number]): Material {
+  const g = new GraphBuilder('glow');
+  g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f) });
+  return new Material({ graph: g.build(), values: { color } });
+}
+```
+
+A surface without a shading model is **unlit**: its color does not depend
+on the lights. With `cullUnlit`, such items are always drawn — a light
+reaching them or not — so the eyes glow wherever an enemy is, a warning
+before the beam finds it. Dazzled, they turn white: the eye nodes get
+another material. The exit pad is unlit too, red while gems are left,
+green once it opens.
+
+## 7. The map and its fog
+
+The map shows the cells the player discovered. A cell is discovered when
+the player walks through it or next to it, or when the beam lights it:
+
+```ts title="maze/exploration.ts"
+// The center of the cell, half a wall high.
+const target = { x: tx, y: 0.5, z: tz };
+if (inCone(spot, target, reach) && clearLine(scene, solid, origin, target)) {
+  this.discover(cell);
+}
+```
+
+The same two tests as the dazzle: in the cone, and in sight. Only the cells
+not discovered yet, around the light, are tested, ten times per second.
+
+**The picture of the map** is drawn on the CPU: four pixels per cell, a
+line for the walls, the floor in between; fog elsewhere. 48 × 48 cells give
+a picture of 193 × 193 pixels, one 32-bit word per pixel:
+
+```ts title="maze/map.ts"
+pixels.fill(fog);
+// The floors of the discovered cells, then their walls.
+if (walls & Wall.North) {
+  fill(x0, z0, x0 + n, z0, wall);
+}
+```
+
+It is redrawn only when the exploration changes, and written into a
+texture with `writeTexture`:
+
+```ts title="maze/map.ts"
+if (this._version !== this._exploration.version) {
+  this.draw();
+  this._backend.textures.writeTexture(this._texture, this._bytes);
+  this._version = this._exploration.version;
+}
+```
+
+Drawing the discovered nodes from above, as the top view of the culling
+does, would cost a draw per node: up to 4700 once the maze is explored. The
+picture costs **one draw**, however much is discovered.
+
+A fullscreen pass shows it in the corner. Its material reads a window of
+the picture, which follows the player (16 cells across), or the whole
+maze with M; the player is drawn on top, a dot and a smaller one ahead:
+
+```ts title="maze/map.ts"
+// The part of the picture shown: x, y, then its size, in uv.
+const window = g.uniform('window', BuiltinTypes.vec4f);
+const uv = g.call(std.add, {
+  a: window.swizzle('xy'),
+  b: g.call(std.mul, { a: local, b: window.swizzle('zw') }),
+});
+```
+
+The player moves at every frame: it is a uniform, not a pixel of the
+picture, so the texture does not change for it. The gems and the exit,
+once their cells are discovered, are marks drawn into the picture.
+
+## What we have
+
+- Game logic at a fixed step, the rendering at the rate of the screen.
+- Gems and enemies as entities, built with nodes, updated by systems over
+  the columns of their components.
+- Enemies walking the graph of the maze, and chasing by its shortest paths.
+- Lines of sight with rays of the scene, through its octree.
+- Unlit materials, seen in the dark.
+- A map revealed by exploration, drawn on the CPU and uploaded only when it
+  changes.
+
+Some ideas left for later: walls between the camera and the character
+becoming transparent, the gamepad, and a scheduler of systems.

@@ -219,6 +219,10 @@ export class VulkanTextureFactory
     return texture;
   }
 
+  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
+    (texture as VulkanTexture).write(data);
+  }
+
   createSampler(descriptor?: GpuSamplerConfiguration): VulkanSampler {
     return new VulkanSampler(this._addon, this._context, descriptor);
   }

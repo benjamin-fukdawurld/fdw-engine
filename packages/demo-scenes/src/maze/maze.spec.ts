@@ -6,9 +6,14 @@ import { createCube, createSphere } from '../geometry';
 import { pointerOnPlane } from './aim';
 import { resolveCircle } from './collisions';
 import { Input, normalizeKey } from './input';
+import { EnemyState, MazeGame } from './game';
+import { Exploration } from './exploration';
+import { FixedStep } from './fixedStep';
+import { Flashlight } from './flashlight';
 import { Player } from './player';
 import { buildLevel } from './level';
-import { generateMaze, Wall } from './maze';
+import { generateMaze, Maze, Wall } from './maze';
+import { distancesFrom, nextStep, openNeighbors } from './paths';
 
 describe('generateMaze', () => {
   it('makes a perfect maze: every cell reachable, by a single path', () => {
@@ -94,6 +99,25 @@ describe('normalizeKey', () => {
   });
 });
 
+describe('Input', () => {
+  it('keeps a press until it is read, even released before', () => {
+    const keys = new EventTarget();
+    const input = new Input(keys);
+    const key = (type: string, name: string) =>
+      keys.dispatchEvent(Object.assign(new Event(type), { key: name }));
+    key('keydown', 'M');
+    key('keyup', 'M');
+    expect(input.isDown('m')).toBe(false);
+    expect(input.pressed('m')).toBe(true);
+    expect(input.pressed('m')).toBe(false);
+    // Held down: the repeats are not new presses.
+    key('keydown', 'f');
+    key('keydown', 'f');
+    expect(input.pressed('f')).toBe(true);
+    expect(input.pressed('f')).toBe(false);
+  });
+});
+
 describe('collisions', () => {
   // A wall along x, its face at z = 0, and the circle of a character.
   const setup = () => {
@@ -171,5 +195,192 @@ describe('pointerOnPlane', () => {
     // The top edge: towards -z.
     const top = pointerOnPlane(world, camera, { x: 0.5, y: 0 });
     expect(top?.z).toBeCloseTo(-7, 6);
+  });
+});
+
+// Two corridors of four cells along x, joined at their east end:
+//   0 1 2 3
+//   4 5 6 7   (3 and 7 open to each other)
+const corridors = (): Maze => {
+  const { North: N, East: E, South: S, West: W } = Wall;
+  return {
+    width: 4,
+    height: 2,
+    cells: new Uint8Array([
+      N | S | W,
+      N | S,
+      N | S,
+      N | E,
+      N | S | W,
+      N | S,
+      N | S,
+      S | E,
+    ]),
+  };
+};
+
+// A level in a scene, its walls solid.
+const levelOf = (maze: Maze) => {
+  const scene = new Scene();
+  const material = new Material({ graph: colorGraph() });
+  const cube = createCube();
+  const level = buildLevel(scene, maze, {
+    cube,
+    floor: material,
+    wall: material,
+  });
+  const Solid = scene.world.defineComponent('solid', {});
+  for (const wall of level.walls.children) {
+    wall.attach(Solid);
+  }
+  const player = new Player(scene, Solid, level.cellCenter(0, 0), {
+    sphere: createSphere(8, 4),
+    cube,
+    body: material,
+  });
+  return { scene, level, Solid, player, cube, material };
+};
+
+describe('paths', () => {
+  it('walks through the maze, not through its walls', () => {
+    const maze = corridors();
+    expect(openNeighbors(maze, 3)).toEqual([7, 2]);
+    expect([...distancesFrom(maze, 0)]).toEqual([0, 1, 2, 3, 7, 6, 5, 4]);
+    // From 0 to 4, the cell just below: all the way round.
+    expect(nextStep(maze, 0, 4)).toBe(1);
+    expect(nextStep(maze, 7, 4)).toBe(6);
+    expect(nextStep(maze, 4, 4)).toBe(4);
+  });
+});
+
+describe('FixedStep', () => {
+  it('runs as many steps as the frames hold, at most a few', () => {
+    const loop = new FixedStep(0.1, 3);
+    let steps = 0;
+    loop.advance(0.25, () => steps++);
+    expect(steps).toBe(2);
+    // The 0.05 left, and 0.05 more: one step.
+    loop.advance(0.05, () => steps++);
+    expect(steps).toBe(3);
+    // A long pause: three steps, not ten.
+    loop.advance(1, () => steps++);
+    expect(steps).toBe(6);
+  });
+});
+
+describe('Exploration', () => {
+  it('discovers the cell walked through, and those open around it', () => {
+    const { level } = levelOf(corridors());
+    const exploration = new Exploration(level);
+    const { x, z } = level.cellCenter(3, 0);
+    exploration.walk({ x, z });
+    expect([...exploration.discovered]).toEqual([0, 0, 1, 1, 0, 0, 0, 1]);
+    expect(exploration.count).toBe(3);
+    exploration.reset();
+    expect(exploration.count).toBe(0);
+  });
+
+  it('discovers what the beam lights, not what a wall hides', () => {
+    const { scene, level, Solid, player } = levelOf(corridors());
+    const flashlight = new Flashlight(player.node);
+    // Facing +x, along the first corridor.
+    player.heading = -Math.PI / 2;
+    player.update(0, new Input(new EventTarget()), 0);
+    const exploration = new Exploration(level);
+    exploration.light(scene, Solid, flashlight.beam);
+    // 1 to 3 lit; 6 and 7 in the cone, behind the wall; 0 under the light.
+    expect([...exploration.discovered]).toEqual([0, 1, 1, 1, 0, 0, 0, 0]);
+  });
+});
+
+describe('MazeGame', () => {
+  const setup = (options: { gems?: number; enemies?: number }) => {
+    const parts = levelOf(generateMaze(12, 12, 4));
+    const { scene, level, Solid, player, cube } = parts;
+    const flashlight = new Flashlight(player.node);
+    const exploration = new Exploration(level);
+    const game = new MazeGame(
+      scene,
+      level,
+      Solid,
+      player,
+      flashlight,
+      exploration,
+      { cube, sphere: createSphere(8, 4) },
+      options
+    );
+    const centerOf = (cell: number) =>
+      level.cellCenter(cell % level.maze.width, Math.floor(cell / 12));
+    // Puts the player at the center of a cell.
+    const goTo = (cell: number) => {
+      const { x, z } = centerOf(cell);
+      player.position.x = x;
+      player.position.z = z;
+      player.update(0, new Input(new EventTarget()), 0);
+    };
+    return { ...parts, flashlight, game, centerOf, goTo };
+  };
+
+  it('collects the gems, then opens the exit', () => {
+    const { game, goTo } = setup({ gems: 3, enemies: 0 });
+    expect(game.total).toBe(3);
+    goTo(game.exitCell);
+    game.update(1 / 60);
+    // Locked while gems are left.
+    expect(game.state).toBe('playing');
+    for (const cell of game.gemCells()) {
+      goTo(cell);
+      game.update(1 / 60);
+    }
+    expect(game.collected).toBe(3);
+    expect(game.gemCells()).toEqual([]);
+    goTo(game.exitCell);
+    game.update(1 / 60);
+    expect(game.state).toBe('won');
+    game.reset();
+    expect(game.state).toBe('playing');
+    expect(game.gemCells().length).toBe(3);
+  });
+
+  it('chases the player it sees, is dazzled by the beam, and catches', () => {
+    const { game, goTo, flashlight, level, scene } = setup({
+      gems: 0,
+      enemies: 1,
+    });
+    const [enemy] = game.Enemy.entities;
+    const { maze } = level;
+    // The player two cells from the enemy, along an open path.
+    const from = game.Enemy.from[enemy];
+    const path = [from];
+    while (path.length < 3) {
+      const ahead = openNeighbors(maze, path[path.length - 1]).filter(
+        (cell) => !path.includes(cell)
+      );
+      path.push(ahead[0] ?? path[path.length - 1]);
+    }
+    flashlight.on = false;
+    goTo(path[1]);
+    game.Enemy.to[enemy] = from;
+    game.Enemy.progress[enemy] = 0;
+    game.update(0.1);
+    // Seen, a cell away in the dark: chased.
+    expect(game.Enemy.state[enemy]).toBe(EnemyState.Chase);
+    // The beam on it: dazzled, harmless.
+    flashlight.on = true;
+    const { x, z } = scene.node(enemy).transform.position;
+    const player = game['_player'] as Player;
+    player.heading = Math.atan2(
+      -(x - player.position.x),
+      -(z - player.position.z)
+    );
+    player.update(0, new Input(new EventTarget()), 0);
+    game.update(0.1);
+    expect(game.Enemy.state[enemy]).toBe(EnemyState.Dazzled);
+    // Once the dazzle is over and the beam off, it catches the player.
+    flashlight.on = false;
+    for (let i = 0; i < 300 && game.state === 'playing'; i++) {
+      game.update(1 / 60);
+    }
+    expect(game.state).toBe('lost');
   });
 });

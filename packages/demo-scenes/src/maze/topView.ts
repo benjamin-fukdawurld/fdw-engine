@@ -9,58 +9,28 @@ import {
   RenderSource,
   TextureHandle,
 } from '@fdw/engine-core';
-import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
+import { std } from '@fdw/engine-shader';
 import type { Scene } from '@fdw/engine-scene';
+import { Inset, insetGraph, insetRect } from './inset';
 import type { Level } from './level';
 
 // The layer of the things only the top view shows (the marker of the
 // camera): the main camera does not see it.
 export const TopViewLayer = 0b10;
 
-// A frame around the picture, in uv.
-const border = 0.004;
-
-// The material drawing the top view in a corner of the screen: its texture
-// inside the rectangle, a dark frame around it, transparent elsewhere.
+// The material drawing the top view in a corner of the screen: the texture
+// of the view, in the rectangle.
 function insetMaterial(backend: RenderBackend): Material {
-  const g = new GraphBuilder('top view inset');
-  const uv = g.builtin('screen-uv');
-  const rect = g.uniform('rect', BuiltinTypes.vec4f);
-  // Where the pixel is in the rectangle, from 0 to 1.
-  const local = g.call(std.div, {
-    a: g.call(std.sub, { a: uv, b: rect.swizzle('xy') }),
-    b: rect.swizzle('zw'),
-  });
-  // 1 between low and high, on both axes.
-  const within = (low: number, high: number) =>
-    g.call(std.mul, {
-      a: g.call(std.mul, {
-        a: g.call(std.step, { edge: low, x: local.swizzle('x') }),
-        b: g.call(std.step, { edge: local.swizzle('x'), x: high }),
-      }),
-      b: g.call(std.mul, {
-        a: g.call(std.step, { edge: low, x: local.swizzle('y') }),
-        b: g.call(std.step, { edge: local.swizzle('y'), x: high }),
-      }),
-    });
-  const inside = within(0, 1);
-  const frame = within(-border * 4, 1 + border * 4);
-  const texel = g.call(std.textureSample, {
-    texture: g.texture('view'),
-    sampler: g.sampler('viewSampler'),
-    uv: local,
-  });
-  g.fullscreen({
-    color: g.call(std.extend, {
-      xyz: g.call(std.mul, { a: texel.swizzle('rgb'), b: inside }),
-      w: g.call(std.max, {
-        a: inside,
-        b: g.call(std.mul, { a: frame, b: 0.8 }),
-      }),
-    }),
-  });
   return new Material({
-    graph: g.build(),
+    graph: insetGraph('top view inset', (g, local) =>
+      g
+        .call(std.textureSample, {
+          texture: g.texture('view'),
+          sampler: g.sampler('viewSampler'),
+          uv: local,
+        })
+        .swizzle('rgb')
+    ),
     values: {
       viewSampler: backend.textures.createSampler({
         wrapModeS: 'clamp-to-edge',
@@ -76,7 +46,7 @@ function insetMaterial(backend: RenderBackend): Material {
  * camera query of the scene (NodeState.lastVisible), so it is drawn after
  * the main view, in the same render graph.
  */
-export class TopView {
+export class TopView implements Inset {
   readonly camera: Camera;
   private readonly _material: Material;
   private readonly _source: RenderSource;
@@ -148,7 +118,7 @@ export class TopView {
   ): TextureHandle {
     // The query the main view just made.
     this._stamp = this._scene.cameraQueries;
-    const size = Math.round(Math.min(surface.width, surface.height) * 0.35);
+    const { size, rect } = insetRect(surface);
     const view = this._renderer.addScenePasses(graph, {
       name: 'top view',
       source: this._source,
@@ -161,16 +131,7 @@ export class TopView {
       shadows: false,
       clearColor: { r: 0.02, g: 0.02, b: 0.03, a: 1 },
     });
-    // In the top right corner, a margin of 2 % around.
-    const margin = 0.02;
-    const width = size / surface.width;
-    const height = size / surface.height;
-    this._material.setValue('rect', [
-      1 - width - margin,
-      margin,
-      width,
-      height,
-    ]);
+    this._material.setValue('rect', rect);
     return this._renderer.addFullscreenPass(graph, 'top view inset', {
       material: this._material,
       inputs: { view },

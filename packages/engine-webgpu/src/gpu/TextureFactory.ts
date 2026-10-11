@@ -106,6 +106,24 @@ export class TextureFactory
     });
   }
 
+  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
+    const target = (texture as Texture).texture;
+    if (!target) {
+      throw new Error('Cannot write a destroyed texture');
+    }
+    const { width, height = 1, layers = 1 } = texture.dimensions;
+    this.device.queue.writeTexture(
+      { texture: target },
+      data,
+      {
+        bytesPerRow:
+          width * TextureFactory.textureFormatToBytesPerPixel(texture.format),
+        rowsPerImage: height,
+      },
+      [width, height, layers]
+    );
+  }
+
   createSampler(descriptor?: GpuSamplerConfiguration): GpuSampler {
     const samplerDescriptor: GPUSamplerDescriptor = {
       addressModeU: (descriptor?.wrapModeS ?? 'repeat') as GPUAddressMode,
@@ -151,7 +169,29 @@ export class TextureFactory
       case 'rgba8snorm':
       case 'rgba8uint':
       case 'rgba8sint':
+      case 'r32float':
+      case 'r32uint':
+      case 'r32sint':
+      case 'rg16float':
+      case 'rg16uint':
+      case 'rg16sint':
+      case 'rgb10a2unorm':
         return 4;
+      case 'r16float':
+      case 'r16uint':
+      case 'r16sint':
+        return 2;
+      case 'rgba16float':
+      case 'rgba16uint':
+      case 'rgba16sint':
+      case 'rg32float':
+      case 'rg32uint':
+      case 'rg32sint':
+        return 8;
+      case 'rgba32float':
+      case 'rgba32uint':
+      case 'rgba32sint':
+        return 16;
 
       default:
         throw new Error(`Unsupported texture format: ${format}`);

@@ -91,4 +91,12 @@ export interface GpuTextureFactory<TextureSource = never> {
       readwrite?: boolean;
     }
   ): GpuTexture;
+
+  /**
+   * Replaces the content of a texture of this factory (every layer): rows
+   * from the top, tightly packed, layer after layer. In the order of the
+   * queue: the frames submitted before read the old content, those after,
+   * the new one. The texture needs the copy-dst usage (the default).
+   */
+  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void;
 }

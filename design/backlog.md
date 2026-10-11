@@ -89,6 +89,8 @@ Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en fran�
 - **Murs transparents** : rendre semi-transparents (0 < alpha < 1) les murs entre la caméra et le personnage, qui peuvent le cacher ([scenegraph §11](scenegraph.md#11-les-démos)). Un rayon ou un volume de la caméra au personnage trouve ces murs ; leur matériau passe en `blend`, avec un alpha qui revient en douceur quand ils ne cachent plus rien.
 - **Gestion des entrées, manettes comprises**, à faire après les démos : une API **générale**, pensée pour n'importe quelle application du moteur (jeu, outil, visualiseur, éditeur), pas pour le labyrinthe seul. Une API abstraite (clavier, souris, manettes, actions nommées et leurs liaisons, configurables par l'application) et deux implémentations, web (événements DOM, Gamepad API) et native (SDL3 : clavier, souris, `SDL_Gamepad`) : probablement un package pour l'API et un par implémentation, comme pour les backends de rendu. L'`Input` du jeu (`demo-scenes/src/maze/input.ts`) en est une ébauche, à remplacer par cette API une fois écrite.
 
+- **Un ordonnanceur de systèmes ECS** (`Scheduler` dans `engine-scene`) : des systèmes ordonnés, une boucle à pas fixe pour la logique, le rendu à la cadence de l'écran. Pour L4, les systèmes sont de simples fonctions `(world, dt) => void` de la démo, et le pas fixe un petit helper : à étudier quand une deuxième application en aura besoin, en gardant l'ECS agnostique (CAO, BIM, jeu).
+
 ## 9. Plus loin
 
 - Un très grand nombre de lumières, le ray tracing, le rendu piloté par le GPU, la sortie HDR et le travail en parallèle sur le GPU : [evolutions.md](evolutions.md).

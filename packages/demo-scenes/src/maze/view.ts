@@ -7,16 +7,18 @@ import {
   ViewStats,
 } from '@fdw/engine-core';
 import type { Scene } from '@fdw/engine-scene';
+import type { Inset } from './inset';
 import type { Level } from './level';
 import { TopView, TopViewLayer } from './topView';
 
 /**
- * The frame of the game: the main view of the camera, then the top view
- * in a corner, in one render graph.
+ * The frame of the game: the main view of the camera, then an inset in a
+ * corner (the top view of the culling, by default), in one render graph.
  */
 export class MazeView {
   readonly renderer: Renderer;
-  private readonly _topView: TopView;
+  /** The top view of the culling: the inset, unless another is given. */
+  readonly topView: TopView;
   private readonly _runner: RenderGraphRunner;
 
   constructor(
@@ -27,7 +29,7 @@ export class MazeView {
     this.renderer = new Renderer(backend, {
       output: { toneMapping: 'neutral', encoding: 'srgb' },
     });
-    this._topView = new TopView(this.renderer, _scene, level, backend);
+    this.topView = new TopView(this.renderer, _scene, level, backend);
     this._runner = new RenderGraphRunner(backend);
   }
 
@@ -38,9 +40,11 @@ export class MazeView {
     {
       cullUnlit = false,
       background = { r: 0.05, g: 0.06, b: 0.08 },
+      inset = this.topView,
     }: {
       cullUnlit?: boolean;
       background?: { r: number; g: number; b: number };
+      inset?: Inset;
     } = {}
   ): ViewStats | undefined {
     const graph = new RenderGraph();
@@ -55,7 +59,7 @@ export class MazeView {
       clearColor: { ...background, a: 1 },
       cullUnlit,
     });
-    this._topView.add(graph, main, surface);
+    inset.add(graph, main, surface);
     this._runner.execute(graph);
     surface.present();
     return this.renderer.stats.get('scene');
