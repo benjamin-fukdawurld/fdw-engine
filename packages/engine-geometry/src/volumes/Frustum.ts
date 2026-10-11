@@ -67,6 +67,18 @@ export class Frustum implements ConvexVolume {
     return this.normalizePlanes();
   }
 
+  /**
+   * Sets the six planes directly (left, right, bottom, top, near, far, each
+   * as nx, ny, nz, d with n · p + d ≥ 0 inside): a volume that no camera
+   * gives, such as the pyramid around the cone of a spot light.
+   */
+  setPlanes(planes: ArrayLike<number>): this {
+    for (let i = 0; i < 24; i++) {
+      this.planes[i] = planes[i];
+    }
+    return this.normalizePlanes();
+  }
+
   private normalizePlanes(): this {
     const p = this.planes;
     for (let i = 0; i < 24; i += 4) {

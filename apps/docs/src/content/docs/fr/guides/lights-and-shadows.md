@@ -39,6 +39,25 @@ Une lumière ne coûte rien lorsqu'elle ne peut changer aucun pixel de la vue :
 `renderer.stats.get('scene')` donne, pour la dernière frame, le nombre de
 lumières utilisées, de shadow maps et d'objets projetant des ombres dessinés.
 
+### Ne pas dessiner ce qui est dans le noir
+
+Lorsque toutes les lumières d'une vue sont limitées (lumières ponctuelles et
+spots, avec une atténuation), ce qu'aucune n'atteint est noir. Avec
+`addScenePasses(graph, { cullUnlit: true })`, cela n'est pas dessiné : un
+objet est conservé lorsque sa boîte est dans la portée d'une lumière
+ponctuelle, ou dans la pyramide qui entoure le cône d'un spot
+(`lightReaches(light, box)`). Le test est conservateur : un objet près du
+bord d'un cône peut être dessiné, noir.
+
+- Les matériaux sans éclairage (`unlit`) sont toujours dessinés : donnez à un
+  objet lumineux un matériau non éclairé.
+- Le terme **ambiant** d'une lumière ne diminue pas avec la distance : un
+  objet juste dans la portée le reçoit, le suivant, écarté, non. Ne donnez
+  aucun ambiant aux lumières d'une telle scène, et une couleur d'effacement
+  noire, pour que l'endroit où le dessin s'arrête ne se voie pas.
+- Avec une lumière directionnelle, ou une lumière sans atténuation, l'option
+  ne fait rien.
+
 ## Comment les modèles les utilisent
 
 Les modèles d'éclairage éclairés additionnent les lumières, par fragment :

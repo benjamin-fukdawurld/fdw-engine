@@ -43,6 +43,7 @@ import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
 import { meshBox } from './bounds';
 import { lightRange } from './lightRange';
+import { lightReaches } from './lightVolumes';
 import { Material, MaterialValue } from './Material';
 import { Mesh } from './Mesh';
 import {
@@ -73,6 +74,11 @@ export interface RenderOptions {
   // are used, up to MaxLights (16), the strongest first. Directional and
   // spot lights with castShadow cast shadows.
   readonly lights?: readonly BaseLight[];
+  // When the lights of the view are all bounded (point and spot lights),
+  // what none of them reaches is black: it is not drawn. Materials without
+  // lighting (unlit) are always drawn; give lit emissive materials an unlit
+  // graph, or leave this off. Default false.
+  readonly cullUnlit?: boolean;
 }
 
 /** What a view of the last frame drew: see Renderer.stats. */
@@ -350,6 +356,27 @@ function matchesPool(block: PhysicalUniformBlock): boolean {
   return matches;
 }
 
+// A point or spot light with a finite range: what it does not reach is
+// black.
+const isBounded = (light: BaseLight) =>
+  !(light instanceof DirectionalLight) && lightRange(light) !== Infinity;
+
+// Whether a material is lit: its graph ends with a surface whose shading
+// model is not unlit. Raw vertex and fragment outputs are not.
+const litGraphs = new WeakMap<MaterialGraphData, boolean>();
+function isLit(material: Material): boolean {
+  let lit = litGraphs.get(material.graph);
+  if (lit === undefined) {
+    lit = material.graph.nodes.some(
+      (node) =>
+        node.type === 'output.surface' &&
+        (node.params['shadingModel'] ?? 'unlit') !== 'unlit'
+    );
+    litGraphs.set(material.graph, lit);
+  }
+  return lit;
+}
+
 // Clips a box to the bounds of a frustum.
 function clipToFrustum(box: Aabb, frustum: Frustum): void {
   if (box.isEmpty()) {
@@ -536,6 +563,7 @@ export class Renderer {
       name = 'scene',
       linear = false,
       shadows = true,
+      cullUnlit = false,
     }: ScenePassesOptions
   ): TextureHandle {
     const from = source ?? this.listSource(items);
@@ -544,7 +572,7 @@ export class Renderer {
       cameraCache.viewProjectionMatrix.value
     );
     // What the camera sees, and the bounds of these receivers.
-    const list: Renderable[] = [];
+    let list: Renderable[] = [];
     const receivers = Aabb.empty();
     from.query(
       frustum,
@@ -566,6 +594,24 @@ export class Renderer {
       frustum
     );
     const used = this.strongestLights(reaching, receivers);
+    if (cullUnlit && used.every(isBounded)) {
+      // Only what a light reaches, and what needs no light.
+      list = list.filter((item) => {
+        const bounds = this.worldBounds(item);
+        return (
+          !bounds ||
+          !isLit(item.material) ||
+          used.some((light) => lightReaches(light, bounds))
+        );
+      });
+      receivers.makeEmpty();
+      for (const item of list) {
+        const bounds = this.worldBounds(item);
+        if (bounds) {
+          receivers.union(bounds);
+        }
+      }
+    }
     const casters =
       shadows && !receivers.isEmpty() ? used.filter(castsShadow) : [];
     const shadowPass =

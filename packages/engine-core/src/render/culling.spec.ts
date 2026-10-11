@@ -1,7 +1,8 @@
 import { Frustum } from '@fdw/engine-geometry';
 import { describe, expect, it } from 'vitest';
 import { Camera } from '../Camera';
-import { DirectionalLight, PointLight } from '../light';
+import { DirectionalLight, PointLight, SpotLight } from '../light';
+import { GraphBuilder } from '@fdw/engine-shader';
 import {
   colorGraph,
   fakeBackend,
@@ -11,6 +12,7 @@ import {
 } from '../testing/fakeBackend';
 import { Transform } from '../Transform';
 import { Material } from './Material';
+import { Mesh } from './Mesh';
 import { Renderer } from './Renderer';
 import {
   AllLayers,
@@ -189,5 +191,63 @@ describe('Renderer culling', () => {
       surface,
     });
     expect(layers).toEqual([AllLayers]);
+  });
+
+  it('leaves out what no bounded light reaches, with cullUnlit', () => {
+    const { renderer, camera } = setup();
+    // A spot at the origin shining along -x, and a lamp whose light dies
+    // within 16 units.
+    const spot = new SpotLight({
+      position: { x: 0, y: 0, z: 0 },
+      direction: { x: -1, y: 0, z: 0 },
+      outerCutoff: 20,
+      quadraticAttenuation: 1,
+    });
+    const g = new GraphBuilder('lit');
+    g.surface({ shadingModel: 'phong', baseColor: [1, 1, 1] });
+    const lit = new Material({ graph: g.build() });
+    // The lit models need normals.
+    const withNormals = new Mesh({
+      description: {
+        vertexBuffers: [
+          {
+            stride: 24,
+            stepMode: 'vertex',
+            attributes: [
+              { semantic: 'position', format: 'float32x3', offset: 0 },
+              { semantic: 'normal', format: 'float32x3', offset: 12 },
+            ],
+          },
+        ],
+        vertexCount: 3,
+      },
+      vertices: [new Float32Array(18)],
+    });
+    const litAt = (x: number) => ({ ...itemAt(x, lit), mesh: withNormals });
+    const items = [
+      litAt(-5), // in the cone
+      litAt(5), // behind the spot: black
+      itemAt(5), // unlit: drawn anyway
+    ];
+    renderer.render({
+      items,
+      lights: [spot],
+      camera,
+      surface,
+      cullUnlit: true,
+    });
+    expect(renderer.stats.get('scene')?.drawn).toBe(2);
+    // A directional light reaches everything: nothing is left out.
+    renderer.render({
+      items,
+      lights: [spot, new DirectionalLight()],
+      camera,
+      surface,
+      cullUnlit: true,
+    });
+    expect(renderer.stats.get('scene')?.drawn).toBe(3);
+    // Off by default.
+    renderer.render({ items, lights: [spot], camera, surface });
+    expect(renderer.stats.get('scene')?.drawn).toBe(3);
   });
 });

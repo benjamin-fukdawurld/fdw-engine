@@ -6,7 +6,7 @@
 //
 // nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden]
-// Scenes: shadows (default), pbr, maze (maze-1 for its first step).
+// Scenes: shadows (default), pbr, maze (maze-1, maze-2 for its first steps).
 // Escape or closing the window quits.
 import type { Engine, Surface } from '@fdw/engine-backend';
 import {
@@ -21,6 +21,7 @@ import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createMazeStep1,
   createMazeStep2,
+  createMazeStep3,
   createPbrScene,
   createShadowsScene,
   SceneFactory,
@@ -30,8 +31,9 @@ const scenes: Record<string, SceneFactory> = {
   shadows: createShadowsScene,
   pbr: createPbrScene,
   // The game: its last step, and the steps before.
-  maze: createMazeStep2,
+  maze: createMazeStep3,
   'maze-1': createMazeStep1,
+  'maze-2': createMazeStep2,
 };
 
 const args = process.argv.slice(2);

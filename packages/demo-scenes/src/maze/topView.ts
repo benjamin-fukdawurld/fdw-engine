@@ -1,6 +1,7 @@
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import {
   Camera,
+  DirectionalLight,
   Material,
   Renderable,
   Renderer,
@@ -79,6 +80,12 @@ export class TopView {
   readonly camera: Camera;
   private readonly _material: Material;
   private readonly _source: RenderSource;
+  private readonly _light = new DirectionalLight({
+    direction: { x: 0.3, y: -1, z: 0.2 },
+    ambient: { x: 0.3, y: 0.3, z: 0.32 },
+    diffuse: { x: 0.9, y: 0.9, z: 0.85 },
+    specular: { x: 0, y: 0, z: 0 },
+  });
   private _stamp = 0;
 
   constructor(
@@ -124,7 +131,9 @@ export class TopView {
           // Not a camera query: it must not change what was retained.
           'shadow'
         ),
-      lights: () => _scene.lights(),
+      // A light of its own, from above: the top view shows what was kept,
+      // lit or not (in the dark, the scene has no sun).
+      lights: () => [this._light],
     };
   }
 

@@ -87,7 +87,7 @@ Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en fran�
 ## 8. Le jeu de démonstration et l'entrée
 
 - **Murs transparents** : rendre semi-transparents (0 < alpha < 1) les murs entre la caméra et le personnage, qui peuvent le cacher ([scenegraph §11](scenegraph.md#11-les-démos)). Un rayon ou un volume de la caméra au personnage trouve ces murs ; leur matériau passe en `blend`, avec un alpha qui revient en douceur quand ils ne cachent plus rien.
-- **Gestion des entrées, manettes comprises**, à faire après les démos : une API abstraite (clavier, souris, manettes, actions nommées et leurs liaisons) et deux implémentations, web (événements DOM, Gamepad API) et native (SDL3 : clavier, souris, `SDL_Gamepad`). Probablement un package pour l'API et un par implémentation, comme pour les backends de rendu ; l'`Input` du jeu (`demo-scenes/src/maze/input.ts`) en est l'ébauche.
+- **Gestion des entrées, manettes comprises**, à faire après les démos : une API **générale**, pensée pour n'importe quelle application du moteur (jeu, outil, visualiseur, éditeur), pas pour le labyrinthe seul. Une API abstraite (clavier, souris, manettes, actions nommées et leurs liaisons, configurables par l'application) et deux implémentations, web (événements DOM, Gamepad API) et native (SDL3 : clavier, souris, `SDL_Gamepad`) : probablement un package pour l'API et un par implémentation, comme pour les backends de rendu. L'`Input` du jeu (`demo-scenes/src/maze/input.ts`) en est une ébauche, à remplacer par cette API une fois écrite.
 
 ## 9. Plus loin
 

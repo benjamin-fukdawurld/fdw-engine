@@ -1,0 +1,173 @@
+---
+title: 'Step 3: the flashlight'
+description: Turn the sun off, give the character a flashlight aimed with the mouse, and draw only what it lights.
+sidebar:
+  order: 4
+---
+
+import Example from '../../../components/Example.astro';
+
+The sun goes out. The character carries a flashlight, which it points where
+the mouse is; the walls cast its shadows. What the light does not reach is
+black — and is not drawn at all: of the 4700 nodes, a few dozen are.
+
+<Example name="maze-3" code={false} />
+
+Click the maze, then: **W A S D** to walk, the **mouse** to aim, **F** to
+switch the flashlight on and off, **Q** and **E** to turn the camera, the
+**wheel** to bring it closer or further.
+
+## 1. Turning the sun off
+
+The world of step 2 takes an option: without the sun, its node is hidden,
+and a hidden light lights nothing.
+
+```ts title="maze/world.ts"
+scene.root.add({ name: 'sun', rotation, visible: daylight }).setLight(sun);
+```
+
+```ts title="maze/step3.ts"
+const { level, cube, sphere } = createMazeWorld(scene, { sun: false });
+```
+
+Switching a light on and off is showing and hiding its node: the scene
+gives the renderer only the lights of visible nodes.
+
+## 2. A flashlight carried by the character
+
+The flashlight is two lights, children of the node of the character: they
+move and turn with it, without code for it.
+
+```ts title="maze/flashlight.ts"
+this.beam = new SpotLight({
+  ambient: { x: 0, y: 0, z: 0 },
+  diffuse: { x: 1.6, y: 1.5, z: 1.3 },
+  specular: { x: 0.6, y: 0.55, z: 0.5 },
+  innerCutoff: 16,
+  outerCutoff: 28,
+  quadraticAttenuation: 0.04,
+  castShadow: true,
+});
+// In the hand, in front of the body; tilted 20° down.
+this.node = character
+  .add({
+    name: 'flashlight',
+    position: { x: 0.15, y: 0.9, z: -0.2 },
+    rotation: { x: Math.sin(-0.175), y: 0, z: 0, w: Math.cos(-0.175) },
+  })
+  .setLight(this.beam);
+```
+
+- A spot lights along the −z axis of its node: the axis the character
+  faces. The rotation, half of 20° around x, tilts it towards the ground.
+- Between `innerCutoff` and `outerCutoff` (in degrees from the axis), the
+  light fades out: the edge of the beam is soft.
+- `castShadow`: the walls stop the beam. The light stays **within the
+  radius** of the character: pressed against a wall, a light in front of
+  the body would be inside the wall, which would then cast no shadow.
+
+The second light, a dim point light above the head, keeps the character
+and its surroundings visible when the beam points away, or is off:
+
+```ts title="maze/flashlight.ts"
+this.glow = new PointLight({
+  ambient: { x: 0, y: 0, z: 0 },
+  diffuse: { x: 0.4, y: 0.36, z: 0.32 },
+  specular: { x: 0, y: 0, z: 0 },
+  quadraticAttenuation: 0.8,
+});
+character.add({ name: 'glow', position: { y: 1.6 } }).setLight(this.glow);
+```
+
+F switches the beam, once per press: the frame remembers whether the key
+was already down.
+
+```ts title="maze/step3.ts"
+const pressed = input.isDown('f');
+if (pressed && !toggled) {
+  flashlight.on = !flashlight.on; // shows or hides the node of the beam
+}
+toggled = pressed;
+```
+
+## 3. Aiming with the mouse
+
+The character faces the point of the ground under the pointer. The input
+gives the pointer from 0 to 1 over the surface, from the top left — the
+same in a page and in a native window. From there, a ray leaves the camera
+through the pointer, and is cut by the ground:
+
+```ts title="maze/aim.ts"
+const tan = Math.tan((projection.fov * Math.PI) / 360);
+// The pointer on the image plane, at distance 1 in front of the camera.
+const sx = (pointer.x * 2 - 1) * tan * projection.aspect;
+const sy = (1 - pointer.y * 2) * tan;
+// In the world: along the x, y and −z axes of the camera's node.
+const direction = [0, 1, 2].map(
+  (i) => world[i] * sx + world[4 + i] * sy - world[8 + i]
+);
+const origin = [world[12], world[13], world[14]];
+const t = (height - origin[1]) / direction[1];
+return { x: origin[0] + direction[0] * t, z: origin[2] + direction[2] * t };
+```
+
+The columns of the world matrix of the camera's node are its axes, and its
+last column its position: no matrix inverse is needed.
+
+The character then turns towards that point, the way it turned towards its
+movement in step 2; it walks with the keys, relative to the camera, while
+facing elsewhere:
+
+```ts title="maze/step3.ts"
+const aim = input.pointerMoved
+  ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)
+  : undefined;
+player.update(dt, input, follow.yaw, aim);
+```
+
+Before the mouse first moves, there is no aim: the character faces where
+it walks.
+
+## 4. Drawing only what is lit
+
+Without the sun, every light of the view is bounded: a point light reaches
+as far as its attenuation lets it, a spot as far, within its cone. What no
+light reaches is black — the renderer can skip it:
+
+```ts title="maze/step3.ts"
+const stats = view.render(surface, camera, {
+  cullUnlit: true,
+  background: { r: 0, g: 0, b: 0 },
+});
+```
+
+`MazeView` passes `cullUnlit` on to `renderer.addScenePasses`. After the
+culling by the frustum of the camera, each item is kept only if one of the
+lights can reach its box: within the range of the glow, or within the
+pyramid enclosing the cone of the beam (`lightReaches(light, box)`).
+
+Two details make the trick invisible:
+
+- **No ambient** in the lights. The ambient term does not fade with the
+  distance: the items just inside the range would get it, the culled ones
+  next to them would not, and the edge would show.
+- **A black background**, the color of what is not lit.
+
+The line under the example counts what is drawn, the lights used and the
+shadow casters. The top view shows the same: only the nodes around the
+character remain. With the flashlight on, the shadow map of the beam draws
+only the walls inside its cone, and close enough to cast a shadow in the
+view.
+
+## What we have
+
+- Lights carried by nodes, switched by hiding them.
+- Aiming with a ray from the camera through the pointer.
+- A view where the dark costs nothing: only the lit part of the level is
+  drawn, and casts shadows.
+
+See [Lights and shadows](/fdw-engine/guides/lights-and-shadows/) for how the
+renderer chooses the lights and the shadow casters of a view.
+
+The next step makes a game of it: things to collect, enemies wandering, and
+lines of sight.

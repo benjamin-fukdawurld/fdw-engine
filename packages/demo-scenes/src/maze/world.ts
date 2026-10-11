@@ -27,8 +27,14 @@ export interface MazeWorld {
   readonly sun: DirectionalLight;
 }
 
-/** Builds the maze of the game in a scene, with a sun casting shadows. */
-export function createMazeWorld(scene: Scene, seed = 7): MazeWorld {
+/**
+ * Builds the maze of the game in a scene, with a sun casting shadows
+ * (`sun: false` for the dark, where the sun stays off).
+ */
+export function createMazeWorld(
+  scene: Scene,
+  { seed = 7, sun: daylight = true }: { seed?: number; sun?: boolean } = {}
+): MazeWorld {
   const cube = createCube();
   const sphere = createSphere(24, 12);
   const level = buildLevel(scene, generateMaze(48, 48, seed), {
@@ -45,7 +51,11 @@ export function createMazeWorld(scene: Scene, seed = 7): MazeWorld {
     specular: { x: 1.3, y: 1.2, z: 1.05 },
   });
   scene.root
-    .add({ name: 'sun', rotation: axisAngle(0.95, 0, 0.31, -1.2) })
+    .add({
+      name: 'sun',
+      rotation: axisAngle(0.95, 0, 0.31, -1.2),
+      visible: daylight,
+    })
     .setLight(sun);
   return { level, cube, sphere, sun };
 }

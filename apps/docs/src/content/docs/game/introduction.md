@@ -10,12 +10,12 @@ above**, explored by a character carrying a **flashlight**, in the dark —
 only what the flashlight lights is visible. Each step is playable, and adds
 a part of the engine:
 
-| Step                                            | Contents                                                                                               | Engine                                      |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| [1. The maze](/fdw-engine/game/maze/)           | A generated maze of thousands of nodes, a camera flying over it, a top view of what the camera retains | Scenes, static nodes, culling, render graph |
-| [2. The character](/fdw-engine/game/character/) | A character moved with the keyboard, colliding with the walls, followed by the camera                  | Nodes, hierarchy, queries with volumes      |
-| 3. The flashlight                               | A spot carried by the character, aimed with the mouse, in the dark                                     | Lights and shadows limited to the view      |
-| 4. The game                                     | Things to collect, enemies wandering, lines of sight                                                   | The ECS core and its systems, rays          |
+| Step                                              | Contents                                                                                               | Engine                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| [1. The maze](/fdw-engine/game/maze/)             | A generated maze of thousands of nodes, a camera flying over it, a top view of what the camera retains | Scenes, static nodes, culling, render graph |
+| [2. The character](/fdw-engine/game/character/)   | A character moved with the keyboard, colliding with the walls, followed by the camera                  | Nodes, hierarchy, queries with volumes      |
+| [3. The flashlight](/fdw-engine/game/flashlight/) | A spot carried by the character, aimed with the mouse, in the dark                                     | Lights and shadows limited to the view      |
+| 4. The game                                       | Things to collect, enemies wandering, lines of sight                                                   | The ECS core and its systems, rays          |
 
 The steps to come will be added to this tutorial as they are written.
 

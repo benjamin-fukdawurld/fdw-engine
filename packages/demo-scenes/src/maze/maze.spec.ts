@@ -1,8 +1,9 @@
-import { Material } from '@fdw/engine-core';
+import { Camera, Material } from '@fdw/engine-core';
 import { colorGraph } from '@fdw/engine-core/testing';
 import { Scene } from '@fdw/engine-scene';
 import { describe, expect, it } from 'vitest';
 import { createCube, createSphere } from '../geometry';
+import { pointerOnPlane } from './aim';
 import { resolveCircle } from './collisions';
 import { Input, normalizeKey } from './input';
 import { Player } from './player';
@@ -143,5 +144,32 @@ describe('collisions', () => {
     // Forward is -z: stopped by the wall, facing it.
     expect(player.position.z).toBeCloseTo(player.radius, 3);
     expect(player.heading).toBeCloseTo(0, 3);
+  });
+});
+
+describe('pointerOnPlane', () => {
+  it('finds the point of the ground under the pointer', () => {
+    // A camera 10 above (2, ·, 3), looking straight down: its -z axis is
+    // -y, its x axis x, its y axis -z.
+    const world = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 2, 10, 3, 1];
+    const camera = new Camera({
+      projection: {
+        type: 'perspective',
+        fov: 90,
+        aspect: 2,
+        near: 0.1,
+        far: 100,
+      },
+    });
+    expect(pointerOnPlane(world, camera, { x: 0.5, y: 0.5 })).toEqual({
+      x: 2,
+      z: 3,
+    });
+    // The right edge: tan(45°) × aspect × 10 to the right.
+    const right = pointerOnPlane(world, camera, { x: 1, y: 0.5 });
+    expect(right?.x).toBeCloseTo(22, 6);
+    // The top edge: towards -z.
+    const top = pointerOnPlane(world, camera, { x: 0.5, y: 0 });
+    expect(top?.z).toBeCloseTo(-7, 6);
   });
 });

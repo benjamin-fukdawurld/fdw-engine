@@ -40,9 +40,15 @@ export class Player {
 
   /**
    * Moves the character along the keys, relative to the direction the
-   * camera looks at (`cameraYaw`), then out of the walls.
+   * camera looks at (`cameraYaw`), then out of the walls. It faces where it
+   * goes, or the point `aim` when given (the pointer on the ground).
    */
-  update(dt: number, input: Input, cameraYaw: number): void {
+  update(
+    dt: number,
+    input: Input,
+    cameraYaw: number,
+    aim?: { readonly x: number; readonly z: number }
+  ): void {
     const forward = input.axis(['s', 'down'], ['w', 'up']);
     const right = input.axis(['a', 'left'], ['d', 'right']);
     if (forward !== 0 || right !== 0) {
@@ -55,11 +61,17 @@ export class Player {
       const run = input.isDown('shift') ? 1.8 : 1;
       this.position.x += dx * this.speed * run * dt;
       this.position.z += dz * this.speed * run * dt;
-      // Turn towards the movement, smoothly: the shortest way round.
-      const target = Math.atan2(-dx, -dz);
-      let delta = target - this.heading;
-      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-      this.heading += delta * Math.min(1, 12 * dt);
+      if (!aim) {
+        this.turnTowards(dx, dz, dt);
+      }
+    }
+    if (aim) {
+      const dx = aim.x - this.position.x;
+      const dz = aim.z - this.position.z;
+      // Too close to the character to tell a direction.
+      if (Math.hypot(dx, dz) > 0.5) {
+        this.turnTowards(dx, dz, dt);
+      }
     }
     resolveCircle(this._scene, this._solid, this.position, this.radius);
     this.node.transform.position = this.position;
@@ -69,5 +81,13 @@ export class Player {
       z: 0,
       w: Math.cos(this.heading / 2),
     };
+  }
+
+  // Turns towards a direction, smoothly: the shortest way round.
+  private turnTowards(dx: number, dz: number, dt: number): void {
+    const target = Math.atan2(-dx, -dz);
+    let delta = target - this.heading;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    this.heading += delta * Math.min(1, 12 * dt);
   }
 }

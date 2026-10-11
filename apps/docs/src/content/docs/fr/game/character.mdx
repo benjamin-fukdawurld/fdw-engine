@@ -24,7 +24,7 @@ et la vue de dessus. L'étape 2 a besoin des deux : ils passent dans deux
 modules, utilisés par chaque étape.
 
 ```ts title="maze/world.ts"
-export function createMazeWorld(scene: Scene, seed = 7): MazeWorld {
+export function createMazeWorld(scene: Scene, { seed = 7 } = {}): MazeWorld {
   const cube = createCube();
   const sphere = createSphere(24, 12);
   const level = buildLevel(scene, generateMaze(48, 48, seed), {
@@ -200,5 +200,5 @@ le mur le cache encore : tourner la caméra (Q, E) le montre de nouveau.
 Rendre transparents les murs situés entre la caméra et le personnage est une
 réponse classique, pour une étape ultérieure.
 
-L'étape suivante éteint les lumières, et donne au personnage une lampe
-torche.
+L'[étape suivante](/fdw-engine/fr/game/flashlight/) éteint les lumières, et
+donne au personnage une lampe torche.

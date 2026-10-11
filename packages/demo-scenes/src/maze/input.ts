@@ -26,7 +26,10 @@ export function normalizeKey(key: string): string {
 export class Input {
   private readonly _down = new Set<string>();
   private _wheel = 0;
-  private _pointer = { x: 0, y: 0 };
+  // In [0, 1] over the element or window receiving the events, from the
+  // top left: the same in a browser and in a native window.
+  private _pointer = { x: 0.5, y: 0.5 };
+  private _pointerMoved = false;
   private readonly _remove: (() => void)[] = [];
 
   constructor(target: EventTarget) {
@@ -46,11 +49,22 @@ export class Input {
       this._wheel += wheel.dy !== undefined ? -wheel.dy * 100 : wheel.deltaY;
     });
     listen('pointermove', (event) => {
-      const pointer = event as PointerEvent;
+      // DOM: offsetX in the element, whose size is clientWidth; native:
+      // x in the window, whose size is width.
+      const pointer = event as PointerEvent & { x: number; y: number };
+      const target = event.target as {
+        clientWidth?: number;
+        clientHeight?: number;
+        width?: number;
+        height?: number;
+      } | null;
+      const width = target?.clientWidth ?? target?.width ?? 1;
+      const height = target?.clientHeight ?? target?.height ?? 1;
       this._pointer = {
-        x: pointer.offsetX ?? pointer.x,
-        y: pointer.offsetY ?? pointer.y,
+        x: (pointer.offsetX ?? pointer.x) / Math.max(width, 1),
+        y: (pointer.offsetY ?? pointer.y) / Math.max(height, 1),
       };
+      this._pointerMoved = true;
     });
     // Keys released while the window lost the focus.
     listen('blur', () => this._down.clear());
@@ -74,8 +88,14 @@ export class Input {
     return wheel;
   }
 
+  /** The pointer, from 0 to 1 over the surface, from the top left. */
   get pointer(): { readonly x: number; readonly y: number } {
     return this._pointer;
+  }
+
+  /** Whether the pointer moved at least once. */
+  get pointerMoved(): boolean {
+    return this._pointerMoved;
   }
 
   dispose(): void {

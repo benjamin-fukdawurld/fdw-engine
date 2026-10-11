@@ -32,7 +32,17 @@ export class MazeView {
   }
 
   /** Renders a frame and presents it: returns what the main view drew. */
-  render(surface: Surface, camera: Camera): ViewStats | undefined {
+  render(
+    surface: Surface,
+    camera: Camera,
+    {
+      cullUnlit = false,
+      background = { r: 0.05, g: 0.06, b: 0.08 },
+    }: {
+      cullUnlit?: boolean;
+      background?: { r: number; g: number; b: number };
+    } = {}
+  ): ViewStats | undefined {
     const graph = new RenderGraph();
     const output = graph.importTexture('surface', surface.getCurrentTarget());
     // The main view sees the level, not the marker of the top view.
@@ -42,7 +52,8 @@ export class MazeView {
       layers: ~TopViewLayer,
       target: output,
       format: surface.format,
-      clearColor: { r: 0.05, g: 0.06, b: 0.08, a: 1 },
+      clearColor: { ...background, a: 1 },
+      cullUnlit,
     });
     this._topView.add(graph, main, surface);
     this._runner.execute(graph);

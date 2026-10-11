@@ -11,3 +11,6 @@ export * from './view';
 export * from './world';
 export * from './step1';
 export * from './step2';
+export * from './aim';
+export * from './flashlight';
+export * from './step3';

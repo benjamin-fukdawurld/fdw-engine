@@ -10,12 +10,12 @@ de dessus**, exploré par un personnage portant une **lampe torche**, dans le
 noir — seul ce qu'éclaire la lampe est visible. Chaque étape est jouable, et
 ajoute une partie du moteur :
 
-| Étape                                              | Contenu                                                                                                             | Moteur                                         |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| [1. Le labyrinthe](/fdw-engine/fr/game/maze/)      | Un labyrinthe généré de milliers de nœuds, une caméra qui le survole, une vue de dessus de ce que la caméra retient | Scènes, nœuds statiques, culling, render graph |
-| [2. Le personnage](/fdw-engine/fr/game/character/) | Un personnage déplacé au clavier, qui heurte les murs, suivi par la caméra                                          | Nœuds, hiérarchie, requêtes par volumes        |
-| 3. La lampe torche                                 | Un spot porté par le personnage, orienté à la souris, dans le noir                                                  | Lumières et ombres limitées à la vue           |
-| 4. Le jeu                                          | Des objets à ramasser, des ennemis qui errent, des lignes de vue                                                    | Le noyau ECS et ses systèmes, rayons           |
+| Étape                                                 | Contenu                                                                                                             | Moteur                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [1. Le labyrinthe](/fdw-engine/fr/game/maze/)         | Un labyrinthe généré de milliers de nœuds, une caméra qui le survole, une vue de dessus de ce que la caméra retient | Scènes, nœuds statiques, culling, render graph |
+| [2. Le personnage](/fdw-engine/fr/game/character/)    | Un personnage déplacé au clavier, qui heurte les murs, suivi par la caméra                                          | Nœuds, hiérarchie, requêtes par volumes        |
+| [3. La lampe torche](/fdw-engine/fr/game/flashlight/) | Un spot porté par le personnage, orienté à la souris, dans le noir                                                  | Lumières et ombres limitées à la vue           |
+| 4. Le jeu                                             | Des objets à ramasser, des ennemis qui errent, des lignes de vue                                                    | Le noyau ECS et ses systèmes, rayons           |
 
 Les étapes à venir seront ajoutées à ce tutoriel au fur et à mesure de leur
 rédaction.

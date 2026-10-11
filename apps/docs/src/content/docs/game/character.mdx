@@ -23,7 +23,7 @@ Step 1 built the level and the sun, and rendered the main view and the top
 view. Step 2 needs both: they move to two modules, used by every step.
 
 ```ts title="maze/world.ts"
-export function createMazeWorld(scene: Scene, seed = 7): MazeWorld {
+export function createMazeWorld(scene: Scene, { seed = 7 } = {}): MazeWorld {
   const cube = createCube();
   const sphere = createSphere(24, 12);
   const level = buildLevel(scene, generateMaze(48, 48, seed), {
@@ -194,4 +194,5 @@ the wall still hides it: turning the camera (Q, E) shows it again. Making
 the walls between the camera and the character transparent is a classic
 answer, for a later step.
 
-The next step turns the lights off, and gives the character a flashlight.
+The [next step](/fdw-engine/game/flashlight/) turns the lights off, and
+gives the character a flashlight.

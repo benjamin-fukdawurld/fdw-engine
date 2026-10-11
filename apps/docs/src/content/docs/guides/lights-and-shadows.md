@@ -38,6 +38,24 @@ A light costs nothing when it cannot change a pixel of the view:
 `renderer.stats.get('scene')` gives, for the last frame, the number of
 lights used, of shadow maps and of shadow casters drawn.
 
+### Not drawing what is in the dark
+
+When every light of a view is bounded (point and spot lights, with an
+attenuation), what none of them reaches is black. With
+`addScenePasses(graph, { cullUnlit: true })`, it is not drawn: an item is
+kept when its box is within the range of a point light, or within the
+pyramid around the cone of a spot (`lightReaches(light, box)`). The test is
+conservative: an item near the edge of a cone can be drawn, black.
+
+- Materials without lighting (`unlit`) are always drawn: give a glowing
+  object an unlit material.
+- The **ambient** term of a light does not fade with the distance: an item
+  just inside the range gets it, the next one, culled, does not. Give the
+  lights of such a scene no ambient, and a black clear color, so that where
+  the drawing stops does not show.
+- With a directional light, or a light without attenuation, the option does
+  nothing.
+
 ## How the models use them
 
 The lit shading models sum the lights, per fragment:

@@ -1,0 +1,178 @@
+---
+title: 'Étape 3 : la lampe torche'
+description: Éteindre le soleil, donner au personnage une lampe torche orientée à la souris, et ne dessiner que ce qu'elle éclaire.
+sidebar:
+  order: 4
+---
+
+import Example from '../../../../components/Example.astro';
+
+Le soleil s'éteint. Le personnage porte une lampe torche, qu'il pointe vers
+la souris ; les murs projettent ses ombres. Ce que la lumière n'atteint pas
+est noir — et n'est pas dessiné du tout : sur les 4700 nœuds, quelques
+dizaines le sont.
+
+<Example name="maze-3" code={false} />
+
+Cliquez sur le labyrinthe, puis : **W A S D** pour marcher, la **souris**
+pour viser, **F** pour allumer et éteindre la lampe torche, **Q** et **E**
+pour faire tourner la caméra, la **molette** pour la rapprocher ou
+l'éloigner.
+
+## 1. Éteindre le soleil
+
+Le monde de l'étape 2 prend une option : sans le soleil, son nœud est caché,
+et une lumière cachée n'éclaire rien.
+
+```ts title="maze/world.ts"
+scene.root.add({ name: 'sun', rotation, visible: daylight }).setLight(sun);
+```
+
+```ts title="maze/step3.ts"
+const { level, cube, sphere } = createMazeWorld(scene, { sun: false });
+```
+
+Allumer et éteindre une lumière, c'est montrer et cacher son nœud : la scène
+ne donne au renderer que les lumières des nœuds visibles.
+
+## 2. Une lampe torche portée par le personnage
+
+La lampe torche est faite de deux lumières, enfants du nœud du personnage :
+elles se déplacent et tournent avec lui, sans code pour cela.
+
+```ts title="maze/flashlight.ts"
+this.beam = new SpotLight({
+  ambient: { x: 0, y: 0, z: 0 },
+  diffuse: { x: 1.6, y: 1.5, z: 1.3 },
+  specular: { x: 0.6, y: 0.55, z: 0.5 },
+  innerCutoff: 16,
+  outerCutoff: 28,
+  quadraticAttenuation: 0.04,
+  castShadow: true,
+});
+// In the hand, in front of the body; tilted 20° down.
+this.node = character
+  .add({
+    name: 'flashlight',
+    position: { x: 0.15, y: 0.9, z: -0.2 },
+    rotation: { x: Math.sin(-0.175), y: 0, z: 0, w: Math.cos(-0.175) },
+  })
+  .setLight(this.beam);
+```
+
+- Un spot éclaire le long de l'axe −z de son nœud : l'axe vers lequel
+  regarde le personnage. La rotation, la moitié de 20° autour de x, l'incline
+  vers le sol.
+- Entre `innerCutoff` et `outerCutoff` (en degrés depuis l'axe), la lumière
+  s'estompe : le bord du faisceau est doux.
+- `castShadow` : les murs arrêtent le faisceau. La lumière reste **dans le
+  rayon** du personnage : plaquée contre un mur, une lumière devant le corps
+  serait à l'intérieur du mur, qui ne projetterait alors aucune ombre.
+
+La seconde lumière, une faible lumière ponctuelle au-dessus de la tête, garde
+le personnage et ses abords visibles lorsque le faisceau pointe ailleurs, ou
+est éteint :
+
+```ts title="maze/flashlight.ts"
+this.glow = new PointLight({
+  ambient: { x: 0, y: 0, z: 0 },
+  diffuse: { x: 0.4, y: 0.36, z: 0.32 },
+  specular: { x: 0, y: 0, z: 0 },
+  quadraticAttenuation: 0.8,
+});
+character.add({ name: 'glow', position: { y: 1.6 } }).setLight(this.glow);
+```
+
+F allume ou éteint le faisceau, une fois par appui : la frame se souvient si
+la touche était déjà enfoncée.
+
+```ts title="maze/step3.ts"
+const pressed = input.isDown('f');
+if (pressed && !toggled) {
+  flashlight.on = !flashlight.on; // shows or hides the node of the beam
+}
+toggled = pressed;
+```
+
+## 3. Viser à la souris
+
+Le personnage regarde le point du sol sous le pointeur. L'entrée donne le
+pointeur de 0 à 1 sur la surface, depuis le coin supérieur gauche — de la
+même façon dans une page et dans une fenêtre native. De là, un rayon part de
+la caméra à travers le pointeur, et est coupé par le sol :
+
+```ts title="maze/aim.ts"
+const tan = Math.tan((projection.fov * Math.PI) / 360);
+// The pointer on the image plane, at distance 1 in front of the camera.
+const sx = (pointer.x * 2 - 1) * tan * projection.aspect;
+const sy = (1 - pointer.y * 2) * tan;
+// In the world: along the x, y and −z axes of the camera's node.
+const direction = [0, 1, 2].map(
+  (i) => world[i] * sx + world[4 + i] * sy - world[8 + i]
+);
+const origin = [world[12], world[13], world[14]];
+const t = (height - origin[1]) / direction[1];
+return { x: origin[0] + direction[0] * t, z: origin[2] + direction[2] * t };
+```
+
+Les colonnes de la matrice monde du nœud de la caméra sont ses axes, et sa
+dernière colonne sa position : aucune inversion de matrice n'est nécessaire.
+
+Le personnage se tourne alors vers ce point, comme il se tournait vers son
+mouvement à l'étape 2 ; il marche avec les touches, par rapport à la caméra,
+tout en regardant ailleurs :
+
+```ts title="maze/step3.ts"
+const aim = input.pointerMoved
+  ? pointerOnPlane(eye.worldMatrix, camera, input.pointer)
+  : undefined;
+player.update(dt, input, follow.yaw, aim);
+```
+
+Avant le premier mouvement de la souris, il n'y a pas de visée : le
+personnage regarde là où il marche.
+
+## 4. Ne dessiner que ce qui est éclairé
+
+Sans le soleil, chaque lumière de la vue est limitée : une lumière ponctuelle
+porte aussi loin que son atténuation le permet, un spot aussi loin, dans son
+cône. Ce qu'aucune lumière n'atteint est noir — le renderer peut l'ignorer :
+
+```ts title="maze/step3.ts"
+const stats = view.render(surface, camera, {
+  cullUnlit: true,
+  background: { r: 0, g: 0, b: 0 },
+});
+```
+
+`MazeView` transmet `cullUnlit` à `renderer.addScenePasses`. Après le culling
+par le frustum de la caméra, chaque objet n'est conservé que si l'une des
+lumières peut atteindre sa boîte : dans la portée de la lueur, ou dans la
+pyramide qui englobe le cône du faisceau (`lightReaches(light, box)`).
+
+Deux détails rendent l'astuce invisible :
+
+- **Pas d'ambiant** dans les lumières. Le terme ambiant ne diminue pas avec
+  la distance : les objets juste dans la portée le recevraient, les objets
+  écartés à côté d'eux non, et la limite se verrait.
+- **Un fond noir**, la couleur de ce qui n'est pas éclairé.
+
+La ligne sous l'exemple compte ce qui est dessiné, les lumières utilisées et
+les objets projetant des ombres. La vue du dessus montre la même chose :
+seuls les nœuds autour du personnage restent. Lampe torche allumée, la shadow
+map du faisceau ne dessine que les murs dans son cône, et assez proches pour
+projeter une ombre dans la vue.
+
+## Ce que nous avons
+
+- Des lumières portées par des nœuds, allumées et éteintes en les cachant.
+- Une visée par un rayon partant de la caméra à travers le pointeur.
+- Une vue où le noir ne coûte rien : seule la partie éclairée du niveau est
+  dessinée, et projette des ombres.
+
+Voir [Lumières et ombres](/fdw-engine/fr/guides/lights-and-shadows/) pour
+la façon dont le renderer choisit les lumières et les objets projetant des
+ombres d'une vue.
+
+L'étape suivante en fait un jeu : des objets à ramasser, des ennemis qui
+errent, et des lignes de vue.
