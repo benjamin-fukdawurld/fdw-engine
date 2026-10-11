@@ -19,6 +19,7 @@ Donner au moteur une scène : une hiérarchie d'objets, leurs transformations, l
 13. [Plan d'implémentation](#13-plan-dimplémentation)
 14. [Stratégie de test](#14-stratégie-de-test)
 15. [Risques, questions et décisions](#15-risques-questions-et-décisions)
+16. [Le pool de transforms](#16-le-pool-de-transforms)
 
 ---
 
@@ -589,3 +590,65 @@ Ce qu'un jeu demande en plus, à construire au fil des démos : une boucle à pa
 5. **Lumières et ombres** : limitées à ce qui peut changer la vue, sans rien retirer qui la change (§7.2). _Validé._
 6. **Occlusion** : le GPU autant que possible (Hi-Z), le CPU seulement en repli ; variante (relecture ou pilotée par le GPU) à choisir dans son propre design. _Validé._
 7. **Démos** : un labyrinthe vu de dessus, avec un personnage muni d'une lampe torche, construit en démos incrémentales (§11). _Validé._
+
+## 16. Le pool de transforms
+
+Ajouté après S6, à la demande : la classe `Transform` et le `TransformCache` du renderer posaient, à petite échelle, le problème que règle l'ECS.
+
+### 16.1 Le problème
+
+- **Un `Transform`** : un `ArrayBuffer` de 40 octets, trois vues (`Vec3View`, `QuatView`) lisant chacune à travers un `DataView` : environ 8 objets dispersés. Et `transform.position.x = 5` change la valeur sans incrémenter la version : le renderer ne voit pas le changement.
+- **Le `TransformCache`** créé par le renderer pour chaque objet dessiné : 5 `CachedValue`, leurs `SnapshotValue` et tableaux de dépendances, 5 `Float32Array` : une vingtaine d'objets, de l'ordre du kilo-octet. Chaque lecture de version remonte la chaîne : c'était le premier poste du profil du culling.
+- **L'envoi de l'uniform `object`** : réécrit champ par champ par un `DataView`, alors que ses 112 octets pourraient être copiés d'un bloc.
+
+### 16.2 Le design
+
+Un **`TransformPool`** : un `Float32Array` de N blocs, un par transform, agrandi par un facteur F quand il est plein (2 par défaut, comme la libstdc++ et la libc++ ; MSVC prend 1,5), les emplacements libérés réutilisés.
+
+| Floats | Contenu                                                                     |
+| ------ | --------------------------------------------------------------------------- |
+| 0–15   | Matrice monde (dérivée)                                                     |
+| 16–27  | Matrice des normales (dérivée), 3 × vec4 : la disposition de WGSL et std140 |
+| 28–37  | Position, rotation (quaternion), échelle locales                            |
+| 38–39  | Libres (bloc de 160 octets)                                                 |
+
+À côté : une version locale (incrémentée à chaque écriture), une version monde (à chaque recalcul) et un bit « périmé » par bloc.
+
+- Les 112 premiers octets d'un bloc sont **l'uniform `object`** : le renderer l'envoie d'une copie quand la disposition du programme y correspond (le cas de tous les backends), et garde l'écriture champ par champ sinon. Plus tard, le pool entier pourra partir d'un bloc vers un storage buffer (rendu piloté par le GPU).
+- C'est un compromis avec l'orientation données : un bloc par transform (tableau de structures) plutôt qu'une colonne par champ, parce que ce que l'on lit ensemble (matrices de l'uniform, valeurs locales d'un transform) est contigu.
+
+**`Transform` devient un proxy** sur un bloc d'un pool (le pool par défaut, ou un autre) : même nom, même constructeur, mêmes accesseurs (valeurs partielles, `position.x`, `version`). Ses vecteurs lisent et écrivent dans le pool, et leurs écritures invalident le bloc comme les autres. La matrice monde et celle des normales sont recalculées à la lecture si le bloc est périmé. `TransformSnapshot` n'exige plus les classes `Vec3View` et `QuatView`, mais une interface (les composantes et `asArray()`) : `TransformCache` et `TransformAdapter` fonctionnent avec les deux.
+
+**Libération** : `transform.dispose()` rend le bloc tout de suite ; à défaut, un `FinalizationRegistry` le rend quand le ramasse-miettes récupère le proxy. Un oubli ne fuit pas : il est libéré plus tard.
+
+**Le renderer** ne passe plus par `TransformCache` pour les `Transform` : il lit la version monde et le bloc dans le pool.
+
+**La scène** (T4) range ses transforms dans son propre pool, indexé par entité, à la place de ses colonnes `Transform` et `WorldMatrix` : `node.transform` est un vrai `Transform`, le renderer n'a qu'un chemin, et les systèmes écrivent `data[e * stride + offset]`.
+
+**Caméras et lumières** ne changent pas : une caméra par vue, 16 lumières au plus par frame, rien à gagner. Un pool de lumières disposé comme une structure GPU viendra avec le culling des lumières (RG6), quand des centaines de lumières iront dans un storage buffer.
+
+### 16.3 Plan
+
+- **T1.** _(fait)_ `TransformPool` : blocs, croissance, emplacements libres, versions, bits « périmé », recalcul des matrices ; tests, bench.
+- **T2.** _(fait)_ `Transform` comme proxy, `dispose()` et `FinalizationRegistry`, `TransformSnapshot` assoupli. Les tests existants passent sans modification.
+- **T3.** _(fait)_ Le renderer lit le pool, envoie l'uniform `object` d'une copie ; benchs avant et après.
+- **T4.** _(fait)_ La scène sur son propre pool, `node.transform` comme vrai `Transform`.
+
+**Décisions** : bloc disposé comme l'uniform `object` ; nom `Transform` gardé ; `dispose()` et `FinalizationRegistry` ; T4 après T3 ; caméras et lumières inchangées. _Validées._
+
+### 16.4 Résultats
+
+T1 à T4 sont faits. Deux ajustements en route :
+
+- **La matrice des normales est calculée à la lecture**, avec son propre bit « périmé » (`updateNormal()`) : seuls les objets dessinés la paient, pas tous ceux qui bougent.
+- **Les transforms d'une scène sont détachés par la scène** quand leur entité est détruite, plutôt que de vérifier leur validité à chaque accès.
+
+| Mesure (1 000 transforms)                                     | Avant   | Après   |
+| ------------------------------------------------------------- | ------- | ------- |
+| Transforms seuls, immobiles : versions lues                   | 6,2 µs  | 4,4 µs  |
+| Transforms seuls, en mouvement : matrices recalculées et lues | 1,93 ms | 0,09 ms |
+| Renderer, 1 000 objets en mouvement (frame)                   | 8,6 ms  | 6,8 ms  |
+| Scène, 1 000 nœuds en mouvement puis la requête               | 0,58 ms | 0,67 ms |
+| Scène, frame du Renderer (1 000 visibles)                     | 1,83 ms | 1,84 ms |
+
+La scène perd environ 90 ns par nœud déplacé : le `Transform` (accesseurs, notification du pool) s'intercale entre le nœud et les données. C'est le prix d'une seule classe `Transform` partout ; les systèmes qui écrivent directement dans `scene.transforms.data` ne le paient pas.

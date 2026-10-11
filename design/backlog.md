@@ -27,7 +27,7 @@ La vue de scène du render graph ([render-graph §10.2](render-graph.md#102-la-v
 
 Détails dans [render-graph.md §13](render-graph.md#13-plan-dimplémentation).
 
-- **RG6. Culling des lumières** (clustered forward), avec un repli pour WebGL2, qui n'a pas de calcul ([évolutions §1](evolutions.md#1-un-très-grand-nombre-de-lumières)).
+- **RG6. Culling des lumières** (clustered forward), avec un repli pour WebGL2, qui n'a pas de calcul ([évolutions §1](evolutions.md#1-un-très-grand-nombre-de-lumières)). Avec lui, un **pool de lumières** disposé comme la structure GPU des lumières, comme le pool de transforms ([scenegraph §16](scenegraph.md#16-le-pool-de-transforms)) : des centaines de lumières envoyées d'un bloc dans un storage buffer.
 - Ombres : lumières ponctuelles (six faces), cascades pour les grandes scènes (CSM), culling des objets par tuile.
 - Transitions initiales des ressources importées (backends à synchronisation explicite : utile avec Vulkan).
 - Coût de la clé structurelle du graphe, si les graphes grossissent.

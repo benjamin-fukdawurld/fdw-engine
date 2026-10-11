@@ -1,16 +1,20 @@
-import type { IQuat, IVec3, Mat4 } from '@fdw/engine-backend';
+import type { IQuat, IVec3 } from '@fdw/engine-backend';
 import {
   AllLayers,
   BaseLight,
   Camera,
+  composeBlock,
   DirectionalLight,
   Material,
   Mesh,
   meshBox,
   PointLight,
   Renderable,
+  RenderItem,
   SpotLight,
-  WorldRenderItem,
+  Transform,
+  TransformLayout,
+  TransformPool,
 } from '@fdw/engine-core';
 import {
   Aabb,
@@ -22,7 +26,7 @@ import {
   Volume,
 } from '@fdw/engine-geometry';
 import { World } from '../ecs/World';
-import { composeAt, premultiplyAt, rotationOf } from './matrices';
+import { premultiplyAt, rotationOf } from './matrices';
 import type { SceneGraph } from './contracts';
 import { Node } from './Node';
 
@@ -75,11 +79,20 @@ export interface OcclusionCuller {
 
 const None = -1;
 
+const {
+  stride,
+  world: World0,
+  position: P,
+  rotation: R,
+  scale: S,
+} = TransformLayout;
+
 /**
- * A scene: entities of a World, in a hierarchy, with a local transform and a
- * world matrix, drawn by a Renderer as a RenderSource. Its entities are
- * handled by systems through the columns of its components, or as nodes
- * (`scene.root`, `node.add()`).
+ * A scene: entities of a World, in a hierarchy, with a transform in a
+ * TransformPool (local values, world and normal matrices), drawn by a
+ * Renderer as a RenderSource. Its entities are handled by systems through
+ * the pool and the columns of its components, or as nodes (`scene.root`,
+ * `node.add()`).
  *
  * World matrices, bounds and the spatial indices are kept up to date by
  * invalidation: changing the transform of an entity marks its branch as
@@ -88,10 +101,12 @@ const None = -1;
  */
 export class Scene implements SceneGraph {
   readonly world: World;
-  /** Local position, rotation (quaternion) and scale. */
-  readonly Transform;
-  /** The world matrix (derived), and its version. */
-  readonly WorldMatrix;
+  /**
+   * The transforms of the entities, by entity: the block of entity e at
+   * `e * TransformLayout.stride` of `transforms.data`. A system writing
+   * local values there calls `transforms.touch(e)` (or `scene.touch(e)`).
+   */
+  readonly transforms: TransformPool;
   /** Parent, first child, next and previous siblings: entities, or -1. */
   readonly Hierarchy;
   /** NodeFlags, layers, the last camera query that kept it, a name (label). */
@@ -128,14 +143,10 @@ export class Scene implements SceneGraph {
   constructor() {
     const world = new World();
     this.world = world;
-    this.Transform = world.defineComponent('transform', {
-      position: ['f32', 3],
-      rotation: ['f32', 4],
-      scale: ['f32', 3],
-    });
-    this.WorldMatrix = world.defineComponent('world matrix', {
-      matrix: ['f32', 16],
-      version: 'u32',
+    this.transforms = new TransformPool({
+      capacity: world.capacity,
+      onTouch: (entity) => this.touch(entity),
+      compute: (entity) => this.updateWorld(entity),
     });
     this.Hierarchy = world.defineComponent('hierarchy', {
       parent: 'i32',
@@ -173,7 +184,10 @@ export class Scene implements SceneGraph {
       this.MeshRenderer.boundsVersion[entity] = 0xffffffff;
       this.queue(entity);
     });
-    world.onRemoved(this.MeshRenderer, (entity) => this.unindex(entity));
+    world.onRemoved(this.MeshRenderer, (entity) => {
+      this.unindex(entity);
+      (this.MeshRenderer.item[entity] as SceneItem).transform.detach();
+    });
     world.onAdded(this.Light, (entity) => this.queue(entity));
     world.onAdded(this.CameraView, (entity) => this.queue(entity));
 
@@ -187,24 +201,22 @@ export class Scene implements SceneGraph {
    * default): the entity level of `node.add()`.
    */
   create(parent: number = this.root.entity, options: NodeOptions = {}): number {
-    const { world, Transform, NodeState } = this;
+    const { world, NodeState } = this;
     const entity = world.create();
-    world.add(entity, Transform);
+    this.transforms.allocateAt(entity);
     const { position, rotation, scale } = options;
-    const p = Transform.position;
-    const r = Transform.rotation;
-    const s = Transform.scale;
-    p[entity * 3] = position?.x ?? 0;
-    p[entity * 3 + 1] = position?.y ?? 0;
-    p[entity * 3 + 2] = position?.z ?? 0;
-    r[entity * 4] = rotation?.x ?? 0;
-    r[entity * 4 + 1] = rotation?.y ?? 0;
-    r[entity * 4 + 2] = rotation?.z ?? 0;
-    r[entity * 4 + 3] = rotation?.w ?? 1;
-    s[entity * 3] = scale?.x ?? 1;
-    s[entity * 3 + 1] = scale?.y ?? 1;
-    s[entity * 3 + 2] = scale?.z ?? 1;
-    world.add(entity, this.WorldMatrix);
+    const data = this.transforms.data;
+    const o = entity * stride;
+    data[o + P] = position?.x ?? 0;
+    data[o + P + 1] = position?.y ?? 0;
+    data[o + P + 2] = position?.z ?? 0;
+    data[o + R] = rotation?.x ?? 0;
+    data[o + R + 1] = rotation?.y ?? 0;
+    data[o + R + 2] = rotation?.z ?? 0;
+    data[o + R + 3] = rotation?.w ?? 1;
+    data[o + S] = scale?.x ?? 1;
+    data[o + S + 1] = scale?.y ?? 1;
+    data[o + S + 2] = scale?.z ?? 1;
     world.add(entity, this.Hierarchy, {
       parent: None,
       first: None,
@@ -236,6 +248,7 @@ export class Scene implements SceneGraph {
       child = next;
     }
     this.unlink(entity);
+    this._nodes[entity]?.release();
     this._nodes[entity] = undefined;
     this.world.destroy(entity);
   }
@@ -270,8 +283,8 @@ export class Scene implements SceneGraph {
   /**
    * Signals that the transform, the parent or the visibility of an entity
    * changed: the world matrices of its branch are stale, and the indices
-   * will be updated before the next query. Systems writing the Transform
-   * columns directly call it once per entity they moved.
+   * will be updated before the next query. Systems writing the local values
+   * of the pool directly call it once per entity they moved.
    */
   touch(entity: number): void {
     const flags = this.NodeState.flags;
@@ -293,6 +306,7 @@ export class Scene implements SceneGraph {
   private markStale(entity: number): void {
     const { flags } = this.NodeState;
     flags[entity] |= NodeFlags.Stale;
+    this.transforms.invalidate(entity);
     for (
       let child = this.Hierarchy.first[entity];
       child !== None;
@@ -313,9 +327,9 @@ export class Scene implements SceneGraph {
   }
 
   /**
-   * Computes the world matrix of an entity if it is stale (and those of
-   * its stale ancestors first). Its 16 values are then in
-   * `WorldMatrix.matrix`, from entity × 16.
+   * Computes the world matrix of an entity if it is stale (and those of its
+   * stale ancestors first), in its block of the pool. The normal matrix is
+   * computed when read (TransformPool.updateNormal()).
    */
   updateWorld(entity: number): void {
     const { flags } = this.NodeState;
@@ -326,27 +340,18 @@ export class Scene implements SceneGraph {
     if (parent !== None) {
       this.updateWorld(parent);
     }
-    const { Transform, WorldMatrix } = this;
-    const matrix = WorldMatrix.matrix;
-    composeAt(
-      matrix,
-      entity * 16,
-      Transform.position,
-      entity * 3,
-      Transform.rotation,
-      entity * 4,
-      Transform.scale,
-      entity * 3
-    );
+    const data = this.transforms.data;
+    const o = entity * stride;
+    composeBlock(data, o);
     let hidden = flags[entity] & NodeFlags.Hidden;
     if (parent !== None) {
-      premultiplyAt(matrix, parent * 16, matrix, entity * 16);
+      premultiplyAt(data, parent * stride + World0, data, o + World0);
       hidden |= flags[parent] & NodeFlags.HiddenInTree;
     }
     flags[entity] =
       (flags[entity] & ~(NodeFlags.Stale | NodeFlags.HiddenInTree)) |
       (hidden ? NodeFlags.HiddenInTree : 0);
-    WorldMatrix.version[entity]++;
+    this.transforms.markUpdated(entity);
   }
 
   /**
@@ -412,9 +417,9 @@ export class Scene implements SceneGraph {
 
   // The world bounds of a renderer, and its place in the indices.
   private updateBounds(entity: number): void {
-    const { MeshRenderer, WorldMatrix } = this;
+    const { MeshRenderer } = this;
     const mesh = MeshRenderer.mesh[entity] as Mesh;
-    const version = WorldMatrix.version[entity];
+    const version = this.transforms.worldVersion(entity);
     if (
       MeshRenderer.boundsVersion[entity] === version &&
       MeshRenderer.meshVersion[entity] === mesh.version &&
@@ -430,8 +435,8 @@ export class Scene implements SceneGraph {
       transformAabb(local, this.worldMatrixView(entity), box);
     } else {
       // No positions: a point at the origin of the entity.
-      const m = WorldMatrix.matrix;
-      const o = entity * 16;
+      const m = this.transforms.data;
+      const o = entity * stride + World0;
       box.setFrom(
         [m[o + 12], m[o + 13], m[o + 14]],
         [m[o + 12], m[o + 13], m[o + 14]]
@@ -499,8 +504,8 @@ export class Scene implements SceneGraph {
 
   // A light or a camera at the position of the entity, looking along its -z.
   private follow(entity: number, object: BaseLight | Camera): void {
-    const m = this.WorldMatrix.matrix;
-    const o = entity * 16;
+    const m = this.transforms.data;
+    const o = entity * stride + World0;
     const position = { x: m[o + 12], y: m[o + 13], z: m[o + 14] };
     if (object instanceof Camera) {
       object.position = position;
@@ -518,8 +523,8 @@ export class Scene implements SceneGraph {
   // --- Reading -----------------------------------------------------------------
 
   /**
-   * The world matrix of an entity, up to date: a view on its row of the
-   * WorldMatrix column (replaced if the column grows).
+   * The world matrix of an entity, up to date: a view on its block of the
+   * pool (replaced if the pool grows).
    */
   worldMatrix(entity: number): Float32Array {
     this.updateWorld(entity);
@@ -527,7 +532,8 @@ export class Scene implements SceneGraph {
   }
 
   private worldMatrixView(entity: number): Float32Array {
-    return this.WorldMatrix.matrix.subarray(entity * 16, entity * 16 + 16);
+    const o = entity * stride + World0;
+    return this.transforms.data.subarray(o, o + 16);
   }
 
   /** The world bounds of a renderer, written into `out`, after the pending changes. */
@@ -772,15 +778,16 @@ export class Scene implements SceneGraph {
 }
 
 /**
- * The render item of a renderer entity, created once: its world matrix is
- * a view on the WorldMatrix column, its bounds those computed by the scene.
+ * The render item of a renderer entity, created once: its transform is the
+ * one of the entity, in the pool of the scene; its bounds are those computed
+ * by the scene.
  */
-export class SceneItem implements WorldRenderItem {
+export class SceneItem implements RenderItem {
   readonly bounds = new Aabb();
-  readonly world: ItemWorld;
+  readonly transform: Transform;
 
   constructor(private readonly _scene: Scene, readonly entity: number) {
-    this.world = new ItemWorld(_scene, entity);
+    this.transform = Transform.of(_scene.transforms, entity);
   }
 
   get mesh(): Mesh {
@@ -793,28 +800,5 @@ export class SceneItem implements WorldRenderItem {
 
   get castShadow(): boolean {
     return this._scene.MeshRenderer.noShadow[this.entity] === 0;
-  }
-}
-
-// The world matrix of an item: a view on its row of the WorldMatrix column,
-// made again when the column grows.
-class ItemWorld {
-  private _view?: Float32Array;
-
-  constructor(
-    private readonly _scene: Scene,
-    private readonly _entity: number
-  ) {}
-
-  get matrix(): Mat4 {
-    const column = this._scene.WorldMatrix.matrix;
-    if (!this._view || this._view.buffer !== column.buffer) {
-      this._view = column.subarray(this._entity * 16, this._entity * 16 + 16);
-    }
-    return this._view;
-  }
-
-  get version(): number {
-    return this._scene.WorldMatrix.version[this._entity];
   }
 }

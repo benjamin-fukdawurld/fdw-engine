@@ -1,70 +1,10 @@
-import type { IQuat, IVec3 } from '@fdw/engine-backend';
+import type { IVec3 } from '@fdw/engine-backend';
+import { Transform } from '@fdw/engine-core';
 import type { BaseLight, Camera, Material, Mesh } from '@fdw/engine-core';
 import type { Volume } from '@fdw/engine-geometry';
 import type { Component, ComponentValues, Schema } from '../ecs/Component';
 import type { SceneNode } from './contracts';
 import { NodeFlags, NodeOptions, Scene } from './Scene';
-
-/** The local transform of a node: its values are copies, set partially. */
-export interface NodeTransform {
-  position: Partial<IVec3>;
-  rotation: Partial<IQuat>;
-  scale: Partial<IVec3>;
-}
-
-// The local transform of a node, read and written in the Transform columns.
-class LocalTransform implements NodeTransform {
-  constructor(
-    private readonly _scene: Scene,
-    private readonly _entity: number
-  ) {}
-
-  get position(): IVec3 {
-    const p = this._scene.Transform.position;
-    const o = this._entity * 3;
-    return { x: p[o], y: p[o + 1], z: p[o + 2] };
-  }
-
-  set position({ x, y, z }: Partial<IVec3>) {
-    const p = this._scene.Transform.position;
-    const o = this._entity * 3;
-    if (x !== undefined) p[o] = x;
-    if (y !== undefined) p[o + 1] = y;
-    if (z !== undefined) p[o + 2] = z;
-    this._scene.touch(this._entity);
-  }
-
-  get rotation(): IQuat {
-    const r = this._scene.Transform.rotation;
-    const o = this._entity * 4;
-    return { x: r[o], y: r[o + 1], z: r[o + 2], w: r[o + 3] };
-  }
-
-  set rotation({ x, y, z, w }: Partial<IQuat>) {
-    const r = this._scene.Transform.rotation;
-    const o = this._entity * 4;
-    if (x !== undefined) r[o] = x;
-    if (y !== undefined) r[o + 1] = y;
-    if (z !== undefined) r[o + 2] = z;
-    if (w !== undefined) r[o + 3] = w;
-    this._scene.touch(this._entity);
-  }
-
-  get scale(): IVec3 {
-    const s = this._scene.Transform.scale;
-    const o = this._entity * 3;
-    return { x: s[o], y: s[o + 1], z: s[o + 2] };
-  }
-
-  set scale({ x, y, z }: Partial<IVec3>) {
-    const s = this._scene.Transform.scale;
-    const o = this._entity * 3;
-    if (x !== undefined) s[o] = x;
-    if (y !== undefined) s[o + 1] = y;
-    if (z !== undefined) s[o + 2] = z;
-    this._scene.touch(this._entity);
-  }
-}
 
 /**
  * A node: the handle of an entity of a scene, with the API of objects. Its
@@ -73,7 +13,7 @@ class LocalTransform implements NodeTransform {
  * throws when used.
  */
 export class Node implements SceneNode {
-  private _transform?: NodeTransform;
+  private _transform?: Transform;
 
   /** @internal Created by Scene.node(). */
   constructor(
@@ -82,11 +22,19 @@ export class Node implements SceneNode {
     private readonly _generation: number
   ) {}
 
-  /** The local transform: set partially, invalidating the branch. */
-  get transform(): NodeTransform {
+  /**
+   * The local transform: a Transform on the block of the entity in the
+   * pool of the scene. Its changes invalidate the branch.
+   */
+  get transform(): Transform {
     this.check();
-    this._transform ??= new LocalTransform(this.scene, this.entity);
+    this._transform ??= Transform.of(this.scene.transforms, this.entity);
     return this._transform;
+  }
+
+  /** @internal Called by the scene when the entity is destroyed. */
+  release(): void {
+    this._transform?.detach();
   }
 
   /** Whether the entity of the node is still alive. */

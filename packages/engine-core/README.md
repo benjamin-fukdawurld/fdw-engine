@@ -17,15 +17,16 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 
 ## Public API
 
-| Export             | Kind  | Description                                                                                                          |
-| ------------------ | ----- | -------------------------------------------------------------------------------------------------------------------- |
-| `Transform`        | class | Position, rotation (quaternion) and scale of an object                                                               |
-| `Camera`           | class | Position, rotation and perspective / orthographic projection                                                         |
-| `BaseLight`        | class | Base class for lights: `ambient`, `diffuse` and `specular` colors                                                    |
-| `DirectionalLight` | class | Light with a `direction`; casts shadows with `castShadow` (see `ShadowOptions`)                                      |
-| `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation                                                |
-| `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles; casts shadows with `castShadow` |
-| `ShadowOptions`    | type  | `bias`, `normalBias` (in texels), `bounds` (the sphere covered by a directional light)                               |
+| Export             | Kind  | Description                                                                                                              |
+| ------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Transform`        | class | Position, rotation (quaternion) and scale of an object: a block of a `TransformPool`, with its world and normal matrices |
+| `TransformPool`    | class | Transforms in blocks of a `Float32Array`, laid out as the object uniforms; grown by a factor (2) when full               |
+| `Camera`           | class | Position, rotation and perspective / orthographic projection                                                             |
+| `BaseLight`        | class | Base class for lights: `ambient`, `diffuse` and `specular` colors                                                        |
+| `DirectionalLight` | class | Light with a `direction`; casts shadows with `castShadow` (see `ShadowOptions`)                                          |
+| `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation                                                    |
+| `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles; casts shadows with `castShadow`     |
+| `ShadowOptions`    | type  | `bias`, `normalBias` (in texels), `bounds` (the sphere covered by a directional light)                                   |
 
 ### Rendering (`render/`)
 
@@ -42,7 +43,7 @@ All scene objects follow the same principles:
 
 - **Snapshots**: each class implements the matching `*Snapshot` type from `@fdw/engine-backend` (`TransformSnapshot`, `CameraSnapshot`, `*LightSnapshot`), so backends can consume them without depending on this package.
 - **Versioning**: every change increments a version counter (`version`, or `transformVersion` / `projectionVersion` for `Camera`). Backends use these counters to recompute derived data (matrices, GPU buffers…) only when needed.
-- **Compact storage**: values are stored in a single `ArrayBuffer`, exposed through `Vec3View` / `QuatView`, which makes uploading them to the GPU cheap.
+- **Pooled transforms**: a `Transform` is a block of a `TransformPool` (the default one, or one given to its constructor): local values, world and normal matrices, laid out as the `object` uniform block, uploaded in one copy. `dispose()` frees the block at once; otherwise the garbage collector does, through a `FinalizationRegistry`.
 - **Partial updates**: setters accept partial values (`transform.position = { y: 2 }` keeps `x` and `z`).
 
 ## Rendering

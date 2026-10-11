@@ -22,7 +22,6 @@ import {
   RenderBackend,
   RenderPipelineDescriptor,
   Surface,
-  TransformCache,
   UniformValue,
 } from '@fdw/engine-backend';
 import { Aabb, Frustum, transformAabb } from '@fdw/engine-geometry';
@@ -38,6 +37,7 @@ import {
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
 import { Transform } from '../Transform';
+import { ObjectBlockSize, TransformLayout } from '../transform/TransformPool';
 import { RenderGraph, TextureHandle } from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
@@ -172,6 +172,9 @@ interface ObjectState extends UniformGroup {
   normalMatrix(): Mat3;
   // The version of the world matrix.
   current(): number;
+  // For the items of a Transform: its block in the pool, whose first bytes
+  // are the object uniform block.
+  pooled?(): { data: Float32Array; byteOffset: number };
   // Version of the world matrix last uploaded.
   version: number;
   // The world bounds of the mesh, for the version of the matrix and of the
@@ -320,6 +323,29 @@ const toneMappingFunctions: Record<string, string> = {
 
 const isHandle = (value: MaterialValue | undefined): boolean =>
   typeof value === 'object' && value !== null && !('length' in value);
+
+// Whether an object uniform block is laid out as the blocks of a
+// TransformPool: the world matrix at 0, the normal matrix (3 columns of 4
+// floats) at 64.
+const poolLayouts = new WeakMap<PhysicalUniformBlock, boolean>();
+function matchesPool(block: PhysicalUniformBlock): boolean {
+  let matches = poolLayouts.get(block);
+  if (matches === undefined) {
+    const world = block.members.find((member) => member.name === 'world');
+    const normal = block.members.find(
+      (member) => member.name === 'normalMatrix'
+    );
+    matches =
+      block.members.length === 2 &&
+      world?.offset === 0 &&
+      world.size === 64 &&
+      normal?.offset === 64 &&
+      normal.size === 48 &&
+      block.size >= ObjectBlockSize;
+    poolLayouts.set(block, matches);
+  }
+  return matches;
+}
 
 // A sphere containing a box.
 const sphereOf = (box: Aabb) => ({
@@ -1242,25 +1268,51 @@ export class Renderer {
     return state;
   }
 
+  // A Transform: its matrices are in its block of the pool, computed when
+  // read after a change.
   private transformState(transform: Transform): ObjectState {
-    const cache = new TransformCache({
-      transform,
-      transformMath: this.backend.transformMath,
-    });
-    // The version of the transform first: a counter, where the version of
-    // the cached matrix walks its dependencies. Asked for each item at each
-    // frame by the culling.
-    let transformVersion = -1;
-    let worldVersion = -1;
+    const pool = transform.pool;
+    let view: Float32Array | undefined;
+    const block = () => {
+      const data = pool.data;
+      if (!view || view.buffer !== data.buffer) {
+        const o = transform.index * TransformLayout.stride;
+        view = data.subarray(o, o + ObjectBlockSize / 4);
+      }
+      return view;
+    };
     return {
-      matrix: () => cache.worldMatrix.value,
-      normalMatrix: () => cache.worldNormalMatrix.value,
-      current: () => {
-        if (transform.version !== transformVersion) {
-          transformVersion = transform.version;
-          worldVersion = cache.worldMatrix.version;
-        }
-        return worldVersion;
+      matrix: () => {
+        pool.update(transform.index);
+        return block().subarray(
+          TransformLayout.world,
+          TransformLayout.world + 16
+        );
+      },
+      normalMatrix: () => {
+        pool.updateNormal(transform.index);
+        // 3 × 3, without the padding of the columns.
+        const n = block();
+        const o = TransformLayout.normal;
+        return Float32Array.of(
+          n[o],
+          n[o + 1],
+          n[o + 2],
+          n[o + 4],
+          n[o + 5],
+          n[o + 6],
+          n[o + 8],
+          n[o + 9],
+          n[o + 10]
+        );
+      },
+      current: () => pool.worldVersion(transform.index),
+      pooled: () => {
+        pool.updateNormal(transform.index);
+        return {
+          data: pool.data,
+          byteOffset: transform.index * TransformLayout.stride * 4,
+        };
       },
       version: -1,
       bindGroups: new Map(),
@@ -1326,7 +1378,9 @@ export class Renderer {
     group: { buffer?: GpuBuffer; bindGroups?: Map<string, GpuBindGroup> },
     block: PhysicalUniformBlock,
     data: ArrayBuffer,
-    label: string
+    label: string,
+    dataOffset = 0,
+    size?: number
   ): boolean {
     const created = !group.buffer || group.buffer.size !== block.size;
     if (created) {
@@ -1338,7 +1392,7 @@ export class Renderer {
       });
       group.bindGroups?.clear();
     }
-    (group.buffer as GpuBuffer).write(0, data);
+    (group.buffer as GpuBuffer).write(0, data, dataOffset, size);
     return created;
   }
 
@@ -1366,6 +1420,20 @@ export class Renderer {
     // Reading the version recomputes the matrices if the transform changed.
     const version = state.current();
     if (state.buffer && state.version === version) {
+      return;
+    }
+    if (state.pooled && matchesPool(block)) {
+      // The block of the pool is the uniform block: one copy.
+      const { data, byteOffset } = state.pooled();
+      this.upload(
+        state,
+        block,
+        data.buffer as ArrayBuffer,
+        'object uniforms',
+        byteOffset,
+        ObjectBlockSize
+      );
+      state.version = version;
       return;
     }
     const values: Record<string, UniformValue> = {

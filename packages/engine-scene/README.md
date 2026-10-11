@@ -50,7 +50,8 @@ renderer.render({ source: scene, camera, surface });
 ```
 
 - **Nodes** are handles on entities: `transform` (partial values), `worldMatrix`, `parent`, `children`, `add`, `remove`, `attach(component, values)`, `setMesh`, `setLight`, `setCamera`, `visible`, `layers`, `static`, `occluder`. A node whose entity was removed throws when used.
-- **Components of the scene**, for systems: `Transform`, `WorldMatrix`, `Hierarchy`, `NodeState`, `MeshRenderer`, `Light`, `CameraView`. A system writing the `Transform` columns calls `scene.touch(entity)` for each entity it moved.
+- **Transforms**: in `scene.transforms`, a `TransformPool` indexed by entity (`@fdw/engine-core`). `node.transform` is a `Transform` on the block of the entity. A system writes the local values of entity `e` at `e * TransformLayout.stride` of `scene.transforms.data`, then calls `scene.transforms.touch(e)`.
+- **Components of the scene**, for systems: `Hierarchy`, `NodeState`, `MeshRenderer`, `Light`, `CameraView`.
 - **Invalidation**: a change marks the branch stale; a world matrix is recomputed when read; every query (the rendering, a raycast) first applies the pending changes (`scene.flush()`).
 - **Indices**: the renderers are in two loose octrees (`@fdw/engine-geometry`), static and dynamic. Static nodes are indexed at once, at the next flush.
 - **Queries**: `scene.raycast(ray, visit)`, nearest first; `scene.queryVolume(volume, visit)`, with any `Volume`; options `layers` and `hidden`. Entity versions (`raycastEntities`, `queryVolumeEntities`) for the systems.

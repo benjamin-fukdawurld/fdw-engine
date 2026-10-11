@@ -3,54 +3,6 @@
 // allocation.
 
 /**
- * Writes at `o` of `out` the matrix of a translation, a rotation (unit
- * quaternion) and a scale, read at `p`, `r` and `s` of their columns.
- */
-export function composeAt(
-  out: Float32Array,
-  o: number,
-  position: Float32Array,
-  p: number,
-  rotation: Float32Array,
-  r: number,
-  scale: Float32Array,
-  s: number
-): void {
-  const x = rotation[r];
-  const y = rotation[r + 1];
-  const z = rotation[r + 2];
-  const w = rotation[r + 3];
-  const sx = scale[s];
-  const sy = scale[s + 1];
-  const sz = scale[s + 2];
-  const xx = x * x;
-  const yy = y * y;
-  const zz = z * z;
-  const xy = x * y;
-  const xz = x * z;
-  const yz = y * z;
-  const wx = w * x;
-  const wy = w * y;
-  const wz = w * z;
-  out[o] = (1 - 2 * (yy + zz)) * sx;
-  out[o + 1] = 2 * (xy + wz) * sx;
-  out[o + 2] = 2 * (xz - wy) * sx;
-  out[o + 3] = 0;
-  out[o + 4] = 2 * (xy - wz) * sy;
-  out[o + 5] = (1 - 2 * (xx + zz)) * sy;
-  out[o + 6] = 2 * (yz + wx) * sy;
-  out[o + 7] = 0;
-  out[o + 8] = 2 * (xz + wy) * sz;
-  out[o + 9] = 2 * (yz - wx) * sz;
-  out[o + 10] = (1 - 2 * (xx + yy)) * sz;
-  out[o + 11] = 0;
-  out[o + 12] = position[p];
-  out[o + 13] = position[p + 1];
-  out[o + 14] = position[p + 2];
-  out[o + 15] = 1;
-}
-
-/**
  * out[o] = a[ao] × out[o]: the parent matrix applied to a local one, in
  * place. Affine matrices only (last row 0, 0, 0, 1).
  */

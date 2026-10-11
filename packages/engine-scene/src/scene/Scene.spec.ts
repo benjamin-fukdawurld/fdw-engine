@@ -5,6 +5,8 @@ import {
   PointLight,
   Renderer,
   SpotLight,
+  Transform,
+  TransformLayout,
 } from '@fdw/engine-core';
 import {
   colorGraph,
@@ -86,7 +88,8 @@ describe('Scene', () => {
     const a1 = a.add();
     const b = scene.root.add({ name: 'b' });
     scene.flush();
-    const version = (node: typeof a) => scene.WorldMatrix.version[node.entity];
+    const version = (node: typeof a) =>
+      scene.transforms.worldVersion(node.entity);
     const before = [a, a1, b].map(version);
     a.transform.position = { y: 3 };
     a.transform.position = { y: 4 };
@@ -98,6 +101,30 @@ describe('Scene', () => {
       before[1] + 1,
       before[2],
     ]);
+  });
+
+  it('gives Transforms on the pool of the scene, and lets systems write it', () => {
+    const scene = new Scene();
+    const parent = scene.root.add({ scale: { x: 2, y: 1, z: 1 } });
+    const child = parent.add({ position: { x: 1 } });
+    expect(child.transform).toBeInstanceOf(Transform);
+    expect(child.transform.pool).toBe(scene.transforms);
+    // A system: local values written in the pool, then signaled.
+    const { data } = scene.transforms;
+    data[
+      parent.entity * TransformLayout.stride + TransformLayout.position + 1
+    ] = 5;
+    scene.transforms.touch(parent.entity);
+    expect(child.worldPosition).toEqual({ x: 2, y: 5, z: 0 });
+    // The normal matrix of the child: the inverse scale of its parent.
+    scene.transforms.updateNormal(child.entity);
+    const n = scene.transforms.data;
+    const o = child.entity * TransformLayout.stride + TransformLayout.normal;
+    expect([n[o], n[o + 5], n[o + 10]]).toEqual([0.5, 1, 1]);
+    // A transform kept after its node is removed cannot be used.
+    const kept = child.transform;
+    child.remove();
+    expect(() => kept.position.x).toThrow(/was disposed/);
   });
 
   it('keeps its index up to date before each query', () => {
@@ -153,13 +180,13 @@ describe('Scene', () => {
     // Points (the test triangle has its vertices at the origin): from -9 to
     // 9, the walls at ±10 are on the planes, outside after rounding.
     expect(seen(scene, box10())).toHaveLength(19);
-    const versions = walls.map(
-      (wall) => scene.WorldMatrix.version[wall.entity]
+    const versions = walls.map((wall) =>
+      scene.transforms.worldVersion(wall.entity)
     );
     scene.flush();
-    expect(walls.map((wall) => scene.WorldMatrix.version[wall.entity])).toEqual(
-      versions
-    );
+    expect(
+      walls.map((wall) => scene.transforms.worldVersion(wall.entity))
+    ).toEqual(versions);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     walls[0].transform.position = { x: 0 };
     walls[1].transform.position = { x: 1 };
