@@ -50,3 +50,6 @@ vitest.config.*.timestamp*
 
 /docs
 *.zip
+
+# Playwright reports of the docs
+/apps/docs/playwright-report

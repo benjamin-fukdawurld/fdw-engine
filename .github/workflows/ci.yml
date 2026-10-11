@@ -68,7 +68,7 @@ jobs:
     timeout-minutes: 60
     env:
       # A suite that cannot run fails instead of being skipped.
-      FDW_REQUIRE_SUITES: vulkan,dawn,hlsl,window
+      FDW_REQUIRE_SUITES: vulkan,dawn,hlsl,glsl,window
     steps:
       - uses: actions/checkout@v4
         with:

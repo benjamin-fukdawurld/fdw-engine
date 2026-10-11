@@ -36,23 +36,29 @@ it('computes the functions of screen-uv per pixel', async () => {
 });
 ```
 
-| File                     | Backend                                  | Needs                                            |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------ |
-| `dawn.spec.ts`           | WebGPU on Dawn, in Node                  | the `webgpu` package (installed)                 |
-| `webgl2.browser.spec.ts` | WebGL2, in headless Chromium             | `npx playwright install chromium-headless-shell` |
-| `vulkan.spec.ts`         | Vulkan, with the validation layer        | the Vulkan SDK, and the addon built              |
-| `hlsl.spec.ts`           | Every program of the suite, through HLSL | the Vulkan SDK (DXC, spirv-val, spirv-cross)     |
+| File                     | Backend                                         | Needs                                                          |
+| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------- |
+| `dawn.spec.ts`           | WebGPU on Dawn, in Node                         | the `webgpu` package (installed)                               |
+| `webgl2.browser.spec.ts` | WebGL2, in headless Chromium                    | `npx playwright install chromium-headless-shell`               |
+| `vulkan.spec.ts`         | Vulkan, with the validation layer               | the Vulkan SDK, and the addon built                            |
+| `programs.spec.ts`       | Every program of the suite, in HLSL and GLSL ES | the Vulkan SDK (DXC, spirv-val, spirv-cross, glslangValidator) |
 
 ```sh
-source <sdk>/setup-env.sh     # for the Vulkan and HLSL tests
+source <sdk>/setup-env.sh     # for the Vulkan, HLSL and GLSL tests
 npx nx test rendering-tests
 ```
 
-Without the SDK, the Vulkan and HLSL tests are skipped, not failed. On
-Vulkan, a test fails if the validation layer reports anything.
-`hlsl.spec.ts` records the programs compiled by the suite, compiles each of
-them with DXC, validates the SPIR-V with `spirv-val`, and compares the
-uniform offsets of the layout with the reflection of `spirv-cross`.
+Without the SDK, the Vulkan, HLSL and GLSL tests are skipped, not failed —
+unless they are required (see [Continuous integration](#continuous-integration)).
+On Vulkan, a test fails if the validation layer reports anything.
+`programs.spec.ts` records the programs compiled by the suite, then:
+
+- compiles each of them in HLSL with DXC, validates the SPIR-V with
+  `spirv-val`, and compares the uniform offsets of the layout with the
+  reflection of `spirv-cross`;
+- generates those WebGL2 can run (no compute stage, no storage buffer) in
+  GLSL ES 3.00, and validates and links them with `glslangValidator`,
+  stricter than the compilers of the browsers.
 
 Pixel tests check **exact** values where the GPU computes them exactly
 (clears, unlit colors), and ranges elsewhere (edges, filtering): the GPUs
@@ -71,9 +77,46 @@ The `test` targets depend on `build-native`, and their inputs include
 graph on the fake backend: `npx vitest bench` in `packages/engine-core`.
 Run them before and after a change on a hot path.
 
-## Before submitting
+## Continuous integration
+
+Every pull request runs on GitHub Actions (`.github/workflows/`), and must
+be green to be merged into `main`:
+
+| Check                     | What it runs                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Check`                   | The format, then typecheck, lint and tests of the projects affected by the change                    |
+| `Native and rendering`    | The projects tagged `gpu`, when affected: the addons, Dawn and the rendering suite, on software GPUs |
+| `Build the documentation` | The site, and its internal links and anchors                                                         |
+
+The runners have no GPU: Vulkan runs on **lavapipe** (the software Vulkan
+of Mesa), WebGL2 in Chromium on **SwiftShader**, the windows in a virtual
+display (Xvfb). The projects that need a GPU, a SDK or a display carry the
+tag `gpu` (`engine-webgpu`, `engine-native`, `engine-vulkan`,
+`rendering-tests`).
+
+On a workstation, a suite whose GPU, SDK, addon or display is missing is
+skipped. In the CI, `FDW_REQUIRE_SUITES` lists the suites that must run
+(`vulkan,dawn,hlsl,glsl,window`): a missing one fails instead of passing
+silently. A new suite of this kind calls `canRun(name, ready, reason)` of
+`@fdw/engine-backend/testing`.
+
+To run the GPU suites as the CI does, on lavapipe:
 
 ```sh
+source <sdk>/setup-env.sh
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json \
+FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window \
+npx nx run-many -t test -p tag:gpu
+```
+
+## Before submitting
+
+Work on a branch, and open a pull request: `main` only receives squashed
+pull requests.
+
+```sh
+npm run format:check         # or npm run format, to fix it
 npx nx affected -t typecheck lint test
 npx nx run docs:build        # if the documentation changed
+npm run docs:links           # then its links
 ```

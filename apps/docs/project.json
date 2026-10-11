@@ -7,21 +7,34 @@
   "targets": {
     "dev": {
       "command": "astro dev",
-      "options": { "cwd": "apps/docs" },
+      "options": {
+        "cwd": "apps/docs"
+      },
       "continuous": true
     },
     "build": {
       "command": "astro build",
-      "options": { "cwd": "apps/docs" },
+      "options": {
+        "cwd": "apps/docs"
+      },
       "cache": true,
       "inputs": ["default", "^production"],
       "outputs": ["{projectRoot}/dist"]
     },
     "preview": {
       "command": "astro preview",
-      "options": { "cwd": "apps/docs" },
+      "options": {
+        "cwd": "apps/docs"
+      },
       "dependsOn": ["build"],
       "continuous": true
+    },
+    "visual": {
+      "command": "playwright test",
+      "options": {
+        "cwd": "apps/docs"
+      },
+      "dependsOn": ["build"]
     }
   }
 }

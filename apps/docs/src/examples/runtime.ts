@@ -1,6 +1,8 @@
 // The runtime of the live examples: one engine per page (WebGPU where the
 // browser has it, else WebGL2; ?backend=webgl2 forces it), a surface per
-// canvas, a frame loop running while the canvas is visible.
+// canvas, a frame loop running while the canvas is visible. ?time=<seconds>
+// stops the clock at that time, for the reference images of the CI; the
+// canvas counts its frames in data-frames.
 import type { Engine, RenderBackend, Surface } from '@fdw/engine-backend';
 import { WebGl2CanvasSurface, WebGl2Engine } from '@fdw/engine-webgl2';
 import { WebGpuEngine, WebGpuSurface } from '@fdw/engine-webgpu';
@@ -90,12 +92,16 @@ export async function startExample(
       visible = entry.isIntersecting;
     }).observe(canvas);
     const start = performance.now();
+    const fixed = new URLSearchParams(window.location.search).get('time');
+    let count = 0;
     const loop = () => {
       if (visible) {
-        const time = (performance.now() - start) / 1000;
+        const time =
+          fixed !== null ? Number(fixed) : (performance.now() - start) / 1000;
         for (const frame of frames) {
           frame(time);
         }
+        canvas.dataset['frames'] = String(++count);
       }
       requestAnimationFrame(loop);
     };

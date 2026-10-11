@@ -38,11 +38,11 @@ Deux jobs Linux en parallèle :
 
 **Quels projets.** Les projets qui ont besoin du GPU, d'un SDK ou d'un écran portent le tag `gpu` (`engine-webgpu`, pour ses tests sur Dawn, `engine-native`, `engine-vulkan`, `rendering-tests`) : `check` les exclut (`nx affected --exclude=tag:gpu`), `native` ne lance qu'eux, et seulement s'ils sont touchés par le changement (`nx show projects --affected --projects tag:gpu`). Sinon `native` s'arrête tout de suite, en succès : le statut reste exigible pour fusionner. Les fenêtres tournent dans un écran virtuel (Xvfb).
 
-**Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,window` fait échouer les tests quand une suite exigée ne peut pas tourner : `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`, appelée par chaque suite. WebGL2 n'en a pas besoin : sans Chromium, sa suite échoue déjà.
+**Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window` fait échouer les tests quand une suite exigée ne peut pas tourner : `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`, appelée par chaque suite. WebGL2 n'en a pas besoin : sans Chromium, sa suite échoue déjà.
 
 **Windows et macOS** ne sont pas dans P0 : les addons n'y sont pas encore construits (c'est la phase P11). Ils s'ajouteront alors, en matrice, sur `main` seulement.
 
-**Le code généré** : le WGSL est déjà validé par Dawn (Tint) dans la suite de rendu, le HLSL par DXC et spirv-val. On ajoute le GLSL ES (WebGL2) par `glslangValidator` (paquet `glslang-tools`), sur les programmes de la suite, comme `hlsl.spec.ts` le fait pour le HLSL. naga demanderait une chaîne Rust pour un gain faible face à Tint : écarté.
+**Le code généré** : le WGSL est déjà validé par Dawn (Tint) dans la suite de rendu, le HLSL par DXC et spirv-val. On ajoute le GLSL ES (WebGL2) par `glslangValidator` (dans le SDK Vulkan), sur les programmes de la suite que WebGL2 peut exécuter (ni calcul, ni storage buffer) : `programs.spec.ts`, qui remplace `hlsl.spec.ts`, enregistre les programmes une fois et valide les deux langages. naga demanderait une chaîne Rust pour un gain faible face à Tint : écarté.
 
 ## 4. `docs.yml` : la documentation
 
