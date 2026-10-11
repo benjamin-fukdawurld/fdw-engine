@@ -48,7 +48,7 @@ Deux jobs Linux en parallèle :
 
 - Construit le site (`nx run docs:build`), avec la référence API.
 - Vérifie les liens internes, ancres comprises : `tools/docs/check-links.mjs` (`npm run docs:links`), sur le site construit.
-- **Captures des exemples vivants** : Playwright ouvre chaque page d'exemple dans Chromium (WebGL2 par SwiftShader, WebGPU par SwiftShader), attend quelques frames, compare la capture à une référence versionnée (`apps/docs/tests/screenshots/`), avec une tolérance. Une différence publie l'image de l'écart en artefact. Les exemples animés sont capturés à un temps fixe (un paramètre de l'URL fige l'horloge).
+- **Captures des exemples vivants** : `@playwright/test` (`npx nx run docs:visual`) ouvre la page de chaque exemple dans Chromium, sur WebGL2 et sur WebGPU (SwiftShader), et compare le canvas seul (pas les polices) à une référence versionnée (`apps/docs/tests/screenshots/`), avec une tolérance (1 % des pixels). L'horloge des exemples est figée (`?time=1.5`) et le rendu s'arrête après quelques frames (`?frames=10`) : l'image est la même à chaque exécution, et le CPU est libre pendant la capture. Sur WebGL2, un exemple qui demande du calcul doit afficher son message. Une différence publie le rapport et les images de l'écart en artefact ; lancé à la main avec `update-screenshots`, le workflow rend de nouvelles références sur la machine de la CI.
 - **Publie** sur GitHub Pages, sous `/fdw-engine/`, depuis `main`. À faire une fois dans les réglages du dépôt : Pages → Source → GitHub Actions.
 
 ## 5. Les mesures

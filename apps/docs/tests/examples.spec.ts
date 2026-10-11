@@ -15,16 +15,19 @@ const examples: Record<string, string> = {
   'maze-4': 'game/the-game/',
 };
 
+// The examples that need compute shaders: on WebGL2, they say so.
+const needsCompute = new Set(['compute-waves']);
+
 // The clock of the examples, stopped: the same image at every run.
 const time = 1.5;
-// Frames rendered before the capture: the shadows, the caches and the
-// smoothed cameras settle.
+// Frames rendered before the capture, then the rendering stops: the
+// shadows, the caches and the smoothed cameras settle, and the image stays.
 const frames = 10;
 
 for (const [name, page] of Object.entries(examples)) {
   test(name, async ({ page: browser }, info) => {
     const backend = info.project.name;
-    const query = `time=${time}${
+    const query = `time=${time}&frames=${frames}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
     }`;
     await browser.goto(`/fdw-engine/${page}?${query}`);
@@ -32,6 +35,10 @@ for (const [name, page] of Object.entries(examples)) {
     await example.scrollIntoViewIfNeeded();
     const canvas = example.locator('canvas');
     const status = example.locator('.fdw-example-status');
+    if (backend === 'webgl2' && needsCompute.has(name)) {
+      await expect(status).toContainText('needs compute shaders');
+      return;
+    }
     // The backend it runs on: the WebGPU project needs WebGPU, not the
     // fallback to WebGL2.
     await expect(status).toContainText(
@@ -45,7 +52,7 @@ for (const [name, page] of Object.entries(examples)) {
           timeout: 30_000,
         }
       )
-      .toBeGreaterThanOrEqual(frames);
+      .toBe(frames);
     await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`);
   });
 }

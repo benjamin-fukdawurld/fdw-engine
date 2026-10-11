@@ -109,6 +109,28 @@ FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window \
 npx nx run-many -t test -p tag:gpu
 ```
 
+### The reference images of the examples
+
+Each live example of the documentation is rendered in headless Chromium,
+on WebGL2 and on WebGPU, both on SwiftShader, and its canvas compared to a
+reference image (`apps/docs/tests/screenshots/`):
+
+```sh
+npx nx run docs:visual                         # builds the site, compares
+npx nx run docs:visual -- --update-snapshots   # writes new references
+```
+
+The examples run with their clock stopped and stop after a few frames
+(`?time=1.5&frames=10`): the image is the same at every run. An example
+that needs compute shaders shows its message on WebGL2 instead.
+
+When a change modifies what an example draws, update its references, look
+at them, and commit them with the change. If the CI renders a little
+differently from your machine, run the **Documentation** workflow by hand
+with **update-screenshots**: it renders the references on the CI machine
+and gives them as an artifact. When a comparison fails, the report with the
+images of the difference is an artifact of the run.
+
 ## Before submitting
 
 Work on a branch, and open a pull request: `main` only receives squashed
