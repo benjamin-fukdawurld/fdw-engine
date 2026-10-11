@@ -2,6 +2,7 @@ import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { BuiltinTypes, GraphBuilder } from '@fdw/engine-shader';
 import type { WebGpuEngine } from '@fdw/engine-webgpu';
 import { WebGpuOffscreenSurface } from '@fdw/engine-webgpu';
+import { canRun } from '@fdw/engine-backend/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDawnEngine } from './dawn';
 import { DawnWindowSurface } from './DawnWindowSurface';
@@ -78,7 +79,9 @@ const camera = new Camera({
   },
 });
 
-describe.skipIf(!dawn)('DawnWindowSurface', () => {
+describe.skipIf(
+  !canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load')
+)('DawnWindowSurface', () => {
   let engine: WebGpuEngine;
   beforeAll(async () => {
     engine = await createDawnEngine();

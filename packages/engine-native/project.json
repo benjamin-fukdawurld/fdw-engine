@@ -3,7 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/engine-native/src",
   "projectType": "library",
-  "tags": [],
+  "tags": ["gpu"],
   "targets": {
     "build-native": {
       "command": "node scripts/build.mjs",

@@ -36,7 +36,9 @@ Deux jobs Linux en parallèle :
    - construit les addons (`engine-native`, `engine-vulkan`) ;
    - lance les tests des packages natifs et la suite de rendu : Vulkan sur lavapipe, Dawn, HLSL (DXC et spirv-val), WebGL2 dans Chromium avec SwiftShader.
 
-**Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,webgl2` fait échouer les tests quand une suite exigée ne peut pas tourner.
+**Quels projets.** Les projets qui ont besoin du GPU, d'un SDK ou d'un écran portent le tag `gpu` (`engine-native`, `engine-vulkan`, `rendering-tests`) : `check` les exclut (`nx affected --exclude=tag:gpu`), `native` ne lance qu'eux, et seulement s'ils sont touchés par le changement (`nx show projects --affected --projects tag:gpu`). Sinon `native` s'arrête tout de suite, en succès : le statut reste exigible pour fusionner. Les fenêtres tournent dans un écran virtuel (Xvfb).
+
+**Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,window` fait échouer les tests quand une suite exigée ne peut pas tourner : `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`, appelée par chaque suite. WebGL2 n'en a pas besoin : sans Chromium, sa suite échoue déjà.
 
 **Windows et macOS** ne sont pas dans P0 : les addons n'y sont pas encore construits (c'est la phase P11). Ils s'ajouteront alors, en matrice, sur `main` seulement.
 
@@ -45,7 +47,7 @@ Deux jobs Linux en parallèle :
 ## 4. `docs.yml` : la documentation
 
 - Construit le site (`nx run docs:build`), avec la référence API.
-- Vérifie les liens internes, ancres comprises : le plugin `starlight-links-validator` (ou le script de vérification utilisé jusqu'ici, versionné dans `tools/`).
+- Vérifie les liens internes, ancres comprises : `tools/docs/check-links.mjs` (`npm run docs:links`), sur le site construit.
 - **Captures des exemples vivants** : Playwright ouvre chaque page d'exemple dans Chromium (WebGL2 par SwiftShader, WebGPU par SwiftShader), attend quelques frames, compare la capture à une référence versionnée (`apps/docs/tests/screenshots/`), avec une tolérance. Une différence publie l'image de l'écart en artefact. Les exemples animés sont capturés à un temps fixe (un paramètre de l'URL fige l'horloge).
 - **Publie** sur GitHub Pages, sous `/fdw-engine/`, depuis `main`. À faire une fois dans les réglages du dépôt : Pages → Source → GitHub Actions.
 
@@ -59,14 +61,22 @@ Deux jobs Linux en parallèle :
 - le render graph mesure chacune de ses passes quand c'est demandé ; `renderer.stats` donne leurs durées GPU (en millisecondes, avec une frame de retard) à côté des compteurs actuels ;
 - c'est un outil de poste : en CI, les GPU sont logiciels, leurs temps ne disent rien du matériel.
 
-## 6. Ce que P0 laisse en place
+## 6. Le flux de travail
+
+Plus de commit direct sur `main` : chaque changement passe par une branche (`FDW-P0`, …) et une pull request.
+
+- **Une règle sur `main`** (un ruleset du dépôt) : pas de push direct, pas de force push, pas de suppression ; une pull request obligatoire ; les statuts `Check`, `Native and rendering` et `Build the documentation` verts pour fusionner ; les conversations résolues.
+- **Fusion par squash** : un commit par pull request sur `main`, un historique linéaire ; les branches supprimées après la fusion.
+- **Le format en local** : `npm run format` formate les fichiers suivis par git, `npm run format:check` vérifie comme la CI.
+
+## 7. Ce que P0 laisse en place
 
 - Une CI verte exigée sur les pull requests (une règle de protection de `main`, à activer dans les réglages du dépôt).
 - La doc en ligne à chaque push sur `main`.
 - Des benchmarks comparés à chaque push, et des durées GPU par passe pour profiler P1.
 - Une page « Contribuer » de la doc mise à jour : ce que la CI vérifie, comment reproduire un job sur son poste, comment mettre à jour une capture de référence.
 
-## 7. Les étapes
+## 8. Les étapes
 
 1. `ci.yml`, job `check`.
 2. `ci.yml`, job `native` : lavapipe, le SDK Vulkan, les addons, `FDW_REQUIRE_SUITES`. Le risque principal : Dawn et le Vulkan logiciel (Dawn peut refuser un adaptateur CPU ; sinon, SwiftShader pour Dawn).

@@ -3,7 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "tests/rendering/src",
   "projectType": "library",
-  "tags": ["type:test"],
+  "tags": ["type:test", "gpu"],
   "targets": {
     "test": {
       "inputs": [

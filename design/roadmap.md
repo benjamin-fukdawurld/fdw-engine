@@ -35,11 +35,14 @@ Les phases sont dans l'ordre de leurs dépendances (§4). Certaines peuvent se c
 
 ### P0. Socle
 
+_En cours_, sur la branche `FDW-P0` : le design est dans [ci.md](ci.md).
+
 Avant d'optimiser et d'ajouter des briques, que chaque changement soit vérifié automatiquement.
 
+- **Un flux de travail par pull request** : plus de commit direct sur `main`, une CI verte exigée pour fusionner.
 - **CI** : typecheck, lint et tests de tous les projets ; la suite de rendu sur lavapipe (Vulkan logiciel) et dans Chromium headless (WebGL2, et WebGPU par SwiftShader).
 - **Documentation** : construction et publication (GitHub Pages), vérification des liens, captures des exemples vivants comparées à des références.
-- **Outils du material graph** : validation du code généré en CI (naga, glslang, DXC).
+- **Outils du material graph** : validation du code généré en CI (le WGSL par Tint dans Dawn, le GLSL ES par glslang, le HLSL par DXC).
 - **Mesures** : des benchmarks de référence suivis dans le temps (renderer, scène, labyrinthe), et les requêtes de timestamps GPU (Vulkan, WebGPU) pour profiler les passes.
 
 ### P1. Performance du rendu

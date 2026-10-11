@@ -3,8 +3,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { addonPath } from './addon';
 import { VulkanEngine } from './VulkanEngine';
 import { VulkanOffscreenSurface } from './VulkanOffscreenSurface';
+import { canRun } from '@fdw/engine-backend/testing';
 
-const built = existsSync(addonPath());
+const built = canRun(
+  'vulkan',
+  existsSync(addonPath()),
+  'the Vulkan addon is not built (VULKAN_SDK)'
+);
 
 describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
   let engine: VulkanEngine;

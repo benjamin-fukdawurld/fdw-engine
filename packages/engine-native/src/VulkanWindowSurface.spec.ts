@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { canRun } from '@fdw/engine-backend/testing';
 import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder } from '@fdw/engine-shader';
 import { addonPath, VulkanEngine } from '@fdw/engine-vulkan';
@@ -7,10 +8,13 @@ import { NativeWindow } from './NativeWindow';
 import { VulkanWindowSurface } from './VulkanWindowSurface';
 
 // A swapchain on a hidden window: needs the two addons and a display.
-const ready =
+const ready = canRun(
+  'window',
   existsSync(new URL('../build/fdw_native.node', import.meta.url)) &&
-  existsSync(addonPath()) &&
-  !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY']);
+    existsSync(addonPath()) &&
+    !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY']),
+  'needs the two addons and a display'
+);
 
 describe.skipIf(!ready)('VulkanWindowSurface', () => {
   let engine: VulkanEngine;

@@ -19,11 +19,11 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 
 ### Engine & surface
 
-| Export             | Kind      | Description                                                              |
-| ------------------ | --------- | ------------------------------------------------------------------------ |
-| `Engine`           | interface | Engine lifecycle: `init`, `pause`, `resume`, `destroy`, `state` signal   |
-| `EngineState`      | type      | `uninitialized` · `initializing` · `ready` · `paused` · `destroying` · `destroyed` |
-| `Surface`          | interface | Where frames are rendered: `width`, `height`, `format`, `init(engine)`, `getCurrentTarget()`, `present()` |
+| Export        | Kind      | Description                                                                                               |
+| ------------- | --------- | --------------------------------------------------------------------------------------------------------- |
+| `Engine`      | interface | Engine lifecycle: `init`, `pause`, `resume`, `destroy`, `state` signal                                    |
+| `EngineState` | type      | `uninitialized` · `initializing` · `ready` · `paused` · `destroying` · `destroyed`                        |
+| `Surface`     | interface | Where frames are rendered: `width`, `height`, `format`, `init(engine)`, `getCurrentTarget()`, `present()` |
 
 `Engine` extends `EventTarget`, exposes its state as a [Preact signal](https://github.com/preactjs/signals), and its `RenderBackend` once ready.
 
@@ -31,84 +31,84 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 
 An abstract rendering API modelled on WebGPU, which maps almost directly onto Vulkan, Metal and Direct3D 12.
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `RenderBackend` | interface | Everything a renderer needs: buffer, texture and pipeline factories, math, render targets, command encoding and submission |
-| `GpuPipelineFactory` | interface | Physical layouts, render pipelines, bind group layouts (shared between equal groups) and bind groups |
-| `RenderPipelineDescriptor`, `PrimitiveState`, `DepthStencilState`, `ColorTargetState`, `BlendState` | type | Pipeline description (`targets: []` for depth-only passes, `depthBias` / `depthBiasSlopeScale`, `sampleCount`); `alphaBlending` is the standard blend state |
-| `GpuCommandEncoder`, `GpuRenderPassEncoder`, `RenderPassDescriptor`, `GpuRenderTarget` | interface | Command recording (`setViewport` for a tile of an atlas; passes without color attachment; `resolveTarget` of a multisampled color attachment) and render targets |
-| `BackendCapabilities` | type | The compiler capabilities, and `renderableFormats` (`rgba16float` for HDR) |
-| `GpuComputePassEncoder`, `ComputePipelineDescriptor`, `GpuComputePipeline` | interface | Compute stages: `createComputePipeline()`, `beginComputePass()`, `dispatchWorkgroups()` (direct or indirect); refused on backends without the `compute` capability (WebGL2) |
-| `matchVertexLayout()`, `isVertexFormatCompatible()`, `meshSemantics()` | function | Matching of the program inputs with the mesh attributes, by semantic |
+| Export                                                                                              | Kind      | Description                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RenderBackend`                                                                                     | interface | Everything a renderer needs: buffer, texture and pipeline factories, math, render targets, command encoding and submission                                                  |
+| `GpuPipelineFactory`                                                                                | interface | Physical layouts, render pipelines, bind group layouts (shared between equal groups) and bind groups                                                                        |
+| `RenderPipelineDescriptor`, `PrimitiveState`, `DepthStencilState`, `ColorTargetState`, `BlendState` | type      | Pipeline description (`targets: []` for depth-only passes, `depthBias` / `depthBiasSlopeScale`, `sampleCount`); `alphaBlending` is the standard blend state                 |
+| `GpuCommandEncoder`, `GpuRenderPassEncoder`, `RenderPassDescriptor`, `GpuRenderTarget`              | interface | Command recording (`setViewport` for a tile of an atlas; passes without color attachment; `resolveTarget` of a multisampled color attachment) and render targets            |
+| `BackendCapabilities`                                                                               | type      | The compiler capabilities, and `renderableFormats` (`rgba16float` for HDR)                                                                                                  |
+| `GpuComputePassEncoder`, `ComputePipelineDescriptor`, `GpuComputePipeline`                          | interface | Compute stages: `createComputePipeline()`, `beginComputePass()`, `dispatchWorkgroups()` (direct or indirect); refused on backends without the `compute` capability (WebGL2) |
+| `matchVertexLayout()`, `isVertexFormatCompatible()`, `meshSemantics()`                              | function  | Matching of the program inputs with the mesh attributes, by semantic                                                                                                        |
 
 ### GPU resources (`gpu/`)
 
-| Export                                   | Kind      | Description                                              |
-| ---------------------------------------- | --------- | -------------------------------------------------------- |
-| `GpuBuffer` / `GpuBufferFactory`         | interface | GPU buffer and its factory                               |
-| `GpuBufferUsage`, `GpuBufferUpdateFrequency` | type  | `uniform`, `storage`, `vertex`, `index`, `copy-src`, `copy-dst` · `static`, `dynamic`, `stream` |
-| `GpuTexture` / `GpuTextureFactory`       | interface | GPU texture and its factory                              |
-| `GpuTextureConfiguration`, `GpuTextureType`, `GpuTextureFormat` | type | Texture description (`2d`, `2d-array`, `3d`, `cube`, formats, usages, `sampleCount` of multisampled attachments) |
-| `GpuSampler` / `GpuSamplerFactory`       | interface | Texture sampler and its factory                          |
-| `GpuSamplerConfiguration`                | type      | Wrap / filter modes, anisotropy, `compare` (comparison samplers) |
-| `GpuShaderStageName`                     | type      | `vertex` · `fragment` · `compute`                        |
+| Export                                                          | Kind      | Description                                                                                                      |
+| --------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| `GpuBuffer` / `GpuBufferFactory`                                | interface | GPU buffer and its factory                                                                                       |
+| `GpuBufferUsage`, `GpuBufferUpdateFrequency`                    | type      | `uniform`, `storage`, `vertex`, `index`, `copy-src`, `copy-dst` · `static`, `dynamic`, `stream`                  |
+| `GpuTexture` / `GpuTextureFactory`                              | interface | GPU texture and its factory                                                                                      |
+| `GpuTextureConfiguration`, `GpuTextureType`, `GpuTextureFormat` | type      | Texture description (`2d`, `2d-array`, `3d`, `cube`, formats, usages, `sampleCount` of multisampled attachments) |
+| `GpuSampler` / `GpuSamplerFactory`                              | interface | Texture sampler and its factory                                                                                  |
+| `GpuSamplerConfiguration`                                       | type      | Wrap / filter modes, anisotropy, `compare` (comparison samplers)                                                 |
+| `GpuShaderStageName`                                            | type      | `vertex` · `fragment` · `compute`                                                                                |
 
 ### GPU data layout (`gpu/`)
 
 Describes how CPU-side values are laid out in GPU memory and how they are declared in shader code. Alignment rules depend on the backend and buffer kind (e.g. WGSL uniform vs storage), so the concrete rules are injected by the backend.
 
-| Export                                          | Kind      | Description                                                   |
-| ----------------------------------------------- | --------- | ------------------------------------------------------------- |
-| `GpuType<T>`                                    | interface | Typed value: `size`, `alignment`, `write()`, `serialize()`    |
-| `GpuArray<T>`                                   | interface | Fixed or runtime-sized array of a `GpuType`                   |
-| `GpuStruct<T>` / `GpuStructField`               | interface | Struct made of named, offset fields                           |
-| `GpuLayout`, `GpuWriter`, `GpuSerializer`       | interface | Building blocks: memory layout, binary writer, shader declaration |
-| `LayoutApi`, `WriterApi`, `SerializerApi`       | type      | One layout / writer / serializer per primitive (`bool`, `int32`, `float32`, `vec2…4`, `quat`, `mat2…4`…) |
-| `PrimitiveApi` / `primitiveApi()` / `primitiveOf()` | type / function | Combine layouts, writers and serializers into `GpuType`s |
-| `ArrayApi` / `arrayApi()` / `arrayOf()`         | type / function | Same for `GpuArray`s                                     |
-| `StructBuildStrategy`                           | interface | Backend-specific alignment and serialization rules for structs |
-| `StructBuilder` / `struct()`                    | class / function | Build a `GpuStruct` from fields and a strategy          |
+| Export                                              | Kind             | Description                                                                                              |
+| --------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `GpuType<T>`                                        | interface        | Typed value: `size`, `alignment`, `write()`, `serialize()`                                               |
+| `GpuArray<T>`                                       | interface        | Fixed or runtime-sized array of a `GpuType`                                                              |
+| `GpuStruct<T>` / `GpuStructField`                   | interface        | Struct made of named, offset fields                                                                      |
+| `GpuLayout`, `GpuWriter`, `GpuSerializer`           | interface        | Building blocks: memory layout, binary writer, shader declaration                                        |
+| `LayoutApi`, `WriterApi`, `SerializerApi`           | type             | One layout / writer / serializer per primitive (`bool`, `int32`, `float32`, `vec2…4`, `quat`, `mat2…4`…) |
+| `PrimitiveApi` / `primitiveApi()` / `primitiveOf()` | type / function  | Combine layouts, writers and serializers into `GpuType`s                                                 |
+| `ArrayApi` / `arrayApi()` / `arrayOf()`             | type / function  | Same for `GpuArray`s                                                                                     |
+| `StructBuildStrategy`                               | interface        | Backend-specific alignment and serialization rules for structs                                           |
+| `StructBuilder` / `struct()`                        | class / function | Build a `GpuStruct` from fields and a strategy                                                           |
 
 ### Math (`math/`)
 
-| Export                                                | Kind  | Description                                                     |
-| ----------------------------------------------------- | ----- | --------------------------------------------------------------- |
-| `IVec2`, `IVec3`, `IVec4`, `IQuat`, `Mat2/3/4`, `*Like` | type | Math value types                                               |
-| `Vec2View`, `Vec3View`, `Vec4View`, `QuatView`        | class | Typed views over a shared `ArrayBuffer`                         |
-| `Vec2Api` … `Mat4Api`, `PrimitivesAdapter`            | type  | Math primitive contracts, implemented by the backend            |
-| `TransformMath`, `CameraMath`                         | class | Local / normal matrices, view / projection matrices, built on a `PrimitivesAdapter` |
+| Export                                                  | Kind  | Description                                                                         |
+| ------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------- |
+| `IVec2`, `IVec3`, `IVec4`, `IQuat`, `Mat2/3/4`, `*Like` | type  | Math value types                                                                    |
+| `Vec2View`, `Vec3View`, `Vec4View`, `QuatView`          | class | Typed views over a shared `ArrayBuffer`                                             |
+| `Vec2Api` … `Mat4Api`, `PrimitivesAdapter`              | type  | Math primitive contracts, implemented by the backend                                |
+| `TransformMath`, `CameraMath`                           | class | Local / normal matrices, view / projection matrices, built on a `PrimitivesAdapter` |
 
 ### Scene data
 
-| Export                                                         | Kind  | Description                                               |
-| -------------------------------------------------------------- | ----- | --------------------------------------------------------- |
-| `TransformData`, `TransformSnapshot`, `TransformParentProvider` | type | Position / rotation / scale, versioned                    |
-| `TransformCache`, `TransformAdapter`                           | class | Cached local / world / normal matrices and their GPU buffers |
-| `CameraData`, `CameraSnapshot`, `ProjectionData`               | type  | Camera transform and perspective / orthographic projection |
-| `CameraCache`, `CameraAdapter`                                 | class | Cached view / projection matrices and their GPU buffers    |
-| `LightData`, `*LightSnapshot`, `LightType`                     | type  | Directional, point and spot lights                        |
-| `Material`, `MaterialDescription`, `MaterialBinding*`          | class / type | Material made of uniform, storage and texture bindings grouped in slots (`frame`, `material`, `object`) |
-| `MeshDescription`, `MeshInputData`, `Mesh`, `VertexAttributeFormat` | type | Vertex buffer layout, attributes and index buffer   |
+| Export                                                              | Kind         | Description                                                                                             |
+| ------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
+| `TransformData`, `TransformSnapshot`, `TransformParentProvider`     | type         | Position / rotation / scale, versioned                                                                  |
+| `TransformCache`, `TransformAdapter`                                | class        | Cached local / world / normal matrices and their GPU buffers                                            |
+| `CameraData`, `CameraSnapshot`, `ProjectionData`                    | type         | Camera transform and perspective / orthographic projection                                              |
+| `CameraCache`, `CameraAdapter`                                      | class        | Cached view / projection matrices and their GPU buffers                                                 |
+| `LightData`, `*LightSnapshot`, `LightType`                          | type         | Directional, point and spot lights                                                                      |
+| `Material`, `MaterialDescription`, `MaterialBinding*`               | class / type | Material made of uniform, storage and texture bindings grouped in slots (`frame`, `material`, `object`) |
+| `MeshDescription`, `MeshInputData`, `Mesh`, `VertexAttributeFormat` | type         | Vertex buffer layout, attributes and index buffer                                                       |
 
 ### Shaders (`shader/`)
 
 Interfaces between the backend-independent programs compiled by `@fdw/engine-shader` and each backend.
 
-| Export | Kind | Description |
-| --- | --- | --- |
-| `PhysicalLayoutStrategy` | interface | Resolves a logical `ProgramLayout` into binding numbers and uniform block offsets, following the rules of a backend |
-| `std140LayoutStrategy` | const | The layout of the GLSL family (WebGL2, Vulkan): std140 uniform blocks, std430 storage buffers, the groups and bindings kept |
-| `PhysicalProgramLayout`, `PhysicalBindGroup`, `PhysicalBinding`, `PhysicalUniformBlock` | type | The resolved layout |
-| `ShaderCodegen` | interface | Translates the IR of a program into the language of a backend |
-| `ShaderLanguage`, `ShaderSources` | type | Target languages and generated sources |
+| Export                                                                                  | Kind      | Description                                                                                                                 |
+| --------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `PhysicalLayoutStrategy`                                                                | interface | Resolves a logical `ProgramLayout` into binding numbers and uniform block offsets, following the rules of a backend         |
+| `std140LayoutStrategy`                                                                  | const     | The layout of the GLSL family (WebGL2, Vulkan): std140 uniform blocks, std430 storage buffers, the groups and bindings kept |
+| `PhysicalProgramLayout`, `PhysicalBindGroup`, `PhysicalBinding`, `PhysicalUniformBlock` | type      | The resolved layout                                                                                                         |
+| `ShaderCodegen`                                                                         | interface | Translates the IR of a program into the language of a backend                                                               |
+| `ShaderLanguage`, `ShaderSources`                                                       | type      | Target languages and generated sources                                                                                      |
 
 ### Utilities (`utils/`)
 
-| Export             | Kind  | Description                                                                 |
-| ------------------ | ----- | --------------------------------------------------------------------------- |
-| `SnapshotProvider` | type  | `{ version, value }` — a value that can be watched for changes              |
-| `SnapshotValue`    | class | Wraps a getter and a version getter as a `SnapshotProvider`                 |
-| `CachedValue`      | class | Lazily recomputes its value only when a dependency's version has changed   |
+| Export             | Kind  | Description                                                              |
+| ------------------ | ----- | ------------------------------------------------------------------------ |
+| `SnapshotProvider` | type  | `{ version, value }` — a value that can be watched for changes           |
+| `SnapshotValue`    | class | Wraps a getter and a version getter as a `SnapshotProvider`              |
+| `CachedValue`      | class | Lazily recomputes its value only when a dependency's version has changed |
 
 ## Change tracking
 

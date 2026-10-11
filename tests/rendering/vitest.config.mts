@@ -33,7 +33,10 @@ export default defineConfig({
             provider: playwright({
               launchOptions: {
                 // Software WebGL, without a GPU (CI, headless servers).
-                args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+                args: [
+                  '--use-angle=swiftshader',
+                  '--enable-unsafe-swiftshader',
+                ],
               },
             }),
             instances: [{ browser: 'chromium' }],
