@@ -45,6 +45,31 @@ const eye = player.add({ position: { y: 12, z: 6 } }).setCamera(camera);
 
 A node whose entity was removed throws when used: `node.alive` tells.
 
+### Many nodes at once
+
+A level, a city, a CAD assembly: thousands of nodes alike, created at
+once. `scene.createBatch()` creates them without a node nor an object per
+entity — the transforms come from flat arrays, the components are written
+column by column:
+
+```ts
+const walls = scene.createBatch({
+  count: 2400,
+  parent: level.entity, // the root by default
+  positions, // x, y, z per wall: a Float32Array of 3 × 2400
+  scales, // optional, as rotations (x, y, z, w per entity)
+  mesh: cube,
+  material: stone,
+  static: true,
+  occluder: true,
+});
+scene.node(walls[0]).attach(Solid); // a node when you need one
+```
+
+It returns the entities, in the order of the arrays; `scene.node(entity)`
+gives the node of one of them. The other options are those of a node
+(`name`, `layers`, `visible`, `castShadow`).
+
 ## Transforms and invalidation
 
 The transforms of a scene are blocks of its `TransformPool`
@@ -170,9 +195,11 @@ against the frustum.
 ## Costs
 
 On 10 000 nodes of which 1000 are visible: a camera query takes about
-0.06 ms, moving 1000 nodes then querying 0.7 ms, a frame of the renderer
-1.9 ms (against 18 ms without culling). Creating 100 000 static nodes and
-indexing them takes about 0.5 s.
+0.06 ms, moving 1000 nodes then querying 0.65 ms, a frame of the renderer
+about 1 ms (against 18 ms without culling). Creating 100 000 static nodes
+and indexing them takes about 0.38 s with nodes, 0.24 s with
+`createBatch()`; most of what remains is the world matrices, the bounds
+and the octree.
 
 The objects sharing a mesh and a material are drawn as instances of one
 draw (see [Object data and instancing](/fdw-engine/guides/backends-and-surfaces/#object-data-and-instancing)):

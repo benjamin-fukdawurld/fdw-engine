@@ -60,6 +60,32 @@ export interface NodeOptions {
   readonly occluder?: boolean;
 }
 
+/**
+ * Many entities created at once (Scene.createBatch): the same options for
+ * all of them, their transforms in flat arrays, and optionally a mesh and a
+ * material drawn by each.
+ */
+export interface BatchOptions {
+  readonly count: number;
+  // The parent of every entity: the root by default.
+  readonly parent?: number;
+  // x, y, z per entity (3 × count); the origin by default.
+  readonly positions?: ArrayLike<number>;
+  // x, y, z, w per entity (4 × count); none by default.
+  readonly rotations?: ArrayLike<number>;
+  // x, y, z per entity (3 × count); 1 by default.
+  readonly scales?: ArrayLike<number>;
+  // Drawn by every entity (setMesh).
+  readonly mesh?: Mesh;
+  readonly material?: Material;
+  readonly castShadow?: boolean;
+  readonly name?: string;
+  readonly layers?: number;
+  readonly visible?: boolean;
+  readonly static?: boolean;
+  readonly occluder?: boolean;
+}
+
 /** Options of the queries of the application. */
 export interface QueryOptions {
   // The layers to search: the nodes whose layers intersect them. Default: all.
@@ -186,7 +212,7 @@ export class Scene implements SceneGraph {
     });
     world.onRemoved(this.MeshRenderer, (entity) => {
       this.unindex(entity);
-      (this.MeshRenderer.item[entity] as SceneItem).transform.detach();
+      (this.MeshRenderer.item[entity] as SceneItem).detach();
     });
     world.onAdded(this.Light, (entity) => this.queue(entity));
     world.onAdded(this.CameraView, (entity) => this.queue(entity));
@@ -195,6 +221,76 @@ export class Scene implements SceneGraph {
   }
 
   // --- Entities ------------------------------------------------------------------
+
+  /**
+   * Creates `count` entities at once, as many create() then setMesh(), but
+   * without a node nor an object per entity: the transforms are read from
+   * flat arrays, the components written directly. For the large static
+   * sets (a level, a city, a CAD assembly). Returns the entities, in the
+   * order of the arrays.
+   */
+  createBatch(options: BatchOptions): Uint32Array {
+    const { world, NodeState, Hierarchy, MeshRenderer } = this;
+    const {
+      count,
+      parent = this.root.entity,
+      positions,
+      rotations,
+      scales,
+      mesh,
+      material,
+    } = options;
+    if (mesh && !material) {
+      throw new Error('A batch with a mesh needs a material');
+    }
+    // The values of the components, the same for every entity.
+    const hierarchy = { parent: None, first: None, next: None, previous: None };
+    const state = {
+      flags:
+        (options.visible === false ? NodeFlags.Hidden : 0) |
+        (options.static ? NodeFlags.Static : 0) |
+        (options.occluder ? NodeFlags.Occluder : 0),
+      layers: options.layers ?? AllLayers,
+      label: options.name ?? '',
+    };
+    const renderer = mesh
+      ? { mesh, material, noShadow: options.castShadow === false ? 1 : 0 }
+      : undefined;
+    world.reserve(count);
+    const entities = new Uint32Array(count);
+    let last = 0;
+    for (let i = 0; i < count; i++) {
+      entities[i] = world.create();
+      last = Math.max(last, entities[i]);
+    }
+    this.transforms.reserve(last + 1);
+    for (let i = 0; i < count; i++) {
+      const entity = entities[i];
+      this.transforms.allocateAt(entity);
+      const data = this.transforms.data;
+      const o = entity * stride;
+      data[o + P] = positions ? positions[i * 3] : 0;
+      data[o + P + 1] = positions ? positions[i * 3 + 1] : 0;
+      data[o + P + 2] = positions ? positions[i * 3 + 2] : 0;
+      data[o + R] = rotations ? rotations[i * 4] : 0;
+      data[o + R + 1] = rotations ? rotations[i * 4 + 1] : 0;
+      data[o + R + 2] = rotations ? rotations[i * 4 + 2] : 0;
+      data[o + R + 3] = rotations ? rotations[i * 4 + 3] : 1;
+      data[o + S] = scales ? scales[i * 3] : 1;
+      data[o + S + 1] = scales ? scales[i * 3 + 1] : 1;
+      data[o + S + 2] = scales ? scales[i * 3 + 2] : 1;
+    }
+    world.addMany(entities, Hierarchy, hierarchy);
+    world.addMany(entities, NodeState, state);
+    for (let i = 0; i < count; i++) {
+      this.link(entities[i], parent);
+      this.touch(entities[i]);
+    }
+    if (renderer) {
+      world.addMany(entities, MeshRenderer, renderer);
+    }
+    return entities;
+  }
 
   /**
    * Creates an entity of the scene, child of `parent` (the root by
@@ -450,8 +546,7 @@ export class Scene implements SceneGraph {
     b[o + 3] = box.max[0];
     b[o + 4] = box.max[1];
     b[o + 5] = box.max[2];
-    const item = MeshRenderer.item[entity] as SceneItem;
-    item.bounds.copyFrom(box);
+    (MeshRenderer.item[entity] as SceneItem).boundsChanged(box);
 
     const isStatic = this.NodeState.flags[entity] & NodeFlags.Static;
     const indexed = MeshRenderer.indexed[entity];
@@ -559,10 +654,15 @@ export class Scene implements SceneGraph {
   private readBounds(entity: number, out: Aabb): Aabb {
     const b = this.MeshRenderer.bounds;
     const o = entity * 6;
-    return out.setFrom(
-      [b[o], b[o + 1], b[o + 2]],
-      [b[o + 3], b[o + 4], b[o + 5]]
-    );
+    // Written in place: called per entity when indexing.
+    const { min, max } = out;
+    min[0] = b[o];
+    min[1] = b[o + 1];
+    min[2] = b[o + 2];
+    max[0] = b[o + 3];
+    max[1] = b[o + 4];
+    max[2] = b[o + 5];
+    return out;
   }
 
   /** The nodes marked as occluders, for the occlusion culling. */
@@ -783,11 +883,37 @@ export class Scene implements SceneGraph {
  * by the scene.
  */
 export class SceneItem implements RenderItem {
-  readonly bounds = new Aabb();
-  readonly transform: Transform;
+  // Created on first read: a renderer reads those of the items it draws,
+  // a small part of a large scene.
+  private _bounds?: Aabb;
+  private _transform?: Transform;
 
-  constructor(private readonly _scene: Scene, readonly entity: number) {
-    this.transform = Transform.of(_scene.transforms, entity);
+  constructor(private readonly _scene: Scene, readonly entity: number) {}
+
+  get transform(): Transform {
+    return (this._transform ??= Transform.of(
+      this._scene.transforms,
+      this.entity
+    ));
+  }
+
+  /** The world bounds, those of the bounds column of the scene. */
+  get bounds(): Aabb {
+    if (!this._bounds) {
+      this._bounds = new Aabb();
+      this._scene.bounds(this._bounds, this.entity);
+    }
+    return this._bounds;
+  }
+
+  /** @internal The scene computed new world bounds. */
+  boundsChanged(box: Aabb): void {
+    this._bounds?.copyFrom(box);
+  }
+
+  /** @internal The entity no longer draws: its transform is detached. */
+  detach(): void {
+    this._transform?.detach();
   }
 
   get mesh(): Mesh {

@@ -34,6 +34,28 @@ describe('World', () => {
     expect([Velocity.x[a], Velocity.y[a]]).toEqual([4, 5]);
   });
 
+  it('gives a component to many entities at once', () => {
+    const { world, Position, Tag } = setup(4);
+    world.reserve(100);
+    const entities = Array.from({ length: 100 }, () => world.create());
+    const moving = world.query(Position);
+    const added: number[] = [];
+    world.onAdded(Position, (entity) => added.push(entity));
+    // One already has it: written, but not added again.
+    world.add(entities[0], Position, { value: [9, 9, 9] });
+    world.addMany(entities, Position, { value: [1, 2, 3] });
+    world.addMany(entities, Tag, { label: 'many', level: 7 });
+    expect(moving.count).toBe(100);
+    expect(added).toHaveLength(100);
+    expect(new Set(added).size).toBe(100);
+    const last = entities[99];
+    expect([...Position.value.subarray(last * 3, last * 3 + 3)]).toEqual([
+      1, 2, 3,
+    ]);
+    expect([...Position.value.subarray(0, 3)]).toEqual([1, 2, 3]);
+    expect([Tag.label[last], Tag.level[last]]).toEqual(['many', 7]);
+  });
+
   it('keeps queries up to date', () => {
     const { world, Position, Velocity, Tag } = setup();
     const moving = world.query(Position, Velocity);

@@ -13,21 +13,22 @@ Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne le
 
 ## 2. Vue d'ensemble
 
-| Phase | Contenu                                            | Livrable                                                    | Taille      |
-| ----- | -------------------------------------------------- | ----------------------------------------------------------- | ----------- |
-| P0    | Socle : CI, publication de la doc, mesures         | La CI verte sur chaque changement, la doc en ligne          | Petite      |
-| P1    | Performance : coût par objet, appels, instancing   | Le labyrinthe et la forêt bien plus rapides, WebGPU compris | Moyenne     |
-| P2    | Lumières et ombres à grande échelle, IBL           | Une démo de centaines de lumières                           | Grande      |
-| P3    | Occlusion culling                                  | Une ville ou un bâtiment, l'essentiel caché                 | Moyenne     |
-| P4    | Caméras, entrées, ordonnanceur ECS                 | **Démo FPS minimaliste**                                    | Moyenne     |
-| P5    | Ressources : images, glTF                          | Des modèles chargés dans les démos                          | Grande      |
-| P6    | Cœur de graph commun, animation et animation graph | Un personnage animé, ses états                              | Grande      |
-| P7    | Audio                                              | Des sons dans les démos, spatialisés                        | Moyenne     |
-| P8    | Le jeu à la troisième personne                     | **Démo TPS : l'épée dans la forêt**                         | Moyenne     |
-| P9    | Graphs de comportement                             | L'IA des ennemis du TPS en graphs                           | Grande      |
-| P10   | Ray tracing : hybride, puis path tracer            | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU  | Grande      |
-| P11   | Plateformes et distribution                        | Windows, macOS, binaires précompilés                        | Moyenne     |
-| P12   | L'éditeur : la modélisation, puis le middleware    | **L'application de modélisation, base de l'éditeur**        | Très grande |
+| Phase | Contenu                                            | Livrable                                                        | Taille      |
+| ----- | -------------------------------------------------- | --------------------------------------------------------------- | ----------- |
+| P0    | Socle : CI, publication de la doc, mesures         | La CI verte sur chaque changement, la doc en ligne              | Petite      |
+| P1    | Performance : coût par objet, appels, instancing   | Le labyrinthe et la forêt bien plus rapides, WebGPU compris     | Moyenne     |
+| P2    | Lumières et ombres à grande échelle, IBL           | Une démo de centaines de lumières                               | Grande      |
+| P3    | Occlusion culling                                  | Une ville ou un bâtiment, l'essentiel caché                     | Moyenne     |
+| P4    | Caméras, entrées, ordonnanceur ECS                 | **Démo FPS minimaliste**                                        | Moyenne     |
+| P5    | Ressources : images, glTF                          | Des modèles chargés dans les démos                              | Grande      |
+| P6    | Cœur de graph commun, animation et animation graph | Un personnage animé, ses états                                  | Grande      |
+| P7    | Audio                                              | Des sons dans les démos, spatialisés                            | Moyenne     |
+| P8    | Le jeu à la troisième personne                     | **Démo TPS : l'épée dans la forêt**                             | Moyenne     |
+| P9    | Graphs de comportement                             | L'IA des ennemis du TPS en graphs                               | Grande      |
+| P10   | Ray tracing : hybride, puis path tracer            | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU      | Grande      |
+| P11   | Plateformes et distribution                        | Windows, macOS, binaires précompilés                            | Moyenne     |
+| P12   | Batching statique                                  | Moins de draws pour les scènes statiques hétérogènes (CAO, BIM) | Moyenne     |
+| P13   | L'éditeur : la modélisation, puis le middleware    | **L'application de modélisation, base de l'éditeur**            | Très grande |
 
 Les phases sont dans l'ordre de leurs dépendances (§4). Certaines peuvent se chevaucher : P11 peut avancer en fond dès P1, et P7 est indépendante de P5 et P6, sauf pour le chargement des sons.
 
@@ -47,11 +48,13 @@ Avant d'optimiser et d'ajouter des briques, que chaque changement soit vérifié
 
 ### P1. Performance du rendu
 
+_Faite_ : le design et les mesures sont dans [p1-objects.md](p1-objects.md). Les données d'objet dans une table indexée par instance (storage buffers, textures de données en WebGL2), l'instancing des objets qui partagent mesh et matériau, la création en lot (`scene.createBatch()`). Labyrinthe, étape 1 : de 89 à environ 171 fps sur Vulkan, de 42 à environ 122 fps sur Dawn. Reportés : le batching statique (P12) ; le coût d'un déplacement de nœud ([backlog §1](backlog.md#1-scène--meshes-scenegraph-et-culling-prévu)) ; la distance d'ombre, remplacée par les cascades de P2.
+
 Le constat : environ 89 images par seconde sur l'étape 1 du labyrinthe (3700 draws), WebGPU lent dans le navigateur à cause du nombre d'appels par objet.
 
 - **Le coût par objet du `Renderer`** : réutiliser les buffers d'uniforms CPU, alléger les vérifications des valeurs en cache ([material-graph-v2 §2](material-graph-v2.md#2-mesures-de-performance)).
 - **Moins d'appels** : les uniforms des objets regroupés dans un seul buffer écrit une fois par frame (offsets dynamiques ou storage buffer indexé), moins de `setBindGroup` ; côté Vulkan, un anneau de transfert et des descriptors dynamiques. C'est le levier principal de WebGPU dans le navigateur.
-- **Instancing et batching statique** : les objets qui partagent mesh et matériau dessinés en un appel ; les entités statiques regroupées par cellule de l'octree.
+- **Instancing** : les objets qui partagent mesh et matériau dessinés en un appel. Le batching statique est devenu P12.
 - **La scène** : la création en lot (100 000 nœuds en 485 ms aujourd'hui), le coût d'un déplacement de nœud (environ 90 ns de plus depuis le pool de transforms).
 - **Les ombres** : une distance d'ombre, en attendant les cascades (P2).
 
@@ -142,7 +145,15 @@ Peut avancer en fond dès P1.
 - **Le démarrage** : un cache de pipelines persisté, la précompilation des programmes (phase 7 du material graph).
 - **N5** : Dawn sans copie, Direct3D 12.
 
-### P12. L'éditeur
+### P12. Batching statique
+
+Reporté de P1 : l'instancing dessine déjà en un appel les objets qui partagent mesh et matériau (les murs du labyrinthe, une forêt d'arbres identiques). Le batching statique ne sert qu'aux scènes statiques **hétérogènes**, où chaque objet a son mesh : une maquette BIM, un assemblage CAO, un décor fait main — ce qu'ouvrira l'éditeur.
+
+- Fusionner les meshes statiques d'une cellule de l'octree et d'un même matériau en un mesh dans l'espace du monde, reconstruit quand un objet de la cellule change.
+- Ce qu'il coûte : la géométrie dupliquée en mémoire, un culling par cellule plutôt que par objet, et la sélection d'un objet dans un mesh fusionné (un identifiant d'objet par sommet).
+- À comparer, avant de l'écrire, avec le rendu piloté par le GPU (culling et draws indirects, [évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), qui pourrait le rendre inutile.
+
+### P13. L'éditeur
 
 L'application de modélisation, puis l'éditeur du middleware. Elle est découpée en étapes, chacune avec son design.
 
@@ -163,11 +174,12 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 
 - **P1** avant **P8** : la forêt demande l'instancing et un coût par objet réduit.
 - **P2** dépend des compute graphs dans le render graph ; **P3** des textures de stockage et des mipmaps.
-- **P4** avant **P8** (caméra TPS, contrôleur de personnage) et avant **P12** (orbite CAO).
+- **P4** avant **P8** (caméra TPS, contrôleur de personnage) et avant **P13** (orbite CAO).
 - **P5** avant **P6** (squelettes et clips de glTF), **P7** (sons chargés) et **P8**.
-- **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P12**.
+- **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P13**.
 - **P10** après **P8** (des scènes à tracer) ; ses prérequis sont posés dès P1 (§6).
-- **P12** s'appuie sur presque tout : la sélection et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
+- **P12** avant **P13** : les scènes de CAO et de BIM qu'ouvre l'éditeur.
+- **P13** s'appuie sur presque tout : la sélection et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
 
 ## 5. Plus tard, hors du plan
 
@@ -177,12 +189,12 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Sortie HDR et couleurs étendues ([évolutions §4](evolutions.md#4-la-sortie-hdr-et-les-couleurs-étendues)) | Écrans HDR et navigateurs inégaux (canvas étendu surtout dans Chrome) ; aucune démo n'en dépend ; le tone mapping actuel suffit              |
 | Travail en parallèle sur le GPU ([évolutions §5](evolutions.md#5-le-travail-en-parallèle-sur-le-gpu))     | WebGPU n'a qu'une file ; le gain n'existe qu'une fois le GPU saturé par des passes de calcul (après P2, P3, à mesurer)                       |
-| Transparence indépendante de l'ordre (OIT)                                                                | Peu d'objets transparents jusqu'ici, le tri suffit ; coûteuse en mémoire et en bande passante. À revoir pour le verre en CAO et en BIM (P12) |
-| Material graph : fonctions génériques, vraies fonctions dans le code généré                               | Ne compte que pour de gros graphs (taille du code, temps de compilation) ; à revoir avec les éditeurs de graphs (P12)                        |
+| Transparence indépendante de l'ordre (OIT)                                                                | Peu d'objets transparents jusqu'ici, le tri suffit ; coûteuse en mémoire et en bande passante. À revoir pour le verre en CAO et en BIM (P13) |
+| Material graph : fonctions génériques, vraies fonctions dans le code généré                               | Ne compte que pour de gros graphs (taille du code, temps de compilation) ; à revoir avec les éditeurs de graphs (P13)                        |
 | Material graph : `f16` de bout en bout                                                                    | Un gain surtout sur mobile, et une capacité inégale selon les GPU                                                                            |
 | Material graph : `frag-coord` en WebGL2                                                                   | Aucun besoin jusqu'ici                                                                                                                       |
 | Material graph : structures dans les storage buffers                                                      | Pas encore utile ; le pool de lumières (P2) ou le ray tracing (P10) pourraient le faire remonter                                             |
-| Material graph : source maps nœud ↔ ligne                                                                 | Un confort de débogage, à faire avec les éditeurs de graphs (P12)                                                                            |
+| Material graph : source maps nœud ↔ ligne                                                                 | Un confort de débogage, à faire avec les éditeurs de graphs (P13)                                                                            |
 | Material graph : limite et préchauffage des variantes                                                     | Lié au temps de démarrage : à traiter avec la précompilation (P11)                                                                           |
 | Render graph : coût de la clé structurelle                                                                | Invisible aux tailles actuelles : à mesurer quand les graphes grossiront                                                                     |
 | Vulkan : barrières groupées par le render graph                                                           | Une optimisation à justifier par le profilage (P0)                                                                                           |
@@ -199,4 +211,4 @@ Les contraintes déjà posées ([évolutions §6](evolutions.md#6-contraintes-de
 - **P3** : la scène tient des identifiants stables et des tables de la scène sur le GPU : la TLAS se construira à partir d'elles.
 - **P5** : les meshes chargés restent des buffers GPU accessibles (storage), pas seulement des vertex buffers ; les textures prêtes pour le bindless.
 - **P6** : **le skinning dans une passe de calcul**, qui écrit les sommets animés dans un buffer, plutôt que dans le vertex shader : la rastérisation, les ombres et la mise à jour des BLAS lisent alors les mêmes sommets.
-- **P12** : l'éditeur rend en rastérisation, avec la même scène et les mêmes matériaux ; une vue en ray tracing y devient un aperçu, pas un second moteur.
+- **P13** : l'éditeur rend en rastérisation, avec la même scène et les mêmes matériaux ; une vue en ray tracing y devient un aperçu, pas un second moteur.

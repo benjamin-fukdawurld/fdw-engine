@@ -82,4 +82,25 @@ describe(`Scene, ${count} nodes, 1000 visible`, () => {
     },
     { iterations: 3 }
   );
+
+  // The same in a batch: Scene.createBatch.
+  const many = 100_000;
+  const positions = Float32Array.from({ length: many * 3 }, (_, i) =>
+    i % 3 === 0 ? (Math.floor(i / 3) - many / 2) * 2 : 0
+  );
+  bench(
+    '100 000 static nodes, created in a batch and indexed',
+    () => {
+      const scene = new Scene();
+      scene.createBatch({
+        count: many,
+        positions,
+        mesh,
+        material,
+        static: true,
+      });
+      scene.flush();
+    },
+    { iterations: 3 }
+  );
 });

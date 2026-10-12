@@ -158,6 +158,54 @@ export class ComponentStore<S extends Schema = Schema> {
     this.write(entity, values);
   }
 
+  /**
+   * @internal Inserts many entities with the same values, field after
+   * field: the batch version of insert().
+   */
+  insertMany(
+    entities: ArrayLike<number>,
+    values: ComponentValues<S> = {}
+  ): void {
+    const needed = this._count + entities.length;
+    if (needed > this._dense.length) {
+      const dense = new Uint32Array(Math.max(this._dense.length * 2, needed));
+      dense.set(this._dense);
+      this._dense = dense;
+    }
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
+      if (this._sparse[entity] < 0) {
+        this._sparse[entity] = this._count;
+        this._dense[this._count++] = entity;
+      }
+    }
+    for (const field of this._fields) {
+      const value = (values as Record<string, unknown>)[field.name];
+      if (value === undefined) {
+        continue;
+      }
+      // One loop per kind of field: each stays monomorphic.
+      if (field.type === 'ref') {
+        const column = field.column as unknown[];
+        for (let i = 0; i < entities.length; i++) {
+          column[entities[i]] = value;
+        }
+      } else if (field.size === 1) {
+        const column = field.column as NumberArray;
+        const number = value as number;
+        for (let i = 0; i < entities.length; i++) {
+          column[entities[i]] = number;
+        }
+      } else {
+        const column = field.column as NumberArray;
+        const vector = value as ArrayLike<number>;
+        for (let i = 0; i < entities.length; i++) {
+          column.set(vector, entities[i] * field.size);
+        }
+      }
+    }
+  }
+
   /** @internal */
   delete(entity: number): void {
     const position = this._sparse[entity];

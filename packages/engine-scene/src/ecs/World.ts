@@ -169,6 +169,43 @@ export class World {
     }
   }
 
+  /**
+   * Gives a component to many entities, with the same values: add() for each,
+   * the values written field after field. The queries and the listeners
+   * learn about the entities that did not have it.
+   */
+  addMany<S extends Schema>(
+    entities: ArrayLike<number>,
+    component: Component<S>,
+    values?: ComponentValues<S>
+  ): void {
+    const added: number[] = [];
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
+      if (!this._alive[entity]) {
+        throw new Error(`Entity ${entity} is not alive`);
+      }
+      if (!component.has(entity)) {
+        added.push(entity);
+      }
+    }
+    component.insertMany(entities, values);
+    const listeners = this._added[component.id];
+    for (const entity of added) {
+      this.changed(entity, component);
+      for (const listener of listeners) {
+        listener(entity);
+      }
+    }
+  }
+
+  /** Makes room for `count` more entities: one growth instead of many. */
+  reserve(count: number): void {
+    if (this._next + count > this._capacity) {
+      this.grow(Math.max(this._capacity * 2, this._next + count));
+    }
+  }
+
   remove(entity: number, component: ComponentStore): void {
     if (!component.has(entity)) {
       return;
