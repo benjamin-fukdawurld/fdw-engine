@@ -40,6 +40,10 @@ export interface GraphTextureDescriptor {
   // Samples per pixel of a multisampled attachment (4): it cannot be
   // sampled, but resolved into a texture (see resolveColor). Default 1.
   readonly sampleCount?: number;
+  // Levels of detail (see GpuTextureConfiguration.mipLevelCount): a count,
+  // or 'full' for the whole chain of the size the texture gets. Computed by
+  // addMipmapPass. Default 1.
+  readonly mipLevelCount?: number | 'full';
   readonly label?: string;
 }
 
@@ -311,6 +315,22 @@ export class RenderGraph {
   ): O {
     const pass = this.addPass(name, 'copy');
     return this.setupPass(pass, setup(new PassBuilder(this, pass)));
+  }
+
+  /**
+   * Computes the levels of a texture created with mipLevelCount from its
+   * first level (see GpuCommandEncoder.generateMipmaps): returns the
+   * version of the texture with its levels, to sample.
+   */
+  addMipmapPass(name: string, texture: TextureHandle): TextureHandle {
+    return this.addCopyPass(name, (pass) => {
+      const written = pass.write(texture, 'copy-dst');
+      return {
+        texture: written,
+        execute: (context) =>
+          context.encoder.generateMipmaps(context.texture(written)),
+      };
+    }).texture;
   }
 
   /** @internal Records an access of a pass; returns the version written. */

@@ -376,6 +376,11 @@ int createDevice(fdw_vk_context *context) {
   VkPhysicalDeviceFeatures2 features{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &features12};
   features.features.samplerAnisotropy = available.samplerAnisotropy;
+  if (available.samplerAnisotropy) {
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(context->physicalDevice, &properties);
+    context->maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+  }
   features.features.independentBlend = available.independentBlend;
 
   std::vector<const char *> extensions;

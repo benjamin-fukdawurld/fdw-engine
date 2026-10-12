@@ -266,6 +266,13 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
       .word(size.height);
   }
 
+  generateMipmaps(texture: GpuAttachmentTarget): void {
+    const levels = unwrap(texture, VulkanTexture, 'The texture');
+    if (levels.mipLevelCount > 1) {
+      this._writer.word(Commands.generateMipmaps).word(levels.id);
+    }
+  }
+
   finish(): GpuCommandBuffer {
     return new VulkanCommandBuffer(this._writer.finish());
   }

@@ -78,13 +78,75 @@ export interface GpuTextureConfiguration {
   // Samples per pixel (4) of a multisampled render attachment, resolved
   // into a texture at the end of the passes. Default 1.
   sampleCount?: number;
+  // Levels of detail, each half the size of the previous one: 1 (the
+  // default) for none, fullMipLevelCount for the whole chain down to 1×1.
+  // The first level is the one written, rendered to and read back; the
+  // others are computed from it (see generateMipmaps).
+  mipLevelCount?: number;
 }
 
 export interface GpuTexture extends Readonly<GpuTextureConfiguration> {
   destroy(): void;
 }
 
+/** The levels of a whole mipmap chain, down to 1×1. */
+export const fullMipLevelCount = ({
+  width,
+  height = 1,
+}: GpuTextureDimensions): number =>
+  Math.floor(Math.log2(Math.max(width, height, 1))) + 1;
+
+/**
+ * Checks the levels of a texture: throws for a count the texture cannot
+ * have. Returns the count (1 by default).
+ */
+export function checkMipLevelCount(
+  configuration: GpuTextureConfiguration
+): number {
+  const {
+    mipLevelCount = 1,
+    sampleCount = 1,
+    dimensions,
+    label,
+  } = configuration;
+  const what = `Texture "${label ?? '(unlabeled)'}"`;
+  const full = fullMipLevelCount(dimensions);
+  if (!Number.isInteger(mipLevelCount) || mipLevelCount < 1) {
+    throw new Error(`${what}: invalid mipLevelCount ${mipLevelCount}`);
+  }
+  if (mipLevelCount > full) {
+    throw new Error(
+      `${what}: ${mipLevelCount} levels, more than the ${full} of its size`
+    );
+  }
+  if (mipLevelCount > 1 && sampleCount > 1) {
+    throw new Error(`${what}: a multisampled texture has a single level`);
+  }
+  if (mipLevelCount > 1 && configuration.type === '3d') {
+    throw new Error(`${what}: 3d textures have a single level`);
+  }
+  // The levels are only ever computed from the first one.
+  if (mipLevelCount > 1 && !canGenerateMipmaps(configuration.format)) {
+    throw new Error(
+      `${what}: the levels of ${configuration.format} cannot be computed`
+    );
+  }
+  return mipLevelCount;
+}
+
+/**
+ * Whether the levels of a format can be computed by averaging texels:
+ * color formats, not integer or depth ones.
+ */
+export const canGenerateMipmaps = (format: GpuTextureFormat): boolean =>
+  !/int$|^depth/.test(format);
+
 export interface GpuTextureFactory<TextureSource = never> {
+  /**
+   * A texture, with the content of `source` when given (as writeTexture).
+   * Throws for a mipLevelCount the texture cannot have (see
+   * checkMipLevelCount).
+   */
   createTexture(
     descriptor: GpuTextureConfiguration & {
       source?: TextureSource | ArrayBufferView<ArrayBuffer>;
@@ -96,7 +158,9 @@ export interface GpuTextureFactory<TextureSource = never> {
    * Replaces the content of a texture of this factory (every layer): rows
    * from the top, tightly packed, layer after layer. In the order of the
    * queue: the frames submitted before read the old content, those after,
-   * the new one. The texture needs the copy-dst usage (the default).
+   * the new one. The texture needs the copy-dst usage (the default). The
+   * data fills the first level; the other levels, if any, are computed
+   * from it (see GpuCommandEncoder.generateMipmaps).
    */
   writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void;
 }

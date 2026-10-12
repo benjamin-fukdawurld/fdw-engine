@@ -58,6 +58,8 @@ function fakeBackend(options: { explicitTransitions?: boolean } = {}) {
       },
       copyBufferToBuffer: () => undefined,
       copyTextureToTexture: () => undefined,
+      generateMipmaps: (texture: { label?: string }) =>
+        log.events.push(`mipmaps ${texture.label}`),
       ...(options.explicitTransitions
         ? {
             transition: (transitions: ResourceTransition[]) =>
@@ -531,6 +533,45 @@ describe('RenderGraphRunner, memory and debugging', () => {
         execute: () => undefined,
       }))
     ).toThrow(/without a color attachment to resolve/);
+  });
+
+  it('computes the levels of the textures between their writer and readers', () => {
+    const { backend, log } = fakeBackend();
+    const graph = new RenderGraph();
+    const backbuffer = graph.importTexture('backbuffer', surface);
+    const scene = graph.createTexture('scene', {
+      format: 'rgba16float',
+      size: { relative: 0.5 },
+      mipLevelCount: 'full',
+    });
+    const drawn = graph.addRasterPass('draw', (pass) => ({
+      color: pass.writeColor(scene, { load: 'clear' }),
+      execute: run(log, 'draw'),
+    }));
+    const levels = graph.addMipmapPass('mipmaps', drawn.color);
+    graph.addRasterPass('blur', (pass) => {
+      pass.read(levels, 'sampled');
+      return {
+        color: pass.writeColor(backbuffer, { load: 'clear' }),
+        execute: run(log, 'blur'),
+      };
+    });
+    new RenderGraphRunner(backend).execute(graph);
+    // 32 × 16: down to 1 × 1 in 6 levels.
+    expect(log.textures[0]).toMatchObject({
+      mipLevelCount: 6,
+      usage: ['render-attachment', 'copy-dst', 'sampled'],
+    });
+    expect(log.events).toEqual([
+      'render draw',
+      'run draw',
+      'end',
+      'mipmaps scene',
+      'render blur',
+      'run blur',
+      'end',
+      'submit',
+    ]);
   });
 
   it('describes the graph for Graphviz', () => {

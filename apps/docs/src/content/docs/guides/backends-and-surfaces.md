@@ -47,16 +47,67 @@ screenshots, thumbnails, tests.
 `backend.capabilities` says what a backend supports, and the compiler checks
 the programs against it:
 
-| Capability          | Meaning                                             | WebGL2                        |
-| ------------------- | --------------------------------------------------- | ----------------------------- |
-| `compute`           | Compute stages                                      | false                         |
-| `storageBuffers`    | Storage buffers                                     | false                         |
-| `maxVaryings`       | Values interpolated between the stages              | from the context              |
-| `renderableFormats` | Color formats usable as attachments (`rgba16float`) | with `EXT_color_buffer_float` |
-| `objectTable`       | The object data read from a table, per instance     | true (data textures)          |
+| Capability          | Meaning                                             | WebGL2                                        |
+| ------------------- | --------------------------------------------------- | --------------------------------------------- |
+| `compute`           | Compute stages                                      | false                                         |
+| `storageBuffers`    | Storage buffers                                     | false                                         |
+| `maxVaryings`       | Values interpolated between the stages              | from the context                              |
+| `renderableFormats` | Color formats usable as attachments (`rgba16float`) | with `EXT_color_buffer_float`                 |
+| `objectTable`       | The object data read from a table, per instance     | true (data textures)                          |
+| `maxAnisotropy`     | The highest anisotropy of the samplers              | with `EXT_texture_filter_anisotropic`, else 1 |
 
 A graph using a missing feature fails to compile with an explicit error;
 test the capability to offer a fallback.
+
+## Mipmaps and anisotropic filtering
+
+A texture created with `mipLevelCount` has levels of detail, each half the
+size of the previous one; `fullMipLevelCount(dimensions)` gives the whole
+chain, down to 1×1. The data written fill the first level, and the backend
+computes the others from it, on the GPU:
+
+```ts
+const map = backend.textures.createTexture({
+  type: '2d',
+  format: 'rgba8unorm-srgb',
+  dimensions: { width: 512, height: 512 },
+  mipLevelCount: fullMipLevelCount({ width: 512, height: 512 }),
+  source: pixels,
+});
+```
+
+After rendering into such a texture, `encoder.generateMipmaps(texture)`
+computes its levels again (in a render graph: `addMipmapPass`). The sRGB
+textures are averaged in linear colors. Levels are for the 2d, 2d-array and
+cube textures of color formats, not multisampled: the other textures refuse
+`mipLevelCount > 1`.
+
+`std.textureSample` chooses the level from the size of the pixel on the
+texture; `std.textureSampleLevel` reads a given one. The latter is available
+in every stage: give it a uv through `std.perFragment`, or it samples at the
+vertices and interpolates the colors.
+
+**Anisotropic filtering** keeps a texture sharp on a surface seen at a
+grazing angle (a floor, a road): the sampler takes up to `maxAnisotropy`
+samples along the direction in which the texture is stretched.
+
+```ts
+const sampler = backend.textures.createSampler({ maxAnisotropy: 8 });
+// Or for every sampler created afterwards without maxAnisotropy:
+const engine = new WebGpuEngine({ maxAnisotropy: 8 });
+backend.textures.defaultMaxAnisotropy = 8;
+```
+
+- It needs the three filters `linear` (the default): an anisotropy asked
+  with a `nearest` filter throws, as WebGPU requires. The default only
+  applies to the samplers that can use it, comparison samplers excepted.
+- Values above `capabilities.maxAnisotropy` are clamped to it (16 on most
+  GPUs, 1 where the device has no anisotropic filtering).
+- It works with the mipmaps: without levels, a minified texture flickers
+  whatever the anisotropy.
+
+The backends compute the levels each in their way: `generateMipmap` in
+WebGL2, a render pass per level in WebGPU, `vkCmdBlitImage` in Vulkan.
 
 ## What the backends absorb
 

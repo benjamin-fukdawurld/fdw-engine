@@ -132,8 +132,8 @@ type TextureSize =
 interface GraphTextureDescriptor {
   readonly format: GpuTextureFormat;
   readonly size: TextureSize;
-  readonly mipLevels?: number;
-  readonly samples?: number;
+  readonly mipLevelCount?: number | 'full';
+  readonly sampleCount?: number;
   readonly label?: string;
 }
 
@@ -148,6 +148,8 @@ interface GraphBufferDescriptor {
 | **Temporaire** (`createTexture`, `createBuffer`) | cible HDR, profondeur, shadow map, liste de lumières             | la frame ; réutilisée par le pool à la frame suivante |
 | **Importée** (`importTexture`, `importBuffer`)   | image de la surface, buffers de la scène, textures des matériaux | gérée hors du graphe                                  |
 | **Persistante** (`createPersistentTexture`)      | historique du TAA, exposition adaptative                         | plusieurs frames, gardée par le graphe                |
+
+**Mipmaps.** _Fait._ Une texture (du graphe ou non) peut avoir des niveaux de détail : `mipLevelCount` (`'full'` dans le graphe : la chaîne complète pour la taille reçue). Les données écrites remplissent le premier niveau et le backend calcule les autres ; après un rendu, `encoder.generateMipmaps(texture)` les recalcule, et `graph.addMipmapPass(name, texture)` en fait une passe de copie qui écrit la texture (`copy-dst`) et rend la version à échantillonner. Chaque backend a sa méthode : `generateMipmap` en WebGL2 ; en WebGPU, qui n'en a pas, une passe de rendu par niveau et par couche (un triangle plein écran qui moyenne 2 × 2 texels par `textureLoad`, ce qui accepte aussi les formats flottants non filtrables) ; en Vulkan, des `vkCmdBlitImage` de niveau en niveau, qui laissent toute l'image dans un même layout pour le suivi par texture. Les niveaux sont réservés aux textures 2d, 2d-array et cube de formats de couleur non entiers, sans multi-échantillonnage (`checkMipLevelCount`). Les attachments et les relectures utilisent le premier niveau.
 
 **Versions.** Chaque écriture crée une **nouvelle version** de la ressource, comme une valeur SSA dans le compilateur de matériaux : `hdr` écrit par la passe des opaques puis par celle des transparents donne `hdr#1` puis `hdr#2`. Une passe lit une version précise : les dépendances sont sans ambiguïté, et une lecture avant toute écriture est détectée.
 

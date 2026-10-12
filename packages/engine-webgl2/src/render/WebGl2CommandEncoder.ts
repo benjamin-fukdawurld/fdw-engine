@@ -509,6 +509,15 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
     });
   }
 
+  generateMipmaps(texture: GpuAttachmentTarget): void {
+    // Render targets have a single level.
+    if (texture instanceof WebGl2RenderTarget) {
+      return;
+    }
+    const levels = unwrap(texture, WebGl2Texture, 'The texture');
+    this._commands.push((gl) => levels.generateMipmaps(gl));
+  }
+
   beginComputePass(): GpuComputePassEncoder {
     throw new Error('WebGL2 has no compute shaders');
   }

@@ -604,6 +604,17 @@ int replayCommands(Replay &replay) {
     case FDW_VK_CMD_COPY_TEXTURE:
       status = copyTexture(replay);
       break;
+    case FDW_VK_CMD_GENERATE_MIPMAPS: {
+      if (replay.inRenderPass || replay.inComputePass) {
+        return fail("Mipmaps are computed outside of the passes");
+      }
+      fdw_vk_texture *texture = find(replay.context->textures,
+                                     replay.reader.word(), "texture", &status);
+      if (texture) {
+        status = generateMipmaps(replay.context, replay.commands, texture);
+      }
+      break;
+    }
     default:
       if (!replay.inRenderPass && !replay.inComputePass) {
         return fail("Command " + std::to_string(opcode) +

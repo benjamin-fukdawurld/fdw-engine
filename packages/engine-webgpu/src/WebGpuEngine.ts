@@ -6,6 +6,10 @@ export type WebGpuEngineOptions = {
   // The WebGPU entry point. Defaults to navigator.gpu; can be provided to run
   // outside a browser (e.g. Dawn for Node).
   gpu?: GPU;
+  // The anisotropy of the samplers created without maxAnisotropy (see
+  // GpuSamplerFactory.defaultMaxAnisotropy): 1 by default, 8 or 16 for
+  // sharp textures on surfaces seen at a grazing angle.
+  maxAnisotropy?: number;
 };
 
 export class WebGpuEngine extends EventTarget implements Engine {
@@ -15,10 +19,12 @@ export class WebGpuEngine extends EventTarget implements Engine {
   state: Signal<EngineState> = signal('uninitialized');
 
   private readonly _gpu?: GPU;
+  private readonly _maxAnisotropy: number;
 
   constructor(options: WebGpuEngineOptions = {}) {
     super();
     this._gpu = options.gpu;
+    this._maxAnisotropy = options.maxAnisotropy ?? 1;
   }
 
   async init(): Promise<void> {
@@ -50,6 +56,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
           : [],
       });
       this.backend = new WebGpuRenderBackend(this.device);
+      this.backend.textures.defaultMaxAnisotropy = this._maxAnisotropy;
     } catch (error) {
       this.adapter = undefined;
       this.device = undefined;

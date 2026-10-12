@@ -127,6 +127,9 @@ typedef struct fdw_vk_texture_options {
   // Layers of an array (6 for a cube), depth of a 3d texture.
   uint32_t layers;
   uint32_t sample_count;
+  // Levels of detail (1: none). Computed from the first level by
+  // fdw_vk_texture_generate_mipmaps or FDW_VK_CMD_GENERATE_MIPMAPS.
+  uint32_t mip_level_count;
   uint32_t usage;
   const char *label;
 } fdw_vk_texture_options;
@@ -140,13 +143,18 @@ FDW_VK_API void fdw_vk_texture_destroy(fdw_vk_context *context,
 FDW_VK_API uint32_t fdw_vk_texture_id(const fdw_vk_texture *texture);
 // Bytes per pixel of the format of a texture.
 FDW_VK_API uint32_t fdw_vk_texture_pixel_size(const fdw_vk_texture *texture);
-// Writes the whole texture (every layer), as queue.writeTexture: rows from
-// the top, tightly packed, layer after layer; in the order of the queue.
+// Writes the whole first level (every layer), as queue.writeTexture: rows
+// from the top, tightly packed, layer after layer; in the order of the
+// queue.
 FDW_VK_API int fdw_vk_texture_write(fdw_vk_context *context,
                                     fdw_vk_texture *texture, const void *data,
                                     uint64_t size);
-// Reads the first layer back, rows from the top, tightly packed: a ticket,
-// as fdw_vk_buffer_read.
+// Computes the levels of a texture after the first one, in the order of the
+// queue (after the writes before), as FDW_VK_CMD_GENERATE_MIPMAPS.
+FDW_VK_API int fdw_vk_texture_generate_mipmaps(fdw_vk_context *context,
+                                               fdw_vk_texture *texture);
+// Reads the first level of the first layer back, rows from the top, tightly
+// packed: a ticket, as fdw_vk_buffer_read.
 FDW_VK_API int fdw_vk_texture_read(fdw_vk_context *context,
                                    fdw_vk_texture *texture, uint64_t *ticket);
 
@@ -168,6 +176,9 @@ typedef struct fdw_vk_sampler_options {
 FDW_VK_API fdw_vk_sampler *
 fdw_vk_sampler_create(fdw_vk_context *context,
                       const fdw_vk_sampler_options *options);
+// The highest max_anisotropy of the samplers (1: no anisotropic filtering);
+// higher ones are clamped to it.
+FDW_VK_API float fdw_vk_max_anisotropy(const fdw_vk_context *context);
 FDW_VK_API void fdw_vk_sampler_destroy(fdw_vk_context *context,
                                        fdw_vk_sampler *sampler);
 FDW_VK_API uint32_t fdw_vk_sampler_id(const fdw_vk_sampler *sampler);
@@ -415,6 +426,9 @@ enum {
   // Outside of the passes. pool, index: the time when the commands before
   // are complete.
   FDW_VK_CMD_WRITE_TIMESTAMP = 17,
+  // Outside of the passes. texture: computes its levels after the first
+  // one, each blitted from the previous one.
+  FDW_VK_CMD_GENERATE_MIPMAPS = 18,
 };
 
 // Records the commands into a command buffer, with the barriers the

@@ -1,3 +1,4 @@
+import { checkMipLevelCount, samplerAnisotropy } from '@fdw/engine-backend';
 import type {
   GpuRenderTarget,
   GpuSampler,
@@ -39,6 +40,7 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
     readonly dimensions: GpuTextureDimensions,
     readonly usage: readonly GpuTextureUsage[],
     readonly sampleCount = 1,
+    readonly mipLevelCount = 1,
     readonly label?: string,
     // An image owned by the native side (a swapchain image): wrapped, not
     // created.
@@ -54,6 +56,7 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
         dimensions.height ?? 1,
         dimensions.layers ?? 1,
         sampleCount,
+        mipLevelCount,
         usage.reduce((flags, name) => flags | TextureUsageFlags[name], 0),
         label
       );
@@ -75,9 +78,15 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
     return this._handle;
   }
 
-  /** Writes every layer: rows from the top, tightly packed. */
+  /**
+   * Writes the first level of every layer, rows from the top, tightly
+   * packed, then computes the other levels.
+   */
   write(data: ArrayBufferView): void {
     this._addon.writeTexture(this.handle, data);
+    if (this.mipLevelCount > 1) {
+      this._addon.generateMipmaps(this.handle);
+    }
   }
 
   /**
@@ -150,7 +159,8 @@ export class VulkanSampler implements GpuSampler {
   constructor(
     private readonly _addon: VulkanAddon,
     context: ContextHandle,
-    config: GpuSamplerConfiguration = {}
+    config: GpuSamplerConfiguration = {},
+    defaultMaxAnisotropy = 1
   ) {
     this.wrapModeS = config.wrapModeS ?? 'repeat';
     this.wrapModeT = config.wrapModeT ?? 'repeat';
@@ -158,7 +168,11 @@ export class VulkanSampler implements GpuSampler {
     this.minFilter = config.minFilter ?? 'linear';
     this.magFilter = config.magFilter ?? 'linear';
     this.mipmapFilter = config.mipmapFilter ?? 'linear';
-    this.maxAnisotropy = config.maxAnisotropy ?? 1;
+    this.maxAnisotropy = samplerAnisotropy(
+      config,
+      defaultMaxAnisotropy,
+      _addon.maxAnisotropy(context)
+    );
     this.compare = config.compare;
     this.label = config.label;
     this._handle = _addon.createSampler(
@@ -187,6 +201,8 @@ export class VulkanSampler implements GpuSampler {
 export class VulkanTextureFactory
   implements GpuTextureFactory<never>, GpuSamplerFactory
 {
+  defaultMaxAnisotropy = 1;
+
   constructor(
     private readonly _addon: VulkanAddon,
     private readonly _context: ContextHandle
@@ -211,6 +227,7 @@ export class VulkanTextureFactory
       dimensions,
       usage,
       descriptor.sampleCount ?? 1,
+      checkMipLevelCount(descriptor),
       label
     );
     if (source) {
@@ -224,6 +241,11 @@ export class VulkanTextureFactory
   }
 
   createSampler(descriptor?: GpuSamplerConfiguration): VulkanSampler {
-    return new VulkanSampler(this._addon, this._context, descriptor);
+    return new VulkanSampler(
+      this._addon,
+      this._context,
+      descriptor,
+      this.defaultMaxAnisotropy
+    );
   }
 }

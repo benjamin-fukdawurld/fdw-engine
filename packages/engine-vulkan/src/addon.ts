@@ -113,6 +113,7 @@ export interface VulkanAddon {
     height: number,
     layers: number,
     sampleCount: number,
+    mipLevelCount: number,
     usage: number,
     label?: string
   ): TextureHandle;
@@ -120,6 +121,8 @@ export interface VulkanAddon {
   textureId(texture: TextureHandle): number;
   // Every layer, rows from the top, tightly packed.
   writeTexture(texture: TextureHandle, data: ArrayBufferView): void;
+  // Computes the levels after the first one, in the order of the queue.
+  generateMipmaps(texture: TextureHandle): void;
   // A ticket for the pixels of the first layer, as readBuffer.
   readTexture(texture: TextureHandle): number;
 
@@ -136,6 +139,8 @@ export interface VulkanAddon {
     label?: string
   ): SamplerHandle;
   destroySampler(sampler: SamplerHandle): void;
+  // The highest anisotropy of the samplers (1: none).
+  maxAnisotropy(context: ContextHandle): number;
   samplerId(sampler: SamplerHandle): number;
   // Whether the queue writes timestamps.
   timestampsSupported(context: ContextHandle): boolean;
@@ -247,6 +252,7 @@ export const Commands = {
   dispatchIndirect: 15,
   resetQueries: 16,
   writeTimestamp: 17,
+  generateMipmaps: 18,
 } as const;
 
 let addon: VulkanAddon | undefined;

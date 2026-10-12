@@ -72,6 +72,7 @@ export class VulkanSwapchain {
               { width: acquired.width, height: acquired.height },
               ['render-attachment', 'copy-src', 'copy-dst'],
               1,
+              1,
               `swapchain image ${index}`,
               image
             )

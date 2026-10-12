@@ -217,6 +217,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         return { ...descriptor, destroy: () => undefined };
       },
       writeTexture: () => undefined,
+      defaultMaxAnisotropy: 1,
       createSampler: () => ({ destroy: () => undefined }),
     } as RenderBackend['textures'],
     pipelines: {
@@ -311,6 +312,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       },
       copyBufferToBuffer: () => undefined,
       copyTextureToTexture: () => undefined,
+      generateMipmaps: () => undefined,
       beginRenderPass: (descriptor) => {
         log.renderPasses.push(descriptor.label ?? '');
         return {

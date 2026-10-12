@@ -8,7 +8,7 @@ import type {
   RenderTargetDescriptor,
 } from '@fdw/engine-backend';
 import { BufferFactory } from '../gpu/BufferFactory';
-import { TextureFactory } from '../gpu/TextureFactory';
+import { MaxAnisotropy, TextureFactory } from '../gpu/TextureFactory';
 import { cameraMath, transformMath } from '../math';
 import {
   WebGpuCommandBuffer,
@@ -30,6 +30,7 @@ export class WebGpuRenderBackend implements RenderBackend {
     renderableFormats: ['rgba16float'],
     // The object data in a table of storage buffers.
     objectTable: true,
+    maxAnisotropy: MaxAnisotropy,
   };
 
   constructor(readonly device: GPUDevice) {
@@ -63,7 +64,10 @@ export class WebGpuRenderBackend implements RenderBackend {
   }
 
   createCommandEncoder(): GpuCommandEncoder {
-    return new WebGpuCommandEncoder(this.device.createCommandEncoder());
+    return new WebGpuCommandEncoder(
+      this.device.createCommandEncoder(),
+      this.textures
+    );
   }
 
   createObjectTable(descriptor: ObjectTableDescriptor): WebGpuObjectTable {

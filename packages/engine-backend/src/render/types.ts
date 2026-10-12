@@ -293,6 +293,14 @@ export interface GpuCommandEncoder {
     destination: GpuAttachmentTarget,
     size: { readonly width: number; readonly height: number }
   ): void;
+  /**
+   * Computes the levels of a texture after the first one, each averaging
+   * the previous one, in every layer: after rendering to the first level,
+   * or writing it. For textures created with mipLevelCount > 1 (a no-op
+   * otherwise), of a format whose levels can be computed
+   * (canGenerateMipmaps); 2d, 2d-array and cube textures.
+   */
+  generateMipmaps(texture: GpuAttachmentTarget): void;
   // Barriers before the next pass, on the backends with explicit
   // synchronization; absent elsewhere.
   transition?(transitions: readonly ResourceTransition[]): void;

@@ -37,15 +37,17 @@ export class VulkanRenderBackend implements RenderBackend {
   readonly transformMath = transformMath;
   // A 32-bit float depth, available on every GPU.
   readonly depthFormat = 'depth24plus';
-  readonly capabilities: BackendCapabilities = {
-    renderableFormats: ['rgba16float'],
-    // The object data in a table of storage buffers.
-    objectTable: true,
-  };
+  readonly capabilities: BackendCapabilities;
 
   constructor(readonly device: VulkanDevice) {
     this.buffers = device.buffers;
     this.textures = new VulkanTextureFactory(loadVulkanAddon(), device.context);
+    this.capabilities = {
+      renderableFormats: ['rgba16float'],
+      // The object data in a table of storage buffers.
+      objectTable: true,
+      maxAnisotropy: loadVulkanAddon().maxAnisotropy(device.context),
+    };
     this.pipelines = new VulkanPipelineFactory(
       loadVulkanAddon(),
       device.context

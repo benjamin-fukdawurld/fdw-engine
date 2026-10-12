@@ -35,6 +35,10 @@ const counts = graph.createBuffer('counts', { size: 16 });
   première texture importée, ou la `size` passée à `execute`.
 - `sampleCount: 4` crée un attachment multiéchantillonné, résolu dans une
   texture avec `pass.resolveColor()`.
+- `mipLevelCount` donne des niveaux de détail à une texture (`'full'` :
+  jusqu'à 1×1, pour la taille qu'elle reçoit).
+  `graph.addMipmapPass(name, texture)` les calcule à partir du premier niveau
+  et renvoie la version à échantillonner (un flou, un bloom, une moyenne).
 
 ## Passes et versions
 
@@ -75,7 +79,7 @@ Trois types de passes ouvrent trois types d'encodeurs :
   (`context.pass`) ;
 - `addComputePass` : une passe de calcul (`context.pass`, WebGPU et
   Vulkan) ;
-- `addCopyPass` : l'encodeur de commandes, pour les copies
+- `addCopyPass` : l'encodeur de commandes, pour les copies et les mipmaps
   (`context.encoder`).
 
 Dans `execute`, `context.texture(handle)` et `context.buffer(handle)`

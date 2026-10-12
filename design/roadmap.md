@@ -70,7 +70,7 @@ Critères : les mesures de P0 avant et après ; le labyrinthe et la forêt en We
 ### P3. Occlusion culling
 
 - **Le package `engine-occlusion`** : le Hi-Z sur le GPU en deux phases (dessiner d'abord ce qui était visible, construire la pyramide de profondeur, tester le reste), et le CPU en repli pour WebGL2 ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)). Le choix entre une relecture CPU et un rendu piloté par le GPU se fera dans son design.
-- **Prérequis** : les textures de stockage (compute graph et Vulkan), la génération des mipmaps.
+- **Prérequis** : les textures de stockage (compute graph et Vulkan), la génération des mipmaps (_faite_ : `addMipmapPass` ; la pyramide Hi-Z demandera une réduction min/max par une passe de calcul plutôt qu'une moyenne).
 - **Ensuite, selon les mesures** : le culling sur le GPU avec des draws indirects ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), et un BVH pour les scènes statiques de CAO et de BIM.
 
 Démo : une scène dense où l'essentiel est caché (une ville, un bâtiment, un assemblage), avec la vue du culling comme dans le labyrinthe.
@@ -88,7 +88,7 @@ Démo : une scène dense où l'essentiel est caché (une ville, un bâtiment, un
 ### P5. Ressources
 
 - **Le système abstrait** : des chargeurs enregistrés par type, un chargement asynchrone, annulable, avec sa progression, un cache et des poignées partagées, les dépendances entre ressources, des sources multiples (URL, fichiers, archives), le rechargement à chaud.
-- **Images** : décodage dans le navigateur et en natif, génération des mipmaps, puis les textures compressées (KTX2, Basis).
+- **Images** : décodage dans le navigateur et en natif, puis les textures compressées (KTX2, Basis). La génération des mipmaps et le filtrage anisotrope existent déjà (`mipLevelCount`, `maxAnisotropy`).
 - **glTF 2.0** : meshes, matériaux PBR traduits en material graph, hiérarchie de nœuds ; les squelettes et les animations sont lus ici, et utilisés en P6.
 - **Les formats de sommets** : tangentes, plusieurs jeux d'UV, couleurs ; le partage des meshes.
 - **L'importeur OBJ** de la démo, repris comme un chargeur parmi d'autres.

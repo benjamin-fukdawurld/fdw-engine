@@ -1,4 +1,7 @@
 import {
+  canGenerateMipmaps,
+  checkMipLevelCount,
+  samplerAnisotropy,
   GpuSampler,
   GpuSamplerFactory,
   GpuSamplerConfiguration,
@@ -11,6 +14,7 @@ import {
 } from '@fdw/engine-backend';
 import { Texture } from './Texture';
 import { Sampler } from './Sampler';
+import { MipmapGenerator } from './MipmapGenerator';
 
 function textureUsageFlags(usage: readonly GpuTextureUsage[]): number {
   const flags: Record<GpuTextureUsage, number> = {
@@ -27,13 +31,20 @@ function textureUsageFlags(usage: readonly GpuTextureUsage[]): number {
 const isImageBitmap = (source: unknown): source is ImageBitmap =>
   typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap;
 
+// WebGPU accepts any anisotropy and clamps it to what the device can do:
+// 16 at most on the current GPUs.
+export const MaxAnisotropy = 16;
+
 export class TextureFactory
   implements GpuTextureFactory<ImageBitmap>, GpuSamplerFactory
 {
   public readonly device: GPUDevice;
+  readonly mipmaps: MipmapGenerator;
+  defaultMaxAnisotropy = 1;
 
   constructor(device: GPUDevice) {
     this.device = device;
+    this.mipmaps = new MipmapGenerator(device);
   }
 
   createTexture(
@@ -53,6 +64,7 @@ export class TextureFactory
       sampleCount = 1,
     } = descriptor;
     const { width, height = 1, layers = 1 } = dimensions;
+    const mipLevelCount = checkMipLevelCount(descriptor);
 
     const textureDescriptor: GPUTextureDescriptor = {
       size: {
@@ -62,6 +74,7 @@ export class TextureFactory
       },
       format: TextureFactory.textureFormatToGPUTextureFormat(format),
       sampleCount,
+      mipLevelCount,
       usage:
         (usage
           ? textureUsageFlags(usage)
@@ -70,6 +83,10 @@ export class TextureFactory
         (source ? GPUTextureUsage.COPY_DST : 0) |
         (readwrite || isImageBitmap(source)
           ? GPUTextureUsage.RENDER_ATTACHMENT
+          : 0) |
+        // The levels are rendered from the previous ones.
+        (mipLevelCount > 1
+          ? GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
           : 0),
       label,
     };
@@ -95,6 +112,7 @@ export class TextureFactory
       } else {
         throw new Error(`Unsupported source type: ${source}`);
       }
+      this.generateMipmaps(texture);
     }
 
     return new Texture({
@@ -103,7 +121,34 @@ export class TextureFactory
       dimensions,
       texture,
       sampleCount,
+      mipLevelCount,
     });
+  }
+
+  /**
+   * Records the computation of the levels of a texture after the first one
+   * (see GpuCommandEncoder.generateMipmaps).
+   */
+  encodeMipmaps(encoder: GPUCommandEncoder, texture: GPUTexture): void {
+    if (texture.mipLevelCount === 1) {
+      return;
+    }
+    if (!canGenerateMipmaps(texture.format)) {
+      throw new Error(
+        `The levels of texture "${texture.label}" (${texture.format}) cannot be computed`
+      );
+    }
+    this.mipmaps.encode(encoder, texture);
+  }
+
+  // Computes the levels of an uploaded texture, in the order of the queue.
+  private generateMipmaps(texture: GPUTexture): void {
+    if (texture.mipLevelCount === 1) {
+      return;
+    }
+    const encoder = this.device.createCommandEncoder();
+    this.encodeMipmaps(encoder, texture);
+    this.device.queue.submit([encoder.finish()]);
   }
 
   writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
@@ -122,6 +167,7 @@ export class TextureFactory
       },
       [width, height, layers]
     );
+    this.generateMipmaps(target);
   }
 
   createSampler(descriptor?: GpuSamplerConfiguration): GpuSampler {
@@ -132,12 +178,17 @@ export class TextureFactory
       magFilter: (descriptor?.magFilter ?? 'linear') as GPUFilterMode,
       minFilter: (descriptor?.minFilter ?? 'linear') as GPUFilterMode,
       mipmapFilter: (descriptor?.mipmapFilter ?? 'linear') as GPUFilterMode,
-      maxAnisotropy: descriptor?.maxAnisotropy ?? 1,
+      maxAnisotropy: samplerAnisotropy(
+        descriptor ?? {},
+        this.defaultMaxAnisotropy,
+        MaxAnisotropy
+      ),
       ...(descriptor?.compare ? { compare: descriptor.compare } : {}),
     };
 
     return new Sampler({
       ...descriptor,
+      maxAnisotropy: samplerDescriptor.maxAnisotropy,
       sampler: this.device.createSampler(samplerDescriptor),
     });
   }
