@@ -94,4 +94,13 @@ Les trois backends lisent les données d'objet dans une table (la capacité `obj
 
 Avant P1, l'étape 1 tournait à environ 89 fps sur Vulkan. Le gain de Dawn, plus fort, vient du coût de chaque appel WebGPU : c'est le cas du navigateur.
 
-Ce qui reste du chemin précédent (un bloc uniforme par objet, sans la capacité) sera retiré à la fin de P1, une fois l'instancing en place.
+## 7. Résultats de l'étape 2 : l'instancing
+
+Les entrées consécutives de même pipeline, même matériau et même mesh (dans la même vue) sont un seul draw de N instances ; le tri ajoute le mesh comme troisième clé. Les statistiques de vue donnent `drawCalls` à côté de `drawn`. Un test de la suite de rendu vérifie, sur les trois backends, deux objets en un draw et un `firstInstance` non nul.
+
+| Labyrinthe, étape 1 (natif, sans validation) | Avant P1 | Table                       | Table et instancing |
+| -------------------------------------------- | -------- | --------------------------- | ------------------- |
+| Vulkan                                       | 89 fps   | 125 fps                     | **≈ 171 fps**       |
+| Dawn                                         | —        | 71,5 fps (42 sans la table) | **≈ 122 fps**       |
+
+L'ancien chemin (un bloc uniforme par objet) est retiré : le `Renderer` exige `createObjectTable`, et compile toujours ses programmes avec la table. Le compilateur garde l'option `objectTable` pour qui compile hors du renderer.

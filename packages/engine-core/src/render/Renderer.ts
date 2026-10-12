@@ -90,6 +90,9 @@ export interface ViewStats {
   // The draws of the scene passes (a double-sided transparent item is
   // drawn twice).
   readonly drawn: number;
+  // The draw calls of the scene passes: fewer than `drawn` with an object
+  // table, where the items sharing a mesh and a material are instanced.
+  readonly drawCalls: number;
   // The lights used: those that can light what the camera sees.
   readonly lights: number;
   readonly shadowMaps: number;
@@ -178,16 +181,14 @@ interface FrameView extends UniformGroup {
 
 // The world matrix of an item, from its Transform or given by its source,
 // with what the renderer derives from it.
-interface ObjectState extends UniformGroup, RowSource {
+interface ObjectState extends RowSource {
   matrix(): Mat4;
   normalMatrix(): Mat3;
   // The version of the world matrix.
   current(): number;
   // For the items of a Transform: its block in the pool, whose first bytes
-  // are the object uniform block.
+  // are the row of the object table.
   pooled?(): { data: Float32Array; byteOffset: number };
-  // Version of the world matrix last uploaded.
-  version: number;
   // The world bounds of the mesh, for the version of the matrix and of the
   // mesh they were computed with.
   readonly bounds: Aabb;
@@ -245,6 +246,30 @@ interface BoundState {
   vertexBuffers: (GpuBuffer | undefined)[];
   indexBuffer?: GpuBuffer;
   indexFormat?: IndexFormat;
+}
+
+// Calls `run` for each run of consecutive entries drawn alike (the same
+// pipeline, material and mesh, in the same view): one instanced draw.
+function forEachRun(
+  entries: readonly PreparedItem[],
+  run: (start: number, count: number) => void
+): void {
+  let start = 0;
+  while (start < entries.length) {
+    const head = entries[start];
+    let end = start + 1;
+    while (
+      end < entries.length &&
+      entries[end].pipelineKey === head.pipelineKey &&
+      entries[end].item.material === head.item.material &&
+      entries[end].item.mesh === head.item.mesh &&
+      entries[end].view === head.view
+    ) {
+      end++;
+    }
+    run(start, end - start);
+    start = end;
+  }
 }
 
 // The object state of an entry: the source of its row in the object table.
@@ -345,29 +370,6 @@ const toneMappingFunctions: Record<string, string> = {
 
 const isHandle = (value: MaterialValue | undefined): boolean =>
   typeof value === 'object' && value !== null && !('length' in value);
-
-// Whether an object uniform block is laid out as the blocks of a
-// TransformPool: the world matrix at 0, the normal matrix (3 columns of 4
-// floats) at 64.
-const poolLayouts = new WeakMap<PhysicalUniformBlock, boolean>();
-function matchesPool(block: PhysicalUniformBlock): boolean {
-  let matches = poolLayouts.get(block);
-  if (matches === undefined) {
-    const world = block.members.find((member) => member.name === 'world');
-    const normal = block.members.find(
-      (member) => member.name === 'normalMatrix'
-    );
-    matches =
-      block.members.length === 2 &&
-      world?.offset === 0 &&
-      world.size === 64 &&
-      normal?.offset === 64 &&
-      normal.size === 48 &&
-      block.size >= ObjectBlockSize;
-    poolLayouts.set(block, matches);
-  }
-  return matches;
-}
 
 // A point or spot light with a finite range: what it does not reach is
 // black.
@@ -485,7 +487,7 @@ export class Renderer {
   // The object table, on the backends whose programs read it (objectTable
   // capability); its bind groups by layout key, with the version of the
   // table they were made for.
-  private readonly _objectRows?: ObjectRows;
+  private readonly _objectRows: ObjectRows;
   private readonly _objectGroups = new Map<
     string,
     { version: number; bindGroup: GpuBindGroup }
@@ -493,9 +495,12 @@ export class Renderer {
 
   constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
-    this._objectRows = backend.capabilities?.objectTable
-      ? new ObjectRows(backend)
-      : undefined;
+    if (!backend.createObjectTable) {
+      throw new Error(
+        'The renderer needs a backend with object tables (createObjectTable)'
+      );
+    }
+    this._objectRows = new ObjectRows(backend);
     this._registry = options.registry;
     this._asyncPipelines = options.asyncPipelines ?? false;
     this._runner = new RenderGraphRunner(backend);
@@ -592,7 +597,7 @@ export class Renderer {
       cullUnlit = false,
     }: ScenePassesOptions
   ): TextureHandle {
-    this._objectRows?.beginFrame();
+    this._objectRows.beginFrame();
     const from = source ?? this.listSource(items);
     const cameraCache = this.cameraCache(camera);
     const frustum = this.frustum(name).setFromMatrix(
@@ -676,6 +681,7 @@ export class Renderer {
     this._stats.set(name, {
       visible: list.length,
       drawn: ordered.length,
+      drawCalls: this.drawCalls(ordered),
       lights: used.length,
       shadowMaps: shadowPass?.tiles.length ?? 0,
       casters: shadowPass?.casters ?? 0,
@@ -769,7 +775,7 @@ export class Renderer {
       blend = false,
     }: FullscreenPassOptions
   ): TextureHandle {
-    this._objectRows?.beginFrame();
+    this._objectRows.beginFrame();
     const view = this.view(name);
     const prepared = this.prepareFullscreen(material, format, view, blend);
     // The frame values of the last scene (exposure…).
@@ -806,7 +812,7 @@ export class Renderer {
     this._shadowSampler?.destroy();
     this._shadowSampler = undefined;
     this._runner.destroy();
-    this._objectRows?.destroy();
+    this._objectRows.destroy();
     this._objectGroups.clear();
     this._pipelines.clear();
   }
@@ -1067,9 +1073,8 @@ export class Renderer {
       program = compile(material.graph, {
         vertexAttributes: semantics,
         features,
-        ...(this.backend.capabilities
-          ? { capabilities: this.backend.capabilities }
-          : {}),
+        // The object data always comes from the table.
+        capabilities: { ...this.backend.capabilities, objectTable: true },
         ...(this._registry ? { registry: this._registry } : {}),
       });
       byAttributes.set(key, program);
@@ -1306,10 +1311,21 @@ export class Renderer {
       return materialOrder.get(material) as number;
     };
 
+    const meshOrder = new Map<Mesh, number>();
+    const meshIndex = (mesh: Mesh) => {
+      if (!meshOrder.has(mesh)) {
+        meshOrder.set(mesh, meshOrder.size);
+      }
+      return meshOrder.get(mesh) as number;
+    };
+
+    // By pipeline, material, then mesh: the items sharing them follow each
+    // other, and become one instanced draw.
     opaque.sort(
       (a, b) =>
         a.pipelineId - b.pipelineId ||
-        materialIndex(a.item.material) - materialIndex(b.item.material)
+        materialIndex(a.item.material) - materialIndex(b.item.material) ||
+        meshIndex(a.item.mesh) - meshIndex(b.item.mesh)
     );
 
     const position = camera.camera.position;
@@ -1404,8 +1420,6 @@ export class Renderer {
           byteOffset: transform.index * TransformLayout.stride * 4,
         };
       },
-      version: -1,
-      bindGroups: new Map(),
       bounds: new Aabb(),
       boundsVersion: -1,
       boundsMeshVersion: -1,
@@ -1428,8 +1442,6 @@ export class Renderer {
         return normal;
       },
       current: () => world.version,
-      version: -1,
-      bindGroups: new Map(),
       bounds: new Aabb(),
       boundsVersion: -1,
       boundsMeshVersion: -1,
@@ -1504,39 +1516,6 @@ export class Renderer {
       this.writeBlock(block, (name) => values[name]),
       `${view.name} frame uniforms`
     );
-  }
-
-  private updateObject(state: ObjectState, block: PhysicalUniformBlock): void {
-    // Reading the version recomputes the matrices if the transform changed.
-    const version = state.current();
-    if (state.buffer && state.version === version) {
-      return;
-    }
-    if (state.pooled && matchesPool(block)) {
-      // The block of the pool is the uniform block: one copy.
-      const { data, byteOffset } = state.pooled();
-      this.upload(
-        state,
-        block,
-        data.buffer as ArrayBuffer,
-        'object uniforms',
-        byteOffset,
-        ObjectBlockSize
-      );
-      state.version = version;
-      return;
-    }
-    const values: Record<string, UniformValue> = {
-      world: state.matrix(),
-      normalMatrix: state.normalMatrix(),
-    };
-    this.upload(
-      state,
-      block,
-      this.writeBlock(block, (name) => values[name]),
-      'object uniforms'
-    );
-    state.version = version;
   }
 
   // --- Bind groups -----------------------------------------------------------------
@@ -1705,16 +1684,25 @@ export class Renderer {
     pass: GpuRenderPassEncoder,
     entries: readonly PreparedItem[]
   ): void {
-    const first = this._objectRows
-      ? this._objectRows.instances(entries, objectOf)
-      : 0;
-    entries.forEach((entry, i) => this.draw(pass, entry, first + i));
+    const first = this._objectRows.instances(entries, objectOf);
+    forEachRun(entries, (start, count) =>
+      this.draw(pass, entries[start], first + start, count)
+    );
+  }
+
+  // The draw calls of entries: a run of entries sharing a mesh, a material
+  // and a pipeline is one, with an object table.
+  private drawCalls(entries: readonly PreparedItem[]): number {
+    let calls = 0;
+    forEachRun(entries, () => calls++);
+    return calls;
   }
 
   private draw(
     pass: GpuRenderPassEncoder,
-    { item, program, layout, pipelineKey, object, view }: PreparedItem,
-    instance: number
+    { item, program, layout, pipelineKey, view }: PreparedItem,
+    instance: number,
+    instances: number
   ): void {
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
@@ -1731,17 +1719,8 @@ export class Renderer {
       let bindGroup: GpuBindGroup | undefined;
       if (group.slot === 'frame') {
         bindGroup = this.sharedBindGroup(view, group);
-      } else if (
-        group.slot === 'object' &&
-        group.bindings[0]?.resource.kind === 'object-table'
-      ) {
-        bindGroup = this.objectTableBindGroup(group);
       } else if (group.slot === 'object') {
-        this.updateObject(
-          object,
-          group.bindings[0].block as PhysicalUniformBlock
-        );
-        bindGroup = this.sharedBindGroup(object, group);
+        bindGroup = this.objectTableBindGroup(group);
       } else {
         bindGroup = this.materialBindGroup(item.material, program, group);
       }
@@ -1769,9 +1748,9 @@ export class Renderer {
         state.indexBuffer = mesh.indexBuffer;
         state.indexFormat = format;
       }
-      pass.drawIndexed(item.mesh.indices.length, 1, instance);
+      pass.drawIndexed(item.mesh.indices.length, instances, instance);
     } else {
-      pass.draw(item.mesh.description.vertexCount, 1, instance);
+      pass.draw(item.mesh.description.vertexCount, instances, instance);
     }
   }
 
@@ -1779,9 +1758,6 @@ export class Renderer {
   // made again when the table grows.
   private objectTableBindGroup(group: PhysicalBindGroup): GpuBindGroup {
     const rows = this._objectRows;
-    if (!rows) {
-      throw new Error('The programs read an object table the renderer has not');
-    }
     const layout = this.bindGroupLayout(group);
     const table = rows.table;
     let cached = this._objectGroups.get(layout.key);

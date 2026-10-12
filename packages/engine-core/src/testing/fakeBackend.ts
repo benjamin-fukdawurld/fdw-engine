@@ -156,10 +156,23 @@ const cameraMath = {
     multiply(projection, view),
 } as unknown as CameraMath;
 
+// The floats of a row of an object table: the world matrix, then the
+// normal matrix as three columns of vec4.
+const RowFloats = 28;
+
+/** The row `index` written to the object tables of a fake backend. */
+export const rowOf = (
+  log: { readonly rows: Float32Array },
+  index: number
+): Float32Array =>
+  log.rows.subarray(index * RowFloats, (index + 1) * RowFloats);
+
 export function fakeBackend(capabilities?: BackendCapabilities) {
   const log = {
     buffers: [] as FakeBuffer[],
     objectTables: [] as { rows: number; instances: number }[],
+    // The rows written to the object tables, 28 floats each (rowOf).
+    rows: new Float32Array(0),
     rowWrites: [] as { first: number; bytes: number }[],
     instanceWrites: [] as { first: number; count: number }[],
     // A view of the rows of the last write: read it right after the frame.
@@ -256,26 +269,36 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     transformMath,
     depthFormat: 'depth24plus',
     capabilities,
-    // With the objectTable capability: a table recording its writes.
-    ...(capabilities?.objectTable
-      ? {
-          createObjectTable: ({ rows, instances }: ObjectTableDescriptor) => {
-            log.objectTables.push({ rows, instances });
-            return {
-              rows,
-              instances,
-              writeRows: (first: number, data: ArrayBufferView) =>
-                log.rowWrites.push({ first, bytes: data.byteLength }),
-              // The rows of the last write; the count of every write.
-              writeInstances: (first: number, rows: Uint32Array) => {
-                log.instanceWrites.push({ first, count: rows.length });
-                log.lastInstances = rows;
-              },
-              destroy: () => undefined,
-            };
-          },
-        }
-      : {}),
+    // An object table recording its writes.
+    createObjectTable: ({ rows, instances }: ObjectTableDescriptor) => {
+      log.objectTables.push({ rows, instances });
+      return {
+        rows,
+        instances,
+        writeRows: (first: number, data: ArrayBufferView) => {
+          log.rowWrites.push({ first, bytes: data.byteLength });
+          // A copy of the rows written, 28 floats each.
+          const floats = new Float32Array(
+            data.buffer,
+            data.byteOffset,
+            data.byteLength / 4
+          );
+          const end = first * RowFloats + floats.length;
+          if (end > log.rows.length) {
+            const grown = new Float32Array(Math.max(end, log.rows.length * 2));
+            grown.set(log.rows);
+            log.rows = grown;
+          }
+          log.rows.set(floats, first * RowFloats);
+        },
+        // The rows of the last write; the count of every write.
+        writeInstances: (first: number, rows: Uint32Array) => {
+          log.instanceWrites.push({ first, count: rows.length });
+          log.lastInstances = rows;
+        },
+        destroy: () => undefined,
+      };
+    },
     createRenderTarget: ({ width, height, format }) => ({
       width,
       height,

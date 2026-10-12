@@ -205,6 +205,30 @@ export function describeRenderer(
       expectColor(pixel(48, 32), [255, 0, 0, 255]);
     });
 
+    it('draws the objects sharing a mesh and a material as instances', async () => {
+      const mesh = quad();
+      const red = new Material({ graph: colorGraph() });
+      const blue = new Material({
+        graph: colorGraph(),
+        values: { color: [0, 0, 1, 1] },
+      });
+      const pixel = await render([
+        { mesh, material: red, transform: at(-0.5, 0.5) },
+        { mesh, material: blue, transform: at(0.5, -0.5) },
+        { mesh, material: red, transform: at(0.5, 0.5) },
+      ]);
+      // Each instance at the place of its object.
+      expectColor(pixel(16, 16), [255, 0, 0, 255]);
+      expectColor(pixel(48, 16), [255, 0, 0, 255]);
+      expectColor(pixel(48, 48), [0, 0, 255, 255]);
+      expectColor(pixel(16, 48), [0, 0, 0, 255]);
+      // The two red quads in one draw.
+      expect(renderer.stats.get('scene')).toMatchObject({
+        drawn: 3,
+        drawCalls: 2,
+      });
+    });
+
     it('applies new uniform values and transforms on the next frame', async () => {
       const material = new Material({ graph: colorGraph() });
       const transform = at(-0.5);

@@ -20,6 +20,7 @@ import {
   colorGraph,
   fakeBackend,
   FakeBuffer,
+  rowOf,
   sizeOf,
   surface,
   texturedGraph,
@@ -91,7 +92,7 @@ describe('Renderer', () => {
     expect(floatsOf(buffer).slice(0, 3)).toEqual([0, 0, 1]);
   });
 
-  it('uploads object matrices only when the transform changes', () => {
+  it('writes the row of an object only when its transform changes', () => {
     const { render, log } = setup();
     const transform = transformAt(2);
     const items = [
@@ -102,18 +103,16 @@ describe('Renderer', () => {
       },
     ];
     render(items);
-    const buffer = log.buffers.find(
-      (b) => b.label === 'object uniforms'
-    ) as FakeBuffer;
-    expect(floatsOf(buffer)[12]).toBe(2);
+    expect(rowOf(log, 0)[12]).toBe(2);
+    expect(log.rowWrites).toHaveLength(1);
 
     render(items);
-    expect(buffer.writes).toBe(1);
+    expect(log.rowWrites).toHaveLength(1);
 
     transform.position = { x: 5 };
     render(items);
-    expect(buffer.writes).toBe(2);
-    expect(floatsOf(buffer)[12]).toBe(5);
+    expect(log.rowWrites).toHaveLength(2);
+    expect(rowOf(log, 0)[12]).toBe(5);
   });
 
   it('writes the camera in the frame uniforms every frame', () => {
@@ -246,13 +245,11 @@ describe('Renderer', () => {
       'glass',
       'glass',
     ]);
-    // Object buffers are created in draw order: the opaque one, then the far
-    // transparent one (z = -5, 15 from the camera), then the near one.
-    const objectBuffers = log.buffers.filter(
-      (b) => b.label === 'object uniforms'
-    );
-    expect(objectBuffers.map((b) => floatsOf(b)[14])).toEqual([0, -5, 5]);
-    expect(log.draws[1].groups[2]).not.toBe(log.draws[2].groups[2]);
+    // The instances of the transparent pass: the far object (z = -5, 15
+    // from the camera), then the near one.
+    expect([...log.lastInstances].map((row) => rowOf(log, row)[14])).toEqual([
+      -5, 5,
+    ]);
   });
 
   it('draws masked materials with the opaque ones, with their cutoff', () => {
@@ -345,20 +342,27 @@ describe('Renderer, object table', () => {
     const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
     const render = (items: Parameters<Renderer['render']>[0]['items']) =>
       renderer.render({ items, camera, surface });
-    return { render, log };
+    return { renderer, render, log };
   };
 
   it('draws each object as an instance of the table, its group bound once', () => {
     const { render, log } = tabled();
     const material = new Material({ graph: colorGraph() });
+    const mesh = triangle();
     const items = [-1, 0, 1].map((x) => ({
-      mesh: triangle(),
+      mesh,
       material,
       transform: transformAt(x),
     }));
     render(items);
     expect(log.objectTables).toHaveLength(1);
-    expect(log.draws.map((draw) => draw.firstInstance)).toEqual([0, 1, 2]);
+    // The same mesh and material: one draw of three instances.
+    expect(
+      log.draws.map(({ instances, firstInstance }) => [
+        instances,
+        firstInstance,
+      ])
+    ).toEqual([[3, 0]]);
     // No buffer per object.
     expect(log.buffers.filter((b) => b.label === 'object uniforms')).toEqual(
       []
@@ -374,8 +378,9 @@ describe('Renderer, object table', () => {
   it('grows the table, every row written in the new one', () => {
     const { render, log } = tabled();
     const material = new Material({ graph: colorGraph() });
+    const mesh = triangle();
     const items = Array.from({ length: 300 }, (_, i) => ({
-      mesh: triangle(),
+      mesh,
       material,
       transform: transformAt(i / 100 - 1.5),
     }));
@@ -386,17 +391,38 @@ describe('Renderer, object table', () => {
     expect(last.rows).toBeGreaterThanOrEqual(300);
     expect(last.instances).toBeGreaterThanOrEqual(300);
     expect(log.rowWrites.at(-1)).toEqual({ first: 0, bytes: 300 * 112 });
-    expect(log.draws.map((draw) => draw.firstInstance)).toEqual(
-      items.map((_, i) => i)
-    );
+    expect(log.draws.map((draw) => draw.instances)).toEqual([300]);
+  });
+
+  it('instances the items sharing a mesh and a material, sorted together', () => {
+    const { renderer, render, log } = tabled();
+    const red = new Material({ graph: colorGraph() });
+    const blue = new Material({ graph: colorGraph() });
+    const cube = triangle();
+    const ball = triangle();
+    // Interleaved: the sort gathers them by material, then by mesh.
+    const items = [
+      { mesh: cube, material: red, transform: transformAt(-1) },
+      { mesh: ball, material: red, transform: transformAt(0) },
+      { mesh: cube, material: blue, transform: transformAt(1) },
+      { mesh: cube, material: red, transform: transformAt(2) },
+      { mesh: ball, material: red, transform: transformAt(3) },
+    ];
+    render(items);
+    expect(log.draws.map((draw) => draw.instances)).toEqual([2, 2, 1]);
+    expect(renderer.stats.get('scene')).toMatchObject({
+      drawn: 5,
+      drawCalls: 3,
+    });
   });
 
   it('rewrites only the rows of the objects that moved', () => {
     const { render, log } = tabled();
     const material = new Material({ graph: colorGraph() });
+    const mesh = triangle();
     const transforms = [0, 1, 2].map((x) => transformAt(x));
     const items = transforms.map((transform) => ({
-      mesh: triangle(),
+      mesh,
       material,
       transform,
     }));
@@ -1075,12 +1101,14 @@ describe('Renderer, state bound on the pass', () => {
     const count = 5;
     render(shared(count, triangle(), new Material({ graph: colorGraph() })));
 
-    // Every group once, except the object one: each item has its own.
+    // One draw of every instance: each group, the object table included,
+    // bound once.
     const groups = Object.keys(log.draws[0].groups).length;
-    expect(log.draws).toHaveLength(count);
+    expect(log.draws).toHaveLength(1);
+    expect(log.draws[0].instances).toBe(count);
     expect(log.calls).toEqual({
       setPipeline: 1,
-      setBindGroup: groups - 1 + count,
+      setBindGroup: groups,
       setVertexBuffer: 1,
       setIndexBuffer: 1,
     });
@@ -1089,17 +1117,26 @@ describe('Renderer, state bound on the pass', () => {
   it('still gives every draw its complete state', () => {
     const { render, log } = setup();
     const count = 4;
-    render(shared(count, triangle(), new Material({ graph: colorGraph() })));
+    const material = new Material({ graph: colorGraph() });
+    // A mesh each: a draw each.
+    render(
+      Array.from({ length: count }, (_, i) => ({
+        mesh: triangle(),
+        material,
+        transform: transformAt(i),
+      }))
+    );
 
     const [first] = log.draws;
+    expect(log.draws).toHaveLength(count);
     for (const draw of log.draws) {
       expect(Object.keys(draw.groups)).toEqual(Object.keys(first.groups));
-      // The frame and material groups are the same objects for all the draws…
+      // The frame, material and object table groups are the same objects
+      // for all the draws.
       expect(draw.groups[0]).toBe(first.groups[0]);
       expect(draw.groups[1]).toBe(first.groups[1]);
+      expect(draw.groups[2]).toBe(first.groups[2]);
     }
-    // …and each item has the group of its own object.
-    expect(new Set(log.draws.map((draw) => draw.groups[2])).size).toBe(count);
   });
 
   it('binds the groups again after a change of pipeline', () => {
@@ -1135,11 +1172,13 @@ describe('Renderer, state bound on the pass', () => {
       ...shared(2, triangle(), material),
     ]);
 
+    // A draw of two instances per mesh.
     const groups = Object.keys(log.draws[0].groups).length;
+    expect(log.draws.map((draw) => draw.instances)).toEqual([2, 2]);
     expect(log.calls.setPipeline).toBe(1);
     expect(log.calls.setVertexBuffer).toBe(2);
     expect(log.calls.setIndexBuffer).toBe(2);
-    expect(log.calls.setBindGroup).toBe(groups - 1 + 4);
+    expect(log.calls.setBindGroup).toBe(groups);
   });
 
   it('does not carry the bound state from a frame to the next', () => {
@@ -1149,10 +1188,10 @@ describe('Renderer, state bound on the pass', () => {
     render(items);
 
     // Each frame has its own pass encoder: everything is bound again.
-    expect(log.draws).toHaveLength(6);
+    expect(log.draws).toHaveLength(2);
     expect(log.calls.setPipeline).toBe(2);
     expect(log.calls.setVertexBuffer).toBe(2);
-    expect(Object.keys(log.draws[3].groups)).toEqual(
+    expect(Object.keys(log.draws[1].groups)).toEqual(
       Object.keys(log.draws[0].groups)
     );
   });

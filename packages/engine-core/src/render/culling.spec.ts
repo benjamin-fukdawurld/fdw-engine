@@ -5,8 +5,9 @@ import { DirectionalLight, PointLight, SpotLight } from '../light';
 import { GraphBuilder } from '@fdw/engine-shader';
 import {
   colorGraph,
-  fakeBackend,
   FakeBuffer,
+  fakeBackend,
+  rowOf,
   surface,
   triangle,
 } from '../testing/fakeBackend';
@@ -88,6 +89,7 @@ describe('Renderer culling', () => {
     expect(renderer.stats.get('scene')).toEqual({
       visible: 2,
       drawn: 2,
+      drawCalls: 2,
       lights: 1,
       shadowMaps: 1,
       casters: 2,
@@ -122,18 +124,15 @@ describe('Renderer culling', () => {
     };
     const source: RenderSource = { query: (_f, _l, visit) => visit(item) };
     renderer.render({ source, camera, surface });
-    const buffer = log.buffers.find(
-      (b) => b.label === 'object uniforms'
-    ) as FakeBuffer;
-    expect(floatsOf(buffer)[12]).toBe(3);
-    // Same version: not uploaded again.
+    expect(rowOf(log, 0)[12]).toBe(3);
+    // Same version: not written again.
     renderer.render({ source, camera, surface });
-    expect(buffer.writes).toBe(1);
+    expect(log.rowWrites).toHaveLength(1);
     matrix[12] = 4;
     (world as { version: number }).version++;
     renderer.render({ source, camera, surface });
-    expect(buffer.writes).toBe(2);
-    expect(floatsOf(buffer)[12]).toBe(4);
+    expect(log.rowWrites).toHaveLength(2);
+    expect(rowOf(log, 0)[12]).toBe(4);
   });
 
   it('refuses an item without transform nor world matrix', () => {

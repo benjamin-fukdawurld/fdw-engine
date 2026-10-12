@@ -173,3 +173,10 @@ On 10 000 nodes of which 1000 are visible: a camera query takes about
 0.06 ms, moving 1000 nodes then querying 0.7 ms, a frame of the renderer
 1.9 ms (against 18 ms without culling). Creating 100 000 static nodes and
 indexing them takes about 0.5 s.
+
+The objects sharing a mesh and a material are drawn as instances of one
+draw (see [Object data and instancing](/fdw-engine/guides/backends-and-surfaces/#object-data-and-instancing)):
+step 1 of the maze game, about 3700 objects drawn per frame with their
+shadows, runs at about 170 frames per second on Vulkan (about 89 before
+the object table and instancing) and 120 on Dawn (42 before the object
+table).

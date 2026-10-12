@@ -53,6 +53,7 @@ the programs against it:
 | `storageBuffers`    | Storage buffers                                     | false                         |
 | `maxVaryings`       | Values interpolated between the stages              | from the context              |
 | `renderableFormats` | Color formats usable as attachments (`rgba16float`) | with `EXT_color_buffer_float` |
+| `objectTable`       | The object data read from a table, per instance     | true (data textures)          |
 
 A graph using a missing feature fails to compile with an explicit error;
 test the capability to offer a fallback.
@@ -79,6 +80,32 @@ The engine follows the conventions of WebGPU; the other backends adapt:
   Vulkan library tracks the last use of each texture and buffer, and inserts
   the barriers.
 - **Depth**: `depth24plus` is a 32-bit float depth on Vulkan.
+
+## Object data and instancing
+
+The data of each object drawn — its world and normal matrices, 112 bytes —
+is a row of an **object table**, created by `backend.createObjectTable()`.
+An object keeps its row while it lives; the row is written again only when
+it moves, and the rows written in a frame go to the GPU in one range. Each
+pass writes the rows of the instances it draws, in its order, then binds
+the table once.
+
+A draw gives `firstInstance`: its instance `i` reads the row
+`instances[firstInstance + i]`. The objects that follow each other with the
+same pipeline, material and mesh are **one draw** of several instances —
+the renderer sorts by pipeline, material, then mesh to gather them.
+`renderer.stats.get('scene')` gives `drawn` (the objects) and `drawCalls`
+(the draws).
+
+| Backend | Object table                                              | First instance                                              |
+| ------- | --------------------------------------------------------- | ----------------------------------------------------------- |
+| WebGPU  | Two storage buffers: the rows, the row of each instance   | `instance_index` includes it                                |
+| Vulkan  | Two storage buffers                                       | `SV_InstanceID` (the `InstanceIndex` of Vulkan) includes it |
+| WebGL2  | Two data textures (RGBA32F, R32UI) read with `texelFetch` | A uniform set before each draw (no base instance)           |
+
+The `Renderer` needs `createObjectTable`: a backend of your own implements
+it (a `GpuObjectTable`: `writeRows`, `writeInstances`), and the
+`object-table` binding of the programs.
 
 ## Pipelines
 
