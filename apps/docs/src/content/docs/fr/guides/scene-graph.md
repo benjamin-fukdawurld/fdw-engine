@@ -48,6 +48,31 @@ const eye = player.add({ position: { y: 12, z: 6 } }).setCamera(camera);
 Un nœud dont l'entité a été supprimée lève une erreur à l'usage :
 `node.alive` l'indique.
 
+### Beaucoup de nœuds d'un coup
+
+Un niveau, une ville, un assemblage CAO : des milliers de nœuds semblables,
+créés d'un coup. `scene.createBatch()` les crée sans nœud ni objet par
+entité — les transformations viennent de tableaux plats, les composants
+sont écrits colonne par colonne :
+
+```ts
+const walls = scene.createBatch({
+  count: 2400,
+  parent: level.entity, // the root by default
+  positions, // x, y, z per wall: a Float32Array of 3 × 2400
+  scales, // optional, as rotations (x, y, z, w per entity)
+  mesh: cube,
+  material: stone,
+  static: true,
+  occluder: true,
+});
+scene.node(walls[0]).attach(Solid); // a node when you need one
+```
+
+Elle renvoie les entités, dans l'ordre des tableaux ; `scene.node(entity)`
+donne le nœud de l'une d'elles. Les autres options sont celles d'un nœud
+(`name`, `layers`, `visible`, `castShadow`).
+
 ## Transformations et invalidation
 
 Les transformations d'une scène sont des blocs de son `TransformPool`
@@ -178,9 +203,11 @@ chaque élément contre le frustum.
 ## Coûts
 
 Sur 10 000 nœuds dont 1000 visibles : une requête de caméra prend environ
-0,06 ms, déplacer 1000 nœuds puis faire une requête 0,7 ms, une frame du
-renderer 1,9 ms (contre 18 ms sans culling). Créer 100 000 nœuds statiques
-et les indexer prend environ 0,5 s.
+0,06 ms, déplacer 1000 nœuds puis faire une requête 0,65 ms, une frame du
+renderer environ 1 ms (contre 18 ms sans culling). Créer 100 000 nœuds
+statiques et les indexer prend environ 0,38 s avec des nœuds, 0,24 s avec
+`createBatch()` ; l'essentiel de ce qui reste, ce sont les matrices monde,
+les englobants et l'octree.
 
 Les objets qui partagent un mesh et un matériau sont dessinés comme les
 instances d'un seul draw (voir

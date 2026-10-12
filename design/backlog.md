@@ -17,9 +17,10 @@ Le moteur ne connaît aujourd'hui que des `RenderItem` à plat (`{ mesh, materia
 Fait (voir le plan du design) : la géométrie (`engine-geometry` : volumes, GJK, octree), le culling des vues dans le `Renderer`, le cœur ECS et la scène (`engine-scene`). Reste :
 
 - **Le coût d'un déplacement de nœud** par la façade : environ 90 ns de plus par nœud depuis le pool de transforms (0,58 → 0,67 ms pour 1 000 nœuds, [scenegraph §16.4](scenegraph.md#164-résultats)). Pistes : alléger la chaîne `Transform` → pool → scène (notification), ou des écritures groupées.
-- **Création en lot** des entités de la scène, écrivant directement les colonnes : 100 000 nœuds statiques coûtent aujourd'hui 485 ms par la façade, dont 100 ms d'octree.
+- **Création en lot** des entités de la scène, écrivant directement les colonnes : _faite_ (P1, `scene.createBatch()`, `world.addMany()`). 100 000 nœuds statiques : 485 → 383 ms par la façade (objets de rendu paresseux, bornes écrites en place), 241 ms en lot ; le reste est le calcul des matrices, des bornes et de l'octree.
 - **Le package `engine-occlusion`** : Hi-Z sur le GPU (relecture ou pilotée par le GPU, à choisir), le CPU en repli ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)).
-- **Batching statique et instancing**, à partir des entités statiques.
+- **Instancing** : _fait_ (P1, [p1-objects.md](p1-objects.md)).
+- **Batching statique** par cellule d'octree : reporté de P1 à la phase **P12** de la [roadmap](roadmap.md#p12-batching-statique). L'instancing couvre les objets qui partagent mesh et matériau ; le batching ne sert qu'aux scènes statiques hétérogènes (CAO, BIM, décors faits main). Coûts : géométrie dupliquée, culling par cellule, sélection dans un mesh fusionné (identifiant par sommet). À comparer d'abord avec le rendu piloté par le GPU.
 - **Événements de la scène** pour les éditeurs (ce qui a changé), et un BVH pour les scènes statiques de CAO et de BIM.
 
 La vue de scène du render graph ([render-graph §10.2](render-graph.md#102-la-vue-de-scène)) en est le point d'entrée : les passes reçoivent déjà les objets visibles d'une caméra, triés.

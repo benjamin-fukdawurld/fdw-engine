@@ -196,6 +196,79 @@ describe('Scene', () => {
     warn.mockRestore();
   });
 
+  it('creates many entities at once, as nodes would be', () => {
+    const scene = new Scene();
+    const mesh = triangle();
+    const shared = material();
+    const parent = scene.root.add({ position: { y: 10 } });
+    const count = 50;
+    const positions = Float32Array.from({ length: count * 3 }, (_, i) =>
+      i % 3 === 0 ? Math.floor(i / 3) - 25 : 0
+    );
+    const scales = new Float32Array(count * 3).fill(2);
+    const entities = scene.createBatch({
+      count,
+      parent: parent.entity,
+      positions,
+      scales,
+      mesh,
+      material: shared,
+      static: true,
+      name: 'wall',
+      castShadow: false,
+    });
+    expect(entities).toHaveLength(count);
+    // Children of the parent, placed by the arrays, under it.
+    const node = scene.node(entities[30]);
+    expect(node.parent?.entity).toBe(parent.entity);
+    expect(node.name).toBe('wall');
+    expect(node.static).toBe(true);
+    const world = node.worldMatrix;
+    expect([world[0], world[12], world[13]]).toEqual([2, 5, 10]);
+    expect(parent.children).toHaveLength(count);
+    // Drawn as setMesh would: indexed, with their render items.
+    const items: { mesh: unknown; material: unknown; castShadow: boolean }[] =
+      [];
+    scene.query(
+      Frustum.fromMatrix(
+        Float32Array.of(
+          0.01,
+          0,
+          0,
+          0,
+          0,
+          0.01,
+          0,
+          0,
+          0,
+          0,
+          0.05,
+          0,
+          0,
+          -0.1,
+          0.5,
+          1
+        )
+      ),
+      0xffffffff,
+      (item) => items.push(item as never),
+      'camera'
+    );
+    expect(items).toHaveLength(count);
+    expect(items[0]).toMatchObject({
+      mesh,
+      material: shared,
+      castShadow: false,
+    });
+  });
+
+  it('refuses a batch drawing a mesh without a material', () => {
+    const scene = new Scene();
+    expect(() => scene.createBatch({ count: 1, mesh: triangle() })).toThrow(
+      /material/
+    );
+  });
+
   it('answers the queries of the application', () => {
     const scene = new Scene();
     const mesh = triangle();

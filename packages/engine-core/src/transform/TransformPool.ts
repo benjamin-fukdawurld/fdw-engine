@@ -139,6 +139,13 @@ export class TransformPool {
     return this.reset(index);
   }
 
+  /** Makes room for `count` blocks: one growth instead of many. */
+  reserve(count: number): void {
+    if (count > this._capacity) {
+      this.grow(count);
+    }
+  }
+
   // The capacity after the growths needed to hold `needed` blocks.
   private grownCapacity(needed: number): number {
     let capacity = this._capacity;
