@@ -3,6 +3,13 @@ import { signal, Signal } from '@preact/signals-core';
 import { VulkanRenderBackend } from './render/VulkanRenderBackend';
 import { VulkanDevice, VulkanDeviceOptions } from './VulkanDevice';
 
+export interface VulkanEngineOptions extends VulkanDeviceOptions {
+  // The anisotropy of the samplers created without maxAnisotropy (see
+  // GpuSamplerFactory.defaultMaxAnisotropy): 1 by default, 8 or 16 for
+  // sharp textures on surfaces seen at a grazing angle.
+  readonly maxAnisotropy?: number;
+}
+
 /**
  * The engine on Vulkan, through the native library of the package (Node
  * only). Its backend implements the abstract rendering API.
@@ -12,7 +19,7 @@ export class VulkanEngine extends EventTarget implements Engine {
   backend: VulkanRenderBackend | undefined = undefined;
   state: Signal<EngineState> = signal('uninitialized');
 
-  constructor(private readonly _options: VulkanDeviceOptions = {}) {
+  constructor(private readonly _options: VulkanEngineOptions = {}) {
     super();
   }
 
@@ -29,6 +36,8 @@ export class VulkanEngine extends EventTarget implements Engine {
     try {
       this.device = new VulkanDevice(this._options);
       this.backend = new VulkanRenderBackend(this.device);
+      this.backend.textures.defaultMaxAnisotropy =
+        this._options.maxAnisotropy ?? 1;
     } catch (error) {
       this.device = undefined;
       this.state.value = 'uninitialized';

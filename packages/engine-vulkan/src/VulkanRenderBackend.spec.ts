@@ -164,8 +164,8 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
   });
 
   it('creates samplers, comparison ones included', () => {
+    // Anisotropic filtering needs the linear filters.
     const sampler = backend().textures.createSampler({
-      minFilter: 'nearest',
       wrapModeS: 'clamp-to-edge',
       maxAnisotropy: 8,
     });

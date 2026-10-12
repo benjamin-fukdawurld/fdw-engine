@@ -81,6 +81,8 @@ struct fdw_vk_texture {
   uint32_t width = 0;
   uint32_t height = 0;
   uint32_t layers = 1;
+  // Levels of detail.
+  uint32_t levels = 1;
   uint32_t pixelSize = 4;
   VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
   bool is3d = false;
@@ -139,6 +141,9 @@ struct fdw_vk_context {
   std::string deviceName;
   VkDevice device = VK_NULL_HANDLE;
   uint32_t queueFamily = 0;
+  // The highest anisotropy of the samplers: 1 without the samplerAnisotropy
+  // feature.
+  float maxAnisotropy = 1;
   // The bits of the timestamps of the queue (0: none), and nanoseconds per
   // tick.
   uint32_t timestampValidBits = 0;
@@ -242,6 +247,11 @@ void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
 // The same for a buffer: a buffer barrier when needed.
 void useBuffer(VkCommandBuffer commands, fdw_vk_buffer *buffer,
                VkPipelineStageFlags2 stages, VkAccessFlags2 access);
+
+// Records the computation of the levels of a texture after the first one,
+// each blitted from the previous one, in every layer.
+int generateMipmaps(fdw_vk_context *context, VkCommandBuffer commands,
+                    fdw_vk_texture *texture);
 
 // Frees a texture now (the GPU no longer uses it).
 void destroyTexture(fdw_vk_context *context, fdw_vk_texture *texture);

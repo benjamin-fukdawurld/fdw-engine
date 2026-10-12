@@ -49,17 +49,70 @@ haut, sur tous les backends : captures d'écran, miniatures, tests.
 `backend.capabilities` indique ce que prend en charge un backend, et le
 compilateur vérifie les programmes en conséquence :
 
-| Capacité            | Signification                                                    | WebGL2                        |
-| ------------------- | ---------------------------------------------------------------- | ----------------------------- |
-| `compute`           | Étapes de calcul                                                 | false                         |
-| `storageBuffers`    | Storage buffers                                                  | false                         |
-| `maxVaryings`       | Valeurs interpolées entre les étapes                             | selon le contexte             |
-| `renderableFormats` | Formats de couleur utilisables comme attachments (`rgba16float`) | avec `EXT_color_buffer_float` |
-| `objectTable`       | Les données des objets lues dans une table, par instance         | true (textures de données)    |
+| Capacité            | Signification                                                    | WebGL2                                         |
+| ------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
+| `compute`           | Étapes de calcul                                                 | false                                          |
+| `storageBuffers`    | Storage buffers                                                  | false                                          |
+| `maxVaryings`       | Valeurs interpolées entre les étapes                             | selon le contexte                              |
+| `renderableFormats` | Formats de couleur utilisables comme attachments (`rgba16float`) | avec `EXT_color_buffer_float`                  |
+| `objectTable`       | Les données des objets lues dans une table, par instance         | true (textures de données)                     |
+| `maxAnisotropy`     | L'anisotropie la plus haute des samplers                         | avec `EXT_texture_filter_anisotropic`, sinon 1 |
 
 Un graphe qui utilise une fonctionnalité absente échoue à la compilation avec
 une erreur explicite ; testez la capacité pour proposer une solution de
 repli.
+
+## Mipmaps et filtrage anisotrope
+
+Une texture créée avec `mipLevelCount` a des niveaux de détail, chacun de la
+moitié de la taille du précédent ; `fullMipLevelCount(dimensions)` donne la
+chaîne complète, jusqu'à 1×1. Les données écrites remplissent le premier
+niveau, et le backend calcule les autres à partir de lui, sur le GPU :
+
+```ts
+const map = backend.textures.createTexture({
+  type: '2d',
+  format: 'rgba8unorm-srgb',
+  dimensions: { width: 512, height: 512 },
+  mipLevelCount: fullMipLevelCount({ width: 512, height: 512 }),
+  source: pixels,
+});
+```
+
+Après un rendu dans une telle texture, `encoder.generateMipmaps(texture)`
+recalcule ses niveaux (dans un render graph : `addMipmapPass`). Les textures
+sRGB sont moyennées en couleurs linéaires. Les niveaux sont réservés aux
+textures 2d, 2d-array et cube de formats de couleur, non
+multiéchantillonnées : les autres textures refusent `mipLevelCount > 1`.
+
+`std.textureSample` choisit le niveau d'après la taille du pixel sur la
+texture ; `std.textureSampleLevel` lit un niveau donné. Ce dernier est
+disponible dans toutes les étapes : passez-lui un uv par `std.perFragment`,
+sinon il échantillonne aux sommets et interpole les couleurs.
+
+Le **filtrage anisotrope** garde une texture nette sur une surface vue en
+incidence rasante (un sol, une route) : le sampler prend jusqu'à
+`maxAnisotropy` échantillons dans la direction où la texture est étirée.
+
+```ts
+const sampler = backend.textures.createSampler({ maxAnisotropy: 8 });
+// Ou pour tous les samplers créés ensuite sans maxAnisotropy :
+const engine = new WebGpuEngine({ maxAnisotropy: 8 });
+backend.textures.defaultMaxAnisotropy = 8;
+```
+
+- Il demande les trois filtres `linear` (ceux par défaut) : une anisotropie
+  demandée avec un filtre `nearest` lève une erreur, comme l'exige WebGPU.
+  La valeur par défaut ne s'applique qu'aux samplers qui peuvent s'en
+  servir, hors samplers de comparaison.
+- Les valeurs au-delà de `capabilities.maxAnisotropy` y sont ramenées (16
+  sur la plupart des GPU, 1 quand l'appareil n'a pas de filtrage
+  anisotrope).
+- Il va avec les mipmaps : sans niveaux, une texture réduite scintille quelle
+  que soit l'anisotropie.
+
+Chaque backend calcule les niveaux à sa façon : `generateMipmap` en WebGL2,
+une passe de rendu par niveau en WebGPU, `vkCmdBlitImage` en Vulkan.
 
 ## Ce que les backends absorbent
 

@@ -14,6 +14,7 @@ import type {
 } from '@fdw/engine-backend';
 import { Buffer } from '../gpu/BufferFactory';
 import { Texture } from '../gpu/Texture';
+import type { TextureFactory } from '../gpu/TextureFactory';
 import {
   WebGpuBindGroup,
   WebGpuComputePipeline,
@@ -38,11 +39,11 @@ function attachmentView(target: unknown, what: string): GPUTextureView {
   if (target instanceof WebGpuRenderTarget) {
     return target.view;
   }
-  const texture = unwrap(target, Texture, what);
-  if (!texture.view) {
+  const view = unwrap(target, Texture, what).attachmentView;
+  if (!view) {
     throw new Error(`${what} was destroyed`);
   }
-  return texture.view;
+  return view;
 }
 
 // The texture behind a render target or a texture, for copies.
@@ -159,7 +160,10 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
   /** The pass timers resolved into this encoder. */
   readonly timers = new Set<WebGpuPassTimer>();
 
-  constructor(private readonly _encoder: GPUCommandEncoder) {}
+  constructor(
+    private readonly _encoder: GPUCommandEncoder,
+    private readonly _textures: TextureFactory
+  ) {}
 
   /** The WebGPU encoder. */
   get gpu(): GPUCommandEncoder {
@@ -241,6 +245,17 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
       { texture: gpuTexture(source, 'The source texture') },
       { texture: gpuTexture(destination, 'The destination texture') },
       [size.width, size.height]
+    );
+  }
+
+  generateMipmaps(texture: GpuAttachmentTarget): void {
+    // Render targets have a single level.
+    if (texture instanceof WebGpuRenderTarget) {
+      return;
+    }
+    this._textures.encodeMipmaps(
+      this._encoder,
+      gpuTexture(texture, 'The texture')
     );
   }
 

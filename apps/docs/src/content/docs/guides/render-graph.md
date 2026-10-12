@@ -35,6 +35,10 @@ const counts = graph.createBuffer('counts', { size: 16 });
   imported texture, or the `size` given to `execute`.
 - `sampleCount: 4` makes a multisampled attachment, resolved into a texture
   with `pass.resolveColor()`.
+- `mipLevelCount` gives a texture levels of detail (`'full'`: down to 1×1,
+  for the size it gets). `graph.addMipmapPass(name, texture)` computes them
+  from the first level and returns the version to sample (a blur, a bloom,
+  an average).
 
 ## Passes and versions
 
@@ -72,7 +76,8 @@ Three kinds of passes open three kinds of encoders:
 
 - `addRasterPass`: a render pass, with its attachments (`context.pass`);
 - `addComputePass`: a compute pass (`context.pass`, WebGPU and Vulkan);
-- `addCopyPass`: the command encoder, for copies (`context.encoder`).
+- `addCopyPass`: the command encoder, for copies and mipmaps
+  (`context.encoder`).
 
 In `execute`, `context.texture(handle)` and `context.buffer(handle)` give the
 real resources, `context.size(handle)` the size of a texture.

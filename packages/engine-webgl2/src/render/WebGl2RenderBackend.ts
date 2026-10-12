@@ -12,7 +12,7 @@ import {
 } from '@fdw/engine-backend';
 import { GL } from '../gl';
 import { WebGl2BufferFactory } from '../gpu/WebGl2Buffer';
-import { WebGl2TextureFactory } from '../gpu/WebGl2Texture';
+import { maxAnisotropy, WebGl2TextureFactory } from '../gpu/WebGl2Texture';
 import {
   WebGl2CommandBuffer,
   WebGl2CommandEncoder,
@@ -51,6 +51,7 @@ export class WebGl2RenderBackend implements RenderBackend {
       renderableFormats: gl.getExtension('EXT_color_buffer_float')
         ? ['rgba16float']
         : [],
+      maxAnisotropy: maxAnisotropy(gl),
     };
   }
 

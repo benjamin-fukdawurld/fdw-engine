@@ -2,6 +2,7 @@
 
 #include "context.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <string_view>
 
@@ -114,6 +115,76 @@ const FormatInfo *findFormat(const char *name) {
   return nullptr;
 }
 
+int generateMipmaps(fdw_vk_context *context, VkCommandBuffer commands,
+                    fdw_vk_texture *texture) {
+  if (texture->levels <= 1) {
+    return 0;
+  }
+  VkFormatProperties properties;
+  vkGetPhysicalDeviceFormatProperties(context->physicalDevice,
+                                      texture->format, &properties);
+  const VkFormatFeatureFlags features = properties.optimalTilingFeatures;
+  if (texture->aspect != VK_IMAGE_ASPECT_COLOR_BIT || texture->is3d ||
+      !(features & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+      !(features & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+    return fail("The levels of this texture cannot be computed by blits");
+  }
+  // Without linear filtering of the format (rgba32float on some GPUs): a
+  // texel of each 2 × 2 block.
+  const VkFilter filter =
+      (features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)
+          ? VK_FILTER_LINEAR
+          : VK_FILTER_NEAREST;
+
+  // Every level in the transfer destination layout, the first one kept.
+  useTexture(commands, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+             VK_PIPELINE_STAGE_2_BLIT_BIT,
+             VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
+  // A level written becomes the source of the next one.
+  auto toSource = [&](uint32_t level) {
+    VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = texture->image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, 1, 0,
+                                texture->layers};
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.imageMemoryBarrierCount = 1;
+    dependency.pImageMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(commands, &dependency);
+  };
+  int32_t width = static_cast<int32_t>(texture->width);
+  int32_t height = static_cast<int32_t>(texture->height);
+  for (uint32_t level = 1; level < texture->levels; level++) {
+    toSource(level - 1);
+    VkImageBlit blit{};
+    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0,
+                           texture->layers};
+    blit.srcOffsets[1] = {width, height, 1};
+    width = std::max(width / 2, 1);
+    height = std::max(height / 2, 1);
+    blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0,
+                           texture->layers};
+    blit.dstOffsets[1] = {width, height, 1};
+    vkCmdBlitImage(commands, texture->image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture->image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, filter);
+  }
+  // Every level in the same layout, as the tracking needs. The last level
+  // was written: the next use waits for the blits and their writes.
+  toSource(texture->levels - 1);
+  texture->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+  texture->last = {VK_PIPELINE_STAGE_2_BLIT_BIT,
+                   VK_ACCESS_2_TRANSFER_WRITE_BIT};
+  return 0;
+}
+
 void destroyTexture(fdw_vk_context *context, fdw_vk_texture *texture) {
   if (texture->attachmentView) {
     vkDestroyImageView(context->device, texture->attachmentView, nullptr);
@@ -143,6 +214,11 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
   const bool cube = type == "cube";
   const bool is3d = type == "3d";
   const uint32_t layers = cube ? 6 : std::max(options->layers, 1u);
+  const uint32_t levels = std::max(options->mip_level_count, 1u);
+  if (levels > 1 && (is3d || options->sample_count > 1)) {
+    fail("3d and multisampled textures have a single level");
+    return nullptr;
+  }
 
   VkImageUsageFlags usage =
       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -164,7 +240,7 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
   info.format = format->format;
   info.extent = {std::max(options->width, 1u), std::max(options->height, 1u),
                  is3d ? layers : 1};
-  info.mipLevels = 1;
+  info.mipLevels = levels;
   info.arrayLayers = is3d ? 1 : layers;
   info.samples = static_cast<VkSampleCountFlagBits>(
       std::max(options->sample_count, 1u));
@@ -180,6 +256,7 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
   texture->width = info.extent.width;
   texture->height = info.extent.height;
   texture->layers = layers;
+  texture->levels = levels;
   texture->pixelSize = format->pixelSize;
   texture->samples = info.samples;
   texture->is3d = is3d;
@@ -201,7 +278,7 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
   view.format = format->format;
   // The shaders read the depth of a depth-stencil texture.
   view.subresourceRange = {format->aspect & ~VK_IMAGE_ASPECT_STENCIL_BIT, 0,
-                           1, 0, is3d ? 1 : layers};
+                           levels, 0, is3d ? 1 : layers};
   result = vkCreateImageView(context->device, &view, nullptr, &texture->view);
   if (result == VK_SUCCESS && !is3d) {
     VkImageViewCreateInfo attachment = view;
@@ -270,6 +347,11 @@ int fdw_vk_texture_write(fdw_vk_context *context, fdw_vk_texture *texture,
   return 0;
 }
 
+int fdw_vk_texture_generate_mipmaps(fdw_vk_context *context,
+                                    fdw_vk_texture *texture) {
+  return generateMipmaps(context, transfers(context), texture);
+}
+
 int fdw_vk_texture_read(fdw_vk_context *context, fdw_vk_texture *texture,
                         uint64_t *ticket) {
   if (texture->samples != VK_SAMPLE_COUNT_1_BIT) {
@@ -311,11 +393,11 @@ fdw_vk_sampler *fdw_vk_sampler_create(fdw_vk_context *context,
   info.addressModeU = addressMode(options->wrap_u);
   info.addressModeV = addressMode(options->wrap_v);
   info.addressModeW = addressMode(options->wrap_w);
-  VkPhysicalDeviceFeatures features;
-  vkGetPhysicalDeviceFeatures(context->physicalDevice, &features);
-  if (options->max_anisotropy > 1 && features.samplerAnisotropy) {
+  // Enabled with the feature only: maxAnisotropy is 1 without it.
+  if (options->max_anisotropy > 1 && context->maxAnisotropy > 1) {
     info.anisotropyEnable = VK_TRUE;
-    info.maxAnisotropy = options->max_anisotropy;
+    info.maxAnisotropy =
+        std::min(options->max_anisotropy, context->maxAnisotropy);
   }
   VkCompareOp op;
   if (compareOp(options->compare, &op)) {
@@ -347,6 +429,10 @@ void fdw_vk_sampler_destroy(fdw_vk_context *context, fdw_vk_sampler *sampler) {
     vkDestroySampler(device, sampler->sampler, nullptr);
     delete sampler;
   });
+}
+
+float fdw_vk_max_anisotropy(const fdw_vk_context *context) {
+  return context->maxAnisotropy;
 }
 
 uint32_t fdw_vk_sampler_id(const fdw_vk_sampler *sampler) {

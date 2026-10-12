@@ -72,7 +72,7 @@ Détails dans [native-backends.md](native-backends.md).
   - moins de descriptor sets (pools par frame, descriptors dynamiques pour les uniforms par objet), puis le bindless (descriptor indexing ou descriptor buffers) ;
   - l'attente des relectures et des frames hors du thread JavaScript (fonctions threadsafe de Node-API) plutôt que par sondage ;
   - les transitions calculées par le render graph pour grouper les barrières.
-- **Vulkan, fonctionnalités** : génération des mipmaps, textures de stockage, requêtes de timestamps (profilage GPU), `VK_EXT_swapchain_maintenance1` et `VK_KHR_present_wait` (latence et cadence des frames).
+- **Vulkan, fonctionnalités** : génération des mipmaps (_fait_ : `vkCmdBlitImage`, voir [render graph §6.1](render-graph.md#61-ressources)), textures de stockage, requêtes de timestamps (profilage GPU), `VK_EXT_swapchain_maintenance1` et `VK_KHR_present_wait` (latence et cadence des frames).
 - **La démo native** : contrôles de caméra au clavier et à la souris, choix de la scène et du backend à chaud.
 
 ## 7. Documentation

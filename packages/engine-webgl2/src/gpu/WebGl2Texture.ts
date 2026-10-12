@@ -1,3 +1,8 @@
+import {
+  canGenerateMipmaps,
+  checkMipLevelCount,
+  samplerAnisotropy,
+} from '@fdw/engine-backend';
 import type {
   CompareFunction,
   GpuSampler,
@@ -44,8 +49,17 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     readonly format: GpuTextureFormat,
     readonly dimensions: GpuTextureDimensions,
     readonly label?: string,
-    readonly sampleCount = 1
+    readonly sampleCount = 1,
+    readonly mipLevelCount = 1
   ) {
+    checkMipLevelCount({
+      type,
+      format,
+      dimensions,
+      label,
+      sampleCount,
+      mipLevelCount,
+    });
     const target = textureTargets()[type];
     if (target === undefined) {
       throw new Error(`Texture type ${type} is not supported by WebGL2`);
@@ -84,13 +98,20 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     this._texture = _gl.createTexture();
     _gl.bindTexture(target, this._texture);
     if (target === GL.TEXTURE_2D_ARRAY || target === GL.TEXTURE_3D) {
-      _gl.texStorage3D(target, 1, internalFormat, width, height, layers);
+      _gl.texStorage3D(
+        target,
+        mipLevelCount,
+        internalFormat,
+        width,
+        height,
+        layers
+      );
     } else {
-      _gl.texStorage2D(target, 1, internalFormat, width, height);
+      _gl.texStorage2D(target, mipLevelCount, internalFormat, width, height);
     }
-    // A single level: the texture stays complete whatever the minification
-    // filter of the sampler, as with WebGPU textures without mipmaps.
-    _gl.texParameteri(target, GL.TEXTURE_MAX_LEVEL, 0);
+    // Only the levels allocated: the texture stays complete whatever the
+    // minification filter of the sampler, as with WebGPU textures.
+    _gl.texParameteri(target, GL.TEXTURE_MAX_LEVEL, mipLevelCount - 1);
   }
 
   get width(): number {
@@ -124,6 +145,22 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     );
   }
 
+  /** Computes the levels after the first one (see generateMipmaps). */
+  generateMipmaps(gl: WebGL2RenderingContext): void {
+    if (this.mipLevelCount === 1) {
+      return;
+    }
+    if (!canGenerateMipmaps(this.format)) {
+      throw new Error(
+        `The levels of texture "${this.label ?? '(unlabeled)'}" (${
+          this.format
+        }) cannot be computed`
+      );
+    }
+    gl.bindTexture(this.target, this.texture);
+    gl.generateMipmap(this.target);
+  }
+
   get texture(): WebGLTexture {
     if (this._renderbuffer) {
       throw new Error(
@@ -138,7 +175,15 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     return this._texture;
   }
 
+  // Writes the first level, then computes the others.
   upload(source: WebGl2TextureSource | ArrayBufferView<ArrayBuffer>): void {
+    this.writeFirstLevel(source);
+    this.generateMipmaps(this._gl);
+  }
+
+  private writeFirstLevel(
+    source: WebGl2TextureSource | ArrayBufferView<ArrayBuffer>
+  ): void {
     const gl = this._gl;
     const { format, type, bytesPerPixel } = glTextureFormat(this.format);
     const { width, height = 1, layers = 1 } = this.dimensions;
@@ -280,6 +325,24 @@ const compareFunctions = lazy(
   })
 );
 
+// The constants of EXT_texture_filter_anisotropic.
+const GL_TEXTURE_MAX_ANISOTROPY_EXT = 0x84fe;
+const GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84ff;
+
+// The anisotropy limit of a context (1 without the extension), enabling
+// the extension.
+const anisotropyLimits = new WeakMap<WebGL2RenderingContext, number>();
+export function maxAnisotropy(gl: WebGL2RenderingContext): number {
+  let limit = anisotropyLimits.get(gl);
+  if (limit === undefined) {
+    limit = gl.getExtension('EXT_texture_filter_anisotropic')
+      ? (gl.getParameter(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number)
+      : 1;
+    anisotropyLimits.set(gl, limit);
+  }
+  return limit;
+}
+
 export class WebGl2Sampler implements GpuSampler {
   readonly wrapModeS: GpuTextureWrapMode;
   readonly wrapModeT: GpuTextureWrapMode;
@@ -294,7 +357,8 @@ export class WebGl2Sampler implements GpuSampler {
 
   constructor(
     private readonly _gl: WebGL2RenderingContext,
-    config: GpuSamplerConfiguration = {}
+    config: GpuSamplerConfiguration = {},
+    defaultMaxAnisotropy = 1
   ) {
     this.wrapModeS = config.wrapModeS ?? 'repeat';
     this.wrapModeT = config.wrapModeT ?? 'repeat';
@@ -302,7 +366,11 @@ export class WebGl2Sampler implements GpuSampler {
     this.minFilter = config.minFilter ?? 'linear';
     this.magFilter = config.magFilter ?? 'linear';
     this.mipmapFilter = config.mipmapFilter ?? 'linear';
-    this.maxAnisotropy = config.maxAnisotropy ?? 1;
+    this.maxAnisotropy = samplerAnisotropy(
+      config,
+      defaultMaxAnisotropy,
+      maxAnisotropy(_gl)
+    );
     this.label = config.label;
 
     const sampler = _gl.createSampler();
@@ -332,11 +400,11 @@ export class WebGl2Sampler implements GpuSampler {
         compareFunctions()[config.compare]
       );
     }
-    const anisotropic = _gl.getExtension('EXT_texture_filter_anisotropic');
-    if (anisotropic && this.maxAnisotropy > 1) {
+    if (this.maxAnisotropy > 1) {
       _gl.samplerParameterf(
         sampler,
-        anisotropic.TEXTURE_MAX_ANISOTROPY_EXT,
+        // EXT_texture_filter_anisotropic, enabled by maxAnisotropy.
+        GL_TEXTURE_MAX_ANISOTROPY_EXT,
         this.maxAnisotropy
       );
     }
@@ -361,6 +429,8 @@ export class WebGl2Sampler implements GpuSampler {
 export class WebGl2TextureFactory
   implements GpuTextureFactory<WebGl2TextureSource>, GpuSamplerFactory
 {
+  defaultMaxAnisotropy = 1;
+
   constructor(private readonly _gl: WebGL2RenderingContext) {}
 
   createTexture(
@@ -376,7 +446,8 @@ export class WebGl2TextureFactory
       format,
       dimensions,
       label,
-      sampleCount
+      sampleCount,
+      descriptor.mipLevelCount
     );
     if (source) {
       texture.upload(source);
@@ -389,6 +460,6 @@ export class WebGl2TextureFactory
   }
 
   createSampler(descriptor?: GpuSamplerConfiguration): GpuSampler {
-    return new WebGl2Sampler(this._gl, descriptor);
+    return new WebGl2Sampler(this._gl, descriptor, this.defaultMaxAnisotropy);
   }
 }

@@ -1,3 +1,4 @@
+import { fullMipLevelCount } from '@fdw/engine-backend';
 import type {
   GpuAttachmentTarget,
   GpuBuffer,
@@ -342,6 +343,17 @@ export class RenderGraphRunner {
       : size;
   }
 
+  private mipLevelCount(
+    graph: RenderGraph,
+    id: number,
+    frame: { width: number; height: number }
+  ): number {
+    const count = graph.resources[id].texture?.mipLevelCount ?? 1;
+    return count === 'full'
+      ? fullMipLevelCount(this.textureSize(graph, id, frame))
+      : count;
+  }
+
   private poolKey(
     graph: RenderGraph,
     id: number,
@@ -356,6 +368,7 @@ export class RenderGraphRunner {
           resource.texture?.format,
           this.textureSize(graph, id, frame),
           resource.texture?.sampleCount ?? 1,
+          this.mipLevelCount(graph, id, frame),
           sorted,
         ])
       : JSON.stringify(['buffer', resource.buffer?.size, sorted]);
@@ -385,6 +398,7 @@ export class RenderGraphRunner {
         ...(resource.texture?.sampleCount
           ? { sampleCount: resource.texture.sampleCount }
           : {}),
+        mipLevelCount: this.mipLevelCount(graph, id, frame),
         usage: [
           ...new Set(
             [...usages]

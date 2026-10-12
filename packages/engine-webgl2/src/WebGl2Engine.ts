@@ -9,6 +9,10 @@ export type WebGl2EngineOptions = {
   // single one.
   canvas?: HTMLCanvasElement | OffscreenCanvas;
   contextAttributes?: WebGLContextAttributes;
+  // The anisotropy of the samplers created without maxAnisotropy (see
+  // GpuSamplerFactory.defaultMaxAnisotropy): 1 by default, 8 or 16 for
+  // sharp textures on surfaces seen at a grazing angle.
+  maxAnisotropy?: number;
 };
 
 // A WebGL2 context is tied to a canvas, where WebGPU devices are not: the
@@ -49,8 +53,8 @@ export class WebGl2Engine extends EventTarget implements Engine {
         throw new Error('WebGL2 needs a canvas or OffscreenCanvas');
       }
       const gl = canvas.getContext('webgl2', {
-        // The depth buffers belong to the renderer, multisampling is not
-        // supported yet: the drawing buffer is only a presentation image.
+        // The depth buffers and the multisampled attachments belong to the
+        // renderer: the drawing buffer is only a presentation image.
         antialias: false,
         depth: false,
         stencil: false,
@@ -63,6 +67,8 @@ export class WebGl2Engine extends EventTarget implements Engine {
       this.canvas = canvas;
       this.gl = gl;
       this.backend = new WebGl2RenderBackend(gl);
+      this.backend.textures.defaultMaxAnisotropy =
+        this._options.maxAnisotropy ?? 1;
     } catch (error) {
       this.canvas = undefined;
       this.gl = undefined;

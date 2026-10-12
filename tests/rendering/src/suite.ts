@@ -307,6 +307,164 @@ export function describeRenderer(
       expectColor(pixel(56, 56), [255, 0, 0, 255]);
     });
 
+    describe('mipmaps and anisotropic filtering', () => {
+      // The level of the map sampled, a uniform. Sampled per pixel:
+      // textureSampleLevel of a per-vertex uv would run in the vertex stage.
+      const levelGraph = () => {
+        const g = new GraphBuilder('sampled at a level');
+        const texel = g.call(std.textureSampleLevel, {
+          texture: g.texture('map'),
+          sampler: g.sampler('mapSampler'),
+          uv: g.call(std.perFragment, {
+            value: g.attribute('uv', BuiltinTypes.vec2f),
+          }),
+          level: g.uniform('level', BuiltinTypes.f32, { default: 0 }),
+        });
+        g.surface({ baseColor: texel.swizzle('rgb') });
+        return g.build();
+      };
+      // 4×4, in 2×2 blocks: red, green / blue, white.
+      const blocks = (colors: number[][]) =>
+        Uint8Array.from({ length: 64 }, (_, i) => {
+          const x = (i >> 2) % 4;
+          const y = i >> 4;
+          return i % 4 === 3 ? 255 : colors[(y >> 1) * 2 + (x >> 1)][i % 4];
+        });
+      const red = [255, 0, 0];
+      const green = [0, 255, 0];
+      const blue = [0, 0, 255];
+      const white = [255, 255, 255];
+      const black = [0, 0, 0];
+
+      it('computes the levels of the textures written', async () => {
+        const map = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 4, height: 4 },
+          mipLevelCount: 3,
+          source: blocks([red, green, blue, white]),
+        });
+        const material = new Material({
+          graph: levelGraph(),
+          values: {
+            map,
+            mapSampler: backend.textures.createSampler({
+              minFilter: 'nearest',
+              magFilter: 'nearest',
+              mipmapFilter: 'nearest',
+            }),
+            level: 1,
+          },
+        });
+        const items = [
+          {
+            mesh: quad(),
+            material,
+            transform: new Transform({ scale: { x: 2, y: 2, z: 1 } }),
+          },
+        ];
+        // Level 1 (2×2): a texel per block.
+        let pixel = await render(items);
+        expectColor(pixel(8, 8), [255, 0, 0, 255]);
+        expectColor(pixel(56, 8), [0, 255, 0, 255]);
+        expectColor(pixel(8, 56), [0, 0, 255, 255]);
+        expectColor(pixel(56, 56), [255, 255, 255, 255]);
+        // Level 2 (1×1): the average.
+        material.setValue('level', 2);
+        pixel = await render(items);
+        expectColor(pixel(32, 32), [128, 128, 128, 255]);
+
+        // Rewritten: the levels follow.
+        backend.textures.writeTexture(map, blocks([red, black, black, black]));
+        pixel = await render(items);
+        expectColor(pixel(32, 32), [64, 0, 0, 255]);
+        map.destroy();
+      });
+
+      it('refuses levels the texture cannot have', () => {
+        const texture = (
+          descriptor: Partial<
+            Parameters<RenderBackend['textures']['createTexture']>[0]
+          >
+        ) =>
+          backend.textures.createTexture({
+            type: '2d',
+            format: 'rgba8unorm',
+            dimensions: { width: 4, height: 4 },
+            ...descriptor,
+          });
+        expect(() => texture({ mipLevelCount: 4 })).toThrow(
+          /more than the 3 of its size/
+        );
+        expect(() => texture({ mipLevelCount: 2, format: 'r32uint' })).toThrow(
+          /cannot be computed/
+        );
+        expect(() =>
+          texture({
+            mipLevelCount: 2,
+            sampleCount: 4,
+            usage: ['render-attachment'],
+          })
+        ).toThrow(/single level/);
+      });
+
+      it('gives the samplers the anisotropy the device allows', async () => {
+        const limit = backend.capabilities?.maxAnisotropy ?? 1;
+        expect(limit).toBeGreaterThanOrEqual(1);
+        const textures = backend.textures;
+        try {
+          textures.defaultMaxAnisotropy = 64;
+          // Clamped to the limit; only for linear, non-comparison samplers.
+          expect(textures.createSampler().maxAnisotropy).toBe(limit);
+          expect(
+            textures.createSampler({ minFilter: 'nearest' }).maxAnisotropy
+          ).toBe(1);
+          expect(
+            textures.createSampler({ compare: 'less-equal' }).maxAnisotropy
+          ).toBe(1);
+          expect(
+            textures.createSampler({ maxAnisotropy: 2 }).maxAnisotropy
+          ).toBe(Math.min(2, limit));
+        } finally {
+          textures.defaultMaxAnisotropy = 1;
+        }
+        expect(textures.createSampler().maxAnisotropy).toBe(1);
+        expect(() =>
+          textures.createSampler({ maxAnisotropy: 4, magFilter: 'nearest' })
+        ).toThrow(/needs linear min, mag and mipmap filters/);
+
+        // A plane seen at a grazing angle, sampled with mipmaps and
+        // anisotropic filtering: the device accepts the sampler.
+        const map = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 4, height: 4 },
+          mipLevelCount: 3,
+          source: blocks([white, white, white, white]),
+        });
+        const material = new Material({
+          graph: texturedGraph(),
+          values: {
+            map,
+            mapSampler: textures.createSampler({ maxAnisotropy: 16 }),
+            tint: [1, 1, 1],
+          },
+        });
+        const pixel = await render([
+          {
+            mesh: quad(),
+            material,
+            transform: new Transform({
+              scale: { x: 2, y: 2, z: 1 },
+              rotation: { x: Math.sin(-0.7), y: 0, z: 0, w: Math.cos(-0.7) },
+            }),
+          },
+        ]);
+        expectColor(pixel(32, 32), [255, 255, 255, 255]);
+        map.destroy();
+      });
+    });
+
     it('passes the engine time to the materials', async () => {
       const material = new Material({ graph: timeGraph() });
       const items = [{ mesh: quad(), material, transform: at(0) }];
@@ -726,6 +884,60 @@ export function describeRenderer(
         expectColor(pixel(48, 32), [255, 255, 255, 255]);
         // Top half of the quad: the orientation is kept.
         expectColor(pixel(16, 8), [255, 255, 255, 255]);
+      });
+
+      it('computes the levels of the textures rendered in the graph', async () => {
+        // The last level (1×1) of the scene: the average of its pixels.
+        const g = new GraphBuilder('average');
+        const texel = g.call(std.textureSampleLevel, {
+          texture: g.texture('source'),
+          sampler: g.sampler('sourceSampler'),
+          uv: g.builtin('screen-uv'),
+          level: g.uniform('level', BuiltinTypes.f32, { default: 0 }),
+        });
+        g.fullscreen({
+          color: g.call(std.extend, { xyz: texel.swizzle('rgb'), w: 1 }),
+        });
+        const average = new Material({
+          graph: g.build(),
+          values: {
+            sourceSampler: backend.textures.createSampler({
+              minFilter: 'nearest',
+              magFilter: 'nearest',
+              mipmapFilter: 'nearest',
+            }),
+            level: Math.log2(size),
+          },
+        });
+        const runner = new RenderGraphRunner(backend);
+        const graph = new RenderGraph();
+        // A red quad over a quarter of the frame.
+        const scene = renderer.addScenePasses(graph, {
+          items: [
+            {
+              mesh: quad(),
+              material: new Material({ graph: colorGraph() }),
+              transform: at(-0.5),
+            },
+          ],
+          camera,
+          target: graph.createTexture('scene', {
+            format: 'rgba8unorm',
+            mipLevelCount: 'full',
+          }),
+          format: 'rgba8unorm',
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        });
+        renderer.addFullscreenPass(graph, 'average', {
+          material: average,
+          inputs: { source: graph.addMipmapPass('scene mipmaps', scene) },
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        runner.execute(graph);
+        runner.destroy();
+        const pixel = await pixelsOf();
+        expectColor(pixel(32, 32), [64, 0, 0, 255]);
       });
 
       it('measures the GPU time of the passes, where the backend can', async (context) => {

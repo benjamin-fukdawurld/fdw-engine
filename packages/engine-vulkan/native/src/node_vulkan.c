@@ -466,16 +466,16 @@ static napi_value js_read_take(napi_env env, napi_callback_info info) {
 // --- Textures and samplers -----------------------------------------------------
 
 // createTexture(context, format, type, width, height, layers, sampleCount,
-// usage, label)
+// mipLevelCount, usage, label)
 static napi_value js_create_texture(napi_env env, napi_callback_info info) {
-  ARGS(9);
+  ARGS(10);
   context_handle *owner = owner_arg(env, argv[0]);
   if (!owner) {
     return NULL;
   }
   char *format = string_arg(env, argv[1]);
   char *type = string_arg(env, argv[2]);
-  char *label = string_arg(env, argv[8]);
+  char *label = string_arg(env, argv[9]);
   fdw_vk_texture_options options = {
       format,
       type,
@@ -484,6 +484,7 @@ static napi_value js_create_texture(napi_env env, napi_callback_info info) {
       (uint32_t)number_arg(env, argv[5]),
       (uint32_t)number_arg(env, argv[6]),
       (uint32_t)number_arg(env, argv[7]),
+      (uint32_t)number_arg(env, argv[8]),
       label,
   };
   fdw_vk_texture *texture = fdw_vk_texture_create(owner->context, &options);
@@ -584,6 +585,21 @@ static napi_value js_write_texture(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
+// generateMipmaps(texture): its levels after the first one, in the order
+// of the queue.
+static napi_value js_generate_mipmaps(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  object_handle *handle = object_arg(env, argv[0], TEXTURE);
+  if (!handle) {
+    return NULL;
+  }
+  if (fdw_vk_texture_generate_mipmaps(handle->owner->context,
+                                      handle->object) != 0) {
+    return throw_last_error(env);
+  }
+  return undefined(env);
+}
+
 // readTexture(texture): a ticket for the pixels of the first layer.
 static napi_value js_read_texture(napi_env env, napi_callback_info info) {
   ARGS(1);
@@ -625,6 +641,16 @@ static napi_value js_create_sampler(napi_env env, napi_callback_info info) {
     return throw_last_error(env);
   }
   return wrap_object(env, argv[0], owner, SAMPLER, sampler);
+}
+
+// maxAnisotropy(context): the highest anisotropy of the samplers.
+static napi_value js_max_anisotropy(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  return number(env, fdw_vk_max_anisotropy(context));
 }
 
 static napi_value js_destroy_sampler(napi_env env, napi_callback_info info) {
@@ -1147,8 +1173,10 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("destroyTexture", js_destroy_texture),
       EXPORT("textureId", js_texture_id),
       EXPORT("writeTexture", js_write_texture),
+      EXPORT("generateMipmaps", js_generate_mipmaps),
       EXPORT("readTexture", js_read_texture),
       EXPORT("createSampler", js_create_sampler),
+      EXPORT("maxAnisotropy", js_max_anisotropy),
       EXPORT("destroySampler", js_destroy_sampler),
       EXPORT("samplerId", js_sampler_id),
       EXPORT("submit", js_submit),

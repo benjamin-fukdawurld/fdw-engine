@@ -276,7 +276,7 @@ _N3 fait._ **La suite de rendu partagée passe entièrement sur Vulkan, couche d
 - **La couche TypeScript** : `VulkanEngine`, `VulkanDevice`, `VulkanRenderBackend` (fabriques, `VulkanPipelineFactory` qui génère le HLSL, encodeurs qui écrivent les commandes), `VulkanOffscreenSurface`.
 - **Construction** : `nx run engine-vulkan:build-native`, contre les en-têtes, volk, VMA et DXC du Vulkan SDK ; sans le SDK, l'addon n'est pas construit et ses tests sont sautés. Le script de construction des addons est commun (`tools/native/build-addon.mjs`).
 - **Corrections en route** : DXC traduit `discard` par `OpDemoteToHelperInvocation` pour Vulkan 1.3, d'où la fonctionnalité `shaderDemoteToHelperInvocation` à activer ; un rejeu interrompu par une erreur soumet ce qui a été enregistré, pour que l'état suivi reste celui du GPU.
-- **Simplifications, à reprendre si le profilage le demande** : un buffer de transfert par écriture (plutôt qu'un anneau) ; un descriptor set par groupe ; pas de cache de pipelines ; relectures attendues par sondage depuis JavaScript ; un seul niveau de mipmap ; les transitions calculées par le render graph ne sont pas encore utilisées.
+- **Simplifications, à reprendre si le profilage le demande** : un buffer de transfert par écriture (plutôt qu'un anneau) ; un descriptor set par groupe ; pas de cache de pipelines ; relectures attendues par sondage depuis JavaScript ; les transitions calculées par le render graph ne sont pas encore utilisées.
 
 _N4 fait._ **La démo native tourne sur Vulkan, présentée par une swapchain, sans copie, à la cadence de l'écran** (`nx run demo-native:start -- shadows --vulkan`).
 
