@@ -11,6 +11,7 @@ import {
 import {
   colorGraph,
   fakeBackend,
+  rowOf,
   surface,
   triangle,
 } from '@fdw/engine-core/testing';
@@ -339,12 +340,11 @@ describe('Scene with a Renderer', () => {
         shadowMaps: 1,
       })
     );
-    const objects = log.buffers.filter(
-      (buffer) => buffer.label === 'object uniforms'
-    );
-    expect(objects).toHaveLength(10);
-    const floats = new Float32Array(objects[3].data);
-    expect(floats[12] % 100).toBe(0);
+    // A row per object drawn (the 10 visible, maybe some casters beyond),
+    // at its place.
+    const drawn = [...log.lastInstances];
+    expect(drawn).toHaveLength(10);
+    expect(rowOf(log, drawn[3])[12] % 100).toBe(0);
     // A point light far away lights nothing visible.
     scene.root
       .add({ position: { x: 5000 } })

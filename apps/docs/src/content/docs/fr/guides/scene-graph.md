@@ -181,3 +181,11 @@ Sur 10 000 nœuds dont 1000 visibles : une requête de caméra prend environ
 0,06 ms, déplacer 1000 nœuds puis faire une requête 0,7 ms, une frame du
 renderer 1,9 ms (contre 18 ms sans culling). Créer 100 000 nœuds statiques
 et les indexer prend environ 0,5 s.
+
+Les objets qui partagent un mesh et un matériau sont dessinés comme les
+instances d'un seul draw (voir
+[Données des objets et instanciation](/fdw-engine/fr/guides/backends-and-surfaces/#données-des-objets-et-instanciation)) :
+l'étape 1 du jeu du labyrinthe, environ 3700 objets dessinés par frame avec
+leurs ombres, tourne à environ 170 images par seconde sous Vulkan (environ 89
+avant la table d'objets et l'instanciation) et 120 sous Dawn (42 avant la
+table d'objets).

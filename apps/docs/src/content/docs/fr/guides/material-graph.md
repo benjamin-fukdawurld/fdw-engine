@@ -160,8 +160,11 @@ les tests.
    interpolée, et calculée le plus tôt possible ; `std.perFragment` maintient
    une valeur dans l'étape de fragments (éclairage, normalisation).
 5. **Disposition** : `frame` (groupe 0, caméra, temps, lumières), `material`
-   (groupe 1), `object` (groupe 2, transformation), puis les slots
-   personnalisés.
+   (groupe 1), `object` (groupe 2 : la table d'objets, voir
+   [Backends](/fdw-engine/fr/guides/backends-and-surfaces/#données-des-objets-et-instanciation)),
+   puis les slots personnalisés. `object.world` et `object.normalMatrix`
+   lisent la ligne de l'objet dessiné ; une étape fragment qui les lit reçoit
+   la ligne par un varying flat.
 6. **Clé de programme** : un hachage du graphe optimisé, indépendant des
    identifiants des nœuds et des valeurs des uniforms. Les matériaux ayant le
    même graphe partagent leur programme.

@@ -156,7 +156,11 @@ its resources, and a **program key**. The `Renderer` compiles for you; call
    as early as possible; `std.perFragment` keeps a value in the fragment
    stage (lighting, normalization).
 5. **Layout**: `frame` (group 0, camera, time, lights), `material`
-   (group 1), `object` (group 2, transform), then custom slots.
+   (group 1), `object` (group 2: the object table, see
+   [Backends](/fdw-engine/guides/backends-and-surfaces/#object-data-and-instancing)),
+   then custom slots. `object.world` and `object.normalMatrix` read the row
+   of the object drawn; a fragment stage reading them receives the row
+   through a flat varying.
 6. **Program key**: a hash of the optimized graph, independent of node ids
    and uniform values. Materials with the same graph share their program.
 
