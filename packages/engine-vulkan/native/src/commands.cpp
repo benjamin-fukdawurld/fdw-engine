@@ -123,9 +123,10 @@ uint32_t operandCount(uint32_t opcode) {
   case FDW_VK_CMD_SET_GROUP:
   case FDW_VK_CMD_SET_VERTEX_BUFFER:
   case FDW_VK_CMD_SET_INDEX_BUFFER:
+    return 2;
   case FDW_VK_CMD_DRAW:
   case FDW_VK_CMD_DRAW_INDEXED:
-    return 2;
+    return 3;
   case FDW_VK_CMD_SET_VIEWPORT:
     return 4;
   case FDW_VK_CMD_DISPATCH:
@@ -340,13 +341,14 @@ int drawCommand(Replay &replay, uint32_t opcode) {
     }
     const uint32_t count = reader.word();
     const uint32_t instances = reader.word();
+    const uint32_t firstInstance = reader.word();
     if (flushGroups(replay) != 0) {
       return -1;
     }
     if (opcode == FDW_VK_CMD_DRAW) {
-      vkCmdDraw(replay.commands, count, instances, 0, 0);
+      vkCmdDraw(replay.commands, count, instances, 0, firstInstance);
     } else {
-      vkCmdDrawIndexed(replay.commands, count, instances, 0, 0, 0);
+      vkCmdDrawIndexed(replay.commands, count, instances, 0, 0, firstInstance);
     }
     return 0;
   }

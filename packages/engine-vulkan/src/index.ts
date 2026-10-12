@@ -6,6 +6,7 @@ export * from './VulkanSwapchain';
 export * from './gpu/VulkanBuffer';
 export * from './gpu/VulkanTexture';
 export * from './render/VulkanCommandEncoder';
+export * from './render/VulkanObjectTable';
 export * from './render/VulkanPassTimer';
 export * from './render/VulkanPipelineFactory';
 export * from './render/VulkanRenderBackend';

@@ -19,7 +19,11 @@ import {
 import type { CompiledProgram } from '@fdw/engine-shader';
 import { GL, lazy } from '../gl';
 import { combinedSamplers } from '../shader/combinedSamplers';
-import { GlslEsCodegen, glslBlockName } from '../shader/GlslEsCodegen';
+import {
+  GlslEsCodegen,
+  glslBlockName,
+  ObjectTableNames,
+} from '../shader/GlslEsCodegen';
 
 // Where a resource of a bind group is found: group index and binding.
 interface BindingRef {
@@ -37,6 +41,14 @@ export interface WebGl2Program {
     readonly texture: BindingRef;
     readonly sampler: BindingRef;
   }[];
+  // The object table: its two data textures on the units after those of
+  // the samplers, and the uniform of the first instance of a draw.
+  readonly objectTable?: {
+    readonly binding: BindingRef;
+    readonly rowsUnit: number;
+    readonly instancesUnit: number;
+    readonly firstInstance: WebGLUniformLocation | null;
+  };
 }
 
 export interface WebGl2BlendState {
@@ -367,9 +379,55 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         ];
       }
     );
+    const objectTable = this.objectTable(program, layout, samplers.length);
     gl.useProgram(null);
 
-    return { program, uniformBlocks, samplers };
+    return {
+      program,
+      uniformBlocks,
+      samplers,
+      ...(objectTable ? { objectTable } : {}),
+    };
+  }
+
+  // The units of the textures of the object table, after those of the
+  // samplers (the program is in use).
+  private objectTable(
+    program: WebGLProgram,
+    layout: PhysicalProgramLayout,
+    units: number
+  ): WebGl2Program['objectTable'] {
+    const gl = this.gl;
+    for (const group of layout.groups) {
+      for (const { binding, resource } of group.bindings) {
+        if (resource.kind !== 'object-table') {
+          continue;
+        }
+        const rowsUnit = units;
+        const instancesUnit = units + 1;
+        const rows = gl.getUniformLocation(program, ObjectTableNames.rows);
+        const instances = gl.getUniformLocation(
+          program,
+          ObjectTableNames.instances
+        );
+        if (rows) {
+          gl.uniform1i(rows, rowsUnit);
+        }
+        if (instances) {
+          gl.uniform1i(instances, instancesUnit);
+        }
+        return {
+          binding: { group: group.index, binding },
+          rowsUnit,
+          instancesUnit,
+          firstInstance: gl.getUniformLocation(
+            program,
+            ObjectTableNames.firstInstance
+          ),
+        };
+      }
+    }
+    return undefined;
   }
 
   private pipeline(

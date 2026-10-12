@@ -8,6 +8,7 @@ import {
   TransformMath,
   wgpuMatrixPrimitives,
   GpuPassTimer,
+  ObjectTableDescriptor,
 } from '@fdw/engine-backend';
 import { loadVulkanAddon } from '../addon';
 import { VulkanTexture, VulkanTextureFactory } from '../gpu/VulkanTexture';
@@ -17,6 +18,7 @@ import {
   VulkanCommandBuffer,
   VulkanCommandEncoder,
 } from './VulkanCommandEncoder';
+import { VulkanObjectTable } from './VulkanObjectTable';
 import { VulkanPassTimer } from './VulkanPassTimer';
 import { VulkanPipelineFactory } from './VulkanPipelineFactory';
 
@@ -37,6 +39,8 @@ export class VulkanRenderBackend implements RenderBackend {
   readonly depthFormat = 'depth24plus';
   readonly capabilities: BackendCapabilities = {
     renderableFormats: ['rgba16float'],
+    // The object data in a table of storage buffers.
+    objectTable: true,
   };
 
   constructor(readonly device: VulkanDevice) {
@@ -65,6 +69,10 @@ export class VulkanRenderBackend implements RenderBackend {
 
   createCommandEncoder(): GpuCommandEncoder {
     return new VulkanCommandEncoder();
+  }
+
+  createObjectTable(descriptor: ObjectTableDescriptor): VulkanObjectTable {
+    return new VulkanObjectTable(this.buffers, descriptor);
   }
 
   // Where the queue writes timestamps.

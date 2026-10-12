@@ -117,15 +117,20 @@ class VulkanRenderPassEncoder implements GpuRenderPassEncoder {
       .word(format === 'uint16' ? 0 : 1);
   }
 
-  draw(vertexCount: number, instanceCount = 1): void {
-    this._writer.word(Commands.draw).word(vertexCount).word(instanceCount);
+  draw(vertexCount: number, instanceCount = 1, firstInstance = 0): void {
+    this._writer
+      .word(Commands.draw)
+      .word(vertexCount)
+      .word(instanceCount)
+      .word(firstInstance);
   }
 
-  drawIndexed(indexCount: number, instanceCount = 1): void {
+  drawIndexed(indexCount: number, instanceCount = 1, firstInstance = 0): void {
     this._writer
       .word(Commands.drawIndexed)
       .word(indexCount)
-      .word(instanceCount);
+      .word(instanceCount)
+      .word(firstInstance);
   }
 
   setViewport(x: number, y: number, width: number, height: number): void {
