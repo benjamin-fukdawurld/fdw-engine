@@ -80,3 +80,18 @@ Ce que chaque backend en fait :
 3. **Le `Renderer`** : les lignes stables, les plages d'écriture, la liste par passe, le groupe lié une fois. Mesures avant et après.
 4. **L'instancing** : la fusion des draws identiques, le tri par mesh, les ombres. Mesures sur le labyrinthe et la forêt.
 5. Puis l'étape 3 de P1 : le batching statique par cellule d'octree, la création en lot dans `engine-scene`.
+
+## 6. Résultats de l'étape 1
+
+Les trois backends lisent les données d'objet dans une table (la capacité `objectTable`) : storage buffers en WebGPU et en Vulkan, textures de données en WebGL2. La suite de rendu passe sur les trois (dont un test qui lit l'objet dans le fragment shader), et les programmes de la suite sont validés en HLSL (DXC, spirv-val) et en GLSL ES (glslang).
+
+| Mesure                                                                  | Sans la table | Avec la table        |
+| ----------------------------------------------------------------------- | ------------- | -------------------- |
+| Labyrinthe, étape 1, Vulkan natif (sans validation)                     | 100 fps       | **125 fps** (+25 %)  |
+| Labyrinthe, étape 1, Dawn natif (le backend du navigateur)              | 42 fps        | **71,5 fps** (+70 %) |
+| `Renderer.render`, 1000 objets en mouvement (CPU, backend factice)      | 7,06 ms       | **2,12 ms**          |
+| `Renderer.render`, 1000 objets immobiles (médiane, 40 séries alternées) | 1,74 ms       | **1,61 ms**          |
+
+Avant P1, l'étape 1 tournait à environ 89 fps sur Vulkan. Le gain de Dawn, plus fort, vient du coût de chaque appel WebGPU : c'est le cas du navigateur.
+
+Ce qui reste du chemin précédent (un bloc uniforme par objet, sans la capacité) sera retiré à la fin de P1, une fois l'instancing en place.

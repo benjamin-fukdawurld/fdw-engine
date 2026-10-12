@@ -397,9 +397,9 @@ enum {
   FDW_VK_CMD_SET_VERTEX_BUFFER = 7,
   // buffer, format (0: uint16, 1: uint32).
   FDW_VK_CMD_SET_INDEX_BUFFER = 8,
-  // vertex count, instance count.
+  // vertex count, instance count, first instance.
   FDW_VK_CMD_DRAW = 9,
-  // index count, instance count.
+  // index count, instance count, first instance.
   FDW_VK_CMD_DRAW_INDEXED = 10,
   // x, y, width, height (floats), in pixels from the top left corner.
   FDW_VK_CMD_SET_VIEWPORT = 11,

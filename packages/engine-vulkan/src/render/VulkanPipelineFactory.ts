@@ -25,6 +25,7 @@ import {
 import { VulkanBuffer } from '../gpu/VulkanBuffer';
 import { VulkanSampler, VulkanTexture } from '../gpu/VulkanTexture';
 import { dxcArguments, HlslCodegen } from '../shader/HlslCodegen';
+import { VulkanObjectTable } from './VulkanObjectTable';
 
 const bindingKind = (resource: LogicalBinding): number => {
   switch (resource.kind) {
@@ -39,7 +40,8 @@ const bindingKind = (resource: LogicalBinding): number => {
         ? BindingKinds.storageReadWrite
         : BindingKinds.storageRead;
     case 'object-table':
-      throw new Error('Object tables are not supported by this backend yet');
+      // Two bindings: see the layout of the group.
+      return BindingKinds.storageRead;
   }
 };
 
@@ -213,10 +215,15 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
   }
 
   createBindGroupLayout(group: PhysicalBindGroup): VulkanBindGroupLayout {
-    const bindings = group.bindings.map(({ binding, resource }) => ({
-      binding,
-      kind: bindingKind(resource),
-    }));
+    // An object table: the rows, then the row of each instance.
+    const bindings = group.bindings.flatMap(({ binding, resource }) =>
+      resource.kind === 'object-table'
+        ? [0, 1].map((offset) => ({
+            binding: binding + offset,
+            kind: BindingKinds.storageRead,
+          }))
+        : [{ binding, kind: bindingKind(resource) }]
+    );
     const key = JSON.stringify(bindings);
     let layout = this._groupLayouts.get(key);
     if (!layout) {
@@ -239,10 +246,17 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
     const handle = this._addon.createGroup(
       this._context,
       layout.handle,
-      entries.map((entry) => ({
-        binding: entry.binding,
-        object: resourceId(entry),
-      }))
+      entries.flatMap((entry) =>
+        entry.resource instanceof VulkanObjectTable
+          ? [
+              { binding: entry.binding, object: entry.resource.rowBuffer.id },
+              {
+                binding: entry.binding + 1,
+                object: entry.resource.instanceBuffer.id,
+              },
+            ]
+          : [{ binding: entry.binding, object: resourceId(entry) }]
+      )
     );
     return new VulkanBindGroup(layout, handle, this._addon.groupId(handle));
   }

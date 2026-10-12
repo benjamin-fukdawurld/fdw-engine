@@ -4,6 +4,7 @@ import {
   GpuCommandBuffer,
   GpuCommandEncoder,
   GpuPassTimer,
+  ObjectTableDescriptor,
   RenderBackend,
   RenderTargetDescriptor,
   TransformMath,
@@ -16,6 +17,7 @@ import {
   WebGl2CommandBuffer,
   WebGl2CommandEncoder,
 } from './WebGl2CommandEncoder';
+import { WebGl2ObjectTable } from './WebGl2ObjectTable';
 import { TimerQueryExtension, WebGl2PassTimer } from './WebGl2PassTimer';
 import { WebGl2PipelineFactory } from './WebGl2PipelineFactory';
 import { WebGl2RenderTarget } from './WebGl2RenderTarget';
@@ -41,6 +43,8 @@ export class WebGl2RenderBackend implements RenderBackend {
     this.capabilities = {
       maxVaryings: gl.getParameter(GL.MAX_VARYING_VECTORS),
       storageBuffers: false,
+      // The object data in data textures.
+      objectTable: true,
       compute: false,
       // Float color attachments need EXT_color_buffer_float (enabled by
       // getExtension), widely available on WebGL2.
@@ -57,6 +61,10 @@ export class WebGl2RenderBackend implements RenderBackend {
     label,
   }: RenderTargetDescriptor): WebGl2RenderTarget {
     return new WebGl2RenderTarget(this.gl, width, height, format, label);
+  }
+
+  createObjectTable(descriptor: ObjectTableDescriptor): WebGl2ObjectTable {
+    return new WebGl2ObjectTable(this.gl, descriptor);
   }
 
   // Where the browser gives the timer queries.

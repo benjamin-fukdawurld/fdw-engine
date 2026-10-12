@@ -16,6 +16,7 @@ import { GL } from '../gl';
 import { WebGl2Buffer } from '../gpu/WebGl2Buffer';
 import { WebGl2Sampler, WebGl2Texture } from '../gpu/WebGl2Texture';
 import { WebGl2BindGroup, WebGl2RenderPipeline } from './WebGl2PipelineFactory';
+import { WebGl2ObjectTable } from './WebGl2ObjectTable';
 import { WebGl2PassTimer } from './WebGl2PassTimer';
 import { WebGl2RenderTarget } from './WebGl2RenderTarget';
 import { FramebufferAttachment, framebufferFor } from '../gpu/framebuffers';
@@ -191,6 +192,37 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     gl.bindTexture(glTexture.target, glTexture.texture);
     gl.bindSampler(unit, glSampler.sampler);
   }
+  const table = program.objectTable;
+  if (table) {
+    const { group, binding } = table.binding;
+    const objects = unwrap(
+      resource(group, binding),
+      WebGl2ObjectTable,
+      'The object table'
+    );
+    // Read by texelFetch: no sampler object.
+    for (const [unit, texture] of [
+      [table.rowsUnit, objects.rowTexture.texture],
+      [table.instancesUnit, objects.instanceTexture.texture],
+    ] as const) {
+      gl.activeTexture(GL.TEXTURE0 + unit);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.bindSampler(unit, null);
+    }
+  }
+}
+
+// The first instance of a draw, for the programs reading the object table
+// (WebGL2 has no base instance). The program is in use.
+function setFirstInstance(
+  gl: WebGL2RenderingContext,
+  state: DrawState,
+  firstInstance: number
+): void {
+  const location = state.pipeline.program.objectTable?.firstInstance;
+  if (location) {
+    gl.uniform1ui(location, firstInstance);
+  }
 }
 
 // Records the commands of a pass. Each draw captures the state set before
@@ -244,10 +276,11 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     };
   }
 
-  draw(vertexCount: number, instanceCount = 1): void {
+  draw(vertexCount: number, instanceCount = 1, firstInstance = 0): void {
     const state = this.state();
     this._commands.push((gl) => {
       this.prepare(gl, state);
+      setFirstInstance(gl, state, firstInstance);
       gl.drawArraysInstanced(
         state.pipeline.topology,
         0,
@@ -257,7 +290,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     });
   }
 
-  drawIndexed(indexCount: number, instanceCount = 1): void {
+  drawIndexed(indexCount: number, instanceCount = 1, firstInstance = 0): void {
     const state = this.state();
     const index = state.indexBuffer;
     if (!index) {
@@ -265,6 +298,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     }
     this._commands.push((gl) => {
       this.prepare(gl, state);
+      setFirstInstance(gl, state, firstInstance);
       gl.drawElementsInstanced(
         state.pipeline.topology,
         indexCount,
