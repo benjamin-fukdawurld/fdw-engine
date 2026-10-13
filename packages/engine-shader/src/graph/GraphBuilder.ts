@@ -266,13 +266,18 @@ export class GraphBuilder {
         ]);
       }
       this._outputTypes.push(resolvedDefinition.id);
-    } else if (resolvedDefinition.id === 'output.target') {
-      // Several targets are allowed: the whole graph is checked on build.
+    } else if (
+      resolvedDefinition.id === 'output.target' ||
+      resolvedDefinition.id === 'output.value'
+    ) {
+      // Several are allowed: the whole graph is checked on build.
       this._outputTypes.push(resolvedDefinition.id);
     } else if (resolvedDefinition.category === 'output') {
       // Allowed: one output.surface, or output.vertex and output.fragment.
       const outputs = [
-        ...this._outputTypes.filter((type) => type !== 'output.target'),
+        ...this._outputTypes.filter(
+          (type) => type !== 'output.target' && type !== 'output.value'
+        ),
         resolvedDefinition.id,
       ].sort();
       if (this._outputTypes.includes('function.output')) {
@@ -448,8 +453,9 @@ export class GraphBuilder {
   }
 
   /**
-   * Reads a value provided by the engine: camera, object transform, time.
-   * These values live in the fixed `frame` and `object` slots, shared by
+   * Reads a value provided by the engine: camera, object transform, time,
+   * the identifier of the object (`object.id`, a u32, 0 for none). These
+   * values live in the fixed `frame` and `object` slots, shared by
    * every material. The lights are read with `light.current` and summed with
    * `light.sum` (see `stdLights`).
    */
@@ -461,6 +467,7 @@ export class GraphBuilder {
       | 'camera.position'
       | 'object.world'
       | 'object.normalMatrix'
+      | 'object.id'
       | 'time'
       | 'exposure'
       | 'shadowMap'
@@ -557,6 +564,23 @@ export class GraphBuilder {
       params: { name, location },
       inputs: { value },
     });
+  }
+
+  /**
+   * A value of the material for a scene output declared `'material'` (see
+   * the outputs of `Renderer.addScenePasses`): written to the target of
+   * that name by the passes that have it, ignored by the others. Its type
+   * matches the format of the target (`vec2f` for `rg16float`, `u32` for
+   * `r32uint`). With {@link GraphBuilder.surface}.
+   *
+   * @example
+   * ```ts
+   * g.surface({ baseColor });
+   * g.output('velocity', velocity);
+   * ```
+   */
+  output(name: string, value: PortHandle | ConstantValue): void {
+    this.node('output.value', { params: { name }, inputs: { value } });
   }
 
   /**

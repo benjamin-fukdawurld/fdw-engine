@@ -59,7 +59,7 @@ export class MazeView {
       clearColor: { ...background, a: 1 },
       cullUnlit,
     });
-    inset.add(graph, main, surface);
+    inset.add(graph, main.color, surface);
     this._runner.execute(graph);
     surface.present();
     return this.renderer.stats.get('scene');

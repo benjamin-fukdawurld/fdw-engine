@@ -199,6 +199,24 @@ export const engineUniformBlocks: Readonly<
 };
 
 /**
+ * The members of a row of the object table: the world matrix, then the
+ * columns of the normal matrix as vec4, laid out as the 'object' uniform
+ * block (std140: the same 112 bytes). The w of the first column holds the
+ * identifier of the object, a float exact up to 2^24.
+ *
+ * @group Program layout
+ */
+export const objectTableMembers: readonly {
+  readonly name: string;
+  readonly type: ShaderType;
+}[] = [
+  { name: 'world', type: BuiltinTypes.mat4f },
+  { name: 'normalColumn0', type: BuiltinTypes.vec4f },
+  { name: 'normalColumn1', type: BuiltinTypes.vec4f },
+  { name: 'normalColumn2', type: BuiltinTypes.vec4f },
+];
+
+/**
  * Where each 'input.engine' value lives.
  *
  * @group Program layout

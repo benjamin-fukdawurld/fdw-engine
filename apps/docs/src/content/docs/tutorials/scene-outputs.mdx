@@ -1,0 +1,170 @@
+---
+title: Scene outputs
+description: Write the normals, the depths and the identifiers of the objects into textures of their own, alongside the color, and use them in later passes.
+sidebar:
+  order: 5
+---
+
+import Example from '../../../components/Example.astro';
+
+The scene passes can write more than a color. Here they also write, for each
+pixel, the normal of the surface, its distance to the camera and the
+identifier of the object, each into its own texture (multiple render
+targets). A full screen pass shows the four, one per quarter of the screen.
+
+<Example name="scene-outputs" />
+
+These textures are what screen space effects (ambient occlusion,
+reflections, outlines), deferred rendering and selection under the mouse are
+made of. The engine does not fix their list: you choose what each one
+holds.
+
+## Asking for outputs
+
+`addScenePasses` takes `outputs`, by name. Each one has a format and a
+`value`: what it holds.
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items: transforms.map((transform, i) => ({
+    mesh: cube,
+    material,
+    transform,
+    id: i + 1,
+  })),
+  camera,
+  lights: [sun],
+  target: graph.createTexture('color', { format: 'rgba8unorm' }),
+  format: 'rgba8unorm',
+  outputs: {
+    normal: { format: 'rgba8unorm', value: encodeNormal },
+    depth: { format: 'r8unorm', value: encodeDepth },
+    id: { format: 'rgba8unorm', value: identifierColor },
+  },
+});
+scene.color; // the color, as before
+scene.outputs.normal; // the versions of the outputs, to read later
+```
+
+The opaque pass writes the color and the outputs at once: the objects are
+drawn a single time. Each output is a texture of the graph, of the size of
+the color target, cleared to 0 where there is no object.
+
+The simplest values are given by name, and converted to the format:
+
+| Value                             | What is written                                         |
+| --------------------------------- | ------------------------------------------------------- |
+| `'view-normal'`, `'world-normal'` | The normal of the surface, after normal mapping         |
+| `'view-depth'`                    | The distance to the camera along its axis               |
+| `'world-position'`                | The position in the world                               |
+| `'object-id'`                     | The `id` of the item (a `u32`, for an `r32uint` target) |
+| `'base-color'`, `'roughness'`, …  | An input of the surface, or its default                 |
+
+```ts
+outputs: {
+  normal: { format: 'rgba16float', value: 'view-normal' },
+  id: { format: 'r32uint', value: 'object-id' },
+},
+```
+
+## Outputs of your own: function graphs
+
+A texture of `rgba8unorm` holds values from 0 to 1: a normal, from −1 to 1,
+needs encoding. An output can be a **function graph**: its inputs are named
+after the values of the surface (`viewNormal`, `viewDepth`, `objectId`,
+`baseColor`, `roughness`…), its output is written, the same for every
+material.
+
+```ts
+const n = new GraphBuilder('encode normal');
+n.functionOutput(
+  'value',
+  n.call(std.extend, {
+    xyz: n.call(std.add, {
+      a: n.call(std.mul, {
+        a: n.functionInput('viewNormal', BuiltinTypes.vec3f),
+        b: 0.5,
+      }),
+      b: 0.5,
+    }),
+  })
+);
+const encodeNormal = defineFunction(n.build(), { id: 'example.normal' });
+```
+
+The function gives the type of the format: a `vec4f` for `rgba8unorm`, an
+`f32` for `r8unorm`, a `u32` for `r32uint`. The example turns the identifier
+into a color the same way, to see it:
+
+```ts
+const c = new GraphBuilder('identifier color');
+const id = c.call(
+  std.convert,
+  { value: c.functionInput('objectId', BuiltinTypes.u32) },
+  { params: { to: BuiltinTypes.f32 } }
+);
+c.functionOutput(
+  'value',
+  c.call(std.extend, {
+    xyz: c.call(std.fract, {
+      x: c.call(std.mul, { a: id, b: [0.61, 0.37, 0.83] }),
+    }),
+  })
+);
+```
+
+To find the object under the mouse, write `'object-id'` into an `r32uint`
+target and read the pixel back instead. Identifiers go from 1 to 2^24; for
+more objects, select by ray casting (`scene.raycast`).
+
+## Outputs of the materials
+
+Some values only exist in some materials: a speed of animation, a mask of
+an effect. Declare the output `'material'`, with a default; the materials
+that have it write it with `g.output`:
+
+```ts
+// In the scene passes.
+velocity: { format: 'rg16float', value: 'material', default: [0, 0] },
+
+// In a material.
+g.surface({ baseColor });
+g.output('velocity', g.uniform('velocity', BuiltinTypes.vec2f));
+```
+
+The passes without the output ignore `g.output`: the material compiles as
+before.
+
+## Using the outputs
+
+The outputs are versions of the graph, like the color: give them to a full
+screen pass. The example composes the four into quarters:
+
+```ts
+renderer.addFullscreenPass(graph, 'quarters', {
+  material: quarters, // reads the textures color, normal, depth and id
+  inputs: { color: scene.color, ...scene.outputs },
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+});
+```
+
+## What to know
+
+- **Transparent items only blend their color**: they write no output. A
+  glass object leaves the outputs of what is behind it, and cannot be
+  selected through `object-id`.
+- **Without `target`**, the passes only write their outputs, without the
+  shading models: a G-buffer, for deferred rendering.
+- **Limits**: 4 targets at least, 8 on most GPUs
+  (`capabilities.maxColorAttachments`); 32 bytes per pixel in WebGPU
+  (`maxColorAttachmentBytesPerSample`).
+- **Multisampling**: the outputs are multisampled with the color and
+  resolved; integer outputs cannot be: draw them with `samples: 1`.
+
+## Next
+
+- [Render graph guide](/fdw-engine/guides/render-graph/#scene-outputs): all
+  the options of the outputs, the depth, the G-buffer.
+- [Post-processing](/fdw-engine/tutorials/post-processing/): full screen
+  passes reading the textures of the graph.

@@ -187,7 +187,7 @@ const main = renderer.addScenePasses(graph, {
   target: output,
   format: surface.format,
 });
-topView.add(graph, main, surface);
+topView.add(graph, main.color, surface);
 runner.execute(graph);
 surface.present();
 ```

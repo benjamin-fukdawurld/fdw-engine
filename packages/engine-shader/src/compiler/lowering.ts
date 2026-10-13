@@ -1,9 +1,85 @@
 import type { Diagnostic } from '../graph/Diagnostic';
 import type { GraphNode, StaticValue } from '../graph/MaterialGraphData';
 import type { NodeRegistry } from '../graph/NodeRegistry';
-import { resolveParams } from '../graph/NodeDefinition';
-import { BuiltinTypes } from '../types/ShaderType';
+import {
+  FunctionDefinition,
+  isFunctionDefinition,
+  resolveParams,
+} from '../graph/NodeDefinition';
+import type { ConstantValue } from '../types/ConstantValue';
+import { BuiltinTypes, ShaderType } from '../types/ShaderType';
+import { composeSwizzles } from '../graph/swizzle';
 import { InputSource, WorkingGraph } from './WorkingGraph';
+
+/**
+ * A color target written by the surface besides its color (or instead of
+ * it): see the `outputs` of {@link CompileOptions}.
+ *
+ * @group Compilation
+ */
+export interface SurfaceOutput {
+  /** The name of the target, unique in the pass. */
+  readonly name: string;
+  /** Its location in the pass: 0 is the color when the pass has one. */
+  readonly location: number;
+  /**
+   * What is written:
+   * - a value of the surface or of the engine, by name: `view-normal`,
+   *   `world-normal`, `view-depth`, `world-position`, `object-id`, `uv`,
+   *   or an input of the surface (`base-color`, `alpha`, `roughness`…, its
+   *   default when the shading model has none); converted to the format;
+   * - a function graph whose inputs are named after these values
+   *   (`viewNormal`, `baseColor`…), the same for every material;
+   * - `'material'`: the `output.value` of that name of the material
+   *   (`g.output`), else `default`.
+   * The functions and the materials give the type of the format.
+   */
+  readonly value: string | FunctionDefinition;
+  /** The components of the format (1 for r32float, 4 for rgba8unorm). */
+  readonly channels: 1 | 2 | 3 | 4;
+  /** The scalar of the format: u32 for uint formats, i32 for sint ones. */
+  readonly scalar: 'f32' | 'u32' | 'i32';
+  /** For `'material'`: the value of the materials without output.value. */
+  readonly default?: ConstantValue;
+}
+
+/** The type a target of `channels` components of `scalar` takes. */
+export function surfaceOutputType(
+  output: Pick<SurfaceOutput, 'channels' | 'scalar'>
+): ShaderType {
+  return output.channels === 1
+    ? { kind: 'scalar', scalar: output.scalar }
+    : { kind: 'vector', scalar: output.scalar, size: output.channels };
+}
+
+// The values of the surface without a port in the shading model.
+const surfaceDefaults: Record<
+  string,
+  { value: ConstantValue; type: ShaderType }
+> = {
+  baseColor: { value: [1, 1, 1], type: BuiltinTypes.vec3f },
+  alpha: { value: 1, type: BuiltinTypes.f32 },
+  emissive: { value: [0, 0, 0], type: BuiltinTypes.vec3f },
+  roughness: { value: 0.5, type: BuiltinTypes.f32 },
+  metallic: { value: 0, type: BuiltinTypes.f32 },
+  occlusion: { value: 1, type: BuiltinTypes.f32 },
+  specular: { value: [1, 1, 1], type: BuiltinTypes.vec3f },
+  shininess: { value: 32, type: BuiltinTypes.f32 },
+};
+
+// A swizzle of a source, composed with the one it has.
+const swizzled = (source: InputSource, swizzle: string): InputSource =>
+  'value' in source
+    ? source
+    : {
+        ...source,
+        swizzle: source.swizzle
+          ? composeSwizzles(source.swizzle, swizzle) ?? swizzle
+          : swizzle,
+      };
+
+const camelCase = (name: string) =>
+  name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
 const isZero = (source: InputSource): boolean =>
   'value' in source &&
@@ -128,12 +204,19 @@ export function lowerFullscreen(
  * With the 'depthOnly' feature, the fragment stage writes no color: the
  * shading model is left out, only the mask discards remain (shadow maps,
  * depth prepasses).
+ *
+ * The `outputs` add color targets (output.target), from the values of the
+ * surface and of the engine. Without `color`, the shading model is left out
+ * too: the surface only writes its outputs (a G-buffer). The output.value
+ * nodes of the material are removed, used by the outputs of their name.
  */
 export function lowerSurface(
   graph: WorkingGraph,
   registry: NodeRegistry,
   diagnostics: Diagnostic[],
-  feature: (name: string) => StaticValue | undefined = () => undefined
+  feature: (name: string) => StaticValue | undefined = () => undefined,
+  outputs: readonly SurfaceOutput[] = [],
+  withColor = true
 ): void {
   const surface = [...graph.nodes.values()].find(
     (node) => node.type === 'output.surface'
@@ -205,6 +288,7 @@ export function lowerSurface(
 
   if (feature('depthOnly')) {
     lowerDepthOnly(graph, surface, source, feature);
+    removeOutputValues(graph);
     return;
   }
 
@@ -217,26 +301,56 @@ export function lowerSurface(
   }
   // Without a normal on the surface, the model gets the interpolated normal
   // of the mesh, in world space (normalized by the model, per fragment).
+  let meshNormal: InputSource | undefined;
+  const interpolatedNormal = (): InputSource => {
+    if (!meshNormal) {
+      const normal = graph.addNode('input.attribute', {
+        semantic: 'normal',
+        type: BuiltinTypes.vec3f,
+      });
+      const normalMatrix = graph.addNode('input.engine', {
+        value: 'object.normalMatrix',
+      });
+      const worldNormal = graph.addNode(
+        'std.transform3',
+        {},
+        { matrix: out(normalMatrix, 'value'), vector: out(normal, 'value') }
+      );
+      meshNormal = out(
+        graph.addNode('std.perFragment', {}, { value: out(worldNormal) })
+      );
+    }
+    return meshNormal;
+  };
   if (
     ports.some((port) => port.name === 'normal') &&
     !surfaceInputs['normal']
   ) {
-    const normal = graph.addNode('input.attribute', {
-      semantic: 'normal',
-      type: BuiltinTypes.vec3f,
-    });
-    const normalMatrix = graph.addNode('input.engine', {
-      value: 'object.normalMatrix',
-    });
-    const worldNormal = graph.addNode(
-      'std.transform3',
-      {},
-      { matrix: out(normalMatrix, 'value'), vector: out(normal, 'value') }
-    );
-    surfaceInputs['normal'] = out(
-      graph.addNode('std.perFragment', {}, { value: out(worldNormal) })
-    );
+    surfaceInputs['normal'] = interpolatedNormal();
   }
+
+  const discard = maskDiscard(graph, source, feature);
+  const targets = lowerOutputs(graph, registry, diagnostics, surface, {
+    outputs,
+    ports: ports.map((port) => ({
+      name: port.name,
+      type: port.type as ShaderType,
+    })),
+    surfaceInputs,
+    interpolatedNormal,
+    worldPosition: out(worldPosition),
+  });
+  removeOutputValues(graph);
+  if (!targets) {
+    return;
+  }
+  if (!withColor) {
+    // A G-buffer: the outputs only, without the shading model.
+    graph.addNode('output.fragment', {}, discard ? { discard } : {});
+    graph.removeNode(surface.id);
+    return;
+  }
+
   const color = graph.addNode(
     lighting,
     {},
@@ -285,7 +399,6 @@ export function lowerSurface(
     );
   }
 
-  const discard = maskDiscard(graph, source, feature);
   graph.addNode(
     'output.fragment',
     {},
@@ -293,6 +406,326 @@ export function lowerSurface(
   );
 
   graph.removeNode(surface.id);
+}
+
+// The output.value nodes of a material: used (or not) by the outputs.
+function removeOutputValues(graph: WorkingGraph): void {
+  for (const node of [...graph.nodes.values()]) {
+    if (node.type === 'output.value') {
+      graph.removeNode(node.id);
+    }
+  }
+}
+
+// Adds an output.target per surface output; false on error.
+function lowerOutputs(
+  graph: WorkingGraph,
+  registry: NodeRegistry,
+  diagnostics: Diagnostic[],
+  surface: GraphNode,
+  context: {
+    readonly outputs: readonly SurfaceOutput[];
+    readonly ports: readonly { name: string; type: ShaderType }[];
+    readonly surfaceInputs: Readonly<Record<string, InputSource | undefined>>;
+    readonly interpolatedNormal: () => InputSource;
+    readonly worldPosition: InputSource;
+  }
+): boolean {
+  const out = (node: string, port = 'result'): InputSource => ({
+    ref: { node, port },
+  });
+  const error = (message: string) => {
+    diagnostics.push({ severity: 'error', node: surface.id, message });
+    return false;
+  };
+  const values = new Map<string, { source: InputSource; type: ShaderType }>();
+  const cached = (
+    name: string,
+    build: () => { source: InputSource; type: ShaderType }
+  ) => {
+    let value = values.get(name);
+    if (!value) {
+      value = build();
+      values.set(name, value);
+    }
+    return value;
+  };
+  const view = () =>
+    cached('camera.view', () => ({
+      source: out(
+        graph.addNode('input.engine', { value: 'camera.view' }),
+        'value'
+      ),
+      type: BuiltinTypes.mat4f,
+    }));
+  const worldNormal = () =>
+    cached('worldNormal', () => ({
+      source: out(
+        graph.addNode(
+          'std.normalize',
+          {},
+          {
+            x: context.surfaceInputs['normal'] ?? context.interpolatedNormal(),
+          }
+        )
+      ),
+      type: BuiltinTypes.vec3f,
+    }));
+  // The values the outputs and their functions can use, by name.
+  const builders: Record<
+    string,
+    () => { source: InputSource; type: ShaderType }
+  > = {
+    normal: worldNormal,
+    worldNormal,
+    viewNormal: () =>
+      cached('viewNormal', () => {
+        const direction = graph.addNode(
+          'std.transform',
+          {},
+          {
+            matrix: view().source,
+            vector: out(
+              graph.addNode(
+                'std.extend',
+                {},
+                { xyz: worldNormal().source, w: { value: 0 } }
+              )
+            ),
+          }
+        );
+        return {
+          source: out(
+            graph.addNode(
+              'std.normalize',
+              {},
+              { x: swizzled(out(direction), 'xyz') }
+            )
+          ),
+          type: BuiltinTypes.vec3f,
+        };
+      }),
+    worldPosition: () => ({
+      source: swizzled(context.worldPosition, 'xyz'),
+      type: BuiltinTypes.vec3f,
+    }),
+    viewDepth: () =>
+      cached('viewDepth', () => {
+        const position = graph.addNode(
+          'std.transform',
+          {},
+          { matrix: view().source, vector: context.worldPosition }
+        );
+        // The camera looks at -z.
+        return {
+          source: out(
+            graph.addNode(
+              'std.mul',
+              {},
+              { a: swizzled(out(position), 'z'), b: { value: -1 } }
+            )
+          ),
+          type: BuiltinTypes.f32,
+        };
+      }),
+    objectId: () =>
+      cached('objectId', () => ({
+        source: out(
+          graph.addNode('input.engine', { value: 'object.id' }),
+          'value'
+        ),
+        type: BuiltinTypes.u32,
+      })),
+    uv: () =>
+      cached('uv', () => ({
+        source: out(
+          graph.addNode('input.attribute', {
+            semantic: 'uv',
+            type: BuiltinTypes.vec2f,
+          }),
+          'value'
+        ),
+        type: BuiltinTypes.vec2f,
+      })),
+  };
+  // The inputs of the surface, or their defaults.
+  const surfaceValue = (name: string) => {
+    const port = context.ports.find((candidate) => candidate.name === name);
+    const connected = context.surfaceInputs[name];
+    if (port && connected) {
+      // Constants as nodes, which can be swizzled and converted.
+      return {
+        source:
+          'value' in connected
+            ? {
+                ref: {
+                  node: graph.addNode('const.value', {
+                    type: port.type,
+                    value: connected.value,
+                  }),
+                  port: 'value',
+                },
+              }
+            : connected,
+        type: port.type,
+      };
+    }
+    const fallback = surfaceDefaults[name];
+    return fallback
+      ? {
+          // A node, which can be swizzled and converted.
+          source: {
+            ref: {
+              node: graph.addNode('const.value', {
+                type: fallback.type,
+                value: fallback.value,
+              }),
+              port: 'value',
+            },
+          },
+          type: fallback.type,
+        }
+      : undefined;
+  };
+  const named = (name: string) => builders[name]?.() ?? surfaceValue(name);
+  const known = () =>
+    [
+      ...Object.keys(builders),
+      ...new Set([
+        ...context.ports.map((port) => port.name),
+        ...Object.keys(surfaceDefaults),
+      ]),
+    ]
+      .filter((name) => name !== 'positionOffset')
+      .join(', ');
+
+  const materialValues = new Map(
+    [...graph.nodes.values()]
+      .filter((node) => node.type === 'output.value')
+      .map((node) => [node.params['name'] as string, node] as const)
+  );
+  for (const output of context.outputs) {
+    const expected = surfaceOutputType(output);
+    let value: InputSource | undefined;
+    if (output.value === 'material') {
+      const node = materialValues.get(output.name);
+      value = node
+        ? graph.inputSource(node, 'value')
+        : {
+            ref: {
+              node: graph.addNode('const.value', {
+                type: expected,
+                value: output.default ?? 0,
+              }),
+              port: 'value',
+            },
+          };
+    } else if (typeof output.value !== 'string') {
+      const fn = output.value;
+      if (!registry.has(fn.id)) {
+        return error(`unknown output function "${fn.id}"`);
+      }
+      const inputs: Record<string, InputSource> = {};
+      for (const port of fn.inputs({})) {
+        const found = named(port.name);
+        if (found) {
+          inputs[port.name] = found.source;
+        } else if (port.default === undefined) {
+          return error(
+            `the input "${port.name}" of the output function "${
+              fn.id
+            }" is not a value of the surface: ${known()}`
+          );
+        }
+      }
+      const result = fn.outputs({})[0];
+      if (!result || !isFunctionDefinition(fn)) {
+        return error(`the output function "${fn.id}" has no output`);
+      }
+      value = out(graph.addNode(fn.id, {}, inputs), result.name);
+    } else {
+      const found = named(camelCase(output.value));
+      if (!found) {
+        return error(
+          `unknown output value "${output.value}": ${known()}, or 'material'`
+        );
+      }
+      const shaped = shape(graph, found, expected);
+      if (!shaped) {
+        return error(
+          `the output "${output.name}" cannot hold "${output.value}" in a format of ${output.channels} ${output.scalar} components`
+        );
+      }
+      value = shaped;
+    }
+    graph.addNode(
+      'output.target',
+      { name: output.name, location: output.location },
+      { value }
+    );
+  }
+  return true;
+}
+
+// A value of the engine converted to the type of a target: its scalars,
+// then its components (dropped, or added: 0, and 1 for the 4th).
+function shape(
+  graph: WorkingGraph,
+  { source, type }: { source: InputSource; type: ShaderType },
+  expected: ShaderType
+): InputSource | undefined {
+  const size = (t: ShaderType) =>
+    t.kind === 'vector' ? t.size : t.kind === 'scalar' ? 1 : 0;
+  const scalar = (t: ShaderType) =>
+    t.kind === 'vector' || t.kind === 'scalar' ? t.scalar : undefined;
+  const from = size(type);
+  const to = size(expected);
+  const toScalar = scalar(expected);
+  if (from === 0 || to === 0 || !toScalar) {
+    return undefined;
+  }
+  let value = source;
+  if (scalar(type) !== toScalar) {
+    const converted: ShaderType =
+      from === 1
+        ? { kind: 'scalar', scalar: toScalar }
+        : { kind: 'vector', scalar: toScalar, size: from as 2 | 3 | 4 };
+    value = {
+      ref: {
+        node: graph.addNode('std.convert', { to: converted }, { value }),
+        port: 'result',
+      },
+    };
+  }
+  if (from > to) {
+    return swizzled(value, 'xyzw'.slice(0, to));
+  }
+  if (from < to) {
+    // Padding only for floats: the constructors of the library take f32.
+    if (toScalar !== 'f32') {
+      return undefined;
+    }
+    const constructors = ['', '', 'std.vec2', 'std.vec3', 'std.vec4'];
+    const inputs: Record<string, InputSource> = {};
+    'xyzw'
+      .slice(0, to)
+      .split('')
+      .forEach((component, i) => {
+        inputs[component] =
+          i < from
+            ? from === 1
+              ? value
+              : swizzled(value, component)
+            : { value: i === 3 ? 1 : 0 };
+      });
+    return {
+      ref: {
+        node: graph.addNode(constructors[to], {}, inputs),
+        port: 'result',
+      },
+    };
+  }
+  return value;
 }
 
 // The discard of masked materials: alpha below the 'alphaCutoff' uniform.

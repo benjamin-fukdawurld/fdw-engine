@@ -10,6 +10,7 @@ import {
   PhysicalLayoutStrategy,
   PhysicalProgramLayout,
   RenderBackend,
+  RenderPassDescriptor,
   RenderPipelineDescriptor,
   Surface,
   TransformMath,
@@ -190,6 +191,8 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     submits: 0,
     textures: [] as GpuTextureConfiguration[],
     renderPasses: [] as string[],
+    // The descriptors of the render passes, with their attachments.
+    passes: [] as RenderPassDescriptor[],
     viewports: [] as number[][],
     calls: {
       setPipeline: 0,
@@ -315,6 +318,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       generateMipmaps: () => undefined,
       beginRenderPass: (descriptor) => {
         log.renderPasses.push(descriptor.label ?? '');
+        log.passes.push(descriptor);
         return {
           setPipeline: (pipeline) => {
             log.calls.setPipeline++;

@@ -21,7 +21,9 @@ import {
   PointLight,
   Renderer,
   RenderItem,
+  SceneOutput,
   SpotLight,
+  TextureHandle,
   Transform,
 } from '@fdw/engine-core';
 
@@ -865,6 +867,219 @@ export function describeRenderer(
       });
     });
 
+    describe('scene outputs', () => {
+      // A 1×1 quad facing the camera, with normals.
+      const flat = () =>
+        new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 24,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                  { semantic: 'normal', format: 'float32x3', offset: 12 },
+                ],
+              },
+            ],
+            vertexCount: 4,
+            indexBuffer: { format: 'uint16', count: 6 },
+          },
+          vertices: [
+            new Float32Array([
+              -0.5, -0.5, 0, 0, 0, 1, 0.5, -0.5, 0, 0, 0, 1, 0.5, 0.5, 0, 0, 0,
+              1, -0.5, 0.5, 0, 0, 0, 1,
+            ]),
+          ],
+          indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+      const nearest = () =>
+        backend.textures.createSampler({
+          minFilter: 'nearest',
+          magFilter: 'nearest',
+          mipmapFilter: 'nearest',
+        });
+      // An output function: one input of the surface, as a color.
+      const asColor = (input: 'viewDepth' | 'objectId', scale: number) => {
+        const f = new GraphBuilder(`${input} as color`);
+        const value = f.functionInput(
+          input,
+          input === 'objectId' ? BuiltinTypes.u32 : BuiltinTypes.f32
+        );
+        const float =
+          input === 'objectId'
+            ? f.call(
+                std.convert,
+                { value },
+                { params: { to: BuiltinTypes.f32 } }
+              )
+            : value;
+        f.functionOutput(
+          'value',
+          f.call(std.vec4, {
+            x: f.call(std.mul, { a: float, b: scale }),
+            w: 1,
+          })
+        );
+        return defineFunction(f.build(), { id: `test.${input}Color` });
+      };
+      // Draws the scene with outputs, then shows one of them on the
+      // surface; the pixels.
+      const output = async (
+        items: RenderItem[],
+        outputs: Record<string, SceneOutput>,
+        shown: string,
+        options: { samples?: number; color?: boolean } = {}
+      ) => {
+        const graph = new RenderGraph();
+        const scene = renderer.addScenePasses(graph, {
+          items,
+          camera,
+          ...(options.color === false
+            ? { size: { width: size, height: size } }
+            : {
+                target: graph.createTexture('scene', {
+                  format: 'rgba8unorm',
+                }),
+                format: 'rgba8unorm',
+              }),
+          outputs,
+          ...(options.samples ? { samples: options.samples } : {}),
+        } as never) as { outputs: Record<string, TextureHandle> };
+        const g = new GraphBuilder('show');
+        g.fullscreen({
+          color: g.call(std.textureSample, {
+            texture: g.texture('source'),
+            sampler: g.sampler('sourceSampler'),
+            uv: g.builtin('screen-uv'),
+          }),
+        });
+        renderer.addFullscreenPass(graph, 'show', {
+          material: new Material({
+            graph: g.build(),
+            values: { sourceSampler: nearest() },
+          }),
+          inputs: { source: scene.outputs[shown] },
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        return (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+      };
+      const red = () => new Material({ graph: colorGraph() });
+      const items = (): RenderItem[] => [
+        { mesh: flat(), material: red(), transform: at(-0.5), id: 3 },
+        { mesh: flat(), material: red(), transform: at(0.5), id: 9 },
+      ];
+
+      it('writes the normals, the depths and the identifiers of the surfaces', async () => {
+        let pixel = await output(
+          items(),
+          { normal: { format: 'rgba8unorm', value: 'view-normal' } },
+          'normal'
+        );
+        // Facing the camera: (0, 0, 1); nothing elsewhere.
+        expectColor(pixel(16, 32), [0, 0, 255, 255]);
+        expectColor(pixel(16, 4), [0, 0, 0, 0]);
+        // 5 in front of the camera, as 5 / 10.
+        pixel = await output(
+          items(),
+          {
+            depth: {
+              format: 'rgba8unorm',
+              value: asColor('viewDepth', 0.1),
+            },
+          },
+          'depth'
+        );
+        expectColor(pixel(16, 32), [128, 0, 0, 255]);
+        // The identifiers 3 and 9, as 3 / 16 and 9 / 16.
+        pixel = await output(
+          items(),
+          { id: { format: 'rgba8unorm', value: asColor('objectId', 1 / 16) } },
+          'id'
+        );
+        expectColor(pixel(16, 32), [48, 0, 0, 255]);
+        expectColor(pixel(48, 32), [143, 0, 0, 255]);
+      });
+
+      it('writes the values of the materials, or the default', async () => {
+        const g = new GraphBuilder('masked out');
+        g.surface({ baseColor: [1, 0, 0] });
+        g.output('mask', [1, 1, 0, 1]);
+        const pixel = await output(
+          [
+            {
+              mesh: flat(),
+              material: new Material({ graph: g.build() }),
+              transform: at(-0.5),
+            },
+            { mesh: flat(), material: red(), transform: at(0.5) },
+          ],
+          {
+            mask: {
+              format: 'rgba8unorm',
+              value: 'material',
+              default: [0, 0, 1, 1],
+            },
+          },
+          'mask'
+        );
+        expectColor(pixel(16, 32), [255, 255, 0, 255]);
+        expectColor(pixel(48, 32), [0, 0, 255, 255]);
+      });
+
+      it('writes a G-buffer without the shading models', async () => {
+        const pixel = await output(
+          items(),
+          { albedo: { format: 'rgba8unorm', value: 'base-color' } },
+          'albedo',
+          { color: false }
+        );
+        expectColor(pixel(16, 32), [255, 0, 0, 255]);
+        expectColor(pixel(16, 4), [0, 0, 0, 0]);
+      });
+
+      it('resolves the multisampled outputs', async () => {
+        const pixel = await output(
+          items(),
+          { normal: { format: 'rgba8unorm', value: 'view-normal' } },
+          'normal',
+          { samples: 4 }
+        );
+        expectColor(pixel(16, 32), [0, 0, 255, 255]);
+      });
+
+      it('keeps the outputs of the opaque items under the transparent ones', async () => {
+        const glass = new Material({
+          graph: colorGraph(),
+          values: { color: [0, 0, 1, 0.5] },
+          renderState: { alphaMode: 'blend' },
+        });
+        const pixel = await output(
+          [
+            ...items(),
+            {
+              mesh: flat(),
+              material: glass,
+              transform: new Transform({
+                position: { x: -0.5, y: 0, z: 1 },
+              }),
+              id: 12,
+            },
+          ],
+          { id: { format: 'rgba8unorm', value: asColor('objectId', 1 / 16) } },
+          'id'
+        );
+        expectColor(pixel(16, 32), [48, 0, 0, 255]);
+      });
+    });
+
     describe('HDR and post-processing', () => {
       const hdrCapable = () =>
         backend.capabilities?.renderableFormats?.includes('rgba16float') ??
@@ -986,7 +1201,7 @@ export function describeRenderer(
         });
         renderer.addFullscreenPass(graph, 'invert', {
           material: invert,
-          inputs: { source: scene },
+          inputs: { source: scene.color },
           target: graph.importTexture('surface', surface.getCurrentTarget()),
           format: surface.format,
         });
@@ -1043,7 +1258,7 @@ export function describeRenderer(
         });
         renderer.addFullscreenPass(graph, 'average', {
           material: average,
-          inputs: { source: graph.addMipmapPass('scene mipmaps', scene) },
+          inputs: { source: graph.addMipmapPass('scene mipmaps', scene.color) },
           target: graph.importTexture('surface', surface.getCurrentTarget()),
           format: surface.format,
         });

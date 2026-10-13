@@ -30,22 +30,23 @@ g.surface({
 const graph = g.build();
 ```
 
-| Méthode                                           | Ajoute                                                                                                    |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `g.call(node, inputs, options?)`                  | Un nœud à une seule sortie, renvoyée                                                                      |
-| `g.node(node, { inputs, params })`                | Un nœud à plusieurs sorties (ou aucune), renvoyées par nom                                                |
-| `g.attribute(semantic, type)`                     | Un attribut de sommet du mesh                                                                             |
-| `g.uniform(name, type, { default, slot })`        | Une valeur du matériau                                                                                    |
-| `g.texture(name)`, `g.sampler(name)`              | Une texture, un sampler du matériau (`comparison: true` pour les tests de profondeur)                     |
-| `g.storage(name, arrayType(element), { access })` | Un storage buffer (WebGPU, Vulkan)                                                                        |
-| `g.builtin(name)`                                 | `vertex-index`, `instance-index`, `frag-coord`, `front-facing`, `screen-uv`, `global-invocation-id`…      |
-| `g.engine(name)`                                  | `camera.view`, `camera.projection`, `camera.position`, `object.world`, `time`, `exposure`…                |
-| `g.constant(type, value)`                         | Une constante, intégrée au code                                                                           |
-| `g.parameter(name, default)`                      | Un paramètre statique, lu par les macros                                                                  |
-| `g.surface(inputs)`                               | La fin d'un matériau : une surface et son modèle d'éclairage                                              |
-| `g.fullscreen({ color })`                         | La fin d'une passe plein écran                                                                            |
-| `g.target(name, value, location)`                 | Une cible de couleur de plus (1, 2…), avec `fullscreen` ou les étapes brutes : plusieurs cibles par passe |
-| `g.compute({ workgroupSize })`, `g.write(…)`      | La fin d'un compute graph, et ses écritures                                                               |
+| Méthode                                           | Ajoute                                                                                                     |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `g.call(node, inputs, options?)`                  | Un nœud à une seule sortie, renvoyée                                                                       |
+| `g.node(node, { inputs, params })`                | Un nœud à plusieurs sorties (ou aucune), renvoyées par nom                                                 |
+| `g.attribute(semantic, type)`                     | Un attribut de sommet du mesh                                                                              |
+| `g.uniform(name, type, { default, slot })`        | Une valeur du matériau                                                                                     |
+| `g.texture(name)`, `g.sampler(name)`              | Une texture, un sampler du matériau (`comparison: true` pour les tests de profondeur)                      |
+| `g.storage(name, arrayType(element), { access })` | Un storage buffer (WebGPU, Vulkan)                                                                         |
+| `g.builtin(name)`                                 | `vertex-index`, `instance-index`, `frag-coord`, `front-facing`, `screen-uv`, `global-invocation-id`…       |
+| `g.engine(name)`                                  | `camera.view`, `camera.projection`, `camera.position`, `object.world`, `time`, `exposure`…                 |
+| `g.constant(type, value)`                         | Une constante, intégrée au code                                                                            |
+| `g.parameter(name, default)`                      | Un paramètre statique, lu par les macros                                                                   |
+| `g.surface(inputs)`                               | La fin d'un matériau : une surface et son modèle d'éclairage                                               |
+| `g.fullscreen({ color })`                         | La fin d'une passe plein écran                                                                             |
+| `g.output(name, value)`                           | Une valeur du matériau pour les sorties de la scène déclarées `'material'` (voir le guide du render graph) |
+| `g.target(name, value, location)`                 | Une cible de couleur de plus (1, 2…), avec `fullscreen` ou les étapes brutes : plusieurs cibles par passe  |
+| `g.compute({ workgroupSize })`, `g.write(…)`      | La fin d'un compute graph, et ses écritures                                                                |
 
 `build()` valide l'ensemble du graphe et renvoie un `MaterialGraphData` :
 `serializeGraph()` et `parseGraph()` le convertissent en JSON et inversement.

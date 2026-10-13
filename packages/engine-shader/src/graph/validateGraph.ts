@@ -204,6 +204,14 @@ export function checkOutputNodes(
       ? undefined
       : 'a compute graph has no other outputs than output.compute and write.storage';
   }
+  // The values of a material for its scene outputs, with a surface.
+  const values = outputs.filter((node) => node.type === 'output.value');
+  if (values.length > 0) {
+    const others = outputs.filter((node) => node.type !== 'output.value');
+    return others.length === 1 && others[0].type === 'output.surface'
+      ? undefined
+      : 'output.value nodes belong to graphs ending with output.surface';
+  }
   // Extra color targets, with the raw stages or a full screen pass.
   const targets = outputs.filter((node) => node.type === 'output.target');
   if (targets.length > 0) {

@@ -7,6 +7,7 @@ const examples: Record<string, string> = {
   'lights-and-shadows': 'tutorials/lights-and-shadows/',
   'toon-shading': 'tutorials/custom-shading-model/',
   'post-processing': 'tutorials/post-processing/',
+  'scene-outputs': 'tutorials/scene-outputs/',
   'compute-waves': 'tutorials/compute/',
   'scene-forest': 'tutorials/scene/',
   'maze-1': 'game/maze/',
