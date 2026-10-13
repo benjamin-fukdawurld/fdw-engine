@@ -26,14 +26,19 @@ export class WebGpuRenderBackend implements RenderBackend {
   readonly cameraMath = cameraMath;
   readonly transformMath = transformMath;
   readonly depthFormat = 'depth24plus';
-  readonly capabilities: BackendCapabilities = {
-    renderableFormats: ['rgba16float'],
-    // The object data in a table of storage buffers.
-    objectTable: true,
-    maxAnisotropy: MaxAnisotropy,
-  };
+  readonly capabilities: BackendCapabilities;
 
   constructor(readonly device: GPUDevice) {
+    this.capabilities = {
+      renderableFormats: ['rgba16float'],
+      // The object data in a table of storage buffers.
+      objectTable: true,
+      maxAnisotropy: MaxAnisotropy,
+      maxColorAttachments: device.limits.maxColorAttachments,
+      maxColorAttachmentBytesPerSample:
+        device.limits.maxColorAttachmentBytesPerSample,
+      independentBlend: true,
+    };
     this.buffers = new BufferFactory(device);
     this.textures = new TextureFactory(device);
     this.pipelines = new WebGpuPipelineFactory(device);

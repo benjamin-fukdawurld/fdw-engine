@@ -49,14 +49,17 @@ haut, sur tous les backends : captures d'écran, miniatures, tests.
 `backend.capabilities` indique ce que prend en charge un backend, et le
 compilateur vérifie les programmes en conséquence :
 
-| Capacité            | Signification                                                    | WebGL2                                         |
-| ------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
-| `compute`           | Étapes de calcul                                                 | false                                          |
-| `storageBuffers`    | Storage buffers                                                  | false                                          |
-| `maxVaryings`       | Valeurs interpolées entre les étapes                             | selon le contexte                              |
-| `renderableFormats` | Formats de couleur utilisables comme attachments (`rgba16float`) | avec `EXT_color_buffer_float`                  |
-| `objectTable`       | Les données des objets lues dans une table, par instance         | true (textures de données)                     |
-| `maxAnisotropy`     | L'anisotropie la plus haute des samplers                         | avec `EXT_texture_filter_anisotropic`, sinon 1 |
+| Capacité                           | Signification                                                    | WebGL2                                         |
+| ---------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
+| `compute`                          | Étapes de calcul                                                 | false                                          |
+| `storageBuffers`                   | Storage buffers                                                  | false                                          |
+| `maxVaryings`                      | Valeurs interpolées entre les étapes                             | selon le contexte                              |
+| `renderableFormats`                | Formats de couleur utilisables comme attachments (`rgba16float`) | avec `EXT_color_buffer_float`                  |
+| `objectTable`                      | Les données des objets lues dans une table, par instance         | true (textures de données)                     |
+| `maxAnisotropy`                    | L'anisotropie la plus haute des samplers                         | avec `EXT_texture_filter_anisotropic`, sinon 1 |
+| `maxColorAttachments`              | Cibles de couleur d'une passe                                    | `MAX_DRAW_BUFFERS` (au moins 4)                |
+| `maxColorAttachmentBytesPerSample` | Octets par pixel des cibles de couleur (WebGPU)                  | —                                              |
+| `independentBlend`                 | Cibles d'un pipeline avec des mélanges différents                | false                                          |
 
 Un graphe qui utilise une fonctionnalité absente échoue à la compilation avec
 une erreur explicite ; testez la capacité pour proposer une solution de

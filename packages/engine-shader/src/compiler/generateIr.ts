@@ -331,6 +331,10 @@ function translateNode(
         }
       }
       return;
+    case 'output.target':
+      // An extra color target, by its name (checked distinct).
+      results[params['name'] as string] = inputValues()[0];
+      return;
   }
 
   if (
@@ -687,14 +691,34 @@ export function generateIr({
     {
       stage: 'fragment',
       inputs: [clipPosition, ...varyings],
-      outputs:
-        fragmentResults['color'] !== undefined
-          ? [{ name: 'color', type: BuiltinTypes.vec4f, location: 0 }]
-          : [],
+      outputs: fragmentOutputs(graph, types, fragmentResults),
       body: fragment.body,
       results: fragmentResults,
     },
   ];
 
   return { name: graph.name, entryPoints };
+}
+
+// The color targets of the fragment stage, by location: the color of
+// output.fragment, then those of the output.target nodes.
+function fragmentOutputs(
+  graph: WorkingGraph,
+  types: ReadonlyMap<NodeId, NodeTypes>,
+  results: Readonly<Record<string, ValueId>>
+): IrStageVariable[] {
+  const outputs: IrStageVariable[] =
+    results['color'] !== undefined
+      ? [{ name: 'color', type: BuiltinTypes.vec4f, location: 0 }]
+      : [];
+  for (const node of graph.nodes.values()) {
+    if (node.type === 'output.target') {
+      outputs.push({
+        name: node.params['name'] as string,
+        type: types.get(node.id)?.inputs['value'] as ShaderType,
+        location: node.params['location'] as number,
+      });
+    }
+  }
+  return outputs.sort((a, b) => (a.location ?? 0) - (b.location ?? 0));
 }

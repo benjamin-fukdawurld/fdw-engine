@@ -435,6 +435,14 @@ float fdw_vk_max_anisotropy(const fdw_vk_context *context) {
   return context->maxAnisotropy;
 }
 
+uint32_t fdw_vk_max_color_attachments(const fdw_vk_context *context) {
+  return context->maxColorAttachments;
+}
+
+int32_t fdw_vk_independent_blend(const fdw_vk_context *context) {
+  return context->independentBlend ? 1 : 0;
+}
+
 uint32_t fdw_vk_sampler_id(const fdw_vk_sampler *sampler) {
   return sampler->id;
 }

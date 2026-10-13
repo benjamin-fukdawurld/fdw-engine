@@ -47,6 +47,10 @@ export class VulkanRenderBackend implements RenderBackend {
       // The object data in a table of storage buffers.
       objectTable: true,
       maxAnisotropy: loadVulkanAddon().maxAnisotropy(device.context),
+      maxColorAttachments: loadVulkanAddon().maxColorAttachments(
+        device.context
+      ),
+      independentBlend: loadVulkanAddon().independentBlend(device.context),
     };
     this.pipelines = new VulkanPipelineFactory(
       loadVulkanAddon(),

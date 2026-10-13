@@ -176,6 +176,11 @@ typedef struct fdw_vk_sampler_options {
 FDW_VK_API fdw_vk_sampler *
 fdw_vk_sampler_create(fdw_vk_context *context,
                       const fdw_vk_sampler_options *options);
+// The color attachments of a render pass (at most 8), and whether the
+// color targets of a pipeline can have different blend states.
+FDW_VK_API uint32_t
+fdw_vk_max_color_attachments(const fdw_vk_context *context);
+FDW_VK_API int32_t fdw_vk_independent_blend(const fdw_vk_context *context);
 // The highest max_anisotropy of the samplers (1: no anisotropic filtering);
 // higher ones are clamped to it.
 FDW_VK_API float fdw_vk_max_anisotropy(const fdw_vk_context *context);

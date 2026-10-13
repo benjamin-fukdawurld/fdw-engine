@@ -750,6 +750,119 @@ export function describeRenderer(
         expect(runner.created).toBe(1);
         runner.destroy();
       });
+
+      it('writes several color targets in one pass', async () => {
+        // Red in the color, (0.5, 0.25, 0) in a second target, an integer
+        // in a third.
+        const g = new GraphBuilder('three targets');
+        g.fullscreen({ color: [1, 0, 0, 1] });
+        g.target('half', [0.5, 0.25, 0, 1], 1);
+        g.target('id', g.constant(BuiltinTypes.u32, 7), 2);
+        // Then the left half of the frame shows the color, the right half
+        // the second target.
+        const show = new GraphBuilder('show');
+        const uv = show.builtin('screen-uv');
+        const sample = (name: string) =>
+          show.call(std.textureSample, {
+            texture: show.texture(name),
+            sampler: show.sampler(`${name}Sampler`),
+            uv,
+          });
+        show.fullscreen({
+          color: show.call(std.select, {
+            ifFalse: sample('color'),
+            ifTrue: sample('half'),
+            condition: show.call(std.greater, { a: uv.swizzle('x'), b: 0.5 }),
+          }),
+        });
+        const sampler = backend.textures.createSampler({
+          minFilter: 'nearest',
+          magFilter: 'nearest',
+          mipmapFilter: 'nearest',
+        });
+
+        const graph = new RenderGraph();
+        const written = renderer.addFullscreenPass(graph, 'three targets', {
+          material: new Material({ graph: g.build() }),
+          target: graph.createTexture('color', { format: 'rgba8unorm' }),
+          format: 'rgba8unorm',
+          targets: {
+            half: {
+              target: graph.createTexture('half', { format: 'rgba8unorm' }),
+              format: 'rgba8unorm',
+            },
+            id: {
+              target: graph.createTexture('id', { format: 'r32uint' }),
+              format: 'r32uint',
+              clearColor: { r: 0, g: 0, b: 0, a: 0 },
+            },
+          },
+        });
+        renderer.addFullscreenPass(graph, 'show', {
+          material: new Material({
+            graph: show.build(),
+            values: { colorSampler: sampler, halfSampler: sampler },
+          }),
+          inputs: { color: written.color, half: written.targets.half },
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        // The integer target, read by nobody, is kept by a pass with side
+        // effects: its writes are checked by the backend (validation).
+        graph.addCopyPass('keep id', (pass) => {
+          pass.read(written.targets.id, 'copy-src');
+          pass.hasSideEffects();
+          return { execute: () => undefined };
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        const at = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        expectColor(at(16, 32), [255, 0, 0, 255]);
+        expectColor(at(48, 32), [128, 64, 0, 255]);
+      });
+
+      it('refuses more color targets than the backend allows', () => {
+        const max = backend.capabilities?.maxColorAttachments ?? 4;
+        const g = new GraphBuilder('too many targets');
+        g.fullscreen({ color: [1, 0, 0, 1] });
+        const targets: Record<string, { target: never; format: string }> = {};
+        for (let i = 1; i <= max; i++) {
+          g.target(`t${i}`, [0, 0, 0, 1], i);
+        }
+        const graph = new RenderGraph();
+        for (let i = 1; i <= max; i++) {
+          targets[`t${i}`] = {
+            target: graph.createTexture(`t${i}`, {
+              format: 'r8unorm',
+            }) as never,
+            format: 'r8unorm',
+          };
+        }
+        if (max >= 8) {
+          // Locations stop at 7: the compiler refuses first.
+          expect(() =>
+            renderer.addFullscreenPass(graph, 'too many', {
+              material: new Material({ graph: g.build() }),
+              target: graph.createTexture('c', { format: 'r8unorm' }),
+              format: 'r8unorm',
+              targets,
+            })
+          ).toThrow();
+          return;
+        }
+        expect(() =>
+          renderer.addFullscreenPass(graph, 'too many', {
+            material: new Material({ graph: g.build() }),
+            target: graph.createTexture('c', { format: 'r8unorm' }),
+            format: 'r8unorm',
+            targets,
+          })
+        ).toThrow(/more than the \d+ of the backend/);
+      });
     });
 
     describe('HDR and post-processing', () => {

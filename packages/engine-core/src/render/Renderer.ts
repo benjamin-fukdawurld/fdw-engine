@@ -127,6 +127,49 @@ export interface FullscreenPassOptions {
   // Blends the color over the target by its alpha (with load: 'load'): an
   // overlay covering part of the screen, transparent elsewhere.
   readonly blend?: boolean;
+  // The extra color targets of the material (its g.target outputs), by
+  // name: written in the same pass, at their locations (1, 2…).
+  readonly targets?: Readonly<Record<string, FullscreenTarget>>;
+}
+
+// The bytes a pixel of color targets takes, as WebGPU counts them for its
+// maxColorAttachmentBytesPerSample limit: each format has a cost and an
+// alignment ("render target pixel byte cost" in the specification), the
+// targets are added in order.
+function colorTargetBytes(formats: readonly GpuTextureFormat[]): number {
+  let total = 0;
+  for (const format of formats) {
+    const [cost, alignment] = /^(rgba8unorm|bgra8unorm|rgb10a2)/.test(format)
+      ? [8, format.startsWith('rgb10a2') ? 4 : 1]
+      : /^rgba32/.test(format)
+      ? [16, 4]
+      : /^rg32/.test(format)
+      ? [8, 4]
+      : /^r32/.test(format)
+      ? [4, 4]
+      : /^rgba16/.test(format)
+      ? [8, 2]
+      : /^rg16/.test(format)
+      ? [4, 2]
+      : /^r16/.test(format)
+      ? [2, 2]
+      : /^rgba8/.test(format)
+      ? [4, 1]
+      : /^rg8/.test(format)
+      ? [2, 1]
+      : [1, 1];
+    total = Math.ceil(total / alignment) * alignment + cost;
+  }
+  return total;
+}
+
+/** An extra color target of a full screen pass. */
+export interface FullscreenTarget {
+  readonly target: TextureHandle;
+  readonly format: GpuTextureFormat;
+  readonly load?: 'clear' | 'load';
+  // For integer formats, the components are integers.
+  readonly clearColor?: IColor;
 }
 
 export interface RendererOptions {
@@ -762,6 +805,18 @@ export class Renderer {
    * with textures of the graph as inputs. Returns the version of the target
    * it writes.
    */
+  addFullscreenPass<K extends string>(
+    graph: RenderGraph,
+    name: string,
+    options: FullscreenPassOptions & {
+      readonly targets: Readonly<Record<K, FullscreenTarget>>;
+    }
+  ): { color: TextureHandle; targets: Record<K, TextureHandle> };
+  addFullscreenPass(
+    graph: RenderGraph,
+    name: string,
+    options: FullscreenPassOptions
+  ): TextureHandle;
   addFullscreenPass(
     graph: RenderGraph,
     name: string,
@@ -773,19 +828,43 @@ export class Renderer {
       load = 'clear',
       clearColor,
       blend = false,
+      targets,
     }: FullscreenPassOptions
-  ): TextureHandle {
+  ):
+    | TextureHandle
+    | { color: TextureHandle; targets: Record<string, TextureHandle> } {
     this._objectRows.beginFrame();
     const view = this.view(name);
-    const prepared = this.prepareFullscreen(material, format, view, blend);
+    const prepared = this.prepareFullscreen(
+      material,
+      format,
+      view,
+      blend,
+      targets ?? {}
+    );
     // The frame values of the last scene (exposure…).
     this.writeView(view, prepared.layout, this._frameValues);
-    return graph.addRasterPass(name, (pass) => {
+    const written = graph.addRasterPass(name, (pass) => {
       const read = Object.entries(inputs).map(
         ([input, handle]) => [input, pass.read(handle, 'sampled')] as const
       );
+      const color = pass.writeColor(target, { load, clearValue: clearColor });
+      // The extra targets, in the order of their locations.
+      const extra = Object.fromEntries(
+        prepared.targets.map((name) => {
+          const extra = (targets ?? {})[name];
+          return [
+            name,
+            pass.writeColor(extra.target, {
+              load: extra.load ?? 'clear',
+              clearValue: extra.clearColor,
+            }),
+          ];
+        })
+      );
       return {
-        color: pass.writeColor(target, { load, clearValue: clearColor }),
+        color,
+        targets: extra,
         execute: ({ pass: encoder, texture }) => {
           for (const [input, handle] of read) {
             const real = texture(handle) as MaterialValue;
@@ -801,7 +880,8 @@ export class Renderer {
           }
         },
       };
-    }).color;
+    });
+    return targets ? written : written.color;
   }
 
   destroy(): void {
@@ -1228,11 +1308,51 @@ export class Renderer {
     material: Material,
     format: GpuTextureFormat,
     view: FrameView,
-    blend: boolean
-  ): PreparedItem {
+    blend: boolean,
+    targets: Readonly<Record<string, FullscreenTarget>>
+  ): PreparedItem & { targets: readonly string[] } {
     const mesh = this._fullscreenMesh;
     const program = this.program(material, mesh);
-    const pipelineKey = `fullscreen|${program.programKey}|${format}|${blend}`;
+    // The extra targets of the program, by location after the color.
+    const outputs =
+      program.module.entryPoints.find((entry) => entry.stage === 'fragment')
+        ?.outputs ?? [];
+    const names = outputs
+      .filter((output) => output.name !== 'color')
+      .map((output, i) => {
+        if (output.location !== i + 1) {
+          throw new Error(
+            `Full screen pass of "${program.name}": the targets take the locations 1, 2… in order ("${output.name}" is at ${output.location})`
+          );
+        }
+        if (!targets[output.name]) {
+          throw new Error(
+            `Full screen pass of "${program.name}": no texture for its target "${output.name}"`
+          );
+        }
+        return output.name;
+      });
+    const unknown = Object.keys(targets).filter(
+      (name) => !names.includes(name)
+    );
+    if (unknown.length > 0) {
+      throw new Error(
+        `Full screen pass of "${
+          program.name
+        }": the material has no target ${unknown
+          .map((name) => `"${name}"`)
+          .join(', ')}`
+      );
+    }
+    this.checkColorTargets(program.name, [
+      format,
+      ...names.map((name) => targets[name].format),
+    ]);
+    const formats = names.map((name) => targets[name].format);
+    const pipelineKey = `fullscreen|${program.programKey}|${[
+      format,
+      ...formats,
+    ].join(',')}|${blend}`;
     this.ensurePipeline(pipelineKey, () => ({
       label: material.label ?? program.name,
       program,
@@ -1242,7 +1362,17 @@ export class Renderer {
         cullMode: 'none',
         frontFace: 'ccw',
       },
-      targets: [{ format, ...(blend ? { blend: alphaBlending } : {}) }],
+      targets: [
+        { format, ...(blend ? { blend: alphaBlending } : {}) },
+        // The blend is for the color: integer targets cannot blend, and
+        // without independentBlend the targets share the same.
+        ...formats.map((format) => ({
+          format,
+          ...(blend && !this.backend.capabilities?.independentBlend
+            ? { blend: alphaBlending }
+            : {}),
+        })),
+      ],
     }));
     const item = { mesh, material, transform: this._fullscreenTransform };
     return {
@@ -1253,7 +1383,29 @@ export class Renderer {
       pipelineId: -1,
       object: this.objectState(item),
       view,
+      targets: names,
     };
+  }
+
+  // Throws when the color targets of a pass exceed what the backend allows.
+  private checkColorTargets(
+    name: string,
+    formats: readonly GpuTextureFormat[]
+  ): void {
+    const capabilities = this.backend.capabilities;
+    const max = capabilities?.maxColorAttachments ?? 4;
+    if (formats.length > max) {
+      throw new Error(
+        `"${name}" writes ${formats.length} color targets, more than the ${max} of the backend (capability maxColorAttachments)`
+      );
+    }
+    const maxBytes = capabilities?.maxColorAttachmentBytesPerSample;
+    const bytes = colorTargetBytes(formats);
+    if (maxBytes !== undefined && bytes > maxBytes) {
+      throw new Error(
+        `"${name}" writes ${bytes} bytes per pixel in its color targets, more than the ${maxBytes} of the backend (capability maxColorAttachmentBytesPerSample)`
+      );
+    }
   }
 
   // The material of the tone mapping pass of the HDR path: exposure, tone

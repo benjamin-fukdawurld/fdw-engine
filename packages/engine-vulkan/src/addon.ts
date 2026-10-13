@@ -141,6 +141,10 @@ export interface VulkanAddon {
   destroySampler(sampler: SamplerHandle): void;
   // The highest anisotropy of the samplers (1: none).
   maxAnisotropy(context: ContextHandle): number;
+  // The color attachments of a render pass (at most 8).
+  maxColorAttachments(context: ContextHandle): number;
+  // Whether the color targets of a pipeline can blend differently.
+  independentBlend(context: ContextHandle): boolean;
   samplerId(sampler: SamplerHandle): number;
   // Whether the queue writes timestamps.
   timestampsSupported(context: ContextHandle): boolean;

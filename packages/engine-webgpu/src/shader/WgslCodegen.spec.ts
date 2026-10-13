@@ -406,6 +406,29 @@ describe('WgslCodegen', () => {
     expect(code).toMatch(/let v\d+: vec4<f32> = b_palette\[v\d+\];/);
   });
 
+  it('returns the color targets in a structure', () => {
+    const g = new GraphBuilder('three targets');
+    g.fullscreen({ color: [1, 0, 0, 1] });
+    g.target('uv', g.builtin('screen-uv'), 1);
+    g.target('id', g.constant(BuiltinTypes.u32, 7), 2);
+    const program = compile(g.build());
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    expect(code).toContain(
+      [
+        'struct FragmentOutputs {',
+        '  @location(0) o_color: vec4<f32>,',
+        '  @location(1) o_uv: vec2<f32>,',
+        '  @location(2) o_id: u32,',
+        '}',
+      ].join('\n')
+    );
+    expect(code).toMatch(/-> FragmentOutputs \{/);
+    expect(code).toMatch(/targets\.o_id = v\d+;\n {2}return targets;\n\}/);
+  });
+
   it('generates a complete program', () => {
     const g = new GraphBuilder('textured-unlit');
     const uv = g.attribute('uv', BuiltinTypes.vec2f);

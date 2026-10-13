@@ -643,6 +643,31 @@ static napi_value js_create_sampler(napi_env env, napi_callback_info info) {
   return wrap_object(env, argv[0], owner, SAMPLER, sampler);
 }
 
+// maxColorAttachments(context): the color attachments of a render pass.
+static napi_value js_max_color_attachments(napi_env env,
+                                           napi_callback_info info) {
+  ARGS(1);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  return number(env, fdw_vk_max_color_attachments(context));
+}
+
+// independentBlend(context): whether the targets can blend differently.
+static napi_value js_independent_blend(napi_env env,
+                                       napi_callback_info info) {
+  ARGS(1);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  napi_value result;
+  CHECK(napi_get_boolean(env, fdw_vk_independent_blend(context) != 0,
+                         &result));
+  return result;
+}
+
 // maxAnisotropy(context): the highest anisotropy of the samplers.
 static napi_value js_max_anisotropy(napi_env env, napi_callback_info info) {
   ARGS(1);
@@ -1177,6 +1202,8 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("readTexture", js_read_texture),
       EXPORT("createSampler", js_create_sampler),
       EXPORT("maxAnisotropy", js_max_anisotropy),
+      EXPORT("maxColorAttachments", js_max_color_attachments),
+      EXPORT("independentBlend", js_independent_blend),
       EXPORT("destroySampler", js_destroy_sampler),
       EXPORT("samplerId", js_sampler_id),
       EXPORT("submit", js_submit),

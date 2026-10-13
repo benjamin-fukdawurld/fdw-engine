@@ -10,7 +10,6 @@ import type {
   IndexFormat,
   RenderPassDescriptor,
   VertexAttributeFormat,
-  RenderPassColorAttachment,
 } from '@fdw/engine-backend';
 import { GL } from '../gl';
 import { WebGl2Buffer } from '../gpu/WebGl2Buffer';
@@ -22,6 +21,23 @@ import { WebGl2RenderTarget } from './WebGl2RenderTarget';
 import { FramebufferAttachment, framebufferFor } from '../gpu/framebuffers';
 
 type Command = (gl: WebGL2RenderingContext) => void;
+
+// Clears a color attachment of the bound framebuffer, with the function of
+// its format: integer formats take integer values.
+function clearColorBuffer(
+  gl: WebGL2RenderingContext,
+  index: number,
+  format: string,
+  value: number[]
+): void {
+  if (format.endsWith('uint')) {
+    gl.clearBufferuiv(GL.COLOR, index, value);
+  } else if (format.endsWith('sint')) {
+    gl.clearBufferiv(GL.COLOR, index, value);
+  } else {
+    gl.clearBufferfv(GL.COLOR, index, value);
+  }
+}
 
 // A render target or a texture, as an attachment of a framebuffer.
 function attachment(target: unknown, what: string): FramebufferAttachment {
@@ -237,11 +253,15 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     private readonly _commands: Command[],
     // Height of the attachments, to flip the viewports.
     private readonly _height: number,
-    // A multisampled color attachment, resolved at the end of the pass.
+    // Multisampled color attachments (their index in `from`), resolved at
+    // the end of the pass.
     private readonly _resolve?: {
-      readonly from: FramebufferAttachment;
+      readonly from: readonly FramebufferAttachment[];
       readonly depth?: FramebufferAttachment;
-      readonly to: FramebufferAttachment;
+      readonly to: readonly {
+        readonly index: number;
+        readonly to: FramebufferAttachment;
+      }[];
     },
     // Recorded after the pass: the end of its timer query.
     private readonly _onEnd?: Command
@@ -314,26 +334,31 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     this._commands.push((gl) => {
       gl.bindVertexArray(null);
       if (resolve) {
-        // The samples averaged into the resolve target.
-        const { width, height } = resolve.to;
-        // Both created first: creating a framebuffer binds it.
+        // The samples of each attachment averaged into its resolve target,
+        // read through the framebuffer of the pass.
         const from = framebufferFor(gl, resolve.from, resolve.depth);
-        const to = framebufferFor(gl, resolve.to);
-        gl.bindFramebuffer(GL.READ_FRAMEBUFFER, from);
-        gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, to);
         gl.colorMask(true, true, true, true);
-        gl.blitFramebuffer(
-          0,
-          0,
-          width,
-          height,
-          0,
-          0,
-          width,
-          height,
-          GL.COLOR_BUFFER_BIT,
-          GL.NEAREST
-        );
+        for (const { index, to } of resolve.to) {
+          // Created before binding: creating a framebuffer binds it.
+          const destination = framebufferFor(gl, to);
+          gl.bindFramebuffer(GL.READ_FRAMEBUFFER, from);
+          gl.readBuffer(GL.COLOR_ATTACHMENT0 + index);
+          gl.bindFramebuffer(GL.DRAW_FRAMEBUFFER, destination);
+          gl.blitFramebuffer(
+            0,
+            0,
+            to.width,
+            to.height,
+            0,
+            0,
+            to.width,
+            to.height,
+            GL.COLOR_BUFFER_BIT,
+            GL.NEAREST
+          );
+        }
+        gl.bindFramebuffer(GL.READ_FRAMEBUFFER, from);
+        gl.readBuffer(GL.COLOR_ATTACHMENT0);
         gl.bindFramebuffer(GL.FRAMEBUFFER, null);
       }
     });
@@ -378,21 +403,17 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
   private readonly _commands: Command[] = [];
 
   beginRenderPass(descriptor: RenderPassDescriptor): GpuRenderPassEncoder {
-    if (descriptor.colorAttachments.length > 1) {
-      throw new Error('The WebGL2 backend renders to one color target');
-    }
     // No color attachment: a depth-only pass.
-    const color = descriptor.colorAttachments[0] as
-      | RenderPassColorAttachment
-      | undefined;
-    const target = color
-      ? attachment(color.target, 'The color target')
-      : undefined;
+    const colors = descriptor.colorAttachments.map((color) => ({
+      ...color,
+      attachment: attachment(color.target, 'The color target'),
+    }));
+    const targets = colors.map((color) => color.attachment);
     const depth = descriptor.depthAttachment;
     const depthTarget = depth
       ? attachment(depth.target, 'The depth target')
       : undefined;
-    const size = target ?? depthTarget;
+    const size = targets[0] ?? depthTarget;
     if (!size) {
       throw new Error('A render pass needs a color or a depth attachment');
     }
@@ -411,39 +432,46 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
     this._commands.push((gl) => {
       gl.bindFramebuffer(
         GL.FRAMEBUFFER,
-        framebufferFor(gl, target, depthTarget)
+        framebufferFor(gl, targets, depthTarget)
       );
       gl.viewport(0, 0, size.width, size.height);
       gl.disable(GL.SCISSOR_TEST);
-      let mask = 0;
-      if (color?.load === 'clear') {
-        const { r, g, b, a } = color.clearValue ?? { r: 0, g: 0, b: 0, a: 1 };
-        gl.colorMask(true, true, true, true);
-        gl.clearColor(r, g, b, a);
-        mask |= GL.COLOR_BUFFER_BIT;
-      }
+      // Each color attachment cleared with the function of its format.
+      colors.forEach((color, i) => {
+        if (color.load === 'clear') {
+          const { r, g, b, a } = color.clearValue ?? { r: 0, g: 0, b: 0, a: 1 };
+          gl.colorMask(true, true, true, true);
+          clearColorBuffer(gl, i, color.attachment.format, [r, g, b, a]);
+        }
+      });
       if (depth?.load === 'clear') {
         // The depth mask also applies to clears.
         gl.depthMask(true);
         gl.clearDepth(depth.clearValue ?? 1);
-        mask |= GL.DEPTH_BUFFER_BIT;
+        let mask = GL.DEPTH_BUFFER_BIT;
         if (depth.target.format.includes('stencil')) {
           gl.clearStencil(0);
           mask |= GL.STENCIL_BUFFER_BIT;
         }
-      }
-      if (mask) {
         gl.clear(mask);
       }
     });
-    const resolveTarget = color?.resolveTarget
-      ? attachment(color.resolveTarget, 'The resolve target')
-      : undefined;
+    // The multisampled attachments resolved at the end of the pass.
+    const resolves = colors.flatMap((color, index) =>
+      color.resolveTarget
+        ? [
+            {
+              index,
+              to: attachment(color.resolveTarget, 'The resolve target'),
+            },
+          ]
+        : []
+    );
     return new WebGl2RenderPassEncoder(
       this._commands,
       size.height,
-      target && resolveTarget
-        ? { from: target, depth: depthTarget, to: resolveTarget }
+      resolves.length > 0
+        ? { from: targets, depth: depthTarget, to: resolves }
         : undefined,
       timer && query ? (gl) => gl.endQuery(timer.target) : undefined
     );

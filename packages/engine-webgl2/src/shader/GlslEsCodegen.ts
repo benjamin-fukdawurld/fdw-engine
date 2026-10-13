@@ -587,8 +587,8 @@ export class GlslEsCodegen implements ShaderCodegen {
     ];
 
     const fragmentBody = emitBody(fragment, samplers, table);
-    // Depth-only programs have no color.
-    const color = fragment.outputs[0] as IrStageVariable | undefined;
+    // Depth-only programs have no color; one out variable per target.
+    const targets = fragment.outputs;
     const fragmentSource = [
       header,
       ...resources,
@@ -596,13 +596,12 @@ export class GlslEsCodegen implements ShaderCodegen {
         ...fragment.inputs
           .filter((input) => !input.builtin)
           .map((input) => varying(input, 'in')),
-        ...(color
-          ? [
-              `layout(location = ${color.location ?? 0}) out ${glslType(
-                color.type
-              )} o_${identifier(color.name)};`,
-            ]
-          : []),
+        ...targets.map(
+          (target) =>
+            `layout(location = ${target.location ?? 0}) out ${glslType(
+              target.type
+            )} o_${identifier(target.name)};`
+        ),
       ].join('\n'),
       [
         'void main() {',
@@ -617,13 +616,12 @@ export class GlslEsCodegen implements ShaderCodegen {
               '  }',
             ]
           : []),
-        ...(color
-          ? [
-              `  o_${identifier(color.name)} = ${fragmentBody.expressions.get(
-                fragment.results[color.name]
-              )};`,
-            ]
-          : []),
+        ...targets.map(
+          (target) =>
+            `  o_${identifier(target.name)} = ${fragmentBody.expressions.get(
+              fragment.results[target.name]
+            )};`
+        ),
         '}',
       ].join('\n'),
     ];

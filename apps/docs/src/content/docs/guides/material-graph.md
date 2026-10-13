@@ -44,6 +44,7 @@ const graph = g.build();
 | `g.parameter(name, default)`                      | A static parameter, read by macros                                                                   |
 | `g.surface(inputs)`                               | The end of a material: a surface and its shading model                                               |
 | `g.fullscreen({ color })`                         | The end of a full screen pass                                                                        |
+| `g.target(name, value, location)`                 | An extra color target (1, 2…), with `fullscreen` or the raw stages: several targets in one pass      |
 | `g.compute({ workgroupSize })`, `g.write(…)`      | The end of a compute graph, and its writes                                                           |
 
 `build()` validates the whole graph and returns a `MaterialGraphData`:

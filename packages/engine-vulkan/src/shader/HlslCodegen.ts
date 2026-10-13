@@ -705,12 +705,34 @@ export class HlslCodegen implements ShaderCodegen {
       'Varyings input',
       ...builtinDeclarations(fragmentBody.builtins),
     ];
-    // Depth-only programs have no color.
-    const color = fragment.outputs[0] as IrStageVariable | undefined;
+    // Depth-only programs have no color; several targets go in a structure.
+    const color =
+      fragment.outputs.length === 1
+        ? (fragment.outputs[0] as IrStageVariable)
+        : undefined;
+    const targets = fragment.outputs.length > 1 ? fragment.outputs : [];
+    if (targets.length > 0) {
+      sections.push(
+        [
+          'struct FragmentOutputs {',
+          ...targets.map(
+            (target) =>
+              `  ${hlslType(target.type)} o_${identifier(
+                target.name
+              )} : SV_Target${target.location ?? 0};`
+          ),
+          '};',
+        ].join('\n')
+      );
+    }
     sections.push(
       [
         `${
-          color ? hlslType(color.type) : 'void'
+          color
+            ? hlslType(color.type)
+            : targets.length > 0
+            ? 'FragmentOutputs'
+            : 'void'
         } ps_main(${fragmentParameters.join(', ')})${
           color ? ` : SV_Target${color.location ?? 0}` : ''
         } {`,
@@ -730,6 +752,20 @@ export class HlslCodegen implements ShaderCodegen {
               `  return ${fragmentBody.expressions.get(
                 fragment.results[color.name]
               )};`,
+            ]
+          : []),
+        ...(targets.length > 0
+          ? [
+              '  FragmentOutputs targets;',
+              ...targets.map(
+                (target) =>
+                  `  targets.o_${identifier(
+                    target.name
+                  )} = ${fragmentBody.expressions.get(
+                    fragment.results[target.name]
+                  )};`
+              ),
+              '  return targets;',
             ]
           : []),
         '}',

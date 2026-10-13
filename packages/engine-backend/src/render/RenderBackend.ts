@@ -70,6 +70,15 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   // The highest anisotropy of the samplers (1: no anisotropic filtering).
   // Higher values are clamped to it.
   readonly maxAnisotropy?: number;
+  // Color attachments of a render pass (4 when absent, the minimum of
+  // WebGL2).
+  readonly maxColorAttachments?: number;
+  // The bytes of all the color attachments of a pass for one sample, where
+  // the backend limits them (WebGPU: 32).
+  readonly maxColorAttachmentBytesPerSample?: number;
+  // Whether the color targets of a pipeline can have different blend
+  // states. Without it (WebGL2), the float targets share the same.
+  readonly independentBlend?: boolean;
 }
 
 // Everything a renderer needs from a backend, once its device is ready.

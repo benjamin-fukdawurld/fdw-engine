@@ -480,6 +480,26 @@ describe('GlslEsCodegen', () => {
     expect(fragment).toContain('bool v4 = v3 != v3;');
   });
 
+  it('declares an out variable per color target', () => {
+    const g = new GraphBuilder('three targets');
+    g.fullscreen({ color: [1, 0, 0, 1] });
+    g.target('uv', g.builtin('screen-uv'), 1);
+    g.target('id', g.constant(BuiltinTypes.u32, 7), 2);
+    const program = compile(g.build());
+    const { fragment } = emit(
+      program.module,
+      std140LayoutStrategy.resolve(program.layout)
+    );
+    expect(fragment).toContain(
+      [
+        'layout(location = 0) out vec4 o_color;',
+        'layout(location = 1) out vec2 o_uv;',
+        'layout(location = 2) out uint o_id;',
+      ].join('\n')
+    );
+    expect(fragment).toMatch(/ {2}o_id = v\d+;\n\}/);
+  });
+
   it('generates a complete program', () => {
     const g = new GraphBuilder('textured-unlit');
     const uv = g.attribute('uv', BuiltinTypes.vec2f);

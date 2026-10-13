@@ -47,14 +47,17 @@ screenshots, thumbnails, tests.
 `backend.capabilities` says what a backend supports, and the compiler checks
 the programs against it:
 
-| Capability          | Meaning                                             | WebGL2                                        |
-| ------------------- | --------------------------------------------------- | --------------------------------------------- |
-| `compute`           | Compute stages                                      | false                                         |
-| `storageBuffers`    | Storage buffers                                     | false                                         |
-| `maxVaryings`       | Values interpolated between the stages              | from the context                              |
-| `renderableFormats` | Color formats usable as attachments (`rgba16float`) | with `EXT_color_buffer_float`                 |
-| `objectTable`       | The object data read from a table, per instance     | true (data textures)                          |
-| `maxAnisotropy`     | The highest anisotropy of the samplers              | with `EXT_texture_filter_anisotropic`, else 1 |
+| Capability                         | Meaning                                             | WebGL2                                        |
+| ---------------------------------- | --------------------------------------------------- | --------------------------------------------- |
+| `compute`                          | Compute stages                                      | false                                         |
+| `storageBuffers`                   | Storage buffers                                     | false                                         |
+| `maxVaryings`                      | Values interpolated between the stages              | from the context                              |
+| `renderableFormats`                | Color formats usable as attachments (`rgba16float`) | with `EXT_color_buffer_float`                 |
+| `objectTable`                      | The object data read from a table, per instance     | true (data textures)                          |
+| `maxAnisotropy`                    | The highest anisotropy of the samplers              | with `EXT_texture_filter_anisotropic`, else 1 |
+| `maxColorAttachments`              | Color targets of a pass                             | `MAX_DRAW_BUFFERS` (at least 4)               |
+| `maxColorAttachmentBytesPerSample` | Bytes per pixel of the color targets (WebGPU)       | —                                             |
+| `independentBlend`                 | Targets of a pipeline with different blend states   | false                                         |
 
 A graph using a missing feature fails to compile with an explicit error;
 test the capability to offer a fallback.

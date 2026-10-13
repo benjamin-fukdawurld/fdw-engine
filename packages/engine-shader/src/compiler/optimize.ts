@@ -15,6 +15,7 @@ import type { WorkingGraph } from './WorkingGraph';
 const rootTypes = new Set([
   'output.vertex',
   'output.fragment',
+  'output.target',
   'output.compute',
   'write.storage',
 ]);

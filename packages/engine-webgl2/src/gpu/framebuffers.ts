@@ -12,48 +12,66 @@ export interface FramebufferAttachment {
 }
 
 const noDepth = {};
-const noColor = {};
 
-// Framebuffers by color attachment, then by depth attachment.
-const framebuffers = new WeakMap<object, WeakMap<object, WebGLFramebuffer>>();
+// A tree of WeakMaps: the color attachments in order, then the depth
+// attachment (or noDepth), lead to the framebuffer.
+interface CacheNode {
+  readonly next: WeakMap<object, CacheNode>;
+  framebuffer?: WebGLFramebuffer;
+}
+const roots = new WeakMap<WebGL2RenderingContext, CacheNode>();
 // Every framebuffer an attachment is part of, deleted with it.
 const attachedTo = new WeakMap<object, Set<WebGLFramebuffer>>();
+// The framebuffers deleted: their cache entries are recreated if found.
+const deleted = new WeakSet<WebGLFramebuffer>();
 
 const depthPoint = (format: GpuTextureFormat) =>
   format.includes('stencil')
     ? GL.DEPTH_STENCIL_ATTACHMENT
     : GL.DEPTH_ATTACHMENT;
 
-// The framebuffer rendering to a color attachment and a depth attachment
-// (either can be absent), created on first use.
+/**
+ * The framebuffer rendering to color attachments (COLOR_ATTACHMENT0, 1…, in
+ * order) and a depth attachment (either can be absent), created on first
+ * use. Its draw buffers are its color attachments.
+ */
 export function framebufferFor(
   gl: WebGL2RenderingContext,
-  color: FramebufferAttachment | undefined,
+  color: FramebufferAttachment | readonly FramebufferAttachment[] | undefined,
   depth?: FramebufferAttachment
 ): WebGLFramebuffer {
-  const first = color ?? depth;
-  if (!first) {
+  const colors = color === undefined ? [] : 'length' in color ? color : [color];
+  if (colors.length === 0 && !depth) {
     throw new Error('A framebuffer needs a color or a depth attachment');
   }
-  let bySecond = framebuffers.get(first);
-  if (!bySecond) {
-    bySecond = new WeakMap();
-    framebuffers.set(first, bySecond);
+  let node: CacheNode | undefined = roots.get(gl);
+  if (!node) {
+    node = { next: new WeakMap() };
+    roots.set(gl, node);
   }
-  const key = color ? depth ?? noDepth : noColor;
-  let framebuffer = bySecond.get(key);
-  if (framebuffer) {
-    return framebuffer;
+  for (const key of [...colors, depth ?? noDepth]) {
+    let next: CacheNode | undefined = node.next.get(key);
+    if (!next) {
+      next = { next: new WeakMap() };
+      node.next.set(key, next);
+    }
+    node = next;
+  }
+  if (node.framebuffer && !deleted.has(node.framebuffer)) {
+    return node.framebuffer;
   }
 
-  framebuffer = gl.createFramebuffer();
+  const framebuffer = gl.createFramebuffer();
   gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
-  if (color) {
-    color.attachTo(gl, GL.COLOR_ATTACHMENT0);
-  } else {
+  colors.forEach((attachment, i) =>
+    attachment.attachTo(gl, GL.COLOR_ATTACHMENT0 + i)
+  );
+  if (colors.length === 0) {
     // Depth only.
     gl.drawBuffers([GL.NONE]);
     gl.readBuffer(GL.NONE);
+  } else if (colors.length > 1) {
+    gl.drawBuffers(colors.map((_, i) => GL.COLOR_ATTACHMENT0 + i));
   }
   if (depth) {
     depth.attachTo(gl, depthPoint(depth.format));
@@ -62,14 +80,17 @@ export function framebufferFor(
   if (status !== GL.FRAMEBUFFER_COMPLETE) {
     gl.deleteFramebuffer(framebuffer);
     throw new Error(
-      `Framebuffer incomplete (0x${status.toString(16)}) for ${[color, depth]
+      `Framebuffer incomplete (0x${status.toString(16)}) for ${[
+        ...colors,
+        depth,
+      ]
         .filter((attachment) => attachment)
         .map((attachment) => attachment?.format)
         .join(' and ')}`
     );
   }
-  bySecond.set(key, framebuffer);
-  for (const attachment of [color, depth]) {
+  node.framebuffer = framebuffer;
+  for (const attachment of [...colors, depth]) {
     if (!attachment) {
       continue;
     }
@@ -90,7 +111,7 @@ export function releaseFramebuffers(
 ): void {
   for (const framebuffer of attachedTo.get(attachment) ?? []) {
     gl.deleteFramebuffer(framebuffer);
+    deleted.add(framebuffer);
   }
   attachedTo.delete(attachment);
-  framebuffers.delete(attachment);
 }

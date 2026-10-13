@@ -266,9 +266,15 @@ export class GraphBuilder {
         ]);
       }
       this._outputTypes.push(resolvedDefinition.id);
+    } else if (resolvedDefinition.id === 'output.target') {
+      // Several targets are allowed: the whole graph is checked on build.
+      this._outputTypes.push(resolvedDefinition.id);
     } else if (resolvedDefinition.category === 'output') {
       // Allowed: one output.surface, or output.vertex and output.fragment.
-      const outputs = [...this._outputTypes, resolvedDefinition.id].sort();
+      const outputs = [
+        ...this._outputTypes.filter((type) => type !== 'output.target'),
+        resolvedDefinition.id,
+      ].sort();
       if (this._outputTypes.includes('function.output')) {
         throw new GraphError([
           {
@@ -528,6 +534,29 @@ export class GraphBuilder {
    */
   fullscreen({ color }: { color: PortHandle | ConstantValue }): void {
     this.node('output.fullscreen', { inputs: { color } });
+  }
+
+  /**
+   * Writes a value to an extra color target of the pass (multiple render
+   * targets), besides the color of the fragment or of the full screen pass
+   * (location 0). With output.vertex and output.fragment, or
+   * output.fullscreen.
+   *
+   * @example
+   * ```ts
+   * g.fullscreen({ color });
+   * g.target('normal', normal, 1);
+   * ```
+   */
+  target(
+    name: string,
+    value: PortHandle | ConstantValue,
+    location: number
+  ): void {
+    this.node('output.target', {
+      params: { name, location },
+      inputs: { value },
+    });
   }
 
   /**
