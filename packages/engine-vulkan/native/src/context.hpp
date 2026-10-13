@@ -144,6 +144,10 @@ struct fdw_vk_context {
   // The highest anisotropy of the samplers: 1 without the samplerAnisotropy
   // feature.
   float maxAnisotropy = 1;
+  // The color attachments of a render pass (at most 8), and whether their
+  // blend states can differ.
+  uint32_t maxColorAttachments = 4;
+  bool independentBlend = false;
   // The bits of the timestamps of the queue (0: none), and nanoseconds per
   // tick.
   uint32_t timestampValidBits = 0;

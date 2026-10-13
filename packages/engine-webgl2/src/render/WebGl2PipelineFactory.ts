@@ -439,7 +439,21 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
       descriptor.program.vertexInputs,
       descriptor.vertex
     );
-    const blend = targets[0]?.blend;
+    // One blend state for every color target (no independent blending
+    // without OES_draw_buffers_indexed); integer targets are never blended.
+    const blended = targets.filter((target) => !/int$/.test(target.format));
+    const blend = blended[0]?.blend;
+    if (
+      blended.some(
+        (target) => JSON.stringify(target.blend) !== JSON.stringify(blend)
+      )
+    ) {
+      throw new Error(
+        `Pipeline "${
+          descriptor.label ?? descriptor.program.name
+        }": WebGL2 blends every color target the same way (capability independentBlend)`
+      );
+    }
     return new WebGl2RenderPipeline(
       program,
       buffers,

@@ -110,7 +110,8 @@ export const stdConstants = {
 
 /**
  * The output node types: `output.surface`, `output.fullscreen` (post-processing
- * passes), the raw `output.vertex` / `output.fragment`, and `output.compute` with the `write.storage` nodes of
+ * passes), the raw `output.vertex` / `output.fragment`, the extra color
+ * targets `output.target`, and `output.compute` with the `write.storage` nodes of
  * the compute graphs.
  *
  * @group Standard library
@@ -119,6 +120,7 @@ export const stdOutputs = {
   surface: outputs.surface,
   vertex: outputs.vertex,
   fragment: outputs.fragment,
+  target: outputs.target,
   fullscreen: outputs.fullscreen,
   compute: outputs.compute,
   writeStorage: outputs.writeStorage,

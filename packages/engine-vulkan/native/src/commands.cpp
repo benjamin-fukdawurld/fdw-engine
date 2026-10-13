@@ -115,6 +115,23 @@ bool isIntegerFormat(VkFormat format) {
   }
 }
 
+bool isSignedIntegerFormat(VkFormat format) {
+  switch (format) {
+  case VK_FORMAT_R8_SINT:
+  case VK_FORMAT_R8G8_SINT:
+  case VK_FORMAT_R8G8B8A8_SINT:
+  case VK_FORMAT_R16_SINT:
+  case VK_FORMAT_R16G16_SINT:
+  case VK_FORMAT_R16G16B16A16_SINT:
+  case VK_FORMAT_R32_SINT:
+  case VK_FORMAT_R32G32_SINT:
+  case VK_FORMAT_R32G32B32A32_SINT:
+    return true;
+  default:
+    return false;
+  }
+}
+
 // The operands of each command, to walk the commands of a pass ahead.
 uint32_t operandCount(uint32_t opcode) {
   switch (opcode) {
@@ -377,7 +394,7 @@ int beginRenderPass(Replay &replay) {
   fdw_vk_context *context = replay.context;
   Reader &reader = replay.reader;
   const uint32_t colorCount = reader.word();
-  if (colorCount > 8) {
+  if (colorCount > context->maxColorAttachments) {
     return fail("Too many color attachments");
   }
   std::vector<VkRenderingAttachmentInfo> colors(colorCount);
@@ -395,9 +412,16 @@ int beginRenderPass(Replay &replay) {
     if (!target) {
       return status;
     }
+    // Integer formats take integer clear values.
     if (isIntegerFormat(target->format)) {
+      const bool sint = isSignedIntegerFormat(target->format);
       for (int c = 0; c < 4; c++) {
-        value.color.uint32[c] = static_cast<uint32_t>(value.color.float32[c]);
+        const float component = value.color.float32[c];
+        if (sint) {
+          value.color.int32[c] = static_cast<int32_t>(component);
+        } else {
+          value.color.uint32[c] = static_cast<uint32_t>(component);
+        }
       }
     }
     useTexture(replay.commands, target, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,

@@ -97,6 +97,15 @@ const toneMapping = () => {
   return compile(g.build());
 };
 
+// A full screen pass writing three color targets.
+const threeTargets = () => {
+  const g = new GraphBuilder('three targets');
+  g.fullscreen({ color: [1, 0, 0, 1] });
+  g.target('uv', g.builtin('screen-uv'), 1);
+  g.target('id', g.constant(BuiltinTypes.u32, 7), 2);
+  return compile(g.build());
+};
+
 // output[i] = input[i] × factor, for i < arrayLength(input).
 const scaleKernel = () => {
   const g = new GraphBuilder('scale');
@@ -165,6 +174,7 @@ const programs: [string, () => CompiledProgram][] = [
   ['full screen tone mapping', toneMapping],
   ['compute kernel', scaleKernel],
   ['raw stages', rawStages],
+  ['three color targets', threeTargets],
 ];
 
 // --- Tests -------------------------------------------------------------------
@@ -308,6 +318,23 @@ async function expectLayout(
     }
   }
 }
+
+describe('HlslCodegen color targets', () => {
+  it('returns the color targets in a structure', () => {
+    const { code } = emit(threeTargets());
+    expect(code).toContain(
+      [
+        'struct FragmentOutputs {',
+        '  float4 o_color : SV_Target0;',
+        '  float2 o_uv : SV_Target1;',
+        '  uint o_id : SV_Target2;',
+        '};',
+      ].join('\n')
+    );
+    expect(code).toMatch(/FragmentOutputs ps_main\(/);
+    expect(code).toMatch(/targets\.o_id = v\d+;\n {2}return targets;\n\}/);
+  });
+});
 
 describe.skipIf(!sdk)('HlslCodegen with DXC', () => {
   for (const [name, program] of programs) {

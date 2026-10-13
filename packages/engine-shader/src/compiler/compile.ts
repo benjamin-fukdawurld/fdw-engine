@@ -45,7 +45,7 @@ import { WorkingGraph } from './WorkingGraph';
  *
  * @group Compilation
  */
-export const CompilerVersion = 3;
+export const CompilerVersion = 4;
 
 /**
  * Limits of the target backend that the compiler checks.
@@ -568,12 +568,57 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
       (node) =>
         node.type === 'output.vertex' ||
         node.type === 'output.fragment' ||
+        node.type === 'output.target' ||
         node.type === 'output.compute' ||
         node.type === 'write.storage'
     )
     .map((node) => hashes.get(node.id) as string)
     .sort();
   return hashString(stableStringify({ version: CompilerVersion, outputs }));
+}
+
+// The color targets of output.target: distinct names and locations (0 is
+// the color of output.fragment when it has one), scalar or vector values of
+// f32, u32 or i32.
+function checkTargets(
+  graph: WorkingGraph,
+  types: GraphValidation['types'],
+  diagnostics: Diagnostic[]
+): void {
+  const nodes = [...graph.nodes.values()];
+  const fragment = nodes.find((node) => node.type === 'output.fragment');
+  const taken = new Map<number, string>();
+  if (fragment && graph.inputSource(fragment, 'color')) {
+    taken.set(0, 'color');
+  }
+  const names = new Set(['color', 'discard']);
+  for (const node of nodes.filter((node) => node.type === 'output.target')) {
+    const name = node.params['name'] as string;
+    const location = node.params['location'] as number;
+    const error = (message: string) =>
+      diagnostics.push({ severity: 'error', node: node.id, message });
+    if (names.has(name)) {
+      error(`the fragment already has an output named "${name}"`);
+    }
+    names.add(name);
+    if (!Number.isInteger(location) || location < 0 || location > 7) {
+      error(`invalid target location ${location}: from 0 to 7`);
+    } else if (taken.has(location)) {
+      error(
+        `location ${location} is already written by "${taken.get(location)}"`
+      );
+    } else {
+      taken.set(location, name);
+    }
+    const type = types.get(node.id)?.inputs['value'];
+    if (
+      !type ||
+      (type.kind !== 'scalar' && type.kind !== 'vector') ||
+      !['f32', 'u32', 'i32'].includes(type.scalar)
+    ) {
+      error('a target value is a scalar or a vector of f32, u32 or i32');
+    }
+  }
 }
 
 /**
@@ -729,7 +774,11 @@ export function compile(
   // Per-light values only exist in the loop of a light.sum.
   for (const id of lightLoopBodies(working)) {
     const node = working.nodes.get(id) as GraphNode;
-    if (node.type === 'output.vertex' || node.type === 'output.fragment') {
+    if (
+      node.type === 'output.vertex' ||
+      node.type === 'output.fragment' ||
+      node.type === 'output.target'
+    ) {
       diagnostics.push({
         severity: 'error',
         node: id,
@@ -756,6 +805,11 @@ export function compile(
     if (diagnostics.length > 0) {
       fail(diagnostics);
     }
+  }
+
+  checkTargets(working, optimized.types, diagnostics);
+  if (diagnostics.length > 0) {
+    fail(diagnostics);
   }
 
   const plan = planStages({

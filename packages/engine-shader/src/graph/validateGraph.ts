@@ -204,6 +204,20 @@ export function checkOutputNodes(
       ? undefined
       : 'a compute graph has no other outputs than output.compute and write.storage';
   }
+  // Extra color targets, with the raw stages or a full screen pass.
+  const targets = outputs.filter((node) => node.type === 'output.target');
+  if (targets.length > 0) {
+    const others = outputs.filter((node) => node.type !== 'output.target');
+    const kinds = others.map((node) => node.type).sort();
+    const withStages =
+      (kinds.length === 2 &&
+        kinds[0] === 'output.fragment' &&
+        kinds[1] === 'output.vertex') ||
+      (kinds.length === 1 && kinds[0] === 'output.fullscreen');
+    return withStages
+      ? undefined
+      : 'output.target nodes belong to graphs ending with output.vertex and output.fragment, or with output.fullscreen';
+  }
   // A function graph: function.output nodes only.
   const functionOutputs = outputs.filter(
     (node) => node.type === 'function.output'

@@ -526,14 +526,34 @@ export class WgslCodegen implements ShaderCodegen {
             .declaration
       ),
     ];
-    // Depth-only programs have no color.
-    const color = fragment.outputs[0] as IrStageVariable | undefined;
+    // Depth-only programs have no color; several targets go in a structure.
+    const color =
+      fragment.outputs.length === 1
+        ? (fragment.outputs[0] as IrStageVariable)
+        : undefined;
+    const targets = fragment.outputs.length > 1 ? fragment.outputs : [];
+    if (targets.length > 0) {
+      sections.push(
+        [
+          'struct FragmentOutputs {',
+          ...targets.map(
+            (target) =>
+              `  @location(${target.location}) o_${identifier(
+                target.name
+              )}: ${wgslType(target.type)},`
+          ),
+          '}',
+        ].join('\n')
+      );
+    }
     sections.push(
       [
         '@fragment',
         `fn fs_main(${fragmentParameters.join(', ')})${
           color
             ? ` -> @location(${color.location}) ${wgslType(color.type)}`
+            : targets.length > 0
+            ? ' -> FragmentOutputs'
             : ''
         } {`,
         ...fragmentBody.lines,
@@ -552,6 +572,20 @@ export class WgslCodegen implements ShaderCodegen {
               `  return ${fragmentBody.expressions.get(
                 fragment.results[color.name]
               )};`,
+            ]
+          : []),
+        ...(targets.length > 0
+          ? [
+              '  var targets: FragmentOutputs;',
+              ...targets.map(
+                (target) =>
+                  `  targets.o_${identifier(
+                    target.name
+                  )} = ${fragmentBody.expressions.get(
+                    fragment.results[target.name]
+                  )};`
+              ),
+              '  return targets;',
             ]
           : []),
         '}',

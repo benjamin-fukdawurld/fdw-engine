@@ -111,6 +111,25 @@ export const fullscreen: NodeDefinition = {
   outputs: () => [],
 };
 
+/**
+ * A color target written besides the color of output.fragment (multiple
+ * render targets): its value goes to the attachment `location` of the pass.
+ * Scalars and vectors of f32, u32 or i32; the format of the attachment must
+ * match (float or normalized for f32, uint for u32, sint for i32). Location
+ * 0 is the color of output.fragment when it has one.
+ */
+export const target: NodeDefinition = {
+  id: 'output.target',
+  category: 'output',
+  params: {
+    name: { kind: 'string', required: true },
+    location: { kind: 'number', required: true },
+  },
+  inputs: () => [{ name: 'value', type: generic('T', 'numeric') }],
+  outputs: () => [],
+  stage: () => 'fragment',
+};
+
 export const fragment: NodeDefinition = {
   id: 'output.fragment',
   category: 'output',

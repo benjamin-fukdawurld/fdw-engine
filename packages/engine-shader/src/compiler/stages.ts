@@ -157,9 +157,16 @@ export function planStages({
   // The fragment stage computes its own values and recomputes the cheap
   // constant and uniform ones. Per-vertex values are computed as early as
   // possible, in the vertex stage, and interpolated through varyings.
-  const fragment = new Set<NodeId>([fragmentOutput]);
+  // The color targets besides output.fragment are fragment outputs too.
+  const fragmentOutputs = [
+    fragmentOutput,
+    ...[...graph.nodes.values()]
+      .filter((node) => node.type === 'output.target')
+      .map((node) => node.id),
+  ];
+  const fragment = new Set<NodeId>(fragmentOutputs);
   const varyingSources = new Map<string, PortRef>();
-  const pending = [fragmentOutput];
+  const pending = [...fragmentOutputs];
   while (pending.length > 0) {
     const consumer = pending.pop() as NodeId;
     for (const edge of graph.incoming(consumer)) {

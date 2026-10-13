@@ -52,6 +52,11 @@ export class WebGl2RenderBackend implements RenderBackend {
         ? ['rgba16float']
         : [],
       maxAnisotropy: maxAnisotropy(gl),
+      maxColorAttachments: Math.min(
+        gl.getParameter(GL.MAX_DRAW_BUFFERS),
+        gl.getParameter(GL.MAX_COLOR_ATTACHMENTS)
+      ),
+      independentBlend: false,
     };
   }
 

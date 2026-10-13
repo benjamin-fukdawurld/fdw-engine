@@ -95,7 +95,28 @@ The `Renderer` adds its passes to a graph:
   linear colors, for an HDR target.
 - `addFullscreenPass(graph, name, { material, inputs, target, format })`: a
   full screen material, its textures bound to resources of the graph by
-  `inputs`.
+  `inputs`. With `targets`, it also writes the extra color targets of the
+  material (`g.target`), by name, and returns `{ color, targets }`:
+
+  ```ts
+  const pass = renderer.addFullscreenPass(graph, 'split', {
+    material, // g.fullscreen({ color }); g.target('mask', mask, 1)
+    target: graph.createTexture('color', { format: 'rgba8unorm' }),
+    format: 'rgba8unorm',
+    targets: {
+      mask: {
+        target: graph.createTexture('mask', { format: 'r8unorm' }),
+        format: 'r8unorm',
+      },
+    },
+  });
+  pass.targets.mask; // the version written, to read in later passes
+  ```
+
+  The number of targets is limited by `capabilities.maxColorAttachments`
+  (4 at least, 8 on most GPUs), and their bytes per pixel by
+  `maxColorAttachmentBytesPerSample` on WebGPU (32). WebGL2 blends all its
+  float targets the same way (`independentBlend` is false).
 
 ```ts
 const runner = new RenderGraphRunner(backend);

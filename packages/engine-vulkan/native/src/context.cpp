@@ -382,6 +382,13 @@ int createDevice(fdw_vk_context *context) {
     context->maxAnisotropy = properties.limits.maxSamplerAnisotropy;
   }
   features.features.independentBlend = available.independentBlend;
+  context->independentBlend = available.independentBlend;
+  {
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(context->physicalDevice, &properties);
+    context->maxColorAttachments =
+        std::min(properties.limits.maxColorAttachments, 8u);
+  }
 
   std::vector<const char *> extensions;
   if (hasDeviceExtension(context->physicalDevice,
