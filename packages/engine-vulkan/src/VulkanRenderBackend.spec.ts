@@ -70,10 +70,18 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
       type: '2d',
       format: 'rgba16float',
       dimensions: { width: 3, height: 1 },
+      usage: ['sampled', 'copy-src', 'copy-dst'],
       source: new Uint16Array(12).fill(0x3c00),
     });
     expect([...new Uint16Array(await hdr.read())]).toEqual(
       Array(12).fill(0x3c00)
+    );
+    // A region: the second column, rows from the top.
+    expect(
+      new Uint8Array(await texture.read({ x: 1, y: 0, width: 1, height: 2 }))
+    ).toEqual(data.filter((_, i) => i % 8 >= 4));
+    expect(() => texture.read({ x: 1, y: 1, width: 2, height: 1 })).toThrow(
+      /not inside/
     );
     texture.destroy();
     hdr.destroy();

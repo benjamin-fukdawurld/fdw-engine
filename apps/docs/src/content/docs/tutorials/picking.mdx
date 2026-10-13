@@ -1,0 +1,136 @@
+---
+title: Picking
+description: Find the objects under the mouse, or in a rectangle, by writing their identifiers into a texture and reading it back.
+sidebar:
+  order: 6
+---
+
+import Example from '../../../components/Example.astro';
+
+To know what is under the mouse, the scene passes write the identifier of
+the object of each pixel into a texture, alongside the color; reading the
+pixel under the mouse back gives the object. Hover a cube to highlight it,
+click to select it, drag a rectangle to select all the cubes in it.
+
+<Example name="picking" />
+
+The answer is exact to the pixel, whatever the meshes, the instancing or
+the masked materials: it is what was drawn.
+
+## Identifiers
+
+Each item gets an `id`, from 1 to 2^24 (16.7 million, `MaxObjectId`); 0
+means no object.
+
+```ts
+items: cubes.map(({ id, transform }) => ({ mesh, material, transform, id })),
+```
+
+The items sharing a transform (or a world matrix) are one object: they
+share its identifier. Instanced items keep each their own.
+
+## The texture of the identifiers
+
+The identifiers are an [output of the scene passes](/fdw-engine/tutorials/scene-outputs/),
+`'object-id'`, in an `r32uint` texture. To read it back after the frame,
+create it yourself with the `copy-src` usage and give it as the `target` of
+the output; the textures the graph creates are reused by the next passes.
+
+```ts
+const ids = backend.textures.createTexture({
+  label: 'identifiers',
+  type: '2d',
+  format: 'r32uint',
+  dimensions: { width, height }, // the size of the color target
+  usage: ['render-attachment', 'copy-src'],
+});
+
+renderer.addScenePasses(graph, {
+  items,
+  camera,
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+  outputs: {
+    id: {
+      format: 'r32uint',
+      value: 'object-id',
+      target: graph.importTexture('identifiers', ids),
+    },
+  },
+});
+```
+
+The identifiers are written in the pass that draws the color: the objects
+are drawn once. Recreate the texture when the canvas changes size (the
+example compares its dimensions at each frame).
+
+## Reading it back
+
+`pickIds` reads a region of the texture back and gives the identifiers it
+contains, distinct, in increasing order, without 0:
+
+```ts
+// A point: the pixel under the mouse.
+const [id] = await pickIds(backend, ids, { x, y });
+
+// A rectangle: every object with a pixel in it. Its width and height can be
+// negative, when dragged up or left.
+const all = await pickIds(backend, ids, { x, y, width, height });
+```
+
+The coordinates are pixels of the texture, from its top left corner. The
+mouse gives CSS pixels: scale them by the size of the canvas in pixels.
+
+```ts
+const pixel = (event: PointerEvent) => ({
+  x: (event.offsetX * canvas.width) / canvas.clientWidth,
+  y: (event.offsetY * canvas.height) / canvas.clientHeight,
+});
+```
+
+The part of a rectangle out of the texture is ignored.
+
+`pickIds` is asynchronous: it does not wait for the GPU, and its promise
+resolves a frame or two later. It reads the texture as the frames submitted
+before left it: call it when the mouse moves, between two frames, without
+slowing the frame loop.
+
+## Reading any texture back
+
+`pickIds` uses `backend.textures.readTexture`, which reads a region of any
+color texture with the `copy-src` usage, on the three backends:
+
+```ts
+const data = await backend.textures.readTexture(texture, {
+  x: 0,
+  y: 0,
+  width: 16,
+  height: 16,
+});
+new Float32Array(data); // for rgba32float: 4 values per pixel
+```
+
+The pixels come row after row from the top, tightly packed, in the layout
+of the format (4 bytes per pixel for `r32uint`, the bits of half floats for
+`rg16float`). Without a region, the whole texture is read. A region out of
+the texture, a multisampled texture, a depth texture or a texture without
+`copy-src` throw.
+
+## What to know
+
+- **Transparent items** only blend their color: they write no identifier
+  and cannot be picked; what is behind them is.
+- **Multisampling**: integer textures cannot be resolved. With
+  `samples > 1`, draw the identifiers in scene passes of their own with
+  `samples: 1` (they can be drawn only when the mouse moves).
+- **More than 2^24 objects**: select by ray casting on the scene instead
+  (`scene.raycast`).
+- **Latency**: the objects under the mouse are those of the frame before;
+  for objects moving fast, the highlight follows a frame late.
+
+## Next
+
+- [Scene outputs](/fdw-engine/tutorials/scene-outputs/): the other values
+  the scene passes can write.
+- [Render graph guide](/fdw-engine/guides/render-graph/#scene-outputs): the
+  options of the outputs.

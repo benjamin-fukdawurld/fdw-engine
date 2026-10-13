@@ -353,12 +353,18 @@ int fdw_vk_texture_generate_mipmaps(fdw_vk_context *context,
 }
 
 int fdw_vk_texture_read(fdw_vk_context *context, fdw_vk_texture *texture,
-                        uint64_t *ticket) {
+                        uint32_t x, uint32_t y, uint32_t width,
+                        uint32_t height, uint64_t *ticket) {
   if (texture->samples != VK_SAMPLE_COUNT_1_BIT) {
     return fail("A multisampled texture cannot be read back: resolve it");
   }
-  const uint64_t size = static_cast<uint64_t>(texture->width) *
-                        texture->height * texture->pixelSize;
+  if (width == 0 || height == 0 || x > texture->width ||
+      y > texture->height || width > texture->width - x ||
+      height > texture->height - y) {
+    return fail("The region read is not inside the texture");
+  }
+  const uint64_t size =
+      static_cast<uint64_t>(width) * height * texture->pixelSize;
   HostBuffer readback;
   if (createHostBuffer(context, size, true, &readback) != 0) {
     return -1;
@@ -367,6 +373,8 @@ int fdw_vk_texture_read(fdw_vk_context *context, fdw_vk_texture *texture,
   useTexture(commands, texture, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
              VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
   VkBufferImageCopy region = wholeTexture(texture, 1);
+  region.imageOffset = {static_cast<int32_t>(x), static_cast<int32_t>(y), 0};
+  region.imageExtent = {width, height, 1};
   vkCmdCopyImageToBuffer(commands, texture->image,
                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer,
                          1, &region);

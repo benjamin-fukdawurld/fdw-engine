@@ -1,9 +1,11 @@
 import {
+  defaultTextureUsage,
   GpuTexture,
   GpuTextureConfiguration,
   GpuTextureDimensions,
   GpuTextureFormat,
   GpuTextureType,
+  GpuTextureUsage,
 } from '@fdw/engine-backend';
 
 export class Texture implements GpuTexture {
@@ -12,6 +14,7 @@ export class Texture implements GpuTexture {
   readonly dimensions: GpuTextureDimensions;
   readonly sampleCount: number;
   readonly mipLevelCount: number;
+  readonly usage: readonly GpuTextureUsage[];
 
   _texture?: GPUTexture;
   private _view?: GPUTextureView;
@@ -24,6 +27,7 @@ export class Texture implements GpuTexture {
     this.dimensions = config.dimensions;
     this.sampleCount = config.sampleCount ?? 1;
     this.mipLevelCount = config.mipLevelCount ?? 1;
+    this.usage = config.usage ?? defaultTextureUsage;
   }
 
   get width(): number {

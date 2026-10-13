@@ -1,4 +1,8 @@
-import { checkMipLevelCount, samplerAnisotropy } from '@fdw/engine-backend';
+import {
+  checkMipLevelCount,
+  checkReadRegion,
+  samplerAnisotropy,
+} from '@fdw/engine-backend';
 import type {
   GpuRenderTarget,
   GpuSampler,
@@ -9,6 +13,7 @@ import type {
   GpuTextureDimensions,
   GpuTextureFactory,
   GpuTextureFormat,
+  GpuTextureRegion,
   GpuTextureType,
   GpuTextureUsage,
 } from '@fdw/engine-backend';
@@ -90,18 +95,24 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
   }
 
   /**
-   * Reads the pixels of the first layer back, rows from the top, tightly
-   * packed: after every command submitted before.
+   * Reads a region of the first layer back (the whole layer by default),
+   * rows from the top, tightly packed: after every command submitted
+   * before.
    */
-  async read(): Promise<ArrayBuffer> {
-    const ticket = this._addon.readTexture(this.handle);
+  read(region?: GpuTextureRegion): Promise<ArrayBuffer> {
+    // Checked before reading: a wrong region throws, as on the other
+    // backends.
+    const checked = checkReadRegion(this, region);
+    const { x, y, width, height } = checked.region;
+    const ticket = this._addon.readTexture(this.handle, x, y, width, height);
+    return this.take(ticket, width * height * checked.bytesPerPixel);
+  }
+
+  private async take(ticket: number, size: number): Promise<ArrayBuffer> {
     while (!this._addon.readReady(this._context, ticket)) {
       await nextTurn();
     }
-    // The size is known by the addon: width × height × bytes per pixel.
-    const data = new ArrayBuffer(
-      this.width * this.height * pixelSize(this.format)
-    );
+    const data = new ArrayBuffer(size);
     this._addon.readTake(this._context, ticket, new Uint8Array(data));
     return data;
   }
@@ -114,34 +125,6 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
     }
   }
 }
-
-// Bytes per pixel of the formats, as in the native library.
-const pixelSizes: Record<string, number> = {
-  r8unorm: 1,
-  r8uint: 1,
-  r8sint: 1,
-  rg8unorm: 2,
-  rg8uint: 2,
-  rg8sint: 2,
-  r16float: 2,
-  r16uint: 2,
-  r16sint: 2,
-  depth16unorm: 2,
-  rgba16float: 8,
-  rgba16uint: 8,
-  rgba16sint: 8,
-  rg32float: 8,
-  rg32uint: 8,
-  rg32sint: 8,
-  'depth24plus-stencil8': 8,
-  rgba32float: 16,
-  rgba32uint: 16,
-  rgba32sint: 16,
-};
-
-/** Bytes per pixel of a format: 4 for the others (rgba8unorm, r32float…). */
-export const pixelSize = (format: GpuTextureFormat): number =>
-  pixelSizes[format] ?? 4;
 
 export class VulkanSampler implements GpuSampler {
   readonly id: number;
@@ -238,6 +221,13 @@ export class VulkanTextureFactory
 
   writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
     (texture as VulkanTexture).write(data);
+  }
+
+  readTexture(
+    texture: GpuTexture,
+    region?: GpuTextureRegion
+  ): Promise<ArrayBuffer> {
+    return (texture as VulkanTexture).read(region);
   }
 
   createSampler(descriptor?: GpuSamplerConfiguration): VulkanSampler {

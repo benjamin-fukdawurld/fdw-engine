@@ -123,8 +123,15 @@ export interface VulkanAddon {
   writeTexture(texture: TextureHandle, data: ArrayBufferView): void;
   // Computes the levels after the first one, in the order of the queue.
   generateMipmaps(texture: TextureHandle): void;
-  // A ticket for the pixels of the first layer, as readBuffer.
-  readTexture(texture: TextureHandle): number;
+  // A ticket for the pixels of a region of the first layer (from the top
+  // left corner), as readBuffer.
+  readTexture(
+    texture: TextureHandle,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): number;
 
   createSampler(
     context: ContextHandle,

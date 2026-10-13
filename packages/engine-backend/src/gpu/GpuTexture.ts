@@ -85,6 +85,12 @@ export interface GpuTextureConfiguration {
   mipLevelCount?: number;
 }
 
+// The usage of the textures created without one.
+export const defaultTextureUsage: readonly GpuTextureUsage[] = [
+  'sampled',
+  'copy-dst',
+];
+
 export interface GpuTexture extends Readonly<GpuTextureConfiguration> {
   destroy(): void;
 }
@@ -141,6 +147,91 @@ export function checkMipLevelCount(
 export const canGenerateMipmaps = (format: GpuTextureFormat): boolean =>
   !/int$|^depth/.test(format);
 
+/** A rectangle of pixels of a texture, from its top left corner. */
+export interface GpuTextureRegion {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** How the pixels of a color format are stored. */
+export interface GpuTexelLayout {
+  readonly channels: number;
+  readonly bytesPerChannel: number;
+  readonly kind: 'unorm' | 'float' | 'uint' | 'sint';
+}
+
+/**
+ * The layout of the pixels of a color format: undefined for the depth
+ * formats and the packed ones (rgb10a2unorm).
+ */
+export function texelLayout(
+  format: GpuTextureFormat
+): GpuTexelLayout | undefined {
+  const match = /^(rg?b?a?)(8|16|32)(unorm|float|uint|sint)(-srgb)?$/.exec(
+    format.replace(/^bgra/, 'rgba')
+  );
+  if (!match) {
+    return undefined;
+  }
+  return {
+    channels: match[1].length,
+    bytesPerChannel: Number(match[2]) / 8,
+    kind: match[3] as GpuTexelLayout['kind'],
+  };
+}
+
+/** The bytes of a pixel of a format: undefined for the depth formats. */
+export function texelBytes(format: GpuTextureFormat): number | undefined {
+  if (format === 'rgb10a2unorm') {
+    return 4;
+  }
+  const layout = texelLayout(format);
+  return layout && layout.channels * layout.bytesPerChannel;
+}
+
+/**
+ * Checks that the region of a texture can be read back (see readTexture):
+ * a color texture with one sample, the copy-src usage, and the region
+ * inside it. Returns the region (the whole texture by default) and the
+ * bytes of a pixel.
+ */
+export function checkReadRegion(
+  texture: GpuTexture,
+  region?: GpuTextureRegion
+): { region: GpuTextureRegion; bytesPerPixel: number } {
+  const what = `Texture "${texture.label ?? '(unlabeled)'}"`;
+  const bytesPerPixel = texelBytes(texture.format);
+  if (bytesPerPixel === undefined) {
+    throw new Error(`${what}: ${texture.format} cannot be read back`);
+  }
+  if ((texture.sampleCount ?? 1) > 1) {
+    throw new Error(`${what} is multisampled: resolve it to read it back`);
+  }
+  if (!(texture.usage ?? defaultTextureUsage).includes('copy-src')) {
+    throw new Error(`${what} needs the copy-src usage to be read back`);
+  }
+  const { width, height = 1 } = texture.dimensions;
+  const read = region ?? { x: 0, y: 0, width, height };
+  const valid =
+    [read.x, read.y, read.width, read.height].every(Number.isInteger) &&
+    read.x >= 0 &&
+    read.y >= 0 &&
+    read.width > 0 &&
+    read.height > 0 &&
+    read.x + read.width <= width &&
+    read.y + read.height <= height;
+  if (!valid) {
+    throw new Error(
+      `${what}: the region ${JSON.stringify(
+        read
+      )} is not inside its ${width}×${height} pixels`
+    );
+  }
+  return { region: read, bytesPerPixel };
+}
+
 export interface GpuTextureFactory<TextureSource = never> {
   /**
    * A texture, with the content of `source` when given (as writeTexture).
@@ -163,4 +254,19 @@ export interface GpuTextureFactory<TextureSource = never> {
    * from it (see GpuCommandEncoder.generateMipmaps).
    */
   writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void;
+
+  /**
+   * Reads a region of the first level of a texture back (the first layer;
+   * the whole texture by default): rows from the top, tightly packed, in
+   * the layout of its format (4 bytes per pixel for r32uint). In the order
+   * of the queue: the content after the frames submitted before, without
+   * waiting for the GPU; the promise resolves a frame or two later. The
+   * texture needs the copy-src usage and a single sample, the region must
+   * be inside it; depth textures cannot be read: throws otherwise (see
+   * checkReadRegion).
+   */
+  readTexture(
+    texture: GpuTexture,
+    region?: GpuTextureRegion
+  ): Promise<ArrayBuffer>;
 }

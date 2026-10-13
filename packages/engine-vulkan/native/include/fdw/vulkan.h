@@ -153,10 +153,13 @@ FDW_VK_API int fdw_vk_texture_write(fdw_vk_context *context,
 // queue (after the writes before), as FDW_VK_CMD_GENERATE_MIPMAPS.
 FDW_VK_API int fdw_vk_texture_generate_mipmaps(fdw_vk_context *context,
                                                fdw_vk_texture *texture);
-// Reads the first level of the first layer back, rows from the top, tightly
-// packed: a ticket, as fdw_vk_buffer_read.
+// Reads a region of the first level of the first layer back (x, y from the
+// top left corner), rows from the top, tightly packed: a ticket, as
+// fdw_vk_buffer_read.
 FDW_VK_API int fdw_vk_texture_read(fdw_vk_context *context,
-                                   fdw_vk_texture *texture, uint64_t *ticket);
+                                   fdw_vk_texture *texture, uint32_t x,
+                                   uint32_t y, uint32_t width, uint32_t height,
+                                   uint64_t *ticket);
 
 typedef struct fdw_vk_sampler_options {
   // "nearest" or "linear".

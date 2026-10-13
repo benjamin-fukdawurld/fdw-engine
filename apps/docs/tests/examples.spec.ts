@@ -8,6 +8,7 @@ const examples: Record<string, string> = {
   'toon-shading': 'tutorials/custom-shading-model/',
   'post-processing': 'tutorials/post-processing/',
   'scene-outputs': 'tutorials/scene-outputs/',
+  picking: 'tutorials/picking/',
   'compute-waves': 'tutorials/compute/',
   'scene-forest': 'tutorials/scene/',
   'maze-1': 'game/maze/',
@@ -57,3 +58,42 @@ for (const [name, page] of Object.entries(examples)) {
     await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`);
   });
 }
+
+// Picking in the browser: the identifiers under the mouse, read back.
+test('picking under the mouse', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/picking/?time=${time}&frames=${frames}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`
+  );
+  const example = browser.locator('[data-example="picking"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBe(frames);
+  const box = await canvas.boundingBox();
+  if (!box) {
+    throw new Error('The canvas is not visible');
+  }
+  // The cube at the center: the 8th of the 5 × 3.
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await browser.mouse.move(center.x, center.y);
+  await expect(status).toContainText('hover 8 ·');
+  // Between the cubes: nothing.
+  await browser.mouse.move(box.x + 4, box.y + 4);
+  await expect(status).toContainText('hover — ·');
+  // A click selects the cube under the mouse.
+  await browser.mouse.click(center.x, center.y);
+  await expect(status).toContainText('selected 8');
+  // A rectangle over the middle row, dragged from the right.
+  await browser.mouse.move(box.x + box.width - 4, center.y);
+  await browser.mouse.down();
+  await browser.mouse.move(box.x + 4, center.y + 4, { steps: 4 });
+  await browser.mouse.up();
+  await expect(status).toContainText('selected 6, 7, 8, 9, 10');
+});

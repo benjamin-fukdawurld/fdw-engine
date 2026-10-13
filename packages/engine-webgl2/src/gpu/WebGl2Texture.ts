@@ -1,6 +1,8 @@
 import {
   canGenerateMipmaps,
   checkMipLevelCount,
+  checkReadRegion,
+  defaultTextureUsage,
   samplerAnisotropy,
 } from '@fdw/engine-backend';
 import type {
@@ -14,12 +16,15 @@ import type {
   GpuTextureFactory,
   GpuTextureFilterMode,
   GpuTextureFormat,
+  GpuTextureRegion,
   GpuTextureType,
+  GpuTextureUsage,
   GpuTextureWrapMode,
 } from '@fdw/engine-backend';
 import { GL, lazy } from '../gl';
 import { glTextureFormat } from './formats';
 import { FramebufferAttachment, releaseFramebuffers } from './framebuffers';
+import { readAttachment } from './readback';
 
 const textureTargets = lazy(
   (): Record<string, GLenum> => ({
@@ -50,7 +55,10 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     readonly dimensions: GpuTextureDimensions,
     readonly label?: string,
     readonly sampleCount = 1,
-    readonly mipLevelCount = 1
+    readonly mipLevelCount = 1,
+    // As in WebGPU, where they are checked: the copy-src usage is needed to
+    // read the texture back.
+    readonly usage: readonly GpuTextureUsage[] = defaultTextureUsage
   ) {
     checkMipLevelCount({
       type,
@@ -447,7 +455,8 @@ export class WebGl2TextureFactory
       dimensions,
       label,
       sampleCount,
-      descriptor.mipLevelCount
+      descriptor.mipLevelCount,
+      descriptor.usage
     );
     if (source) {
       texture.upload(source);
@@ -457,6 +466,17 @@ export class WebGl2TextureFactory
 
   writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
     (texture as WebGl2Texture).upload(data);
+  }
+
+  readTexture(
+    texture: GpuTexture,
+    region?: GpuTextureRegion
+  ): Promise<ArrayBuffer> {
+    const checked = checkReadRegion(texture, region);
+    if (texture.type !== '2d') {
+      throw new Error('Only 2d textures can be read back by WebGL2');
+    }
+    return readAttachment(this._gl, texture as WebGl2Texture, checked.region);
   }
 
   createSampler(descriptor?: GpuSamplerConfiguration): GpuSampler {
