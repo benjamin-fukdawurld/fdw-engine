@@ -103,14 +103,16 @@ export class TextureFactory
           height,
         ]);
       } else if (ArrayBuffer.isView(source)) {
+        // Every layer: the six faces of a cube, the layers of an array.
         this.device.queue.writeTexture(
           { texture },
           source,
           {
             bytesPerRow:
               width * TextureFactory.textureFormatToBytesPerPixel(format),
+            rowsPerImage: height,
           },
-          [width, height]
+          [width, height, layers]
         );
       } else {
         throw new Error(`Unsupported source type: ${source}`);

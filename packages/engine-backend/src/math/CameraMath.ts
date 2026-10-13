@@ -44,4 +44,9 @@ export class CameraMath {
   getViewProjectionMatrix(viewMatrix: Mat4, projectionMatrix: Mat4): Mat4 {
     return this.primitiveApis.mat4.multiply(projectionMatrix, viewMatrix);
   }
+
+  // The inverse of a view projection: from the clip space to the world.
+  getInverseMatrix(matrix: Mat4): Mat4 {
+    return this.primitiveApis.mat4.invert(matrix);
+  }
 }

@@ -130,6 +130,56 @@ export function createCube(): Mesh {
   });
 }
 
+// A square of side 1 in the xz plane, facing +y, centered on the origin,
+// split in segments × segments cells: enough vertices to displace them
+// (displacement mapping). Positions, normals and uvs (u along +x, v along
+// +z: the image seen from above, its top towards -z).
+export function createPlane(segments = 1): Mesh {
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  for (let row = 0; row <= segments; row++) {
+    for (let column = 0; column <= segments; column++) {
+      const u = column / segments;
+      const v = row / segments;
+      vertices.push(u - 0.5, 0, v - 0.5, 0, 1, 0, u, v);
+    }
+  }
+  const stride = segments + 1;
+  for (let row = 0; row < segments; row++) {
+    for (let column = 0; column < segments; column++) {
+      const a = row * stride + column;
+      const b = a + stride;
+      // Counter-clockwise seen from +y.
+      indices.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  const count = vertices.length / 8;
+  return new Mesh({
+    label: 'plane',
+    description: {
+      vertexBuffers: [
+        {
+          stride: 32,
+          stepMode: 'vertex',
+          attributes: [
+            { semantic: 'position', format: 'float32x3', offset: 0 },
+            { semantic: 'normal', format: 'float32x3', offset: 12 },
+            { semantic: 'uv', format: 'float32x2', offset: 24 },
+          ],
+        },
+      ],
+      vertexCount: count,
+      indexBuffer: {
+        format: count > 65535 ? 'uint32' : 'uint16',
+        count: indices.length,
+      },
+    },
+    vertices: [new Float32Array(vertices)],
+    indices:
+      count > 65535 ? new Uint32Array(indices) : new Uint16Array(indices),
+  });
+}
+
 // Rotation of `angle` radians around a unit axis, as a quaternion.
 export const axisAngle = (x: number, y: number, z: number, angle: number) => {
   const s = Math.sin(angle / 2);

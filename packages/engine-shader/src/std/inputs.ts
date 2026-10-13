@@ -139,6 +139,7 @@ const engineValues: Record<string, ShaderType> = {
   'camera.view': BuiltinTypes.mat4f,
   'camera.projection': BuiltinTypes.mat4f,
   'camera.viewProjection': BuiltinTypes.mat4f,
+  'camera.inverseViewProjection': BuiltinTypes.mat4f,
   'camera.position': BuiltinTypes.vec3f,
   'object.world': BuiltinTypes.mat4f,
   'object.normalMatrix': BuiltinTypes.mat3f,

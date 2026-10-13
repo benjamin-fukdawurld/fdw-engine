@@ -92,6 +92,31 @@ export const notEqual = comparison('notEqual', 'not-equal');
 export const floor = unaryFloat('floor', 'floor');
 export const fract = unaryFloat('fract', 'fract');
 export const sqrt = unaryFloat('sqrt', 'sqrt');
+
+// Screen space derivatives: computed by the neighboring pixels, so only in
+// the fragment stage.
+const derivative = (id: string, op: IntrinsicOp) =>
+  intrinsic(id, op, [port('x', float)], float, 'fragment');
+
+/**
+ * The change of a value from a pixel to the next one, to the right: the
+ * basis of bump mapping, of the tangent frames without tangents, of
+ * antialiased procedural patterns. Fragment stage only.
+ */
+export const dpdx = derivative('dpdx', 'dpdx');
+
+/**
+ * The change of a value from a pixel to the next one, below (y points down,
+ * as screen-uv). Fragment stage only.
+ */
+export const dpdy = derivative('dpdy', 'dpdy');
+
+/**
+ * |dpdx| + |dpdy|: how fast a value changes on the screen, typically the
+ * width of a pixel in the units of the value (antialiased edges with
+ * smoothstep). Fragment stage only.
+ */
+export const fwidth = derivative('fwidth', 'fwidth');
 export const sin = unaryFloat('sin', 'sin');
 export const cos = unaryFloat('cos', 'cos');
 export const saturate = unaryFloat('saturate', 'saturate');
@@ -244,6 +269,39 @@ export const textureSampleCompare = intrinsic(
   BuiltinTypes.f32
 );
 
+/**
+ * Samples a cube texture in a direction (any length): the environment seen
+ * in that direction. Fragment stage only, as textureSample.
+ */
+export const textureSampleCube = intrinsic(
+  'textureSampleCube',
+  'texture-sample',
+  [
+    port('texture', BuiltinTypes.textureCube),
+    port('sampler', BuiltinTypes.sampler),
+    port('direction', BuiltinTypes.vec3f),
+  ],
+  BuiltinTypes.vec4f,
+  'fragment'
+);
+
+/**
+ * Samples a cube texture in a direction at an explicit level of detail:
+ * the higher the level, the blurrier the environment (glossy reflections,
+ * the level chosen by the roughness).
+ */
+export const textureSampleCubeLevel = intrinsic(
+  'textureSampleCubeLevel',
+  'texture-sample-level',
+  [
+    port('texture', BuiltinTypes.textureCube),
+    port('sampler', BuiltinTypes.sampler),
+    port('direction', BuiltinTypes.vec3f),
+    port('level', BuiltinTypes.f32, 0),
+  ],
+  BuiltinTypes.vec4f
+);
+
 export const vec2 = intrinsic(
   'vec2',
   'construct',
@@ -357,6 +415,11 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   textureSample,
   textureSampleLevel,
   textureSampleCompare,
+  textureSampleCube,
+  textureSampleCubeLevel,
+  dpdx,
+  dpdy,
+  fwidth,
   vec2,
   vec3,
   vec4,

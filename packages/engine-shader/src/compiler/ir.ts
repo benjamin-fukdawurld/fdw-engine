@@ -73,7 +73,15 @@ export type IrIntrinsic =
   | 'clamp'
   | 'smoothstep'
   | 'saturate'
-  | 'step';
+  | 'step'
+  /**
+   * The change of a value from a pixel to the next one, to the right
+   * (dpdx) or below (dpdy: y points down, as screen-uv and frag-coord in
+   * WGSL), and |dpdx| + |dpdy|. Fragment stage only.
+   */
+  | 'dpdx'
+  | 'dpdy'
+  | 'fwidth';
 
 /**
  * The operation of an instruction.

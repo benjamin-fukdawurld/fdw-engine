@@ -1,0 +1,269 @@
+---
+title: Rendu différé
+description: Éclairer la scène une fois par pixel plutôt qu'une fois par objet, à partir d'un G-buffer écrit par les passes de la scène, puis dessiner les objets transparents par-dessus.
+sidebar:
+  order: 8
+---
+
+import Example from '../../../../components/Example.astro';
+
+Dans le rendu habituel (**forward**), chaque objet est éclairé au moment où
+il est dessiné : son modèle d'éclairage additionne les lumières de l'image
+pour chacun de ses pixels. Quand des objets se recouvrent, les pixels cachés
+sont éclairés pour rien, et chaque objet paie pour chaque lumière.
+
+Le **rendu différé** sépare les deux. Les passes de la scène écrivent
+d'abord, pour chaque pixel, ce dont l'éclairage a besoin : la couleur de la
+surface, sa normale, sa profondeur, sa rugosité… (le **G-buffer**). Une
+passe plein écran éclaire ensuite chaque pixel de l'écran une seule fois, à
+partir de ces textures. Les objets transparents, qu'un G-buffer ne peut pas
+contenir (plusieurs se mélangent sur un même pixel), sont dessinés en
+dernier, par-dessus le résultat, en forward.
+
+Le moteur n'a pas de mode différé : c'est une composition de passes dans un
+render graph, que vous écrivez et modifiez selon vos besoins. Cliquez sur
+l'exemple pour passer de l'image en différé à l'image en forward (la même),
+puis aux textures du G-buffer.
+
+<Example name="deferred-rendering" />
+
+L'image se construit en quatre étapes :
+
+1. Les passes de la scène écrivent le **G-buffer** des objets opaques, sans
+   éclairage.
+2. Une passe plein écran l'**éclaire** avec le modèle PBR.
+3. Les passes de la scène dessinent les objets **transparents** par-dessus,
+   en forward.
+4. Une dernière passe **encode** les couleurs pour l'écran.
+
+## 1. Le G-buffer
+
+Ce qu'il faut écrire dépend du modèle d'éclairage qui l'éclairera. Le modèle
+PBR a besoin de la couleur de base, de la normale, de la position du point,
+de sa rugosité et de son facteur métallique. Les passes de la scène écrivent
+ces valeurs grâce à leurs `outputs` (voir
+[Sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/)), dans trois
+textures :
+
+| Texture       | Format        | Contenu                                    |
+| ------------- | ------------- | ------------------------------------------ |
+| `baseColor`   | `rgba8unorm`  | la couleur de base                         |
+| `normalDepth` | `rgba16float` | la normale dans le monde, et la profondeur |
+| `properties`  | `rgba8unorm`  | la rugosité et le facteur métallique       |
+
+Deux d'entre elles contiennent plusieurs valeurs : une fonction-graphe les
+assemble.
+
+```ts
+// La normale (xyz) et la profondeur (w).
+const n = new GraphBuilder('normal and depth');
+n.functionOutput(
+  'value',
+  n.call(std.extend, {
+    xyz: n.functionInput('worldNormal', BuiltinTypes.vec3f),
+    w: n.functionInput('viewDepth', BuiltinTypes.f32),
+  })
+);
+const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
+
+// La rugosité (x) et le facteur métallique (y).
+const p = new GraphBuilder('material properties');
+p.functionOutput(
+  'value',
+  p.call(std.vec4, {
+    x: p.functionInput('roughness', BuiltinTypes.f32),
+    y: p.functionInput('metallic', BuiltinTypes.f32),
+    w: 1,
+  })
+);
+const properties = defineFunction(p.build(), { id: 'example.properties' });
+```
+
+Les passes de la scène ne reçoivent **pas de cible de couleur** : sans
+elle, les modèles d'éclairage des matériaux sont laissés de côté, les passes
+n'écrivent que les sorties. `include: 'opaque'` ne garde que les objets
+opaques et masqués.
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights,
+  include: 'opaque',
+  outputs: {
+    baseColor: { format: 'rgba8unorm', value: 'base-color' },
+    normalDepth: { format: 'rgba16float', value: normalDepth },
+    properties: { format: 'rgba8unorm', value: properties },
+  },
+});
+```
+
+Les matériaux ne changent pas : les mêmes graphes, avec leur
+`output.surface`, sont dessinés en forward ou dans un G-buffer.
+
+La **position** du point n'est pas écrite : elle est reconstruite à partir
+de la profondeur (étape 2). Une texture de positions coûterait 8 octets de
+plus par pixel.
+
+## 2. L'éclairage
+
+La passe d'éclairage est un matériau plein écran. Pour chaque pixel, elle
+lit le G-buffer, reconstruit la position, et appelle le **modèle
+d'éclairage** des matériaux comme n'importe quelle fonction :
+`lighting.pbr` prend les entrées de la surface, additionne les lumières de
+l'image et rend la couleur.
+
+```ts
+const g = new GraphBuilder('deferred lighting');
+const uv = g.builtin('screen-uv');
+const read = (name: string) =>
+  g.call(std.textureSample, {
+    texture: g.texture(name),
+    sampler: g.sampler(`${name}Sampler`),
+    uv,
+  });
+const geometry = read('normalDepth');
+const material = read('properties');
+// Le point du pixel, dans le monde, à partir de sa profondeur.
+const position = g.call('camera.positionFromDepth', {
+  uv,
+  viewDepth: geometry.swizzle('w'),
+});
+const lit = g.call('lighting.pbr', {
+  baseColor: read('baseColor').swizzle('rgb'),
+  normal: geometry.swizzle('xyz'),
+  roughness: material.swizzle('x'),
+  metallic: material.swizzle('y'),
+  worldPosition: g.call(std.extend, { xyz: position, w: 1 }),
+});
+// Là où aucun objet n'a été dessiné (profondeur 0), le fond.
+g.fullscreen({
+  color: g.call(std.select, {
+    ifFalse: [0.02, 0.02, 0.03, 1],
+    ifTrue: lit,
+    condition: g.call(std.greater, { a: geometry.swizzle('w'), b: 0 }),
+  }),
+});
+```
+
+### La position à partir de la profondeur
+
+`camera.positionFromDepth` donne le point du monde vu à une position de
+l'écran (`uv`), à une profondeur le long de l'axe de la caméra (la
+`view-depth` des passes de la scène). Elle fonctionne avec les caméras en
+perspective et orthographiques. Elle utilise la valeur du moteur
+`camera.inverseViewProjection`, l'inverse de la projection de la caméra :
+de l'écran vers le monde.
+
+### Les lumières et la caméra de l'image
+
+Une passe plein écran lit les valeurs de l'image des **dernières passes de
+scène ajoutées au graphe** : leur caméra (`camera.position`, utilisée par
+les reflets spéculaires), leurs lumières, les ombres de ces lumières.
+Ajoutez la passe d'éclairage après les passes du G-buffer, avec la même
+caméra et les mêmes lumières.
+
+Avec des ombres, donnez à la passe les shadow maps des passes de la scène,
+dans `shadows` : le modèle d'éclairage assombrit alors la lumière dans les
+ombres, comme en forward. Sans elles, les lumières ne projettent pas
+d'ombre dans la passe d'éclairage.
+
+```ts
+const lit = renderer.addFullscreenPass(graph, 'lighting', {
+  material: lighting,
+  inputs: {
+    baseColor: scene.outputs.baseColor,
+    normalDepth: scene.outputs.normalDepth,
+    properties: scene.outputs.properties,
+  },
+  // Les shadow maps, quand les lumières projettent des ombres.
+  ...(scene.shadows ? { shadows: scene.shadows } : {}),
+  target: graph.createTexture('color', { format: 'rgba16float' }),
+  format: 'rgba16float',
+});
+```
+
+Le G-buffer est lu avec un sampler `nearest` : un texel par pixel, jamais un
+mélange des normales ou des profondeurs de deux objets.
+
+## 3. Les objets transparents
+
+Un G-buffer a une seule surface par pixel : un verre devant un mur ne peut
+pas y être écrit. Les objets transparents sont dessinés après l'éclairage,
+par les passes de la scène avec `include: 'transparent'`, par-dessus
+l'image éclairée (`target`, avec `load: 'load'`). Ils sont testés contre la
+**profondeur du G-buffer** (`depth`), pour que les objets opaques devant eux
+les cachent.
+
+```ts
+const color = renderer.addScenePasses(graph, {
+  name: 'transparent',
+  items,
+  camera,
+  lights,
+  include: 'transparent',
+  depth: scene.depth,
+  target: lit,
+  format: 'rgba16float',
+  load: 'load',
+  linear: true,
+}).color;
+```
+
+## 4. La sortie
+
+Les couleurs sont linéaires : une dernière passe les encode en sRGB pour
+l'écran, comme le fait le renderer par défaut (avec un tone mapping si vous
+en voulez un).
+
+```ts
+const o = new GraphBuilder('output');
+const hdr = o.call(std.textureSample, {
+  texture: o.texture('hdr'),
+  sampler: o.sampler('hdrSampler'),
+  uv: o.builtin('screen-uv'),
+});
+o.fullscreen({
+  color: o.call(std.extend, {
+    xyz: o.call('color.linearToSrgb', { color: hdr.swizzle('rgb') }),
+  }),
+});
+```
+
+## Forward ou différé ?
+
+Le rendu différé n'est pas toujours plus rapide. Ce qu'il faut peser :
+
+- **Le gain** vient avec beaucoup de lumières sur beaucoup d'objets qui se
+  recouvrent : chaque pixel est éclairé une fois. Avec peu de lumières, le
+  forward coûte moins : il ne lit aucune texture. Le renderer additionne
+  pour l'instant jusqu'à 16 lumières par image ; le culling des lumières en
+  clusters, prévu avec le pool de lumières, rendra le rendu différé
+  rentable avec des centaines de petites lumières.
+- **La bande passante** : le G-buffer est écrit puis relu à chaque image.
+  Ici, 16 octets par pixel, en plus du depth buffer ; quatre textures
+  `rgba16float` en 1080p font 66 Mo écrits puis relus par image, un vrai
+  coût sur les GPU mobiles.
+- **Le multi-échantillonnage** ne convient pas : la passe d'éclairage
+  devrait éclairer chaque échantillon. Lissez plutôt les bords avec une
+  passe plein écran (FXAA, TAA).
+- **Un seul modèle d'éclairage** : la passe d'éclairage en appelle un. Pour
+  plusieurs, écrivez un identifiant du modèle dans le G-buffer et choisissez
+  avec `std.select`.
+- **Ce qui n'est pas écrit est perdu** : la couleur émise, l'occlusion des
+  matériaux… Ajoutez une sortie pour chaque valeur qu'utilise le modèle.
+- **La précision** : la profondeur dans un `rgba16float` est exacte à
+  environ 0,05 % de la distance près. Pour de grandes scènes, écrivez-la
+  seule dans une texture 32 bits, ou encodez la normale sur deux canaux
+  (encodage en octaèdre) pour faire de la place.
+- **Les objets transparents** restent en forward, avec leurs limites
+  habituelles (voir [Transparence](/fdw-engine/fr/tutorials/transparency/)).
+
+## Pour aller plus loin
+
+- [Sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/) : toutes
+  les valeurs que les passes de la scène savent écrire.
+- [Occlusion ambiante](/fdw-engine/fr/tutorials/ambient-occlusion/) : une
+  autre passe qui lit les normales et les profondeurs.
+- [Guide du render graph](/fdw-engine/fr/guides/render-graph/) : les
+  textures du graphe, l'ordre des passes.

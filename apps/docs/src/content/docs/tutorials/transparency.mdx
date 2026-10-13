@@ -1,0 +1,166 @@
+---
+title: Transparency
+description: Draw glass, water and foliage with blended and masked materials; how the renderer sorts transparent objects, and the cases no order can draw right.
+sidebar:
+  order: 10
+---
+
+import Example from '../../../components/Example.astro';
+
+A transparent surface lets what is behind it show through. The engine has
+two ways to draw one, chosen by the `alphaMode` of the render state of the
+material:
+
+| `alphaMode` | For                             | How                                                  |
+| ----------- | ------------------------------- | ---------------------------------------------------- |
+| `'opaque'`  | everything else (the default)   | the alpha is ignored                                 |
+| `'mask'`    | foliage, fences, cut-out shapes | each pixel is either drawn or not, by its alpha      |
+| `'blend'`   | glass, water, smoke             | the color is mixed with what is behind, by its alpha |
+
+The example shows both: three panes of colored glass, a glass ball, a
+fence with holes, and two crossing panes. The camera turns around them.
+
+<Example name="transparency" />
+
+## The alpha of the surface
+
+The surface of a material has an `alpha` input, from 0 (invisible) to 1
+(opaque), 1 by default. It comes from a uniform, a texture, any value of
+the graph:
+
+```ts
+const g = new GraphBuilder('glass');
+const color = g.uniform('color', BuiltinTypes.vec4f);
+g.surface({
+  shadingModel: 'phong',
+  baseColor: color.swizzle('rgb'),
+  alpha: color.swizzle('a'),
+});
+```
+
+The alpha only matters with a render state that uses it.
+
+## Blended materials
+
+With `alphaMode: 'blend'`, the color of the surface is mixed with the color
+already drawn behind it: `color × alpha + behind × (1 − alpha)`.
+
+```ts
+const red = new Material({
+  graph: g.build(),
+  values: { color: [1, 0.2, 0.2, 0.4] },
+  renderState: { alphaMode: 'blend' },
+});
+```
+
+The result depends on **the order** of the draws: what is behind must be
+drawn first. The renderer does it:
+
+1. the opaque and masked objects first, in any order (the depth buffer
+   sorts them);
+2. then the blended objects, **from the farthest to the nearest**, by the
+   distance from the camera to their origin, at every frame.
+
+The blended objects **do not write the depth** (`depthWrite: false` by
+default for them): a pane must not hide the pane behind it, drawn after it
+when the camera turns. They are still tested against the depth of the
+opaque objects: a wall in front of a glass hides it.
+
+In the example, the three panes on the left are drawn in a new order as
+the camera turns around them: the colors always mix right.
+
+### Double-sided objects
+
+A closed transparent object, a glass ball, shows its back faces through
+its front faces. With `doubleSided: true`, the renderer draws it **twice**:
+its back faces first, then its front faces over them. For a convex shape
+(a ball, a box), the order is then right.
+
+```ts
+const ball = new Material({
+  graph: g.build(),
+  values: { color: [1, 0.85, 0.3, 0.35] },
+  renderState: { alphaMode: 'blend', doubleSided: true },
+});
+```
+
+A single-sided transparent object shows only the faces turned towards the
+camera: right for a pane seen from one side, wrong for a ball.
+
+## Masked materials
+
+A fence, the leaves of a tree, a grid: the holes are fully transparent, the
+rest fully opaque. With `alphaMode: 'mask'`, the pixels whose alpha is
+below `alphaCutoff` (0.5 by default, a value of the material) are
+**discarded**; the others are drawn as opaque.
+
+```ts
+const texel = g.call(std.textureSample, {
+  texture: g.texture('map'),
+  sampler: g.sampler('mapSampler'),
+  uv,
+});
+g.surface({
+  shadingModel: 'phong',
+  baseColor: texel.swizzle('rgb'),
+  // 0 in the holes of the texture.
+  alpha: texel.swizzle('a'),
+});
+const fence = new Material({
+  graph: g.build(),
+  values: { map, mapSampler, alphaCutoff: 0.5 },
+  renderState: { alphaMode: 'mask', doubleSided: true },
+});
+```
+
+Masked materials need no sorting: they are drawn with the opaque ones, and
+write the depth. They **cast shadows with their holes**: the shadow maps
+discard the same pixels. They also write the outputs of the scene passes
+(normals, identifiers: see [Picking](/fdw-engine/tutorials/picking/)),
+which the blended ones do not.
+
+Their edges are sharp, and shimmer when the texture is far: the alpha of
+the mipmaps averages the holes and the bars. Multisampling smooths the edges
+of the triangles, not those of the mask.
+
+## What sorting cannot do
+
+The renderer sorts **objects**, by their origin, not pixels. Some cases have
+no right order:
+
+- **Crossing objects**: in the example, the two crossing panes on the
+  right. On one side of the crossing the orange pane is in front, on the
+  other side the purple one: whichever is drawn last covers the other
+  everywhere. Split them in pieces that do not cross.
+- **Large objects near small ones**: a large water surface and a fish in
+  it; the origin of the water may be closer to the camera than the fish
+  while most of the water is behind it. Split the large object, or move its
+  origin.
+- **Concave objects** (a glass cup): their faces cover each other in an
+  order that depends on the view. Split them in convex parts.
+
+When the colors only add up (light, fire, glows), the order does not
+matter: such materials need an additive blend, which the render state does
+not offer yet.
+
+The exact solutions, order-independent transparency (weighted blended,
+per-pixel lists), are not in the engine.
+
+## Transparency and the other passes
+
+- **HDR**: by default, the renderer draws in linear colors in an
+  `rgba16float` target, where the colors blend right, then encodes them
+  (see [Colors and HDR](/fdw-engine/guides/colors-and-hdr/)).
+- **Scene outputs**: the blended objects only write the color, not the
+  other outputs; a glass is not seen by picking, nor by the ambient
+  occlusion.
+- **Deferred rendering**: the blended objects are drawn after the lighting
+  pass, in forward (see
+  [Deferred rendering](/fdw-engine/tutorials/deferred-rendering/)).
+- **Shadows**: the blended objects cast none.
+
+## Next
+
+- [Reflections](/fdw-engine/tutorials/reflections/): environment maps,
+  mirrors and screen space reflections.
+- [Materials](/fdw-engine/tutorials/materials/): textures and samplers.

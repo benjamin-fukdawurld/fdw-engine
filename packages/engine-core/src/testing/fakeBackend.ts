@@ -156,6 +156,8 @@ const cameraMath = {
   getProjectionMatrix: () => fakeProjection,
   getViewProjectionMatrix: (view: Float32Array, projection: Float32Array) =>
     multiply(projection, view),
+  // Not checked by the tests of the renderer.
+  getInverseMatrix: () => new Float32Array(16),
 } as unknown as CameraMath;
 
 // The floats of a row of an object table: the world matrix, then the

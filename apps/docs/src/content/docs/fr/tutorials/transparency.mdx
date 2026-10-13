@@ -1,0 +1,170 @@
+---
+title: Transparence
+description: Dessiner du verre, de l'eau et du feuillage avec des matériaux mélangés et masqués ; comment le renderer trie les objets transparents, et les cas qu'aucun ordre ne dessine correctement.
+sidebar:
+  order: 10
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une surface transparente laisse voir ce qu'il y a derrière elle. Le moteur
+a deux façons d'en dessiner une, choisies par l'`alphaMode` du render state
+du matériau :
+
+| `alphaMode` | Pour                                   | Comment                                                        |
+| ----------- | -------------------------------------- | -------------------------------------------------------------- |
+| `'opaque'`  | tout le reste (par défaut)             | l'alpha est ignoré                                             |
+| `'mask'`    | feuillage, grillages, formes découpées | chaque pixel est dessiné ou non, selon son alpha               |
+| `'blend'`   | verre, eau, fumée                      | la couleur est mélangée à ce qu'il y a derrière, selon l'alpha |
+
+L'exemple montre les deux : trois vitres colorées, une boule de verre, un
+grillage troué, et deux vitres qui se croisent. La caméra tourne autour.
+
+<Example name="transparency" />
+
+## L'alpha de la surface
+
+La surface d'un matériau a une entrée `alpha`, de 0 (invisible) à 1
+(opaque), 1 par défaut. Elle vient d'un uniform, d'une texture, de
+n'importe quelle valeur du graphe :
+
+```ts
+const g = new GraphBuilder('glass');
+const color = g.uniform('color', BuiltinTypes.vec4f);
+g.surface({
+  shadingModel: 'phong',
+  baseColor: color.swizzle('rgb'),
+  alpha: color.swizzle('a'),
+});
+```
+
+L'alpha ne compte qu'avec un render state qui l'utilise.
+
+## Les matériaux mélangés
+
+Avec `alphaMode: 'blend'`, la couleur de la surface est mélangée à la
+couleur déjà dessinée derrière elle : `couleur × alpha + derrière × (1 −
+alpha)`.
+
+```ts
+const red = new Material({
+  graph: g.build(),
+  values: { color: [1, 0.2, 0.2, 0.4] },
+  renderState: { alphaMode: 'blend' },
+});
+```
+
+Le résultat dépend de **l'ordre** des dessins : ce qui est derrière doit
+être dessiné d'abord. Le renderer s'en charge :
+
+1. les objets opaques et masqués d'abord, dans n'importe quel ordre (le
+   depth buffer les trie) ;
+2. puis les objets mélangés, **du plus loin au plus proche**, selon la
+   distance de la caméra à leur origine, à chaque image.
+
+Les objets mélangés **n'écrivent pas la profondeur** (`depthWrite: false`
+par défaut pour eux) : une vitre ne doit pas cacher la vitre derrière elle,
+dessinée après elle quand la caméra tourne. Ils sont tout de même testés
+contre la profondeur des objets opaques : un mur devant un verre le cache.
+
+Dans l'exemple, les trois vitres de gauche sont redessinées dans un nouvel
+ordre quand la caméra tourne autour : les couleurs se mélangent toujours
+correctement.
+
+### Les objets double face
+
+Un objet transparent fermé, une boule de verre, montre ses faces arrière à
+travers ses faces avant. Avec `doubleSided: true`, le renderer le dessine
+**deux fois** : ses faces arrière d'abord, puis ses faces avant par-dessus.
+Pour une forme convexe (une boule, une boîte), l'ordre est alors correct.
+
+```ts
+const ball = new Material({
+  graph: g.build(),
+  values: { color: [1, 0.85, 0.3, 0.35] },
+  renderState: { alphaMode: 'blend', doubleSided: true },
+});
+```
+
+Un objet transparent à une seule face ne montre que les faces tournées vers
+la caméra : correct pour une vitre vue d'un côté, faux pour une boule.
+
+## Les matériaux masqués
+
+Un grillage, les feuilles d'un arbre, une grille : les trous sont
+entièrement transparents, le reste entièrement opaque. Avec
+`alphaMode: 'mask'`, les pixels dont l'alpha est inférieur à `alphaCutoff`
+(0,5 par défaut, une valeur du matériau) sont **écartés** ; les autres sont
+dessinés comme opaques.
+
+```ts
+const texel = g.call(std.textureSample, {
+  texture: g.texture('map'),
+  sampler: g.sampler('mapSampler'),
+  uv,
+});
+g.surface({
+  shadingModel: 'phong',
+  baseColor: texel.swizzle('rgb'),
+  // 0 dans les trous de la texture.
+  alpha: texel.swizzle('a'),
+});
+const fence = new Material({
+  graph: g.build(),
+  values: { map, mapSampler, alphaCutoff: 0.5 },
+  renderState: { alphaMode: 'mask', doubleSided: true },
+});
+```
+
+Les matériaux masqués n'ont pas besoin de tri : ils sont dessinés avec les
+opaques, et écrivent la profondeur. Ils **projettent des ombres trouées** :
+les shadow maps écartent les mêmes pixels. Ils écrivent aussi les sorties
+des passes de la scène (normales, identifiants : voir
+[Sélection au pixel](/fdw-engine/fr/tutorials/picking/)), ce que ne font pas
+les objets mélangés.
+
+Leurs bords sont nets, et scintillent quand la texture est loin : l'alpha
+des mipmaps moyenne les trous et les barreaux. Le multi-échantillonnage
+lisse les bords des triangles, pas ceux du masque.
+
+## Ce que le tri ne peut pas faire
+
+Le renderer trie des **objets**, selon leur origine, pas des pixels.
+Certains cas n'ont pas de bon ordre :
+
+- **Les objets qui se croisent** : dans l'exemple, les deux vitres de
+  droite. D'un côté du croisement la vitre orange est devant, de l'autre la
+  violette : celle qui est dessinée en dernier couvre l'autre partout.
+  Découpez-les en morceaux qui ne se croisent pas.
+- **Les grands objets près des petits** : une grande étendue d'eau et un
+  poisson dedans ; l'origine de l'eau peut être plus proche de la caméra que
+  le poisson alors que l'essentiel de l'eau est derrière lui. Découpez le
+  grand objet, ou déplacez son origine.
+- **Les objets concaves** (une tasse en verre) : leurs faces se recouvrent
+  dans un ordre qui dépend de la vue. Découpez-les en parties convexes.
+
+Quand les couleurs ne font que s'ajouter (lumière, feu, halos), l'ordre ne
+compte pas : ces matériaux demandent un mélange additif, que le render
+state ne propose pas encore.
+
+Les solutions exactes, la transparence indépendante de l'ordre (weighted
+blended, listes par pixel), ne sont pas dans le moteur.
+
+## La transparence et les autres passes
+
+- **HDR** : par défaut, le renderer dessine en couleurs linéaires dans une
+  cible `rgba16float`, où les couleurs se mélangent correctement, puis les
+  encode (voir [Couleurs et HDR](/fdw-engine/fr/guides/colors-and-hdr/)).
+- **Sorties de la scène** : les objets mélangés n'écrivent que la couleur,
+  pas les autres sorties ; un verre n'est vu ni par la sélection au pixel,
+  ni par l'occlusion ambiante.
+- **Rendu différé** : les objets mélangés sont dessinés après la passe
+  d'éclairage, en forward (voir
+  [Rendu différé](/fdw-engine/fr/tutorials/deferred-rendering/)).
+- **Ombres** : les objets mélangés n'en projettent pas.
+
+## Pour aller plus loin
+
+- [Réflexions](/fdw-engine/fr/tutorials/reflections/) : cartes
+  d'environnement, miroirs et reflets en espace écran.
+- [Matériaux](/fdw-engine/fr/tutorials/materials/) : textures et samplers.

@@ -93,10 +93,14 @@ The `Renderer` adds its passes to a graph:
   (the color of `target`, the depth buffer, the outputs below). `name` (default
   `scene`) separates several views of a graph: each name has its own frame
   uniforms, so two cameras can be drawn in one frame. `linear: true` writes
-  linear colors, for an HDR target.
+  linear colors, for an HDR target. `inputs` binds textures of the graph to
+  the textures of that name of the materials (a mirror image). When lights
+  cast shadows, `shadows` is the version of their shadow atlas.
 - `addFullscreenPass(graph, name, { material, inputs, target, format })`: a
   full screen material, its textures bound to resources of the graph by
-  `inputs`. With `targets`, it also writes the extra color targets of the
+  `inputs`. It reads the camera and the lights of the last scene passes
+  added (a deferred lighting pass), and their shadow maps with
+  `shadows: scene.shadows`. With `targets`, it also writes the extra color targets of the
   material (`g.target`), by name, and returns `{ color, targets }`:
 
   ```ts

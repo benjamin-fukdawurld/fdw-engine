@@ -464,6 +464,7 @@ export class GraphBuilder {
       | 'camera.view'
       | 'camera.projection'
       | 'camera.viewProjection'
+      | 'camera.inverseViewProjection'
       | 'camera.position'
       | 'object.world'
       | 'object.normalMatrix'

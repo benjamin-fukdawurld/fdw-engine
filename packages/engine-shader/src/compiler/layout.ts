@@ -181,6 +181,9 @@ export const engineUniformBlocks: Readonly<
     { name: 'viewProjection', type: BuiltinTypes.mat4f },
     { name: 'view', type: BuiltinTypes.mat4f },
     { name: 'projection', type: BuiltinTypes.mat4f },
+    // From the clip space back to the world: deferred and screen space
+    // passes rebuild positions with it.
+    { name: 'inverseViewProjection', type: BuiltinTypes.mat4f },
     { name: 'cameraPosition', type: BuiltinTypes.vec3f },
     { name: 'time', type: BuiltinTypes.f32 },
     // Multiplies the linear color before the tone mapping.
@@ -230,6 +233,10 @@ export const engineValueLocations: Readonly<
   'camera.viewProjection': { slot: 'frame', member: 'viewProjection' },
   'camera.view': { slot: 'frame', member: 'view' },
   'camera.projection': { slot: 'frame', member: 'projection' },
+  'camera.inverseViewProjection': {
+    slot: 'frame',
+    member: 'inverseViewProjection',
+  },
   'camera.position': { slot: 'frame', member: 'cameraPosition' },
   time: { slot: 'frame', member: 'time' },
   exposure: { slot: 'frame', member: 'exposure' },

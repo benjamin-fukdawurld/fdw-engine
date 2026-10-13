@@ -72,24 +72,25 @@ describe('wgslLayoutStrategy', () => {
       ['viewProjection', 0, 64],
       ['view', 64, 64],
       ['projection', 128, 64],
-      ['cameraPosition', 192, 12],
-      ['time', 204, 4],
-      ['exposure', 208, 4],
-      ['lightCount', 212, 4],
+      ['inverseViewProjection', 192, 64],
+      ['cameraPosition', 256, 12],
+      ['time', 268, 4],
+      ['exposure', 272, 4],
+      ['lightCount', 276, 4],
       // Arrays of 16 vec4, aligned to 16 bytes.
-      ['lightPositions', 224, 256],
-      ['lightAmbients', 480, 256],
-      ['lightDiffuses', 736, 256],
-      ['lightSpeculars', 992, 256],
-      ['lightAttenuations', 1248, 256],
-      ['lightSpotDirections', 1504, 256],
-      ['lightSpotCones', 1760, 256],
-      ['lightShadows', 2016, 256],
-      ['lightShadowRects', 2272, 256],
+      ['lightPositions', 288, 256],
+      ['lightAmbients', 544, 256],
+      ['lightDiffuses', 800, 256],
+      ['lightSpeculars', 1056, 256],
+      ['lightAttenuations', 1312, 256],
+      ['lightSpotDirections', 1568, 256],
+      ['lightSpotCones', 1824, 256],
+      ['lightShadows', 2080, 256],
+      ['lightShadowRects', 2336, 256],
       // Arrays of 16 mat4.
-      ['lightShadowMatrices', 2528, 1024],
+      ['lightShadowMatrices', 2592, 1024],
     ]);
-    expect(block('frame').size).toBe(3552);
+    expect(block('frame').size).toBe(3616);
   });
 
   it('pads the mat3 columns of the object block', () => {

@@ -1,0 +1,256 @@
+---
+title: Deferred rendering
+description: Light the scene once per pixel instead of once per object, from a G-buffer written by the scene passes, then draw the transparent objects over it.
+sidebar:
+  order: 8
+---
+
+import Example from '../../../components/Example.astro';
+
+In the usual rendering (**forward**), each object is lit as it is drawn:
+its shading model sums the lights of the frame for each of its pixels. When
+objects cover each other, the hidden pixels are lit for nothing, and every
+object pays for every light.
+
+**Deferred rendering** separates the two. The scene passes first write, for
+each pixel, what the lighting needs: the color of the surface, its normal,
+its depth, its roughness… (the **G-buffer**). A full screen pass then lights
+each pixel of the screen once, from these textures. The transparent objects,
+which cannot be written in a G-buffer (several of them blend on one pixel),
+are drawn last, over the result, in forward.
+
+The engine has no deferred mode: it is a composition of passes in a render
+graph, which you write and change as you need. Click the example to switch
+between the deferred image, the forward one (the same), and the textures of
+the G-buffer.
+
+<Example name="deferred-rendering" />
+
+The frame has four steps:
+
+1. The scene passes write the **G-buffer** of the opaque objects, without
+   lighting.
+2. A full screen pass **lights** it with the PBR shading model.
+3. The scene passes draw the **transparent** objects over it, in forward.
+4. A last pass **encodes** the colors for the screen.
+
+## 1. The G-buffer
+
+What to write depends on the shading model that will light it. The PBR
+model needs the base color, the normal, the position of the point, its
+roughness and its metallic factor. The scene passes write these values with
+their `outputs` (see [Scene outputs](/fdw-engine/tutorials/scene-outputs/)),
+in three textures:
+
+| Texture       | Format        | Content                                  |
+| ------------- | ------------- | ---------------------------------------- |
+| `baseColor`   | `rgba8unorm`  | the base color                           |
+| `normalDepth` | `rgba16float` | the normal in world space, and the depth |
+| `properties`  | `rgba8unorm`  | the roughness and the metallic factor    |
+
+Two of them hold several values: a function graph puts them together.
+
+```ts
+// The normal (xyz) and the depth (w).
+const n = new GraphBuilder('normal and depth');
+n.functionOutput(
+  'value',
+  n.call(std.extend, {
+    xyz: n.functionInput('worldNormal', BuiltinTypes.vec3f),
+    w: n.functionInput('viewDepth', BuiltinTypes.f32),
+  })
+);
+const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
+
+// The roughness (x) and the metallic factor (y).
+const p = new GraphBuilder('material properties');
+p.functionOutput(
+  'value',
+  p.call(std.vec4, {
+    x: p.functionInput('roughness', BuiltinTypes.f32),
+    y: p.functionInput('metallic', BuiltinTypes.f32),
+    w: 1,
+  })
+);
+const properties = defineFunction(p.build(), { id: 'example.properties' });
+```
+
+The scene passes are given **no color target**: without it, the shading
+models of the materials are left out, the passes only write the outputs.
+`include: 'opaque'` keeps the opaque and masked objects only.
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights,
+  include: 'opaque',
+  outputs: {
+    baseColor: { format: 'rgba8unorm', value: 'base-color' },
+    normalDepth: { format: 'rgba16float', value: normalDepth },
+    properties: { format: 'rgba8unorm', value: properties },
+  },
+});
+```
+
+The materials do not change: the same graphs, with their `output.surface`,
+are drawn in forward or in a G-buffer.
+
+The **position** of the point is not written: it is rebuilt from the depth
+(step 2). A texture of positions would cost 8 more bytes per pixel.
+
+## 2. The lighting
+
+The lighting pass is a full screen material. For each pixel, it reads the
+G-buffer, rebuilds the position, and calls the **shading model** of the
+materials like any function: `lighting.pbr` takes the inputs of the surface,
+sums the lights of the frame and returns the color.
+
+```ts
+const g = new GraphBuilder('deferred lighting');
+const uv = g.builtin('screen-uv');
+const read = (name: string) =>
+  g.call(std.textureSample, {
+    texture: g.texture(name),
+    sampler: g.sampler(`${name}Sampler`),
+    uv,
+  });
+const geometry = read('normalDepth');
+const material = read('properties');
+// The point of the pixel, in the world, from its depth.
+const position = g.call('camera.positionFromDepth', {
+  uv,
+  viewDepth: geometry.swizzle('w'),
+});
+const lit = g.call('lighting.pbr', {
+  baseColor: read('baseColor').swizzle('rgb'),
+  normal: geometry.swizzle('xyz'),
+  roughness: material.swizzle('x'),
+  metallic: material.swizzle('y'),
+  worldPosition: g.call(std.extend, { xyz: position, w: 1 }),
+});
+// Where no object was drawn (depth 0), the background.
+g.fullscreen({
+  color: g.call(std.select, {
+    ifFalse: [0.02, 0.02, 0.03, 1],
+    ifTrue: lit,
+    condition: g.call(std.greater, { a: geometry.swizzle('w'), b: 0 }),
+  }),
+});
+```
+
+### The position from the depth
+
+`camera.positionFromDepth` gives the point of the world seen at a position
+of the screen (`uv`), at a depth along the axis of the camera (the
+`view-depth` of the scene passes). It works with perspective and
+orthographic cameras. It uses the engine value
+`camera.inverseViewProjection`, the inverse of the view projection of the
+camera: from the screen back to the world.
+
+### The lights and the camera of the frame
+
+A full screen pass reads the frame values of the **last scene passes added
+to the graph**: their camera (`camera.position`, used by the specular
+highlights), their lights, the shadows of these lights. Add the lighting
+pass after the G-buffer passes, with the same camera and the same lights.
+
+With shadows, give the pass the shadow maps of the scene passes, in
+`shadows`: the shading model then darkens the light in the shadows, as it
+does in forward. Without it, the lights cast no shadows in the lighting
+pass.
+
+```ts
+const lit = renderer.addFullscreenPass(graph, 'lighting', {
+  material: lighting,
+  inputs: {
+    baseColor: scene.outputs.baseColor,
+    normalDepth: scene.outputs.normalDepth,
+    properties: scene.outputs.properties,
+  },
+  // The shadow maps, when the lights cast shadows.
+  ...(scene.shadows ? { shadows: scene.shadows } : {}),
+  target: graph.createTexture('color', { format: 'rgba16float' }),
+  format: 'rgba16float',
+});
+```
+
+The G-buffer is read with a `nearest` sampler: one texel per pixel, never a
+blend of the normals or the depths of two objects.
+
+## 3. The transparent objects
+
+A G-buffer has one surface per pixel: a glass in front of a wall cannot be
+written in it. The transparent objects are drawn after the lighting, by the
+scene passes with `include: 'transparent'`, over the lit image (`target`,
+with `load: 'load'`). They are tested against the **depth of the G-buffer**
+(`depth`), so that the opaque objects in front of them hide them.
+
+```ts
+const color = renderer.addScenePasses(graph, {
+  name: 'transparent',
+  items,
+  camera,
+  lights,
+  include: 'transparent',
+  depth: scene.depth,
+  target: lit,
+  format: 'rgba16float',
+  load: 'load',
+  linear: true,
+}).color;
+```
+
+## 4. The output
+
+The colors are linear: a last pass encodes them in sRGB for the screen, as
+the renderer does by default (with tone mapping if you want one).
+
+```ts
+const o = new GraphBuilder('output');
+const hdr = o.call(std.textureSample, {
+  texture: o.texture('hdr'),
+  sampler: o.sampler('hdrSampler'),
+  uv: o.builtin('screen-uv'),
+});
+o.fullscreen({
+  color: o.call(std.extend, {
+    xyz: o.call('color.linearToSrgb', { color: hdr.swizzle('rgb') }),
+  }),
+});
+```
+
+## Forward or deferred?
+
+Deferred rendering is not always faster. What to weigh:
+
+- **The gain** comes with many lights on many overlapping objects: each
+  pixel is lit once. With a few lights, forward costs less: it reads no
+  textures. The renderer sums up to 16 lights per frame for now; the
+  clustered light culling planned with the light pool will make deferred
+  rendering pay off with hundreds of small lights.
+- **The bandwidth**: the G-buffer is written then read back at every frame.
+  Here, 16 bytes per pixel, besides the depth buffer; four `rgba16float`
+  textures in 1080p are 66 MB written then read per frame, a real cost on
+  mobile GPUs.
+- **Multisampling** does not fit: the lighting pass would have to light
+  every sample. Antialias with a full screen pass instead (FXAA, TAA).
+- **One shading model**: the lighting pass calls one. For several, write
+  an identifier of the model in the G-buffer and choose with `std.select`.
+- **What is not written is lost**: the emissive color, the occlusion of the
+  materials… Add an output for each value the model uses.
+- **The precision**: the depth in an `rgba16float` is exact to about
+  0.05 % of the distance. For large scenes, write it alone in a
+  32-bit texture, or encode the normal in two channels (octahedral
+  encoding) to make room.
+- **The transparent objects** stay in forward, with their usual limits (see
+  [Transparency](/fdw-engine/tutorials/transparency/)).
+
+## Next
+
+- [Scene outputs](/fdw-engine/tutorials/scene-outputs/): all the values the
+  scene passes can write.
+- [Ambient occlusion](/fdw-engine/tutorials/ambient-occlusion/): another
+  pass reading the normals and the depths.
+- [Render graph guide](/fdw-engine/guides/render-graph/): textures of the
+  graph, the order of the passes.

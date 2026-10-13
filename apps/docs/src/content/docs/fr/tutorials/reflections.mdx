@@ -1,0 +1,359 @@
+---
+title: Réflexions
+description: Refléter l'environnement avec une texture cube, la scène avec un miroir plan rendu depuis une caméra symétrique, et ce qui est à l'écran avec des reflets en espace écran.
+sidebar:
+  order: 11
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un reflet montre, en chaque point d'une surface, ce qu'on voit dans la
+direction de la vue renvoyée par la surface. Suivre ces rayons dans la
+scène, c'est ce que fait un ray tracer ; un rasterizer retrouve les mêmes
+couleurs autrement, chaque méthode avec ses limites :
+
+| Technique                   | Reflète                         | Coût                                       | Limites                                     |
+| --------------------------- | ------------------------------- | ------------------------------------------ | ------------------------------------------- |
+| **Carte d'environnement**   | un entourage fixe (ciel, pièce) | une lecture                                | pas les objets de la scène                  |
+| **Miroir plan**             | toute la scène                  | la scène dessinée une seconde fois         | une surface plane par rendu supplémentaire  |
+| **Reflets en espace écran** | ce qui est à l'écran            | une passe plein écran, une lecture par pas | rien de ce qui est hors de l'écran ou caché |
+
+Dans l'exemple, des boules chromées reflètent une carte d'environnement,
+nette puis floue à mesure que leur rugosité augmente. Cliquez pour passer
+le sol d'un sol mat à un miroir plan, puis à des reflets en espace écran.
+
+<Example name="reflections" />
+
+## La direction réfléchie
+
+Toutes les techniques partent de la même direction : la vue, de la caméra
+vers le point, réfléchie par la normale de la surface. `std.reflect` la
+donne :
+
+```ts
+// La position et la normale de la surface dans le monde, par fragment.
+const position = g
+  .call(std.perFragment, {
+    value: g.call(std.transform, {
+      matrix: g.engine('object.world'),
+      vector: g.call(std.extend, {
+        xyz: g.attribute('position', BuiltinTypes.vec3f),
+      }),
+    }),
+  })
+  .swizzle('xyz');
+const normal = g.call(std.normalize, {
+  x: g.call(std.perFragment, {
+    value: g.call(std.transform3, {
+      matrix: g.engine('object.normalMatrix'),
+      vector: g.attribute('normal', BuiltinTypes.vec3f),
+    }),
+  }),
+});
+const reflected = g.call(std.reflect, {
+  incident: g.call(std.normalize, {
+    x: g.call(std.sub, { a: position, b: g.engine('camera.position') }),
+  }),
+  normal,
+});
+```
+
+## Les cartes d'environnement
+
+Une **texture cube** contient ce qu'on voit dans toutes les directions
+depuis un point : six faces carrées, les côtés d'un cube autour de lui (+x,
+-x, +y, -y, +z, -z). `std.textureSampleCube` la lit dans une direction, de
+longueur quelconque ; `std.textureSampleCubeLevel` à un niveau de ses
+mipmaps.
+
+```ts
+const environment = backend.textures.createTexture({
+  type: 'cube',
+  format: 'rgba8unorm-srgb',
+  dimensions: { width: 64, height: 64, layers: 6 },
+  mipLevelCount: fullMipLevelCount({ width: 64 }),
+  // Les six faces à la suite, rangées depuis le haut.
+  source: faces,
+});
+```
+
+L'exemple calcule ses faces en TypeScript : pour chaque texel, sa
+direction, puis la couleur d'un ciel ou d'un sol en damier dans cette
+direction. La direction d'un texel en `(u, v)` (de -1 à 1, `v` vers le bas)
+de chaque face est la même sur tous les backends :
+
+| Face | Direction     | Face | Direction      |
+| ---- | ------------- | ---- | -------------- |
+| +x   | `(1, -v, -u)` | -x   | `(-1, -v, u)`  |
+| +y   | `(u, 1, v)`   | -y   | `(u, -1, -v)`  |
+| +z   | `(u, -v, 1)`  | -z   | `(-u, -v, -1)` |
+
+Les mipmaps de la texture cube sont calculées à partir de son premier
+niveau (`mipLevelCount`). Chaque niveau moyenne le précédent : plus le
+niveau est élevé, plus l'environnement est flou. Une surface **rugueuse**
+diffuse son reflet : elle lit un niveau plus élevé.
+
+```ts
+const roughness = g.uniform('roughness', BuiltinTypes.f32);
+const reflection = g.call(std.textureSampleCubeLevel, {
+  texture: g.texture('environment', { dimension: 'cube' }),
+  sampler: g.sampler('environmentSampler'),
+  direction: reflected,
+  // Du niveau 0, net, au dernier.
+  level: g.call(std.mul, { a: roughness, b: levels - 1 }),
+});
+g.surface({ shadingModel: 'unlit', baseColor: reflection.swizzle('rgb') });
+```
+
+Une moyenne des niveaux approche le flou d'une surface rugueuse : le flou
+exact (une convolution par le lobe du matériau, l'image based lighting du
+modèle PBR) viendra avec l'IBL de la phase P2.
+
+L'environnement est le même pour tous les points : les boules ne se
+reflètent pas entre elles, ni les boîtes. Il convient à un entourage
+lointain (un ciel, un paysage) ou à une sonde capturée au centre d'une
+pièce.
+
+### Le ciel
+
+Le fond de l'exemple est la même texture, lue dans la direction de chaque
+pixel. Une passe plein écran l'obtient à partir de la caméra :
+`camera.positionFromDepth` donne un point du rayon du pixel (à n'importe
+quelle profondeur), moins la position de la caméra.
+
+```ts
+const uv = g.builtin('screen-uv');
+const direction = g.call(std.sub, {
+  a: g.call('camera.positionFromDepth', { uv, viewDepth: 1 }),
+  b: g.engine('camera.position'),
+});
+```
+
+## Les miroirs plans
+
+Un miroir plan reflète la scène comme la verrait une caméra placée
+**derrière le miroir**, symétrique de la vraie. La scène est dessinée une
+seconde fois, depuis cette caméra, dans une texture ; le miroir montre cette
+texture.
+
+Pour le sol, le plan `y = 0`, la caméra symétrique a le `y` opposé, et sa
+rotation les `x` et `z` opposés :
+
+```ts
+const { x, y, z } = camera.position;
+mirrored.position = { x, y: -y, z };
+mirrored.rotation = {
+  x: -rotation.x,
+  y: rotation.y,
+  z: -rotation.z,
+  w: rotation.w,
+};
+```
+
+Une symétrie n'est pas une rotation : aucune caméra ne voit l'image du
+miroir elle-même. La caméra symétrique la voit **à l'envers**, ce que le
+miroir corrige en la lisant.
+
+### L'image du miroir
+
+La caméra symétrique dessine les objets, **pas le miroir**, dans une
+texture du render graph :
+
+```ts
+const reflection = renderer.addScenePasses(graph, {
+  name: 'mirror',
+  items: objects, // Sans le sol.
+  camera: mirrored,
+  lights: [light],
+  target: graph.createTexture('mirror color', { format: 'rgba16float' }),
+  format: 'rgba16float',
+  linear: true,
+});
+```
+
+Donnez à ces passes leur propre `name` : chaque nom a sa propre caméra dans
+les uniforms de l'image. Une passe plein écran ajoute ensuite le ciel
+derrière les objets, comme pour la vue principale (l'exemple écrit les
+profondeurs pour cela).
+
+### La lire
+
+Le matériau du sol lit l'image du miroir à la position de son pixel **sur
+l'écran**, qu'il calcule à partir de sa position dans le monde et de la
+projection de la caméra. Le `y` de l'écran pointe vers le bas ; l'image est
+à l'envers : les deux s'annulent.
+
+```ts
+const clip = g.call(std.perFragment, {
+  value: g.call(std.transform, {
+    matrix: g.engine('camera.viewProjection'),
+    vector: g.call(std.extend, { xyz: position }),
+  }),
+});
+// clip.xy / clip.w, de [-1, 1] vers [0, 1], sans retournement.
+const uv = g.call(std.add, {
+  a: g.call(std.mul, {
+    a: g.call(std.div, { a: clip.swizzle('xy'), b: clip.swizzle('w') }),
+    b: 0.5,
+  }),
+  b: 0.5,
+});
+const mirror = g.call(std.textureSample, {
+  texture: g.texture('mirror'),
+  sampler: g.sampler('mirrorSampler'),
+  uv,
+});
+g.surface({
+  shadingModel: 'phong',
+  baseColor: g.call(std.mul, { a: floorColor, b: 0.5 }),
+  // Le reflet, ajouté à la lumière du sol.
+  emissive: g.call(std.mul, { a: mirror.swizzle('rgb'), b: 0.5 }),
+});
+```
+
+L'image du miroir est une texture **du render graph** : les passes de la
+scène la lient aux matériaux avec `inputs`, par le nom de la texture dans
+leurs graphes. Le graphe sait alors que les passes principales la lisent,
+et dessine le miroir d'abord.
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights: [light],
+  target: graph.createTexture('color', { format: 'rgba16float' }),
+  format: 'rgba16float',
+  // La texture 'mirror' des matériaux : l'image du miroir.
+  inputs: { mirror },
+});
+```
+
+Ce qu'il faut savoir :
+
+- **Le coût** : la scène est dessinée deux fois. Une texture de miroir plus
+  petite (`size: { relative: 0.5 }`) en économise l'essentiel, pour un reflet
+  plus flou.
+- **Un seul plan** : chaque plan de miroir demande son propre rendu.
+- **Ce qui est sous le miroir** y apparaîtrait : ici, rien n'est sous le
+  sol. Sinon, laissez ces objets hors des passes du miroir.
+- **Le miroir lui-même** ne doit pas être dessiné par ses propres passes.
+
+## Les reflets en espace écran
+
+Les reflets en espace écran (SSR) ne demandent pas de second rendu : ils
+cherchent le reflet **dans l'image déjà dessinée**. Une passe plein écran
+suit, pour chaque pixel qui reflète, le rayon réfléchi dans la scène, pas à
+pas ; elle projette chaque point sur l'écran, et compare sa profondeur à
+celle de l'image à cet endroit. Le premier point qui passe **derrière**
+l'image est celui où le rayon rencontre la scène : la couleur de l'image à
+cet endroit est le reflet.
+
+La passe a besoin, pour chaque pixel, de sa position et de sa normale (les
+[sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/)), et de
+savoir quelles surfaces reflètent, et combien. Les matériaux l'écrivent
+eux-mêmes, avec `g.output` : une sortie de valeur `'material'` des passes de
+la scène la recueille, 0 pour les autres.
+
+```ts
+// Dans le matériau du sol.
+g.output('reflectivity', 0.5);
+
+// Les passes de la scène.
+const scene = renderer.addScenePasses(graph, {
+  // …
+  outputs: {
+    normalDepth: { format: 'rgba16float', value: normalDepth },
+    reflectivity: { format: 'r8unorm', value: 'material', default: 0 },
+  },
+});
+```
+
+La passe reconstruit la position du pixel à partir de sa profondeur, et
+réfléchit la vue :
+
+```ts
+const position = r.call('camera.positionFromDepth', { uv, viewDepth: depth });
+const ray = r.call(std.reflect, {
+  incident: r.call(std.normalize, {
+    x: r.call(std.sub, { a: position, b: r.engine('camera.position') }),
+  }),
+  normal,
+});
+```
+
+Puis les pas. Le material graph n'a pas de boucles : une boucle TypeScript
+écrit les 32 pas dans le graphe. Chaque pas projette son point avec la
+projection de la caméra, et lit la profondeur de l'image à cet endroit :
+
+```ts
+for (let i = 1; i <= 32; i++) {
+  const point = r.call(std.add, {
+    a: position,
+    b: r.call(std.mul, { a: ray, b: i * 0.12 }),
+  });
+  const clip = r.call(std.transform, {
+    matrix: r.engine('camera.viewProjection'),
+    vector: r.call(std.extend, { xyz: point }),
+  });
+  const pointUv = /* clip.xy / clip.w, vers [0, 1], y vers le bas */;
+  const pointDepth = /* -(view × point).z */;
+  const sceneDepth = read('normalDepth', pointUv).swizzle('w');
+  // Un impact : derrière l'image de moins d'une épaisseur (0,4), sur
+  // l'écran, là où il y a un objet.
+}
+```
+
+Le premier impact est choisi du dernier pas au premier, avec
+`std.select`. Là où le rayon ne rencontre rien à l'écran, l'exemple se
+rabat sur la carte d'environnement : le sol reflète le ciel.
+
+```ts
+const reflection = r.call(std.mix, {
+  a: environmentInTheRayDirection,
+  b: read('color', hitUv).swizzle('rgb'),
+  t: found,
+});
+const color = r.call(std.add, {
+  a: sceneColor,
+  b: r.call(std.mul, { a: reflection, b: reflectivity }),
+});
+```
+
+Ce qu'il faut savoir :
+
+- **Seul ce qui est à l'écran** peut être reflété. Le dessous d'une boule,
+  un objet derrière la caméra, l'arrière d'une boîte : ils ne sont pas dans
+  l'image. Les reflets disparaissent aux bords de l'écran. Un repli (la
+  carte d'environnement) en cache l'essentiel.
+- **L'épaisseur** : l'image a une profondeur par pixel ; derrière, la passe
+  ne peut pas savoir s'il y a un objet ou du vide. Un point derrière l'image
+  de moins que l'épaisseur est pris pour un impact.
+- **Les pas** : leur longueur et leur nombre fixent la portée (ici 32 ×
+  0,12 unité) et la précision. Trop longs, ils enjambent les objets minces
+  et le reflet montre des bandes, visibles sur le sol de l'exemple. Une
+  recherche plus fine entre les deux derniers pas (quelques dichotomies), ou
+  un décalage aléatoire du premier pas par pixel suivi d'un flou, les
+  réduisent.
+- **Le coût** est d'une lecture par pas pour chaque pixel : calculez-les en
+  demi-taille, seulement là où la réflectivité n'est pas nulle.
+
+## Laquelle choisir ?
+
+- **Les cartes d'environnement** partout, en repli des autres : peu
+  coûteuses, floutées par la rugosité, mais aveugles aux objets.
+- **Les miroirs plans** pour un grand miroir plat, une eau calme, un sol
+  poli qui compte : exacts, au prix d'un second rendu.
+- **Les reflets en espace écran** pour des sols et des murs mouillés ou
+  brillants, beaucoup de surfaces à la fois : un coût fixe, avec les lacunes
+  de l'écran.
+
+Le ray tracing (phase P10) reflétera ce qu'aucune d'elles ne peut refléter.
+
+## Pour aller plus loin
+
+- [Rendu différé](/fdw-engine/fr/tutorials/deferred-rendering/) : le
+  G-buffer et la position à partir de la profondeur.
+- [Transparence](/fdw-engine/fr/tutorials/transparency/) : verre et
+  masques.
+- [Guide du render graph](/fdw-engine/fr/guides/render-graph/) : les
+  textures du graphe, l'ordre des passes.
