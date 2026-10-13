@@ -3,6 +3,7 @@ import type { NodeDefinition } from '../graph/NodeDefinition';
 import * as constants from './constants';
 import * as functions from './functions';
 import * as inputs from './inputs';
+import { createCameraFunctions } from './camera';
 import { createColorFunctions } from './color';
 import { createShadingModels } from './lighting';
 import * as lights from './lights';
@@ -24,7 +25,9 @@ export type { ShadingModel } from './outputs';
  * `cross`, `length`, `normalize`, `reflect`), interpolation (`mix`, `clamp`,
  * `smoothstep`, `select`), comparisons (`less`, `lessEqual`, `greater`,
  * `greaterEqual`, `equal`, `notEqual`), arrays (`index`, `arrayLength`,
- * for storage buffers), textures (`textureSample`), construction (`vec2`,
+ * for storage buffers), textures (`textureSample`, `textureSampleLevel`,
+ * `textureSampleCube`, `textureSampleCubeLevel`), screen space derivatives
+ * (`dpdx`, `dpdy`, `fwidth`, fragment stage only), construction (`vec2`,
  * `vec3`, `vec4`, `extend`, `convert`), transforms (`transform`,
  * `transform3`) and `perFragment`.
  *
@@ -72,6 +75,11 @@ export const std = {
   textureSample: functions.textureSample,
   textureSampleLevel: functions.textureSampleLevel,
   textureSampleCompare: functions.textureSampleCompare,
+  textureSampleCube: functions.textureSampleCube,
+  textureSampleCubeLevel: functions.textureSampleCubeLevel,
+  dpdx: functions.dpdx,
+  dpdy: functions.dpdy,
+  fwidth: functions.fwidth,
   vec2: functions.vec2,
   vec3: functions.vec3,
   vec4: functions.vec4,
@@ -161,6 +169,10 @@ export const stdMacros = {
   optionalAttribute: macros.optionalAttribute,
   repeat: macros.repeat,
   normalMapping: macros.normalMapping,
+  bumpMapping: macros.bumpMapping,
+  parallaxMapping: macros.parallaxMapping,
+  parallaxOcclusionMapping: macros.parallaxOcclusionMapping,
+  displacement: macros.displacement,
 } as const;
 
 export { call, engineValue, swizzle } from './macros';
@@ -207,6 +219,7 @@ export function standardNodeDefinitions(): readonly NodeDefinition[] {
       const base = new NodeRegistry(baseDefinitions);
       shadingModels = [
         ...createColorFunctions(base),
+        ...createCameraFunctions(base),
         ...createShadingModels(base),
       ];
     } finally {

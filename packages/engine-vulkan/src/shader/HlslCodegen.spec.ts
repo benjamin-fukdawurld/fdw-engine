@@ -201,7 +201,7 @@ describe('HlslCodegen', () => {
     expect(code).toContain('#pragma pack_matrix(column_major)');
     expect(code).toContain('  [[vk::offset(0)]] float4x4 u_viewProjection;');
     expect(code).toContain(
-      '  [[vk::offset(224)]] float4 u_lightPositions[16];'
+      '  [[vk::offset(288)]] float4 u_lightPositions[16];'
     );
     expect(code).toContain(
       '[[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms> frameUniforms;'

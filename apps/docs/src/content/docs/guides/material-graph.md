@@ -30,23 +30,23 @@ g.surface({
 const graph = g.build();
 ```
 
-| Method                                            | Adds                                                                                                 |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `g.call(node, inputs, options?)`                  | A node with one output, returned                                                                     |
-| `g.node(node, { inputs, params })`                | A node with several outputs (or none), returned by name                                              |
-| `g.attribute(semantic, type)`                     | A vertex attribute of the mesh                                                                       |
-| `g.uniform(name, type, { default, slot })`        | A value of the material                                                                              |
-| `g.texture(name)`, `g.sampler(name)`              | A texture, a sampler of the material (`comparison: true` for depth tests)                            |
-| `g.storage(name, arrayType(element), { access })` | A storage buffer (WebGPU, Vulkan)                                                                    |
-| `g.builtin(name)`                                 | `vertex-index`, `instance-index`, `frag-coord`, `front-facing`, `screen-uv`, `global-invocation-id`… |
-| `g.engine(name)`                                  | `camera.view`, `camera.projection`, `camera.position`, `object.world`, `time`, `exposure`…           |
-| `g.constant(type, value)`                         | A constant, part of the code                                                                         |
-| `g.parameter(name, default)`                      | A static parameter, read by macros                                                                   |
-| `g.surface(inputs)`                               | The end of a material: a surface and its shading model                                               |
-| `g.fullscreen({ color })`                         | The end of a full screen pass                                                                        |
-| `g.output(name, value)`                           | A value of the material for the scene outputs declared `'material'` (see the render graph guide)     |
-| `g.target(name, value, location)`                 | An extra color target (1, 2…), with `fullscreen` or the raw stages: several targets in one pass      |
-| `g.compute({ workgroupSize })`, `g.write(…)`      | The end of a compute graph, and its writes                                                           |
+| Method                                            | Adds                                                                                                                       |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `g.call(node, inputs, options?)`                  | A node with one output, returned                                                                                           |
+| `g.node(node, { inputs, params })`                | A node with several outputs (or none), returned by name                                                                    |
+| `g.attribute(semantic, type)`                     | A vertex attribute of the mesh                                                                                             |
+| `g.uniform(name, type, { default, slot })`        | A value of the material                                                                                                    |
+| `g.texture(name)`, `g.sampler(name)`              | A texture (`dimension: 'cube'` for a cube), a sampler of the material (`comparison: true` for depth tests)                 |
+| `g.storage(name, arrayType(element), { access })` | A storage buffer (WebGPU, Vulkan)                                                                                          |
+| `g.builtin(name)`                                 | `vertex-index`, `instance-index`, `frag-coord`, `front-facing`, `screen-uv`, `global-invocation-id`…                       |
+| `g.engine(name)`                                  | `camera.view`, `camera.projection`, `camera.inverseViewProjection`, `camera.position`, `object.world`, `time`, `exposure`… |
+| `g.constant(type, value)`                         | A constant, part of the code                                                                                               |
+| `g.parameter(name, default)`                      | A static parameter, read by macros                                                                                         |
+| `g.surface(inputs)`                               | The end of a material: a surface and its shading model                                                                     |
+| `g.fullscreen({ color })`                         | The end of a full screen pass                                                                                              |
+| `g.output(name, value)`                           | A value of the material for the scene outputs declared `'material'` (see the render graph guide)                           |
+| `g.target(name, value, location)`                 | An extra color target (1, 2…), with `fullscreen` or the raw stages: several targets in one pass                            |
+| `g.compute({ workgroupSize })`, `g.write(…)`      | The end of a compute graph, and its writes                                                                                 |
 
 `build()` validates the whole graph and returns a `MaterialGraphData`:
 `serializeGraph()` and `parseGraph()` turn it into JSON and back.
@@ -73,16 +73,17 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 
 ## The standard library
 
-| Group       | Nodes                                                                                                                                            |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Arithmetic  | `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `pow`, `sin`, `cos`, `saturate`, `clamp`, `mix`, `step`, `smoothstep` |
-| Vectors     | `dot`, `length`, `normalize`, `cross`, `reflect`, `vec2`, `vec3`, `vec4`, `extend`, `convert`, `transform`, `transform3`                         |
-| Comparisons | `less`, `lessEqual`, `greater`, `greaterEqual`, `equal`, `notEqual`, `select`                                                                    |
-| Textures    | `textureSample`, `textureSampleLevel`, `textureSampleCompare`                                                                                    |
-| Arrays      | `index`, `arrayLength` (storage buffers)                                                                                                         |
-| Stages      | `perFragment`: what depends on it is computed per pixel                                                                                          |
-| Lights      | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                       |
-| Macros      | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping` (`stdMacros`)                                                                     |
+| Group       | Nodes                                                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arithmetic  | `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `pow`, `sin`, `cos`, `saturate`, `clamp`, `mix`, `step`, `smoothstep`           |
+| Vectors     | `dot`, `length`, `normalize`, `cross`, `reflect`, `vec2`, `vec3`, `vec4`, `extend`, `convert`, `transform`, `transform3`                                   |
+| Comparisons | `less`, `lessEqual`, `greater`, `greaterEqual`, `equal`, `notEqual`, `select`                                                                              |
+| Textures    | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel`                                               |
+| Derivatives | `dpdx`, `dpdy`, `fwidth`: the change from a pixel to the next one (fragment stage only, `y` down)                                                          |
+| Arrays      | `index`, `arrayLength` (storage buffers)                                                                                                                   |
+| Stages      | `perFragment`: what depends on it is computed per pixel                                                                                                    |
+| Lights      | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                 |
+| Macros      | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`) |
 
 They are all in `std`, `stdLights` and `stdMacros`; `createStandardRegistry()`
 returns a registry of every standard node type.
@@ -101,7 +102,12 @@ whose inputs are those of the surface:
 
 Every surface also takes `positionOffset`, which moves the vertices in
 object space. A shading model is a function graph: see
-[A custom shading model](/fdw-engine/tutorials/custom-shading-model/).
+[A custom shading model](/fdw-engine/tutorials/custom-shading-model/). It can
+also be called like any function, `g.call('lighting.pbr', inputs)` with
+`worldPosition`: a full screen pass lights a G-buffer that way (see
+[Deferred rendering](/fdw-engine/tutorials/deferred-rendering/)), with the
+camera and the lights of the last scene passes. `camera.positionFromDepth`
+(`uv`, `viewDepth`) gives the world position of a pixel from its depth.
 
 ## Functions
 
@@ -129,12 +135,18 @@ generates. Macros read **static parameters**: the `features` of the
 material, then the `parameter`s declared by the graph, then what the mesh
 has (`hasAttribute.<semantic>`).
 
-| Macro                     | Does                                                               |
-| ------------------------- | ------------------------------------------------------------------ |
-| `macro.staticSwitch`      | `ifTrue` or `ifFalse`, from a feature; only one branch is compiled |
-| `macro.optionalAttribute` | An attribute when the mesh has it, a fallback otherwise            |
-| `macro.repeat`            | Applies a function `count` times                                   |
-| `macro.normalMapping`     | The normal from a normal map when the mesh has tangents            |
+| Macro                            | Does                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| `macro.staticSwitch`             | `ifTrue` or `ifFalse`, from a feature; only one branch is compiled             |
+| `macro.optionalAttribute`        | An attribute when the mesh has it, a fallback otherwise                        |
+| `macro.repeat`                   | Applies a function `count` times                                               |
+| `macro.normalMapping`            | The normal from a normal map, with the tangents of the mesh or the derivatives |
+| `macro.bumpMapping`              | The normal tilted by the slopes of a height                                    |
+| `macro.parallaxMapping`          | The uv shifted along the view by a height map                                  |
+| `macro.parallaxOcclusionMapping` | The uv where the view meets the relief, by `steps` reads                       |
+| `macro.displacement`             | The offset of the vertices along their normal, for `positionOffset`            |
+
+See [Surface details](/fdw-engine/tutorials/surface-details/).
 
 Each parameter read becomes part of the **variant key** of the program:
 a mesh with colors and one without get two programs only if the graph reads

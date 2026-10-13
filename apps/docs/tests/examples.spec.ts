@@ -10,6 +10,10 @@ const examples: Record<string, string> = {
   'scene-outputs': 'tutorials/scene-outputs/',
   picking: 'tutorials/picking/',
   'ambient-occlusion': 'tutorials/ambient-occlusion/',
+  'deferred-rendering': 'tutorials/deferred-rendering/',
+  'surface-details': 'tutorials/surface-details/',
+  transparency: 'tutorials/transparency/',
+  reflections: 'tutorials/reflections/',
   'compute-waves': 'tutorials/compute/',
   'scene-forest': 'tutorials/scene/',
   'maze-1': 'game/maze/',
@@ -124,6 +128,63 @@ test('ambient occlusion alone', async ({ page: browser }, info) => {
     })
     .toBeGreaterThan(after + frames);
   await expect(canvas).toHaveScreenshot(
-    `ambient-occlusion-alone-${backend}.png`
+    `ambient-occlusion-alone-${backend}.png`,
+    { timeout: 20_000 }
   );
 });
+
+// The other modes of the examples, reached by clicks on the canvas, as
+// above.
+const modes = [
+  {
+    example: 'deferred-rendering',
+    page: 'tutorials/deferred-rendering/',
+    clicks: 3,
+    status: 'G-buffer: normals',
+    shot: 'deferred-rendering-normals',
+  },
+  {
+    example: 'reflections',
+    page: 'tutorials/reflections/',
+    clicks: 1,
+    status: 'planar mirror',
+    shot: 'reflections-mirror',
+  },
+  {
+    example: 'reflections',
+    page: 'tutorials/reflections/',
+    clicks: 2,
+    status: 'screen space reflections',
+    shot: 'reflections-screen-space',
+  },
+];
+for (const mode of modes) {
+  test(mode.shot, async ({ page: browser }, info) => {
+    const backend = info.project.name;
+    await browser.goto(
+      `/fdw-engine/${mode.page}?time=${time}${
+        backend === 'webgl2' ? '&backend=webgl2' : ''
+      }`
+    );
+    const example = browser.locator(`[data-example="${mode.example}"]`).first();
+    await example.scrollIntoViewIfNeeded();
+    const canvas = example.locator('canvas');
+    const status = example.locator('.fdw-example-status');
+    await expect(status).toContainText('click to switch');
+    for (let i = 0; i < mode.clicks; i++) {
+      await canvas.click();
+    }
+    await expect(status).toContainText(mode.status);
+    await expect(status).not.toHaveAttribute('data-error');
+    const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+    await expect
+      .poll(
+        async () => Number((await canvas.getAttribute('data-frames')) ?? 0),
+        { timeout: 30_000 }
+      )
+      .toBeGreaterThan(after + frames);
+    await expect(canvas).toHaveScreenshot(`${mode.shot}-${backend}.png`, {
+      timeout: 20_000,
+    });
+  });
+}

@@ -140,6 +140,9 @@ export interface ScenePasses<K extends string = string> {
   // The depth: multisampled with samples > 1.
   readonly depth: TextureHandle;
   readonly outputs: Readonly<Record<K, TextureHandle>>;
+  // The shadow atlas of the lights, when they cast shadows: for the full
+  // screen passes that light the scene (deferred rendering).
+  readonly shadows?: TextureHandle;
 }
 
 export interface ScenePassesOptions<K extends string = string>
@@ -178,6 +181,10 @@ export interface ScenePassesOptions<K extends string = string>
   readonly linear?: boolean;
   // Draws the shadows of the lights that cast some. Default true.
   readonly shadows?: boolean;
+  // Textures of the graph bound to the textures of the materials drawn, by
+  // name (a mirror rendered by earlier passes): read by the passes, set on
+  // every material whose graph has a texture of that name.
+  readonly inputs?: Readonly<Record<string, TextureHandle>>;
 }
 
 export interface FullscreenPassOptions {
@@ -195,6 +202,10 @@ export interface FullscreenPassOptions {
   // The extra color targets of the material (its g.target outputs), by
   // name: written in the same pass, at their locations (1, 2…).
   readonly targets?: Readonly<Record<string, FullscreenTarget>>;
+  // The shadow atlas of the scene passes (their `shadows`): the shading
+  // models called by the material then darken the light by the shadows,
+  // as in the scene passes. Without it, the lights cast none.
+  readonly shadows?: TextureHandle;
 }
 
 // The bytes a pixel of color targets takes, as WebGPU counts them for its
@@ -510,6 +521,21 @@ function isLit(material: Material): boolean {
   return lit;
 }
 
+// Whether the graph of a material reads a texture of that name.
+const textureNames = new WeakMap<MaterialGraphData, Set<string>>();
+function hasTexture(material: Material, name: string): boolean {
+  let names = textureNames.get(material.graph);
+  if (!names) {
+    names = new Set(
+      material.graph.nodes
+        .filter((node) => node.type === 'input.texture')
+        .map((node) => node.params['name'] as string)
+    );
+    textureNames.set(material.graph, names);
+  }
+  return names.has(name);
+}
+
 // Clips a box to the bounds of a frustum.
 function clipToFrustum(box: Aabb, frustum: Frustum): void {
   if (box.isEmpty()) {
@@ -727,6 +753,7 @@ export class Renderer {
       linear = false,
       shadows = true,
       cullUnlit = false,
+      inputs = {},
     }: ScenePassesOptions
   ): ScenePasses {
     const outputs = this.sceneOutputs(
@@ -843,6 +870,7 @@ export class Renderer {
     const position = camera.position;
     this._frameValues = {
       viewProjection: cameraCache.viewProjectionMatrix.value,
+      inverseViewProjection: cameraCache.inverseViewProjectionMatrix.value,
       view: cameraCache.viewMatrix.value,
       projection: cameraCache.projectionMatrix.value,
       cameraPosition: [position.x, position.y, position.z],
@@ -860,6 +888,34 @@ export class Renderer {
       entry.item.material.renderState.alphaMode === 'blend';
     const opaqueEntries = ordered.filter((entry) => !isTransparent(entry));
     const transparentEntries = ordered.filter(isTransparent);
+    // The textures of the graph read by the materials, and the materials
+    // that have them.
+    const readInputs = (pass: {
+      read(handle: TextureHandle, usage: 'sampled'): TextureHandle;
+    }) =>
+      Object.entries(inputs).map(([input, handle]) => ({
+        input,
+        handle: pass.read(handle, 'sampled'),
+      }));
+    const bindInputs = (
+      entries: readonly PreparedItem[],
+      read: readonly { input: string; handle: TextureHandle }[],
+      texture: (handle: TextureHandle) => unknown
+    ) => {
+      for (const { input, handle } of read) {
+        const real = texture(handle) as MaterialValue;
+        for (const material of new Set(
+          entries.map((entry) => entry.item.material)
+        )) {
+          if (
+            hasTexture(material, input) &&
+            material.getValue(input) !== real
+          ) {
+            material.setValue(input, real);
+          }
+        }
+      }
+    };
 
     // The attachments have the size of the color target, or of the first
     // output given, or of the frame.
@@ -903,6 +959,7 @@ export class Renderer {
       const last = !transparents;
       const opaque = graph.addRasterPass(`${name} opaque`, (pass) => {
         const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+        const read = readInputs(pass);
         let written: TextureHandle | undefined;
         let resolvedColor: TextureHandle | undefined;
         if (color && target) {
@@ -934,6 +991,7 @@ export class Renderer {
           }),
           execute: ({ pass: encoder, texture }) => {
             this.bindShadowMap(view, atlas && texture(atlas));
+            bindInputs(opaqueEntries, read, texture);
             this.drawAll(encoder, opaqueEntries);
           },
         };
@@ -941,11 +999,13 @@ export class Renderer {
       colorVersion = last ? opaque.resolved : opaque.color;
       depthVersion = opaque.depth;
     }
+    const atlas = shadowPass ? { shadows: shadowPass.atlas } : {};
     if (!transparents || !target || !color) {
       return {
         ...(colorVersion ? { color: colorVersion } : {}),
         depth: depthVersion,
         outputs: results,
+        ...atlas,
       };
     }
     // Over the opaque items, tested against their depth without writing it.
@@ -953,6 +1013,7 @@ export class Renderer {
     const transparent = graph.addRasterPass(`${name} transparent`, (pass) => {
       pass.readDepth(depthVersion);
       const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+      const read = readInputs(pass);
       const written = pass.writeColor(over, {
         load: include === 'transparent' ? load : 'load',
         clearValue: clearColor,
@@ -961,11 +1022,17 @@ export class Renderer {
         color: multisampled ? pass.resolveColor(target) : written,
         execute: ({ pass: encoder, texture }) => {
           this.bindShadowMap(view, atlas && texture(atlas));
+          bindInputs(transparentEntries, read, texture);
           this.drawAll(encoder, transparentEntries);
         },
       };
     });
-    return { color: transparent.color, depth: depthVersion, outputs: results };
+    return {
+      color: transparent.color,
+      depth: depthVersion,
+      outputs: results,
+      ...atlas,
+    };
   }
 
   // The outputs of scene passes, checked: their locations after the color,
@@ -1073,6 +1140,7 @@ export class Renderer {
       clearColor,
       blend = false,
       targets,
+      shadows,
     }: FullscreenPassOptions
   ):
     | TextureHandle
@@ -1084,14 +1152,17 @@ export class Renderer {
       format,
       view,
       blend,
-      targets ?? {}
+      targets ?? {},
+      shadows !== undefined
     );
-    // The frame values of the last scene (exposure…).
+    // The frame values of the last scene: its camera, its lights, the
+    // exposure…
     this.writeView(view, prepared.layout, this._frameValues);
     const written = graph.addRasterPass(name, (pass) => {
       const read = Object.entries(inputs).map(
         ([input, handle]) => [input, pass.read(handle, 'sampled')] as const
       );
+      const atlas = shadows && pass.read(shadows, 'sampled');
       const color = pass.writeColor(target, { load, clearValue: clearColor });
       // The extra targets, in the order of their locations.
       const extra = Object.fromEntries(
@@ -1110,6 +1181,7 @@ export class Renderer {
         color,
         targets: extra,
         execute: ({ pass: encoder, texture }) => {
+          this.bindShadowMap(view, atlas && texture(atlas));
           for (const [input, handle] of read) {
             const real = texture(handle) as MaterialValue;
             // Pooled textures are stable: the bind group is rebuilt only
@@ -1369,7 +1441,7 @@ export class Renderer {
   private program(
     material: Material,
     mesh: Mesh,
-    variant?: PassVariant
+    variant?: Partial<PassVariant>
   ): CompiledProgram {
     const semantics = meshSemantics(mesh.description);
     // The alpha mode selects the variant of the surface: masked materials
@@ -1565,10 +1637,11 @@ export class Renderer {
     format: GpuTextureFormat,
     view: FrameView,
     blend: boolean,
-    targets: Readonly<Record<string, FullscreenTarget>>
+    targets: Readonly<Record<string, FullscreenTarget>>,
+    shadows: boolean
   ): PreparedItem & { targets: readonly string[] } {
     const mesh = this._fullscreenMesh;
-    const program = this.program(material, mesh);
+    const program = this.program(material, mesh, { shadows });
     // The extra targets of the program, by location after the color.
     const outputs =
       program.module.entryPoints.find((entry) => entry.stage === 'fragment')

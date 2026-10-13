@@ -18,6 +18,11 @@ export class CameraCache {
     Mat4,
     [SnapshotProvider<Mat4>, SnapshotProvider<Mat4>]
   >;
+  // From the clip space back to the world.
+  public readonly inverseViewProjectionMatrix: CachedValue<
+    Mat4,
+    [SnapshotProvider<Mat4>]
+  >;
 
   constructor(camera: CameraSnapshot, cameraMath: CameraMath) {
     this._camera = camera;
@@ -65,6 +70,16 @@ export class CameraCache {
         ),
       dependencies: [this.viewMatrix, this.projectionMatrix],
     });
+
+    this.inverseViewProjectionMatrix = new CachedValue<
+      Mat4,
+      [SnapshotProvider<Mat4>]
+    >({
+      initialValue: new Float32Array(16),
+      updateStrategy: (_, dependencies) =>
+        cameraMath.getInverseMatrix(dependencies[0].value),
+      dependencies: [this.viewProjectionMatrix],
+    });
   }
 
   get camera(): CameraSnapshot {
@@ -76,5 +91,6 @@ export class CameraCache {
     this.viewMatrix.invalidate();
     this.projectionMatrix.invalidate();
     this.viewProjectionMatrix.invalidate();
+    this.inverseViewProjectionMatrix.invalidate();
   }
 }

@@ -74,6 +74,11 @@ fdw_vk_buffer *fdw_vk_buffer_create(fdw_vk_context *context, uint64_t size,
   }
   setName(context, VK_OBJECT_TYPE_BUFFER,
           reinterpret_cast<uint64_t>(buffer->buffer), label);
+  // Zeroed, as in WebGPU: the memory may hold what a destroyed buffer left.
+  // Recorded with the transfers, which run before the next submission.
+  VkCommandBuffer commands = transfers(context);
+  afterPreviousTransfers(commands);
+  vkCmdFillBuffer(commands, buffer->buffer, 0, VK_WHOLE_SIZE, 0);
   buffer->id = context->nextId++;
   context->buffers[buffer->id] = buffer;
   return buffer;

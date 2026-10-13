@@ -161,6 +161,10 @@ export type IntrinsicOp =
   | 'smoothstep'
   | 'saturate'
   | 'step'
+  // Screen space derivatives, in the fragment stage only.
+  | 'dpdx'
+  | 'dpdy'
+  | 'fwidth'
   // Returns its input unchanged: used to force a computation per fragment.
   | 'identity'
   | 'select'

@@ -207,14 +207,130 @@ describe('macro.normalMapping', () => {
     });
   });
 
-  it('falls back on the interpolated normal without tangents', () => {
+  it('builds the frame from the derivatives without tangents', () => {
     const program = compile(graph(), { vertexAttributes: base });
     expect(program.vertexInputs.map((input) => input.semantic)).not.toContain(
       'tangent'
     );
-    expect(program.variantKey).toEqual({ 'hasAttribute.tangent': false });
-    // The normal map is not sampled anymore.
-    expect(resources(program)).not.toContain('normalMap');
+    expect(program.variantKey).toEqual({
+      'hasAttribute.tangent': false,
+      'hasAttribute.uv': true,
+    });
+    const names = ops(stage(program, 'fragment'), 'intrinsic').map(
+      (i) => (i.op as { name: string }).name
+    );
+    expect(names).toEqual(expect.arrayContaining(['dpdx', 'dpdy']));
+    expect(resources(program)).toContain('normalMap');
+  });
+
+  it('falls back on the interpolated normal without tangents nor uv', () => {
+    const g = new GraphBuilder('no uv');
+    const normal = g.call(stdMacros.normalMapping, {
+      sample: [0.5, 0.5, 1],
+    });
+    g.surface({ shadingModel: 'phong', normal });
+    const program = compile(g.build(), {
+      vertexAttributes: ['position', 'normal'],
+    });
+    const names = ops(stage(program, 'fragment'), 'intrinsic').map(
+      (i) => (i.op as { name: string }).name
+    );
+    expect(names).not.toContain('dpdx');
+  });
+});
+
+describe('surface details', () => {
+  const heightMap = (g: GraphBuilder) => ({
+    texture: g.texture('heightMap'),
+    sampler: g.sampler('heightSampler'),
+  });
+  const intrinsics = (
+    program: CompiledProgram,
+    name: 'vertex' | 'fragment'
+  ) => {
+    const found: string[] = [];
+    forEachInstruction(stage(program, name).body, (instruction) => {
+      if (instruction.op.kind === 'intrinsic') {
+        found.push(instruction.op.name);
+      }
+    });
+    return found;
+  };
+  const samples = (program: CompiledProgram, name: 'vertex' | 'fragment') => {
+    let count = 0;
+    forEachInstruction(stage(program, name).body, (instruction) => {
+      if (
+        instruction.op.kind === 'sample' ||
+        instruction.op.kind === 'sample-level'
+      ) {
+        count++;
+      }
+    });
+    return count;
+  };
+  const attributes = ['position', 'normal', 'uv'];
+
+  it('perturbs the normal by the derivatives of a height', () => {
+    const g = new GraphBuilder('bumped');
+    const height = g.call(std.sin, {
+      x: g.call(std.mul, {
+        a: g.attribute('uv', BuiltinTypes.vec2f).swizzle('x'),
+        b: 40,
+      }),
+    });
+    g.surface({
+      shadingModel: 'phong',
+      normal: g.call(stdMacros.bumpMapping, { height, scale: 0.01 }),
+    });
+    const program = compile(g.build(), { vertexAttributes: attributes });
+    expect(intrinsics(program, 'fragment')).toEqual(
+      expect.arrayContaining(['dpdx', 'dpdy', 'cross'])
+    );
+    expect(intrinsics(program, 'vertex')).not.toContain('dpdx');
+  });
+
+  it('rejects the derivatives outside of the fragment stage', () => {
+    const g = new GraphBuilder('vertex derivative');
+    g.surface({
+      positionOffset: g.call(std.dpdx, {
+        x: g.attribute('position', BuiltinTypes.vec3f),
+      }),
+    });
+    expect(errorOf(g.build(), { vertexAttributes: attributes })).toMatch(
+      /fragment/
+    );
+  });
+
+  it('shifts the uv by one read of the height map', () => {
+    const g = new GraphBuilder('parallax');
+    const uv = g.call(stdMacros.parallaxMapping, heightMap(g));
+    g.surface({ baseColor: g.call(std.vec3, { x: uv.swizzle('x') }) });
+    const program = compile(g.build(), { vertexAttributes: attributes });
+    expect(samples(program, 'fragment')).toBe(1);
+  });
+
+  it('unrolls the steps of parallax occlusion mapping', () => {
+    const g = new GraphBuilder('pom');
+    const uv = g.call(stdMacros.parallaxOcclusionMapping, heightMap(g), {
+      params: { steps: 8 },
+    });
+    g.surface({ baseColor: g.call(std.vec3, { x: uv.swizzle('x') }) });
+    const program = compile(g.build(), { vertexAttributes: attributes });
+    // A read per step, and one at the start.
+    expect(samples(program, 'fragment')).toBe(9);
+  });
+
+  it('displaces the vertices by a height read in the vertex stage', () => {
+    const g = new GraphBuilder('displaced');
+    g.surface({
+      positionOffset: g.call(stdMacros.displacement, {
+        ...heightMap(g),
+        scale: 0.2,
+      }),
+    });
+    const program = compile(g.build(), { vertexAttributes: attributes });
+    expect(samples(program, 'vertex')).toBe(1);
+    expect(samples(program, 'fragment')).toBe(0);
   });
 });
 

@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BaseLight,
   Camera,
+  computeTangents,
   ComputeRunner,
   RenderGraph,
   RenderGraphRunner,
@@ -1779,6 +1780,445 @@ export function describeRenderer(
         expect(renderer.stats.get('scene')?.lights).toBe(1);
         // Above the center, 1 away: N·L = 1, attenuation 1 / (1 + 1).
         expectColor(pixel(32, 32), gray(0.5));
+      });
+
+      // Deferred rendering: the scene passes write a G-buffer (the base
+      // color, the normal, the depth), a full screen pass lights it with the
+      // shading model of the materials. The same image as the forward one.
+      const deferred = async (
+        items: RenderItem[],
+        lights: BaseLight[],
+        view: Camera = camera
+      ) => {
+        // Black first: a failed frame does not leave the forward one.
+        await render([]);
+        const f = new GraphBuilder('geometry');
+        f.functionOutput(
+          'value',
+          f.call(std.extend, {
+            xyz: f.functionInput('worldNormal', BuiltinTypes.vec3f),
+            w: f.functionInput('viewDepth', BuiltinTypes.f32),
+          })
+        );
+        const geometry = defineFunction(f.build(), { id: 'test.geometry' });
+        const g = new GraphBuilder('deferred lighting');
+        const uv = g.builtin('screen-uv');
+        const read = (name: string) =>
+          g.call(std.textureSample, {
+            texture: g.texture(name),
+            sampler: g.sampler(`${name}Sampler`),
+            uv,
+          });
+        const normalDepth = read('geometry');
+        const position = g.call('camera.positionFromDepth', {
+          uv,
+          viewDepth: normalDepth.swizzle('w'),
+        });
+        g.fullscreen({
+          color: g.call('lighting.phong', {
+            baseColor: read('baseColor').swizzle('rgb'),
+            normal: normalDepth.swizzle('xyz'),
+            worldPosition: g.call(std.extend, { xyz: position, w: 1 }),
+            specular: [0, 0, 0],
+          }),
+        });
+        const nearest = backend.textures.createSampler({
+          minFilter: 'nearest',
+          magFilter: 'nearest',
+          mipmapFilter: 'nearest',
+        });
+        const lighting = new Material({
+          graph: g.build(),
+          values: { geometrySampler: nearest, baseColorSampler: nearest },
+        });
+        const graph = new RenderGraph();
+        const scene = renderer.addScenePasses(graph, {
+          items,
+          camera: view,
+          lights,
+          size: { width: size, height: size },
+          include: 'opaque',
+          outputs: {
+            baseColor: { format: 'rgba8unorm', value: 'base-color' },
+            geometry: { format: 'rgba16float', value: geometry },
+          },
+        });
+        renderer.addFullscreenPass(graph, 'lighting', {
+          material: lighting,
+          inputs: {
+            geometry: scene.outputs.geometry,
+            baseColor: scene.outputs.baseColor,
+          },
+          ...(scene.shadows ? { shadows: scene.shadows } : {}),
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        return (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+      };
+      // Same pixels, within two units, where there is something.
+      const samePixels = (
+        forward: (x: number, y: number) => number[],
+        lighted: (x: number, y: number) => number[]
+      ) => {
+        for (let y = 2; y < size; y += 5) {
+          for (let x = 2; x < size; x += 5) {
+            const [a, b] = [forward(x, y), lighted(x, y)];
+            expect(
+              a.slice(0, 3).every((c, i) => Math.abs(c - b[i]) <= 2),
+              `(${x}, ${y}): forward ${a}, deferred ${b}`
+            ).toBe(true);
+          }
+        }
+      };
+
+      it('lights a G-buffer in a full screen pass, shadows included', async () => {
+        const items = scene(-0.5, 0);
+        const lights = [sun({ x: 1, y: 0, z: -1 })];
+        const forward = await render(items, 0, lights);
+        const pixel = await deferred(items, lights);
+        // The shadow, and the light around it.
+        expectColor(pixel(32, 32), shadowed);
+        expectColor(pixel(48, 32), lit);
+        samePixels(forward, pixel);
+      });
+
+      it('rebuilds the positions of a perspective view for point lights', async () => {
+        const perspective = new Camera({
+          position: { x: 0.3, y: 0.2, z: 3 },
+          projection: {
+            type: 'perspective',
+            fov: 45,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        const items = scene(0.3, 0.3, false);
+        const lights = [
+          new PointLight({
+            position: { x: -0.4, y: 0.2, z: 1 },
+            ambient: { x: 0.05, y: 0.05, z: 0.05 },
+            diffuse: { x: 1, y: 1, z: 1 },
+            specular: { x: 0, y: 0, z: 0 },
+            linearAttenuation: 0.2,
+            quadraticAttenuation: 0.5,
+          }),
+        ];
+        renderer.render({
+          items,
+          camera: perspective,
+          surface,
+          lights,
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        });
+        const pixels = await fixture.readPixels();
+        const forward = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        samePixels(forward, await deferred(items, lights, perspective));
+      });
+    });
+
+    describe('surface details', () => {
+      // A 2 × 2 quad facing the camera, covering the view, with normals and
+      // uvs (u along +x, v along -y: v points down, as in images).
+      const lit = (withTangents = false) => {
+        const mesh = new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 32,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                  { semantic: 'normal', format: 'float32x3', offset: 12 },
+                  { semantic: 'uv', format: 'float32x2', offset: 24 },
+                ],
+              },
+            ],
+            vertexCount: 4,
+            indexBuffer: { format: 'uint16', count: 6 },
+          },
+          vertices: [
+            new Float32Array(
+              [
+                [-1, -1, 0, 1],
+                [1, -1, 1, 1],
+                [1, 1, 1, 0],
+                [-1, 1, 0, 0],
+              ].flatMap(([x, y, u, v]) => [x, y, 0, 0, 0, 1, u, v])
+            ),
+          ],
+          indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+        return withTangents ? computeTangents(mesh) : mesh;
+      };
+      // The world normal of the surface, from [-1, 1] to [0, 255].
+      const f = new GraphBuilder('encode normal');
+      f.functionOutput(
+        'value',
+        f.call(std.extend, {
+          xyz: f.call(std.add, {
+            a: f.call(std.mul, {
+              a: f.functionInput('worldNormal', BuiltinTypes.vec3f),
+              b: 0.5,
+            }),
+            b: 0.5,
+          }),
+        })
+      );
+      const encodeNormal = defineFunction(f.build(), {
+        id: 'test.encodeNormal',
+      });
+      const normalAt = async (graph: GraphBuilder, mesh = lit()) => {
+        const frame = new RenderGraph();
+        renderer.addScenePasses(frame, {
+          items: [
+            {
+              mesh,
+              material: new Material({ graph: graph.build() }),
+              transform: at(0),
+            },
+          ],
+          camera,
+          outputs: {
+            normal: {
+              format: 'rgba8unorm',
+              value: encodeNormal,
+              target: frame.importTexture(
+                'surface',
+                surface.getCurrentTarget()
+              ),
+            },
+          },
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(frame);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        return (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+      };
+
+      it('gives the derivatives along x right and y down on every backend', async () => {
+        const g = new GraphBuilder('derivatives');
+        const uv = g.builtin('screen-uv');
+        // One pixel is 1 / size of the uv: × size, 1.
+        g.fullscreen({
+          color: g.call(std.vec4, {
+            x: g.call(std.mul, {
+              a: g.call(std.dpdx, { x: uv.swizzle('x') }),
+              b: size,
+            }),
+            y: g.call(std.mul, {
+              a: g.call(std.dpdy, { x: uv.swizzle('y') }),
+              b: size,
+            }),
+            z: g.call(std.mul, {
+              a: g.call(std.fwidth, { x: uv.swizzle('x') }),
+              b: size * 0.5,
+            }),
+            w: 1,
+          }),
+        });
+        const frame = new RenderGraph();
+        renderer.addFullscreenPass(frame, 'derivatives', {
+          material: new Material({ graph: g.build() }),
+          target: frame.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(frame);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        const at = (17 * size + 23) * 4;
+        expectColor([...pixels.subarray(at, at + 4)], [255, 255, 128, 255]);
+      });
+
+      it('tilts the normal by the slope of a height', async () => {
+        // The height grows by 1 from x = -1 to 1: a slope of 0.5, × 2.
+        const g = new GraphBuilder('bumped');
+        g.surface({
+          shadingModel: 'phong',
+          normal: g.call(stdMacros.bumpMapping, {
+            height: g.attribute('uv', BuiltinTypes.vec2f).swizzle('x'),
+            scale: 2,
+          }),
+        });
+        const pixel = await normalAt(g);
+        // normalize(-1, 0, 1).
+        const encoded = (n: number) => Math.round((n * 0.5 + 0.5) * 255);
+        expectColor(pixel(20, 40), [
+          encoded(-Math.SQRT1_2),
+          128,
+          encoded(Math.SQRT1_2),
+          255,
+        ]);
+      });
+
+      for (const withTangents of [false, true]) {
+        it(`maps the normals ${
+          withTangents ? 'with the tangents of the mesh' : 'without tangents'
+        }`, async () => {
+          const mapped = (sample: number[]) => {
+            const g = new GraphBuilder('normal mapped');
+            g.surface({
+              shadingModel: 'phong',
+              normal: g.call(stdMacros.normalMapping, { sample }),
+            });
+            return g;
+          };
+          // (0.6, 0, 0.8) in the tangent frame: along +u, then up in the
+          // image (green), which is +y here.
+          let pixel = await normalAt(
+            mapped([0.8, 0.5, 0.9]),
+            lit(withTangents)
+          );
+          expectColor(pixel(40, 20), [204, 128, 230, 255]);
+          pixel = await normalAt(mapped([0.5, 0.8, 0.9]), lit(withTangents));
+          expectColor(pixel(40, 20), [128, 204, 230, 255]);
+        });
+      }
+    });
+
+    describe('cube textures', () => {
+      it('samples the faces of a cube texture in their directions', async () => {
+        // 1 × 1 faces: +x red, -x green, +y blue, -y yellow, +z magenta,
+        // -z cyan.
+        const colors = [
+          [255, 0, 0, 255],
+          [0, 255, 0, 255],
+          [0, 0, 255, 255],
+          [255, 255, 0, 255],
+          [255, 0, 255, 255],
+          [0, 255, 255, 255],
+        ];
+        const environment = backend.textures.createTexture({
+          type: 'cube',
+          format: 'rgba8unorm',
+          dimensions: { width: 1, height: 1, layers: 6 },
+          source: new Uint8Array(colors.flat()),
+        });
+        const directions = [
+          [1, 0.2, -0.1],
+          [-1, 0.1, 0.2],
+          [0.1, 1, 0.2],
+          [-0.2, -1, 0.1],
+          [0.2, -0.1, 1],
+          [0.1, 0.2, -1],
+        ];
+        // Six columns, each sampling a direction; the last one at an
+        // explicit level.
+        const g = new GraphBuilder('cube');
+        const column = g.call(std.floor, {
+          x: g.call(std.mul, {
+            a: g.builtin('screen-uv').swizzle('x'),
+            b: 6,
+          }),
+        });
+        let direction = g.constant(BuiltinTypes.vec3f, directions[0]);
+        directions.slice(1).forEach((value, i) => {
+          direction = g.call(std.select, {
+            ifFalse: direction,
+            ifTrue: g.constant(BuiltinTypes.vec3f, value),
+            condition: g.call(std.greater, { a: column, b: i + 0.5 }),
+          });
+        });
+        const texture = g.texture('environment', { dimension: 'cube' });
+        const sampler = g.sampler('environmentSampler');
+        g.fullscreen({
+          color: g.call(std.select, {
+            ifFalse: g.call(std.textureSampleCube, {
+              texture,
+              sampler,
+              direction,
+            }),
+            ifTrue: g.call(std.textureSampleCubeLevel, {
+              texture,
+              sampler,
+              direction,
+              level: 0,
+            }),
+            condition: g.call(std.greater, { a: column, b: 4.5 }),
+          }),
+        });
+        const frame = new RenderGraph();
+        renderer.addFullscreenPass(frame, 'cube', {
+          material: new Material({
+            graph: g.build(),
+            values: {
+              environment,
+              environmentSampler: backend.textures.createSampler({
+                minFilter: 'nearest',
+                magFilter: 'nearest',
+                mipmapFilter: 'nearest',
+              }),
+            },
+          }),
+          target: frame.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(frame);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        colors.forEach((color, i) => {
+          const x = Math.floor(((i + 0.5) / 6) * size);
+          const at = (32 * size + x) * 4;
+          expectColor([...pixels.subarray(at, at + 4)], color);
+        });
+      });
+    });
+
+    describe('scene inputs', () => {
+      it('binds the textures of the graph to the materials of the scene', async () => {
+        // A full screen pass fills a texture; a quad samples it.
+        const fill = new GraphBuilder('fill');
+        fill.fullscreen({ color: [0, 1, 0, 1] });
+        const g = new GraphBuilder('reads the graph');
+        g.surface({
+          baseColor: g
+            .call(std.textureSample, {
+              texture: g.texture('rendered'),
+              sampler: g.sampler('renderedSampler'),
+              uv: g.attribute('uv', BuiltinTypes.vec2f),
+            })
+            .swizzle('rgb'),
+        });
+        const material = new Material({
+          graph: g.build(),
+          values: { renderedSampler: backend.textures.createSampler({}) },
+        });
+        const frame = new RenderGraph();
+        const rendered = renderer.addFullscreenPass(frame, 'fill', {
+          material: new Material({ graph: fill.build() }),
+          target: frame.createTexture('rendered', {
+            format: 'rgba8unorm',
+            size: { width: 4, height: 4 },
+          }),
+          format: 'rgba8unorm',
+        });
+        renderer.addScenePasses(frame, {
+          items: [{ mesh: quad(), material, transform: at(-0.5) }],
+          camera,
+          inputs: { rendered },
+          target: frame.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(frame);
+        runner.destroy();
+        const pixels = await fixture.readPixels();
+        const at16 = (32 * size + 16) * 4;
+        expectColor([...pixels.subarray(at16, at16 + 4)], [0, 255, 0, 255]);
       });
     });
 

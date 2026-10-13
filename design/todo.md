@@ -1,0 +1,12 @@
+- La démo P2b (une scène avec SSAO, sélection au pixel, différé ou forward au choix) n'est pas faite.
+- Corriger le screen space reflections
+  - **Crénelage des reflets** causes probables:
+    - Résolution du buffer SSR : si tu calcules les réflexions à une résolution inférieure à celle de l'image finale, les contours seront crénelés, surtout si tu ne fais pas d'upscaling adapté.
+    - Pas de ray marching trop grand : si ton rayon avance par incréments importants dans le depth buffer, il peut manquer des intersections ou produire des transitions irrégulières.
+    - Recherche d'intersection imprécise : une fois que le rayon passe derrière une surface, une recherche binaire ou une autre méthode de raffinement peut améliorer la localisation de l'intersection.
+    - Absence d'anti-aliasing adapté aux réflexions : le MSAA ne résout pas automatiquement l'aliasing introduit par le ray marching dans un shader de post-traitement. Le TAA, une reconstruction temporelle ou un filtre spatial peuvent être plus adaptés.
+  - **Artefacts sur l'arrière plan (cube et sol)** causes probables:
+    - Le test d'intersection avec le depth buffer
+      - Un rayon peut passer derrière une surface sans que ton algorithme détecte correctement le franchissement.
+      - Un pas trop grand peut traverser une surface et trouver une intersection approximative.
+      - Une tolérance d'intersection trop large peut faire accrocher le rayon à la mauvaise surface, notamment aux discontinuités de profondeur autour des sphères et des cubes.

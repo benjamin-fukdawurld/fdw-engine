@@ -1,0 +1,242 @@
+---
+title: Détails de surface
+description: Donner du relief à des surfaces planes avec le normal mapping, le bump mapping, le parallax occlusion mapping et le displacement mapping, les quatre techniques comparées sur le même mur.
+sidebar:
+  order: 9
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un mur de briques modélisé brique par brique demanderait des milliers de
+triangles. Quatre techniques donnent la même impression avec une seule
+surface plane et quelques textures. Elles coûtent de plus en plus cher, et
+chacune trompe l'œil un peu mieux :
+
+| Technique              | Ce qu'elle change                  | Coût                      |
+| ---------------------- | ---------------------------------- | ------------------------- |
+| **Normal mapping**     | la normale, lue dans une texture   | une lecture               |
+| **Bump mapping**       | la normale, à partir d'une hauteur | une lecture, des dérivées |
+| **Parallax occlusion** | les uv, le long de la vue          | une lecture par pas (16)  |
+| **Displacement**       | les sommets                        | beaucoup de sommets       |
+
+L'exemple les montre sur le même mur, en partant d'en haut à gauche :
+normal, bump, parallax occlusion, displacement. Une lampe tourne au-dessus.
+Cliquez pour voir le mur plat.
+
+<Example name="surface-details" />
+
+Les quatre sont des macros de la bibliothèque standard (`stdMacros`) : des
+nœuds que le compilateur remplace par les nœuds qu'ils représentent. Elles
+rendent une normale, des uv ou un décalage, donnés à la surface.
+
+## Les textures
+
+L'exemple calcule ses trois textures en TypeScript :
+
+- la **carte de hauteur** : 1 sur les briques, 0 dans le joint, avec des
+  bords biseautés ;
+- la **normal map**, dérivée d'elle : la normale du relief en chaque texel,
+  encodée de [-1, 1] vers [0, 1] ;
+- les **couleurs** des briques et du joint.
+
+Les textures d'un outil de modélisation fonctionnent de la même façon. Les
+normal maps suivent la **convention OpenGL** (vert vers le haut, comme
+glTF) : `x` le long de `u`, `y` vers le haut de l'image, `z` hors de la
+surface. Une carte en convention DirectX (vert vers le bas) demande
+d'inverser son canal vert.
+
+Chaque matériau lit les textures avec des uv calculés **par fragment**
+(`std.perFragment`) : les textures sont lues pour chaque pixel, pas
+interpolées depuis les sommets.
+
+```ts
+const tiled = g.call(std.mul, {
+  a: g.attribute('uv', BuiltinTypes.vec2f),
+  b: 2,
+});
+let uv = g.call(std.perFragment, { value: tiled });
+```
+
+## Normal mapping
+
+La normal map donne, pour chaque texel, une normale dans le **repère
+tangent** de la surface : la tangente (le long de `u`), la bitangente (vers
+le haut de l'image) et la normale. `macro.normalMapping` la transforme en
+normale du monde.
+
+```ts
+const normal = g.call(stdMacros.normalMapping, {
+  sample: read('normal', uv).swizzle('rgb'),
+  uv,
+});
+g.surface({ shadingModel: 'phong', baseColor, normal });
+```
+
+Le repère tangent vient des **tangentes du mesh** quand il en a (l'attribut
+`tangent`). `computeTangents` les ajoute à un mesh qui a des positions, des
+normales et des uv :
+
+```ts
+import { computeTangents } from '@fdw/engine-core';
+
+const withTangents = computeTangents(createPlane(180));
+```
+
+Sans tangentes, la macro calcule le repère pour chaque pixel à partir des
+**dérivées d'écran** de la position et des uv (son entrée `uv`, sinon les uv
+du mesh) : aucune préparation, un peu plus de travail pour le GPU, et un
+repère qui change légèrement d'un triangle à l'autre. Sans tangentes ni uv,
+la carte est ignorée.
+
+`strength` (1 par défaut) accentue ou atténue le relief.
+
+## Bump mapping
+
+Le bump mapping n'a besoin que d'une **hauteur**, n'importe quelle valeur
+calculée par pixel : une texture, un bruit, une fonction de la position. La
+macro mesure à quelle vitesse elle change d'un pixel au suivant, avec les
+dérivées `std.dpdx` et `std.dpdy`, et incline la normale selon ces pentes
+(la méthode de Mikkelsen, 2010). Ni tangentes, ni normal map.
+
+```ts
+const normal = g.call(stdMacros.bumpMapping, {
+  height: read('height', uv).swizzle('x'),
+  // La hauteur d'une valeur de 1, dans les unités de la scène.
+  scale: 0.04,
+});
+```
+
+Le résultat dépend de la résolution de la hauteur : une carte de hauteur de
+faible résolution, agrandie, montre ses texels en facettes. Les dérivées
+sont calculées par groupes de 2 × 2 pixels : les détails plus petits que
+deux pixels scintillent. Utilisez les mipmaps de la carte de hauteur
+(`mipLevelCount`).
+
+### Les dérivées
+
+`std.dpdx` et `std.dpdy` sont à la disposition de tous les matériaux : le
+changement d'une valeur d'un pixel au suivant, vers la droite et vers le bas
+(`y` pointe vers le bas, comme `screen-uv`, sur tous les backends).
+`std.fwidth` est la somme de leurs valeurs absolues : la largeur d'un pixel
+dans les unités de la valeur, pour des motifs procéduraux sans crénelage.
+
+```ts
+// Une ligne d'un pixel de large partout où x passe un entier, à toute
+// distance.
+const x = position.swizzle('x');
+// La distance à l'entier le plus proche.
+const distance = g.call(std.abs, {
+  x: g.call(std.sub, {
+    a: g.call(std.fract, { x: g.call(std.add, { a: x, b: 0.5 }) }),
+    b: 0.5,
+  }),
+});
+const width = g.call(std.fwidth, { x });
+const line = g.call(std.sub, {
+  a: 1,
+  b: g.call(std.smoothstep, { low: 0, high: width, x: distance }),
+});
+```
+
+Elles n'existent que dans le **stage fragment** : le compilateur refuse une
+valeur dérivée dans le stage vertex.
+
+## Parallax occlusion mapping
+
+Les deux techniques précédentes changent la lumière, pas la forme : vu en
+rasant, le mur reste plat. Le **parallax mapping** déplace les uv le long de
+la vue : un point profond est vu plus loin que le point de la surface devant
+lui. `macro.parallaxOcclusionMapping` suit le rayon de la vue sous la
+surface, pas à pas, jusqu'à ce qu'il rencontre le relief de la carte de
+hauteur : les briques cachent le joint derrière elles.
+
+```ts
+uv = g.call(
+  stdMacros.parallaxOcclusionMapping,
+  {
+    texture: g.texture('heightMap'),
+    sampler: g.sampler('heightSampler'),
+    uv,
+    // La profondeur du relief, en unités d'uv.
+    scale: 0.06,
+  },
+  { params: { steps: 16 } }
+);
+// Les autres textures sont lues aux uv qu'elle donne.
+const baseColor = read('color', uv).swizzle('rgb');
+const normal = g.call(stdMacros.normalMapping, {
+  sample: read('normal', uv).swizzle('rgb'),
+  uv,
+});
+```
+
+Le material graph n'a pas de boucles : la macro écrit ses `steps` lectures
+l'une après l'autre, à la compilation (8 à 32 ; 16 par défaut). Plus de pas,
+moins de strates visibles en rasant, plus de lectures. Entre les deux
+derniers pas, la macro interpole le point où le rayon rencontre le relief.
+
+`macro.parallaxMapping`, avec les mêmes entrées, ne fait qu'une lecture : un
+décalage moins cher, convaincant pour des reliefs peu profonds, sans
+occlusion.
+
+La silhouette de la surface ne change pas : les bords du mur restent droits.
+Le repère tangent vient, comme pour le normal mapping, des tangentes ou des
+dérivées.
+
+## Displacement mapping
+
+Le displacement mapping déplace les **sommets** eux-mêmes, le long de leur
+normale, selon la carte de hauteur : la silhouette change, le relief
+projette de vraies ombres. Il lui faut un mesh avec assez de sommets :
+`createPlane(180)` découpe le plan en 180 × 180 cellules. Ni WebGPU ni WebGL2
+ne savent subdiviser les surfaces sur le GPU (tessellation) : la version
+adaptative viendra avec la phase P3b.
+
+```ts
+const positionOffset = g.call(stdMacros.displacement, {
+  texture: g.texture('heightMap'),
+  sampler: g.sampler('heightSampler'),
+  uv: tiled, // Les uv du sommet : pas par fragment.
+  // La hauteur d'une valeur de 1, dans les unités du mesh.
+  scale: 0.025,
+});
+// Les normales du mesh ne voient pas le relief : bump de la même hauteur.
+const normal = g.call(stdMacros.bumpMapping, {
+  height: read('height', uv).swizzle('x'),
+  scale: 0.025 * 1.8, // Dans les unités de la scène : le mesh est agrandi 1,8 fois.
+});
+g.surface({ shadingModel: 'phong', baseColor, normal, positionOffset });
+```
+
+La macro lit la hauteur dans le **stage vertex**, avec
+`std.textureSampleLevel` au niveau 0 : `std.textureSample` a besoin des
+dérivées du stage fragment.
+
+### Le stage d'une lecture
+
+Le compilateur place chaque nœud dans le stage où sont ses entrées : une
+texture lue à partir de l'attribut uv, avec `textureSampleLevel`, s'exécute
+dans le **stage vertex**, et son résultat est interpolé entre les sommets.
+C'est ce qu'il faut au displacement, et un piège ailleurs : la texture
+semble floue, lue seulement aux sommets. Pour la lire par pixel, passez
+d'abord les uv par `std.perFragment`, comme le font les exemples ici.
+
+## Laquelle choisir ?
+
+- **Le normal mapping** pour la plupart des surfaces : peu coûteux, précis,
+  à partir des cartes des outils de modélisation. Calculez une fois les
+  tangentes des meshes.
+- **Le bump mapping** pour des détails procéduraux ou une carte de hauteur
+  seule, sans rien préparer.
+- **Le parallax occlusion mapping** pour des reliefs profonds vus de biais
+  (murs, pavés), pour un coût qui croît avec les pas ; la silhouette reste
+  plate.
+- **Le displacement** pour des reliefs qui changent la silhouette
+  (terrains), sur des meshes assez subdivisés.
+
+## Pour aller plus loin
+
+- [Matériaux](/fdw-engine/fr/tutorials/materials/) : textures, samplers et
+  mipmaps.
+- [Guide du material graph](/fdw-engine/fr/guides/material-graph/) : les
+  macros, les stages, les fonctions de la bibliothèque standard.

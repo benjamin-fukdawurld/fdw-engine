@@ -12,6 +12,7 @@ layout(std140) uniform FrameUniforms {
   mat4 u_viewProjection;
   mat4 u_view;
   mat4 u_projection;
+  mat4 u_inverseViewProjection;
   vec3 u_cameraPosition;
   float u_time;
   float u_exposure;
@@ -67,6 +68,7 @@ layout(std140) uniform FrameUniforms {
   mat4 u_viewProjection;
   mat4 u_view;
   mat4 u_projection;
+  mat4 u_inverseViewProjection;
   vec3 u_cameraPosition;
   float u_time;
   float u_exposure;

@@ -56,7 +56,7 @@ import { WorkingGraph } from './WorkingGraph';
  *
  * @group Compilation
  */
-export const CompilerVersion = 4;
+export const CompilerVersion = 5;
 
 /**
  * Limits of the target backend that the compiler checks.

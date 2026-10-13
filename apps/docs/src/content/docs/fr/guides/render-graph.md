@@ -97,10 +97,14 @@ Le `Renderer` ajoute ses passes à un graphe :
   `scene`) distingue plusieurs vues d'un même graphe : chaque nom a ses
   propres uniforms de frame, de sorte que deux caméras peuvent être dessinées
   dans une même frame. `linear: true` écrit des couleurs linéaires, pour une
-  cible HDR.
+  cible HDR. `inputs` lie des textures du graphe aux textures de même nom des
+  matériaux (l'image d'un miroir). Quand des lumières projettent des ombres,
+  `shadows` est la version de leur atlas d'ombres.
 - `addFullscreenPass(graph, name, { material, inputs, target, format })` :
   un matériau plein écran, dont les textures sont liées aux ressources du
-  graphe par `inputs`. Avec `targets`, il écrit aussi les cibles de couleur
+  graphe par `inputs`. Il lit la caméra et les lumières des dernières passes
+  de scène ajoutées (une passe d'éclairage différé), et leurs shadow maps
+  avec `shadows: scene.shadows`. Avec `targets`, il écrit aussi les cibles de couleur
   supplémentaires du matériau (`g.target`), par nom, et renvoie
   `{ color, targets }` :
 

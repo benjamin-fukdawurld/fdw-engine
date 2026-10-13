@@ -297,6 +297,11 @@ function emitInstructions(
         expression =
           op.name === 'saturate'
             ? `clamp(${arg(instruction, 0)}, 0.0, 1.0)`
+            : op.name === 'dpdx'
+            ? `dFdx(${arg(instruction, 0)})`
+            : op.name === 'dpdy'
+            ? // The window y points up in OpenGL: down, as in WGSL.
+              `(-dFdy(${arg(instruction, 0)}))`
             : `${op.name}(${args(instruction)})`;
         break;
       case 'select': {

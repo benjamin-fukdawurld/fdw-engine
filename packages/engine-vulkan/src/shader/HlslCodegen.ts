@@ -147,6 +147,8 @@ function literal(type: ShaderType, value: ConstantValue): string {
 const intrinsicNames: Record<string, string> = {
   fract: 'frac',
   mix: 'lerp',
+  dpdx: 'ddx',
+  dpdy: 'ddy',
 };
 
 // Textures, samplers, arrays and buffers are used inline: HLSL cannot copy

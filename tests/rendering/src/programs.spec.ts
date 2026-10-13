@@ -130,7 +130,8 @@ describe.skipIf(skipHlsl)('The programs of the rendering suite in HLSL', () => {
       }
     }
     expect(failures).toEqual([]);
-  });
+    // One DXC run per program, one after the other.
+  }, 30_000);
 });
 
 // Validates and links the two stages of a GLSL ES program.
