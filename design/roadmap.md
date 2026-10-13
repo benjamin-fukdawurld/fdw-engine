@@ -13,22 +13,24 @@ Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne le
 
 ## 2. Vue d'ensemble
 
-| Phase | Contenu                                            | Livrable                                                        | Taille      |
-| ----- | -------------------------------------------------- | --------------------------------------------------------------- | ----------- |
-| P0    | Socle : CI, publication de la doc, mesures         | La CI verte sur chaque changement, la doc en ligne              | Petite      |
-| P1    | Performance : coût par objet, appels, instancing   | Le labyrinthe et la forêt bien plus rapides, WebGPU compris     | Moyenne     |
-| P2    | Lumières et ombres à grande échelle, IBL           | Une démo de centaines de lumières                               | Grande      |
-| P3    | Occlusion culling                                  | Une ville ou un bâtiment, l'essentiel caché                     | Moyenne     |
-| P4    | Caméras, entrées, ordonnanceur ECS                 | **Démo FPS minimaliste**                                        | Moyenne     |
-| P5    | Ressources : images, glTF                          | Des modèles chargés dans les démos                              | Grande      |
-| P6    | Cœur de graph commun, animation et animation graph | Un personnage animé, ses états                                  | Grande      |
-| P7    | Audio                                              | Des sons dans les démos, spatialisés                            | Moyenne     |
-| P8    | Le jeu à la troisième personne                     | **Démo TPS : l'épée dans la forêt**                             | Moyenne     |
-| P9    | Graphs de comportement                             | L'IA des ennemis du TPS en graphs                               | Grande      |
-| P10   | Ray tracing : hybride, puis path tracer            | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU      | Grande      |
-| P11   | Plateformes et distribution                        | Windows, macOS, binaires précompilés                            | Moyenne     |
-| P12   | Batching statique                                  | Moins de draws pour les scènes statiques hétérogènes (CAO, BIM) | Moyenne     |
-| P13   | L'éditeur : la modélisation, puis le middleware    | **L'application de modélisation, base de l'éditeur**            | Très grande |
+| Phase | Contenu                                             | Livrable                                                            | Taille      |
+| ----- | --------------------------------------------------- | ------------------------------------------------------------------- | ----------- |
+| P0    | Socle : CI, publication de la doc, mesures          | La CI verte sur chaque changement, la doc en ligne                  | Petite      |
+| P1    | Performance : coût par objet, appels, instancing    | Le labyrinthe et la forêt bien plus rapides, WebGPU compris         | Moyenne     |
+| P2    | Lumières et ombres à grande échelle, IBL            | Une démo de centaines de lumières                                   | Grande      |
+| P2b   | Cibles multiples, rendu différé, détails de surface | Une scène avec SSAO et sélection au pixel ; les exemples            | Grande      |
+| P3    | Occlusion culling                                   | Une ville ou un bâtiment, l'essentiel caché                         | Moyenne     |
+| P3b   | Tessellation par patchs instanciés                  | Du displacement adaptatif, un terrain, sans tessellation matérielle | Moyenne     |
+| P4    | Caméras, entrées, ordonnanceur ECS                  | **Démo FPS minimaliste**                                            | Moyenne     |
+| P5    | Ressources : images, glTF                           | Des modèles chargés dans les démos                                  | Grande      |
+| P6    | Cœur de graph commun, animation et animation graph  | Un personnage animé, ses états                                      | Grande      |
+| P7    | Audio                                               | Des sons dans les démos, spatialisés                                | Moyenne     |
+| P8    | Le jeu à la troisième personne                      | **Démo TPS : l'épée dans la forêt**                                 | Moyenne     |
+| P9    | Graphs de comportement                              | L'IA des ennemis du TPS en graphs                                   | Grande      |
+| P10   | Ray tracing : hybride, puis path tracer             | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU          | Grande      |
+| P11   | Plateformes et distribution                         | Windows, macOS, binaires précompilés                                | Moyenne     |
+| P12   | Batching statique                                   | Moins de draws pour les scènes statiques hétérogènes (CAO, BIM)     | Moyenne     |
+| P13   | L'éditeur : la modélisation, puis le middleware     | **L'application de modélisation, base de l'éditeur**                | Très grande |
 
 Les phases sont dans l'ordre de leurs dépendances (§4). Certaines peuvent se chevaucher : P11 peut avancer en fond dès P1, et P7 est indépendante de P5 et P6, sauf pour le chargement des sons.
 
@@ -67,6 +69,26 @@ Critères : les mesures de P0 avant et après ; le labyrinthe et la forêt en We
 - **Ombres** : les lumières ponctuelles (six faces), les cascades (CSM) pour les grandes scènes, le culling des projeteurs par tuile.
 - **Éclairage par environnement (IBL)** : cubemap, irradiance, spéculaire préfiltré, table BRDF. C'est l'écart de qualité le plus visible aujourd'hui.
 
+### P2b. Cibles de rendu multiples, rendu différé et détails de surface
+
+Insérée après P2 sans renuméroter les phases suivantes. Le principe : **le moteur ne fixe aucune liste de cibles**. L'utilisateur choisit ce que ses passes écrivent (couleur, normales, identifiants, toute sortie de la surface) et compose les textures obtenues comme il veut dans le render graph ; le rendu différé n'est qu'une façon de les composer, jamais imposée.
+
+- **Les cibles de rendu multiples (MRT) sur tous les backends.** L'API (`colorAttachments`, `targets` des pipelines) et les encodeurs WebGPU et Vulkan acceptent déjà plusieurs attachments ; **WebGL2 les refuse** aujourd'hui (« renders to one color target ») alors que WebGL2 les supporte : `drawBuffers` et un framebuffer à plusieurs attachments, la résolution du multi-échantillonnage attachment par attachment (`readBuffer` et `blitFramebuffer`). À traiter : une sortie par attachment dans le material graph et les trois générateurs, la limite du nombre d'attachments en capacité (`maxColorAttachments` : 8 en WebGPU, au moins 4 en WebGL2), le mélange par attachment (WebGL2 n'a qu'un état de mélange sans `OES_draw_buffers_indexed`), et `pass.writeColor` répété dans le render graph.
+- **Des sorties de surface au choix.** `addScenePasses` reçoit les cibles voulues, chacune avec son format et la valeur écrite, prise dans la surface du matériau ou dans le moteur. Le graphe du matériau ne change pas : c'est la cible de compilation `gbuffer` prévue au [render graph §8](render-graph.md#8-les-matériaux-dans-les-passes), généralisée à une liste de sorties choisie par l'utilisateur.
+  - **Les normales** : la normale par pixel (après normal mapping), dans l'espace de la vue, dans une cible `rgba16float` ou encodée en octaèdre dans `rg16float`. Avec la profondeur, elle sert à l'**occlusion ambiante** (SSAO, en passe plein écran, ou en calcul en WebGPU et Vulkan), à des contours, aux reflets en espace écran.
+  - **Les identifiants** : l'utilisateur donne un identifiant (u32) à chaque mesh dessiné ; une cible `r32uint` reçoit, pour chaque pixel, l'identifiant de l'objet qui y est visible (0 : aucun). L'identifiant vient de la table des objets (P1), donc l'instancing le garde ; les matériaux masqués respectent leur `discard`. La relecture d'un pixel ou d'un rectangle est asynchrone, sans bloquer la frame. C'est la base de la **sélection** de l'éditeur (P13) : clic, rectangle, survol des gizmos.
+- **Le rendu différé, pour qui le veut.** Une passe écrit les cibles choisies (le G-buffer), des passes plein écran écrites en material graph calculent l'éclairage en les lisant, les transparents restent dessinés en forward par-dessus. Avec le pool de lumières et le culling en clusters de P2, il permet beaucoup de lumières. À documenter : son coût en bande passante, et son incompatibilité pratique avec le MSAA.
+- **Les détails de surface**, en fonctions de la bibliothèque standard, documentés et chacun avec un exemple :
+  - **normal mapping** : dans l'espace tangent, avec les tangentes des meshes (calculées par le moteur, ou lues dans glTF en P5) ; à défaut, un repère tangent calculé à partir des dérivées d'écran ;
+  - **bump mapping** : une carte de hauteur qui perturbe la normale par ses dérivées d'écran (des nœuds `dpdx` / `dpdy` à ajouter) ;
+  - **parallax mapping** : le décalage des uv selon la vue, puis le parallax occlusion mapping, qui demande une boucle à pas dans le material graph (la généralisation de `loop-sum` en `fold`, aux [écarts](material-graph-gaps.md)) ;
+  - **displacement mapping** : le déplacement des sommets d'un mesh subdivisé par une texture lue dans le vertex stage (`textureSampleLevel`), avec les normales recalculées ; ni WebGPU ni WebGL2 n'ont de tessellation.
+- **Des exemples dans la documentation** (EN et FR, rendus et comparés en CI) : la **transparence** (tri, objets double face, `blend` et `mask`, l'ordre de dessin et ses limites) et la **réflexion** (cubemap d'environnement avec l'IBL de P2, reflet plan par rendu dans une texture avec la caméra symétrique, reflets en espace écran avec les cibles de normales et de profondeur) ; ceux des cibles multiples, de l'occlusion ambiante, de la sélection, du rendu différé et des quatre techniques de détail.
+
+Ordre suggéré : les MRT en WebGL2 et les sorties de surface (normales, identifiants), puis la SSAO et la sélection, le rendu différé, les détails de surface ; les exemples suivent chaque brique. Les MRT, les normales et les identifiants ne dépendent pas de P2 et peuvent commencer avant.
+
+Démo : une scène avec occlusion ambiante et sélection au pixel, éclairée en rendu différé ou en forward au choix.
+
 ### P3. Occlusion culling
 
 - **Le package `engine-occlusion`** : le Hi-Z sur le GPU en deux phases (dessiner d'abord ce qui était visible, construire la pyramide de profondeur, tester le reste), et le CPU en repli pour WebGL2 ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)). Le choix entre une relecture CPU et un rendu piloté par le GPU se fera dans son design.
@@ -74,6 +96,31 @@ Critères : les mesures de P0 avant et après ; le labyrinthe et la forêt en We
 - **Ensuite, selon les mesures** : le culling sur le GPU avec des draws indirects ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), et un BVH pour les scènes statiques de CAO et de BIM.
 
 Démo : une scène dense où l'essentiel est caché (une ville, un bâtiment, un assemblage), avec la vue du culling comme dans le labyrinthe.
+
+### P3b. Tessellation
+
+Insérée après P3 sans renuméroter. Ni WebGPU ni WebGL2 n'ont de tessellation matérielle (hull et domain shaders) ; Metal ne l'a pas sous cette forme, et les moteurs récents la remplacent par du calcul. Le moteur aura **un seul chemin pour tous les backends**, sans la tessellation matérielle de Vulkan : le même rendu partout, une seule chose à tester. Un design (`design/tessellation.md`) comparera d'abord les alternatives : tessellation matérielle, subdivision sur le CPU au chargement, patchs instanciés, concurrent binary trees.
+
+**Le principe retenu : des patchs instanciés.** Aucun sommet n'est généré à chaque frame ; le choix du niveau est séparé de l'évaluation.
+
+1. **Des gabarits**, calculés une fois sur le CPU : un patch (triangle ou quad) subdivisé à 1, 2, 4… 64, en coordonnées locales seulement (barycentriques ou uv du patch).
+2. **Le choix du niveau**, à chaque frame, par patch et par arête (taille à l'écran, distance, courbure), avec le culling des patchs hors du frustum :
+   - **WebGPU et Vulkan** : une passe de calcul qui range les patchs par gabarit (compaction) et écrit les arguments de **draws indirects** ;
+   - **WebGL2** : sans calcul ni draw indirect, le nombre d'instances d'un draw est fixé par le CPU. Le CPU choisit le gabarit **par groupe de patchs**, de façon conservatrice (le niveau maximal possible d'après les bornes du groupe) ; une passe de **rendu dans une texture** (un pixel par patch ou par arête) calcule les facteurs exacts, que le vertex shader lit par `texelFetch` et applique en ramenant les sommets en trop sur la grille du niveau réel. Pas de relecture, pas de fissure ; le surcoût est l'écart de niveaux dans un groupe. Écartés : la relecture asynchrone des niveaux (une ou deux frames de retard : des sauts de niveau et des patchs manquants au bord de l'écran) et le dessin systématique au niveau maximal.
+3. **L'évaluation dans le vertex shader**, qui tient le rôle du domain shader : il lit les points de contrôle du patch, évalue la surface (interpolation, Phong tessellation, PN triangles, Bézier), déplace le sommet par `textureSampleLevel` (le displacement mapping de P2b) et recalcule la normale.
+
+**Les difficultés à traiter dans le design :**
+
+- **Les fissures** : des facteurs par arête, calculés depuis le milieu de l'arête pour que deux patchs voisins s'accordent, et les sommets d'une arête ramenés sur la grille du niveau le plus grossier. C'est le même mécanisme que le repli WebGL2.
+- **Les ombres** : les shadow maps voient la même géométrie, avec les niveaux choisis pour la caméra principale, pas recalculés par lumière.
+- **Les bornes** : élargies du déplacement maximal, pour le culling des objets et des patchs.
+- **Les backends** : le choix par groupe de WebGL2 est plus grossier ; le rendu reste cohérent, pas identique au pixel : la suite de rendu partagée compare avec une tolérance, ou à niveau fixé.
+
+**À ajouter au moteur :** les draws indirects (`drawIndirect`, `drawIndexedIndirect`) dans `GpuRenderPassEncoder` (le culling sur le GPU de P3 en a aussi besoin) ; un mode « patch » du material graph, où le vertex stage reçoit les coordonnées dans le patch et les points de contrôle au lieu d'attributs de sommet ; la lecture des points de contrôle dans le vertex stage (storage buffers, textures de données en WebGL2).
+
+**Ensuite** : pour les terrains en WebGPU et Vulkan, les concurrent binary trees (Dupuy, 2020), une subdivision adaptative entièrement sur le GPU, sans fissure par construction, sur la même évaluation dans le vertex shader.
+
+Démos et exemples : le displacement mapping de P2b rendu adaptatif, un terrain (utile au TPS de P8).
 
 ### P4. Caméras, entrées, ordonnanceur — démo FPS
 
@@ -158,7 +205,7 @@ Reporté de P1 : l'instancing dessine déjà en un appel les objets qui partagen
 L'application de modélisation, puis l'éditeur du middleware. Elle est découpée en étapes, chacune avec son design.
 
 1. **Les fondations d'un éditeur** :
-   - la sélection (picking par un buffer d'identifiants sur le GPU) ;
+   - la sélection (picking par le buffer d'identifiants de P2b) ;
    - les gizmos de transformation ;
    - les événements de la scène (ce qui a changé) ;
    - un système de commandes avec annuler et refaire ;
@@ -174,12 +221,14 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 
 - **P1** avant **P8** : la forêt demande l'instancing et un coût par objet réduit.
 - **P2** dépend des compute graphs dans le render graph ; **P3** des textures de stockage et des mipmaps.
+- **P2b** : le rendu différé et les exemples de reflets après **P2** (pool de lumières, clusters, IBL) ; les MRT, les normales et les identifiants peuvent commencer avant. Les tangentes de glTF viendront avec **P5**.
 - **P4** avant **P8** (caméra TPS, contrôleur de personnage) et avant **P13** (orbite CAO).
 - **P5** avant **P6** (squelettes et clips de glTF), **P7** (sons chargés) et **P8**.
 - **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P13**.
 - **P10** après **P8** (des scènes à tracer) ; ses prérequis sont posés dès P1 (§6).
+- **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; ses draws indirects servent aussi au culling sur le GPU de **P3**. Avant **P8** si la forêt a un terrain.
 - **P12** avant **P13** : les scènes de CAO et de BIM qu'ouvre l'éditeur.
-- **P13** s'appuie sur presque tout : la sélection et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
+- **P13** s'appuie sur presque tout : la sélection (le buffer d'identifiants de P2b) et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
 
 ## 5. Plus tard, hors du plan
 
@@ -208,7 +257,9 @@ Les contraintes déjà posées ([évolutions §6](evolutions.md#6-contraintes-de
 
 - **P1** : les données des objets dans des tables indexées par identifiant (transforms, matériaux) plutôt que liées objet par objet. C'est aussi ce qui réduit les appels : le même travail sert les deux. Les buffers de géométrie créés avec les usages qu'un BLAS demandera.
 - **P2** : le pool de lumières dans un storage buffer : le ray tracing y tirera ses lumières. L'IBL en textures que les rayons pourront lire.
+- **P2b** : les cibles de normales et de profondeur serviront au débruitage de l'hybride et du path tracer ; les sorties de surface passent par la séparation surface et éclairage, comme la cible `bsdf`.
 - **P3** : la scène tient des identifiants stables et des tables de la scène sur le GPU : la TLAS se construira à partir d'elles.
 - **P5** : les meshes chargés restent des buffers GPU accessibles (storage), pas seulement des vertex buffers ; les textures prêtes pour le bindless.
+- **P3b** : les rayons ne voient pas la géométrie évaluée dans le vertex shader. Le calcul des niveaux doit pouvoir écrire aussi les sommets tessellés dans un buffer, pour les BLAS (à un niveau fixé ou choisi pour la caméra), comme le skinning en calcul de P6.
 - **P6** : **le skinning dans une passe de calcul**, qui écrit les sommets animés dans un buffer, plutôt que dans le vertex shader : la rastérisation, les ombres et la mise à jour des BLAS lisent alors les mêmes sommets.
 - **P13** : l'éditeur rend en rastérisation, avec la même scène et les mêmes matériaux ; une vue en ray tracing y devient un aperçu, pas un second moteur.
