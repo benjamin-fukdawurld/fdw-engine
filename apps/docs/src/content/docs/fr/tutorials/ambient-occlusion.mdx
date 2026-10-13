@@ -1,0 +1,390 @@
+---
+title: Occlusion ambiante
+description: Assombrir les coins, les plis et les contacts entre les objets avec l'occlusion ambiante en espace écran (SSAO), construite à partir des sorties de la scène et de trois passes plein écran.
+sidebar:
+  order: 7
+---
+
+import Example from '../../../../components/Example.astro';
+
+La lumière ambiante vient de partout à la fois : elle éclaire un coin autant
+qu'un sol dégagé, et les objets semblent flotter. En réalité, un coin, un pli
+ou le sol sous une balle en reçoit moins, parce que la géométrie autour
+cache une partie du ciel. L'**occlusion ambiante** mesure, en chaque point,
+ce qui est caché, et assombrit d'autant la lumière ambiante.
+
+L'occlusion ambiante **en espace écran** (SSAO) l'estime à partir de ce que
+voit la caméra : les normales et les profondeurs des pixels. Cliquez sur
+l'exemple pour passer de l'image avec occlusion à l'image sans, puis à
+l'occlusion seule.
+
+<Example name="ambient-occlusion" />
+
+L'image se construit en quatre étapes, toutes dans un render graph :
+
+1. Les passes de la scène dessinent la couleur éclairée et écrivent, en
+   plus, la **normale et la profondeur** de chaque pixel (le G-buffer).
+2. Une passe plein écran **estime l'occlusion** de chaque pixel à partir
+   d'elles.
+3. Une deuxième **floute** l'estimation.
+4. Une troisième **compose** l'image : la lumière ambiante est assombrie, la
+   lumière directe reste telle quelle.
+
+## 1. Les normales et les profondeurs
+
+La passe d'occlusion a besoin, pour chaque pixel, de la normale de la
+surface et de sa distance à la caméra. Ce sont deux valeurs que les passes
+de la scène savent écrire (voir
+[Sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/)). Une
+fonction-graphe les range dans une seule texture `rgba16float`, la normale
+dans `xyz` et la profondeur dans `w` : la passe d'occlusion les lit d'un seul
+échantillonnage.
+
+```ts
+const n = new GraphBuilder('normal and depth');
+n.functionOutput(
+  'value',
+  n.call(std.extend, {
+    xyz: n.functionInput('viewNormal', BuiltinTypes.vec3f),
+    w: n.functionInput('viewDepth', BuiltinTypes.f32),
+  })
+);
+const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
+
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights: [sun],
+  target: graph.createTexture('color', { format: 'rgba16float' }),
+  format: 'rgba16float',
+  // Des couleurs linéaires, encodées par la composition (étape 4).
+  linear: true,
+  outputs: {
+    gbuffer: { format: 'rgba16float', value: normalDepth },
+    // Pour la composition (étape 4).
+    baseColor: { format: 'rgba8unorm', value: 'base-color' },
+  },
+});
+```
+
+Les deux sont **dans l'espace de la vue** : la caméra à l'origine, qui
+regarde vers −z. La profondeur est la distance le long de l'axe de la
+caméra, positive ; 0 là où il n'y a pas d'objet.
+
+## 2. L'occlusion
+
+Pour chaque pixel, la passe place 16 points dans la **demi-sphère au-dessus
+de la surface**, orientée par sa normale, et compte ceux qui sont **derrière
+la scène** : un point caché par la géométrie est une direction d'où la
+lumière ambiante ne vient pas.
+
+### Le point du pixel
+
+La profondeur et la position à l'écran donnent le point dans l'espace de la
+vue. Avec une projection en perspective, un point à la profondeur `d` arrive
+à l'écran en `x × p / d`, où `p` est l'échelle de la projection : l'inverse
+le redonne.
+
+```ts
+// projection[0][0] et projection[1][1] : 1 / tan(fov / 2), divisé par
+// l'aspect pour x.
+const f = 1 / Math.tan((fov * Math.PI) / 360);
+ssao.setValue('projection', [f / aspect, f]);
+```
+
+```ts
+const uv = o.builtin('screen-uv');
+const center = read(uv);
+const normal = o.call(std.normalize, { x: center.swizzle('xyz') });
+const depth = center.swizzle('w');
+// De [0, 1] (y vers le bas) à [-1, 1] (y vers le haut).
+const ndc = o.call(std.mul, {
+  a: o.call(std.sub, { a: o.call(std.mul, { a: uv, b: 2 }), b: 1 }),
+  b: [1, -1],
+});
+const xy = o.call(std.div, {
+  a: o.call(std.mul, { a: ndc, b: depth }),
+  b: projection,
+});
+const position = o.call(std.vec3, {
+  x: xy.swizzle('x'),
+  y: xy.swizzle('y'),
+  z: o.call(std.mul, { a: depth, b: -1 }),
+});
+```
+
+### Les échantillons
+
+Les 16 points sont calculés une fois, en TypeScript : des directions de la
+demi-sphère autour de `z`, à des distances de 0,1 à 1, plus nombreuses près
+du centre (la géométrie proche compte le plus).
+
+```ts
+const kernel = [...Array(16)].map((_, i) => {
+  const angle = i * 2.39996; // L'angle d'or : bien répartis autour de z.
+  const z = 1 - (i + 0.5) / 16; // De la normale vers l'horizon.
+  const side = Math.sqrt(1 - z * z);
+  const scale = 0.1 + 0.9 * (((i * 7) % 16) / 16) ** 2;
+  return [
+    side * Math.cos(angle) * scale,
+    side * Math.sin(angle) * scale,
+    Math.max(z, 0.1) * scale,
+  ];
+});
+```
+
+Une matrice les tourne autour de la normale du pixel : ses colonnes sont une
+tangente, une bitangente et la normale. Avec les mêmes 16 directions
+partout, l'occlusion ferait des bandes ; la tangente est tournée d'un angle
+qui change d'un pixel à l'autre, sur une tuile de 4 × 4 pixels. Les pixels
+voisins regardent dans des directions différentes, et le flou (étape 3) en
+fait la moyenne.
+
+```ts
+// La position du pixel dans sa tuile de 4 × 4 : 16 angles.
+const cell = o.call(std.floor, {
+  x: o.call(std.mul, {
+    a: o.call(std.fract, {
+      x: o.call(std.mul, {
+        a: o.builtin('frag-coord').swizzle('xy'),
+        b: 0.25,
+      }),
+    }),
+    b: 4,
+  }),
+});
+const angle = o.call(std.mul, {
+  a: o.call(std.dot, { a: cell, b: [1, 4] }),
+  b: (2 * Math.PI * 7) / 16,
+});
+// tangent, bitangent : perpendiculaires à la normale, tournées de l'angle.
+const frame = o.call(std.mat3, { c0: tangent, c1: bitangent, c2: normal });
+```
+
+### Caché ou non
+
+Le graphe n'a pas de boucles : une boucle TypeScript y écrit les 16
+échantillons, l'un après l'autre. Pour chacun, le point est projeté à
+l'écran (l'inverse de la reconstruction ci-dessus) et comparé à la
+profondeur de la scène à cet endroit.
+
+```ts
+let hidden: PortHandle | number = 0;
+for (const offset of kernel) {
+  // Le point, à au plus `radius` de la surface.
+  const point = o.call(std.add, {
+    a: position,
+    b: o.call(std.mul, {
+      a: o.call(std.transform3, { matrix: frame, vector: offset }),
+      b: radius,
+    }),
+  });
+  const pointDepth = o.call(std.mul, { a: point.swizzle('z'), b: -1 });
+  const pointUv = /* point.xy × projection / pointDepth, ramené à [0, 1] */;
+  const sceneDepth = read(pointUv).swizzle('w');
+  // 1 quand la scène est devant le point (et n'est pas le fond).
+  const inFront = o.call(std.mul, {
+    a: o.call(std.step, {
+      edge: o.call(std.add, { a: sceneDepth, b: bias }),
+      x: pointDepth,
+    }),
+    b: o.call(std.step, { edge: 0.0001, x: sceneDepth }),
+  });
+  // De moins en moins quand la scène, là, est plus loin du pixel que le rayon.
+  const near = o.call(std.smoothstep, {
+    low: 0,
+    high: 1,
+    x: /* radius / |depth − sceneDepth| */,
+  });
+  hidden = o.call(std.add, {
+    a: hidden,
+    b: o.call(std.mul, { a: inFront, b: near }),
+  });
+}
+// 1 : dégagé, 0 : entièrement caché.
+const open = /* (1 − hidden / 16) ^ power, et 1 pour le fond */;
+o.fullscreen({ color: o.call(std.vec4, { x: open, w: 1 }) });
+```
+
+Quatre valeurs règlent le résultat :
+
+- **`radius`** (0,5 ici, dans les unités de la scène) : jusqu'où la
+  géométrie cache la lumière ambiante. Petit : seuls les plis
+  s'assombrissent ; grand : de larges ombres douces autour des objets.
+- **`bias`** (0,025) : une marge sur la comparaison. Sans elle, la surface
+  cache ses propres échantillons à cause de la précision des profondeurs
+  (de l'« acné »).
+- **`power`** (2) : l'occlusion élevée à une puissance, pour la renforcer.
+- **`near`**, le test de distance : un point peut être derrière un objet
+  bien devant le pixel, le bord d'un cube devant le mur. Sans lui, le mur
+  derrière aurait un halo sombre autour du cube.
+
+Le G-buffer est lu avec un **sampler `nearest`** : un sampler linéaire
+mélangerait, au bord des objets, la profondeur de l'objet et celle de ce
+qui est derrière, une profondeur qui n'existe pas. Son mode de répétition
+est `clamp-to-edge` : un point projeté hors de l'écran ne doit pas lire
+l'autre côté.
+
+```ts
+const nearest = backend.textures.createSampler({
+  wrapModeS: 'clamp-to-edge',
+  wrapModeT: 'clamp-to-edge',
+  minFilter: 'nearest',
+  magFilter: 'nearest',
+});
+```
+
+L'occlusion est écrite dans une texture `r8unorm` du graphe : une valeur par
+pixel, de 0 à 1.
+
+```ts
+const raw = renderer.addFullscreenPass(graph, 'ssao', {
+  material: ssao,
+  inputs: { gbuffer: scene.outputs.gbuffer },
+  target: graph.createTexture('occlusion', { format: 'r8unorm' }),
+  format: 'r8unorm',
+});
+```
+
+## 3. Le flou
+
+Chaque pixel n'a regardé que dans 16 directions, et ses voisins dans
+d'autres : l'occlusion brute laisse voir la tuile de 4 × 4. La moyenne de
+chaque bloc de 4 × 4 pixels la fait disparaître, puisqu'il contient les 16
+angles.
+
+Pas besoin de 16 lectures : un sampler **linéaire**, lu exactement entre
+quatre pixels, rend leur moyenne. Quatre lectures, à −½ et +1½ pixel,
+couvrent les 16.
+
+```ts
+const texel = b.uniform('texel', BuiltinTypes.vec2f); // 1 / taille
+let sum: PortHandle | number = 0;
+for (const [dx, dy] of [
+  [-0.5, -0.5],
+  [1.5, -0.5],
+  [-0.5, 1.5],
+  [1.5, 1.5],
+]) {
+  sum = b.call(std.add, {
+    a: sum,
+    b: b
+      .call(std.textureSample, {
+        texture: occlusionTexture,
+        sampler: occlusionSampler,
+        uv: b.call(std.add, {
+          a: blurUv,
+          b: b.call(std.mul, { a: texel, b: [dx, dy] }),
+        }),
+      })
+      .swizzle('x'),
+  });
+}
+b.fullscreen({
+  color: b.call(std.vec4, { x: b.call(std.mul, { a: sum, b: 0.25 }), w: 1 }),
+});
+```
+
+La taille d'un pixel change avec le canvas : elle est donnée à chaque frame.
+
+```ts
+const target = surface.getCurrentTarget();
+blur.setValue('texel', [1 / target.width, 1 / target.height]);
+```
+
+## 4. La composition
+
+L'occlusion cache la lumière **ambiante**, pas le soleil : un coin en plein
+soleil n'est pas plus sombre. Les passes de la scène ont déjà ajouté le
+terme ambiant, `ambient × baseColor` avec le modèle Phong. La composition en
+retire la part cachée :
+
+```
+color − ambient × baseColor × (1 − occlusion)
+```
+
+C'est pourquoi les passes de la scène écrivent aussi `base-color`. La
+soustraction est juste sur les couleurs **linéaires**, celles que calculent
+les matériaux : les passes de la scène les écrivent avec `linear: true`, et
+la composition encode le résultat en sRGB pour l'écran, comme le fait le
+renderer par défaut.
+
+La lumière ambiante est celle de la lumière, donnée au matériau :
+
+```ts
+const sun = new DirectionalLight({
+  direction: { x: -0.6, y: -1, z: -0.5 },
+  ambient: { x: 0.6, y: 0.6, z: 0.6 },
+  diffuse: { x: 0.4, y: 0.4, z: 0.4 },
+});
+compose.setValue('ambient', [sun.ambient.x, sun.ambient.y, sun.ambient.z]);
+```
+
+```ts
+const color = sample('color').swizzle('rgb');
+const ambient = c.call(std.mul, {
+  a: c.uniform('ambient', BuiltinTypes.vec3f),
+  b: sample('baseColor').swizzle('rgb'),
+});
+const occlusion = sample('occlusion').swizzle('x');
+const occluded = c.call(std.sub, {
+  a: color,
+  b: c.call(std.mul, {
+    a: ambient,
+    b: c.call(std.sub, { a: 1, b: occlusion }),
+  }),
+});
+// Pour l'écran : sRGB.
+const encoded = c.call('color.linearToSrgb', { color: occluded });
+c.fullscreen({ color: c.call(std.extend, { xyz: encoded }) });
+```
+
+Les quatre passes, dans l'ordre : le render graph exécute chacune après les
+passes dont elle lit les textures.
+
+```ts
+const raw = renderer.addFullscreenPass(graph, 'ssao', { … });
+const blurred = renderer.addFullscreenPass(graph, 'ssao blur', {
+  material: blur,
+  inputs: { occlusion: raw },
+  target: graph.createTexture('blurred occlusion', { format: 'r8unorm' }),
+  format: 'r8unorm',
+});
+renderer.addFullscreenPass(graph, 'compose', {
+  material: compose,
+  inputs: {
+    color: scene.color,
+    baseColor: scene.outputs.baseColor,
+    occlusion: blurred,
+  },
+  target: graph.importTexture('surface', target),
+  format: surface.format,
+});
+```
+
+## À savoir
+
+- **Seul ce qui est à l'écran compte.** Un objet hors de l'image, ou caché
+  derrière un autre, n'assombrit rien ; l'occlusion apparaît et disparaît
+  aux bords de l'écran quand la caméra bouge.
+- **Le coût** est de 16 lectures par pixel. Pour l'alléger : calculer
+  l'occlusion à la moitié de la taille (`size: { relative: 0.5 }` de
+  `createTexture`) et la flouter en pleine taille, ou prendre 8 échantillons.
+- **Le flou traverse les bords** : l'occlusion d'un mur déborde un peu sur
+  l'objet devant lui. Un flou qui compare les profondeurs (bilatéral)
+  l'évite, pour 16 lectures.
+- **La composition dépend du modèle d'éclairage.** Elle retire
+  `ambient × baseColor`, le terme ambiant de `phong` ; avec plusieurs
+  lumières, additionnez leurs `ambient`. Le rendu différé appliquera
+  l'occlusion directement là où la lumière ambiante est calculée.
+- **Le modèle PBR** multiplie déjà son terme ambiant par l'entrée
+  `occlusion` de la surface : une occlusion précalculée dans une texture par
+  un outil de modélisation, plus fine et stable, mais qui ignore les autres
+  objets. Les deux se combinent.
+
+## Ensuite
+
+- [Sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/) : toutes
+  les valeurs que les passes de la scène savent écrire.
+- [Guide du render graph](/fdw-engine/fr/guides/render-graph/) : les
+  textures du graphe, leurs tailles, l'ordre des passes.

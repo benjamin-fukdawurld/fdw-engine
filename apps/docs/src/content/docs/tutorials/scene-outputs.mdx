@@ -14,8 +14,9 @@ targets). A full screen pass shows the four, one per quarter of the screen.
 
 <Example name="scene-outputs" />
 
-These textures are what screen space effects (ambient occlusion,
-reflections, outlines), deferred rendering and selection under the mouse are
+These textures are what screen space effects
+([ambient occlusion](/fdw-engine/tutorials/ambient-occlusion/), reflections,
+outlines), deferred rendering and selection under the mouse are
 made of. The engine does not fix their list: you choose what each one
 holds.
 
@@ -169,3 +170,5 @@ renderer.addFullscreenPass(graph, 'quarters', {
   the options of the outputs, the depth, the G-buffer.
 - [Post-processing](/fdw-engine/tutorials/post-processing/): full screen
   passes reading the textures of the graph.
+- [Ambient occlusion](/fdw-engine/tutorials/ambient-occlusion/): an effect
+  built on the normals and the depths.

@@ -1,0 +1,382 @@
+---
+title: Ambient occlusion
+description: Darken the corners, the creases and the contacts between objects with screen space ambient occlusion (SSAO), built from the scene outputs and three full screen passes.
+sidebar:
+  order: 7
+---
+
+import Example from '../../../components/Example.astro';
+
+The ambient light comes from everywhere at once: it lights a corner as much
+as an open floor, and objects seem to float. In reality, a corner, a crease
+or the ground under a ball receives less of it, because the geometry around
+hides part of the sky. **Ambient occlusion** measures, for each point, how
+much is hidden, and darkens the ambient light by as much.
+
+**Screen space** ambient occlusion (SSAO) estimates it from what the camera
+sees: the normals and the depths of the pixels. Click the example to switch
+between the image with occlusion, without it, and the occlusion alone.
+
+<Example name="ambient-occlusion" />
+
+The frame has four steps, all in a render graph:
+
+1. The scene passes draw the lit color and write, alongside it, the
+   **normal and the depth** of each pixel (the G-buffer).
+2. A full screen pass **estimates the occlusion** of each pixel from them.
+3. A second one **blurs** the estimate.
+4. A third one **composes** the image: the ambient light is darkened, the
+   direct light is left as is.
+
+## 1. The normals and the depths
+
+The occlusion pass needs, for each pixel, the normal of the surface and its
+distance to the camera. Both are values the scene passes can write (see
+[Scene outputs](/fdw-engine/tutorials/scene-outputs/)). A function graph puts
+them in one `rgba16float` texture, the normal in `xyz` and the depth in `w`:
+the occlusion pass reads them with a single sample.
+
+```ts
+const n = new GraphBuilder('normal and depth');
+n.functionOutput(
+  'value',
+  n.call(std.extend, {
+    xyz: n.functionInput('viewNormal', BuiltinTypes.vec3f),
+    w: n.functionInput('viewDepth', BuiltinTypes.f32),
+  })
+);
+const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
+
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights: [sun],
+  target: graph.createTexture('color', { format: 'rgba16float' }),
+  format: 'rgba16float',
+  // Linear colors, encoded by the composition (step 4).
+  linear: true,
+  outputs: {
+    gbuffer: { format: 'rgba16float', value: normalDepth },
+    // For the composition (step 4).
+    baseColor: { format: 'rgba8unorm', value: 'base-color' },
+  },
+});
+```
+
+Both are **in view space**: the camera at the origin, looking at −z. The
+depth is the distance along the axis of the camera, positive; 0 where there
+is no object.
+
+## 2. The occlusion
+
+For each pixel, the pass places 16 points in the **half sphere above the
+surface**, oriented by its normal, and counts the ones that are **behind
+the scene**: a point hidden by the geometry is a direction from which the
+ambient light does not come.
+
+### The point of the pixel
+
+The depth and the position on the screen give the point in view space.
+With a perspective projection, a point at depth `d` lands on the screen at
+`x × p / d`, where `p` is the scale of the projection: the inverse gives it
+back.
+
+```ts
+// projection[0][0] and projection[1][1]: 1 / tan(fov / 2), divided by the
+// aspect for x.
+const f = 1 / Math.tan((fov * Math.PI) / 360);
+ssao.setValue('projection', [f / aspect, f]);
+```
+
+```ts
+const uv = o.builtin('screen-uv');
+const center = read(uv);
+const normal = o.call(std.normalize, { x: center.swizzle('xyz') });
+const depth = center.swizzle('w');
+// From [0, 1] (y down) to [-1, 1] (y up).
+const ndc = o.call(std.mul, {
+  a: o.call(std.sub, { a: o.call(std.mul, { a: uv, b: 2 }), b: 1 }),
+  b: [1, -1],
+});
+const xy = o.call(std.div, {
+  a: o.call(std.mul, { a: ndc, b: depth }),
+  b: projection,
+});
+const position = o.call(std.vec3, {
+  x: xy.swizzle('x'),
+  y: xy.swizzle('y'),
+  z: o.call(std.mul, { a: depth, b: -1 }),
+});
+```
+
+### The samples
+
+The 16 points are computed once, in TypeScript: directions of the half
+sphere around `z`, at distances from 0.1 to 1, more of them close to the
+center (the nearby geometry matters most).
+
+```ts
+const kernel = [...Array(16)].map((_, i) => {
+  const angle = i * 2.39996; // The golden angle: evenly spread around z.
+  const z = 1 - (i + 0.5) / 16; // From the normal to the horizon.
+  const side = Math.sqrt(1 - z * z);
+  const scale = 0.1 + 0.9 * (((i * 7) % 16) / 16) ** 2;
+  return [
+    side * Math.cos(angle) * scale,
+    side * Math.sin(angle) * scale,
+    Math.max(z, 0.1) * scale,
+  ];
+});
+```
+
+A matrix turns them around the normal of the pixel: its columns are a
+tangent, a bitangent and the normal. With the same 16 directions
+everywhere, the occlusion would show bands; the tangent is turned by an
+angle that changes from one pixel to the next, over a tile of 4 × 4 pixels.
+Neighboring pixels look in different directions, and the blur (step 3)
+averages them.
+
+```ts
+// The position of the pixel in its 4 × 4 tile: 16 angles.
+const cell = o.call(std.floor, {
+  x: o.call(std.mul, {
+    a: o.call(std.fract, {
+      x: o.call(std.mul, {
+        a: o.builtin('frag-coord').swizzle('xy'),
+        b: 0.25,
+      }),
+    }),
+    b: 4,
+  }),
+});
+const angle = o.call(std.mul, {
+  a: o.call(std.dot, { a: cell, b: [1, 4] }),
+  b: (2 * Math.PI * 7) / 16,
+});
+// tangent, bitangent: perpendicular to the normal, turned by the angle.
+const frame = o.call(std.mat3, { c0: tangent, c1: bitangent, c2: normal });
+```
+
+### Hidden or not
+
+The graph has no loops: a TypeScript loop writes the 16 samples into it,
+one after the other. For each one, the point is projected on the screen
+(the inverse of the reconstruction above) and compared to the depth of the
+scene there.
+
+```ts
+let hidden: PortHandle | number = 0;
+for (const offset of kernel) {
+  // The point, at most `radius` away from the surface.
+  const point = o.call(std.add, {
+    a: position,
+    b: o.call(std.mul, {
+      a: o.call(std.transform3, { matrix: frame, vector: offset }),
+      b: radius,
+    }),
+  });
+  const pointDepth = o.call(std.mul, { a: point.swizzle('z'), b: -1 });
+  const pointUv = /* point.xy × projection / pointDepth, to [0, 1] */;
+  const sceneDepth = read(pointUv).swizzle('w');
+  // 1 when the scene is in front of the point (and is not the background).
+  const inFront = o.call(std.mul, {
+    a: o.call(std.step, {
+      edge: o.call(std.add, { a: sceneDepth, b: bias }),
+      x: pointDepth,
+    }),
+    b: o.call(std.step, { edge: 0.0001, x: sceneDepth }),
+  });
+  // Less as the scene there is farther from the pixel than the radius.
+  const near = o.call(std.smoothstep, {
+    low: 0,
+    high: 1,
+    x: /* radius / |depth − sceneDepth| */,
+  });
+  hidden = o.call(std.add, {
+    a: hidden,
+    b: o.call(std.mul, { a: inFront, b: near }),
+  });
+}
+// 1: open, 0: fully hidden.
+const open = /* (1 − hidden / 16) ^ power, and 1 for the background */;
+o.fullscreen({ color: o.call(std.vec4, { x: open, w: 1 }) });
+```
+
+Four values set the result:
+
+- **`radius`** (0.5 here, in the units of the scene): how far the geometry
+  hides the ambient light. Small: only the creases darken; large: wide
+  soft shadows around the objects.
+- **`bias`** (0.025): a margin on the comparison. Without it, the surface
+  hides its own samples because of the precision of the depths (acne).
+- **`power`** (2): the occlusion raised to a power, to strengthen it.
+- **`near`**, the range check: a point can be behind an object far in front
+  of the pixel, the edge of a cube in front of the wall. Without it, the wall
+  behind would get a dark halo around the cube.
+
+The G-buffer is read with a **`nearest` sampler**: a linear one would
+blend, at the edges of the objects, the depth of the object with the depth
+of what is behind it, a depth that does not exist. Its wrap mode is
+`clamp-to-edge`: a point that projects off the screen must not read the
+other side of it.
+
+```ts
+const nearest = backend.textures.createSampler({
+  wrapModeS: 'clamp-to-edge',
+  wrapModeT: 'clamp-to-edge',
+  minFilter: 'nearest',
+  magFilter: 'nearest',
+});
+```
+
+The occlusion is written into an `r8unorm` texture of the graph: one value
+per pixel, from 0 to 1.
+
+```ts
+const raw = renderer.addFullscreenPass(graph, 'ssao', {
+  material: ssao,
+  inputs: { gbuffer: scene.outputs.gbuffer },
+  target: graph.createTexture('occlusion', { format: 'r8unorm' }),
+  format: 'r8unorm',
+});
+```
+
+## 3. The blur
+
+Each pixel has looked in 16 directions only, and its neighbors in others:
+the raw occlusion shows the 4 × 4 tile. The average of each block of 4 × 4
+pixels removes it, since it contains the 16 angles.
+
+16 reads are not needed: a **linear** sampler, read exactly between four
+pixels, returns their average. Four reads, at −½ and +1½ pixel, cover the 16.
+
+```ts
+const texel = b.uniform('texel', BuiltinTypes.vec2f); // 1 / size
+let sum: PortHandle | number = 0;
+for (const [dx, dy] of [
+  [-0.5, -0.5],
+  [1.5, -0.5],
+  [-0.5, 1.5],
+  [1.5, 1.5],
+]) {
+  sum = b.call(std.add, {
+    a: sum,
+    b: b
+      .call(std.textureSample, {
+        texture: occlusionTexture,
+        sampler: occlusionSampler,
+        uv: b.call(std.add, {
+          a: blurUv,
+          b: b.call(std.mul, { a: texel, b: [dx, dy] }),
+        }),
+      })
+      .swizzle('x'),
+  });
+}
+b.fullscreen({
+  color: b.call(std.vec4, { x: b.call(std.mul, { a: sum, b: 0.25 }), w: 1 }),
+});
+```
+
+The size of a pixel changes with the canvas: it is set every frame.
+
+```ts
+const target = surface.getCurrentTarget();
+blur.setValue('texel', [1 / target.width, 1 / target.height]);
+```
+
+## 4. The composition
+
+The occlusion hides the **ambient** light, not the sun: a corner in full
+sun is not darker. The scene passes have already added the ambient term,
+`ambient × baseColor` with the Phong model. The composition removes the
+part of it that is hidden:
+
+```
+color − ambient × baseColor × (1 − occlusion)
+```
+
+This is why the scene passes also write `base-color`. The subtraction is
+right on the **linear** colors, those the materials compute: the scene
+passes write them with `linear: true`, and the composition encodes the
+result in sRGB for the screen, as the renderer does by default.
+
+The ambient light is the one of the light, given to the material:
+
+```ts
+const sun = new DirectionalLight({
+  direction: { x: -0.6, y: -1, z: -0.5 },
+  ambient: { x: 0.6, y: 0.6, z: 0.6 },
+  diffuse: { x: 0.4, y: 0.4, z: 0.4 },
+});
+compose.setValue('ambient', [sun.ambient.x, sun.ambient.y, sun.ambient.z]);
+```
+
+```ts
+const color = sample('color').swizzle('rgb');
+const ambient = c.call(std.mul, {
+  a: c.uniform('ambient', BuiltinTypes.vec3f),
+  b: sample('baseColor').swizzle('rgb'),
+});
+const occlusion = sample('occlusion').swizzle('x');
+const occluded = c.call(std.sub, {
+  a: color,
+  b: c.call(std.mul, {
+    a: ambient,
+    b: c.call(std.sub, { a: 1, b: occlusion }),
+  }),
+});
+// For the screen: sRGB.
+const encoded = c.call('color.linearToSrgb', { color: occluded });
+c.fullscreen({ color: c.call(std.extend, { xyz: encoded }) });
+```
+
+The four passes, in order: the render graph runs each one after the passes
+whose textures it reads.
+
+```ts
+const raw = renderer.addFullscreenPass(graph, 'ssao', { … });
+const blurred = renderer.addFullscreenPass(graph, 'ssao blur', {
+  material: blur,
+  inputs: { occlusion: raw },
+  target: graph.createTexture('blurred occlusion', { format: 'r8unorm' }),
+  format: 'r8unorm',
+});
+renderer.addFullscreenPass(graph, 'compose', {
+  material: compose,
+  inputs: {
+    color: scene.color,
+    baseColor: scene.outputs.baseColor,
+    occlusion: blurred,
+  },
+  target: graph.importTexture('surface', target),
+  format: surface.format,
+});
+```
+
+## What to know
+
+- **Only what is on the screen counts.** An object outside the image, or
+  hidden behind another, does not darken anything; occlusion appears and
+  disappears at the edges of the screen when the camera moves.
+- **The cost** is 16 reads per pixel. To save it: compute the occlusion at
+  half the size (`size: { relative: 0.5 }` of `createTexture`) and blur it
+  at full size, or take 8 samples.
+- **The blur crosses the edges**: the occlusion of a wall bleeds a little
+  onto the object in front of it. A blur that compares the depths
+  (bilateral) avoids it, for 16 reads.
+- **The composition depends on the shading model.** It removes
+  `ambient × baseColor`, the ambient term of `phong`; with several lights,
+  add their `ambient`. Deferred rendering will apply the occlusion directly
+  where the ambient light is computed.
+- **The PBR model** already multiplies its ambient term by the `occlusion`
+  input of the surface: occlusion baked in a texture by a modeling tool,
+  finer and stable, but which does not know about the other objects. Both
+  combine.
+
+## Next
+
+- [Scene outputs](/fdw-engine/tutorials/scene-outputs/): all the values the
+  scene passes can write.
+- [Render graph guide](/fdw-engine/guides/render-graph/): textures of the
+  graph, sizes, the order of the passes.
