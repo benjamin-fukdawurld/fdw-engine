@@ -142,6 +142,8 @@ const engineValues: Record<string, ShaderType> = {
   'camera.position': BuiltinTypes.vec3f,
   'object.world': BuiltinTypes.mat4f,
   'object.normalMatrix': BuiltinTypes.mat3f,
+  // The identifier of the object drawn (0: none), from the object table.
+  'object.id': BuiltinTypes.u32,
   time: BuiltinTypes.f32,
   exposure: BuiltinTypes.f32,
   // The shadow atlas of the lights, read by the light.shadow macro.
@@ -149,16 +151,19 @@ const engineValues: Record<string, ShaderType> = {
   shadowSampler: BuiltinTypes.comparisonSampler,
 };
 
-// The members of a row of the object table.
+// The members of a row of the object table (objectTableMembers).
 const objectMembers: Record<string, ShaderType> = {
   world: BuiltinTypes.mat4f,
-  normalMatrix: BuiltinTypes.mat3f,
+  normalColumn0: BuiltinTypes.vec4f,
+  normalColumn1: BuiltinTypes.vec4f,
+  normalColumn2: BuiltinTypes.vec4f,
 };
 
 /**
- * A member of a row of the object table: what input.engine `object.world`
- * and `object.normalMatrix` become on the backends with the objectTable
- * capability, reading the row `index` (input.builtin `object-index`).
+ * A member of a row of the object table: what input.engine `object.world`,
+ * `object.normalMatrix` and `object.id` become on the backends with the
+ * objectTable capability, reading the row `index` (input.builtin
+ * `object-index`).
  * Produced by the compiler; a graph has no reason to use it.
  */
 export const object: NodeDefinition = {

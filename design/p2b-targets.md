@@ -78,8 +78,11 @@ const properties = defineFunction(f.build(), { id: 'app.properties' });
 const scene = renderer.addScenePasses(graph, {
   items,
   camera,
+  // La couleur éclairée, comme aujourd'hui (facultative : sans elle, pas
+  // d'éclairage).
+  target: graph.createTexture('color', { format: 'rgba16float' }),
+  format: 'rgba16float',
   outputs: {
-    color: { format: 'rgba16float' }, // la couleur éclairée, comme aujourd'hui
     normal: { format: 'rgba16float', value: 'view-normal' },
     depth: { format: 'r32float', value: 'view-depth' },
     id: { format: 'r32uint', value: 'object-id' },
@@ -87,7 +90,7 @@ const scene = renderer.addScenePasses(graph, {
     velocity: { format: 'rg16float', value: 'material', default: [0, 0] },
   },
 });
-scene.outputs.normal; // TextureHandle, comme scene.outputs.properties, scene.depth
+scene.outputs.normal; // TextureHandle, comme scene.color, scene.depth
 ```
 
 Ce que contient une sortie, trois façons de le dire :
@@ -185,9 +188,19 @@ Chacun avec sa page (EN, FR), son exemple vivant et ses captures de référence 
 
 Les étapes 1 à 3 forment le socle ; 4 à 7 peuvent s'ordonner librement ensuite.
 
+**Une fonctionnalité n'est terminée qu'avec son tutoriel** dans la documentation (`tutorials`, EN et FR, exemple vivant et captures de référence), pas seulement des paragraphes dans les guides. Tutoriels attendus : les cibles multiples (étape 1, avec les sorties de surface de l'étape 2), l'occlusion ambiante, la sélection au pixel, le rendu différé, les quatre techniques de détail de surface, la transparence et la réflexion. L'état d'avancement de chaque étape le dit.
+
+État :
+
+- **Étape 1 faite** (13 octobre 2026) : `g.target`, les trois générateurs, WebGL2 (`drawBuffers`, effacements et résolutions par attachment), les capacités `maxColorAttachments`, `maxColorAttachmentBytesPerSample`, `independentBlend`, `addFullscreenPass({ targets })`.
+- **Étape 2 faite** (13 octobre 2026) : `addScenePasses({ outputs })` et son retour `{ color, depth, outputs }` (la couleur reste `target`/`format`, désormais facultative), `depth`, `load`, `include`, `samples` et `size` par appel ; les valeurs du moteur, les fonctions-graphes de sortie, `g.output` ; l'identifiant des objets (`RenderItem.id`, `object.id` dans les shaders). Les colonnes de la matrice des normales sont des `vec4` dans la ligne d'objet (même layout), l'identifiant dans le `w` de la première. Les textures des sorties s'appellent `<passes> <sortie> output`. Tutoriel « Sorties de la scène » (EN, FR) avec son exemple vivant et ses captures. Les usages de l'ancienne API sont corrigés (code, exemples, guides, tutoriels, README).
+- **Reste de l'étape 3** : la relecture d'une région (`readTexture`) et `pickIds`, puis le tutoriel de la sélection.
+
 ## 8. Décisions
 
 Validées le 13 octobre 2026 :
+
+0. **Une fonctionnalité n'est terminée qu'avec son tutoriel** dans la documentation (§7).
 
 1. **L'identifiant en flottant**, limité à 2^24 (16,7 millions). Au-delà, le lancer de rayons ; documenté (§3.3).
 2. **Le retour de `addScenePasses` change de forme** : un changement cassant, à condition de corriger tous les usages de l'ancienne API, dans le code, les exemples et la documentation (§3.5).

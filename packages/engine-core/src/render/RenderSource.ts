@@ -18,6 +18,11 @@ interface RenderItemBase {
   // Drawn into the shadow maps of the lights. Default true; transparent
   // items never cast shadows.
   readonly castShadow?: boolean;
+  // An identifier of the object, from 1 to 2^24 (MaxObjectId), written by
+  // the 'object-id' outputs of the scene passes for its pixels (0: none):
+  // to find what is under the mouse. The items sharing a transform or a
+  // world matrix are one object: they share it.
+  readonly id?: number;
   // The world bounds, when the source knows them; otherwise computed from
   // the mesh and the world matrix.
   readonly bounds?: Aabb;

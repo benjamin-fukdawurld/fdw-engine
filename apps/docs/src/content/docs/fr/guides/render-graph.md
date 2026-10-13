@@ -92,7 +92,8 @@ Le `Renderer` ajoute ses passes à un graphe :
 
 - `addScenePasses(graph, { source, camera, target, format })` (ou `items`
   à la place de `source`, et `lights`, `layers`) : les shadow maps, les éléments opaques et transparents, dessinés dans `target`.
-  Renvoie la version de `target` qu'elles écrivent. `name` (par défaut
+  Renvoie `{ color, depth, outputs }` : les versions qu'elles écrivent (la
+  couleur de `target`, la profondeur, les sorties ci-dessous). `name` (par défaut
   `scene`) distingue plusieurs vues d'un même graphe : chaque nom a ses
   propres uniforms de frame, de sorte que deux caméras peuvent être dessinées
   dans une même frame. `linear: true` écrit des couleurs linéaires, pour une
@@ -150,6 +151,63 @@ const inset = renderer.addScenePasses(graph, {
 runner.execute(graph);
 surface.present();
 ```
+
+## Sorties de la scène
+
+En plus de leur couleur, les passes de la scène écrivent les **sorties**
+demandées, chacune dans sa texture (cibles multiples), autant que le backend
+le permet, nommées comme vous voulez :
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  target: graph.createTexture('color', { format: 'rgba8unorm' }),
+  format: 'rgba8unorm',
+  outputs: {
+    normal: { format: 'rgba16float', value: 'view-normal' },
+    id: { format: 'r32uint', value: 'object-id' },
+    properties: { format: 'rgba8unorm', value: packProperties },
+    velocity: { format: 'rg16float', value: 'material', default: [0, 0] },
+  },
+});
+scene.outputs.normal; // une version à lire dans les passes suivantes
+```
+
+Ce que contient une sortie :
+
+- **Une valeur de la surface ou du moteur** : `view-normal`,
+  `world-normal`, `view-depth`, `world-position`, `object-id`, `uv`, ou une
+  entrée de la surface (`base-color`, `alpha`, `emissive`, `roughness`,
+  `metallic`, `occlusion`…, sa valeur par défaut si le modèle d'éclairage ne
+  l'a pas). Convertie au format (les composantes manquantes valent 0, et 1
+  pour la 4e).
+- **Une fonction-graphe à vous** (`defineFunction`), la même pour tous les
+  matériaux : ses entrées portent le nom de ces valeurs (`viewNormal`,
+  `baseColor`, `objectId`…) et sa sortie est écrite. Pour ranger plusieurs
+  valeurs dans une cible, les encoder, calculer ce que le moteur ne connaît
+  pas.
+- **`'material'`** : chaque matériau l'écrit avec `g.output(name, value)` ;
+  les autres écrivent `default`.
+
+Les fonctions et les matériaux donnent des valeurs du type du format :
+`vec2f` pour `rg16float`, `u32` pour `r32uint`, `vec4f` pour `rgba8unorm`.
+
+- **Sans `target`**, les passes n'écrivent que leurs sorties, sans les
+  modèles d'éclairage : un G-buffer pour le rendu différé (`size` donne la
+  taille des textures, celle de la frame par défaut).
+- **Identifiants** : donnez un `id` (de 1 à 2^24) aux éléments ;
+  `object-id` l'écrit pour leurs pixels, 0 ailleurs. Au-delà de 2^24
+  objets, sélectionnez par lancer de rayons (`scene.raycast`) plutôt
+  qu'avec un buffer d'identifiants.
+- **Les transparents ne mélangent que leur couleur** : ils n'écrivent
+  aucune sortie, et ne peuvent pas être sélectionnés par `object-id`.
+- `samples` règle le multi-échantillonnage d'un appel (celui du renderer
+  par défaut). Les sorties de formats entiers ne sont pas
+  multi-échantillonnées : dessinez-les dans un appel avec `samples: 1`.
+- `depth` donne une profondeur écrite par des passes précédentes, et
+  `include: 'opaque' | 'transparent'` les éléments dessinés : un G-buffer
+  des opaques, puis les transparents sur l'image composée.
 
 ## Compilation
 

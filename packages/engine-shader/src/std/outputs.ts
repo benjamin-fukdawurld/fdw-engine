@@ -112,6 +112,19 @@ export const fullscreen: NodeDefinition = {
 };
 
 /**
+ * A value of the material for a scene output declared 'material': written
+ * to the target of that name by the passes that have it (see the outputs of
+ * Renderer.addScenePasses), ignored by the others. With output.surface.
+ */
+export const value: NodeDefinition = {
+  id: 'output.value',
+  category: 'output',
+  params: { name: { kind: 'string', required: true } },
+  inputs: () => [{ name: 'value', type: generic('T', 'numeric') }],
+  outputs: () => [],
+};
+
+/**
  * A color target written besides the color of output.fragment (multiple
  * render targets): its value goes to the attachment `location` of the pass.
  * Scalars and vectors of f32, u32 or i32; the format of the attachment must

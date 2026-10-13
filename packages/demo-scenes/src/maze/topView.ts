@@ -134,7 +134,7 @@ export class TopView implements Inset {
     this._material.setValue('rect', rect);
     return this._renderer.addFullscreenPass(graph, 'top view inset', {
       material: this._material,
-      inputs: { view },
+      inputs: { view: view.color },
       target,
       format: surface.format,
       load: 'load',

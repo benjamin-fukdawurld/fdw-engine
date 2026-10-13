@@ -6,8 +6,16 @@ import type {
 import { ObjectBlockSize } from '../transform/TransformPool';
 
 // A row: the world matrix, then the normal matrix as three columns of
-// vec4 (objectRowLayout), as the blocks of a TransformPool.
+// vec4 (objectRowLayout), as the blocks of a TransformPool. The w of the
+// first column holds the identifier of the object.
 const RowFloats = ObjectBlockSize / 4;
+const IdFloat = 16 + 3;
+
+/**
+ * The highest identifier of an object: identifiers are stored as floats,
+ * exact up to 2^24.
+ */
+export const MaxObjectId = 2 ** 24;
 
 /**
  * What a row is written from: the object state of the renderer, which also
@@ -23,11 +31,14 @@ export interface RowSource {
   normalMatrix(): ArrayLike<number>;
   // The block of a TransformPool holding the row as it is.
   pooled?(): { data: Float32Array; byteOffset: number };
+  // The identifier of the object (0: none), written in the row.
+  id?: number;
 }
 
 export interface Row {
   readonly index: number;
   version: number;
+  id: number;
 }
 
 /**
@@ -122,7 +133,7 @@ export class ObjectRows {
     let row = source.objectRow;
     if (!row) {
       const index = this._free.pop() ?? this._count++;
-      row = { index, version: Number.NaN };
+      row = { index, version: Number.NaN, id: 0 };
       source.objectRow = row;
       this._freed.register(source, index);
       if (this._count * RowFloats > this._rows.length) {
@@ -132,9 +143,11 @@ export class ObjectRows {
       }
     }
     const version = source.current();
-    if (row.version !== version) {
+    const id = source.id ?? 0;
+    if (row.version !== version || row.id !== id) {
       this.copy(row.index, source);
       row.version = version;
+      row.id = id;
       this._dirtyFirst = Math.min(this._dirtyFirst, row.index);
       this._dirtyEnd = Math.max(this._dirtyEnd, row.index + 1);
     }
@@ -147,6 +160,7 @@ export class ObjectRows {
     if (pooled) {
       const from = pooled.byteOffset / 4;
       this._rows.set(pooled.data.subarray(from, from + RowFloats), o);
+      this._rows[o + IdFloat] = source.id ?? 0;
       return;
     }
     this._rows.set(source.matrix(), o);
@@ -158,6 +172,7 @@ export class ObjectRows {
       this._rows[c + 2] = n[column * 3 + 2];
       this._rows[c + 3] = 0;
     }
+    this._rows[o + IdFloat] = source.id ?? 0;
   }
 
   // The rows changed since the last write, as one range.

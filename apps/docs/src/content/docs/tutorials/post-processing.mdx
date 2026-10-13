@@ -78,7 +78,7 @@ onFrame(() => {
   });
   renderer.addFullscreenPass(graph, 'sepia vignette', {
     material: effect,
-    inputs: { scene },
+    inputs: { scene: scene.color },
     target: output,
     format: surface.format,
   });
@@ -93,8 +93,9 @@ onFrame(() => {
   when the frame runs, from a pool. By default, it has the size of the frame,
   the first imported texture.
 - `addScenePasses` adds the passes of the scene (shadows, opaque,
-  transparent) drawing into the target, and returns the **version** of the
-  target they write. A pass reading that version runs after them.
+  transparent) drawing into the target, and returns the **versions** they
+  write: `scene.color` for the target. A pass reading that version runs
+  after them.
 - `addFullscreenPass` draws the effect; `inputs` binds its `scene` texture to
   the texture written by the scene.
 - `runner.execute` compiles the graph — orders the passes, culls those whose
@@ -111,7 +112,7 @@ Each effect reads the version written by the one before:
 ```ts
 const blurred = renderer.addFullscreenPass(graph, 'blur', {
   material: blur,
-  inputs: { source: scene },
+  inputs: { source: scene.color },
   target: graph.createTexture('blurred', {
     format: 'rgba8unorm',
     size: { relative: 0.5 },
@@ -120,7 +121,7 @@ const blurred = renderer.addFullscreenPass(graph, 'blur', {
 });
 renderer.addFullscreenPass(graph, 'bloom', {
   material: bloom,
-  inputs: { scene, blurred },
+  inputs: { scene: scene.color, blurred },
   target: output,
   format: surface.format,
 });

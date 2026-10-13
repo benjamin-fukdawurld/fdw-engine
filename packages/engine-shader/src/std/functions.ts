@@ -283,6 +283,18 @@ export const extend = intrinsic(
 );
 
 /** Matrix × vector products: transforming positions and directions. */
+/** A 3 × 3 matrix from its columns. */
+export const mat3 = intrinsic(
+  'mat3',
+  'construct',
+  [
+    port('c0', BuiltinTypes.vec3f),
+    port('c1', BuiltinTypes.vec3f),
+    port('c2', BuiltinTypes.vec3f),
+  ],
+  BuiltinTypes.mat3f
+);
+
 export const transform = intrinsic(
   'transform',
   'mul',
@@ -349,6 +361,7 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   vec3,
   vec4,
   extend,
+  mat3,
   transform,
   transform3,
   convert,

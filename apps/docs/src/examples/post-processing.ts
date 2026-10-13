@@ -102,7 +102,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
     });
     renderer.addFullscreenPass(graph, 'sepia vignette', {
       material: effect,
-      inputs: { scene },
+      inputs: { scene: scene.color },
       target: output,
       format: surface.format,
     });

@@ -387,9 +387,13 @@ describe('compile', () => {
           {
             kind: 'object-table',
             name: 'objects',
+            // The normal matrix by columns: the identifier of the object
+            // in the w of the first one.
             members: [
               { name: 'world', type: BuiltinTypes.mat4f },
-              { name: 'normalMatrix', type: BuiltinTypes.mat3f },
+              { name: 'normalColumn0', type: BuiltinTypes.vec4f },
+              { name: 'normalColumn1', type: BuiltinTypes.vec4f },
+              { name: 'normalColumn2', type: BuiltinTypes.vec4f },
             ],
           },
         ],

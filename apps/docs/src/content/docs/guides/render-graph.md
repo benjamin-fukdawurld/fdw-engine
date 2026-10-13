@@ -89,7 +89,8 @@ The `Renderer` adds its passes to a graph:
 - `addScenePasses(graph, { source, camera, target, format })` (or `items`
   instead of `source`, and `lights`, `layers`): the
   shadow maps, the opaque and the transparent items, drawing into
-  `target`. Returns the version of `target` they write. `name` (default
+  `target`. Returns `{ color, depth, outputs }`: the versions they write
+  (the color of `target`, the depth buffer, the outputs below). `name` (default
   `scene`) separates several views of a graph: each name has its own frame
   uniforms, so two cameras can be drawn in one frame. `linear: true` writes
   linear colors, for an HDR target.
@@ -141,10 +142,64 @@ const inset = renderer.addScenePasses(graph, {
   }),
   format: 'rgba8unorm',
 });
-// … a pass drawing `inset` over `main` …
+// … a pass drawing `inset.color` over `main.color` …
 runner.execute(graph);
 surface.present();
 ```
+
+## Scene outputs
+
+Besides their color, the scene passes write the **outputs** you ask for,
+each in its texture (multiple render targets), as many as the backend
+allows, named as you like:
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  target: graph.createTexture('color', { format: 'rgba8unorm' }),
+  format: 'rgba8unorm',
+  outputs: {
+    normal: { format: 'rgba16float', value: 'view-normal' },
+    id: { format: 'r32uint', value: 'object-id' },
+    properties: { format: 'rgba8unorm', value: packProperties },
+    velocity: { format: 'rg16float', value: 'material', default: [0, 0] },
+  },
+});
+scene.outputs.normal; // a version to read in later passes
+```
+
+What an output holds:
+
+- **A value of the surface or of the engine**: `view-normal`,
+  `world-normal`, `view-depth`, `world-position`, `object-id`, `uv`, or an
+  input of the surface (`base-color`, `alpha`, `emissive`, `roughness`,
+  `metallic`, `occlusion`…, its default when the shading model has none).
+  Converted to the format (missing components are 0, and 1 for the 4th).
+- **A function graph of yours** (`defineFunction`), the same for every
+  material: its inputs are named after these values (`viewNormal`,
+  `baseColor`, `objectId`…) and its output is written. Pack several values
+  in one target, encode them, compute what the engine does not know.
+- **`'material'`**: each material writes it with `g.output(name, value)`;
+  the others write `default`.
+
+The functions and the materials give values of the type of the format:
+`vec2f` for `rg16float`, `u32` for `r32uint`, `vec4f` for `rgba8unorm`.
+
+- **Without `target`**, the passes only write their outputs, without the
+  shading models: a G-buffer for deferred rendering (`size` gives the size
+  of the textures, the frame by default).
+- **Identifiers**: give `id` (1 to 2^24) to the items; `object-id` writes it
+  for their pixels, 0 elsewhere. Beyond 2^24 objects, select by ray casting
+  (`scene.raycast`) rather than with an identifier buffer.
+- **Transparent items only blend their color**: they write no output, and
+  cannot be selected through `object-id`.
+- `samples` sets the multisampling of a call (the renderer's by default).
+  Outputs of integer formats are not multisampled: draw them in a call with
+  `samples: 1`.
+- `depth` gives a depth buffer written by earlier passes, and
+  `include: 'opaque' | 'transparent'` the items drawn: a G-buffer of the
+  opaque items, then the transparent ones over the composed image.
 
 ## Compilation
 

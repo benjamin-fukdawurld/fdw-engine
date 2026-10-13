@@ -1,0 +1,172 @@
+---
+title: Sorties de la scène
+description: Écrire les normales, les profondeurs et les identifiants des objets dans leurs propres textures, en plus de la couleur, et s'en servir dans les passes suivantes.
+sidebar:
+  order: 5
+---
+
+import Example from '../../../../components/Example.astro';
+
+Les passes de la scène peuvent écrire plus qu'une couleur. Ici, elles
+écrivent aussi, pour chaque pixel, la normale de la surface, sa distance à
+la caméra et l'identifiant de l'objet, chacun dans sa texture (cibles de
+rendu multiples). Une passe plein écran montre les quatre, une par quart de
+l'écran.
+
+<Example name="scene-outputs" />
+
+C'est avec ces textures que l'on fait les effets en espace écran (occlusion
+ambiante, reflets, contours), le rendu différé et la sélection sous la
+souris. Le moteur n'en fixe pas la liste : vous choisissez ce que chacune
+contient.
+
+## Demander des sorties
+
+`addScenePasses` reçoit des `outputs`, par nom. Chacune a un format et une
+`value` : ce qu'elle contient.
+
+```ts
+const scene = renderer.addScenePasses(graph, {
+  items: transforms.map((transform, i) => ({
+    mesh: cube,
+    material,
+    transform,
+    id: i + 1,
+  })),
+  camera,
+  lights: [sun],
+  target: graph.createTexture('color', { format: 'rgba8unorm' }),
+  format: 'rgba8unorm',
+  outputs: {
+    normal: { format: 'rgba8unorm', value: encodeNormal },
+    depth: { format: 'r8unorm', value: encodeDepth },
+    id: { format: 'rgba8unorm', value: identifierColor },
+  },
+});
+scene.color; // la couleur, comme avant
+scene.outputs.normal; // les versions des sorties, à lire ensuite
+```
+
+La passe des opaques écrit la couleur et les sorties à la fois : les objets
+ne sont dessinés qu'une fois. Chaque sortie est une texture du graphe, de la
+taille de la cible de couleur, effacée à 0 là où il n'y a pas d'objet.
+
+Les valeurs les plus simples se donnent par leur nom, converties au format :
+
+| Valeur                            | Ce qui est écrit                                         |
+| --------------------------------- | -------------------------------------------------------- |
+| `'view-normal'`, `'world-normal'` | La normale de la surface, après le normal mapping        |
+| `'view-depth'`                    | La distance à la caméra le long de son axe               |
+| `'world-position'`                | La position dans le monde                                |
+| `'object-id'`                     | L'`id` de l'élément (un `u32`, pour une cible `r32uint`) |
+| `'base-color'`, `'roughness'`, …  | Une entrée de la surface, ou sa valeur par défaut        |
+
+```ts
+outputs: {
+  normal: { format: 'rgba16float', value: 'view-normal' },
+  id: { format: 'r32uint', value: 'object-id' },
+},
+```
+
+## Vos propres sorties : des fonctions-graphes
+
+Une texture `rgba8unorm` contient des valeurs de 0 à 1 : une normale, de −1
+à 1, doit être encodée. Une sortie peut être une **fonction-graphe** : ses
+entrées portent le nom des valeurs de la surface (`viewNormal`,
+`viewDepth`, `objectId`, `baseColor`, `roughness`…), sa sortie est écrite,
+la même pour tous les matériaux.
+
+```ts
+const n = new GraphBuilder('encode normal');
+n.functionOutput(
+  'value',
+  n.call(std.extend, {
+    xyz: n.call(std.add, {
+      a: n.call(std.mul, {
+        a: n.functionInput('viewNormal', BuiltinTypes.vec3f),
+        b: 0.5,
+      }),
+      b: 0.5,
+    }),
+  })
+);
+const encodeNormal = defineFunction(n.build(), { id: 'example.normal' });
+```
+
+La fonction donne le type du format : un `vec4f` pour `rgba8unorm`, un
+`f32` pour `r8unorm`, un `u32` pour `r32uint`. L'exemple transforme de même
+l'identifiant en couleur, pour le voir :
+
+```ts
+const c = new GraphBuilder('identifier color');
+const id = c.call(
+  std.convert,
+  { value: c.functionInput('objectId', BuiltinTypes.u32) },
+  { params: { to: BuiltinTypes.f32 } }
+);
+c.functionOutput(
+  'value',
+  c.call(std.extend, {
+    xyz: c.call(std.fract, {
+      x: c.call(std.mul, { a: id, b: [0.61, 0.37, 0.83] }),
+    }),
+  })
+);
+```
+
+Pour trouver l'objet sous la souris, écrivez plutôt `'object-id'` dans une
+cible `r32uint` et relisez le pixel. Les identifiants vont de 1 à 2^24 ;
+au-delà, sélectionnez par lancer de rayons (`scene.raycast`).
+
+## Les sorties des matériaux
+
+Certaines valeurs n'existent que dans certains matériaux : une vitesse
+d'animation, un masque d'effet. Déclarez la sortie `'material'`, avec une
+valeur par défaut ; les matériaux qui l'ont l'écrivent avec `g.output` :
+
+```ts
+// Dans les passes de la scène.
+velocity: { format: 'rg16float', value: 'material', default: [0, 0] },
+
+// Dans un matériau.
+g.surface({ baseColor });
+g.output('velocity', g.uniform('velocity', BuiltinTypes.vec2f));
+```
+
+Les passes sans cette sortie ignorent `g.output` : le matériau se compile
+comme avant.
+
+## Utiliser les sorties
+
+Les sorties sont des versions du graphe, comme la couleur : donnez-les à une
+passe plein écran. L'exemple compose les quatre en quarts :
+
+```ts
+renderer.addFullscreenPass(graph, 'quarters', {
+  material: quarters, // lit les textures color, normal, depth et id
+  inputs: { color: scene.color, ...scene.outputs },
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+});
+```
+
+## À savoir
+
+- **Les transparents ne mélangent que leur couleur** : ils n'écrivent
+  aucune sortie. Un objet en verre laisse les sorties de ce qui est derrière
+  lui, et ne peut pas être sélectionné par `object-id`.
+- **Sans `target`**, les passes n'écrivent que leurs sorties, sans les
+  modèles d'éclairage : un G-buffer, pour le rendu différé.
+- **Limites** : 4 cibles au moins, 8 sur la plupart des GPU
+  (`capabilities.maxColorAttachments`) ; 32 octets par pixel en WebGPU
+  (`maxColorAttachmentBytesPerSample`).
+- **Multi-échantillonnage** : les sorties sont multi-échantillonnées avec
+  la couleur et résolues ; les sorties entières ne peuvent pas l'être :
+  dessinez-les avec `samples: 1`.
+
+## Ensuite
+
+- [Guide du render graph](/fdw-engine/fr/guides/render-graph/#sorties-de-la-scène) :
+  toutes les options des sorties, la profondeur, le G-buffer.
+- [Post-traitement](/fdw-engine/fr/tutorials/post-processing/) : des passes
+  plein écran qui lisent les textures du graphe.

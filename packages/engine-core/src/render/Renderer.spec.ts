@@ -501,7 +501,7 @@ describe('Renderer on the render graph', () => {
       format: 'rgba16float',
     });
     graph.addCopyPass('capture', (pass) => {
-      pass.read(scene, 'copy-src');
+      pass.read(scene.color, 'copy-src');
       pass.hasSideEffects();
       return { execute: () => log.renderPasses.push('capture') };
     });
@@ -608,7 +608,7 @@ describe('Renderer, HDR', () => {
     });
     const inverted = renderer.addFullscreenPass(graph, 'invert', {
       material: invert,
-      inputs: { source: scene },
+      inputs: { source: scene.color },
       target: graph.createTexture('inverted', { format: 'rgba8unorm', size }),
       format: 'rgba8unorm',
     });
@@ -1194,5 +1194,202 @@ describe('Renderer, state bound on the pass', () => {
     expect(Object.keys(log.draws[1].groups)).toEqual(
       Object.keys(log.draws[0].groups)
     );
+  });
+});
+
+describe('Renderer, scene outputs', () => {
+  const opaque = () => new Material({ graph: colorGraph() });
+  const glass = () =>
+    new Material({
+      graph: colorGraph(),
+      renderState: { alphaMode: 'blend' },
+    });
+  const scene = (
+    materials: Material[],
+    options: Partial<Parameters<Renderer['addScenePasses']>[1]> = {},
+    renderer = new Renderer(fakeBackend().backend)
+  ) => {
+    const graph = new RenderGraph();
+    const target = graph.importTexture('surface', surface.getCurrentTarget());
+    const passes = renderer.addScenePasses(graph, {
+      items: materials.map((material, i) => ({
+        mesh: triangle(),
+        material,
+        transform: transformAt(i * 0.1),
+        id: i + 1,
+      })),
+      camera: new Camera(),
+      target,
+      format: surface.format,
+      outputs: {
+        position: { format: 'rgba16float', value: 'world-position' },
+        id: { format: 'r32uint', value: 'object-id' },
+      },
+      ...options,
+    } as never);
+    graph.addCopyPass('keep', (pass) => {
+      for (const handle of Object.values(passes.outputs)) {
+        pass.read(handle as never, 'copy-src');
+      }
+      pass.hasSideEffects();
+      return { execute: () => undefined };
+    });
+    new RenderGraphRunner(renderer.backend).execute(graph);
+    return passes;
+  };
+
+  it('writes the outputs in the opaque pass, after the color', () => {
+    const { backend, log } = fakeBackend();
+    const passes = scene([opaque()], {}, new Renderer(backend));
+    expect(Object.keys(passes.outputs)).toEqual(['position', 'id']);
+    expect(
+      log.passes[0].colorAttachments.map(
+        (attachment) => attachment.target.format
+      )
+    ).toEqual(['rgba8unorm', 'rgba16float', 'r32uint']);
+    expect(log.pipelines[0].targets.map((target) => target.format)).toEqual([
+      'rgba8unorm',
+      'rgba16float',
+      'r32uint',
+    ]);
+    const fragment = log.pipelines[0].program.module.entryPoints[1];
+    expect(fragment.outputs.map((output) => output.name)).toEqual([
+      'color',
+      'position',
+      'id',
+    ]);
+    // The pixels without object: 0.
+    expect(log.passes[0].colorAttachments[2].clearValue).toEqual({
+      r: 0,
+      g: 0,
+      b: 0,
+      a: 0,
+    });
+  });
+
+  it('only blends the color of the transparent items', () => {
+    const { backend, log } = fakeBackend();
+    scene([opaque(), glass()], {}, new Renderer(backend));
+    expect(log.renderPasses).toEqual(['scene opaque', 'scene transparent']);
+    expect(log.passes[1].colorAttachments).toHaveLength(1);
+    const glassPipeline = log.pipelines.find((pipeline) =>
+      pipeline.targets.some((target) => target.blend)
+    );
+    expect(glassPipeline?.targets).toHaveLength(1);
+  });
+
+  it('writes only the outputs without color: a G-buffer', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const graph = new RenderGraph();
+    const passes = renderer.addScenePasses(graph, {
+      items: [
+        { mesh: triangle(), material: opaque(), transform: transformAt(0) },
+        { mesh: triangle(), material: glass(), transform: transformAt(0) },
+      ],
+      camera: new Camera(),
+      outputs: {
+        albedo: { format: 'rgba8unorm', value: 'base-color' },
+      },
+      size: { width: 4, height: 4 },
+    });
+    graph.addCopyPass('keep', (pass) => {
+      pass.read(passes.outputs.albedo, 'copy-src');
+      pass.hasSideEffects();
+      return { execute: () => undefined };
+    });
+    new RenderGraphRunner(backend).execute(graph);
+    expect(passes.color).toBeUndefined();
+    // The transparent item has nothing to write.
+    expect(log.draws).toHaveLength(1);
+    expect(log.pipelines[0].targets).toEqual([{ format: 'rgba8unorm' }]);
+    expect(log.textures.map((texture) => texture.label)).toEqual([
+      'scene albedo output',
+      'scene depth',
+    ]);
+  });
+
+  it('writes the identifiers of the objects in their rows', () => {
+    const { backend, log } = fakeBackend();
+    scene([opaque(), opaque()], {}, new Renderer(backend));
+    const ids = [0, 1].map((row) => rowOf(log, row)[19]).sort();
+    expect(ids).toEqual([1, 2]);
+    expect(() => scene([opaque()], {}, new Renderer(backend))).not.toThrow();
+    const renderer = new Renderer(fakeBackend().backend);
+    expect(() =>
+      renderer.render({
+        items: [
+          {
+            mesh: triangle(),
+            material: opaque(),
+            transform: transformAt(0),
+            id: 2 ** 24 + 1,
+          },
+        ],
+        camera: new Camera(),
+        surface,
+      })
+    ).toThrow(/is not an integer from 0 to 2\^24/);
+  });
+
+  it('refuses integer outputs with multisampling, and too many bytes', () => {
+    expect(() => scene([opaque()], { samples: 4 })).toThrow(
+      /the output "id" \(r32uint\) cannot be multisampled/
+    );
+    const renderer = new Renderer(
+      fakeBackend({ maxColorAttachmentBytesPerSample: 32 }).backend
+    );
+    expect(() =>
+      scene(
+        [opaque()],
+        {
+          outputs: {
+            a: { format: 'rgba32float', value: 'world-position' },
+            b: { format: 'rgba32float', value: 'world-position' },
+          },
+        },
+        renderer
+      )
+    ).toThrow(/more than the 32 of the backend/);
+  });
+
+  it('draws the transparent items over the depth of earlier passes', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const graph = new RenderGraph();
+    const items = [
+      { mesh: triangle(), material: opaque(), transform: transformAt(0) },
+      { mesh: triangle(), material: glass(), transform: transformAt(0) },
+    ];
+    const gbuffer = renderer.addScenePasses(graph, {
+      items,
+      camera: new Camera(),
+      include: 'opaque',
+      outputs: { albedo: { format: 'rgba8unorm', value: 'base-color' } },
+      size: { width: 4, height: 4 },
+    });
+    const target = graph.importTexture('surface', surface.getCurrentTarget());
+    expect(() =>
+      renderer.addScenePasses(graph, {
+        name: 'no depth',
+        items,
+        camera: new Camera(),
+        target,
+        format: surface.format,
+        include: 'transparent',
+      })
+    ).toThrow(/give it/);
+    renderer.addScenePasses(graph, {
+      name: 'forward',
+      items,
+      camera: new Camera(),
+      target,
+      format: surface.format,
+      include: 'transparent',
+      depth: gbuffer.depth,
+    });
+    new RenderGraphRunner(backend).execute(graph);
+    expect(log.renderPasses).toEqual(['scene opaque', 'forward transparent']);
+    expect(log.passes[1].depthAttachment?.load).toBe('load');
   });
 });

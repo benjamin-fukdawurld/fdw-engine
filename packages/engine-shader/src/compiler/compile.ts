@@ -3,11 +3,15 @@ import type {
   GraphNode,
   MaterialGraphData,
   NodeId,
+  PortRef,
   StaticValue,
 } from '../graph/MaterialGraphData';
 import { registryWithFunctions } from '../graph/functions';
-import { isFunctionDefinition } from '../graph/NodeDefinition';
-import type { NodeRegistry } from '../graph/NodeRegistry';
+import {
+  FunctionDefinition,
+  isFunctionDefinition,
+} from '../graph/NodeDefinition';
+import { NodeRegistry } from '../graph/NodeRegistry';
 import {
   GraphValidation,
   ResolvedNode,
@@ -16,6 +20,7 @@ import {
 import { createStandardRegistry } from '../std';
 import {
   ArrayType,
+  BuiltinTypes,
   ShaderType,
   TextureType,
   typeToString,
@@ -30,11 +35,17 @@ import {
   engineValueLocations,
   LogicalBinding,
   ObjectTableName,
+  objectTableMembers,
   ProgramLayout,
   slotOrder,
   uniformBlockName,
 } from './layout';
-import { lowerFullscreen, lowerSurface } from './lowering';
+import {
+  lowerFullscreen,
+  lowerSurface,
+  SurfaceOutput,
+  surfaceOutputType,
+} from './lowering';
 import { expandMacros } from './macros';
 import { optimize, structuralParams } from './optimize';
 import { planStages } from './stages';
@@ -101,6 +112,18 @@ export interface CompileOptions {
    * They override the defaults declared by the graph parameters.
    */
   readonly features?: Readonly<Record<string, StaticValue>>;
+  /**
+   * The color targets a surface writes besides its color (see
+   * {@link SurfaceOutput}): normals, depths, identifiers, values of the
+   * application… Ignored by the graphs without output.surface.
+   */
+  readonly outputs?: readonly SurfaceOutput[];
+  /**
+   * Whether a surface writes its color, at location 0 (default true).
+   * Without it, the shading model is left out: the surface only writes its
+   * outputs.
+   */
+  readonly color?: boolean;
 }
 
 /**
@@ -381,7 +404,8 @@ function useObjectTable(graph: WorkingGraph): boolean {
   const reads = [...graph.nodes.values()].filter(
     (node) =>
       node.type === 'input.engine' &&
-      engineValueLocations[node.params['value'] as string]?.slot === 'object'
+      (node.params['value'] === 'object.id' ||
+        engineValueLocations[node.params['value'] as string]?.slot === 'object')
   );
   if (reads.length === 0) {
     return false;
@@ -392,18 +416,52 @@ function useObjectTable(graph: WorkingGraph): boolean {
     {},
     'objectIndex'
   );
-  for (const read of reads) {
-    const location = engineValueLocations[read.params['value'] as string];
-    const object = graph.addNode(
+  const member = (name: string, label?: string) =>
+    graph.addNode(
       'input.object',
-      { member: location.member },
+      { member: name },
       { index: { ref: { node: index, port: 'value' } } },
-      read.label
+      label
     );
-    graph.redirectPort(
-      { node: read.id, port: 'value' },
-      { ref: { node: object, port: 'value' } }
-    );
+  for (const read of reads) {
+    const value = read.params['value'] as string;
+    let replacement: PortRef;
+    if (value === 'object.world') {
+      replacement = { node: member('world', read.label), port: 'value' };
+    } else if (value === 'object.id') {
+      // A float in the w of the first column, exact: converted once, in
+      // the vertex stage (an integer varying is not interpolated).
+      replacement = {
+        node: graph.addNode(
+          'std.convert',
+          { to: BuiltinTypes.u32 },
+          {
+            value: {
+              ref: { node: member('normalColumn0'), port: 'value' },
+              swizzle: 'w',
+            },
+          },
+          read.label
+        ),
+        port: 'result',
+      };
+    } else {
+      // The normal matrix from the xyz of its columns.
+      const column = (i: number) => ({
+        ref: { node: member(`normalColumn${i}`), port: 'value' },
+        swizzle: 'xyz',
+      });
+      replacement = {
+        node: graph.addNode(
+          'std.mat3',
+          {},
+          { c0: column(0), c1: column(1), c2: column(2) },
+          read.label
+        ),
+        port: 'result',
+      };
+    }
+    graph.redirectPort({ node: read.id, port: 'value' }, { ref: replacement });
     graph.removeNode(read.id);
   }
   return true;
@@ -455,7 +513,7 @@ function buildLayout(
             {
               kind: 'object-table',
               name: ObjectTableName,
-              members: engineUniformBlocks.object,
+              members: objectTableMembers,
             },
           ],
         };
@@ -621,6 +679,36 @@ function checkTargets(
   }
 }
 
+// The outputs given by the materials and the functions have the type of
+// their format.
+function checkOutputTypes(
+  graph: WorkingGraph,
+  types: GraphValidation['types'],
+  outputs: readonly SurfaceOutput[],
+  diagnostics: Diagnostic[]
+): void {
+  for (const node of graph.nodes.values()) {
+    const output = outputs.find(
+      (candidate) =>
+        node.type === 'output.target' && candidate.name === node.params['name']
+    );
+    if (!output) {
+      continue;
+    }
+    const type = types.get(node.id)?.inputs['value'];
+    const expected = surfaceOutputType(output);
+    if (type && typeToString(type) !== typeToString(expected)) {
+      diagnostics.push({
+        severity: 'error',
+        node: node.id,
+        message: `the output "${output.name}" is a ${typeToString(
+          type
+        )}, its format takes a ${typeToString(expected)}`,
+      });
+    }
+  }
+}
+
 /**
  * Compiles a material graph into a backend-independent program: the
  * intermediate representation of its stages, its resource layout and its
@@ -647,11 +735,25 @@ export function compile(
   graph: MaterialGraphData,
   options: CompileOptions = {}
 ): CompiledProgram {
-  // With the function graphs embedded in the graph.
-  const registry = registryWithFunctions(
+  // With the function graphs embedded in the graph, and those of the
+  // outputs.
+  let registry = registryWithFunctions(
     options.registry ?? createStandardRegistry(),
     graph
   );
+  const outputs = options.outputs ?? [];
+  const outputFunctions = outputs
+    .map((output) => output.value)
+    .filter((value): value is FunctionDefinition => typeof value !== 'string')
+    .filter((fn) => !registry.has(fn.id));
+  if (outputFunctions.length > 0) {
+    registry = new NodeRegistry(registry.definitions);
+    for (const fn of outputFunctions) {
+      if (!registry.has(fn.id)) {
+        registry.register(fn);
+      }
+    }
+  }
   const capabilities = {
     ...defaultCompilerCapabilities,
     ...options.capabilities,
@@ -713,7 +815,29 @@ export function compile(
 
   // The surface lowering reads the 'alphaMode' feature.
   const working = new WorkingGraph(graph);
-  lowerSurface(working, registry, diagnostics, feature);
+  const hasSurface = graph.nodes.some((node) => node.type === 'output.surface');
+  if (hasSurface && (outputs.length > 0 || options.color === false)) {
+    // In the key of the variant: the outputs, functions by their id.
+    variantKey['outputs'] = JSON.stringify([
+      options.color ?? true,
+      ...outputs.map((output) => [
+        output.name,
+        output.location,
+        typeof output.value === 'string' ? output.value : output.value.id,
+        output.channels,
+        output.scalar,
+        output.default ?? null,
+      ]),
+    ]);
+  }
+  lowerSurface(
+    working,
+    registry,
+    diagnostics,
+    feature,
+    hasSurface ? outputs : [],
+    options.color ?? true
+  );
   lowerFullscreen(working, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);
@@ -741,6 +865,24 @@ export function compile(
   }
   if (compute) {
     checkCompute(working, lowered, diagnostics);
+    if (diagnostics.length > 0) {
+      fail(diagnostics);
+    }
+  }
+  // The identifier of the object only lives in the object table.
+  if (!compute && !capabilities.objectTable) {
+    for (const node of working.nodes.values()) {
+      if (
+        node.type === 'input.engine' &&
+        node.params['value'] === 'object.id'
+      ) {
+        diagnostics.push({
+          severity: 'error',
+          node: node.id,
+          message: 'object.id needs the objectTable capability',
+        });
+      }
+    }
     if (diagnostics.length > 0) {
       fail(diagnostics);
     }
@@ -808,6 +950,7 @@ export function compile(
   }
 
   checkTargets(working, optimized.types, diagnostics);
+  checkOutputTypes(working, optimized.types, outputs, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);
   }

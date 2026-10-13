@@ -31,15 +31,18 @@ import {
   GraphBuilder,
   std,
   CompiledProgram,
+  ConstantValue,
+  FunctionDefinition,
   MaterialGraphData,
   MaxLights,
   NodeRegistry,
+  SurfaceOutput,
   ToneMapping,
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
 import { Transform } from '../Transform';
 import { ObjectBlockSize, TransformLayout } from '../transform/TransformPool';
-import { RenderGraph, TextureHandle } from '../graph/RenderGraph';
+import { RenderGraph, TextureHandle, TextureSize } from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
 import { meshBox } from './bounds';
@@ -47,7 +50,7 @@ import { lightRange } from './lightRange';
 import { lightReaches } from './lightVolumes';
 import { Material, MaterialValue } from './Material';
 import { Mesh } from './Mesh';
-import { ObjectRows, RowSource } from './ObjectRows';
+import { MaxObjectId, ObjectRows, RowSource } from './ObjectRows';
 import {
   AllLayers,
   Renderable,
@@ -100,10 +103,72 @@ export interface ViewStats {
   readonly casters: number;
 }
 
-export interface ScenePassesOptions extends Omit<RenderOptions, 'surface'> {
-  // The color target, and its format.
-  readonly target: TextureHandle;
+/**
+ * A target of the scene passes besides the color: what the surfaces write
+ * there for each pixel (see addScenePasses).
+ */
+export interface SceneOutput {
   readonly format: GpuTextureFormat;
+  /**
+   * What it holds:
+   * - a value of the surface or of the engine: 'view-normal',
+   *   'world-normal', 'view-depth', 'world-position', 'object-id', 'uv',
+   *   or an input of the surface ('base-color', 'alpha', 'roughness'…),
+   *   converted to the format;
+   * - a function graph of the application, whose inputs are named after
+   *   these values (viewNormal, baseColor…), the same for every material;
+   * - 'material': what each material writes with g.output(name, value),
+   *   `default` for the others.
+   * The functions and the materials give the type of the format (vec2f for
+   * rg16float, u32 for r32uint).
+   */
+  readonly value: string | FunctionDefinition;
+  readonly default?: ConstantValue;
+  // The value of the pixels without object. Default 0 everywhere (0 is
+  // also the identifier of no object).
+  readonly clearColor?: IColor;
+  // The texture written; by default a texture of the graph ('scene normal
+  // output' for the output 'normal' of the passes 'scene'), of the size of
+  // the color target.
+  readonly target?: TextureHandle;
+}
+
+/** What the scene passes wrote: the versions to read in later passes. */
+export interface ScenePasses<K extends string = string> {
+  // The color, resolved: absent without a color target.
+  readonly color?: TextureHandle;
+  // The depth: multisampled with samples > 1.
+  readonly depth: TextureHandle;
+  readonly outputs: Readonly<Record<K, TextureHandle>>;
+}
+
+export interface ScenePassesOptions<K extends string = string>
+  extends Omit<RenderOptions, 'surface'> {
+  // The color target, and its format. Without it, the surfaces only write
+  // their outputs: their shading models are left out (a G-buffer).
+  readonly target?: TextureHandle;
+  readonly format?: GpuTextureFormat;
+  // Targets written besides the color, by name: see SceneOutput. Only the
+  // opaque and masked items write them: transparent ones only blend their
+  // color.
+  readonly outputs?: Readonly<Record<K, SceneOutput>>;
+  // A depth buffer to test against and write (written by earlier passes):
+  // loaded, where a new one is cleared.
+  readonly depth?: TextureHandle;
+  // Whether the color and the outputs start cleared (the default) or with
+  // what earlier passes wrote.
+  readonly load?: 'clear' | 'load';
+  // The items drawn: 'opaque' for the opaque and masked ones (a G-buffer),
+  // 'transparent' for the blended ones over the result of earlier passes
+  // (with their `depth`). Default 'all'.
+  readonly include?: 'all' | 'opaque' | 'transparent';
+  // Samples per pixel, the renderer's by default. Outputs of integer
+  // formats need 1: their samples cannot be resolved.
+  readonly samples?: number;
+  // The size of the textures created for the outputs and the depth, when
+  // there is no color target nor output target to take it from: the size
+  // of the frame by default.
+  readonly size?: TextureSize;
   // Prefix of the names of the passes and resources: 'scene' by default.
   // Each name has its own frame uniforms: give different names to the
   // views of a graph (several cameras).
@@ -162,6 +227,10 @@ function colorTargetBytes(formats: readonly GpuTextureFormat[]): number {
   }
   return total;
 }
+
+// The components of a color format: 1 for r…, 2 for rg…, 4 for the others.
+const formatChannels = (format: GpuTextureFormat): 1 | 2 | 4 =>
+  /^r\d/.test(format) ? 1 : /^rg\d/.test(format) ? 2 : 4;
 
 /** An extra color target of a full screen pass. */
 export interface FullscreenTarget {
@@ -261,6 +330,12 @@ interface PassVariant {
   readonly depthOnly: boolean;
   // Samples per pixel of the attachments.
   readonly samples: number;
+  // Whether the color is written (format), and the other targets.
+  readonly color?: boolean;
+  readonly outputs?: readonly SurfaceOutput[];
+  readonly outputFormats?: readonly GpuTextureFormat[];
+  // A key of color and outputs, in the keys of programs and pipelines.
+  readonly outputsKey?: string;
 }
 
 interface PreparedPipeline {
@@ -594,7 +669,7 @@ export class Renderer {
       });
       this.addFullscreenPass(graph, 'tone mapping', {
         material: this.toneMappingMaterial(),
-        inputs: { hdr: scene },
+        inputs: { hdr: scene.color },
         target,
         format: surface.format,
       });
@@ -621,6 +696,14 @@ export class Renderer {
    * its frustum, the lights that can light them, and the shadow casters
    * whose shadows can fall on them.
    */
+  addScenePasses<K extends string = never>(
+    graph: RenderGraph,
+    options: ScenePassesOptions<K> & { readonly target: TextureHandle }
+  ): ScenePasses<K> & { readonly color: TextureHandle };
+  addScenePasses<K extends string = never>(
+    graph: RenderGraph,
+    options: ScenePassesOptions<K>
+  ): ScenePasses<K>;
   addScenePasses(
     graph: RenderGraph,
     {
@@ -630,6 +713,12 @@ export class Renderer {
       camera,
       target,
       format,
+      outputs: outputOptions = {},
+      depth: givenDepth,
+      load = 'clear',
+      include = 'all',
+      samples = this._samples,
+      size: givenSize,
       clearColor,
       time = 0,
       exposure = 1,
@@ -639,7 +728,19 @@ export class Renderer {
       shadows = true,
       cullUnlit = false,
     }: ScenePassesOptions
-  ): TextureHandle {
+  ): ScenePasses {
+    const outputs = this.sceneOutputs(
+      name,
+      target,
+      format,
+      outputOptions,
+      samples
+    );
+    if (include === 'transparent' && (!givenDepth || samples > 1)) {
+      throw new Error(
+        `"${name}": the transparent items are drawn over the depth of earlier passes (give it), with samples: 1`
+      );
+    }
     this._objectRows.beginFrame();
     const from = source ?? this.listSource(items);
     const cameraCache = this.cameraCache(camera);
@@ -702,18 +803,28 @@ export class Renderer {
         : undefined;
 
     const view = this.view(name);
+    const blended = (item: Renderable) =>
+      item.material.renderState.alphaMode === 'blend';
     const prepared = list
+      .filter((item) =>
+        include === 'all'
+          ? // Without color, the transparent items have nothing to write.
+            target !== undefined || !blended(item)
+          : (include === 'transparent') === blended(item)
+      )
       .flatMap((item) =>
         this.passes(item).map((cullMode) =>
           this.prepare(
             item,
             {
-              format,
+              format: format ?? '',
               cullMode,
               linear,
               shadows: shadowPass !== undefined,
               depthOnly: false,
-              samples: this._samples,
+              samples,
+              // The transparent items only blend their color.
+              ...(blended(item) ? {} : outputs.variant),
             },
             view
           )
@@ -750,44 +861,102 @@ export class Renderer {
     const opaqueEntries = ordered.filter((entry) => !isTransparent(entry));
     const transparentEntries = ordered.filter(isTransparent);
 
-    // The attachments have the size of the target.
-    const size = graph.textureSize(target);
-    const multisampled = this._samples > 1;
+    // The attachments have the size of the color target, or of the first
+    // output given, or of the frame.
+    const sized =
+      target ?? outputs.list.find((output) => output.target)?.target;
+    const size = (sized && graph.textureSize(sized)) ?? givenSize;
+    const multisampled = samples > 1;
     const attachment = (suffix: string, attachmentFormat: GpuTextureFormat) =>
       graph.createTexture(`${name} ${suffix}`, {
         format: attachmentFormat,
         ...(size ? { size } : {}),
-        ...(multisampled ? { sampleCount: this._samples } : {}),
+        ...(multisampled ? { sampleCount: samples } : {}),
       });
-    const depth = attachment('depth', this.backend.depthFormat);
-    const color = multisampled
-      ? attachment('multisampled color', format)
-      : target;
-    const last = transparentEntries.length === 0;
-    const opaque = graph.addRasterPass(`${name} opaque`, (pass) => {
-      const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
-      const written = pass.writeColor(color, {
-        load: 'clear',
-        clearValue: clearColor,
+    // What the passes write: the textures resolved into with MSAA.
+    const resolved = (output: (typeof outputs.list)[number]) =>
+      output.target ??
+      graph.createTexture(`${name} ${output.name} output`, {
+        format: output.format,
+        ...(size ? { size } : {}),
       });
+    const depth = givenDepth ?? attachment('depth', this.backend.depthFormat);
+    const color =
+      target &&
+      (multisampled
+        ? attachment('multisampled color', format as GpuTextureFormat)
+        : target);
+    const outputTargets = outputs.list.map((output) => ({
+      output,
+      resolved:
+        multisampled || !output.target ? resolved(output) : output.target,
+      written: multisampled
+        ? attachment(`multisampled ${output.name} output`, output.format)
+        : output.target ?? undefined,
+    }));
+    const results: Record<string, TextureHandle> = {};
+    const transparents = transparentEntries.length > 0 && target !== undefined;
+    let colorVersion: TextureHandle | undefined;
+    let depthVersion = depth;
+
+    if (include !== 'transparent') {
+      const last = !transparents;
+      const opaque = graph.addRasterPass(`${name} opaque`, (pass) => {
+        const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+        let written: TextureHandle | undefined;
+        let resolvedColor: TextureHandle | undefined;
+        if (color && target) {
+          written = pass.writeColor(color, { load, clearValue: clearColor });
+          resolvedColor =
+            multisampled && last ? pass.resolveColor(target) : written;
+        }
+        // The outputs, in the order of their locations, each resolved
+        // right after it is declared.
+        for (const {
+          output,
+          resolved: into,
+          written: drawn,
+        } of outputTargets) {
+          const version = pass.writeColor(drawn ?? into, {
+            load,
+            clearValue: output.clearColor ?? { r: 0, g: 0, b: 0, a: 0 },
+          });
+          results[output.name] = multisampled
+            ? pass.resolveColor(into)
+            : version;
+        }
+        return {
+          color: written,
+          resolved: resolvedColor,
+          depth: pass.writeDepth(depth, {
+            load: givenDepth ? 'load' : 'clear',
+            clearValue: 1,
+          }),
+          execute: ({ pass: encoder, texture }) => {
+            this.bindShadowMap(view, atlas && texture(atlas));
+            this.drawAll(encoder, opaqueEntries);
+          },
+        };
+      });
+      colorVersion = last ? opaque.resolved : opaque.color;
+      depthVersion = opaque.depth;
+    }
+    if (!transparents || !target || !color) {
       return {
-        color: written,
-        resolved: multisampled && last ? pass.resolveColor(target) : written,
-        depth: pass.writeDepth(depth, { load: 'clear', clearValue: 1 }),
-        execute: ({ pass: encoder, texture }) => {
-          this.bindShadowMap(view, atlas && texture(atlas));
-          this.drawAll(encoder, opaqueEntries);
-        },
+        ...(colorVersion ? { color: colorVersion } : {}),
+        depth: depthVersion,
+        outputs: results,
       };
-    });
-    if (last) {
-      return opaque.resolved;
     }
     // Over the opaque items, tested against their depth without writing it.
+    const over = colorVersion ?? color;
     const transparent = graph.addRasterPass(`${name} transparent`, (pass) => {
-      pass.readDepth(opaque.depth);
+      pass.readDepth(depthVersion);
       const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
-      const written = pass.writeColor(opaque.color, { load: 'load' });
+      const written = pass.writeColor(over, {
+        load: include === 'transparent' ? load : 'load',
+        clearValue: clearColor,
+      });
       return {
         color: multisampled ? pass.resolveColor(target) : written,
         execute: ({ pass: encoder, texture }) => {
@@ -796,7 +965,82 @@ export class Renderer {
         },
       };
     });
-    return transparent.color;
+    return { color: transparent.color, depth: depthVersion, outputs: results };
+  }
+
+  // The outputs of scene passes, checked: their locations after the color,
+  // their types from their formats, and the variant of the opaque items.
+  private sceneOutputs(
+    name: string,
+    target: TextureHandle | undefined,
+    format: GpuTextureFormat | undefined,
+    options: Readonly<Record<string, SceneOutput>>,
+    samples: number
+  ): {
+    list: (SceneOutput & { name: string })[];
+    variant: Pick<
+      PassVariant,
+      'color' | 'outputs' | 'outputFormats' | 'outputsKey'
+    >;
+  } {
+    if (target && !format) {
+      throw new Error(`"${name}": the color target needs its format`);
+    }
+    const list = Object.entries(options).map(([output, value]) => ({
+      ...value,
+      name: output,
+    }));
+    if (!target && list.length === 0) {
+      throw new Error(`"${name}": nothing to write: give a target or outputs`);
+    }
+    const first = target ? 1 : 0;
+    const surfaceOutputs: SurfaceOutput[] = list.map((output, i) => {
+      const scalar = /uint$/.test(output.format)
+        ? 'u32'
+        : /sint$/.test(output.format)
+        ? 'i32'
+        : 'f32';
+      if (scalar !== 'f32' && samples > 1) {
+        throw new Error(
+          `"${name}": the output "${output.name}" (${output.format}) cannot be multisampled: draw it with samples: 1`
+        );
+      }
+      return {
+        name: output.name,
+        location: first + i,
+        value: output.value,
+        channels: formatChannels(output.format),
+        scalar,
+        ...(output.default !== undefined ? { default: output.default } : {}),
+      };
+    });
+    this.checkColorTargets(name, [
+      ...(format && target ? [format] : []),
+      ...list.map((output) => output.format),
+    ]);
+    const outputFormats = list.map((output) => output.format);
+    return {
+      list,
+      variant:
+        list.length === 0
+          ? {}
+          : {
+              color: target !== undefined,
+              outputs: surfaceOutputs,
+              outputFormats,
+              outputsKey: JSON.stringify([
+                target !== undefined,
+                ...surfaceOutputs.map((output) => [
+                  output.name,
+                  typeof output.value === 'string'
+                    ? output.value
+                    : output.value.id,
+                  output.default ?? null,
+                ]),
+                outputFormats,
+              ]),
+            },
+    };
   }
 
   /**
@@ -1142,7 +1386,7 @@ export class Renderer {
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
       features
-    )}`;
+    )}|${variant?.outputsKey ?? ''}`;
     let byAttributes = this._programs.get(material.graph);
     if (!byAttributes) {
       byAttributes = new Map();
@@ -1153,6 +1397,8 @@ export class Renderer {
       program = compile(material.graph, {
         vertexAttributes: semantics,
         features,
+        ...(variant?.outputs?.length ? { outputs: variant.outputs } : {}),
+        ...(variant?.color === false ? { color: false } : {}),
         // The object data always comes from the table.
         capabilities: { ...this.backend.capabilities, objectTable: true },
         ...(this._registry ? { registry: this._registry } : {}),
@@ -1234,10 +1480,18 @@ export class Renderer {
       targets: variant.depthOnly
         ? []
         : [
-            {
-              format: variant.format,
-              ...(state.alphaMode === 'blend' ? { blend: alphaBlending } : {}),
-            },
+            ...(variant.color === false
+              ? []
+              : [
+                  {
+                    format: variant.format,
+                    ...(state.alphaMode === 'blend'
+                      ? { blend: alphaBlending }
+                      : {}),
+                  },
+                ]),
+            // The outputs of the opaque items: never blended.
+            ...(variant.outputFormats ?? []).map((format) => ({ format })),
           ],
       ...(variant.samples > 1 ? { sampleCount: variant.samples } : {}),
     }));
@@ -1273,7 +1527,9 @@ export class Renderer {
       byPass = new Map();
       byMesh.set(mesh, byPass);
     }
-    const passKey = `${variant.cullMode}|${variant.format}|${variant.linear}|${variant.shadows}|${variant.depthOnly}|${variant.samples}`;
+    const passKey = `${variant.cullMode}|${variant.format}|${variant.linear}|${
+      variant.shadows
+    }|${variant.depthOnly}|${variant.samples}|${variant.outputsKey ?? ''}`;
     const cached = byPass.get(passKey);
     if (cached && cached.features === material.features) {
       return cached;
@@ -1286,7 +1542,7 @@ export class Renderer {
       variant.cullMode
     }|${variant.format}|${variant.depthOnly ? 'depth-only' : ''}|${
       variant.samples
-    }|${this.backend.depthFormat}`;
+    }|${this.backend.depthFormat}|${variant.outputsKey ?? ''}`;
     let pipelineId = this._pipelineIds.get(pipelineKey);
     if (pipelineId === undefined) {
       pipelineId = this._pipelineIds.size;
@@ -1522,6 +1778,17 @@ export class Renderer {
         ? this.worldState(world)
         : this.transformState(transform as Transform);
       this._objects.set(key, state);
+    }
+    const id = item.id ?? 0;
+    if (id !== (state.id ?? 0)) {
+      if (!Number.isInteger(id) || id < 0 || id > MaxObjectId) {
+        throw new Error(
+          `The identifier ${id} of "${
+            item.mesh.label ?? 'mesh'
+          }" is not an integer from 0 to 2^24`
+        );
+      }
+      state.id = id;
     }
     return state;
   }
