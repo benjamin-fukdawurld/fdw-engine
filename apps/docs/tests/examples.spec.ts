@@ -9,6 +9,7 @@ const examples: Record<string, string> = {
   'post-processing': 'tutorials/post-processing/',
   'scene-outputs': 'tutorials/scene-outputs/',
   picking: 'tutorials/picking/',
+  'ambient-occlusion': 'tutorials/ambient-occlusion/',
   'compute-waves': 'tutorials/compute/',
   'scene-forest': 'tutorials/scene/',
   'maze-1': 'game/maze/',
@@ -96,4 +97,33 @@ test('picking under the mouse', async ({ page: browser }, info) => {
   await browser.mouse.move(box.x + 4, center.y + 4, { steps: 4 });
   await browser.mouse.up();
   await expect(status).toContainText('selected 6, 7, 8, 9, 10');
+});
+
+// Ambient occlusion: two clicks show the occlusion alone. The clock is
+// stopped but the frames are not limited: the frames after the clicks show
+// it.
+test('ambient occlusion alone', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/ambient-occlusion/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`
+  );
+  const example = browser.locator('[data-example="ambient-occlusion"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('with occlusion');
+  await canvas.click();
+  await canvas.click();
+  await expect(status).toContainText('occlusion alone');
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(
+    `ambient-occlusion-alone-${backend}.png`
+  );
 });

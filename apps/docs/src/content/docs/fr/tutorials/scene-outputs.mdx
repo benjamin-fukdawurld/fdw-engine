@@ -15,8 +15,9 @@ l'écran.
 
 <Example name="scene-outputs" />
 
-C'est avec ces textures que l'on fait les effets en espace écran (occlusion
-ambiante, reflets, contours), le rendu différé et la sélection sous la
+C'est avec ces textures que l'on fait les effets en espace écran
+([occlusion ambiante](/fdw-engine/fr/tutorials/ambient-occlusion/), reflets,
+contours), le rendu différé et la sélection sous la
 souris. Le moteur n'en fixe pas la liste : vous choisissez ce que chacune
 contient.
 
@@ -172,3 +173,5 @@ renderer.addFullscreenPass(graph, 'quarters', {
   toutes les options des sorties, la profondeur, le G-buffer.
 - [Post-traitement](/fdw-engine/fr/tutorials/post-processing/) : des passes
   plein écran qui lisent les textures du graphe.
+- [Occlusion ambiante](/fdw-engine/fr/tutorials/ambient-occlusion/) : un
+  effet construit sur les normales et les profondeurs.
