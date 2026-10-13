@@ -1,5 +1,5 @@
 import { Engine, GpuTextureFormat, Surface } from '@fdw/engine-backend';
-import { GL } from './gl';
+import { readAttachment } from './gpu/readback';
 import { WebGl2RenderTarget } from './render/WebGl2RenderTarget';
 import WebGl2Engine from './WebGl2Engine';
 
@@ -73,26 +73,14 @@ export class WebGl2OffscreenSurface implements Surface {
     if (!gl || !target) {
       throw new Error('Nothing has been rendered to the surface');
     }
-    const rowBytes = this._width * 4;
-    const pixels = new Uint8Array(rowBytes * this._height);
-    gl.bindFramebuffer(GL.FRAMEBUFFER, target.framebuffer());
-    gl.pixelStorei(GL.PACK_ALIGNMENT, 1);
-    gl.readPixels(
-      0,
-      0,
-      this._width,
-      this._height,
-      GL.RGBA,
-      GL.UNSIGNED_BYTE,
-      pixels
+    return new Uint8Array(
+      await readAttachment(gl, target, {
+        x: 0,
+        y: 0,
+        width: this._width,
+        height: this._height,
+      })
     );
-    // OpenGL images start at the bottom row.
-    const flipped = new Uint8Array(pixels.length);
-    for (let row = 0; row < this._height; row++) {
-      const source = (this._height - 1 - row) * rowBytes;
-      flipped.set(pixels.subarray(source, source + rowBytes), row * rowBytes);
-    }
-    return flipped;
   }
 
   destroy(): void {

@@ -2,6 +2,7 @@ import {
   BackendCapabilities,
   ObjectTableDescriptor,
   CameraMath,
+  checkReadRegion,
   GpuBindGroupEntry,
   GpuBuffer,
   GpuRenderTarget,
@@ -220,6 +221,13 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         return { ...descriptor, destroy: () => undefined };
       },
       writeTexture: () => undefined,
+      // Zeros, of the size of the region.
+      readTexture: async (texture, region) => {
+        const read = checkReadRegion(texture, region);
+        return new ArrayBuffer(
+          read.region.width * read.region.height * read.bytesPerPixel
+        );
+      },
       defaultMaxAnisotropy: 1,
       createSampler: () => ({ destroy: () => undefined }),
     } as RenderBackend['textures'],

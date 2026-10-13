@@ -18,6 +18,7 @@ import {
   DirectionalLight,
   Material,
   Mesh,
+  pickIds,
   PointLight,
   Renderer,
   RenderItem,
@@ -1077,6 +1078,187 @@ export function describeRenderer(
           'id'
         );
         expectColor(pixel(16, 32), [48, 0, 0, 255]);
+      });
+    });
+
+    describe('readback and picking', () => {
+      // A 2 × 2 texture of a format, with its content, readable.
+      const readable = (format: string, data: ArrayBufferView<ArrayBuffer>) =>
+        backend.textures.createTexture({
+          type: '2d',
+          format,
+          dimensions: { width: 2, height: 2 },
+          usage: ['sampled', 'copy-src', 'copy-dst'],
+          source: data,
+        });
+
+      it('reads textures back, whole or a region, rows from the top', async () => {
+        const cases: [string, ArrayBufferView<ArrayBuffer>][] = [
+          // Red, green / blue, white.
+          [
+            'rgba8unorm',
+            new Uint8Array([
+              255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255,
+              255,
+            ]),
+          ],
+          ['r32uint', new Uint32Array([1, 2, 3, 16777216])],
+          // 1, 2 / -1, 0.5 / 0, 65504 / -2, 0.25, as half floats.
+          [
+            'rg16float',
+            new Uint16Array([
+              0x3c00, 0x4000, 0xbc00, 0x3800, 0, 0x7bff, 0xc000, 0x3400,
+            ]),
+          ],
+          [
+            'rgba32float',
+            new Float32Array([...Array(16)].map((_, i) => i * 0.5 - 2)),
+          ],
+          ['r16sint', new Int16Array([-1, 2, -32768, 32767])],
+        ];
+        for (const [format, data] of cases) {
+          const texture = readable(format, data);
+          const bytes = new Uint8Array(data.buffer);
+          const pixel = bytes.length / 4;
+          expect(
+            [...new Uint8Array(await backend.textures.readTexture(texture))],
+            format
+          ).toEqual([...bytes]);
+          // The second column, then the bottom row.
+          expect(
+            [
+              ...new Uint8Array(
+                await backend.textures.readTexture(texture, {
+                  x: 1,
+                  y: 0,
+                  width: 1,
+                  height: 2,
+                })
+              ),
+            ],
+            format
+          ).toEqual([
+            ...bytes.subarray(pixel, 2 * pixel),
+            ...bytes.subarray(3 * pixel, 4 * pixel),
+          ]);
+          expect(
+            [
+              ...new Uint8Array(
+                await backend.textures.readTexture(texture, {
+                  x: 0,
+                  y: 1,
+                  width: 2,
+                  height: 1,
+                })
+              ),
+            ],
+            format
+          ).toEqual([...bytes.subarray(2 * pixel)]);
+          texture.destroy();
+        }
+      });
+
+      it('refuses the regions and the textures it cannot read', async () => {
+        const texture = readable('rgba8unorm', new Uint8Array(16));
+        expect(() =>
+          backend.textures.readTexture(texture, {
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 1,
+          })
+        ).toThrow(/not inside its 2×2 pixels/);
+        texture.destroy();
+        const sampled = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 2, height: 2 },
+        });
+        expect(() => backend.textures.readTexture(sampled)).toThrow(
+          /copy-src usage/
+        );
+        sampled.destroy();
+      });
+
+      it('picks the identifiers of the objects, instanced and masked', async () => {
+        const mesh = quad();
+        const red = new Material({ graph: colorGraph() });
+        // Discards the left half of the quad: alpha = u.
+        const g = new GraphBuilder('half');
+        g.surface({
+          baseColor: [0, 1, 0],
+          alpha: g.attribute('uv', BuiltinTypes.vec2f).swizzle('x'),
+        });
+        const half = new Material({
+          graph: g.build(),
+          renderState: { alphaMode: 'mask' },
+        });
+        const ids = backend.textures.createTexture({
+          label: 'ids',
+          type: '2d',
+          format: 'r32uint',
+          dimensions: { width: size, height: size },
+          usage: ['render-attachment', 'copy-src'],
+        });
+        const graph = new RenderGraph();
+        renderer.addScenePasses(graph, {
+          items: [
+            // Two instances of one draw, at the top.
+            { mesh, material: red, transform: at(-0.5, 0.5), id: 1 },
+            { mesh, material: red, transform: at(0.5, 0.5), id: 2 },
+            // At the bottom left, seen through the masked half of the quad
+            // in front, which covers the bottom.
+            { mesh, material: red, transform: at(-0.5, -0.5), id: 3 },
+            {
+              mesh,
+              material: half,
+              transform: new Transform({
+                position: { x: 0, y: -0.5, z: 1 },
+                scale: { x: 2, y: 1, z: 1 },
+              }),
+              id: 16777216,
+            },
+          ],
+          camera,
+          outputs: {
+            id: {
+              format: 'r32uint',
+              value: 'object-id',
+              target: graph.importTexture('ids', ids),
+            },
+          },
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        const picks = await Promise.all([
+          pickIds(backend, ids, { x: 16, y: 16 }),
+          pickIds(backend, ids, { x: 48, y: 16 }),
+          pickIds(backend, ids, { x: 16, y: 48 }),
+          pickIds(backend, ids, { x: 48, y: 48 }),
+          // The top half, then everything.
+          pickIds(backend, ids, { x: 0, y: 0, width: size, height: 31 }),
+          pickIds(backend, ids, {
+            x: size,
+            y: size,
+            width: -size,
+            height: -size,
+          }),
+        ]);
+        expect(picks).toEqual([
+          [1],
+          [2],
+          [3],
+          [16777216],
+          [1, 2],
+          [1, 2, 3, 16777216],
+        ]);
+        // The three red quads in one draw: each instance keeps its own.
+        expect(renderer.stats.get('scene')).toMatchObject({
+          drawn: 4,
+          drawCalls: 2,
+        });
+        runner.destroy();
+        ids.destroy();
       });
     });
 

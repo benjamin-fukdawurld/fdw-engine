@@ -600,16 +600,20 @@ static napi_value js_generate_mipmaps(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
-// readTexture(texture): a ticket for the pixels of the first layer.
+// readTexture(texture, x, y, width, height): a ticket for the pixels of a
+// region of the first layer.
 static napi_value js_read_texture(napi_env env, napi_callback_info info) {
-  ARGS(1);
+  ARGS(5);
   object_handle *handle = object_arg(env, argv[0], TEXTURE);
   if (!handle) {
     return NULL;
   }
   uint64_t ticket = 0;
-  if (fdw_vk_texture_read(handle->owner->context, handle->object, &ticket) !=
-      0) {
+  if (fdw_vk_texture_read(handle->owner->context, handle->object,
+                          (uint32_t)number_arg(env, argv[1]),
+                          (uint32_t)number_arg(env, argv[2]),
+                          (uint32_t)number_arg(env, argv[3]),
+                          (uint32_t)number_arg(env, argv[4]), &ticket) != 0) {
     return throw_last_error(env);
   }
   return number(env, (double)ticket);

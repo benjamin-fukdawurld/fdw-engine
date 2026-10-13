@@ -42,6 +42,29 @@ An offscreen surface renders into a texture of a given size:
 returns the pixels as RGBA bytes, rows from the top, on every backend:
 screenshots, thumbnails, tests.
 
+## Reading textures back
+
+`backend.textures.readTexture(texture, region?)` reads a region of a color
+texture back (the whole texture by default), without waiting for the GPU:
+its promise resolves a frame or two later, with the content the frames
+submitted before left. The pixels come rows from the top, tightly packed,
+in the layout of the format (4 bytes per pixel for `r32uint`).
+
+```ts
+const data = await backend.textures.readTexture(texture, {
+  x: 10,
+  y: 20,
+  width: 4,
+  height: 4,
+});
+```
+
+The texture needs the `copy-src` usage (not in the default usage) and a
+single sample; depth textures cannot be read. A region out of the texture
+throws. WebGPU copies into a mapped buffer, WebGL2 reads into a pixel
+buffer polled by a fence, Vulkan copies into a host buffer. `pickIds` is
+built on it: see [Picking](/fdw-engine/tutorials/picking/).
+
 ## Capabilities
 
 `backend.capabilities` says what a backend supports, and the compiler checks

@@ -44,6 +44,31 @@ Une surface hors écran rend dans une texture de taille donnée :
 `readPixels()` renvoie les pixels sous forme d'octets RGBA, lignes depuis le
 haut, sur tous les backends : captures d'écran, miniatures, tests.
 
+## Relire des textures
+
+`backend.textures.readTexture(texture, region?)` relit une région d'une
+texture de couleur (toute la texture par défaut), sans attendre le GPU : sa
+promesse est résolue une ou deux frames plus tard, avec le contenu qu'ont
+laissé les frames soumises avant. Les pixels viennent rangée par rangée
+depuis le haut, sans remplissage, dans le layout du format (4 octets par
+pixel pour `r32uint`).
+
+```ts
+const data = await backend.textures.readTexture(texture, {
+  x: 10,
+  y: 20,
+  width: 4,
+  height: 4,
+});
+```
+
+La texture doit avoir l'usage `copy-src` (absent de l'usage par défaut) et
+un seul échantillon ; les textures de profondeur ne se relisent pas. Une
+région qui sort de la texture lève une erreur. WebGPU copie dans un buffer
+mappé, WebGL2 lit dans un pixel buffer sondé par une fence, Vulkan copie
+dans un buffer de l'hôte. `pickIds` repose dessus : voir la
+[sélection au pixel](/fdw-engine/fr/tutorials/picking/).
+
 ## Capacités
 
 `backend.capabilities` indique ce que prend en charge un backend, et le

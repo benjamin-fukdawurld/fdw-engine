@@ -1,0 +1,143 @@
+---
+title: Sélection au pixel
+description: Trouver les objets sous la souris, ou dans un rectangle, en écrivant leurs identifiants dans une texture que l'on relit.
+sidebar:
+  order: 6
+---
+
+import Example from '../../../../components/Example.astro';
+
+Pour savoir ce qui est sous la souris, les passes de la scène écrivent
+l'identifiant de l'objet de chaque pixel dans une texture, en plus de la
+couleur ; relire le pixel sous la souris donne l'objet. Survolez un cube
+pour le mettre en surbrillance, cliquez pour le sélectionner, tracez un
+rectangle pour sélectionner tous les cubes qu'il contient.
+
+<Example name="picking" />
+
+La réponse est exacte au pixel près, quels que soient les maillages,
+l'instancing ou les matériaux masqués : c'est ce qui a été dessiné.
+
+## Les identifiants
+
+Chaque item reçoit un `id`, de 1 à 2^24 (16,7 millions, `MaxObjectId`) ; 0
+veut dire « aucun objet ».
+
+```ts
+items: cubes.map(({ id, transform }) => ({ mesh, material, transform, id })),
+```
+
+Les items qui partagent un transform (ou une matrice du monde) sont un seul
+objet : ils partagent son identifiant. Les items instanciés gardent chacun
+le leur.
+
+## La texture des identifiants
+
+Les identifiants sont une [sortie des passes de la scène](/fdw-engine/fr/tutorials/scene-outputs/),
+`'object-id'`, dans une texture `r32uint`. Pour la relire après la frame,
+créez-la vous-même avec l'usage `copy-src` et donnez-la comme `target` de la
+sortie ; les textures que crée le graphe sont réutilisées par les passes
+suivantes.
+
+```ts
+const ids = backend.textures.createTexture({
+  label: 'identifiers',
+  type: '2d',
+  format: 'r32uint',
+  dimensions: { width, height }, // la taille de la cible de couleur
+  usage: ['render-attachment', 'copy-src'],
+});
+
+renderer.addScenePasses(graph, {
+  items,
+  camera,
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+  outputs: {
+    id: {
+      format: 'r32uint',
+      value: 'object-id',
+      target: graph.importTexture('identifiers', ids),
+    },
+  },
+});
+```
+
+Les identifiants sont écrits dans la passe qui dessine la couleur : les
+objets ne sont dessinés qu'une fois. Recréez la texture quand le canvas
+change de taille (l'exemple compare ses dimensions à chaque frame).
+
+## La relire
+
+`pickIds` relit une région de la texture et rend les identifiants qu'elle
+contient, distincts, par ordre croissant, sans 0 :
+
+```ts
+// Un point : le pixel sous la souris.
+const [id] = await pickIds(backend, ids, { x, y });
+
+// Un rectangle : tous les objets qui y ont un pixel. Sa largeur et sa
+// hauteur peuvent être négatives, quand il est tracé vers le haut ou la
+// gauche.
+const all = await pickIds(backend, ids, { x, y, width, height });
+```
+
+Les coordonnées sont des pixels de la texture, depuis son coin en haut à
+gauche. La souris donne des pixels CSS : multipliez-les par la taille du
+canvas en pixels.
+
+```ts
+const pixel = (event: PointerEvent) => ({
+  x: (event.offsetX * canvas.width) / canvas.clientWidth,
+  y: (event.offsetY * canvas.height) / canvas.clientHeight,
+});
+```
+
+La partie d'un rectangle hors de la texture est ignorée.
+
+`pickIds` est asynchrone : il n'attend pas le GPU, et sa promesse est
+résolue une ou deux frames plus tard. Il lit la texture telle que l'ont
+laissée les frames soumises avant : appelez-le quand la souris bouge, entre
+deux frames, sans ralentir la boucle de rendu.
+
+## Relire n'importe quelle texture
+
+`pickIds` se sert de `backend.textures.readTexture`, qui relit une région de
+toute texture de couleur ayant l'usage `copy-src`, sur les trois backends :
+
+```ts
+const data = await backend.textures.readTexture(texture, {
+  x: 0,
+  y: 0,
+  width: 16,
+  height: 16,
+});
+new Float32Array(data); // pour rgba32float : 4 valeurs par pixel
+```
+
+Les pixels viennent rangée par rangée depuis le haut, sans remplissage,
+dans le layout du format (4 octets par pixel pour `r32uint`, les bits des
+demi-flottants pour `rg16float`). Sans région, toute la texture est lue. Une
+région qui sort de la texture, une texture multi-échantillonnée, une texture
+de profondeur ou une texture sans `copy-src` lèvent une erreur.
+
+## À savoir
+
+- **Les items transparents** ne font que mélanger leur couleur : ils
+  n'écrivent pas d'identifiant et ne peuvent pas être sélectionnés ; ce qui
+  est derrière eux l'est.
+- **Multi-échantillonnage** : les textures entières ne peuvent pas être
+  résolues. Avec `samples > 1`, dessinez les identifiants dans des passes de
+  la scène à part, avec `samples: 1` (que l'on peut ne dessiner que quand la
+  souris bouge).
+- **Plus de 2^24 objets** : sélectionnez plutôt par lancer de rayons dans la
+  scène (`scene.raycast`).
+- **Latence** : les objets sous la souris sont ceux de la frame précédente ;
+  pour des objets rapides, la surbrillance suit avec une frame de retard.
+
+## Ensuite
+
+- [Sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/) : les
+  autres valeurs que les passes de la scène peuvent écrire.
+- [Guide du render graph](/fdw-engine/fr/guides/render-graph/#sorties-de-la-scène) :
+  les options des sorties.

@@ -197,7 +197,9 @@ Les fonctions et les matériaux donnent des valeurs du type du format :
   modèles d'éclairage : un G-buffer pour le rendu différé (`size` donne la
   taille des textures, celle de la frame par défaut).
 - **Identifiants** : donnez un `id` (de 1 à 2^24) aux éléments ;
-  `object-id` l'écrit pour leurs pixels, 0 ailleurs. Au-delà de 2^24
+  `object-id` l'écrit pour leurs pixels, 0 ailleurs. `pickIds` relit
+  ceux d'une région d'une texture `r32uint` (voir la
+  [sélection au pixel](/fdw-engine/fr/tutorials/picking/)). Au-delà de 2^24
   objets, sélectionnez par lancer de rayons (`scene.raycast`) plutôt
   qu'avec un buffer d'identifiants.
 - **Les transparents ne mélangent que leur couleur** : ils n'écrivent

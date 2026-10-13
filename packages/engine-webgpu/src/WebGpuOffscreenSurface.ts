@@ -1,5 +1,6 @@
 import { Engine, GpuTextureFormat, Surface } from '@fdw/engine-backend';
 import WebGpuEngine from './WebGpuEngine';
+import { readTextureRegion } from './gpu/readback';
 import { WebGpuRenderTarget } from './render/WebGpuRenderTarget';
 
 // A surface rendering into a texture: for render-to-texture, screenshots and
@@ -84,33 +85,14 @@ export class WebGpuOffscreenSurface implements Surface {
     if (!device || !texture) {
       throw new Error('Nothing has been rendered to the surface');
     }
-    const rowBytes = this._width * 4;
-    // Copies need rows aligned to 256 bytes.
-    const paddedRowBytes = Math.ceil(rowBytes / 256) * 256;
-    const buffer = device.createBuffer({
-      size: paddedRowBytes * this._height,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder();
-    encoder.copyTextureToBuffer(
-      { texture },
-      { buffer, bytesPerRow: paddedRowBytes },
-      [this._width, this._height]
+    return new Uint8Array(
+      await readTextureRegion(
+        device,
+        texture,
+        { x: 0, y: 0, width: this._width, height: this._height },
+        4
+      )
     );
-    device.queue.submit([encoder.finish()]);
-
-    await buffer.mapAsync(GPUMapMode.READ);
-    const padded = new Uint8Array(buffer.getMappedRange());
-    const pixels = new Uint8Array(rowBytes * this._height);
-    for (let row = 0; row < this._height; row++) {
-      pixels.set(
-        padded.subarray(row * paddedRowBytes, row * paddedRowBytes + rowBytes),
-        row * rowBytes
-      );
-    }
-    buffer.unmap();
-    buffer.destroy();
-    return pixels;
   }
 
   destroy(): void {

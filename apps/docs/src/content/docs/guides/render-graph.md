@@ -190,7 +190,9 @@ The functions and the materials give values of the type of the format:
   shading models: a G-buffer for deferred rendering (`size` gives the size
   of the textures, the frame by default).
 - **Identifiers**: give `id` (1 to 2^24) to the items; `object-id` writes it
-  for their pixels, 0 elsewhere. Beyond 2^24 objects, select by ray casting
+  for their pixels, 0 elsewhere. `pickIds` reads those of a region of an
+  `r32uint` texture back (see [Picking](/fdw-engine/tutorials/picking/)).
+  Beyond 2^24 objects, select by ray casting
   (`scene.raycast`) rather than with an identifier buffer.
 - **Transparent items only blend their color**: they write no output, and
   cannot be selected through `object-id`.

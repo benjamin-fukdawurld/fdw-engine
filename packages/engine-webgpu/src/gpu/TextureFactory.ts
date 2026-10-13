@@ -1,6 +1,7 @@
 import {
   canGenerateMipmaps,
   checkMipLevelCount,
+  checkReadRegion,
   samplerAnisotropy,
   GpuSampler,
   GpuSamplerFactory,
@@ -10,11 +11,13 @@ import {
   GpuTextureFactory,
   GpuTextureFormatName,
   GpuTextureFormatNames,
+  GpuTextureRegion,
   GpuTextureUsage,
 } from '@fdw/engine-backend';
 import { Texture } from './Texture';
 import { Sampler } from './Sampler';
 import { MipmapGenerator } from './MipmapGenerator';
+import { readTextureRegion } from './readback';
 
 function textureUsageFlags(usage: readonly GpuTextureUsage[]): number {
   const flags: Record<GpuTextureUsage, number> = {
@@ -122,6 +125,7 @@ export class TextureFactory
       texture,
       sampleCount,
       mipLevelCount,
+      ...(usage ? { usage } : {}),
     });
   }
 
@@ -168,6 +172,23 @@ export class TextureFactory
       [width, height, layers]
     );
     this.generateMipmaps(target);
+  }
+
+  readTexture(
+    texture: GpuTexture,
+    region?: GpuTextureRegion
+  ): Promise<ArrayBuffer> {
+    const checked = checkReadRegion(texture, region);
+    const source = (texture as Texture).texture;
+    if (!source) {
+      throw new Error('Cannot read a destroyed texture');
+    }
+    return readTextureRegion(
+      this.device,
+      source,
+      checked.region,
+      checked.bytesPerPixel
+    );
   }
 
   createSampler(descriptor?: GpuSamplerConfiguration): GpuSampler {
