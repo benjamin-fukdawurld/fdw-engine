@@ -84,6 +84,38 @@ describe('Input', () => {
     expect(input.pointer).toMatchObject({ dx: 0, dy: 0 });
   });
 
+  it('locks the pointer: relative movements, the position kept', () => {
+    const { source, input } = setup();
+    source.sink?.pointerMove(0.5, 0.5);
+    input.lockPointer();
+    input.update();
+    expect(source.pointerLocked).toBe(true);
+    expect(input.pointer.locked).toBe(true);
+    // Locked, the source gives the movement; the position stays.
+    source.sink?.pointerMove(0.5, 0.5, 0.1, -0.02);
+    source.sink?.pointerMove(0.5, 0.5, 0.3, 0);
+    input.update();
+    expect(input.pointer.x).toBe(0.5);
+    expect(input.pointer.dx).toBeCloseTo(0.4);
+    expect(input.pointer.dy).toBeCloseTo(-0.02);
+    // Released by the source (Escape in a browser).
+    source.sink?.pointerLock(false);
+    input.update();
+    expect(input.pointer.locked).toBe(false);
+    expect(input.pointer.dx).toBe(0);
+  });
+
+  it('shakes the gamepads, through the source', () => {
+    const { source, input } = setup();
+    source.connectGamepad();
+    const pad = source.connectGamepad();
+    input.update();
+    input.gamepads[1].rumble(1.5, 0.25, 0.2);
+    expect(source.rumbles).toEqual([
+      { gamepad: pad.id, strong: 1, weak: 0.25, duration: 0.2 },
+    ]);
+  });
+
   it('follows the gamepads, connected and disconnected', () => {
     const { source, input } = setup();
     const pad = source.connectGamepad('Pad');
@@ -229,6 +261,73 @@ describe('ActionMap', () => {
     expect(x).toBeCloseTo(0.1);
     expect(y).toBeCloseTo(0.2);
     expect(actions.axis('turn')).toBeCloseTo(0.1);
+  });
+
+  it('reads the lock of the pointer as a button', () => {
+    const { input } = setup();
+    const actions = new ActionMap(input, {
+      look: { type: 'button', bindings: ['pointer:2', 'pointer:locked'] },
+    });
+    input.update();
+    expect(actions.button('look').down).toBe(false);
+    input.lockPointer();
+    input.update();
+    expect(actions.button('look')).toMatchObject({ down: true, pressed: true });
+    input.update();
+    expect(actions.button('look')).toMatchObject({
+      down: true,
+      pressed: false,
+    });
+    input.lockPointer(false);
+    input.update();
+    expect(actions.button('look')).toMatchObject({
+      down: false,
+      released: true,
+    });
+  });
+
+  it('reads nothing disabled, nor in the frame it is enabled', () => {
+    const { source, input } = setup();
+    const game = new ActionMap(input, definitions);
+    const menu = new ActionMap(
+      input,
+      { back: { type: 'button', bindings: ['key:Escape'] } },
+      { enabled: false }
+    );
+    source.keyDown('KeyW');
+    source.keyDown('Space');
+    source.keyDown('Escape');
+    input.update();
+    expect(menu.button('back').pressed).toBe(false);
+    // Escape opens the menu: the menu does not see the same press.
+    game.enabled = false;
+    menu.enabled = true;
+    expect(game.active).toBe(false);
+    expect(menu.button('back').pressed).toBe(false);
+    expect(game.button('jump').down).toBe(false);
+    expect(game.vector('move')).toEqual({ x: 0, y: 0 });
+    expect(game.axis('zoom')).toBe(0);
+    source.keyUp('Escape');
+    source.keyDown('Escape');
+    input.update();
+    expect(menu.button('back').pressed).toBe(true);
+    // Enabled again: the keys held count from the next frame.
+    game.enabled = true;
+    expect(game.button('jump').down).toBe(false);
+    input.update();
+    expect(game.button('jump')).toMatchObject({ down: true, pressed: false });
+    expect(game.vector('move')).toEqual({ x: 0, y: 1 });
+  });
+
+  it('shakes the gamepads of its actions', () => {
+    const { source, input } = setup();
+    source.connectGamepad();
+    const second = source.connectGamepad();
+    input.update();
+    new ActionMap(input, definitions, { gamepad: 1 }).rumble(0.5, 0.5, 1);
+    expect(source.rumbles.map((r) => r.gamepad)).toEqual([second.id]);
+    new ActionMap(input, definitions).rumble(0, 0, 0);
+    expect(source.rumbles.length).toBe(3);
   });
 
   it('changes and saves its bindings', () => {

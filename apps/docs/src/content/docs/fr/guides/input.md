@@ -76,6 +76,14 @@ son déplacement pendant la frame, en fractions de la surface (0 avant son
 premier mouvement), et `wheel` : les crans tournés pendant la frame,
 positifs vers le bas.
 
+`input.lockPointer()` verrouille le pointeur — caché, ses mouvements
+relatifs et sans limite, pour une vue à la première personne — et
+`lockPointer(false)` le libère. `pointer.locked` dit quand la source l'a
+obtenu : un navigateur ne l'accepte qu'après un clic ou une touche, et le
+libère sur Échap. Verrouillé, `x` et `y` restent, `dx` et `dy` bougent
+toujours. Voir
+[Contrôles à la première personne](/fdw-engine/fr/tutorials/first-person/).
+
 ## Les manettes
 
 `input.gamepads` liste les manettes connectées, dans la **disposition
@@ -100,6 +108,11 @@ endroits sur toutes les manettes :
 - Dans un navigateur, une manette n'apparaît qu'une fois un bouton appuyé
   (une règle des navigateurs, contre le fingerprinting) ; seules celles de
   la disposition standard sont lues.
+
+`gamepad.rumble(strong, weak, duration)` fait vibrer une manette : son
+moteur fort (basse fréquence) et son moteur faible (haute fréquence) de 0
+à 1, pendant `duration` secondes. Sans moteurs, ou dans un navigateur sans
+`vibrationActuator`, rien ne se passe.
 
 `input.lastDevice` est le périphérique utilisé en dernier — `'keyboard'`,
 `'pointer'` ou `'gamepad'` : pour viser avec la souris ou un stick, ou pour
@@ -150,6 +163,7 @@ quels :
 | `pointer:wheel`                   | La molette, un axe : les crans de la frame                     |
 | `pointer:delta`                   | Le déplacement du pointeur pendant la frame, un vecteur        |
 | `pointer:deltaX`, `deltaY`        | Le même, en axes (y positif vers le bas)                       |
+| `pointer:locked`                  | Un bouton, enfoncé tant que le pointeur est verrouillé         |
 | `gamepad:<button>`                | Un bouton de manette : `gamepad:south`, `gamepad:rightTrigger` |
 | `gamepad:<axis>`                  | Un axe de stick, à travers sa zone morte : `gamepad:leftX`     |
 | `gamepad:leftStick`, `rightStick` | Un stick, pour un vecteur (comme bouton : le stick enfoncé)    |
@@ -164,7 +178,27 @@ quels :
   retourne.
 - **Toutes les manettes** pilotent les actions par défaut. Pour un jeu avec
   une manette par joueur, `new ActionMap(input, definitions, { gamepad: 1 })`
-  ne lit que la deuxième.
+  ne lit que la deuxième. `actions.rumble(strong, weak, duration)` fait
+  vibrer les manettes des actions.
+
+### Les contextes
+
+Un menu et un jeu lisent les mêmes touches différemment : donnez à chacun
+son `ActionMap`, et activez-en une à la fois. Désactivée (`enabled =
+false`, ou l'option `enabled: false`), une table ne lit rien : boutons
+relâchés, axes et vecteurs à 0. Une table activée pendant une frame ne lit
+rien jusqu'au `update()` suivant : l'appui qui a ouvert un menu n'agit pas
+aussi dedans. `active` dit si la table lit ses actions dans cette frame.
+
+```ts
+const game = new ActionMap(input, gameActions);
+const menu = new ActionMap(input, menuActions, { enabled: false });
+
+if (game.button('pause').pressed) {
+  game.enabled = false;
+  menu.enabled = true; // lit à partir de la frame suivante
+}
+```
 
 ### Modifier et enregistrer les liaisons
 
@@ -197,7 +231,11 @@ expect(actions.vector('move')).toEqual({ x: 0, y: 1 });
 Une `InputSource` écrit les événements dans l'`InputSink` que `Input` donne
 à son `attach()`, et remplit les états des manettes dans
 `readGamepads(out)`, en réutilisant les objets de `out` : rien n'est alloué
-par frame. Un écran tactile, un rejeu réseau ou une autre bibliothèque de
+par frame. `setPointerLock(locked)` et `rumble(gamepad, strong, weak,
+duration)` sont facultatives : une source qui ne les a pas ne verrouille
+jamais le pointeur ni ne fait vibrer de manette ; avec elles, elle dit au
+récepteur quand le verrou est pris ou perdu (`pointerLock(locked)`), et
+donne les mouvements relatifs dans `pointerMove(x, y, dx, dy)`. Un écran tactile, un rejeu réseau ou une autre bibliothèque de
 fenêtrage sont une source de plus.
 
 ## La navigation de la caméra
@@ -209,6 +247,5 @@ par défaut pour le clavier, la souris et les manettes. Voir le tutoriel
 
 ## Pas encore
 
-Les vibrations, le verrouillage du pointeur (mouvements relatifs, pour une
-vue à la première personne) et les contextes d'actions (un menu, un jeu) ne
-sont pas encore là ; l'API leur laisse de la place.
+Le texte saisi (pour un champ de texte, pas pour un jeu) n'est pas encore
+là ; l'API lui laisse de la place.

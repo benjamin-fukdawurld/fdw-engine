@@ -8,12 +8,14 @@ import { NativeWindow, NativeWindowEvent } from '@fdw/engine-native';
 
 /**
  * The inputs of a native window: its keyboard, pointer and wheel events,
- * and the gamepads of SDL3, in the standard layout. The events are read by
+ * and the gamepads of SDL3, in the standard layout. The pointer locks in
+ * the relative mode of SDL; the gamepads rumble with SDL_RumbleGamepad. The events are read by
  * NativeWindow.pollEvents() (runLoop calls it): a gamepad connected shows
  * at the next frame.
  */
 export class NativeInputSource implements InputSource {
   private readonly _remove: (() => void)[] = [];
+  private _sink?: InputSink;
 
   constructor(private readonly _window: NativeWindow) {}
 
@@ -30,22 +32,43 @@ export class NativeInputSource implements InputSource {
     // The key name of SDL ("Z", "Left Shift") stands for the DOM `key`.
     listen('keydown', (event) => sink.keyDown(event.code, event.key));
     listen('keyup', (event) => sink.keyUp(event.code, event.key));
-    listen('pointermove', (event) =>
+    // SDL gives the movement too: the only one while the pointer is locked.
+    listen('pointermove', (event) => {
+      const width = Math.max(window.width, 1);
+      const height = Math.max(window.height, 1);
       sink.pointerMove(
-        event.x / Math.max(window.width, 1),
-        event.y / Math.max(window.height, 1)
-      )
-    );
+        event.x / width,
+        event.y / height,
+        event.dx / width,
+        event.dy / height
+      );
+    });
     listen('pointerdown', (event) => sink.pointerButton(event.button, true));
     listen('pointerup', (event) => sink.pointerButton(event.button, false));
     // SDL: steps, positive upwards.
     listen('wheel', (event) => sink.wheel(-event.dy));
     listen('blur', () => sink.blur());
+    this._sink = sink;
+  }
+
+  setPointerLock(locked: boolean): void {
+    this._window.pointerLocked = locked;
+    this._sink?.pointerLock(locked);
+  }
+
+  rumble(
+    gamepad: number,
+    strong: number,
+    weak: number,
+    duration: number
+  ): void {
+    NativeWindow.rumbleGamepad(gamepad, strong, weak, duration);
   }
 
   detach(): void {
     this._remove.forEach((remove) => remove());
     this._remove.length = 0;
+    this._sink = undefined;
   }
 
   readGamepads(out: GamepadState[]): number {

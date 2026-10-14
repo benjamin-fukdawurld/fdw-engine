@@ -33,11 +33,18 @@ const notchesOf = (event: WheelEvent) =>
  * element (a canvas: give it a `tabindex` to receive the keys once
  * clicked) or over the whole window, and the gamepads of the Gamepad API,
  * in the standard layout (the others are ignored: their buttons have no
- * known meaning).
+ * known meaning). The pointer locks to the element (the Pointer Lock API,
+ * the root element for the window); the gamepads rumble through their
+ * `vibrationActuator`, where the browser has it.
  */
 export class WebInputSource implements InputSource {
   private readonly _remove: (() => void)[] = [];
   private readonly _gamepads?: GamepadProvider;
+  // The element the pointer locks to, and its document.
+  private readonly _lockElement?: Element;
+  private readonly _document?: Document;
+  // Whether a move was seen since the pointer got locked.
+  private _movedLocked = false;
 
   constructor(
     private readonly _target: HTMLElement | Window,
@@ -48,6 +55,18 @@ export class WebInputSource implements InputSource {
       (typeof navigator !== 'undefined' && 'getGamepads' in navigator
         ? navigator
         : undefined);
+    this._document =
+      'document' in _target ? _target.document : _target.ownerDocument;
+    this._lockElement =
+      'document' in _target ? this._document?.documentElement : _target;
+  }
+
+  // Whether the pointer is locked to the element.
+  private get locked(): boolean {
+    return (
+      this._lockElement !== undefined &&
+      this._document?.pointerLockElement === this._lockElement
+    );
   }
 
   attach(sink: InputSink): void {
@@ -66,17 +85,33 @@ export class WebInputSource implements InputSource {
     listen('keydown', (event) => sink.keyDown(event.code, event.key));
     listen('keyup', (event) => sink.keyUp(event.code, event.key));
     listen('pointermove', (event) => {
-      if ('innerWidth' in target) {
-        // Over the window.
-        sink.pointerMove(
-          event.clientX / Math.max(target.innerWidth, 1),
-          event.clientY / Math.max(target.innerHeight, 1)
-        );
+      // Over the window, or in the element, of clientWidth × clientHeight.
+      const overWindow = 'innerWidth' in target;
+      const width = Math.max(
+        overWindow ? target.innerWidth : target.clientWidth,
+        1
+      );
+      const height = Math.max(
+        overWindow ? target.innerHeight : target.clientHeight,
+        1
+      );
+      const x = (overWindow ? event.clientX : event.offsetX) / width;
+      const y = (overWindow ? event.clientY : event.offsetY) / height;
+      if (!this.locked) {
+        this._movedLocked = false;
+        sink.pointerMove(x, y);
+      } else if (!this._movedLocked) {
+        // The first move once locked: Chromium gives it a movement from
+        // nowhere (up to the size of the screen).
+        this._movedLocked = true;
+        sink.pointerMove(x, y, 0, 0);
       } else {
-        // In the element, whose size is clientWidth × clientHeight.
+        // The position stays: only the movement counts.
         sink.pointerMove(
-          event.offsetX / Math.max(target.clientWidth, 1),
-          event.offsetY / Math.max(target.clientHeight, 1)
+          x,
+          y,
+          event.movementX / width,
+          event.movementY / height
         );
       }
     });
@@ -86,6 +121,54 @@ export class WebInputSource implements InputSource {
       passive: true,
     });
     listen('blur', () => sink.blur());
+    const document = this._document;
+    if (document) {
+      const changed = () => sink.pointerLock(this.locked);
+      document.addEventListener('pointerlockchange', changed);
+      this._remove.push(() =>
+        document.removeEventListener('pointerlockchange', changed)
+      );
+    }
+  }
+
+  setPointerLock(locked: boolean): void {
+    const element = this._lockElement;
+    if (!element || locked === this.locked) {
+      return;
+    }
+    if (locked) {
+      // Refused without a recent gesture of the user: pointer.locked
+      // stays false. A promise in recent browsers, nothing in older ones.
+      const request = element.requestPointerLock?.() as unknown;
+      if (request instanceof Promise) {
+        request.catch(() => undefined);
+      }
+    } else {
+      this._document?.exitPointerLock?.();
+    }
+  }
+
+  rumble(
+    gamepad: number,
+    strong: number,
+    weak: number,
+    duration: number
+  ): void {
+    const pad = this._gamepads?.getGamepads()[gamepad];
+    const actuator = pad?.vibrationActuator;
+    if (!actuator) {
+      return;
+    }
+    const done =
+      duration <= 0 || (strong <= 0 && weak <= 0)
+        ? actuator.reset?.()
+        : actuator.playEffect?.('dual-rumble', {
+            duration: duration * 1000,
+            strongMagnitude: strong,
+            weakMagnitude: weak,
+          });
+    // Rejected when a new rumble replaces it.
+    (done as Promise<unknown> | undefined)?.catch?.(() => undefined);
   }
 
   detach(): void {

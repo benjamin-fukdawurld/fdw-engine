@@ -1,0 +1,186 @@
+---
+title: First person controls
+description: Lock the pointer to look around, switch between a menu and the game with contexts of actions, and make the gamepad rumble.
+sidebar:
+  order: 17
+---
+
+import Example from '../../../components/Example.astro';
+
+A first person game needs three things more than the
+[camera navigation](/fdw-engine/tutorials/camera-operators/):
+
+- the **pointer locked**: hidden, it turns the view without a button held,
+  and never stops at the edge of the screen;
+- **contexts of actions**: the arrows move in the game, select in a menu;
+  one set of actions at a time;
+- **rumble**: a shot is felt in the gamepad.
+
+Click the canvas to play: the mouse looks around, WASD walks, a click or
+Space shoots — the pillar hit turns orange. Escape (start on a gamepad)
+opens the menu: the arrows or the pad choose, Enter or the south button
+confirms.
+
+<Example name="first-person" />
+
+## Locking the pointer
+
+```ts
+input.lockPointer(); // asks the source
+input.lockPointer(false); // releases it
+
+input.pointer.locked; // true once the source got it
+input.pointer.dx; // the movement of the frame, locked or not
+```
+
+Locked, the pointer keeps its position: `x` and `y` stay, `dx` and `dy`
+give the movement — the relative movement of the mouse, not bounded by the
+screen. The `pointer:delta` control reads it as before, so an action bound
+to it works the same, locked or not.
+
+The lock is asynchronous: `pointer.locked` becomes true at the next
+`update()` once the source got it.
+
+- **In a browser**, `WebInputSource` locks the pointer to its element. The
+  browser accepts it only after a click or a key of the user: call
+  `lockPointer()` in the frame of the press (as the example does), or in
+  its event handler. It releases the lock itself on Escape, or when the
+  page loses the focus.
+- **In a native window**, `NativeInputSource` uses the relative mode of
+  SDL (`window.pointerLocked`); no gesture is needed.
+
+`pointer:locked` is a control too: a button, down while the pointer is
+locked, `pressed` when it gets locked, `released` when it is lost.
+`FlyActions` binds it to `drag`: the `FlyOperator` looks around with the
+pointer locked, without a button held. The example pauses when the
+browser takes the lock back:
+
+```ts
+const game = new ActionMap(input, {
+  ...FlyActions,
+  fire: {
+    type: 'button',
+    bindings: ['pointer:0', 'key:Space', 'gamepad:rightTrigger'],
+  },
+  pause: { type: 'button', bindings: ['key:Escape', 'gamepad:start'] },
+  locked: { type: 'button', bindings: ['pointer:locked'] },
+});
+
+// Escape releases the lock in a browser: the game pauses then.
+if (game.button('pause').pressed || game.button('locked').released) {
+  pause();
+}
+```
+
+## Contexts: a menu over the game
+
+A context is an `ActionMap` of its own. `enabled` switches it on and off:
+disabled, a map reads nothing — every button is released, every axis and
+vector is 0 — so the code of the game needs no `if (paused)` in each
+action.
+
+```ts
+const menu = new ActionMap(input, {
+  up: {
+    type: 'button',
+    bindings: ['key:ArrowUp', 'key:KeyW', 'gamepad:dpadUp'],
+  },
+  down: {
+    type: 'button',
+    bindings: ['key:ArrowDown', 'key:KeyS', 'gamepad:dpadDown'],
+  },
+  confirm: {
+    type: 'button',
+    bindings: ['key:Enter', 'key:Space', 'pointer:0', 'gamepad:south'],
+  },
+});
+const game = new ActionMap(input, gameActions, { enabled: false });
+
+const play = () => {
+  menu.enabled = false;
+  game.enabled = true;
+  input.lockPointer();
+};
+const pause = () => {
+  game.enabled = false;
+  menu.enabled = true;
+  input.lockPointer(false);
+};
+```
+
+The same key can mean one thing in each context — Space confirms in the
+menu, shoots in the game — and the same press must not do both. A map
+enabled during a frame reads nothing until the next `update()`: the click
+that chooses Play does not also shoot, and the Escape that opens a menu
+does not close it at once. `active` tells whether a map reads its
+actions in this frame:
+
+```ts
+onFrame(() => {
+  input.update();
+  if (menu.active) {
+    // up, down, confirm
+  } else if (game.active) {
+    // pause, fire
+  }
+  fly.enabled = game.enabled; // the operator stays still under the menu
+  fly.update(dt);
+});
+```
+
+A camera operator reads its own `ActionMap`: disable the map, or the
+operator (`fly.enabled`), and it stops. Several maps can be enabled at
+once — the game and a map of shortcuts always on, for instance.
+
+## Rumble
+
+```ts
+gamepad.rumble(strong, weak, duration); // input.gamepads[0]
+actions.rumble(strong, weak, duration); // the gamepads of an ActionMap
+```
+
+A gamepad has two motors: the **strong** one, heavy, at a low frequency,
+and the **weak** one, light and fast. Each goes from 0 to 1, for
+`duration` seconds. A new rumble replaces the current one;
+`rumble(0, 0, 0)` stops.
+
+`actions.rumble()` shakes the gamepads that drive the actions: all of
+them by default, the one of the player with the `gamepad` option. The
+example shakes a little for a miss, more for a hit:
+
+```ts
+game.rumble(hit ? 0.8 : 0.2, hit ? 0.4 : 0.6, hit ? 0.25 : 0.08);
+```
+
+In a browser, the rumble goes through the `vibrationActuator` of the
+Gamepad API (Chrome, Edge; not every browser has it); in a native window,
+through `SDL_RumbleGamepad`. A gamepad without motors, or a source that
+cannot drive them, ignores it. Let the user turn it off: the menu of the
+example does.
+
+## Testing it
+
+`FakeInputSource` locks the pointer at once and records the rumbles:
+
+```ts
+const source = new FakeInputSource();
+const input = new Input(source);
+input.lockPointer();
+source.sink?.pointerMove(0.5, 0.5, 0.05, 0); // x, y, then dx, dy
+input.update();
+expect(input.pointer).toMatchObject({ locked: true, dx: 0.05 });
+
+source.connectGamepad();
+input.update();
+input.gamepads[0].rumble(1, 0.5, 0.2);
+expect(source.rumbles).toEqual([
+  { gamepad: 0, strong: 1, weak: 0.5, duration: 0.2 },
+]);
+```
+
+## Next
+
+- [Input guide](/fdw-engine/guides/input/): the devices, the controls, the
+  actions.
+- [Camera navigation](/fdw-engine/tutorials/camera-operators/): the
+  operators, their bindings, rebinding them.

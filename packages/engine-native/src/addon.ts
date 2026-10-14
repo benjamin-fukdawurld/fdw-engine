@@ -51,6 +51,8 @@ export interface NativeAddon {
   windowSize(window: WindowHandle): [number, number];
   setTitle(window: WindowHandle, title: string): void;
   setVsync(window: WindowHandle, vsync: number): void;
+  // Locks the pointer to the window (1), or releases it (0).
+  setRelativeMouse(window: WindowHandle, enabled: number): void;
   // RGBA pixels, `stride` bytes per row.
   presentRgba(
     window: WindowHandle,
@@ -71,6 +73,13 @@ export interface NativeAddon {
     buttons: Float32Array,
     axes: Float32Array
   ): string | undefined;
+  // Shakes a gamepad, the motors from 0 to 1: false when it cannot.
+  gamepadRumble(
+    id: number,
+    strong: number,
+    weak: number,
+    durationMs: number
+  ): boolean;
 }
 
 /** The window system of a window and its native handles. */

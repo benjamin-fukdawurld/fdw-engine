@@ -87,14 +87,14 @@ const fly = new FlyOperator(camera, new ActionMap(input, FlyActions), {
 fly.lookAt({ x: 0, y: 1, z: 0 });
 ```
 
-| Action    | Keyboard, mouse          | Gamepad                         | Does                      |
-| --------- | ------------------------ | ------------------------------- | ------------------------- |
-| `move`    | WASD (ZQSD on AZERTY)    | Left stick                      | Moves, y forward          |
-| `look`    | Arrows                   | Right stick                     | Turns                     |
-| `drag`    | Main or secondary button | —                               | Turns with the pointer    |
-| `lift`    | Q down, E up             | Left trigger down, right one up | Goes down and up          |
-| `run`     | Shift                    | Left stick pressed              | Multiplies the speed (×3) |
-| `pointer` | The pointer moved        | —                               | What `drag` follows       |
+| Action    | Keyboard, mouse                                 | Gamepad                         | Does                      |
+| --------- | ----------------------------------------------- | ------------------------------- | ------------------------- |
+| `move`    | WASD (ZQSD on AZERTY)                           | Left stick                      | Moves, y forward          |
+| `look`    | Arrows                                          | Right stick                     | Turns                     |
+| `drag`    | Main or secondary button, or the pointer locked | —                               | Turns with the pointer    |
+| `lift`    | Q down, E up                                    | Left trigger down, right one up | Goes down and up          |
+| `run`     | Shift                                           | Left stick pressed              | Multiplies the speed (×3) |
+| `pointer` | The pointer moved                               | —                               | What `drag` follows       |
 
 The sticks are rates — radians or units per second, multiplied by the
 step of the frame — and the pointer is a displacement: `pointer:delta`
@@ -180,6 +180,8 @@ const fly = new FlyOperator(camera, game, { names: { move: 'walk' } });
 
 ## Next
 
+- [First person controls](/fdw-engine/tutorials/first-person/): the
+  pointer locked, a menu over the game, the rumble.
 - [Input guide](/fdw-engine/guides/input/): the devices, the controls, the
   actions.
 - [Making a game](/fdw-engine/game/introduction/): a game with the input of

@@ -183,6 +183,22 @@ static napi_value js_set_vsync(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
+// setRelativeMouse(window, enabled)
+static napi_value js_set_relative_mouse(napi_env env,
+                                        napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2];
+  CHECK(napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
+  fdw_window *window = window_arg(env, argv[0]);
+  if (!window) {
+    return NULL;
+  }
+  if (fdw_window_set_relative_mouse(window, int_arg(env, argv[1])) != 0) {
+    return throw_last_error(env);
+  }
+  return undefined(env);
+}
+
 // presentRgba(window, pixels: ArrayBufferView, width, height, stride)
 static napi_value js_present_rgba(napi_env env, napi_callback_info info) {
   size_t argc = 5;
@@ -364,6 +380,26 @@ static napi_value js_gamepad_state(napi_env env, napi_callback_info info) {
   return name;
 }
 
+// gamepadRumble(id, strong, weak, durationMs): whether the gamepad shakes.
+static napi_value js_gamepad_rumble(napi_env env, napi_callback_info info) {
+  size_t argc = 4;
+  napi_value argv[4];
+  CHECK(napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
+  uint32_t id = 0;
+  double strong = 0;
+  double weak = 0;
+  uint32_t duration = 0;
+  CHECK(napi_get_value_uint32(env, argv[0], &id));
+  CHECK(napi_get_value_double(env, argv[1], &strong));
+  CHECK(napi_get_value_double(env, argv[2], &weak));
+  CHECK(napi_get_value_uint32(env, argv[3], &duration));
+  napi_value result;
+  CHECK(napi_get_boolean(
+      env, fdw_gamepad_rumble(id, (float)strong, (float)weak, duration) == 0,
+      &result));
+  return result;
+}
+
 static napi_value init_module(napi_env env, napi_value exports) {
   const napi_property_descriptor properties[] = {
       {"init", NULL, js_init, NULL, NULL, NULL, napi_default, NULL},
@@ -377,6 +413,8 @@ static napi_value init_module(napi_env env, napi_value exports) {
        NULL},
       {"setTitle", NULL, js_set_title, NULL, NULL, NULL, napi_default, NULL},
       {"setVsync", NULL, js_set_vsync, NULL, NULL, NULL, napi_default, NULL},
+      {"setRelativeMouse", NULL, js_set_relative_mouse, NULL, NULL, NULL,
+       napi_default, NULL},
       {"presentRgba", NULL, js_present_rgba, NULL, NULL, NULL, napi_default,
        NULL},
       {"pollEvents", NULL, js_poll_events, NULL, NULL, NULL, napi_default,
@@ -386,6 +424,8 @@ static napi_value init_module(napi_env env, napi_value exports) {
       {"gamepads", NULL, js_gamepads, NULL, NULL, NULL, napi_default, NULL},
       {"gamepadState", NULL, js_gamepad_state, NULL, NULL, NULL, napi_default,
        NULL},
+      {"gamepadRumble", NULL, js_gamepad_rumble, NULL, NULL, NULL,
+       napi_default, NULL},
   };
   if (napi_define_properties(env, exports,
                              sizeof(properties) / sizeof(properties[0]),

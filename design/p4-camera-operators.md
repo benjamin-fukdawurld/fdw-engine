@@ -43,4 +43,4 @@ Ils lisent des **actions** nommées (`ActionMap`), jamais des touches : `FlyActi
 
 ## 5. La suite
 
-Les autres contrôleurs de P4 : TPS (bras à ressort, collisions), stratégie et isométrique (contraintes au plan XZ), le zoom vers le curseur, les mouvements lissés (ressorts amortis), les transitions entre caméras, et le verrouillage du pointeur (vue subjective sans bouton maintenu). Le labyrinthe pourra remplacer ses `FlyCamera` et `FollowCamera`.
+Les autres contrôleurs de P4 : TPS (bras à ressort, collisions), stratégie et isométrique (contraintes au plan XZ), le zoom vers le curseur, les mouvements lissés (ressorts amortis), les transitions entre caméras. Le verrouillage du pointeur (vue subjective sans bouton maintenu) est fait : `FlyActions` lie `pointer:locked` à `drag` ([p4-input.md](p4-input.md)). Le labyrinthe pourra remplacer ses `FlyCamera` et `FollowCamera`.

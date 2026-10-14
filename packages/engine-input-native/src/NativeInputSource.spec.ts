@@ -11,7 +11,7 @@ import { NativeInputSource } from './NativeInputSource';
 
 // An addon with a window of 200 × 100 pixels, events queued by the test,
 // and a gamepad (id 3) whose left stick is pushed up.
-function fakeAddon(queue: RawWindowEvent[]): NativeAddon {
+function fakeAddon(queue: RawWindowEvent[], calls: string[] = []): NativeAddon {
   return {
     init: () => undefined,
     quit: () => undefined,
@@ -21,6 +21,7 @@ function fakeAddon(queue: RawWindowEvent[]): NativeAddon {
     windowSize: () => [200, 100],
     setTitle: () => undefined,
     setVsync: () => undefined,
+    setRelativeMouse: (_, enabled) => calls.push(`relative ${enabled}`),
     presentRgba: () => undefined,
     pollEvents: () => queue.splice(0),
     nativeHandle: () => ({ system: 'x11', display: 0n, window: 0n }),
@@ -30,6 +31,8 @@ function fakeAddon(queue: RawWindowEvent[]): NativeAddon {
       axes[1] = -1;
       return 'SDL pad';
     },
+    gamepadRumble: (id, strong, weak, ms) =>
+      calls.push(`rumble ${id} ${strong} ${weak} ${ms}`) > 0,
   };
 }
 
@@ -59,6 +62,32 @@ describe('NativeInputSource', () => {
     expect(gamepad.name).toBe('SDL pad');
     expect(gamepad.isDown('rightTrigger')).toBe(true);
     expect(gamepad.stick('left')).toEqual({ x: 0, y: -1 });
+    input.dispose();
+    window.destroy();
+  });
+
+  it('locks the pointer in the relative mode, and shakes the gamepads', () => {
+    const queue: RawWindowEvent[] = [];
+    const calls: string[] = [];
+    setAddon(fakeAddon(queue, calls));
+    const window = new NativeWindow();
+    const input = new Input(new NativeInputSource(window));
+    input.lockPointer();
+    // Relative: x and y stay, dx and dy move.
+    queue.push(
+      { type: 'pointermove', window: 1, x: 100, y: 50, dx: 20, dy: 0 },
+      { type: 'pointermove', window: 1, x: 100, y: 50, dx: 20, dy: -10 }
+    );
+    NativeWindow.pollEvents();
+    input.update();
+    expect(window.pointerLocked).toBe(true);
+    expect(input.pointer.locked).toBe(true);
+    expect([input.pointer.dx, input.pointer.dy]).toEqual([0.2, -0.1]);
+    input.lockPointer(false);
+    input.update();
+    expect(input.pointer.locked).toBe(false);
+    input.gamepads[0].rumble(1, 0.5, 0.25);
+    expect(calls).toEqual(['relative 1', 'relative 0', 'rumble 3 1 0.5 250']);
     input.dispose();
     window.destroy();
   });
