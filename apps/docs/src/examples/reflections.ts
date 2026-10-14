@@ -313,7 +313,8 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     normal: r.call(std.normalize, { x: geometry.swizzle('xyz') }),
   });
   // A point along the ray, at a distance t: where it is on the screen, and
-  // how far it is behind the depth of the image there.
+  // whether it is inside an object there: behind the depth of its front
+  // faces (the image), in front of the depth of its back faces.
   const probe = (t: PortHandle | number) => {
     const point = r.call(std.add, {
       a: position,
@@ -340,59 +341,47 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         .swizzle('z'),
       b: -1,
     });
-    const sceneDepth = read(r, 'normalDepth', pointUv).swizzle('w');
-    return {
-      uv: pointUv,
-      sceneDepth,
-      behind: r.call(std.sub, { a: pointDepth, b: sceneDepth }),
-    };
-  };
-  // Points along the ray, projected on the screen: the first one that has
-  // just gone behind the image is what the ray meets. The graph has no
-  // loops: the steps are written one by one.
-  const steps = 40;
-  const stepLength = 0.1;
-  // How much deeper the ray goes in one step: a point behind the image by
-  // more than that was already behind it at the step before; the ray
-  // passes behind an object, it does not meet it.
-  const stepDepth = r.call(std.abs, {
-    x: r
-      .call(std.transform, {
-        matrix: r.engine('camera.view'),
-        vector: r.call(std.extend, { xyz: ray, w: 0 }),
-      })
-      .swizzle('z'),
-  });
-  const thickness = r.call(std.add, {
-    a: r.call(std.mul, { a: stepDepth, b: stepLength * 2 }),
-    b: 0.15,
-  });
-  const hits: { t: number; uv: PortHandle; hit: PortHandle }[] = [];
-  for (let i = 1; i <= steps; i++) {
-    const { uv: pointUv, sceneDepth, behind } = probe(i * stepLength);
-    // 1 when all hold: behind the image, by less than the thickness; an
-    // object there (depth > 0); on the screen.
+    const front = read(r, 'normalDepth', pointUv).swizzle('w');
+    const back = read(r, 'backDepth', pointUv).swizzle('w');
+    // 1 when all hold: behind the front faces, in front of the back faces
+    // (with a margin for the precision of the depths); an object there
+    // (depth > 0); on the screen.
     const conditions = [
-      r.call(std.step, { edge: 0.01, x: behind }),
-      r.call(std.step, { edge: behind, x: thickness }),
-      r.call(std.step, { edge: 0.0001, x: sceneDepth }),
+      r.call(std.step, {
+        edge: r.call(std.add, { a: front, b: 0.005 }),
+        x: pointDepth,
+      }),
+      r.call(std.step, {
+        edge: pointDepth,
+        x: r.call(std.add, { a: back, b: 0.05 }),
+      }),
+      r.call(std.step, { edge: 0.0001, x: front }),
       r.call(std.step, { edge: 0, x: pointUv.swizzle('x') }),
       r.call(std.step, { edge: pointUv.swizzle('x'), x: 1 }),
       r.call(std.step, { edge: 0, x: pointUv.swizzle('y') }),
       r.call(std.step, { edge: pointUv.swizzle('y'), x: 1 }),
     ];
-    hits.push({
-      t: i * stepLength,
+    return {
       uv: pointUv,
-      hit: conditions.reduce((a, b) => r.call(std.mul, { a, b })),
-    });
-  }
+      inside: conditions.reduce((a, b) => r.call(std.mul, { a, b })),
+    };
+  };
+  // Points along the ray, projected on the screen: the first one inside an
+  // object is what the ray meets. A ray passing behind an object is behind
+  // its back faces too: it goes on. The graph has no loops: the steps are
+  // written one by one.
+  const steps = 40;
+  const stepLength = 0.1;
+  const hits = Array.from({ length: steps }, (_, i) => ({
+    t: (i + 1) * stepLength,
+    ...probe((i + 1) * stepLength),
+  }));
   // The first hit: chosen from the last step to the first.
   let hitUv: PortHandle = hits[steps - 1].uv;
   let far: PortHandle | number = hits[steps - 1].t;
   let found: PortHandle | number = 0;
   for (let i = steps - 1; i >= 0; i--) {
-    const isHit = r.call(std.greater, { a: hits[i].hit, b: 0.5 });
+    const isHit = r.call(std.greater, { a: hits[i].inside, b: 0.5 });
     hitUv = r.call(std.select, {
       ifFalse: hitUv,
       ifTrue: hits[i].uv,
@@ -403,11 +392,11 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       ifTrue: hits[i].t,
       condition: isHit,
     });
-    found = r.call(std.max, { a: found, b: hits[i].hit });
+    found = r.call(std.max, { a: found, b: hits[i].inside });
   }
-  // The hit lies between the step before (in front of the image) and the
-  // step found (behind it): halved a few times, it lands on the surface
-  // instead of on the steps, which drew bands.
+  // The hit lies between the step before (outside) and the step found
+  // (inside): halved a few times, it lands on the surface instead of on
+  // the steps, which drew bands.
   let near: PortHandle = r.call(std.sub, { a: far, b: stepLength });
   for (let i = 0; i < 6; i++) {
     const middle = r.call(std.mul, {
@@ -415,21 +404,21 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       b: 0.5,
     });
     const point = probe(middle);
-    const behind = r.call(std.greater, { a: point.behind, b: 0 });
+    const inside = r.call(std.greater, { a: point.inside, b: 0.5 });
     hitUv = r.call(std.select, {
       ifFalse: hitUv,
       ifTrue: point.uv,
-      condition: behind,
+      condition: inside,
     });
     far = r.call(std.select, {
       ifFalse: far,
       ifTrue: middle,
-      condition: behind,
+      condition: inside,
     });
     near = r.call(std.select, {
       ifFalse: middle,
       ifTrue: near,
-      condition: behind,
+      condition: inside,
     });
   }
   // What the ray meets in the image, else the environment.
@@ -456,6 +445,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       colorSampler: linear,
       normalDepthSampler: nearest,
       reflectivitySampler: nearest,
+      backDepthSampler: nearest,
     },
   });
 
@@ -590,7 +580,17 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       // Read by the material of the floor.
       inputs = { mirror };
     }
-    // 2. The scene, in linear colors, with its G-buffer.
+    // 2. The depth of the back faces of the objects (in the 'w' of the
+    // same function): how thick they are, for the screen space reflections.
+    const back = renderer.addScenePasses(graph, {
+      name: 'back faces',
+      items,
+      camera,
+      faces: 'back',
+      shadows: false,
+      outputs: { backDepth: outputs.normalDepth },
+    });
+    // 3. The scene, in linear colors, with its G-buffer.
     const scene = renderer.addScenePasses(graph, {
       items,
       camera,
@@ -601,13 +601,14 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       outputs,
       inputs,
     });
-    // 3. The sky, the screen space reflections, the encoding.
+    // 4. The sky, the screen space reflections, the encoding.
     renderer.addFullscreenPass(graph, 'compose', {
       material: compose,
       inputs: {
         color: scene.color,
         normalDepth: scene.outputs.normalDepth,
         reflectivity: scene.outputs.reflectivity,
+        backDepth: back.outputs.backDepth,
       },
       target: graph.importTexture('surface', target),
       format: surface.format,

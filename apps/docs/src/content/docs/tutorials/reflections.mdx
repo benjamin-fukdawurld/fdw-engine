@@ -238,9 +238,9 @@ What to know:
 Screen space reflections (SSR) need no second rendering: they search the
 reflection **in the image already drawn**. A full screen pass follows, for
 each reflective pixel, the reflected ray in the scene, step by step; it
-projects each point on the screen, and compares its depth with the depth
-of the image there. The first point that goes **behind** the image is where
-the ray meets the scene: the color of the image there is the reflection.
+projects each point on the screen, and compares its depth with the depths
+of the objects there. The first point **inside** an object is where the ray
+meets the scene: the color of the image there is the reflection.
 
 The pass needs, for each pixel, its position and its normal (the
 [scene outputs](/fdw-engine/tutorials/scene-outputs/)), and which surfaces
@@ -262,6 +262,24 @@ const scene = renderer.addScenePasses(graph, {
 });
 ```
 
+The image has one depth per pixel, the one of the front faces: behind it,
+nothing says whether there is an object or empty space. A ray passing
+behind a ball would be taken for a hit, and the ball would smear over what
+is behind it. The example draws a second depth, the one of the **back
+faces** (`faces: 'back'`: the far side of the objects): between the two,
+the ray is inside an object.
+
+```ts
+const back = renderer.addScenePasses(graph, {
+  name: 'back faces',
+  items,
+  camera,
+  faces: 'back',
+  shadows: false,
+  outputs: { backDepth: { format: 'rgba16float', value: normalDepth } },
+});
+```
+
 The pass rebuilds the position of the pixel from its depth, and reflects
 the view:
 
@@ -277,7 +295,7 @@ const ray = r.call(std.reflect, {
 
 Then the steps. The material graph has no loops: a TypeScript loop writes
 the 40 steps into the graph. Each step projects its point with the view
-projection of the camera, and reads the depth of the image there:
+projection of the camera, and reads the two depths there:
 
 ```ts
 // A point of the ray, at a distance t.
@@ -292,25 +310,22 @@ const probe = (t) => {
   });
   const uv = /* clip.xy / clip.w, to [0, 1], y down */;
   const pointDepth = /* -(view × point).z */;
-  const sceneDepth = read('normalDepth', uv).swizzle('w');
-  return { uv, behind: pointDepth - sceneDepth };
+  const front = read('normalDepth', uv).swizzle('w');
+  const back = read('backDepth', uv).swizzle('w');
+  // Inside: behind the front faces, in front of the back faces, on the
+  // screen, where there is an object.
+  return { uv, inside: /* front < pointDepth < back, … */ };
 };
 for (let i = 1; i <= 40; i++) {
-  const { uv, behind } = probe(i * 0.1);
-  // A hit: behind the image by less than a thickness, on the screen,
-  // where there is an object.
+  const { uv, inside } = probe(i * 0.1);
 }
 ```
 
-The thickness follows the ray: a little more than how much deeper it goes
-in one step. A point further behind the image was already behind it at the
-step before: the ray passes behind an object, it does not meet it.
-
 The first hit is chosen from the last step to the first, with
-`std.select`. It lies between the step before (in front of the image) and
-this step (behind it): six halvings put it on the surface, not on a step.
-Where the ray meets nothing on the screen, the example falls back on the
-environment map: the floor reflects the sky.
+`std.select`. It lies between the step before (outside) and this step
+(inside): six halvings put it on the surface, not on a step, which would
+draw bands, one per step. Where the ray meets nothing on the screen, the
+example falls back on the environment map: the floor reflects the sky.
 
 ```ts
 const reflection = r.call(std.mix, {
@@ -326,23 +341,23 @@ const color = r.call(std.add, {
 
 What to know:
 
-- **Only what is on the screen** can be reflected. The underside of a ball,
-  an object behind the camera, the back of a box: they are not in the
-  image. Reflections vanish at the edges of the screen. A fallback (the
-  environment map) hides most of it.
-- **The thickness**: the image has one depth per pixel; behind it, the
-  pass cannot know whether there is an object or empty space. A point
-  behind the image by less than the thickness is taken as a hit. Too thick,
-  objects smear over what is behind them; too thin, the reflection has
-  holes.
+- **Only what is on the screen** can be reflected. An object behind the
+  camera, the back of a box, a box hidden behind a ball: they are not in
+  the image. Seen past a ball, the reflection of the box behind it is cut
+  by the ball. Reflections vanish at the edges of the screen. A fallback
+  (the environment map) hides most of it.
+- **The hidden sides**: a ray that meets the underside of a ball takes the
+  color of its visible side, the only one in the image. The top of the
+  reflections of the balls is approximate.
+- **The back faces** give the thickness of closed objects. An open
+  surface (a plane, a leaf) has no back face of its own: give it a
+  thickness, or draw it double-sided. Two objects one behind the other:
+  only the nearer one is known.
 - **The steps**: their length and their count set the reach (here 40 × 0.1
-  units) and the precision. Without the finer search, the reflection shows
-  bands, one per step. Some remain where the balls touch the floor, where
-  the ray passes under a ball the image does not show: a random offset of
-  the first step per pixel, followed by a blur or a temporal accumulation,
-  softens them.
-- **The cost** is a read per step for every pixel: compute it at half the
-  size, only where the reflectivity is not 0.
+  units). An object thinner than a step can be stepped over.
+- **The cost**: a second depth of the scene, and two reads per step for
+  every pixel: compute the reflections at half the size, only where the
+  reflectivity is not 0.
 
 ## Which one?
 
