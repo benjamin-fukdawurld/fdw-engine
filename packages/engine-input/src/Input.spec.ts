@@ -69,6 +69,21 @@ describe('Input', () => {
     expect(input.pointer.seen).toBe(true);
   });
 
+  it('gives the movement of the pointer during the frame', () => {
+    const { source, input } = setup();
+    // The first move: from nowhere, not from the center.
+    source.sink?.pointerMove(0.2, 0.2);
+    input.update();
+    expect(input.pointer).toMatchObject({ dx: 0, dy: 0 });
+    source.sink?.pointerMove(0.3, 0.1);
+    source.sink?.pointerMove(0.5, 0.15);
+    input.update();
+    expect(input.pointer.dx).toBeCloseTo(0.3);
+    expect(input.pointer.dy).toBeCloseTo(-0.05);
+    input.update();
+    expect(input.pointer).toMatchObject({ dx: 0, dy: 0 });
+  });
+
   it('follows the gamepads, connected and disconnected', () => {
     const { source, input } = setup();
     const pad = source.connectGamepad('Pad');
@@ -197,6 +212,23 @@ describe('ActionMap', () => {
     source.setAxis(pad, 'leftY', -1);
     input.update();
     expect(actions.vector('move')).toEqual({ x: 0, y: 1 });
+  });
+
+  it('reads the movement of the pointer, as a vector or axes', () => {
+    const { source, input } = setup();
+    const actions = new ActionMap(input, {
+      look: { type: 'vector', bindings: ['pointer:delta'] },
+      turn: { type: 'axis', bindings: ['pointer:deltaX'] },
+    });
+    source.sink?.pointerMove(0.5, 0.5);
+    input.update();
+    source.sink?.pointerMove(0.6, 0.3);
+    input.update();
+    // Up on the surface: y positive for the vector.
+    const { x, y } = actions.vector('look');
+    expect(x).toBeCloseTo(0.1);
+    expect(y).toBeCloseTo(0.2);
+    expect(actions.axis('turn')).toBeCloseTo(0.1);
   });
 
   it('changes and saves its bindings', () => {

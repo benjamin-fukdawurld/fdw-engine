@@ -18,6 +18,7 @@ const examples: Record<string, string> = {
   'scene-forest': 'tutorials/scene/',
   'occlusion-culling': 'tutorials/occlusion-culling/',
   tessellation: 'tutorials/tessellation/',
+  'camera-operators': 'tutorials/camera-operators/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',
@@ -195,3 +196,34 @@ for (const mode of modes) {
     });
   });
 }
+
+// Camera navigation: C switches from the orbit to the walk. The clock is
+// stopped: the camera stays where the operator puts it.
+test('camera-operators-walk', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/camera-operators/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`
+  );
+  const example = browser.locator('[data-example="camera-operators"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('orbit');
+  await canvas.click();
+  await browser.keyboard.press('KeyC');
+  await expect(status).toContainText('walk');
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(
+    `camera-operators-walk-${backend}.png`,
+    {
+      timeout: 20_000,
+    }
+  );
+});

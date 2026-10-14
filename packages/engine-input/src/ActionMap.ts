@@ -7,6 +7,9 @@ import { GamepadAxes, GamepadButtons } from './source';
  * - `key:<code>`: a key, by physical position (`key:KeyW`);
  * - `pointer:<button>`: a button of the pointer (`pointer:0`), and
  *   `pointer:wheel`, the wheel (an axis: notches of the frame);
+ * - `pointer:delta`: the movement of the pointer during the frame, for a
+ *   vector, in fractions of the surface; `pointer:deltaX`,
+ *   `pointer:deltaY`: the same, as axes (y positive downwards);
  * - `gamepad:<button>`: a button of a gamepad (`gamepad:south`,
  *   `gamepad:rightTrigger`);
  * - `gamepad:<axis>`: an axis of a stick, from -1 to 1 (`gamepad:leftX`);
@@ -282,8 +285,15 @@ export class ActionMap {
 
   private readAxis(control: Control): number {
     const [device, name] = split(control);
+    const { pointer } = this._input;
     if (control === 'pointer:wheel') {
-      return this._input.pointer.wheel;
+      return pointer.wheel;
+    }
+    if (control === 'pointer:deltaX') {
+      return pointer.dx;
+    }
+    if (control === 'pointer:deltaY') {
+      return pointer.dy;
     }
     if (device === 'gamepad' && isAxis(name)) {
       let result = 0;
@@ -305,6 +315,12 @@ export class ActionMap {
   private readStick(control: Control, out: { x: number; y: number }): void {
     out.x = 0;
     out.y = 0;
+    if (control === 'pointer:delta') {
+      // Not a stick, but read as one: y positive downwards.
+      out.x = this._input.pointer.dx;
+      out.y = this._input.pointer.dy;
+      return;
+    }
     const side =
       control === 'gamepad:leftStick'
         ? 'left'

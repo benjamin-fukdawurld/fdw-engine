@@ -130,7 +130,7 @@ Démos et exemples : le displacement mapping de P2b rendu adaptatif, un terrain 
 
 ### P4. Caméras, entrées, ordonnanceur — démo FPS
 
-- **Contrôleurs de caméra** ([backlog §9](backlog.md#9-vers-un-middleware-de-création-3d)) : FPS, TPS (bras à ressort, collisions), stratégie et isométrique (plan XZ), orbite CAO (pivot, panoramique, zoom vers le curseur), vol libre ; des intentions reliées par l'application à ses actions, des contraintes composables, des ressorts amortis, des transitions entre caméras.
+- **Contrôleurs de caméra** ([backlog §9](backlog.md#9-vers-un-middleware-de-création-3d)) — _premiers opérateurs faits_ (14 octobre 2026), avec leur tutoriel : `@fdw/engine-camera`, orbite et vol libre ou marche, au clavier, à la souris et à la manette, liaisons réaffectables ([p4-camera-operators.md](p4-camera-operators.md)). Le reste : TPS (bras à ressort, collisions), stratégie et isométrique (plan XZ), le zoom vers le curseur ; des contraintes composables, des ressorts amortis, des transitions entre caméras.
 - **Entrées** : le verrouillage du pointeur (déplacements relatifs), les contextes d'actions (menu, jeu), les vibrations ([input §6](input.md#6-hors-du-périmètre-prévu-par-lapi)).
 - **L'ordonnanceur de systèmes ECS** : des systèmes ordonnés, la boucle à pas fixe intégrée.
 - **Un contrôleur de personnage** : une capsule qui marche, saute, glisse le long des murs et monte les marches, contre les volumes de la scène. Une API abstraite pour brancher un moteur physique plus tard.
