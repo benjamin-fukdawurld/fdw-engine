@@ -214,6 +214,9 @@ Les fonctions et les matériaux donnent des valeurs du type du format :
 - `depth` donne une profondeur écrite par des passes précédentes, et
   `include: 'opaque' | 'transparent'` les éléments dessinés : un G-buffer
   des opaques, puis les transparents sur l'image composée.
+- `faces: 'back'` dessine les faces arrière des éléments à une face au
+  lieu de leurs faces avant : la profondeur du côté éloigné des objets,
+  leur épaisseur (voir [Reflets](/fdw-engine/fr/tutorials/reflections/)).
 
 ## Compilation
 

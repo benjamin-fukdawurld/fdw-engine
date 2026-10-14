@@ -242,20 +242,20 @@ Ce qu'il faut savoir :
 
 Les reflets en espace écran (SSR) ne demandent pas de second rendu : ils
 cherchent le reflet **dans l'image déjà dessinée**. Une passe plein écran
-suit, pour chaque pixel qui reflète, le rayon réfléchi dans la scène, pas à
-pas ; elle projette chaque point sur l'écran, et compare sa profondeur à
-celle de l'image à cet endroit. Le premier point qui passe **derrière**
-l'image est celui où le rayon rencontre la scène : la couleur de l'image à
+suit, pour chaque pixel réfléchissant, le rayon réfléchi dans la scène, pas
+à pas ; elle projette chaque point à l'écran, et compare sa profondeur aux
+profondeurs des objets à cet endroit. Le premier point **à l'intérieur**
+d'un objet est là où le rayon rencontre la scène : la couleur de l'image à
 cet endroit est le reflet.
 
 La passe a besoin, pour chaque pixel, de sa position et de sa normale (les
 [sorties de la scène](/fdw-engine/fr/tutorials/scene-outputs/)), et de
-savoir quelles surfaces reflètent, et combien. Les matériaux l'écrivent
-eux-mêmes, avec `g.output` : une sortie de valeur `'material'` des passes de
-la scène la recueille, 0 pour les autres.
+savoir quelles surfaces réfléchissent, et combien. Les materials l'écrivent
+eux-mêmes, avec `g.output` : une sortie de valeur `'material'` des passes
+de la scène le recueille, 0 pour les autres.
 
 ```ts
-// Dans le matériau du sol.
+// Dans le material du sol.
 g.output('reflectivity', 0.5);
 
 // Les passes de la scène.
@@ -268,7 +268,25 @@ const scene = renderer.addScenePasses(graph, {
 });
 ```
 
-La passe reconstruit la position du pixel à partir de sa profondeur, et
+L'image a une profondeur par pixel, celle des faces avant : derrière, rien
+ne dit s'il y a un objet ou du vide. Un rayon qui passe derrière une boule
+serait pris pour un impact, et la boule « baverait » sur ce qui est
+derrière elle. L'exemple dessine une seconde profondeur, celle des **faces
+arrière** (`faces: 'back'` : le côté éloigné des objets) : entre les deux,
+le rayon est à l'intérieur d'un objet.
+
+```ts
+const back = renderer.addScenePasses(graph, {
+  name: 'back faces',
+  items,
+  camera,
+  faces: 'back',
+  shadows: false,
+  outputs: { backDepth: { format: 'rgba16float', value: normalDepth } },
+});
+```
+
+La passe reconstruit la position du pixel depuis sa profondeur, et
 réfléchit la vue :
 
 ```ts
@@ -283,7 +301,7 @@ const ray = r.call(std.reflect, {
 
 Puis les pas. Le material graph n'a pas de boucles : une boucle TypeScript
 écrit les 40 pas dans le graphe. Chaque pas projette son point avec la
-projection de la caméra, et lit la profondeur de l'image à cet endroit :
+projection de la caméra, et lit les deux profondeurs à cet endroit :
 
 ```ts
 // Un point du rayon, à une distance t.
@@ -298,25 +316,23 @@ const probe = (t) => {
   });
   const uv = /* clip.xy / clip.w, vers [0, 1], y vers le bas */;
   const pointDepth = /* -(view × point).z */;
-  const sceneDepth = read('normalDepth', uv).swizzle('w');
-  return { uv, behind: pointDepth - sceneDepth };
+  const front = read('normalDepth', uv).swizzle('w');
+  const back = read('backDepth', uv).swizzle('w');
+  // À l'intérieur : derrière les faces avant, devant les faces arrière,
+  // sur l'écran, là où il y a un objet.
+  return { uv, inside: /* front < pointDepth < back, … */ };
 };
 for (let i = 1; i <= 40; i++) {
-  const { uv, behind } = probe(i * 0.1);
-  // Un impact : derrière l'image de moins d'une épaisseur, sur l'écran,
-  // là où il y a un objet.
+  const { uv, inside } = probe(i * 0.1);
 }
 ```
 
-L'épaisseur suit le rayon : un peu plus que ce dont il s'enfonce en
-profondeur en un pas. Un point plus loin derrière l'image l'était déjà au
-pas d'avant : le rayon passe derrière un objet, il ne le rencontre pas.
-
 Le premier impact est choisi du dernier pas au premier, avec
-`std.select`. Il est entre le pas d'avant (devant l'image) et ce pas
-(derrière) : six dichotomies le placent sur la surface, et non sur un
-pas. Là où le rayon ne rencontre rien à l'écran, l'exemple se rabat sur
-la carte d'environnement : le sol reflète le ciel.
+`std.select`. Il est entre le pas d'avant (dehors) et ce pas (dedans) : six
+dichotomies le placent sur la surface, et non sur un pas, ce qui
+dessinerait des bandes, une par pas. Là où le rayon ne rencontre rien à
+l'écran, l'exemple se rabat sur la carte d'environnement : le sol reflète
+le ciel.
 
 ```ts
 const reflection = r.call(std.mix, {
@@ -332,22 +348,23 @@ const color = r.call(std.add, {
 
 Ce qu'il faut savoir :
 
-- **Seul ce qui est à l'écran** peut être reflété. Le dessous d'une boule,
-  un objet derrière la caméra, l'arrière d'une boîte : ils ne sont pas dans
-  l'image. Les reflets disparaissent aux bords de l'écran. Un repli (la
-  carte d'environnement) en cache l'essentiel.
-- **L'épaisseur** : l'image a une profondeur par pixel ; derrière, la passe
-  ne peut pas savoir s'il y a un objet ou du vide. Un point derrière l'image
-  de moins que l'épaisseur est pris pour un impact. Trop grande, les objets
-  « bavent » sur ce qui est derrière eux ; trop petite, le reflet se troue.
+- **Seul ce qui est à l'écran** peut être reflété. Un objet derrière la
+  caméra, l'arrière d'une boîte, une boîte cachée derrière une boule : ils
+  ne sont pas dans l'image. Vu au-delà d'une boule, le reflet de la boîte
+  derrière elle est coupé par la boule. Les reflets disparaissent aux bords
+  de l'écran. Un repli (la carte d'environnement) en cache l'essentiel.
+- **Les faces cachées** : un rayon qui rencontre le dessous d'une boule
+  prend la couleur de sa face visible, la seule dans l'image. Le haut des
+  reflets des boules est approximatif.
+- **Les faces arrière** donnent l'épaisseur des objets fermés. Une surface
+  ouverte (un plan, une feuille) n'a pas de face arrière à elle : donnez-lui
+  une épaisseur, ou dessinez-la double face. Deux objets l'un derrière
+  l'autre : seul le plus proche est connu.
 - **Les pas** : leur longueur et leur nombre fixent la portée (ici 40 ×
-  0,1 unité) et la précision. Sans la recherche fine, le reflet montre des
-  bandes, une par pas. Il en reste au contact des boules et du sol, là où
-  le rayon passe sous une boule que l'image ne montre pas : un décalage
-  aléatoire du premier pas par pixel, suivi d'un flou ou d'une
-  accumulation temporelle, les adoucit.
-- **Le coût** est d'une lecture par pas pour chaque pixel : calculez-les en
-  demi-taille, seulement là où la réflectivité n'est pas nulle.
+  0,1 unité). Un objet plus mince qu'un pas peut être enjambé.
+- **Le coût** : une seconde profondeur de la scène, et deux lectures par
+  pas pour chaque pixel : calculez les reflets en demi-taille, seulement là
+  où la réflectivité n'est pas nulle.
 
 ## Laquelle choisir ?
 

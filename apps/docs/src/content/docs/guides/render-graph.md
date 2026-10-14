@@ -206,6 +206,9 @@ The functions and the materials give values of the type of the format:
 - `depth` gives a depth buffer written by earlier passes, and
   `include: 'opaque' | 'transparent'` the items drawn: a G-buffer of the
   opaque items, then the transparent ones over the composed image.
+- `faces: 'back'` draws the back faces of the one-sided items instead of
+  their front faces: the depth of the far side of the objects, their
+  thickness (see [Reflections](/fdw-engine/tutorials/reflections/)).
 
 ## Compilation
 
