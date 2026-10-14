@@ -276,30 +276,41 @@ const ray = r.call(std.reflect, {
 ```
 
 Then the steps. The material graph has no loops: a TypeScript loop writes
-the 32 steps into the graph. Each step projects its point with the view
+the 40 steps into the graph. Each step projects its point with the view
 projection of the camera, and reads the depth of the image there:
 
 ```ts
-for (let i = 1; i <= 32; i++) {
+// A point of the ray, at a distance t.
+const probe = (t) => {
   const point = r.call(std.add, {
     a: position,
-    b: r.call(std.mul, { a: ray, b: i * 0.12 }),
+    b: r.call(std.mul, { a: ray, b: t }),
   });
   const clip = r.call(std.transform, {
     matrix: r.engine('camera.viewProjection'),
     vector: r.call(std.extend, { xyz: point }),
   });
-  const pointUv = /* clip.xy / clip.w, to [0, 1], y down */;
+  const uv = /* clip.xy / clip.w, to [0, 1], y down */;
   const pointDepth = /* -(view × point).z */;
-  const sceneDepth = read('normalDepth', pointUv).swizzle('w');
-  // A hit: behind the image by less than a thickness (0.4), on the
-  // screen, where there is an object.
+  const sceneDepth = read('normalDepth', uv).swizzle('w');
+  return { uv, behind: pointDepth - sceneDepth };
+};
+for (let i = 1; i <= 40; i++) {
+  const { uv, behind } = probe(i * 0.1);
+  // A hit: behind the image by less than a thickness, on the screen,
+  // where there is an object.
 }
 ```
 
+The thickness follows the ray: a little more than how much deeper it goes
+in one step. A point further behind the image was already behind it at the
+step before: the ray passes behind an object, it does not meet it.
+
 The first hit is chosen from the last step to the first, with
-`std.select`. Where the ray meets nothing on the screen, the example falls
-back on the environment map: the floor reflects the sky.
+`std.select`. It lies between the step before (in front of the image) and
+this step (behind it): six halvings put it on the surface, not on a step.
+Where the ray meets nothing on the screen, the example falls back on the
+environment map: the floor reflects the sky.
 
 ```ts
 const reflection = r.call(std.mix, {
@@ -321,12 +332,15 @@ What to know:
   environment map) hides most of it.
 - **The thickness**: the image has one depth per pixel; behind it, the
   pass cannot know whether there is an object or empty space. A point
-  behind the image by less than the thickness is taken as a hit.
-- **The steps**: their length and their count set the reach (here 32 × 0.12
-  units) and the precision. Too long, they step over thin objects and the
-  reflection shows bands, visible on the floor of the example. A finer
-  search between the last two steps (a few halvings), or a random offset of
-  the first step per pixel followed by a blur, reduce them.
+  behind the image by less than the thickness is taken as a hit. Too thick,
+  objects smear over what is behind them; too thin, the reflection has
+  holes.
+- **The steps**: their length and their count set the reach (here 40 × 0.1
+  units) and the precision. Without the finer search, the reflection shows
+  bands, one per step. Some remain where the balls touch the floor, where
+  the ray passes under a ball the image does not show: a random offset of
+  the first step per pixel, followed by a blur or a temporal accumulation,
+  softens them.
 - **The cost** is a read per step for every pixel: compute it at half the
   size, only where the reflectivity is not 0.
 

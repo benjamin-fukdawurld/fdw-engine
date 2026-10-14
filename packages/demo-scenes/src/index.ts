@@ -3,3 +3,4 @@ export * from './geometry';
 export * from './pbr';
 export * from './shadows';
 export * from './maze';
+export * from './ssr';

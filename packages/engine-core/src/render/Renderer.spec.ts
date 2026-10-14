@@ -819,6 +819,31 @@ describe('Renderer, views', () => {
       expect.closeTo(-0.002, 6),
     ]);
   });
+
+  it('draws the back faces of one-sided items when asked', () => {
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const graph = new RenderGraph();
+    const item = (doubleSided: boolean) => ({
+      mesh: triangle(),
+      material: new Material({
+        graph: colorGraph(),
+        renderState: { doubleSided },
+      }),
+      transform: transformAt(0),
+    });
+    renderer.addScenePasses(graph, {
+      items: [item(false), item(true)],
+      camera: new Camera({ position: { x: 0, y: 0, z: 10 } }),
+      target: graph.createTexture('back', { format: 'rgba8unorm' }),
+      format: 'rgba8unorm',
+      faces: 'back',
+    });
+    expect(log.pipelines.map((p) => p.primitive.cullMode).sort()).toEqual([
+      'front',
+      'none',
+    ]);
+  });
 });
 
 describe('Renderer, phase 4', () => {

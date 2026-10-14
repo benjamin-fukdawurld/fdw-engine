@@ -282,30 +282,41 @@ const ray = r.call(std.reflect, {
 ```
 
 Puis les pas. Le material graph n'a pas de boucles : une boucle TypeScript
-écrit les 32 pas dans le graphe. Chaque pas projette son point avec la
+écrit les 40 pas dans le graphe. Chaque pas projette son point avec la
 projection de la caméra, et lit la profondeur de l'image à cet endroit :
 
 ```ts
-for (let i = 1; i <= 32; i++) {
+// Un point du rayon, à une distance t.
+const probe = (t) => {
   const point = r.call(std.add, {
     a: position,
-    b: r.call(std.mul, { a: ray, b: i * 0.12 }),
+    b: r.call(std.mul, { a: ray, b: t }),
   });
   const clip = r.call(std.transform, {
     matrix: r.engine('camera.viewProjection'),
     vector: r.call(std.extend, { xyz: point }),
   });
-  const pointUv = /* clip.xy / clip.w, vers [0, 1], y vers le bas */;
+  const uv = /* clip.xy / clip.w, vers [0, 1], y vers le bas */;
   const pointDepth = /* -(view × point).z */;
-  const sceneDepth = read('normalDepth', pointUv).swizzle('w');
-  // Un impact : derrière l'image de moins d'une épaisseur (0,4), sur
-  // l'écran, là où il y a un objet.
+  const sceneDepth = read('normalDepth', uv).swizzle('w');
+  return { uv, behind: pointDepth - sceneDepth };
+};
+for (let i = 1; i <= 40; i++) {
+  const { uv, behind } = probe(i * 0.1);
+  // Un impact : derrière l'image de moins d'une épaisseur, sur l'écran,
+  // là où il y a un objet.
 }
 ```
 
+L'épaisseur suit le rayon : un peu plus que ce dont il s'enfonce en
+profondeur en un pas. Un point plus loin derrière l'image l'était déjà au
+pas d'avant : le rayon passe derrière un objet, il ne le rencontre pas.
+
 Le premier impact est choisi du dernier pas au premier, avec
-`std.select`. Là où le rayon ne rencontre rien à l'écran, l'exemple se
-rabat sur la carte d'environnement : le sol reflète le ciel.
+`std.select`. Il est entre le pas d'avant (devant l'image) et ce pas
+(derrière) : six dichotomies le placent sur la surface, et non sur un
+pas. Là où le rayon ne rencontre rien à l'écran, l'exemple se rabat sur
+la carte d'environnement : le sol reflète le ciel.
 
 ```ts
 const reflection = r.call(std.mix, {
@@ -327,13 +338,14 @@ Ce qu'il faut savoir :
   carte d'environnement) en cache l'essentiel.
 - **L'épaisseur** : l'image a une profondeur par pixel ; derrière, la passe
   ne peut pas savoir s'il y a un objet ou du vide. Un point derrière l'image
-  de moins que l'épaisseur est pris pour un impact.
-- **Les pas** : leur longueur et leur nombre fixent la portée (ici 32 ×
-  0,12 unité) et la précision. Trop longs, ils enjambent les objets minces
-  et le reflet montre des bandes, visibles sur le sol de l'exemple. Une
-  recherche plus fine entre les deux derniers pas (quelques dichotomies), ou
-  un décalage aléatoire du premier pas par pixel suivi d'un flou, les
-  réduisent.
+  de moins que l'épaisseur est pris pour un impact. Trop grande, les objets
+  « bavent » sur ce qui est derrière eux ; trop petite, le reflet se troue.
+- **Les pas** : leur longueur et leur nombre fixent la portée (ici 40 ×
+  0,1 unité) et la précision. Sans la recherche fine, le reflet montre des
+  bandes, une par pas. Il en reste au contact des boules et du sol, là où
+  le rayon passe sous une boule que l'image ne montre pas : un décalage
+  aléatoire du premier pas par pixel, suivi d'un flou ou d'une
+  accumulation temporelle, les adoucit.
 - **Le coût** est d'une lecture par pas pour chaque pixel : calculez-les en
   demi-taille, seulement là où la réflectivité n'est pas nulle.
 
