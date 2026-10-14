@@ -165,6 +165,10 @@ export interface ScenePassesOptions<K extends string = string>
   // 'transparent' for the blended ones over the result of earlier passes
   // (with their `depth`). Default 'all'.
   readonly include?: 'all' | 'opaque' | 'transparent';
+  // The faces drawn of the one-sided items: 'front' (the default), or
+  // 'back', the far side of closed objects (their depth, for a thickness).
+  // Double-sided items are drawn as usual.
+  readonly faces?: 'front' | 'back';
   // Samples per pixel, the renderer's by default. Outputs of integer
   // formats need 1: their samples cannot be resolved.
   readonly samples?: number;
@@ -743,6 +747,7 @@ export class Renderer {
       depth: givenDepth,
       load = 'clear',
       include = 'all',
+      faces = 'front',
       samples = this._samples,
       size: givenSize,
       clearColor,
@@ -845,7 +850,8 @@ export class Renderer {
             item,
             {
               format: format ?? '',
-              cullMode,
+              cullMode:
+                faces === 'back' && cullMode === 'back' ? 'front' : cullMode,
               linear,
               shadows: shadowPass !== undefined,
               depthOnly: false,

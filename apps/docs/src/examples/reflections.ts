@@ -312,16 +312,12 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     }),
     normal: r.call(std.normalize, { x: geometry.swizzle('xyz') }),
   });
-  // Points along the ray, projected on the screen: the first one behind
-  // the depth of the image (by less than a thickness) is what the ray
-  // meets. The graph has no loops: the steps are written one by one.
-  const steps = 32;
-  const stepLength = 0.12;
-  const hits: { uv: PortHandle; hit: PortHandle }[] = [];
-  for (let i = 1; i <= steps; i++) {
+  // A point along the ray, at a distance t: where it is on the screen, and
+  // how far it is behind the depth of the image there.
+  const probe = (t: PortHandle | number) => {
     const point = r.call(std.add, {
       a: position,
-      b: r.call(std.mul, { a: ray, b: i * stepLength }),
+      b: r.call(std.mul, { a: ray, b: t }),
     });
     const clip = r.call(std.transform, {
       matrix: r.engine('camera.viewProjection'),
@@ -345,12 +341,40 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       b: -1,
     });
     const sceneDepth = read(r, 'normalDepth', pointUv).swizzle('w');
-    const behind = r.call(std.sub, { a: pointDepth, b: sceneDepth });
-    // 1 when all hold: behind the image, by less than 0.4; an object there
-    // (depth > 0); on the screen.
+    return {
+      uv: pointUv,
+      sceneDepth,
+      behind: r.call(std.sub, { a: pointDepth, b: sceneDepth }),
+    };
+  };
+  // Points along the ray, projected on the screen: the first one that has
+  // just gone behind the image is what the ray meets. The graph has no
+  // loops: the steps are written one by one.
+  const steps = 40;
+  const stepLength = 0.1;
+  // How much deeper the ray goes in one step: a point behind the image by
+  // more than that was already behind it at the step before; the ray
+  // passes behind an object, it does not meet it.
+  const stepDepth = r.call(std.abs, {
+    x: r
+      .call(std.transform, {
+        matrix: r.engine('camera.view'),
+        vector: r.call(std.extend, { xyz: ray, w: 0 }),
+      })
+      .swizzle('z'),
+  });
+  const thickness = r.call(std.add, {
+    a: r.call(std.mul, { a: stepDepth, b: stepLength * 2 }),
+    b: 0.15,
+  });
+  const hits: { t: number; uv: PortHandle; hit: PortHandle }[] = [];
+  for (let i = 1; i <= steps; i++) {
+    const { uv: pointUv, sceneDepth, behind } = probe(i * stepLength);
+    // 1 when all hold: behind the image, by less than the thickness; an
+    // object there (depth > 0); on the screen.
     const conditions = [
-      r.call(std.step, { edge: 0.02, x: behind }),
-      r.call(std.step, { edge: behind, x: 0.4 }),
+      r.call(std.step, { edge: 0.01, x: behind }),
+      r.call(std.step, { edge: behind, x: thickness }),
       r.call(std.step, { edge: 0.0001, x: sceneDepth }),
       r.call(std.step, { edge: 0, x: pointUv.swizzle('x') }),
       r.call(std.step, { edge: pointUv.swizzle('x'), x: 1 }),
@@ -358,12 +382,14 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       r.call(std.step, { edge: pointUv.swizzle('y'), x: 1 }),
     ];
     hits.push({
+      t: i * stepLength,
       uv: pointUv,
       hit: conditions.reduce((a, b) => r.call(std.mul, { a, b })),
     });
   }
   // The first hit: chosen from the last step to the first.
   let hitUv: PortHandle = hits[steps - 1].uv;
+  let far: PortHandle | number = hits[steps - 1].t;
   let found: PortHandle | number = 0;
   for (let i = steps - 1; i >= 0; i--) {
     const isHit = r.call(std.greater, { a: hits[i].hit, b: 0.5 });
@@ -372,7 +398,39 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       ifTrue: hits[i].uv,
       condition: isHit,
     });
+    far = r.call(std.select, {
+      ifFalse: far,
+      ifTrue: hits[i].t,
+      condition: isHit,
+    });
     found = r.call(std.max, { a: found, b: hits[i].hit });
+  }
+  // The hit lies between the step before (in front of the image) and the
+  // step found (behind it): halved a few times, it lands on the surface
+  // instead of on the steps, which drew bands.
+  let near: PortHandle = r.call(std.sub, { a: far, b: stepLength });
+  for (let i = 0; i < 6; i++) {
+    const middle = r.call(std.mul, {
+      a: r.call(std.add, { a: near, b: far }),
+      b: 0.5,
+    });
+    const point = probe(middle);
+    const behind = r.call(std.greater, { a: point.behind, b: 0 });
+    hitUv = r.call(std.select, {
+      ifFalse: hitUv,
+      ifTrue: point.uv,
+      condition: behind,
+    });
+    far = r.call(std.select, {
+      ifFalse: far,
+      ifTrue: middle,
+      condition: behind,
+    });
+    near = r.call(std.select, {
+      ifFalse: middle,
+      ifTrue: near,
+      condition: behind,
+    });
   }
   // What the ray meets in the image, else the environment.
   const reflection = r.call(std.mix, {
