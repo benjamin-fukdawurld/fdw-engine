@@ -1,0 +1,7 @@
+{
+  "name": "engine-camera",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-camera/src",
+  "projectType": "library",
+  "tags": []
+}

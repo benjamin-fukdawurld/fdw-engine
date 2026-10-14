@@ -1,0 +1,186 @@
+---
+title: Camera navigation
+description: Move a camera with the mouse, the keyboard and a gamepad — orbit around a point or fly through the scene — with controls the user can rebind.
+sidebar:
+  order: 16
+---
+
+import Example from '../../../components/Example.astro';
+
+A **camera operator** moves a camera from the input of each frame. The
+package `@fdw/engine-camera` has two:
+
+- `OrbitOperator` turns around a pivot, as a modeling tool or a strategy
+  game: drag to turn, right drag to pan, the wheel to zoom;
+- `FlyOperator` moves where the camera looks, flying or walking, as a
+  first person game: WASD and the left stick move, the right stick and the
+  mouse dragged look around.
+
+Click the canvas, then use the mouse, the keyboard or a gamepad. C — or
+the north button, Y on an Xbox gamepad — switches between them.
+
+<Example name="camera-operators" />
+
+## The input
+
+The operators read **actions** of `@fdw/engine-input`, not keys: every
+control can be rebound (see the [Input guide](/fdw-engine/guides/input/)).
+Create the input once, with the source of the page, and update it first
+in every frame:
+
+```ts
+import { ActionMap, Input } from '@fdw/engine-input';
+import { WebInputSource } from '@fdw/engine-input-web';
+
+const input = new Input(new WebInputSource(canvas));
+```
+
+In a native window, the source is `NativeInputSource(window)`; the rest is
+the same.
+
+## Orbiting
+
+```ts
+import { OrbitActions, OrbitOperator } from '@fdw/engine-camera';
+
+const orbit = new OrbitOperator(camera, new ActionMap(input, OrbitActions), {
+  pivot: { x: 0, y: 0, z: 0 },
+  distance: 22,
+  yaw: 0.6, // radians around y: 0 looks along -z
+  pitch: -0.55, // negative: from above
+  minPitch: -1.5,
+  maxPitch: -0.05, // never under the ground
+});
+
+onFrame(() => {
+  input.update();
+  orbit.update(dt); // in seconds
+  renderer.render({ items, camera, surface, lights });
+});
+```
+
+`OrbitActions` are the default actions, with their bindings:
+
+| Action      | Keyboard, mouse       | Gamepad                 | Does                                  |
+| ----------- | --------------------- | ----------------------- | ------------------------------------- |
+| `orbit`     | Arrows                | Right stick             | Turns around the pivot                |
+| `orbitDrag` | Main button dragged   | —                       | The same, with the pointer            |
+| `panDrag`   | Secondary or middle   | —                       | Pans: the scene follows the pointer   |
+| `move`      | WASD (ZQSD on AZERTY) | Left stick              | Moves the pivot over the ground       |
+| `zoom`      | E closer, Q further   | Right trigger, left one | Zooms while held                      |
+| `zoomStep`  | Wheel                 | —                       | Zooms by notches                      |
+| `pointer`   | The pointer moved     | —                       | What `orbitDrag` and `panDrag` follow |
+
+The pivot, the distance, the yaw and the pitch are fields: change them to
+frame an object, `apply()` writes them into the camera at once.
+
+## Flying and walking
+
+```ts
+import { FlyActions, FlyOperator } from '@fdw/engine-camera';
+
+const fly = new FlyOperator(camera, new ActionMap(input, FlyActions), {
+  mode: 'walk', // horizontal; 'fly' (default) goes where it looks
+  position: { x: 0, y: 1.7, z: 14 },
+  speed: 5, // units per second
+});
+fly.lookAt({ x: 0, y: 1, z: 0 });
+```
+
+| Action    | Keyboard, mouse          | Gamepad                         | Does                      |
+| --------- | ------------------------ | ------------------------------- | ------------------------- |
+| `move`    | WASD (ZQSD on AZERTY)    | Left stick                      | Moves, y forward          |
+| `look`    | Arrows                   | Right stick                     | Turns                     |
+| `drag`    | Main or secondary button | —                               | Turns with the pointer    |
+| `lift`    | Q down, E up             | Left trigger down, right one up | Goes down and up          |
+| `run`     | Shift                    | Left stick pressed              | Multiplies the speed (×3) |
+| `pointer` | The pointer moved        | —                               | What `drag` follows       |
+
+The sticks are rates — radians or units per second, multiplied by the
+step of the frame — and the pointer is a displacement: `pointer:delta`
+gives the movement of the pointer during the frame. Pushed fully, the
+stick turns at `lookSpeed` (2.5 radians per second); the pointer dragged
+the height of the canvas turns by `pointerSpeed` (3 radians). The
+operators read the aspect of the camera, so that a pixel turns as much
+horizontally as vertically; `invertY` reverses up and down.
+
+## Several operators
+
+An operator only moves the camera in its `update()`, and does nothing
+when `enabled` is false. To switch, enable one and disable the other; the
+example reads a third `ActionMap` for the switch:
+
+```ts
+const switching = new ActionMap(input, {
+  switch: { type: 'button', bindings: ['key:KeyC', 'gamepad:north'] },
+});
+
+if (switching.button('switch').pressed) {
+  orbit.enabled = !orbit.enabled;
+  fly.enabled = !orbit.enabled;
+  (orbit.enabled ? orbit : fly).apply(); // back to where it left the camera
+}
+```
+
+The operator also drives the node of a camera in a scene: give it the
+transform of the node, `new FlyOperator(node.transform, actions)`. A
+transform has no projection: the pan then assumes a field of view of 45°
+and the pointer a square canvas.
+
+## Rebinding the controls
+
+The actions are an ordinary `ActionMap`: `rebind()` changes the controls
+of an action, `toJSON()` saves them, the `bindings` option restores them.
+
+```ts
+const actions = new ActionMap(input, FlyActions, {
+  bindings: JSON.parse(localStorage.getItem('fly') ?? '{}'),
+});
+
+// Left-handed: IJKL and the right stick move, the left stick looks, the
+// mouse turns only with its secondary button.
+actions.rebind('move', [
+  { up: 'key:KeyI', down: 'key:KeyK', left: 'key:KeyJ', right: 'key:KeyL' },
+  'gamepad:rightStick',
+]);
+actions.rebind('look', ['gamepad:leftStick']);
+actions.rebind('drag', ['pointer:2']);
+
+localStorage.setItem('fly', JSON.stringify(actions));
+```
+
+To let the user choose a key, wait for the next key pressed and bind it:
+
+```ts
+function waitForKey(): Promise<string> {
+  return new Promise((resolve) =>
+    canvas.addEventListener('keydown', (event) => resolve(event.code), {
+      once: true,
+    })
+  );
+}
+
+const code = await waitForKey();
+actions.rebind('run', [`key:${code}`, 'gamepad:leftStick']);
+// To show it: "Z" for KeyW on an AZERTY keyboard.
+const label = input.keyboard.label(code);
+```
+
+When an application already has its actions, it can share its
+`ActionMap`: `names` maps the intents of the operator to its own names.
+
+```ts
+const game = new ActionMap(input, {
+  ...FlyActions,
+  walk: FlyActions.move,
+  jump: { type: 'button', bindings: ['key:Space', 'gamepad:south'] },
+});
+const fly = new FlyOperator(camera, game, { names: { move: 'walk' } });
+```
+
+## Next
+
+- [Input guide](/fdw-engine/guides/input/): the devices, the controls, the
+  actions.
+- [Making a game](/fdw-engine/game/introduction/): a game with the input of
+  the engine, a camera following a character.

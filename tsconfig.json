@@ -55,6 +55,9 @@
       "path": "./packages/engine-input"
     },
     {
+      "path": "./packages/engine-camera"
+    },
+    {
       "path": "./packages/engine-input-web"
     },
     {

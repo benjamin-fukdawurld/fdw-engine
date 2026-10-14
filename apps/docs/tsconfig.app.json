@@ -40,6 +40,9 @@
       "path": "../../packages/engine-input-web/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-camera/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-occlusion/tsconfig.lib.json"
     },
     {

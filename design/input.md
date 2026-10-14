@@ -115,7 +115,7 @@ actions.axis('zoom');
 | `axis`   | Un nombre                              | Un axe de manette, la molette, ou une paire `{ negative, positive }` de contrôles                |
 | `vector` | `{ x, y }`, longueur ≤ 1               | Quatre contrôles `{ up, down, left, right }`, ou un stick                                        |
 
-- **Les contrôles** sont des chaînes : `key:<code>`, `pointer:<bouton>`, `pointer:wheel`, `gamepad:<bouton>`, `gamepad:<axe>`, `gamepad:leftStick` / `rightStick`. Une chaîne se sauvegarde, se compare, s'affiche.
+- **Les contrôles** sont des chaînes : `key:<code>`, `pointer:<bouton>`, `pointer:wheel`, `pointer:delta` (le déplacement du pointeur pendant la frame, ajouté pour les [opérateurs de caméra](p4-camera-operators.md)) et `pointer:deltaX` / `deltaY`, `gamepad:<bouton>`, `gamepad:<axe>`, `gamepad:leftStick` / `rightStick`. Une chaîne se sauvegarde, se compare, s'affiche.
 - **Plusieurs liaisons** par action : la plus forte l'emporte (le clavier et le stick ne s'additionnent pas). Quatre touches d'un vecteur sont normalisées : la diagonale n'est pas plus rapide.
 - **Un stick comme bouton** : `gamepad:leftStick` est le stick dans un vecteur, le stick enfoncé dans un bouton (le bouton `leftStick` de la disposition standard).
 - **Les manettes** : une liaison de manette lit toutes les manettes branchées (la plus forte l'emporte). Un jeu à plusieurs joueurs donnera une manette à chaque `ActionMap` (`gamepad` dans les options) : prévu par l'API, pas utilisé par le labyrinthe.

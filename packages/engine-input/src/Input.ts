@@ -107,6 +107,12 @@ export class Pointer {
   moved = false;
   /** Whether it ever moved: before, x and y are the center. */
   seen = false;
+  /**
+   * How far it moved since the previous frame, in fractions of the
+   * surface: x to the right, y downwards. 0 before its first move.
+   */
+  dx = 0;
+  dy = 0;
   /** The wheel turned since the previous frame, in notches (positive: down). */
   wheel = 0;
   /** @internal */
@@ -295,6 +301,8 @@ export class Input {
     keyboard._keys.freeze();
     pointer._buttons.freeze();
     const live = pointer._live;
+    pointer.dx = pointer.seen ? live.x - pointer.x : 0;
+    pointer.dy = pointer.seen ? live.y - pointer.y : 0;
     pointer.x = live.x;
     pointer.y = live.y;
     pointer.moved = live.moved;

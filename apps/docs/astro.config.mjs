@@ -18,6 +18,7 @@ const packages = [
   'engine-input',
   'engine-input-web',
   'engine-input-native',
+  'engine-camera',
   'engine-shader',
   'engine-backend',
   'engine-webgpu',

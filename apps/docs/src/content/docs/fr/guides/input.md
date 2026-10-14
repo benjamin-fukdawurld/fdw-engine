@@ -71,8 +71,10 @@ qu'elle a été appuyée — son code avant cela.
 
 `input.pointer` donne `x` et `y` de 0 à 1 sur la surface, depuis le coin
 supérieur gauche, `moved` pendant la frame, les boutons (`isDown(0)` : 0 est
-le bouton principal, 1 celui du milieu, 2 le secondaire), et `wheel` : les
-crans tournés pendant la frame, positifs vers le bas.
+le bouton principal, 1 celui du milieu, 2 le secondaire), `dx` et `dy` :
+son déplacement pendant la frame, en fractions de la surface (0 avant son
+premier mouvement), et `wheel` : les crans tournés pendant la frame,
+positifs vers le bas.
 
 ## Les manettes
 
@@ -132,11 +134,11 @@ if (actions.button('jump').pressed) {
 }
 ```
 
-| Type     | Lecture                                                                   | Liaisons                                                           |
-| -------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `button` | `button(name)` : `down`, `pressed`, `released`, `value`                   | Touches, boutons du pointeur, boutons de manette                   |
-| `axis`   | `axis(name)` : un nombre                                                  | Un axe de stick, `pointer:wheel`, ou `{ negative, positive }`      |
-| `vector` | `vector(name)` : `{ x, y }`, longueur de 0 à 1, y vers le haut ou l'avant | `{ up, down, left, right }`, ou `gamepad:leftStick` / `rightStick` |
+| Type     | Lecture                                                                   | Liaisons                                                                        |
+| -------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `button` | `button(name)` : `down`, `pressed`, `released`, `value`                   | Touches, boutons du pointeur, boutons de manette                                |
+| `axis`   | `axis(name)` : un nombre                                                  | Un axe de stick, `pointer:wheel`, `pointer:deltaX`, ou `{ negative, positive }` |
+| `vector` | `vector(name)` : `{ x, y }`, longueur de 0 à 1, y vers le haut ou l'avant | `{ up, down, left, right }`, un stick, ou `pointer:delta`                       |
 
 Les contrôles sont des chaînes — ils s'enregistrent et se comparent tels
 quels :
@@ -146,6 +148,8 @@ quels :
 | `key:<code>`                      | Une touche, par position : `key:KeyW`, `key:ArrowUp`           |
 | `pointer:<button>`                | Un bouton du pointeur : `pointer:0`                            |
 | `pointer:wheel`                   | La molette, un axe : les crans de la frame                     |
+| `pointer:delta`                   | Le déplacement du pointeur pendant la frame, un vecteur        |
+| `pointer:deltaX`, `deltaY`        | Le même, en axes (y positif vers le bas)                       |
 | `gamepad:<button>`                | Un bouton de manette : `gamepad:south`, `gamepad:rightTrigger` |
 | `gamepad:<axis>`                  | Un axe de stick, à travers sa zone morte : `gamepad:leftX`     |
 | `gamepad:leftStick`, `rightStick` | Un stick, pour un vecteur (comme bouton : le stick enfoncé)    |
@@ -195,6 +199,13 @@ Une `InputSource` écrit les événements dans l'`InputSink` que `Input` donne
 `readGamepads(out)`, en réutilisant les objets de `out` : rien n'est alloué
 par frame. Un écran tactile, un rejeu réseau ou une autre bibliothèque de
 fenêtrage sont une source de plus.
+
+## La navigation de la caméra
+
+`@fdw/engine-camera` déplace une caméra par des actions : `OrbitOperator`
+tourne autour d'un point, `FlyOperator` vole ou marche, avec des liaisons
+par défaut pour le clavier, la souris et les manettes. Voir le tutoriel
+[Navigation de la caméra](/fdw-engine/fr/tutorials/camera-operators/).
 
 ## Pas encore
 

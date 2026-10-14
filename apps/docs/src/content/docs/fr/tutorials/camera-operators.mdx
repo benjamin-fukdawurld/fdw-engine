@@ -1,0 +1,195 @@
+---
+title: Navigation de la caméra
+description: Déplacer une caméra à la souris, au clavier et à la manette — tourner autour d'un point ou voler dans la scène — avec des contrôles que l'utilisateur peut réaffecter.
+sidebar:
+  order: 16
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un **opérateur de caméra** déplace une caméra d'après les entrées de
+chaque frame. Le package `@fdw/engine-camera` en a deux :
+
+- `OrbitOperator` tourne autour d'un pivot, comme un modeleur ou un jeu de
+  stratégie : glisser pour tourner, glisser au bouton droit pour décaler la
+  vue, la molette pour zoomer ;
+- `FlyOperator` avance là où regarde la caméra, en volant ou en marchant,
+  comme un jeu à la première personne : WASD et le stick gauche déplacent,
+  le stick droit et la souris glissée orientent la vue.
+
+Cliquez dans le canvas, puis utilisez la souris, le clavier ou une
+manette. C — ou le bouton nord, Y sur une manette Xbox — passe de l'un à
+l'autre.
+
+<Example name="camera-operators" />
+
+## Les entrées
+
+Les opérateurs lisent des **actions** d'`@fdw/engine-input`, pas des
+touches : chaque contrôle peut être réaffecté (voir le
+[guide des entrées](/fdw-engine/fr/guides/input/)). Créez l'entrée une
+fois, avec la source de la page, et mettez-la à jour au début de chaque
+frame :
+
+```ts
+import { ActionMap, Input } from '@fdw/engine-input';
+import { WebInputSource } from '@fdw/engine-input-web';
+
+const input = new Input(new WebInputSource(canvas));
+```
+
+Dans une fenêtre native, la source est `NativeInputSource(window)` ; le
+reste ne change pas.
+
+## Tourner autour d'un point
+
+```ts
+import { OrbitActions, OrbitOperator } from '@fdw/engine-camera';
+
+const orbit = new OrbitOperator(camera, new ActionMap(input, OrbitActions), {
+  pivot: { x: 0, y: 0, z: 0 },
+  distance: 22,
+  yaw: 0.6, // en radians autour de y : 0 regarde vers -z
+  pitch: -0.55, // négatif : depuis le dessus
+  minPitch: -1.5,
+  maxPitch: -0.05, // jamais sous le sol
+});
+
+onFrame(() => {
+  input.update();
+  orbit.update(dt); // en secondes
+  renderer.render({ items, camera, surface, lights });
+});
+```
+
+`OrbitActions` sont les actions par défaut, avec leurs liaisons :
+
+| Action      | Clavier, souris             | Manette                 | Effet                                     |
+| ----------- | --------------------------- | ----------------------- | ----------------------------------------- |
+| `orbit`     | Flèches                     | Stick droit             | Tourne autour du pivot                    |
+| `orbitDrag` | Bouton principal glissé     | —                       | La même chose, au pointeur                |
+| `panDrag`   | Bouton secondaire ou milieu | —                       | Décale la vue : la scène suit le pointeur |
+| `move`      | WASD (ZQSD en AZERTY)       | Stick gauche            | Déplace le pivot sur le sol               |
+| `zoom`      | E plus près, Q plus loin    | Gâchette droite, gauche | Zoome tant qu'il est maintenu             |
+| `zoomStep`  | Molette                     | —                       | Zoome par crans                           |
+| `pointer`   | Le pointeur déplacé         | —                       | Ce que suivent `orbitDrag` et `panDrag`   |
+
+Le pivot, la distance, le lacet (`yaw`) et le tangage (`pitch`) sont des
+champs : modifiez-les pour cadrer un objet, `apply()` les écrit aussitôt
+dans la caméra.
+
+## Voler et marcher
+
+```ts
+import { FlyActions, FlyOperator } from '@fdw/engine-camera';
+
+const fly = new FlyOperator(camera, new ActionMap(input, FlyActions), {
+  mode: 'walk', // à l'horizontale ; 'fly' (par défaut) va où il regarde
+  position: { x: 0, y: 1.7, z: 14 },
+  speed: 5, // unités par seconde
+});
+fly.lookAt({ x: 0, y: 1, z: 0 });
+```
+
+| Action    | Clavier, souris                | Manette                               | Effet                      |
+| --------- | ------------------------------ | ------------------------------------- | -------------------------- |
+| `move`    | WASD (ZQSD en AZERTY)          | Stick gauche                          | Déplace, y vers l'avant    |
+| `look`    | Flèches                        | Stick droit                           | Oriente la vue             |
+| `drag`    | Bouton principal ou secondaire | —                                     | Oriente la vue au pointeur |
+| `lift`    | Q descend, E monte             | Gâchette gauche descend, droite monte | Descend et monte           |
+| `run`     | Shift                          | Stick gauche enfoncé                  | Multiplie la vitesse (×3)  |
+| `pointer` | Le pointeur déplacé            | —                                     | Ce que suit `drag`         |
+
+Les sticks sont des vitesses — des radians ou des unités par seconde,
+multipliées par la durée de la frame — et le pointeur est un déplacement :
+`pointer:delta` donne le mouvement du pointeur pendant la frame. Poussé à
+fond, le stick tourne à `lookSpeed` (2,5 radians par seconde) ; le
+pointeur glissé sur la hauteur du canvas tourne de `pointerSpeed`
+(3 radians). Les opérateurs lisent l'aspect de la caméra, pour qu'un pixel
+tourne autant à l'horizontale qu'à la verticale ; `invertY` inverse le
+haut et le bas.
+
+## Plusieurs opérateurs
+
+Un opérateur ne déplace la caméra que dans son `update()`, et ne fait rien
+quand `enabled` est faux. Pour passer de l'un à l'autre, activez l'un et
+désactivez l'autre ; l'exemple lit une troisième `ActionMap` pour la
+bascule :
+
+```ts
+const switching = new ActionMap(input, {
+  switch: { type: 'button', bindings: ['key:KeyC', 'gamepad:north'] },
+});
+
+if (switching.button('switch').pressed) {
+  orbit.enabled = !orbit.enabled;
+  fly.enabled = !orbit.enabled;
+  (orbit.enabled ? orbit : fly).apply(); // là où il avait laissé la caméra
+}
+```
+
+Un opérateur déplace aussi le nœud d'une caméra dans une scène : donnez-lui
+la transformation du nœud, `new FlyOperator(node.transform, actions)`. Une
+transformation n'a pas de projection : le décalage suppose alors un champ
+de vision de 45°, et le pointeur un canvas carré.
+
+## Réaffecter les contrôles
+
+Les actions sont une `ActionMap` ordinaire : `rebind()` change les
+contrôles d'une action, `toJSON()` les sauvegarde, l'option `bindings` les
+restaure.
+
+```ts
+const actions = new ActionMap(input, FlyActions, {
+  bindings: JSON.parse(localStorage.getItem('fly') ?? '{}'),
+});
+
+// Pour un gaucher : IJKL et le stick droit déplacent, le stick gauche
+// oriente la vue, la souris ne tourne qu'avec son bouton secondaire.
+actions.rebind('move', [
+  { up: 'key:KeyI', down: 'key:KeyK', left: 'key:KeyJ', right: 'key:KeyL' },
+  'gamepad:rightStick',
+]);
+actions.rebind('look', ['gamepad:leftStick']);
+actions.rebind('drag', ['pointer:2']);
+
+localStorage.setItem('fly', JSON.stringify(actions));
+```
+
+Pour laisser l'utilisateur choisir une touche, attendez la prochaine touche
+enfoncée et liez-la :
+
+```ts
+function waitForKey(): Promise<string> {
+  return new Promise((resolve) =>
+    canvas.addEventListener('keydown', (event) => resolve(event.code), {
+      once: true,
+    })
+  );
+}
+
+const code = await waitForKey();
+actions.rebind('run', [`key:${code}`, 'gamepad:leftStick']);
+// Pour l'afficher : « Z » pour KeyW sur un clavier AZERTY.
+const label = input.keyboard.label(code);
+```
+
+Quand une application a déjà ses actions, elle peut partager son
+`ActionMap` : `names` associe les intentions de l'opérateur à ses propres
+noms.
+
+```ts
+const game = new ActionMap(input, {
+  ...FlyActions,
+  walk: FlyActions.move,
+  jump: { type: 'button', bindings: ['key:Space', 'gamepad:south'] },
+});
+const fly = new FlyOperator(camera, game, { names: { move: 'walk' } });
+```
+
+## Ensuite
+
+- [Guide des entrées](/fdw-engine/fr/guides/input/) : les périphériques,
+  les contrôles, les actions.
+- [Créer un jeu](/fdw-engine/fr/game/introduction/) : un jeu avec les
+  entrées du moteur, une caméra qui suit un personnage.

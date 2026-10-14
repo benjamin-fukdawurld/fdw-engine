@@ -70,8 +70,10 @@ code before.
 
 `input.pointer` gives `x` and `y` from 0 to 1 over the surface, from the
 top left corner, `moved` during the frame, the buttons (`isDown(0)`: 0 is
-the main button, 1 the middle, 2 the secondary), and `wheel`: the notches
-turned during the frame, positive downwards.
+the main button, 1 the middle, 2 the secondary), `dx` and `dy`: how far it
+moved during the frame, in fractions of the surface (0 before its first
+move), and `wheel`: the notches turned during the frame, positive
+downwards.
 
 ## Gamepads
 
@@ -130,11 +132,11 @@ if (actions.button('jump').pressed) {
 }
 ```
 
-| Type     | Read                                                       | Bindings                                                           |
-| -------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
-| `button` | `button(name)`: `down`, `pressed`, `released`, `value`     | Keys, pointer buttons, gamepad buttons                             |
-| `axis`   | `axis(name)`: a number                                     | A stick axis, `pointer:wheel`, or `{ negative, positive }`         |
-| `vector` | `vector(name)`: `{ x, y }`, length 0 to 1, y up or forward | `{ up, down, left, right }`, or `gamepad:leftStick` / `rightStick` |
+| Type     | Read                                                       | Bindings                                                                     |
+| -------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `button` | `button(name)`: `down`, `pressed`, `released`, `value`     | Keys, pointer buttons, gamepad buttons                                       |
+| `axis`   | `axis(name)`: a number                                     | A stick axis, `pointer:wheel`, `pointer:deltaX`, or `{ negative, positive }` |
+| `vector` | `vector(name)`: `{ x, y }`, length 0 to 1, y up or forward | `{ up, down, left, right }`, a stick, or `pointer:delta`                     |
 
 The controls are strings — they save and compare as they are:
 
@@ -143,6 +145,8 @@ The controls are strings — they save and compare as they are:
 | `key:<code>`                      | A key, by position: `key:KeyW`, `key:ArrowUp`             |
 | `pointer:<button>`                | A pointer button: `pointer:0`                             |
 | `pointer:wheel`                   | The wheel, an axis: the notches of the frame              |
+| `pointer:delta`                   | The movement of the pointer during the frame, a vector    |
+| `pointer:deltaX`, `deltaY`        | The same, as axes (y positive downwards)                  |
 | `gamepad:<button>`                | A gamepad button: `gamepad:south`, `gamepad:rightTrigger` |
 | `gamepad:<axis>`                  | A stick axis, through its dead zone: `gamepad:leftX`      |
 | `gamepad:leftStick`, `rightStick` | A stick, for a vector (as a button: the stick pressed)    |
@@ -189,6 +193,13 @@ to its `attach()`, and fills the states of the gamepads in
 `readGamepads(out)`, reusing the objects of `out`: nothing is allocated per
 frame. A touch screen, a network replay or another windowing library is
 one more source.
+
+## Camera navigation
+
+`@fdw/engine-camera` moves a camera with actions: `OrbitOperator` turns
+around a point, `FlyOperator` flies or walks, with default bindings for
+the keyboard, the mouse and the gamepads. See the
+[Camera navigation tutorial](/fdw-engine/tutorials/camera-operators/).
 
 ## Not yet
 

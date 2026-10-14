@@ -92,6 +92,10 @@ packages/
   engine-scene/         The scene: an ECS core, nodes, transforms, culling
   engine-occlusion/     Occlusion culling: a depth pyramid tested on the GPU, every backend
   engine-tessellation/  Tessellation: patches drawn from templates at their level, every backend
+  engine-input/         Input: keyboard, pointer, gamepads, named actions with rebindable controls
+  engine-input-web/     The input source of a page (DOM events, Gamepad API)
+  engine-input-native/  The input source of a native window (SDL3)
+  engine-camera/        Camera operators (orbit, fly, walk) driven by the actions of the input
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)
   engine-vulkan/        Vulkan backend (Node-API addon, HLSL compiled to SPIR-V by DXC)
   demo-scenes/          Scenes shared by the web and native demos
