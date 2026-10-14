@@ -26,7 +26,8 @@ export type { ShadingModel } from './outputs';
  * `smoothstep`, `select`), comparisons (`less`, `lessEqual`, `greater`,
  * `greaterEqual`, `equal`, `notEqual`), arrays (`index`, `arrayLength`,
  * for storage buffers), textures (`textureSample`, `textureSampleLevel`,
- * `textureSampleCube`, `textureSampleCubeLevel`), screen space derivatives
+ * `textureSampleCube`, `textureSampleCubeLevel`, `textureLoad`,
+ * `textureLoadDepth`), screen space derivatives
  * (`dpdx`, `dpdy`, `fwidth`, fragment stage only), construction (`vec2`,
  * `vec3`, `vec4`, `extend`, `convert`), transforms (`transform`,
  * `transform3`) and `perFragment`.
@@ -77,6 +78,8 @@ export const std = {
   textureSampleCompare: functions.textureSampleCompare,
   textureSampleCube: functions.textureSampleCube,
   textureSampleCubeLevel: functions.textureSampleCubeLevel,
+  textureLoad: functions.textureLoad,
+  textureLoadDepth: functions.textureLoadDepth,
   dpdx: functions.dpdx,
   dpdy: functions.dpdy,
   fwidth: functions.fwidth,

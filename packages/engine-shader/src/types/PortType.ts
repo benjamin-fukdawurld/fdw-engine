@@ -23,6 +23,8 @@ export const TypeConstraintNames = [
   'integer',
   // Arrays (storage buffers).
   'array',
+  // 2d textures of floats, filterable or not (not depth, not multisampled).
+  'float-texture-2d',
 ] as const;
 /**
  * A constraint on the type bound to a generic:
@@ -31,7 +33,9 @@ export const TypeConstraintNames = [
  * - `float`: `f32` / `f16` scalars and vectors;
  * - `float-vector`: `f32` / `f16` vectors;
  * - `integer`: `i32` / `u32` scalars and vectors;
- * - `array`: arrays, read with `std.index`.
+ * - `array`: arrays, read with `std.index`;
+ * - `float-texture-2d`: 2d textures of floats, filterable or not, read with
+ *   `std.textureLoad`.
  *
  * @group Port types
  */
@@ -205,6 +209,15 @@ export function satisfiesConstraint(
   }
   if (constraint === 'array') {
     return type.kind === 'array';
+  }
+  if (constraint === 'float-texture-2d') {
+    return (
+      type.kind === 'texture' &&
+      type.dimension === '2d' &&
+      (type.sampleType === 'float' ||
+        type.sampleType === 'unfilterable-float') &&
+      !type.multisampled
+    );
   }
 
   if (type.kind !== 'scalar' && type.kind !== 'vector') {

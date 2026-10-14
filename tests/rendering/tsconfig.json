@@ -24,6 +24,9 @@
     },
     {
       "path": "../../packages/engine-vulkan"
+    },
+    {
+      "path": "../../packages/engine-occlusion"
     }
   ]
 }

@@ -163,6 +163,28 @@ const rawStages = () => {
   return compile(g.build());
 };
 
+// A full screen pass reading texels by their coordinates: a float texture
+// that cannot be filtered, at a level, and a depth texture.
+const texelLoads = () => {
+  const g = new GraphBuilder('texel loads');
+  const coords = g.call(
+    std.convert,
+    { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
+    { params: { to: BuiltinTypes.vec2i } }
+  );
+  const texel = g.call(std.textureLoad, {
+    texture: g.texture('values', { sampleType: 'unfilterable-float' }),
+    coords,
+    level: 1,
+  });
+  const depth = g.call(std.textureLoadDepth, {
+    texture: g.texture('depth', { sampleType: 'depth' }),
+    coords,
+  });
+  g.fullscreen({ color: g.call(std.mul, { a: texel, b: depth }) });
+  return compile(g.build());
+};
+
 const programs: [string, () => CompiledProgram][] = [
   ['unlit', unlit],
   ['textured phong with tone mapping', texturedPhong],
@@ -175,6 +197,7 @@ const programs: [string, () => CompiledProgram][] = [
   ['compute kernel', scaleKernel],
   ['raw stages', rawStages],
   ['three color targets', threeTargets],
+  ['texel loads', texelLoads],
 ];
 
 // --- Tests -------------------------------------------------------------------
@@ -333,6 +356,16 @@ describe('HlslCodegen color targets', () => {
     );
     expect(code).toMatch(/FragmentOutputs ps_main\(/);
     expect(code).toMatch(/targets\.o_id = v\d+;\n {2}return targets;\n\}/);
+  });
+});
+
+describe('HlslCodegen texel loads', () => {
+  it('reads texels with Load, the level as the last coordinate', () => {
+    const { code } = emit(texelLoads());
+    expect(code).toContain('Texture2D<float4> t_values');
+    expect(code).toContain('Texture2D<float> t_depth');
+    expect(code).toMatch(/float4 v\d+ = t_values\.Load\(int3\(v\d+, v\d+\)\)/);
+    expect(code).toMatch(/float v\d+ = t_depth\.Load\(int3\(v\d+, v\d+\)\)/);
   });
 });
 

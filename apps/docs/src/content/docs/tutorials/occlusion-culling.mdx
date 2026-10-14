@@ -1,0 +1,159 @@
+---
+title: Occlusion culling
+description: Leave out the objects hidden behind others, on every backend, with a depth pyramid tested on the GPU.
+sidebar:
+  order: 14
+---
+
+import Example from '../../../components/Example.astro';
+
+From a street, the first buildings hide almost all the others. The frustum
+culling keeps everything in the field of view, hidden or not; the
+**occlusion culling** leaves out what the opaque objects hide. Below, a
+city of 2304 buildings: the corner shows the culling from above, light what
+is drawn, red what is hidden. Click the canvas to switch it off and on: the
+image does not change, the number of objects drawn does.
+
+<Example name="occlusion-culling" />
+
+## Turning it on
+
+The occlusion culling is in its own package, `@fdw/engine-occlusion`. Give
+an `OcclusionCulling` to the scene passes of a view:
+
+```ts
+import { OcclusionCulling } from '@fdw/engine-occlusion';
+
+const occlusion = new OcclusionCulling();
+
+// Each frame:
+renderer.render({ source: scene, camera, surface, occlusion });
+```
+
+With a render graph of your own, the option is the same; the graph needs
+the size of the frame, which the culling sizes its passes with (a graph
+whose targets have an absolute size does not):
+
+```ts
+const current = surface.getCurrentTarget();
+const graph = new RenderGraph({
+  size: { width: current.width, height: current.height },
+});
+renderer.addScenePasses(graph, {
+  source: scene,
+  camera,
+  target: graph.importTexture('surface', current),
+  format: surface.format,
+  occlusion,
+});
+```
+
+One `OcclusionCulling` per view: it remembers what the tests of its camera
+found. A scene or a list of items, any source works; the items need
+bounds (an item without them is always drawn).
+
+## How it works
+
+After the opaque objects, full screen passes:
+
+1. **Reduce the depth buffer to a pyramid** (a Hi-Z): each level keeps,
+   for each texel, the farthest depth of 2 × 2 texels of the level below,
+   down to a single texel.
+2. **Test the box of every object** the frustum kept, one texel each: its
+   8 corners give a rectangle of the screen and its nearest point; the
+   finest level where the rectangle covers 2 × 2 texels gives the farthest
+   depth of the opaque objects over it. The box is hidden when its nearest
+   point is farther.
+3. **Read the results back**, without waiting: one to three frames later,
+   the objects found hidden are left out, until a test finds them visible
+   again. The hidden objects are tested every frame too.
+
+Only full screen passes, reading textures by their texels: the culling runs
+the same way on WebGPU, Vulkan and WebGL2, which has no compute shaders.
+
+What is hidden is not seen: leaving it out does not change the image. Only
+**what becomes visible** depends on the delay: an object a moving camera
+reveals may appear a frame or two late. The boxes are grown by the motion
+of the camera to find these objects a little earlier (`motion`, 2 by
+default: twice the distance moved since the last frame).
+
+## What it saves
+
+The city of the demo (`city` in the demo app), 5184 buildings, from a
+street, at 1920 × 1080 on Vulkan (RTX 2060 SUPER): about 4000 buildings in
+the frustum, 3600 of them hidden.
+
+|                             | Without | With                                   |
+| --------------------------- | ------- | -------------------------------------- |
+| Objects drawn               | 3995    | 399                                    |
+| CPU per frame               | 6.7 ms  | 1.7 ms                                 |
+| GPU per frame               | 0.47 ms | 0.53 ms (0.17 ms of it is the culling) |
+| CPU, with the sun's shadows | 11.2 ms | 7.0 ms                                 |
+
+The gain is on the CPU: each object drawn costs its preparation and its
+place in the draws. The passes of the culling cost about 0.2 ms of GPU
+time, whatever the number of objects: they pay off as soon as the objects
+are heavy to draw, or numerous. With few objects, or a scene seen from
+above (nothing hides anything), leave it off.
+
+## Seeing what it does
+
+```ts
+const stats = renderer.stats.get('scene');
+stats.visible; // drawn
+stats.occluded; // left out by the occlusion culling
+
+occlusion.isHidden(item); // what the latest results say of an item
+occlusion.stats; // { tested, hidden, latency }: the last results
+```
+
+The view of the demo is a second camera over the scene: it draws the items
+the main camera kept, red when `isHidden` (see `CullingView` in
+`@fdw/demo-scenes`).
+
+## What to know
+
+- **Shadows**: the shadow casters are not culled by occlusion (their
+  shadows may fall in view); only the items of the camera are.
+- **Transparent objects** hide nothing (they write no depth), but are
+  culled when opaque objects hide them.
+- **Multisampling** is not supported yet: the culling reads the depth of
+  the opaque objects, which must be drawn with `samples: 1`.
+- **Moving objects** are tested with their box of the frame of the test:
+  one that moves out from behind a wall may appear a frame late.
+- **Several passes** (a G-buffer, then the transparent objects): give the
+  culling to both; the passes of the transparent objects only read its
+  results.
+- `margin` (0.001): how much farther, relatively, a box must be than the
+  depth in front of it. It keeps an object from hiding itself, by the
+  rounding of the depths.
+
+## Reading depths in a pass
+
+The culling reads the depth buffer with `std.textureLoadDepth`, and its
+`r32float` levels with `std.textureLoad`: a texel by its integer
+coordinates, without sampler nor filtering, in any stage. Any full screen
+pass can do the same, with the depth of the scene passes as an input:
+
+```ts
+const depth = g.call(std.textureLoadDepth, {
+  texture: g.texture('depth', { sampleType: 'depth' }),
+  coords: pixel, // a vec2i, from the top left corner
+});
+renderer.addFullscreenPass(graph, 'fog', {
+  material,
+  inputs: { depth: scene.depth },
+  target,
+  format,
+});
+```
+
+`std.textureLoad` reads the textures that cannot be filtered (`r32float`,
+`rgba32float`): declare them with `sampleType: 'unfilterable-float'`.
+
+## Next
+
+- [Scene graph guide](/fdw-engine/guides/scene-graph/#occlusion-culling):
+  the occlusion culling with the scene, its options.
+- [Render graph guide](/fdw-engine/guides/render-graph/#the-size-of-the-frame):
+  graphs that know the size of their frame.

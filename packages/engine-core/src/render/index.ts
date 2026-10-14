@@ -3,6 +3,7 @@ export * from './Mesh';
 export * from './Renderer';
 export * from './picking';
 export * from './RenderSource';
+export * from './occlusion';
 export { meshBounds, meshBox } from './bounds';
 export { lightRange } from './lightRange';
 export { lightReaches, spotVolume } from './lightVolumes';

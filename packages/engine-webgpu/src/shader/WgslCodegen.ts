@@ -307,6 +307,9 @@ function emitInstructions(
       case 'sample-compare':
         expression = `textureSampleCompareLevel(${args(instruction)})`;
         break;
+      case 'texture-load':
+        expression = `textureLoad(${args(instruction)})`;
+        break;
       case 'construct':
       case 'convert':
         expression = `${wgslType(type)}(${args(instruction)})`;

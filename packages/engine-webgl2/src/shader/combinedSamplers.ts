@@ -9,13 +9,16 @@ import {
 // GLSL ES has no separate samplers: a texture is sampled through a sampler2D
 // that combines it with its sampling state. The IR keeps textures and
 // samplers apart; each (texture, sampler) pair sampled together becomes one
-// combined sampler, bound to its own texture unit at draw time.
+// combined sampler, bound to its own texture unit at draw time. A texture
+// read by textureLoad (texelFetch) has one too, without sampler: the backend
+// binds a sampler object that only makes it complete (nearest, no compare).
 export interface CombinedSampler {
   // Name of the uniform in the generated code.
   readonly name: string;
-  // Names of the texture and sampler bindings in the layout.
+  // Names of the texture and sampler bindings in the layout; no sampler for
+  // the textures read by textureLoad.
   readonly texture: string;
-  readonly sampler: string;
+  readonly sampler?: string;
   readonly type: TextureType;
   // A comparison sampler (shadow maps): a sampler2DShadow.
   readonly comparison: boolean;
@@ -58,16 +61,19 @@ export function combinedSamplers(
       return op.binding;
     };
     for (const instruction of instructions) {
+      const kind = instruction.op.kind;
       if (
-        instruction.op.kind !== 'sample' &&
-        instruction.op.kind !== 'sample-level' &&
-        instruction.op.kind !== 'sample-compare'
+        kind !== 'sample' &&
+        kind !== 'sample-level' &&
+        kind !== 'sample-compare' &&
+        kind !== 'texture-load'
       ) {
         continue;
       }
       const texture = bindingOf(instruction.args[0]);
-      const sampler = bindingOf(instruction.args[1]);
-      const key = `${texture}|${sampler}`;
+      const sampler =
+        kind === 'texture-load' ? undefined : bindingOf(instruction.args[1]);
+      const key = `${texture}|${sampler ?? ''}`;
       if (pairs.has(key)) {
         continue;
       }
@@ -77,11 +83,14 @@ export function combinedSamplers(
       }
       pairs.set(key, {
         // The index keeps names distinct whatever the binding names.
-        name: `ts${pairs.size}_${texture}_${sampler}`.replace(/_{2,}/g, '_'),
+        name: `ts${pairs.size}_${texture}_${sampler ?? 'load'}`.replace(
+          /_{2,}/g,
+          '_'
+        ),
         texture,
-        sampler,
+        ...(sampler !== undefined ? { sampler } : {}),
         type,
-        comparison: comparisonSamplers.has(sampler),
+        comparison: sampler !== undefined && comparisonSamplers.has(sampler),
       });
     }
   }

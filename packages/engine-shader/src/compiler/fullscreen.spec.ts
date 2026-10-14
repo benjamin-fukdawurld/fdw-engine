@@ -120,3 +120,59 @@ describe('output.fullscreen', () => {
     expect(fragment.outputs[0].type).toEqual(BuiltinTypes.vec4f);
   });
 });
+
+describe('std.textureLoad', () => {
+  const loads = () => {
+    const g = new GraphBuilder('loads');
+    const coords = g.call(
+      std.convert,
+      { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
+      { params: { to: BuiltinTypes.vec2i } }
+    );
+    const texel = g.call(std.textureLoad, {
+      texture: g.texture('values', { sampleType: 'unfilterable-float' }),
+      coords,
+      level: 1,
+    });
+    const depth = g.call(std.textureLoadDepth, {
+      texture: g.texture('depth', { sampleType: 'depth' }),
+      coords,
+    });
+    g.fullscreen({ color: g.call(std.mul, { a: texel, b: depth }) });
+    return g.build();
+  };
+
+  it('reads texels without sampler, from float and depth textures', () => {
+    const program = compile(loads());
+    const material = program.layout.groups.find(
+      (group) => group.slot === 'material'
+    );
+    expect(
+      material?.bindings.map((binding) => [
+        binding.name,
+        binding.kind === 'texture' ? binding.type.sampleType : binding.kind,
+      ])
+    ).toEqual([
+      ['depth', 'depth'],
+      ['values', 'unfilterable-float'],
+    ]);
+    const fragment = entryPoint(program, 'fragment');
+    const texelLoads = fragment.body.filter(
+      (instruction) => instruction.op.kind === 'texture-load'
+    );
+    expect(texelLoads.map((instruction) => instruction.type)).toEqual([
+      BuiltinTypes.vec4f,
+      BuiltinTypes.f32,
+    ]);
+  });
+
+  it('refuses the textures it cannot read', () => {
+    const g = new GraphBuilder('cube');
+    expect(() =>
+      g.call(std.textureLoad, {
+        texture: g.texture('environment', { dimension: 'cube' }),
+        coords: [0, 0],
+      })
+    ).toThrow(/float-texture-2d/);
+  });
+});

@@ -46,6 +46,9 @@
       "path": "./packages/engine-scene"
     },
     {
+      "path": "./packages/engine-occlusion"
+    },
+    {
       "path": "./packages/engine-input"
     },
     {

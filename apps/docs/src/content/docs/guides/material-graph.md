@@ -73,17 +73,17 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 
 ## The standard library
 
-| Group       | Nodes                                                                                                                                                      |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arithmetic  | `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `pow`, `sin`, `cos`, `saturate`, `clamp`, `mix`, `step`, `smoothstep`           |
-| Vectors     | `dot`, `length`, `normalize`, `cross`, `reflect`, `vec2`, `vec3`, `vec4`, `extend`, `convert`, `transform`, `transform3`                                   |
-| Comparisons | `less`, `lessEqual`, `greater`, `greaterEqual`, `equal`, `notEqual`, `select`                                                                              |
-| Textures    | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel`                                               |
-| Derivatives | `dpdx`, `dpdy`, `fwidth`: the change from a pixel to the next one (fragment stage only, `y` down)                                                          |
-| Arrays      | `index`, `arrayLength` (storage buffers)                                                                                                                   |
-| Stages      | `perFragment`: what depends on it is computed per pixel                                                                                                    |
-| Lights      | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                 |
-| Macros      | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`) |
+| Group       | Nodes                                                                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arithmetic  | `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `pow`, `sin`, `cos`, `saturate`, `clamp`, `mix`, `step`, `smoothstep`                                                                          |
+| Vectors     | `dot`, `length`, `normalize`, `cross`, `reflect`, `vec2`, `vec3`, `vec4`, `extend`, `convert`, `transform`, `transform3`                                                                                                  |
+| Comparisons | `less`, `lessEqual`, `greater`, `greaterEqual`, `equal`, `notEqual`, `select`                                                                                                                                             |
+| Textures    | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel`; `textureLoad`, `textureLoadDepth`: a texel by its integer coordinates, without sampler (depths, `r32float`) |
+| Derivatives | `dpdx`, `dpdy`, `fwidth`: the change from a pixel to the next one (fragment stage only, `y` down)                                                                                                                         |
+| Arrays      | `index`, `arrayLength` (storage buffers)                                                                                                                                                                                  |
+| Stages      | `perFragment`: what depends on it is computed per pixel                                                                                                                                                                   |
+| Lights      | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                                                                                |
+| Macros      | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`)                                                                |
 
 They are all in `std`, `stdLights` and `stdMacros`; `createStandardRegistry()`
 returns a registry of every standard node type.

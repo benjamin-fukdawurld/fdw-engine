@@ -101,8 +101,10 @@ Trois choix comptent ici :
   coup dans un index spatial qui leur est propre (un octree construit de haut
   en bas), à la première frame.
 - **Occluders.** Les murs cachent ce qui se trouve derrière eux :
-  `occluder: true` les marque pour l'occlusion culling à venir. Ils ne
-  changent encore rien.
+  `occluder: true` les marque. Vu de dessus, un labyrinthe cache peu de
+  chose : le jeu le dessine sans
+  l'[occlusion culling](/fdw-engine/fr/tutorials/occlusion-culling/), qui
+  est rentable au niveau des rues.
 - **Groupes.** `floor` et `walls` sont des nœuds sans mesh : ils organisent
   la hiérarchie (`level.walls.children` liste les murs) sans rien coûter au
   dessin.

@@ -270,6 +270,40 @@ export const textureSampleCompare = intrinsic(
 );
 
 /**
+ * Reads a texel of a 2d texture by its integer coordinates (rows from the
+ * top, as uv), at a level: no sampler, no filtering. Available in every
+ * stage. Reads the textures that cannot be filtered (r32float, rgba32float:
+ * declare them with `sampleType: 'unfilterable-float'`). Coordinates outside
+ * of the level give an undefined value: clamp them.
+ */
+export const textureLoad = intrinsic(
+  'textureLoad',
+  'texture-load',
+  [
+    port('texture', generic('T', 'float-texture-2d')),
+    port('coords', BuiltinTypes.vec2i),
+    port('level', BuiltinTypes.i32, 0),
+  ],
+  BuiltinTypes.vec4f
+);
+
+/**
+ * Reads the depth of a texel of a depth texture (a depth attachment written
+ * by earlier passes), by its integer coordinates: 0 at the near plane, 1 at
+ * the far one. Available in every stage. Not for multisampled depth.
+ */
+export const textureLoadDepth = intrinsic(
+  'textureLoadDepth',
+  'texture-load',
+  [
+    port('texture', BuiltinTypes.depthTexture2d),
+    port('coords', BuiltinTypes.vec2i),
+    port('level', BuiltinTypes.i32, 0),
+  ],
+  BuiltinTypes.f32
+);
+
+/**
  * Samples a cube texture in a direction (any length): the environment seen
  * in that direction. Fragment stage only, as textureSample.
  */
@@ -417,6 +451,8 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   textureSampleCompare,
   textureSampleCube,
   textureSampleCubeLevel,
+  textureLoad,
+  textureLoadDepth,
   dpdx,
   dpdy,
   fwidth,

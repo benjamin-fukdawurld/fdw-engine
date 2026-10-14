@@ -1,0 +1,21 @@
+{
+  "name": "@fdw/engine-occlusion",
+  "version": "0.0.1",
+  "dependencies": {
+    "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-core": "0.0.1",
+    "@fdw/engine-geometry": "0.0.1",
+    "@fdw/engine-shader": "0.0.1",
+    "tslib": "^2.3.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw-engine/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}

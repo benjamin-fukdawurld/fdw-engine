@@ -100,8 +100,9 @@ objets dessinés.
   indexe tous les nœuds statiques d'un coup dans un index qui leur est
   propre, construit de haut en bas. En déplacer un reste possible, mais a
   un coût ; la scène avertit une fois.
-- Un **occluder** (un mur, un bâtiment) est un nœud qui en cache d'autres :
-  l'occlusion culling à venir partira d'eux. `scene.occluders()` les liste.
+- Un **occluder** (un mur, un bâtiment) est un nœud qui en cache d'autres.
+  `scene.occluders()` les liste. L'[occlusion culling](#occlusion-culling)
+  n'en a pas besoin : tout objet opaque dessiné cache ce qui est derrière.
 
 ## La scène comme source
 
@@ -114,8 +115,47 @@ scène ce qui se trouve dans son frustum. La scène répond à partir de ses
 deux octrees lâches, statique et dynamique, sans tester chaque nœud. Une
 requête de caméra enregistre aussi sur chaque nœud la dernière requête qui
 l'a retenu (`NodeState.lastVisible`), et passe par `scene.occlusion`
-lorsqu'il est défini : l'étape où un occlusion culling viendra se brancher,
-appliquée aux seules requêtes de caméra, jamais aux projeteurs d'ombre.
+lorsqu'il est défini : une étape à vous (une visibilité précalculée, des
+portails), appliquée aux seules requêtes de caméra, jamais aux projeteurs
+d'ombre.
+
+## Occlusion culling
+
+Ce que le frustum garde peut encore être caché par ce qui est devant :
+depuis une rue, les premiers immeubles cachent presque tous les autres. Un
+`OcclusionCulling` (de `@fdw/engine-occlusion`) donné aux passes de la scène
+les retire :
+
+```ts
+const occlusion = new OcclusionCulling();
+renderer.render({ source: scene, camera, surface, occlusion });
+```
+
+Après les objets opaques, des passes plein écran réduisent le depth buffer
+en pyramide et y testent la boîte de chaque objet que le frustum a gardé ;
+les résultats sont relus sans attendre, et les objets trouvés cachés sont
+retirés une à trois frames plus tard, jusqu'à ce qu'un test les trouve de
+nouveau visibles. Il fonctionne sur tous les backends (sans compute
+shaders), avec toute source. Le
+[tutoriel](/fdw-engine/fr/tutorials/occlusion-culling/) le montre sur une
+ville.
+
+| Option       | Défaut | Rôle                                                                                                                           |
+| ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `margin`     | 0,001  | De combien, relativement, une boîte doit être plus loin que la profondeur devant elle pour être cachée                         |
+| `motion`     | 2      | Les boîtes grandissent de la distance parcourue par la caméra depuis la frame précédente, fois ceci : moins d'objets en retard |
+| `maxPending` | 2      | Résultats attendus au plus : pas de nouveau test tant qu'ils le sont                                                           |
+
+- Un par vue (caméra) : il retient ce que les tests de sa vue ont trouvé.
+- `renderer.stats.get(name).occluded` compte ce qu'il a retiré ;
+  `occlusion.isHidden(item)` dit ce que les derniers résultats ont trouvé
+  d'un objet.
+- Les projeteurs d'ombre ne sont jamais retirés ; les objets sans bornes non
+  plus.
+- Pas encore avec le multi-échantillonnage (`samples: 1`) : il lit la
+  profondeur.
+- Dans un graphe à vous, le graphe doit connaître la taille de la frame
+  (`new RenderGraph({ size })`).
 
 ## Requêtes
 

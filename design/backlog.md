@@ -12,13 +12,13 @@ Le moteur ne connaît aujourd'hui que des `RenderItem` à plat (`{ mesh, materia
 - **La gestion des meshes** : chargement (glTF), formats de sommets, bornes calculées une fois (`meshBounds` existe déjà pour les ombres), partage entre objets, instancing.
 - **Le frustum culling** : ne pas préparer ni dessiner les objets hors du champ, grâce aux bornes de la hiérarchie. Il servira aussi aux tuiles d'ombre (un culling par lumière).
 - **Le culling sur le GPU** ensuite, avec des draws indirects ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), quand le nombre d'objets le demande.
-- **L'occlusion culling**, peut-être : ne pas dessiner ce qui est caché par d'autres objets (Hi-Z construit par une passe de calcul, ou requêtes d'occlusion). Décisif pour la CAO et le BIM (bâtiments, assemblages), où l'essentiel de la scène est caché.
+- **L'occlusion culling** : ne pas dessiner ce qui est caché par d'autres objets. Décisif pour la CAO et le BIM (bâtiments, assemblages), où l'essentiel de la scène est caché. _Fait_ (P3, voir plus bas).
 
 Fait (voir le plan du design) : la géométrie (`engine-geometry` : volumes, GJK, octree), le culling des vues dans le `Renderer`, le cœur ECS et la scène (`engine-scene`). Reste :
 
 - **Le coût d'un déplacement de nœud** par la façade : environ 90 ns de plus par nœud depuis le pool de transforms (0,58 → 0,67 ms pour 1 000 nœuds, [scenegraph §16.4](scenegraph.md#164-résultats)). Pistes : alléger la chaîne `Transform` → pool → scène (notification), ou des écritures groupées.
 - **Création en lot** des entités de la scène, écrivant directement les colonnes : _faite_ (P1, `scene.createBatch()`, `world.addMany()`). 100 000 nœuds statiques : 485 → 383 ms par la façade (objets de rendu paresseux, bornes écrites en place), 241 ms en lot ; le reste est le calcul des matrices, des bornes et de l'octree.
-- **Le package `engine-occlusion`** : Hi-Z sur le GPU (relecture ou pilotée par le GPU, à choisir), le CPU en repli ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)).
+- **Le package `engine-occlusion`** : _fait_ (P3, [p3-occlusion.md](p3-occlusion.md)) : Hi-Z en passes plein écran, relu sans attendre, sur les trois backends. Reste : les deux phases sans retard pilotées par le GPU (draws indirects), la pyramide en une passe de calcul, le MSAA, le culling des projeteurs d'ombres.
 - **Instancing** : _fait_ (P1, [p1-objects.md](p1-objects.md)).
 - **Batching statique** par cellule d'octree : reporté de P1 à la phase **P12** de la [roadmap](roadmap.md#p12-batching-statique). L'instancing couvre les objets qui partagent mesh et matériau ; le batching ne sert qu'aux scènes statiques hétérogènes (CAO, BIM, décors faits main). Coûts : géométrie dupliquée, culling par cellule, sélection dans un mesh fusionné (identifiant par sommet). À comparer d'abord avec le rendu piloté par le GPU.
 - **Événements de la scène** pour les éditeurs (ce qui a changé), et un BVH pour les scènes statiques de CAO et de BIM.

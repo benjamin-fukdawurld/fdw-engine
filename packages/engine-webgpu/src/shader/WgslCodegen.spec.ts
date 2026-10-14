@@ -357,6 +357,36 @@ describe('WgslCodegen', () => {
     ).toHaveLength(9);
   });
 
+  it('reads texels with textureLoad, from float and depth textures', () => {
+    const g = new GraphBuilder('texel loads');
+    const coords = g.call(
+      std.convert,
+      { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
+      { params: { to: BuiltinTypes.vec2i } }
+    );
+    const texel = g.call(std.textureLoad, {
+      texture: g.texture('values', { sampleType: 'unfilterable-float' }),
+      coords,
+      level: 1,
+    });
+    const depth = g.call(std.textureLoadDepth, {
+      texture: g.texture('depth', { sampleType: 'depth' }),
+      coords,
+    });
+    g.fullscreen({ color: g.call(std.mul, { a: texel, b: depth }) });
+    const program = compile(g.build());
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout)
+    );
+    expect(code).toMatch(/var t_values: texture_2d<f32>;/);
+    expect(code).toMatch(/var t_depth: texture_depth_2d;/);
+    expect(code).toMatch(
+      /let v\d+: vec4<f32> = textureLoad\(t_values, v\d+, v\d+\);/
+    );
+    expect(code).toMatch(/let v\d+: f32 = textureLoad\(t_depth, v\d+, v\d+\);/);
+  });
+
   it('writes no color in depth-only programs', () => {
     const g = new GraphBuilder('lit');
     g.surface({
