@@ -21,6 +21,7 @@ import {
   Mesh,
   pickIds,
   PointLight,
+  Renderable,
   Renderer,
   RenderItem,
   SceneOutput,
@@ -29,6 +30,7 @@ import {
   Transform,
 } from '@fdw/engine-core';
 import { OcclusionCulling } from '@fdw/engine-occlusion';
+import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
 
 // Rendering tests shared by every backend: the same graphs, meshes and
 // expected pixels, rendered through the whole engine on a real GPU API.
@@ -144,7 +146,7 @@ export function describeRenderer(
     // Renders a frame and returns the RGBA color at pixel (x, y), from the top
     // left.
     const render = async (
-      items: RenderItem[],
+      items: Renderable[],
       time = 0,
       lights: BaseLight[] = [],
       using: Renderer = renderer,
@@ -1346,6 +1348,177 @@ export function describeRenderer(
         });
         expectColor(pixel(24, 32), [0, 255, 0, 255]);
         occlusion.destroy();
+      });
+    });
+
+    describe('tessellation', () => {
+      // The grid of patches in XZ turned to face the camera: (x, 0, z) →
+      // (x, -z, 0); v points down, as in images.
+      const facing = [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1];
+      const heightMap = (width: number, at: (x: number) => number) =>
+        backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width, height: width },
+          source: new Uint8Array(
+            Array.from({ length: width * width }, (_, i) => {
+              const h = Math.round(at(i) * 255);
+              return [h, h, h, 255];
+            }).flat()
+          ),
+        });
+      const linear = () =>
+        backend.textures.createSampler({
+          minFilter: 'linear',
+          magFilter: 'linear',
+          mipmapFilter: 'nearest',
+          wrapModeS: 'clamp-to-edge',
+          wrapModeT: 'clamp-to-edge',
+        });
+
+      it('generates the vertices of the patches from their index', async () => {
+        // The uv as a color: each point where it belongs.
+        const g = new GraphBuilder('patch uv');
+        const vertex = patchVertex(g);
+        g.surface({
+          baseColor: g.call(std.vec3, {
+            x: vertex.uv.swizzle('x'),
+            y: vertex.uv.swizzle('y'),
+            z: 0,
+          }),
+        });
+        const material = new Material({ graph: g.build() });
+        const terrain = new PatchSurface(backend, {
+          patches: patchGrid({ width: 2, depth: 2, columns: 2, rows: 2 }),
+          material,
+          matrix: facing,
+          minLevel: 3,
+        });
+        terrain.update(camera, { width: size, height: size });
+        expect(terrain.stats.drawn).toBe(4);
+        const pixel = await render([terrain]);
+        for (const [x, y] of [
+          [8, 8],
+          [40, 16],
+          [16, 56],
+          [60, 44],
+        ]) {
+          const [r, gr, b] = pixel(x, y);
+          expect(Math.abs(r - ((x + 0.5) / size) * 255)).toBeLessThan(3);
+          expect(Math.abs(gr - ((y + 0.5) / size) * 255)).toBeLessThan(3);
+          expect(b).toBe(0);
+        }
+        terrain.destroy();
+      });
+
+      it('displaces the patches at their levels, without crack', async () => {
+        // Rough ground seen from above at an angle: every pixel is ground.
+        // Without the points of the edges moved to the grid of their level,
+        // the sky shows between the patches of different levels here.
+        const g = new GraphBuilder('rough');
+        patchVertex(g, {
+          displacement: {
+            texture: g.texture('heightMap'),
+            sampler: g.sampler('heightSampler'),
+            scale: 1.5,
+            texel: 1 / 64,
+          },
+        });
+        g.surface({ baseColor: [1, 1, 1] });
+        let seed = 7;
+        const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const material = new Material({
+          graph: g.build(),
+          values: {
+            heightMap: heightMap(64, () => random()),
+            heightSampler: linear(),
+          },
+        });
+        const terrain = new PatchSurface(backend, {
+          patches: patchGrid({ width: 40, depth: 40, columns: 10, rows: 10 }),
+          material,
+          edgePixels: 8,
+          displacement: 1.5,
+        });
+        const above = new Camera({
+          position: { x: 0, y: 12, z: 12 },
+          // 45° down.
+          rotation: {
+            x: -Math.sin(Math.PI / 8),
+            y: 0,
+            z: 0,
+            w: Math.cos(Math.PI / 8),
+          },
+          projection: {
+            type: 'perspective',
+            fov: 40,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        terrain.update(above, { width: size, height: size });
+        // Several levels, some patches out of view.
+        expect(
+          terrain.stats.levels.filter((n) => n > 0).length
+        ).toBeGreaterThan(1);
+        expect(terrain.stats.drawn).toBeLessThan(100);
+        renderer.render({
+          items: [terrain],
+          camera: above,
+          surface,
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        });
+        const pixels = await fixture.readPixels();
+        let holes = 0;
+        for (let i = 0; i < size * size; i++) {
+          if (pixels[i * 4] < 128) {
+            holes++;
+          }
+        }
+        expect(holes).toBe(0);
+        terrain.destroy();
+      });
+
+      it('computes the normal of the displaced surface', async () => {
+        // A ramp: the height goes from 0 to 1 along u, 2 units wide, scaled
+        // by 2: a slope of 1, the normal (-1, 1, 0) / √2 in the grid.
+        const g = new GraphBuilder('ramp');
+        const vertex = patchVertex(g, {
+          displacement: {
+            texture: g.texture('heightMap'),
+            sampler: g.sampler('heightSampler'),
+            scale: 2,
+            texel: 1 / 64,
+          },
+        });
+        g.surface({
+          baseColor: g.call(std.add, {
+            a: g.call(std.mul, { a: vertex.normal, b: 0.5 }),
+            b: 0.5,
+          }),
+        });
+        const material = new Material({
+          graph: g.build(),
+          values: {
+            heightMap: heightMap(64, (i) => (i % 64) / 63),
+            heightSampler: linear(),
+          },
+        });
+        const terrain = new PatchSurface(backend, {
+          patches: patchGrid({ width: 2, depth: 2, columns: 2, rows: 2 }),
+          material,
+          matrix: facing,
+          displacement: 2,
+        });
+        terrain.update(camera, { width: size, height: size });
+        const pixel = await render([terrain]);
+        const half = Math.SQRT1_2 * 0.5;
+        const expected = [0.5 - half, 0.5 + half, 0.5].map((c) => c * 255);
+        pixel(32, 32)
+          .slice(0, 3)
+          .forEach((c, i) => expect(Math.abs(c - expected[i])).toBeLessThan(6));
+        terrain.destroy();
       });
     });
 

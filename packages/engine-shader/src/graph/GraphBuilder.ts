@@ -268,7 +268,8 @@ export class GraphBuilder {
       this._outputTypes.push(resolvedDefinition.id);
     } else if (
       resolvedDefinition.id === 'output.target' ||
-      resolvedDefinition.id === 'output.value'
+      resolvedDefinition.id === 'output.value' ||
+      resolvedDefinition.id === 'output.attribute'
     ) {
       // Several are allowed: the whole graph is checked on build.
       this._outputTypes.push(resolvedDefinition.id);
@@ -276,7 +277,10 @@ export class GraphBuilder {
       // Allowed: one output.surface, or output.vertex and output.fragment.
       const outputs = [
         ...this._outputTypes.filter(
-          (type) => type !== 'output.target' && type !== 'output.value'
+          (type) =>
+            type !== 'output.target' &&
+            type !== 'output.value' &&
+            type !== 'output.attribute'
         ),
         resolvedDefinition.id,
       ].sort();
@@ -582,6 +586,26 @@ export class GraphBuilder {
    */
   output(name: string, value: PortHandle | ConstantValue): void {
     this.node('output.value', { params: { name }, inputs: { value } });
+  }
+
+  /**
+   * Computes a vertex attribute instead of reading it from the mesh: every
+   * read of the attribute `semantic` (by the graph, the vertex stage of the
+   * surface, the macros) gets `value`, computed in the vertex stage. The
+   * geometry generated in the vertex shader (the patches of
+   * `@fdw/engine-tessellation`) gives its position, normal and uv this way.
+   *
+   * @example
+   * ```ts
+   * g.vertexAttribute('position', patch.position);
+   * g.vertexAttribute('normal', patch.normal);
+   * ```
+   */
+  vertexAttribute(semantic: string, value: PortHandle | ConstantValue): void {
+    this.node('output.attribute', {
+      params: { semantic },
+      inputs: { value },
+    });
   }
 
   /**

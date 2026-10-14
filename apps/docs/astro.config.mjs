@@ -14,6 +14,7 @@ const packages = [
   'engine-geometry',
   'engine-scene',
   'engine-occlusion',
+  'engine-tessellation',
   'engine-input',
   'engine-input-web',
   'engine-input-native',

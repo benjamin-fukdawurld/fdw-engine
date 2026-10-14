@@ -41,6 +41,7 @@ import {
   uniformBlockName,
 } from './layout';
 import {
+  lowerComputedAttributes,
   lowerFullscreen,
   lowerSurface,
   SurfaceOutput,
@@ -796,16 +797,22 @@ export function compile(
       parameter.default,
     ])
   );
+  // The attributes computed by the graph (output.attribute) are there,
+  // whatever the mesh.
+  const computedAttributes = new Set(
+    graph.nodes
+      .filter((node) => node.type === 'output.attribute')
+      .map((node) => node.params['semantic'] as string)
+  );
   const feature = (name: string): StaticValue | undefined => {
     let value = options.features?.[name] ?? parameters.get(name);
-    if (
-      value === undefined &&
-      name.startsWith('hasAttribute.') &&
-      options.vertexAttributes
-    ) {
-      value = options.vertexAttributes.includes(
-        name.slice('hasAttribute.'.length)
-      );
+    if (value === undefined && name.startsWith('hasAttribute.')) {
+      const semantic = name.slice('hasAttribute.'.length);
+      if (computedAttributes.has(semantic)) {
+        value = true;
+      } else if (options.vertexAttributes) {
+        value = options.vertexAttributes.includes(semantic);
+      }
     }
     if (value !== undefined) {
       variantKey[name] = value;
@@ -844,6 +851,7 @@ export function compile(
   }
 
   expandMacros({ graph: working, registry, feature, diagnostics });
+  lowerComputedAttributes(working, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);
   }

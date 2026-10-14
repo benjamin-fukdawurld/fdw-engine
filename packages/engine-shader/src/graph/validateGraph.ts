@@ -204,6 +204,20 @@ export function checkOutputNodes(
       ? undefined
       : 'a compute graph has no other outputs than output.compute and write.storage';
   }
+  // Attributes computed by the graph, with a surface or the raw stages.
+  const attributes = outputs.filter((node) => node.type === 'output.attribute');
+  if (attributes.length > 0) {
+    const others = outputs.filter((node) => node.type !== 'output.attribute');
+    if (
+      others.some(
+        (node) =>
+          node.type === 'output.fullscreen' || node.type === 'function.output'
+      )
+    ) {
+      return 'output.attribute nodes belong to graphs ending with output.surface, or with output.vertex and output.fragment';
+    }
+    return checkOutputNodes(others);
+  }
   // The values of a material for its scene outputs, with a surface.
   const values = outputs.filter((node) => node.type === 'output.value');
   if (values.length > 0) {

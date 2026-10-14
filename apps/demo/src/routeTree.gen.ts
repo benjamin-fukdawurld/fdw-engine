@@ -15,6 +15,7 @@ import { Route as TriangleStripRouteRouteImport } from './routes/triangle-strip/
 import { Route as TriangleHardColorRouteRouteImport } from './routes/triangle-hard-color/route'
 import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
 import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
+import { Route as TerrainRouteRouteImport } from './routes/terrain/route'
 import { Route as SsrRouteRouteImport } from './routes/ssr/route'
 import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
 import { Route as PbrRouteRouteImport } from './routes/pbr/route'
@@ -60,6 +61,11 @@ const TriangleRouteRoute = TriangleRouteRouteImport.update({
 const TexturedTriangleRouteRoute = TexturedTriangleRouteRouteImport.update({
   id: '/textured-triangle',
   path: '/textured-triangle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TerrainRouteRoute = TerrainRouteRouteImport.update({
+  id: '/terrain',
+  path: '/terrain',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SsrRouteRoute = SsrRouteRouteImport.update({
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/pbr': typeof PbrRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/ssr': typeof SsrRouteRoute
+  '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/pbr': typeof PbrRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/ssr': typeof SsrRouteRoute
+  '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/pbr': typeof PbrRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/ssr': typeof SsrRouteRoute
+  '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
@@ -236,6 +245,7 @@ export interface FileRouteTypes {
     | '/pbr'
     | '/shadows'
     | '/ssr'
+    | '/terrain'
     | '/textured-triangle'
     | '/triangle'
     | '/triangle-hard-color'
@@ -260,6 +270,7 @@ export interface FileRouteTypes {
     | '/pbr'
     | '/shadows'
     | '/ssr'
+    | '/terrain'
     | '/textured-triangle'
     | '/triangle'
     | '/triangle-hard-color'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/pbr'
     | '/shadows'
     | '/ssr'
+    | '/terrain'
     | '/textured-triangle'
     | '/triangle'
     | '/triangle-hard-color'
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   PbrRouteRoute: typeof PbrRouteRoute
   ShadowsRouteRoute: typeof ShadowsRouteRoute
   SsrRouteRoute: typeof SsrRouteRoute
+  TerrainRouteRoute: typeof TerrainRouteRoute
   TexturedTriangleRouteRoute: typeof TexturedTriangleRouteRoute
   TriangleRouteRoute: typeof TriangleRouteRoute
   TriangleHardColorRouteRoute: typeof TriangleHardColorRouteRoute
@@ -359,6 +372,13 @@ declare module '@tanstack/react-router' {
       path: '/textured-triangle'
       fullPath: '/textured-triangle'
       preLoaderRoute: typeof TexturedTriangleRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terrain': {
+      id: '/terrain'
+      path: '/terrain'
+      fullPath: '/terrain'
+      preLoaderRoute: typeof TerrainRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ssr': {
@@ -493,6 +513,7 @@ const rootRouteChildren: RootRouteChildren = {
   PbrRouteRoute: PbrRouteRoute,
   ShadowsRouteRoute: ShadowsRouteRoute,
   SsrRouteRoute: SsrRouteRoute,
+  TerrainRouteRoute: TerrainRouteRoute,
   TexturedTriangleRouteRoute: TexturedTriangleRouteRoute,
   TriangleRouteRoute: TriangleRouteRoute,
   TriangleHardColorRouteRoute: TriangleHardColorRouteRoute,

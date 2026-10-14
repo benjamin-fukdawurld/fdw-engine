@@ -1,0 +1,157 @@
+---
+title: Tessellation
+description: Du displacement adaptatif sur tous les backends, sans tessellation matérielle, avec des patchs dessinés depuis des gabarits au niveau que demande leur taille à l'écran.
+sidebar:
+  order: 15
+---
+
+import Example from '../../../../components/Example.astro';
+
+Le displacement mapping demande des sommets : un terrain d'un kilomètre avec
+un sommet tous les 25 cm en aurait 16 millions, la plupart au loin, plus
+petits qu'un pixel. La **tessellation** subdivise chaque partie d'une
+surface autant que le demande sa taille à l'écran. Ni WebGPU ni WebGL2 n'ont
+de tessellation matérielle : le moteur dessine des **patchs** depuis des
+gabarits subdivisés 1, 2, 4… 64 fois, et génère leurs sommets dans le vertex
+shader. Ci-dessous, un terrain de 32 × 32 patchs déplacés par une carte de
+hauteur ; cliquez sur le canvas pour colorer les patchs par niveau, du bleu
+(2 triangles) au rouge (8192).
+
+<Example name="tessellation" />
+
+## Une surface de patchs
+
+La tessellation est dans son propre package, `@fdw/engine-tessellation`.
+Une surface est faite de **patchs** quadrilatères ; `patchGrid` en fait une
+grille plane, dans le plan XZ, tournée vers +Y, avec des uv de 0 à 1 :
+
+```ts
+import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
+
+const patches = patchGrid({ width: 1024, depth: 1024, columns: 32, rows: 32 });
+```
+
+Son matériau appelle `patchVertex` : dans le vertex shader, il trouve le
+patch et le point de son gabarit dessinés, interpole les coins du patch,
+déplace le point le long de la normale selon la carte de hauteur, et calcule
+la normale de la surface déplacée. Il donne la **position**, la **normale**
+et les **uv** du sommet au reste du graphe : la surface, les macros et
+`g.attribute('uv')` les lisent comme s'ils venaient d'un mesh.
+
+```ts
+const g = new GraphBuilder('terrain');
+const vertex = patchVertex(g, {
+  displacement: {
+    texture: g.texture('heightMap'),
+    sampler: g.sampler('heightSampler'),
+    scale: 120, // La hauteur d'un texel à 1, en mètres.
+    texel: 1 / 256, // 1 / la taille de la carte de hauteur : pour la normale.
+  },
+});
+g.surface({
+  shadingModel: 'phong',
+  baseColor: colorOf(vertex.height), // La hauteur lue, de 0 à 1.
+});
+const material = new Material({
+  graph: g.build(),
+  values: { heightMap, heightSampler },
+});
+```
+
+La surface est un objet à rendre. À chaque frame, `update` choisit les
+niveaux pour la caméra, puis le renderer la dessine avec les autres :
+
+```ts
+const terrain = new PatchSurface(backend, {
+  patches,
+  material, // Un matériau par surface : il porte les patchs dessinés.
+  displacement: 120, // Jusqu'où les points bougent : les bornes en grandissent.
+});
+
+// À chaque frame :
+terrain.update(camera, surface); // La taille de l'image, en pixels.
+renderer.render({ items: [terrain, ...autres], camera, surface, lights });
+```
+
+## Comment ça marche
+
+1. **Les gabarits** : un patch subdivisé en 2^niveau × 2^niveau quads, du
+   niveau 0 (2 triangles) au niveau 6 (8192). Rien n'est stocké : un sommet
+   connaît sa place dans son gabarit par son numéro.
+2. **Le choix des niveaux**, sur le CPU, à chaque frame : chaque arête
+   reçoit le niveau qui rend ses triangles longs d'environ `edgePixels` (8)
+   pixels à l'écran, vue depuis son point le plus proche ; chaque patch
+   prend le niveau le plus fin de ses quatre arêtes. Les patchs hors de la
+   vue sont retirés.
+3. **Le draw** : les patchs sont triés par niveau et écrits dans une
+   texture, un texel chacun. Un seul draw, sans vertex buffer, génère tous
+   leurs sommets : depuis son numéro, un sommet trouve son niveau, son
+   patch, son quad, son coin.
+4. **L'évaluation**, dans le vertex shader : les coins du patch sont lus
+   dans une texture (`std.textureLoad`), interpolés, déplacés par la carte
+   de hauteur (`std.textureSampleLevel`) ; la normale vient des pentes de la
+   carte de hauteur.
+
+**Pas de fissure.** Deux voisins de niveaux différents n'auraient pas les
+mêmes points sur leur arête commune : le plus fin laisserait des trous le
+long du plus grossier. Chaque arête a un seul niveau, partagé par ses deux
+patchs ; sur le patch le plus fin, les points de l'arête vont sur la grille
+du niveau de l'arête, et les deux côtés ont exactement les mêmes points. Les
+patchs interpolent leurs coins de sorte qu'une arête commune donne les mêmes
+positions au bit près.
+
+Le même chemin en WebGPU, en Vulkan et en WebGL2 : seulement des vertex
+shaders et des textures, ni calcul ni tessellation matérielle.
+
+## Les attributs calculés
+
+`patchVertex` repose sur une fonctionnalité générale des material graphs :
+`g.vertexAttribute(sémantique, valeur)` calcule un attribut au lieu de le
+lire dans le mesh. Toutes les lectures de l'attribut, dans le graphe, dans
+le vertex stage de la surface et dans les macros, reçoivent la valeur :
+
+```ts
+// Un sommet placé par son numéro : le mesh n'a pas besoin de position.
+g.vertexAttribute('position', positionDepuisLeNumero);
+g.vertexAttribute('normal', [0, 1, 0]);
+```
+
+Le mesh n'a plus besoin de ces attributs ; un mesh sans vertex buffer
+dessine `setVertexCount(count)` sommets, générés dans le shader.
+
+## Ce que ça coûte
+
+Le terrain de la démo (`terrain` dans l'application de démo), 32 × 32
+patchs sur un kilomètre, en 1280 × 720 en Vulkan (RTX 2060 SUPER) : environ
+470 patchs dans la vue, **400 000 triangles** en adaptatif, contre 3,8
+millions avec tous les patchs au niveau le plus fin (5 ici : les 2^24
+sommets d'une frame), 1140 images par seconde contre 660.
+
+Le choix des niveaux coûte 0,4 ms de CPU pour 4096 patchs (0,6 ms avec le
+retrait des patchs hors de la vue), quel que soit le nombre de triangles.
+
+## À savoir
+
+- **Une mise à jour par frame** : les shadow maps et les autres vues de la
+  frame dessinent les patchs choisis pour la caméra donnée à `update`.
+- **Les patchs retirés ne projettent pas d'ombre** : avec un soleil bas, des
+  collines hors de la vue peuvent projeter leur ombre dedans ;
+  `cull: false` garde tous les patchs.
+- **Les niveaux** : `edgePixels` (8) règle la densité, `minLevel` et
+  `maxLevel` (0 et 6) la bornent. Au plus 2^24 sommets par frame : au-delà,
+  la surface baisse ses niveaux.
+- **La normale** : calculée depuis la carte de hauteur, celle des sommets
+  change avec leur niveau. Pour un éclairage qui ne change pas avec le
+  niveau, lisez la normale par pixel dans la carte de hauteur (le terrain
+  de la démo le fait, voir `terrainGraph` dans `@fdw/demo-scenes`).
+- **Vos propres patchs** : `new Patches([...])` prend des quads par leurs
+  coins (position, normale, uv). Des voisins doivent partager les coins de
+  leurs arêtes communes ; dans le même sens, la jointure est exacte.
+
+## Ensuite
+
+- [Détails de surface](/fdw-engine/fr/tutorials/surface-details/) : le
+  displacement mapping sur un mesh subdivisé, et les techniques sans
+  géométrie.
+- [Guide du material graph](/fdw-engine/fr/guides/material-graph/#les-attributs-calculés) :
+  les attributs calculés par le graphe.

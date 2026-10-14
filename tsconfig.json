@@ -49,6 +49,9 @@
       "path": "./packages/engine-occlusion"
     },
     {
+      "path": "./packages/engine-tessellation"
+    },
+    {
       "path": "./packages/engine-input"
     },
     {

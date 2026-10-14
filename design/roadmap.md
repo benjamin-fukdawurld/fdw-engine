@@ -101,6 +101,10 @@ Démo : une scène dense où l'essentiel est caché (une ville, un bâtiment, un
 
 ### P3b. Tessellation
 
+_Faite_ (14 octobre 2026), avec son tutoriel : le design, les mesures et la suite sont dans [p3b-tessellation.md](p3b-tessellation.md). Un seul chemin pour les trois backends, WebGL2 compris : les niveaux choisis par arête sur le CPU (0,4 ms pour 4096 patchs), les sommets générés depuis leur numéro en un draw par surface, sans fissure ; les attributs calculés du material graph (`g.vertexAttribute`) comme mode patch. Le terrain de la démo (1280 × 720, Vulkan) : 400 000 triangles adaptatifs contre 3,8 millions au niveau le plus fin, 1140 contre 660 images par seconde. Reportés : les draws indirects et le choix des niveaux en calcul (WebGPU, Vulkan), les patchs triangulaires (Phong tessellation, PN triangles), les concurrent binary trees, les ombres hors de la vue.
+
+Le plan d'origine :
+
 Insérée après P3 sans renuméroter. Ni WebGPU ni WebGL2 n'ont de tessellation matérielle (hull et domain shaders) ; Metal ne l'a pas sous cette forme, et les moteurs récents la remplacent par du calcul. Le moteur aura **un seul chemin pour tous les backends**, sans la tessellation matérielle de Vulkan : le même rendu partout, une seule chose à tester. Un design (`design/tessellation.md`) comparera d'abord les alternatives : tessellation matérielle, subdivision sur le CPU au chargement, patchs instanciés, concurrent binary trees.
 
 **Le principe retenu : des patchs instanciés.** Aucun sommet n'est généré à chaque frame ; le choix du niveau est séparé de l'évaluation.
@@ -228,7 +232,7 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 - **P5** avant **P6** (squelettes et clips de glTF), **P7** (sons chargés) et **P8**.
 - **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P13**.
 - **P10** après **P8** (des scènes à tracer) ; ses prérequis sont posés dès P1 (§6).
-- **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; ses draws indirects servent aussi aux deux phases sans retard de **P3** (sa suite). Avant **P8** si la forêt a un terrain.
+- **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; faite sans draws indirects : ils restent à ajouter pour les deux phases sans retard de **P3** (sa suite) et le choix des niveaux en calcul. Avant **P8** si la forêt a un terrain : le terrain existe (`buildTerrain` des demo-scenes).
 - **P12** avant **P13** : les scènes de CAO et de BIM qu'ouvre l'éditeur.
 - **P13** s'appuie sur presque tout : la sélection (le buffer d'identifiants de P2b) et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
 

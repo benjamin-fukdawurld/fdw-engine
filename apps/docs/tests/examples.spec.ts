@@ -17,6 +17,7 @@ const examples: Record<string, string> = {
   'compute-waves': 'tutorials/compute/',
   'scene-forest': 'tutorials/scene/',
   'occlusion-culling': 'tutorials/occlusion-culling/',
+  tessellation: 'tutorials/tessellation/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',

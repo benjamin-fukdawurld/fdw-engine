@@ -32,6 +32,7 @@
       "@fdw/engine-geometry": ["packages/engine-geometry/src/index.ts"],
       "@fdw/engine-scene": ["packages/engine-scene/src/index.ts"],
       "@fdw/engine-occlusion": ["packages/engine-occlusion/src/index.ts"],
+      "@fdw/engine-tessellation": ["packages/engine-tessellation/src/index.ts"],
       "@fdw/engine-input": ["packages/engine-input/src/index.ts"],
       "@fdw/engine-input-web": ["packages/engine-input-web/src/index.ts"],
       "@fdw/engine-input-native": ["packages/engine-input-native/src/index.ts"]

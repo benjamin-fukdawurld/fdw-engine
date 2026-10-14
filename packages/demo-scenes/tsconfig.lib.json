@@ -26,6 +26,9 @@
     },
     {
       "path": "../engine-occlusion/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-tessellation/tsconfig.lib.json"
     }
   ],
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"]

@@ -87,6 +87,25 @@ export const writeStorage: NodeDefinition = {
 };
 
 /**
+ * A vertex attribute computed by the graph instead of read from the mesh:
+ * every input.attribute of this semantic, in the graph and in what the
+ * compiler adds (the vertex stage of output.surface, the macros), reads
+ * `value` instead. Vertex stage. The geometry generated in the vertex
+ * shader (the patches of the tessellation) gives its position, normal and
+ * uv this way; the mesh then needs no such attribute.
+ */
+export const attribute: NodeDefinition = {
+  id: 'output.attribute',
+  category: 'output',
+  params: {
+    semantic: { kind: 'string', required: true },
+  },
+  inputs: () => [{ name: 'value', type: generic('T', 'numeric') }],
+  outputs: () => [],
+  stage: () => 'vertex',
+};
+
+/**
  * Raw stage outputs, for full control (post-processing, full-screen passes).
  * The compiler also lowers 'output.surface' to this pair.
  */

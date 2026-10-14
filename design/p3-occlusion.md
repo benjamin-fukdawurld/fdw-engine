@@ -8,7 +8,7 @@ Contraintes : le GPU autant que possible, sur les trois backends ; rien que WebG
 
 | Ce qui existe                                                                                           | Ce qui manque                                                                                                                    |
 | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Le frustum culling du `Renderer` et de la scène (octrees)                                               | Les draws indirects (`drawIndirect`) dans l'API abstraite : prévus avec P3b                                                      |
+| Le frustum culling du `Renderer` et de la scène (octrees)                                               | Les draws indirects (`drawIndirect`) dans l'API abstraite : prévus avec P3b, qui s'en est passée                                 |
 | Le drapeau `occluder`, `NodeState.lastVisible`, la table des bornes, `scene.occlusion` (scenegraph §10) | Les textures de stockage, le calcul en WebGL2                                                                                    |
 | Les passes plein écran, `readTexture` d'une région sur les trois backends (P2b)                         | Lire la profondeur dans un shader (réservé aux shadow maps), lire un texel sans sampler (`r32float` n'est pas filtrable partout) |
 | `addMipmapPass` (une moyenne)                                                                           | Une réduction max ; le rendu dans un niveau de mip                                                                               |

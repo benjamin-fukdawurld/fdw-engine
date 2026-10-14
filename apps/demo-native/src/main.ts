@@ -7,7 +7,8 @@
 // nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden]
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
-// city (the occlusion culling; city-no-occlusion to compare).
+// city (the occlusion culling; city-no-occlusion to compare), terrain (the
+// tessellation; terrain-uniform: every patch at the finest level).
 // Escape or closing the window quits.
 import type { Engine, Surface } from '@fdw/engine-backend';
 import {
@@ -23,6 +24,8 @@ import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createCity,
   createCityScene,
+  createTerrain,
+  createTerrainScene,
   createMazeStep1,
   createMazeStep2,
   createMazeStep3,
@@ -42,6 +45,8 @@ const scenes: Record<string, SceneFactory> = {
   'maze-3': createMazeStep3,
   city: createCityScene,
   'city-no-occlusion': createCity({ occlusion: false }),
+  terrain: createTerrainScene,
+  'terrain-uniform': createTerrain({ minLevel: 6 }),
 };
 
 const args = process.argv.slice(2);
