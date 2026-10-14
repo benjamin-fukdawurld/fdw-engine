@@ -30,4 +30,7 @@ if (actions.button('jump').pressed) {
 - **Keys by position**: `KeyW` is the key at the place of W — Z on an AZERTY keyboard. `keyboard.label(code)` gives what it shows in the layout.
 - **Gamepads in the standard layout** (Gamepad API, SDL3): `south`, `east`, `west`, `north`, shoulders, analog triggers, sticks with a radial dead zone.
 - **Actions**: buttons, axes and vectors, several bindings each (the strongest wins), rebound at run time and saved as JSON.
+- **Contexts**: an `ActionMap` per context (a menu, the game), `enabled` or not; a map enabled during a frame reads from the next one.
+- **Pointer lock**: `input.lockPointer()`, relative movements in `pointer.dx` and `dy`, the `pointer:locked` control.
+- **Rumble**: `gamepad.rumble(strong, weak, duration)`, or `actions.rumble()` for the gamepads of an `ActionMap`.
 - **`FakeInputSource`**: a source driven by code, for tests and replays.

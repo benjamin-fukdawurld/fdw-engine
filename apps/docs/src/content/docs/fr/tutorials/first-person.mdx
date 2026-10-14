@@ -1,0 +1,188 @@
+---
+title: Contrôles à la première personne
+description: Verrouiller le pointeur pour regarder autour de soi, passer d'un menu au jeu avec des contextes d'actions, et faire vibrer la manette.
+sidebar:
+  order: 17
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un jeu à la première personne demande trois choses de plus que la
+[navigation de la caméra](/fdw-engine/fr/tutorials/camera-operators/) :
+
+- le **pointeur verrouillé** : caché, il tourne la vue sans bouton
+  maintenu, et ne s'arrête jamais au bord de l'écran ;
+- des **contextes d'actions** : les flèches déplacent dans le jeu,
+  choisissent dans un menu ; un jeu d'actions à la fois ;
+- les **vibrations** : un tir se sent dans la manette.
+
+Cliquez dans le canvas pour jouer : la souris oriente la vue, WASD (ZQSD
+en AZERTY) fait marcher, un clic ou Espace tire — le pilier touché devient
+orange. Échap (start à la manette) ouvre le menu : les flèches ou la croix
+choisissent, Entrée ou le bouton sud valident.
+
+<Example name="first-person" />
+
+## Verrouiller le pointeur
+
+```ts
+input.lockPointer(); // le demande à la source
+input.lockPointer(false); // le libère
+
+input.pointer.locked; // vrai une fois que la source l'a obtenu
+input.pointer.dx; // le déplacement de la frame, verrouillé ou non
+```
+
+Verrouillé, le pointeur garde sa position : `x` et `y` restent, `dx` et
+`dy` donnent le déplacement — le mouvement relatif de la souris, sans
+limite d'écran. Le contrôle `pointer:delta` le lit comme avant : une
+action qui lui est liée marche de la même façon, verrouillé ou non.
+
+Le verrouillage est asynchrone : `pointer.locked` devient vrai au
+`update()` suivant, une fois que la source l'a obtenu.
+
+- **Dans un navigateur**, `WebInputSource` verrouille le pointeur sur son
+  élément. Le navigateur ne l'accepte qu'après un clic ou une touche de
+  l'utilisateur : appelez `lockPointer()` dans la frame de l'appui (comme
+  l'exemple), ou dans son gestionnaire d'événement. Il libère lui-même le
+  verrou sur Échap, ou quand la page perd le focus.
+- **Dans une fenêtre native**, `NativeInputSource` utilise le mode relatif
+  de SDL (`window.pointerLocked`) ; aucun geste n'est nécessaire.
+
+`pointer:locked` est aussi un contrôle : un bouton, enfoncé tant que le
+pointeur est verrouillé, `pressed` quand il le devient, `released` quand
+il est perdu. `FlyActions` le lie à `drag` : le `FlyOperator` oriente la
+vue au pointeur verrouillé, sans bouton maintenu. L'exemple se met en
+pause quand le navigateur reprend le verrou :
+
+```ts
+const game = new ActionMap(input, {
+  ...FlyActions,
+  fire: {
+    type: 'button',
+    bindings: ['pointer:0', 'key:Space', 'gamepad:rightTrigger'],
+  },
+  pause: { type: 'button', bindings: ['key:Escape', 'gamepad:start'] },
+  locked: { type: 'button', bindings: ['pointer:locked'] },
+});
+
+// Échap libère le verrou dans un navigateur : le jeu se met alors en pause.
+if (game.button('pause').pressed || game.button('locked').released) {
+  pause();
+}
+```
+
+## Les contextes : un menu sur le jeu
+
+Un contexte est une `ActionMap` à part. `enabled` l'active ou la
+désactive : désactivée, une table ne lit rien — tous les boutons sont
+relâchés, les axes et les vecteurs à 0 — et le code du jeu n'a pas besoin
+d'un `if (paused)` à chaque action.
+
+```ts
+const menu = new ActionMap(input, {
+  up: {
+    type: 'button',
+    bindings: ['key:ArrowUp', 'key:KeyW', 'gamepad:dpadUp'],
+  },
+  down: {
+    type: 'button',
+    bindings: ['key:ArrowDown', 'key:KeyS', 'gamepad:dpadDown'],
+  },
+  confirm: {
+    type: 'button',
+    bindings: ['key:Enter', 'key:Space', 'pointer:0', 'gamepad:south'],
+  },
+});
+const game = new ActionMap(input, gameActions, { enabled: false });
+
+const play = () => {
+  menu.enabled = false;
+  game.enabled = true;
+  input.lockPointer();
+};
+const pause = () => {
+  game.enabled = false;
+  menu.enabled = true;
+  input.lockPointer(false);
+};
+```
+
+Une même touche peut avoir un sens dans chaque contexte — Espace valide
+dans le menu, tire dans le jeu — et un même appui ne doit pas faire les
+deux. Une table activée pendant une frame ne lit rien jusqu'au `update()`
+suivant : le clic qui choisit « Play » ne tire pas aussi, et l'Échap qui
+ouvre un menu ne le referme pas aussitôt. `active` dit si une table lit
+ses actions dans cette frame :
+
+```ts
+onFrame(() => {
+  input.update();
+  if (menu.active) {
+    // up, down, confirm
+  } else if (game.active) {
+    // pause, fire
+  }
+  fly.enabled = game.enabled; // l'opérateur reste immobile sous le menu
+  fly.update(dt);
+});
+```
+
+Un opérateur de caméra lit sa propre `ActionMap` : désactivez la table, ou
+l'opérateur (`fly.enabled`), et il s'arrête. Plusieurs tables peuvent être
+actives à la fois — le jeu et une table de raccourcis toujours active, par
+exemple.
+
+## Les vibrations
+
+```ts
+gamepad.rumble(strong, weak, duration); // input.gamepads[0]
+actions.rumble(strong, weak, duration); // les manettes d'une ActionMap
+```
+
+Une manette a deux moteurs : le **fort** (`strong`), lourd, à basse
+fréquence, et le **faible** (`weak`), léger et rapide. Chacun va de 0 à 1,
+pendant `duration` secondes. Une nouvelle vibration remplace la
+précédente ; `rumble(0, 0, 0)` l'arrête.
+
+`actions.rumble()` fait vibrer les manettes qui pilotent les actions :
+toutes par défaut, celle du joueur avec l'option `gamepad`. L'exemple
+vibre un peu pour un tir manqué, plus pour un tir réussi :
+
+```ts
+game.rumble(hit ? 0.8 : 0.2, hit ? 0.4 : 0.6, hit ? 0.25 : 0.08);
+```
+
+Dans un navigateur, la vibration passe par le `vibrationActuator` de la
+Gamepad API (Chrome, Edge ; tous les navigateurs ne l'ont pas) ; dans une
+fenêtre native, par `SDL_RumbleGamepad`. Une manette sans moteurs, ou une
+source qui ne sait pas les piloter, l'ignore. Laissez l'utilisateur la
+couper : le menu de l'exemple le fait.
+
+## Le tester
+
+`FakeInputSource` verrouille le pointeur aussitôt et enregistre les
+vibrations :
+
+```ts
+const source = new FakeInputSource();
+const input = new Input(source);
+input.lockPointer();
+source.sink?.pointerMove(0.5, 0.5, 0.05, 0); // x, y, puis dx, dy
+input.update();
+expect(input.pointer).toMatchObject({ locked: true, dx: 0.05 });
+
+source.connectGamepad();
+input.update();
+input.gamepads[0].rumble(1, 0.5, 0.2);
+expect(source.rumbles).toEqual([
+  { gamepad: 0, strong: 1, weak: 0.5, duration: 0.2 },
+]);
+```
+
+## Ensuite
+
+- [Guide des entrées](/fdw-engine/fr/guides/input/) : les périphériques,
+  les contrôles, les actions.
+- [Navigation de la caméra](/fdw-engine/fr/tutorials/camera-operators/) :
+  les opérateurs, leurs liaisons, les réaffecter.

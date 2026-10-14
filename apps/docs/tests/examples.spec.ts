@@ -19,6 +19,7 @@ const examples: Record<string, string> = {
   'occlusion-culling': 'tutorials/occlusion-culling/',
   tessellation: 'tutorials/tessellation/',
   'camera-operators': 'tutorials/camera-operators/',
+  'first-person': 'tutorials/first-person/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',
@@ -226,4 +227,34 @@ test('camera-operators-walk', async ({ page: browser }, info) => {
       timeout: 20_000,
     }
   );
+});
+
+// First person controls: a click leaves the menu for the game, Space
+// shoots the pillar ahead, which turns orange. The pointer lock may be
+// refused to a headless browser: the shot does not need it.
+test('first-person-shot', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/first-person/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`
+  );
+  const example = browser.locator('[data-example="first-person"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('paused');
+  await canvas.click();
+  await expect(status).toContainText('playing');
+  await browser.keyboard.press('Space');
+  await expect(status).toContainText('hits: 1');
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(`first-person-shot-${backend}.png`, {
+    timeout: 20_000,
+  });
 });

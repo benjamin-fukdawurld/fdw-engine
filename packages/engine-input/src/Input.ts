@@ -109,16 +109,33 @@ export class Pointer {
   seen = false;
   /**
    * How far it moved since the previous frame, in fractions of the
-   * surface: x to the right, y downwards. 0 before its first move.
+   * surface: x to the right, y downwards. 0 before its first move. Locked,
+   * the pointer still moves by dx and dy, while x and y stay.
    */
   dx = 0;
   dy = 0;
   /** The wheel turned since the previous frame, in notches (positive: down). */
   wheel = 0;
+  /**
+   * Whether the pointer is locked (Input.lockPointer): hidden, it only
+   * gives relative movements, without bounds.
+   */
+  locked = false;
+  /** @internal: locked or released since the previous frame. */
+  _lockChanged = false;
   /** @internal */
   readonly _buttons = new ButtonSet<number>();
   /** @internal */
-  _live = { x: 0.5, y: 0.5, moved: false, wheel: 0 };
+  _live = {
+    x: 0.5,
+    y: 0.5,
+    dx: 0,
+    dy: 0,
+    moved: false,
+    seen: false,
+    wheel: 0,
+    locked: false,
+  };
 
   isDown(button = 0): boolean {
     return this._buttons.down.has(button);
@@ -139,6 +156,8 @@ export const DefaultDeadZone = 0.15;
 // Down beyond half of the range: for the analog triggers.
 const ButtonThreshold = 0.5;
 
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
 /** A gamepad, in the standard layout. */
 export class Gamepad {
   /** The dead zone of the sticks, radial. */
@@ -150,6 +169,9 @@ export class Gamepad {
   /** @internal: pressed or released between the frames. */
   readonly _pressed = new Uint8Array(GamepadButtons.length);
   readonly _released = new Uint8Array(GamepadButtons.length);
+
+  /** @internal */
+  constructor(private readonly _source?: InputSource) {}
 
   get id(): number {
     return this._state.id;
@@ -206,6 +228,21 @@ export class Gamepad {
     return out;
   }
 
+  /**
+   * Shakes the gamepad: the strong (low frequency) and weak (high
+   * frequency) motors from 0 to 1, for `duration` seconds. A new rumble
+   * replaces the current one; rumble(0, 0, 0) stops. Nothing happens
+   * without motors, or with a source that cannot drive them.
+   */
+  rumble(strong: number, weak: number, duration: number): void {
+    this._source?.rumble?.(
+      this.id,
+      clamp01(strong),
+      clamp01(weak),
+      Math.max(0, duration)
+    );
+  }
+
   /** @internal: the new state of the frame, and its presses. */
   _update(state: GamepadState): boolean {
     const { buttons } = this._state;
@@ -250,6 +287,8 @@ export class Input {
   readonly gamepads: Gamepad[] = [];
   /** The device used last: to choose between aiming with the mouse or a stick. */
   lastDevice: InputDevice = 'keyboard';
+  /** The number of update() calls: the frame of the state. */
+  frame = 0;
   private _liveDevice: InputDevice = 'keyboard';
   private readonly _states: GamepadState[] = [];
   private readonly _byId = new Map<number, Gamepad>();
@@ -269,11 +308,24 @@ export class Input {
         }
       },
       keyUp: (code) => keyboard._keys.release(code),
-      pointerMove: (x, y) => {
-        pointer._live.x = x;
-        pointer._live.y = y;
-        pointer._live.moved = true;
+      pointerMove: (x, y, dx, dy) => {
+        const live = pointer._live;
+        if (dx !== undefined && dy !== undefined) {
+          live.dx += dx;
+          live.dy += dy;
+        } else if (live.seen) {
+          // The first move comes from nowhere, not from the center.
+          live.dx += x - live.x;
+          live.dy += y - live.y;
+        }
+        live.x = x;
+        live.y = y;
+        live.moved = true;
+        live.seen = true;
         this._liveDevice = 'pointer';
+      },
+      pointerLock: (locked) => {
+        pointer._live.locked = locked;
       },
       pointerButton: (button, down) => {
         if (down) {
@@ -301,17 +353,34 @@ export class Input {
     keyboard._keys.freeze();
     pointer._buttons.freeze();
     const live = pointer._live;
-    pointer.dx = pointer.seen ? live.x - pointer.x : 0;
-    pointer.dy = pointer.seen ? live.y - pointer.y : 0;
+    pointer.dx = live.dx;
+    pointer.dy = live.dy;
     pointer.x = live.x;
     pointer.y = live.y;
     pointer.moved = live.moved;
-    pointer.seen ||= live.moved;
+    pointer.seen = live.seen;
     pointer.wheel = live.wheel;
+    pointer._lockChanged = pointer.locked !== live.locked;
+    pointer.locked = live.locked;
+    live.dx = 0;
+    live.dy = 0;
     live.moved = false;
     live.wheel = 0;
     this.lastDevice = this._liveDevice;
+    this.frame++;
     this.updateGamepads();
+  }
+
+  /**
+   * Locks the pointer — hidden, its movements relative and unbounded, for
+   * a first person view — or releases it. Asynchronous: `pointer.locked`
+   * tells when the source got it. A browser only locks it after a click or
+   * a key of the user (call it in the frame of the press, or in its
+   * handler), and releases it on Escape. Nothing happens with a source
+   * that cannot lock it.
+   */
+  lockPointer(locked = true): void {
+    this._source.setPointerLock?.(locked);
   }
 
   /** Stops listening to the source. */
@@ -327,7 +396,7 @@ export class Input {
       connected.add(state.id);
       let gamepad = this._byId.get(state.id);
       if (!gamepad) {
-        gamepad = new Gamepad();
+        gamepad = new Gamepad(this._source);
         this._byId.set(state.id, gamepad);
         this.gamepads.push(gamepad);
       }

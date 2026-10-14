@@ -85,6 +85,7 @@ export class NativeWindow extends EventTarget {
   private _handle?: WindowHandle;
   private _width: number;
   private _height: number;
+  private _pointerLocked = false;
 
   constructor({
     title = 'FdwEngine',
@@ -153,6 +154,28 @@ export class NativeWindow extends EventTarget {
       : loadAddon().gamepadState(id, buttons, axes);
   }
 
+  /**
+   * Shakes a gamepad: the strong (low frequency) and weak (high frequency)
+   * motors from 0 to 1, for `duration` seconds; 0 stops. Returns false
+   * when the gamepad is not connected or has no motors.
+   */
+  static rumbleGamepad(
+    id: number,
+    strong: number,
+    weak: number,
+    duration: number
+  ): boolean {
+    return (
+      windows.size > 0 &&
+      loadAddon().gamepadRumble(
+        id,
+        strong,
+        weak,
+        Math.round(Math.max(0, duration) * 1000)
+      )
+    );
+  }
+
   // The size in pixels: the size of the images presented.
   get width(): number {
     return this._width;
@@ -168,6 +191,19 @@ export class NativeWindow extends EventTarget {
 
   set title(title: string) {
     this._addon.setTitle(this.handle, title);
+  }
+
+  /**
+   * Whether the pointer is locked to the window: hidden, its 'pointermove'
+   * events give the movement (dx, dy) while x and y stay.
+   */
+  get pointerLocked(): boolean {
+    return this._pointerLocked;
+  }
+
+  set pointerLocked(locked: boolean) {
+    this._addon.setRelativeMouse(this.handle, locked ? 1 : 0);
+    this._pointerLocked = locked;
   }
 
   // Copy presentation: waits for the vertical synchronization (default).

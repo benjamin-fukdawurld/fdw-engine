@@ -10,6 +10,7 @@ import { GamepadAxes, GamepadButtons } from './source';
  * - `pointer:delta`: the movement of the pointer during the frame, for a
  *   vector, in fractions of the surface; `pointer:deltaX`,
  *   `pointer:deltaY`: the same, as axes (y positive downwards);
+ * - `pointer:locked`: a button, down while the pointer is locked;
  * - `gamepad:<button>`: a button of a gamepad (`gamepad:south`,
  *   `gamepad:rightTrigger`);
  * - `gamepad:<axis>`: an axis of a stick, from -1 to 1 (`gamepad:leftX`);
@@ -63,6 +64,8 @@ export interface ActionMapOptions {
   readonly gamepad?: number;
   /** Saved bindings (toJSON()), replacing those of the definitions. */
   readonly bindings?: Bindings;
+  /** Whether the actions are read: see ActionMap.enabled. Default true. */
+  readonly enabled?: boolean;
 }
 
 const NotPressed: ButtonState = {
@@ -92,9 +95,15 @@ const NotPressed: ButtonState = {
  * if (actions.button('jump').pressed) { … }
  * const { x, y } = actions.vector('move'); // y forward
  * ```
+ *
+ * A context — a menu, the game — is an ActionMap of its own, enabled while
+ * it is active: a disabled map reads nothing.
  */
 export class ActionMap {
   private readonly _definitions = new Map<string, ActionDefinition>();
+  private _enabled: boolean;
+  // The frame of the input when the map was enabled.
+  private _enabledFrame = -1;
 
   constructor(
     private readonly _input: Input,
@@ -106,6 +115,40 @@ export class ActionMap {
     }
     for (const [name, bindings] of Object.entries(_options.bindings ?? {})) {
       this.rebind(name, bindings as ActionDefinition['bindings']);
+    }
+    this._enabled = _options.enabled ?? true;
+  }
+
+  /**
+   * Whether the actions are read. Disabled, every button is released, every
+   * axis and vector 0: the actions of a context that is not active (the
+   * game under a menu). Enabled during a frame, the map reads nothing
+   * until the next input.update(): the press that opened a menu does not
+   * also act in it.
+   */
+  get enabled(): boolean {
+    return this._enabled;
+  }
+
+  set enabled(enabled: boolean) {
+    if (enabled && !this._enabled) {
+      this._enabledFrame = this._input.frame;
+    }
+    this._enabled = enabled;
+  }
+
+  /** Whether the actions are read during this frame. */
+  get active(): boolean {
+    return this._enabled && this._enabledFrame !== this._input.frame;
+  }
+
+  /**
+   * Shakes the gamepads of these actions (see Gamepad.rumble): the strong
+   * and weak motors from 0 to 1, for `duration` seconds.
+   */
+  rumble(strong: number, weak: number, duration: number): void {
+    for (const gamepad of this.gamepads()) {
+      gamepad.rumble(strong, weak, duration);
     }
   }
 
@@ -136,6 +179,9 @@ export class ActionMap {
   button(name: string): ButtonState {
     const definition = this.definition(name, 'button');
     let state = NotPressed;
+    if (!this.active) {
+      return state;
+    }
     let down = false;
     let pressed = false;
     let released = false;
@@ -158,6 +204,9 @@ export class ActionMap {
   axis(name: string): number {
     const definition = this.definition(name, 'axis');
     let result = 0;
+    if (!this.active) {
+      return result;
+    }
     for (const binding of definition.bindings as readonly AxisBinding[]) {
       const value =
         typeof binding === 'string'
@@ -184,7 +233,10 @@ export class ActionMap {
     let bestY = 0;
     let best = 0;
     const stick = { x: 0, y: 0 };
-    for (const binding of definition.bindings as readonly VectorBinding[]) {
+    const bindings = this.active
+      ? (definition.bindings as readonly VectorBinding[])
+      : [];
+    for (const binding of bindings) {
       let x: number;
       let y: number;
       if (typeof binding === 'string') {
@@ -246,6 +298,15 @@ export class ActionMap {
   private readButton(control: Control): ButtonState {
     const [device, name] = split(control);
     const { keyboard, pointer } = this._input;
+    if (control === 'pointer:locked') {
+      const changed = pointer._lockChanged;
+      return {
+        down: pointer.locked,
+        pressed: pointer.locked && changed,
+        released: !pointer.locked && changed,
+        value: pointer.locked ? 1 : 0,
+      };
+    }
     if (device === 'key') {
       const down = keyboard.isDown(name);
       return {

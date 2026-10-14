@@ -69,6 +69,88 @@ describe('WebInputSource', () => {
     expect(input.keyboard.isDown('KeyA')).toBe(false);
   });
 
+  it('locks the pointer to the element: relative movements', () => {
+    const { element, input, send } = setup();
+    let lockElement: Element | null = null;
+    Object.defineProperty(document, 'pointerLockElement', {
+      configurable: true,
+      get: () => lockElement,
+    });
+    const change = (to: Element | null) => {
+      lockElement = to;
+      document.dispatchEvent(new Event('pointerlockchange'));
+    };
+    element.requestPointerLock = () => {
+      change(element);
+      return Promise.resolve();
+    };
+    document.exitPointerLock = () => change(null);
+    send('pointermove', { offsetX: 100, offsetY: 50, movementX: 0 });
+    input.lockPointer();
+    input.update();
+    expect(input.pointer.locked).toBe(true);
+    // The first move once locked: its movement is ignored (Chromium gives
+    // it a jump).
+    send('pointermove', {
+      offsetX: 100,
+      offsetY: 50,
+      movementX: -900,
+      movementY: 0,
+    });
+    input.update();
+    expect(input.pointer.dx).toBe(0);
+    // Then the position stays, movementX and movementY move it.
+    send('pointermove', {
+      offsetX: 100,
+      offsetY: 50,
+      movementX: 20,
+      movementY: -10,
+    });
+    input.update();
+    expect([input.pointer.x, input.pointer.y]).toEqual([0.5, 0.5]);
+    expect([input.pointer.dx, input.pointer.dy]).toEqual([0.1, -0.1]);
+    input.lockPointer(false);
+    input.update();
+    expect(input.pointer.locked).toBe(false);
+    delete (document as { pointerLockElement?: unknown }).pointerLockElement;
+  });
+
+  it('shakes the gamepads that have an actuator', () => {
+    const effects: unknown[] = [];
+    const vibrationActuator = {
+      playEffect: (type: string, params: object) => {
+        effects.push({ type, ...params });
+        return Promise.resolve('complete');
+      },
+      reset: () => {
+        effects.push('reset');
+        return Promise.resolve('complete');
+      },
+    };
+    const pad = {
+      index: 0,
+      id: 'Pad',
+      connected: true,
+      mapping: 'standard' as const,
+      buttons: [] as GamepadButton[],
+      axes: [],
+      vibrationActuator: vibrationActuator as unknown as GamepadHapticActuator,
+    };
+    const { input } = setup([pad]);
+    input.update();
+    input.gamepads[0].rumble(1, 0.5, 0.25);
+    input.gamepads[0].rumble(0, 0, 0);
+    expect(effects).toEqual([
+      {
+        type: 'dual-rumble',
+        duration: 250,
+        strongMagnitude: 1,
+        weakMagnitude: 0.5,
+      },
+      'reset',
+    ]);
+  });
+
   it('reads the gamepads of the standard layout', () => {
     const buttons = Array.from({ length: 17 }, () => ({ value: 0 }));
     buttons[7].value = 0.6; // the right trigger

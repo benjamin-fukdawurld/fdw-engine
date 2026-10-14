@@ -19,6 +19,15 @@ export class FakeInputSource implements InputSource {
   sink?: InputSink;
   /** The gamepads connected: change their buttons and axes freely. */
   readonly gamepads: GamepadState[] = [];
+  /** Whether the pointer is locked: setPointerLock() takes it at once. */
+  pointerLocked = false;
+  /** The rumbles asked, in order. */
+  readonly rumbles: {
+    gamepad: number;
+    strong: number;
+    weak: number;
+    duration: number;
+  }[] = [];
   private _nextId = 0;
 
   attach(sink: InputSink): void {
@@ -38,6 +47,20 @@ export class FakeInputSource implements InputSource {
       out[i].axes.set(state.axes);
     });
     return this.gamepads.length;
+  }
+
+  setPointerLock(locked: boolean): void {
+    this.pointerLocked = locked;
+    this.sink?.pointerLock(locked);
+  }
+
+  rumble(
+    gamepad: number,
+    strong: number,
+    weak: number,
+    duration: number
+  ): void {
+    this.rumbles.push({ gamepad, strong, weak, duration });
   }
 
   /** Presses a key (`code`, and what it produces: its `key`). */

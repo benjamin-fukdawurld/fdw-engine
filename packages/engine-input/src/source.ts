@@ -64,8 +64,15 @@ export function createGamepadState(): GamepadState {
 export interface InputSink {
   keyDown(code: string, key: string): void;
   keyUp(code: string, key: string): void;
-  /** From 0 to 1 over the surface, from the top left corner. */
-  pointerMove(x: number, y: number): void;
+  /**
+   * From 0 to 1 over the surface, from the top left corner. `dx` and `dy`:
+   * the relative movement, in fractions of the surface, when the source
+   * knows it (the only movement while the pointer is locked: the position
+   * stays); without them, the difference of the positions.
+   */
+  pointerMove(x: number, y: number, dx?: number, dy?: number): void;
+  /** The pointer was locked or released (see InputSource.setPointerLock). */
+  pointerLock(locked: boolean): void;
   /** Buttons as in the DOM: 0 main, 1 middle, 2 secondary. */
   pointerButton(button: number, down: boolean): void;
   /** In notches, positive downwards. */
@@ -89,4 +96,23 @@ export interface InputSource {
   readGamepads(out: GamepadState[]): number;
   /** Stops writing the events. */
   detach(): void;
+  /**
+   * Locks the pointer — hidden, its movements relative and unbounded, for
+   * a first person view — or releases it. The source tells the sink when
+   * the lock is taken or lost: a browser may refuse it, and releases it on
+   * Escape. Optional: without it, the pointer is never locked.
+   */
+  setPointerLock?(locked: boolean): void;
+  /**
+   * Shakes a gamepad (its `id`): the strong (low frequency) and weak (high
+   * frequency) motors from 0 to 1, for `duration` seconds; 0 stops. A new
+   * rumble replaces the previous one. Optional, and ignored by a gamepad
+   * without motors.
+   */
+  rumble?(
+    gamepad: number,
+    strong: number,
+    weak: number,
+    duration: number
+  ): void;
 }

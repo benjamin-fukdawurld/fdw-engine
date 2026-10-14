@@ -75,6 +75,13 @@ moved during the frame, in fractions of the surface (0 before its first
 move), and `wheel`: the notches turned during the frame, positive
 downwards.
 
+`input.lockPointer()` locks the pointer — hidden, its movements relative
+and unbounded, for a first person view — and `lockPointer(false)` releases
+it. `pointer.locked` tells when the source got it: a browser accepts it
+only after a click or a key, and releases it on Escape. Locked, `x` and `y`
+stay, `dx` and `dy` still move. See
+[First person controls](/fdw-engine/tutorials/first-person/).
+
 ## Gamepads
 
 `input.gamepads` lists the gamepads connected, in the **standard layout**
@@ -98,6 +105,11 @@ every gamepad:
 - In a browser, a gamepad shows once a button is pressed (a rule of the
   browsers, against fingerprinting); only those of the standard layout are
   read.
+
+`gamepad.rumble(strong, weak, duration)` shakes a gamepad: its strong
+(low frequency) and weak (high frequency) motors from 0 to 1, for
+`duration` seconds. Without motors, or in a browser without
+`vibrationActuator`, nothing happens.
 
 `input.lastDevice` is the device used last — `'keyboard'`, `'pointer'` or
 `'gamepad'`: to aim with the mouse or a stick, or to show the right
@@ -147,6 +159,7 @@ The controls are strings — they save and compare as they are:
 | `pointer:wheel`                   | The wheel, an axis: the notches of the frame              |
 | `pointer:delta`                   | The movement of the pointer during the frame, a vector    |
 | `pointer:deltaX`, `deltaY`        | The same, as axes (y positive downwards)                  |
+| `pointer:locked`                  | A button, down while the pointer is locked                |
 | `gamepad:<button>`                | A gamepad button: `gamepad:south`, `gamepad:rightTrigger` |
 | `gamepad:<axis>`                  | A stick axis, through its dead zone: `gamepad:leftX`      |
 | `gamepad:leftStick`, `rightStick` | A stick, for a vector (as a button: the stick pressed)    |
@@ -158,7 +171,27 @@ The controls are strings — they save and compare as they are:
   stick is positive downwards. The binding of a stick turns it.
 - **Every gamepad** drives the actions by default. For a game with a
   gamepad per player, `new ActionMap(input, definitions, { gamepad: 1 })`
-  reads only the second one.
+  reads only the second one. `actions.rumble(strong, weak, duration)`
+  shakes the gamepads of the actions.
+
+### Contexts
+
+A menu and a game read the same keys differently: give each its own
+`ActionMap`, and enable one at a time. Disabled (`enabled = false`, or the
+`enabled: false` option), a map reads nothing: buttons released, axes and
+vectors at 0. A map enabled during a frame reads nothing until the next
+`update()`: the press that opened a menu does not also act in it. `active`
+tells whether the map reads its actions in this frame.
+
+```ts
+const game = new ActionMap(input, gameActions);
+const menu = new ActionMap(input, menuActions, { enabled: false });
+
+if (game.button('pause').pressed) {
+  game.enabled = false;
+  menu.enabled = true; // reads from the next frame
+}
+```
 
 ### Changing and saving the bindings
 
@@ -191,7 +224,11 @@ expect(actions.vector('move')).toEqual({ x: 0, y: 1 });
 An `InputSource` writes the events into the `InputSink` that `Input` gives
 to its `attach()`, and fills the states of the gamepads in
 `readGamepads(out)`, reusing the objects of `out`: nothing is allocated per
-frame. A touch screen, a network replay or another windowing library is
+frame. `setPointerLock(locked)` and `rumble(gamepad, strong, weak,
+duration)` are optional: a source without them never locks the pointer nor
+shakes a gamepad; with them, it tells the sink when the lock is taken or
+lost (`pointerLock(locked)`), and gives the relative movements in
+`pointerMove(x, y, dx, dy)`. A touch screen, a network replay or another windowing library is
 one more source.
 
 ## Camera navigation
@@ -203,6 +240,5 @@ the keyboard, the mouse and the gamepads. See the
 
 ## Not yet
 
-Vibrations, pointer lock (relative movements, for a first person view), and
-contexts of actions (a menu, a game) are not there yet; the API leaves
-room for them.
+The text typed (for a text field, not a game) is not there yet; the API
+leaves room for it.

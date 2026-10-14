@@ -36,6 +36,7 @@ function fakeAddon() {
     },
     setTitle: (_, title) => calls.push(`title ${title}`),
     setVsync: (_, vsync) => calls.push(`vsync ${vsync}`),
+    setRelativeMouse: (_, enabled) => calls.push(`relative ${enabled}`),
     presentRgba: (_, pixels, width, height, stride) =>
       calls.push(`present ${pixels.length} ${width}×${height} ${stride}`),
     pollEvents: () => queue.splice(0),
@@ -49,6 +50,10 @@ function fakeAddon() {
       buttons[0] = 1;
       axes[0] = 1;
       return 'Pad';
+    },
+    gamepadRumble: (id, strong, weak, ms) => {
+      calls.push(`rumble ${id} ${strong} ${weak} ${ms}`);
+      return id === 7;
     },
   };
   return { addon, calls, queue };
@@ -150,6 +155,9 @@ describe('NativeWindow', () => {
     expect(NativeWindow.readGamepad(7, buttons, axes)).toBe('Pad');
     expect([buttons[0], axes[0]]).toEqual([1, 1]);
     expect(NativeWindow.readGamepad(3, buttons, axes)).toBeUndefined();
+    // Milliseconds for the addon; false without the gamepad.
+    expect(NativeWindow.rumbleGamepad(7, 1, 0.5, 0.25)).toBe(true);
+    expect(NativeWindow.rumbleGamepad(3, 1, 1, 1)).toBe(false);
     left.destroy();
     right.destroy();
   });
@@ -161,10 +169,13 @@ describe('NativeWindow', () => {
     window.presentRgba(new Uint8Array(16), 2, 2);
     window.presentRgba(new Uint8Array(512), 2, 2, 256);
     window.vsync = false;
-    expect(calls.slice(-3)).toEqual([
+    window.pointerLocked = true;
+    expect(window.pointerLocked).toBe(true);
+    expect(calls.slice(-4)).toEqual([
       'present 16 2×2 8',
       'present 512 2×2 256',
       'vsync 0',
+      'relative 1',
     ]);
     window.destroy();
   });

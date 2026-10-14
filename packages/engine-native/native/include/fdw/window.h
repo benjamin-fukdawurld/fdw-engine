@@ -129,6 +129,10 @@ FDW_API int fdw_window_present_rgba(fdw_window *window, const void *pixels,
 // Copy presentation: waits for the vertical synchronization (1, default)
 // or not (0).
 FDW_API int fdw_window_set_vsync(fdw_window *window, int32_t vsync);
+// Locks the pointer to the window (1) — hidden, its movements relative
+// (FDW_EVENT_POINTER_MOVE gives dx and dy, x and y stay) — or releases it
+// (0). Returns 0, or -1 on error.
+FDW_API int fdw_window_set_relative_mouse(fdw_window *window, int32_t enabled);
 
 // The window system of a window and its native handles: what a graphics
 // API needs to present into it (a Vulkan surface…).
@@ -163,6 +167,12 @@ FDW_API int fdw_poll_event(fdw_event *event);
 FDW_API int32_t fdw_gamepads(uint32_t *ids, int32_t capacity);
 // The state of a gamepad now. Returns 0, or -1 when it is not connected.
 FDW_API int fdw_gamepad_read(uint32_t id, fdw_gamepad_state *state);
+// Shakes a gamepad: the strong (low frequency) and weak (high frequency)
+// motors from 0 to 1, for `duration_ms` milliseconds; 0 stops. Replaces the
+// current rumble. Returns 0, or -1 when it is not connected or has no
+// motors.
+FDW_API int fdw_gamepad_rumble(uint32_t id, float strong, float weak,
+                               uint32_t duration_ms);
 
 #ifdef __cplusplus
 }

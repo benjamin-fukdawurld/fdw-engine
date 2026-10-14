@@ -131,7 +131,7 @@ Démos et exemples : le displacement mapping de P2b rendu adaptatif, un terrain 
 ### P4. Caméras, entrées, ordonnanceur — démo FPS
 
 - **Contrôleurs de caméra** ([backlog §9](backlog.md#9-vers-un-middleware-de-création-3d)) — _premiers opérateurs faits_ (14 octobre 2026), avec leur tutoriel : `@fdw/engine-camera`, orbite et vol libre ou marche, au clavier, à la souris et à la manette, liaisons réaffectables ([p4-camera-operators.md](p4-camera-operators.md)). Le reste : TPS (bras à ressort, collisions), stratégie et isométrique (plan XZ), le zoom vers le curseur ; des contraintes composables, des ressorts amortis, des transitions entre caméras.
-- **Entrées** : le verrouillage du pointeur (déplacements relatifs), les contextes d'actions (menu, jeu), les vibrations ([input §6](input.md#6-hors-du-périmètre-prévu-par-lapi)).
+- **Entrées** — _fait_ (14 octobre 2026), avec son tutoriel « Contrôles à la première personne » : le verrouillage du pointeur (déplacements relatifs), les contextes d'actions (menu, jeu), les vibrations ([p4-input.md](p4-input.md)).
 - **L'ordonnanceur de systèmes ECS** : des systèmes ordonnés, la boucle à pas fixe intégrée.
 - **Un contrôleur de personnage** : une capsule qui marche, saute, glisse le long des murs et monte les marches, contre les volumes de la scène. Une API abstraite pour brancher un moteur physique plus tard.
 - **Restes du labyrinthe** : les murs transparents entre la caméra et le personnage (avec la caméra TPS), et la démo native (choix de la scène et du backend à chaud).

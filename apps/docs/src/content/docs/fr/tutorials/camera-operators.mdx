@@ -91,14 +91,14 @@ const fly = new FlyOperator(camera, new ActionMap(input, FlyActions), {
 fly.lookAt({ x: 0, y: 1, z: 0 });
 ```
 
-| Action    | Clavier, souris                | Manette                               | Effet                      |
-| --------- | ------------------------------ | ------------------------------------- | -------------------------- |
-| `move`    | WASD (ZQSD en AZERTY)          | Stick gauche                          | Déplace, y vers l'avant    |
-| `look`    | Flèches                        | Stick droit                           | Oriente la vue             |
-| `drag`    | Bouton principal ou secondaire | —                                     | Oriente la vue au pointeur |
-| `lift`    | Q descend, E monte             | Gâchette gauche descend, droite monte | Descend et monte           |
-| `run`     | Shift                          | Stick gauche enfoncé                  | Multiplie la vitesse (×3)  |
-| `pointer` | Le pointeur déplacé            | —                                     | Ce que suit `drag`         |
+| Action    | Clavier, souris                                           | Manette                               | Effet                      |
+| --------- | --------------------------------------------------------- | ------------------------------------- | -------------------------- |
+| `move`    | WASD (ZQSD en AZERTY)                                     | Stick gauche                          | Déplace, y vers l'avant    |
+| `look`    | Flèches                                                   | Stick droit                           | Oriente la vue             |
+| `drag`    | Bouton principal ou secondaire, ou le pointeur verrouillé | —                                     | Oriente la vue au pointeur |
+| `lift`    | Q descend, E monte                                        | Gâchette gauche descend, droite monte | Descend et monte           |
+| `run`     | Shift                                                     | Stick gauche enfoncé                  | Multiplie la vitesse (×3)  |
+| `pointer` | Le pointeur déplacé                                       | —                                     | Ce que suit `drag`         |
 
 Les sticks sont des vitesses — des radians ou des unités par seconde,
 multipliées par la durée de la frame — et le pointeur est un déplacement :
@@ -189,6 +189,8 @@ const fly = new FlyOperator(camera, game, { names: { move: 'walk' } });
 
 ## Ensuite
 
+- [Contrôles à la première personne](/fdw-engine/fr/tutorials/first-person/) :
+  le pointeur verrouillé, un menu sur le jeu, les vibrations.
 - [Guide des entrées](/fdw-engine/fr/guides/input/) : les périphériques,
   les contrôles, les actions.
 - [Créer un jeu](/fdw-engine/fr/game/introduction/) : un jeu avec les

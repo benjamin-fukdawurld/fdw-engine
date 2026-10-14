@@ -241,6 +241,13 @@ int fdw_window_set_vsync(fdw_window *window, int32_t vsync) {
   return 0;
 }
 
+int fdw_window_set_relative_mouse(fdw_window *window, int32_t enabled) {
+  if (!SDL_SetWindowRelativeMouseMode(window->window, enabled != 0)) {
+    return fail(sdl_error("SDL_SetWindowRelativeMouseMode"));
+  }
+  return 0;
+}
+
 int fdw_window_present_rgba(fdw_window *window, const void *pixels,
                             int32_t width, int32_t height, int32_t stride) {
   if (!window->renderer) {
@@ -434,6 +441,22 @@ int fdw_gamepad_read(uint32_t id, fdw_gamepad_state *state) {
   state->axes[1] = axis_value(gamepad, SDL_GAMEPAD_AXIS_LEFTY);
   state->axes[2] = axis_value(gamepad, SDL_GAMEPAD_AXIS_RIGHTX);
   state->axes[3] = axis_value(gamepad, SDL_GAMEPAD_AXIS_RIGHTY);
+  return 0;
+}
+
+int fdw_gamepad_rumble(uint32_t id, float strong, float weak,
+                       uint32_t duration_ms) {
+  const auto found = gamepads.find(id);
+  if (found == gamepads.end()) {
+    return fail("No gamepad " + std::to_string(id));
+  }
+  const auto motor = [](float value) {
+    return static_cast<Uint16>(std::clamp(value, 0.0f, 1.0f) * 0xFFFF);
+  };
+  if (!SDL_RumbleGamepad(found->second, motor(strong), motor(weak),
+                         duration_ms)) {
+    return fail(sdl_error("SDL_RumbleGamepad"));
+  }
   return 0;
 }
 

@@ -17,8 +17,9 @@ export type FlyIntent = 'move' | 'lift' | 'look' | 'drag' | 'pointer' | 'run';
  * The default actions of a FlyOperator: give them to an ActionMap, rebind
  * them, save them. WASD (ZQSD on AZERTY) and the left stick move, Q and E
  * or the triggers go down and up, the arrows and the right stick look
- * around, as the pointer dragged with its main or secondary button; Shift
- * or the left stick pressed runs.
+ * around, as the pointer dragged with its main or secondary button, or
+ * moved while it is locked (Input.lockPointer); Shift or the left stick
+ * pressed runs.
  */
 export const FlyActions: Readonly<Record<FlyIntent, ActionDefinition>> = {
   move: {
@@ -47,7 +48,10 @@ export const FlyActions: Readonly<Record<FlyIntent, ActionDefinition>> = {
       'gamepad:rightStick',
     ],
   },
-  drag: { type: 'button', bindings: ['pointer:0', 'pointer:2'] },
+  drag: {
+    type: 'button',
+    bindings: ['pointer:0', 'pointer:2', 'pointer:locked'],
+  },
   pointer: { type: 'vector', bindings: ['pointer:delta'] },
   run: {
     type: 'button',

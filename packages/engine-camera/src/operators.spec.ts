@@ -117,6 +117,19 @@ describe('FlyOperator', () => {
     expect(fly.pitch).toBeCloseTo(0.1);
   });
 
+  it('looks with the pointer locked, without a button', () => {
+    const { source, input } = setup();
+    const fly = new FlyOperator(camera(), new ActionMap(input, FlyActions), {
+      pointerSpeed: 1,
+    });
+    input.lockPointer();
+    source.sink?.pointerMove(0.5, 0.5, 0.05, -0.1);
+    input.update();
+    fly.update(0.016);
+    expect(fly.yaw).toBeCloseTo(-0.1);
+    expect(fly.pitch).toBeCloseTo(0.1);
+  });
+
   it('stays horizontal when walking, and stops at the vertical', () => {
     const { source, input, pad } = setup();
     const target = camera();

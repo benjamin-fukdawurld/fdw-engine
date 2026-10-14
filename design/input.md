@@ -135,10 +135,9 @@ actions.axis('zoom');
 
 ## 6. Hors du périmètre, prévu par l'API
 
-- Les vibrations (`GamepadHapticActuator`, `SDL_RumbleGamepad`) : une méthode de la source.
-- Le verrouillage du pointeur (visée à la souris en vue subjective) : des déplacements relatifs dans le récepteur.
-- Les contextes d'actions (menu ou jeu) : plusieurs `ActionMap`, activées ou non.
 - Le texte saisi (`beforeinput`, `SDL_EVENT_TEXT_INPUT`) : pour un champ de texte, pas pour un jeu.
+
+Les vibrations, le verrouillage du pointeur et les contextes d'actions, prévus ici, sont faits en P4 : voir [p4-input.md](p4-input.md).
 
 ## 7. Le labyrinthe
 
