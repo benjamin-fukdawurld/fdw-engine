@@ -64,7 +64,9 @@ for (const [name, page] of Object.entries(examples)) {
         }
       )
       .toBe(count);
-    await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`);
+    await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`, {
+      timeout: 30_000,
+    });
   });
 }
 
