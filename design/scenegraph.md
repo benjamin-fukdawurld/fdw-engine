@@ -204,6 +204,8 @@ Comparées ici pour savoir ce qu'il faut préparer ; aucune n'est implémentée 
 | Rastérisation logicielle des occultants  | Rastériser sur le CPU des versions simplifiées des gros objets statiques, tester les bornes                            | Tous                 | Pas de latence ; pas de GPU : le repli CPU naturel                        | CPU (SIMD, WASM) ; occultants à fabriquer                                                                       |
 | Visibilité précalculée (PVS, portails)   | Précalculer, pour des cellules de l'espace, ce qui peut être vu ; portails entre pièces                                | Tous                 | Quasi gratuit à l'exécution ; naturel pour des bâtiments (pièces, étages) | Précalcul ; géométrie statique uniquement                                                                       |
 
+_Mise à jour (P3, 14 octobre 2026)_ : le choix est fait dans [p3-occlusion.md](p3-occlusion.md) : un Hi-Z en passes plein écran avec relecture, sur les trois backends (WebGL2 compris, sans repli CPU) ; les deux phases pilotées par le GPU viendront avec les draws indirects.
+
 **Décision** : le GPU autant que possible (Hi-Z en deux phases) ; le CPU n'est qu'un repli, pour les backends sans calcul (WebGL2). Le Hi-Z existe en deux variantes, à départager dans le design du package `engine-occlusion` :
 
 - **avec relecture** : le compute écrit un masque de visibilité, relu par le CPU une ou deux frames plus tard. Il s'insère dans le renderer actuel (un draw par objet), au prix d'une latence (des objets qui apparaissent avec un temps de retard) ;

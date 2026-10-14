@@ -117,15 +117,16 @@ export class RenderGraphRunner {
 
   /**
    * Compiles (or finds in the cache) and runs a graph. `size` is the size of
-   * the frame, for the textures of relative size; it defaults to the size of
-   * the first imported texture.
+   * the frame, for the textures of relative size; it defaults to the size
+   * the graph was created with, else to the size of the first imported
+   * texture.
    */
   execute(
     graph: RenderGraph,
     options: { size?: { width: number; height: number } } = {}
   ): CompiledRenderGraph {
     const compiled = this.compile(graph);
-    const size = options.size ?? this.frameSize(graph);
+    const size = options.size ?? graph.size ?? this.frameSize(graph);
     const real = new Map<number, GraphResource>();
     const keys = new Map<number, string>();
     for (const resource of graph.resources) {

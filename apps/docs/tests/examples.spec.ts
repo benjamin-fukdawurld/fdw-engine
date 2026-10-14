@@ -16,6 +16,7 @@ const examples: Record<string, string> = {
   reflections: 'tutorials/reflections/',
   'compute-waves': 'tutorials/compute/',
   'scene-forest': 'tutorials/scene/',
+  'occlusion-culling': 'tutorials/occlusion-culling/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',
@@ -30,11 +31,14 @@ const time = 1.5;
 // Frames rendered before the capture, then the rendering stops: the
 // shadows, the caches and the smoothed cameras settle, and the image stays.
 const frames = 10;
+// More for the examples waiting for results read back from the GPU.
+const framesOf: Record<string, number> = { 'occlusion-culling': 40 };
 
 for (const [name, page] of Object.entries(examples)) {
   test(name, async ({ page: browser }, info) => {
     const backend = info.project.name;
-    const query = `time=${time}&frames=${frames}${
+    const count = framesOf[name] ?? frames;
+    const query = `time=${time}&frames=${count}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
     }`;
     await browser.goto(`/fdw-engine/${page}?${query}`);
@@ -59,7 +63,7 @@ for (const [name, page] of Object.entries(examples)) {
           timeout: 30_000,
         }
       )
-      .toBe(frames);
+      .toBe(count);
     await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`);
   });
 }

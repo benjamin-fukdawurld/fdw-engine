@@ -500,6 +500,59 @@ describe('GlslEsCodegen', () => {
     expect(fragment).toMatch(/ {2}o_id = v\d+;\n\}/);
   });
 
+  it('reads texels with texelFetch, rows counted from the top', () => {
+    const g = new GraphBuilder('texel loads');
+    const coords = g.call(
+      std.convert,
+      { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
+      { params: { to: BuiltinTypes.vec2i } }
+    );
+    const texel = g.call(std.textureLoad, {
+      texture: g.texture('values', { sampleType: 'unfilterable-float' }),
+      coords,
+      level: 1,
+    });
+    const depth = g.call(std.textureLoadDepth, {
+      texture: g.texture('depth', { sampleType: 'depth' }),
+      coords,
+    });
+    g.fullscreen({ color: g.call(std.mul, { a: texel, b: depth }) });
+    const program = compile(g.build());
+    const layout = std140LayoutStrategy.resolve(program.layout);
+    // A combined sampler without sampler per texture.
+    expect(
+      combinedSamplers(program.module, layout).map(
+        ({ name, texture, sampler, comparison }) => ({
+          name,
+          texture,
+          sampler,
+          comparison,
+        })
+      )
+    ).toEqual([
+      {
+        name: 'ts0_values_load',
+        texture: 'values',
+        sampler: undefined,
+        comparison: false,
+      },
+      {
+        name: 'ts1_depth_load',
+        texture: 'depth',
+        sampler: undefined,
+        comparison: false,
+      },
+    ]);
+    const { fragment } = emit(program.module, layout);
+    expect(fragment).toContain('uniform sampler2D ts1_depth_load;');
+    expect(fragment).toMatch(
+      /vec4 v\d+ = texelFetch\(ts0_values_load, ivec2\((v\d+)\.x, textureSize\(ts0_values_load, (v\d+)\)\.y - 1 - \1\.y\), \2\);/
+    );
+    expect(fragment).toMatch(
+      /float v\d+ = texelFetch\(ts1_depth_load, ivec2\(v\d+\.x, textureSize\(ts1_depth_load, v\d+\)\.y - 1 - v\d+\.y\), v\d+\)\.r;/
+    );
+  });
+
   it('generates a complete program', () => {
     const g = new GraphBuilder('textured-unlit');
     const uv = g.attribute('uv', BuiltinTypes.vec2f);

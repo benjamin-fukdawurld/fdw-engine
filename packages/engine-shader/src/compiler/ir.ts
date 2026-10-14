@@ -123,6 +123,12 @@ export type IrOp =
    * comparison sampler), at level 0. The fraction of them that pass.
    */
   | { readonly kind: 'sample-compare' }
+  /**
+   * textureLoad(texture, coords, level): the texel at integer coordinates
+   * (a vec2<i32>, rows from the top) of a level, without sampler nor
+   * filtering. A vec4<f32>, or the depth (f32) of a depth texture.
+   */
+  | { readonly kind: 'texture-load' }
   /** A vector built from its arguments; a single scalar argument is a splat. */
   | { readonly kind: 'construct' }
   | { readonly kind: 'swizzle'; readonly components: string }

@@ -14,7 +14,9 @@ import {
 import { Transform } from '../Transform';
 import { Material } from './Material';
 import { Mesh } from './Mesh';
+import type { OcclusionCuller } from './occlusion';
 import { Renderer } from './Renderer';
+import { RenderGraph } from '../graph/RenderGraph';
 import {
   AllLayers,
   RenderItem,
@@ -88,6 +90,7 @@ describe('Renderer culling', () => {
     expect(queries[0].frustum.containsPoint([0, 0, 0])).toBe(true);
     expect(renderer.stats.get('scene')).toEqual({
       visible: 2,
+      occluded: 0,
       drawn: 2,
       drawCalls: 2,
       lights: 1,
@@ -248,5 +251,112 @@ describe('Renderer culling', () => {
     // Off by default.
     renderer.render({ items, lights: [spot], camera, surface });
     expect(renderer.stats.get('scene')?.drawn).toBe(3);
+  });
+});
+
+describe('Renderer occlusion culling', () => {
+  // A culler leaving out the items of a set, recording its calls.
+  const culler = (hidden: Set<object>) => {
+    const calls: string[] = [];
+    const occlusion: OcclusionCuller = {
+      begin: (view) => calls.push(`begin ${view.name}`),
+      visible: (item, bounds) => {
+        calls.push(`visible ${bounds ? 'bounded' : 'unbounded'}`);
+        return !hidden.has(item);
+      },
+      addPasses: (graph, context) => {
+        calls.push(`passes ${context.name} ${context.depth.name}`);
+        expect(context.renderer).toBeInstanceOf(Renderer);
+      },
+    };
+    return { occlusion, calls };
+  };
+
+  it('leaves out the items the culler finds hidden, and counts them', () => {
+    const { renderer, log, camera } = setup();
+    const hidden = itemAt(1);
+    const { occlusion, calls } = culler(new Set([hidden]));
+    renderer.render({
+      items: [itemAt(0), hidden, itemAt(5000)],
+      camera,
+      surface,
+      occlusion,
+    });
+    expect(log.draws).toHaveLength(1);
+    expect(renderer.stats.get('scene')).toMatchObject({
+      visible: 1,
+      occluded: 1,
+      drawn: 1,
+    });
+    // Asked for the items in the frustum only, then given the depth of the
+    // opaque items.
+    expect(calls).toEqual([
+      'begin scene',
+      'visible bounded',
+      'visible bounded',
+      'passes scene scene depth',
+    ]);
+  });
+
+  it('only asks the culler in the passes of the transparent items', () => {
+    const { renderer, camera } = setup();
+    const { occlusion, calls } = culler(new Set());
+    const graph = new RenderGraph();
+    const opaque = renderer.addScenePasses(graph, {
+      items: [itemAt(0)],
+      camera,
+      outputs: { depth: { format: 'r32float', value: 'view-depth' } },
+      include: 'opaque',
+      occlusion,
+    });
+    renderer.addScenePasses(graph, {
+      items: [itemAt(0)],
+      camera,
+      target: graph.createTexture('color', { format: 'rgba8unorm' }),
+      format: 'rgba8unorm',
+      depth: opaque.depth,
+      include: 'transparent',
+      name: 'transparent',
+      occlusion,
+    });
+    expect(calls).toEqual([
+      'begin scene',
+      'visible bounded',
+      'passes scene scene depth',
+      'visible bounded',
+    ]);
+  });
+
+  it('refuses multisampling: the depth would not be read', () => {
+    const { backend } = fakeBackend();
+    const renderer = new Renderer(backend, { samples: 4 });
+    const { occlusion } = culler(new Set());
+    expect(() =>
+      renderer.render({
+        items: [itemAt(0)],
+        camera: new Camera({ position: { x: 0, y: 0, z: 10 } }),
+        surface,
+        occlusion,
+      })
+    ).toThrow(/samples: 1/);
+  });
+
+  it('gives the graph of render() the size of the surface', () => {
+    const { renderer, camera } = setup();
+    let size: unknown;
+    renderer.render({
+      items: [itemAt(0)],
+      camera,
+      surface,
+      occlusion: {
+        begin: () => undefined,
+        visible: () => true,
+        addPasses: (graph, { depth }) => {
+          size = graph.pixelSize(depth);
+        },
+      },
+    });
+    const target = surface.getCurrentTarget();
+    expect(size).toEqual({ width: target.width, height: target.height });
   });
 });

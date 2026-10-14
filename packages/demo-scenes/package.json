@@ -7,6 +7,7 @@
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-geometry": "0.0.1",
     "@fdw/engine-input": "0.0.1",
+    "@fdw/engine-occlusion": "0.0.1",
     "@fdw/engine-scene": "0.0.1",
     "@fdw/engine-shader": "0.0.1",
     "tslib": "^2.3.0"

@@ -28,6 +28,7 @@ import {
   TextureHandle,
   Transform,
 } from '@fdw/engine-core';
+import { OcclusionCulling } from '@fdw/engine-occlusion';
 
 // Rendering tests shared by every backend: the same graphs, meshes and
 // expected pixels, rendered through the whole engine on a real GPU API.
@@ -1263,6 +1264,91 @@ export function describeRenderer(
       });
     });
 
+    describe('occlusion culling', () => {
+      const perspective = new Camera({
+        position: { x: 0, y: 0, z: 5 },
+        projection: {
+          type: 'perspective',
+          fov: 60,
+          aspect: 1,
+          near: 0.1,
+          far: 100,
+        },
+      });
+      const colored = (r: number, g: number, b: number) =>
+        new Material({ graph: colorGraph(), values: { color: [r, g, b, 1] } });
+      const placed = (x: number, z: number, width: number, height = width) =>
+        new Transform({
+          position: { x, y: 0, z },
+          scale: { x: width, y: height, z: 1 },
+        });
+
+      it('leaves out what the opaque items hide, on every backend', async () => {
+        const mesh = quad();
+        // A wall on the left; behind it, a quad it hides; on the right, a
+        // quad nothing hides.
+        const wall = {
+          mesh,
+          material: colored(1, 0, 0),
+          transform: placed(-1, 0, 2, 3),
+        };
+        const hidden = {
+          mesh,
+          material: colored(0, 1, 0),
+          transform: placed(-1, -2, 0.5),
+        };
+        const seen = {
+          mesh,
+          material: colored(0, 0, 1),
+          transform: placed(1, -2, 0.5),
+        };
+        const items = [wall, hidden, seen];
+        const occlusion = new OcclusionCulling();
+        const frame = async () => {
+          renderer.render({
+            items,
+            camera: perspective,
+            surface,
+            occlusion,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          const pixels = await fixture.readPixels();
+          return (x: number, y: number) => [
+            ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+          ];
+        };
+        // Frames until the results of a test arrive and apply.
+        const settle = async (done: () => boolean) => {
+          for (let i = 0; i < 20 && !done(); i++) {
+            await frame();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          return frame();
+        };
+
+        let pixel = await settle(() => occlusion.isHidden(hidden));
+        expect(renderer.stats.get('scene')).toMatchObject({
+          visible: 2,
+          occluded: 1,
+        });
+        expect(occlusion.isHidden(wall)).toBe(false);
+        expect(occlusion.isHidden(seen)).toBe(false);
+        // The image is the same: the wall where the hidden quad is.
+        expectColor(pixel(24, 32), [255, 0, 0, 255]);
+        expectColor(pixel(40, 32), [0, 0, 255, 255]);
+
+        // The wall out of view: the quad is drawn again.
+        wall.transform.position = { x: -20 };
+        pixel = await settle(() => !occlusion.isHidden(hidden));
+        expect(renderer.stats.get('scene')).toMatchObject({
+          visible: 2,
+          occluded: 0,
+        });
+        expectColor(pixel(24, 32), [0, 255, 0, 255]);
+        occlusion.destroy();
+      });
+    });
+
     describe('HDR and post-processing', () => {
       const hdrCapable = () =>
         backend.capabilities?.renderableFormats?.includes('rgba16float') ??
@@ -1395,6 +1481,74 @@ export function describeRenderer(
         expectColor(pixel(48, 32), [255, 255, 255, 255]);
         // Top half of the quad: the orientation is kept.
         expectColor(pixel(16, 8), [255, 255, 255, 255]);
+      });
+
+      it('reads texels and depths by their coordinates, rows from the top', async () => {
+        // 0.25, 0.5 / 0.75, 1 in a texture that cannot be filtered.
+        const values = backend.textures.createTexture({
+          type: '2d',
+          format: 'r32float',
+          dimensions: { width: 2, height: 2 },
+          source: new Float32Array([0.25, 0.5, 0.75, 1]),
+        });
+        const g = new GraphBuilder('loads');
+        const uv = g.builtin('screen-uv');
+        const texel = g.call(std.textureLoad, {
+          texture: g.texture('values', { sampleType: 'unfilterable-float' }),
+          coords: g.call(
+            std.convert,
+            { value: g.call(std.mul, { a: uv, b: 2 }) },
+            { params: { to: BuiltinTypes.vec2i } }
+          ),
+        });
+        // The depth of the scene, × 10 (0.049 where the quad is, 1 elsewhere).
+        const depth = g.call(std.textureLoadDepth, {
+          texture: g.texture('depth', { sampleType: 'depth' }),
+          coords: g.call(
+            std.convert,
+            { value: g.call(std.mul, { a: uv, b: size }) },
+            { params: { to: BuiltinTypes.vec2i } }
+          ),
+        });
+        g.fullscreen({
+          color: g.call(std.vec4, {
+            x: g.call(std.saturate, {
+              x: g.call(std.mul, { a: depth, b: 10 }),
+            }),
+            y: texel.swizzle('r'),
+            w: 1,
+          }),
+        });
+        const runner = new RenderGraphRunner(backend);
+        const graph = new RenderGraph();
+        const scene = renderer.addScenePasses(graph, {
+          items: [
+            {
+              mesh: quad(),
+              material: new Material({ graph: colorGraph() }),
+              transform: at(-0.5),
+            },
+          ],
+          camera,
+          target: graph.createTexture('scene', { format: 'rgba8unorm' }),
+          format: 'rgba8unorm',
+        });
+        renderer.addFullscreenPass(graph, 'loads', {
+          material: new Material({ graph: g.build(), values: { values } }),
+          inputs: { depth: scene.depth },
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        runner.execute(graph);
+        runner.destroy();
+        const pixel = await pixelsOf();
+        // The quad 5 units away, between the planes at 0.1 and 100.
+        const quadDepth = Math.round(((5 - 0.1) / 99.9) * 10 * 255);
+        expectColor(pixel(16, 24), [quadDepth, 64, 0, 255]);
+        expectColor(pixel(48, 24), [255, 128, 0, 255]);
+        expectColor(pixel(16, 40), [quadDepth, 191, 0, 255]);
+        expectColor(pixel(48, 40), [255, 255, 0, 255]);
+        values.destroy();
       });
 
       it('computes the levels of the textures rendered in the graph', async () => {

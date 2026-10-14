@@ -95,9 +95,9 @@ The normal matrix is computed later still, only for the objects drawn.
 - A **static** node does not move. The scene computes it once, and indexes
   all the static nodes at once in an index of their own, built top down.
   Moving one stays possible, at a cost; the scene warns once.
-- An **occluder** (a wall, a building) is a node that hides others: the
-  occlusion culling to come will start from them. `scene.occluders()`
-  lists them.
+- An **occluder** (a wall, a building) is a node that hides others.
+  `scene.occluders()` lists them. The [occlusion culling](#occlusion-culling)
+  does not need them: every opaque object drawn hides what is behind it.
 
 ## The scene as a source
 
@@ -109,9 +109,42 @@ For each view — the camera, each shadow map — the renderer asks the scene
 what is in its frustum. The scene answers from its two loose octrees,
 static and dynamic, without testing every node. A camera query also records
 on each node the last query that kept it (`NodeState.lastVisible`), and
-passes through `scene.occlusion` when one is set: the stage where an
-occlusion culling will plug in, applied to the camera queries only, never
-to the shadow casters.
+passes through `scene.occlusion` when one is set: a stage of your own
+(a precomputed visibility, portals), applied to the camera queries only,
+never to the shadow casters.
+
+## Occlusion culling
+
+What the frustum keeps can still be hidden by what is in front of it: from
+a street, the first buildings hide almost all the others. An
+`OcclusionCulling` (from `@fdw/engine-occlusion`) given to the scene passes
+leaves them out:
+
+```ts
+const occlusion = new OcclusionCulling();
+renderer.render({ source: scene, camera, surface, occlusion });
+```
+
+After the opaque objects, full screen passes reduce the depth buffer to a
+pyramid and test the box of every object the frustum kept against it; the
+results are read back without waiting, and the objects found hidden are
+left out one to three frames later, until a test finds them visible again.
+It works on every backend (no compute shaders needed), for any source. The
+[tutorial](/fdw-engine/tutorials/occlusion-culling/) shows it on a city.
+
+| Option       | Default | Role                                                                                                 |
+| ------------ | ------- | ---------------------------------------------------------------------------------------------------- |
+| `margin`     | 0.001   | How much farther, relatively, a box must be than the depth in front of it to be hidden               |
+| `motion`     | 2       | The boxes grow by the distance the camera moved since the last frame, times this: fewer late objects |
+| `maxPending` | 2       | Results awaited at most: no new test while they are                                                  |
+
+- One per view (camera): it remembers what the tests of its view found.
+- `renderer.stats.get(name).occluded` counts what it left out;
+  `occlusion.isHidden(item)` says what the latest results found of an item.
+- The shadow casters are never left out; nor are the items without bounds.
+- Not with multisampling yet (`samples: 1`): it reads the depth.
+- In a graph of your own, the graph needs the size of the frame
+  (`new RenderGraph({ size })`).
 
 ## Queries
 

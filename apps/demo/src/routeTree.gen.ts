@@ -28,6 +28,7 @@ import { Route as DepthTestingRouteRouteImport } from './routes/depth-testing/ro
 import { Route as CullingRouteRouteImport } from './routes/culling/route'
 import { Route as ColoredTriangleInterleavedRouteRouteImport } from './routes/colored-triangle-interleaved/route'
 import { Route as ColoredTriangleRouteRouteImport } from './routes/colored-triangle/route'
+import { Route as CityRouteRouteImport } from './routes/city/route'
 import { Route as CameraRouteRouteImport } from './routes/camera/route'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -127,6 +128,11 @@ const ColoredTriangleRouteRoute = ColoredTriangleRouteRouteImport.update({
   path: '/colored-triangle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CityRouteRoute = CityRouteRouteImport.update({
+  id: '/city',
+  path: '/city',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CameraRouteRoute = CameraRouteRouteImport.update({
   id: '/camera',
   path: '/camera',
@@ -141,6 +147,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/camera': typeof CameraRouteRoute
+  '/city': typeof CityRouteRoute
   '/colored-triangle': typeof ColoredTriangleRouteRoute
   '/colored-triangle-interleaved': typeof ColoredTriangleInterleavedRouteRoute
   '/culling': typeof CullingRouteRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/camera': typeof CameraRouteRoute
+  '/city': typeof CityRouteRoute
   '/colored-triangle': typeof ColoredTriangleRouteRoute
   '/colored-triangle-interleaved': typeof ColoredTriangleInterleavedRouteRoute
   '/culling': typeof CullingRouteRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/camera': typeof CameraRouteRoute
+  '/city': typeof CityRouteRoute
   '/colored-triangle': typeof ColoredTriangleRouteRoute
   '/colored-triangle-interleaved': typeof ColoredTriangleInterleavedRouteRoute
   '/culling': typeof CullingRouteRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/camera'
+    | '/city'
     | '/colored-triangle'
     | '/colored-triangle-interleaved'
     | '/culling'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/camera'
+    | '/city'
     | '/colored-triangle'
     | '/colored-triangle-interleaved'
     | '/culling'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/camera'
+    | '/city'
     | '/colored-triangle'
     | '/colored-triangle-interleaved'
     | '/culling'
@@ -283,6 +295,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CameraRouteRoute: typeof CameraRouteRoute
+  CityRouteRoute: typeof CityRouteRoute
   ColoredTriangleRouteRoute: typeof ColoredTriangleRouteRoute
   ColoredTriangleInterleavedRouteRoute: typeof ColoredTriangleInterleavedRouteRoute
   CullingRouteRoute: typeof CullingRouteRoute
@@ -439,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ColoredTriangleRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/city': {
+      id: '/city'
+      path: '/city'
+      fullPath: '/city'
+      preLoaderRoute: typeof CityRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/camera': {
       id: '/camera'
       path: '/camera'
@@ -459,6 +479,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CameraRouteRoute: CameraRouteRoute,
+  CityRouteRoute: CityRouteRoute,
   ColoredTriangleRouteRoute: ColoredTriangleRouteRoute,
   ColoredTriangleInterleavedRouteRoute: ColoredTriangleInterleavedRouteRoute,
   CullingRouteRoute: CullingRouteRoute,

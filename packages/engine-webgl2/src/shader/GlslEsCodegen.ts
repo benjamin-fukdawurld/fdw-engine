@@ -362,6 +362,28 @@ function emitInstructions(
         }${type.kind === 'scalar' ? '.r' : ''}`;
         break;
       }
+      case 'texture-load': {
+        const texture = arg(instruction, 0);
+        const combined = samplers.find(
+          (candidate) =>
+            candidate.texture === texture && candidate.sampler === undefined
+        );
+        if (!combined) {
+          throw new Error(`No combined sampler to load ${texture}`);
+        }
+        // Rows are stored bottom first (see WebGl2Texture): counted from the
+        // top, as in WebGPU.
+        const coords = arg(instruction, 1);
+        const level = arg(instruction, 2);
+        expression = `texelFetch(${
+          combined.name
+        }, ivec2(${coords}.x, textureSize(${
+          combined.name
+        }, ${level}).y - 1 - ${coords}.y), ${level})${
+          type.kind === 'scalar' ? '.r' : ''
+        }`;
+        break;
+      }
       case 'construct':
       case 'convert':
         expression = `${glslType(type)}(${args(instruction)})`;

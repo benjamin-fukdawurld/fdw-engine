@@ -96,7 +96,9 @@ Three choices matter here:
   to compute these nodes once, and to index them all at once in a spatial
   index of their own (an octree built top down), at the first frame.
 - **Occluders.** The walls hide what is behind them: `occluder: true`
-  marks them for the occlusion culling to come. They change nothing yet.
+  marks them. Seen from above, a maze hides little: the game draws it
+  without the [occlusion culling](/fdw-engine/tutorials/occlusion-culling/),
+  which pays off at the level of the streets.
 - **Groups.** `floor` and `walls` are nodes without mesh: they organize
   the hierarchy (`level.walls.children` lists the walls) without costing
   anything to draw.

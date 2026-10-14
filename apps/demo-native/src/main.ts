@@ -6,7 +6,8 @@
 //
 // nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden]
-// Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps).
+// Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
+// city (the occlusion culling; city-no-occlusion to compare).
 // Escape or closing the window quits.
 import type { Engine, Surface } from '@fdw/engine-backend';
 import {
@@ -20,6 +21,8 @@ import {
 import { NativeInputSource } from '@fdw/engine-input-native';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
+  createCity,
+  createCityScene,
   createMazeStep1,
   createMazeStep2,
   createMazeStep3,
@@ -37,6 +40,8 @@ const scenes: Record<string, SceneFactory> = {
   'maze-1': createMazeStep1,
   'maze-2': createMazeStep2,
   'maze-3': createMazeStep3,
+  city: createCityScene,
+  'city-no-occlusion': createCity({ occlusion: false }),
 };
 
 const args = process.argv.slice(2);
@@ -136,7 +141,7 @@ const seconds = (performance.now() - start) / 1000;
 console.log(
   `${name}: ${frames} frames in ${seconds.toFixed(1)} s (${(
     frames / seconds
-  ).toFixed(1)} fps)`
+  ).toFixed(1)} fps)${info ? `, ${info}` : ''}`
 );
 if (engine instanceof VulkanEngine) {
   const messages = engine.device?.takeMessages() ?? [];

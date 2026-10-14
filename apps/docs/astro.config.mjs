@@ -13,6 +13,7 @@ const packages = [
   'engine-core',
   'engine-geometry',
   'engine-scene',
+  'engine-occlusion',
   'engine-input',
   'engine-input-web',
   'engine-input-native',

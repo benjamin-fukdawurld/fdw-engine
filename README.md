@@ -90,6 +90,7 @@ packages/
   engine-shader/        Material graph: shader types, graph model, compiler
   engine-geometry/      Volumes, intersections, rays, spatial indices (octree)
   engine-scene/         The scene: an ECS core, nodes, transforms, culling
+  engine-occlusion/     Occlusion culling: a depth pyramid tested on the GPU, every backend
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)
   engine-vulkan/        Vulkan backend (Node-API addon, HLSL compiled to SPIR-V by DXC)
   demo-scenes/          Scenes shared by the web and native demos

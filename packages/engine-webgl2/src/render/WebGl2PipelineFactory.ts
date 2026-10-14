@@ -39,7 +39,8 @@ export interface WebGl2Program {
   readonly samplers: readonly {
     readonly unit: number;
     readonly texture: BindingRef;
-    readonly sampler: BindingRef;
+    // None for the textures read by textureLoad (texelFetch).
+    readonly sampler?: BindingRef;
   }[];
   // The object table: its two data textures on the units after those of
   // the samplers, and the uniform of the first instance of a draw.
@@ -374,7 +375,9 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
           {
             unit,
             texture: bindingOf.get(sampler.texture) as BindingRef,
-            sampler: bindingOf.get(sampler.sampler) as BindingRef,
+            ...(sampler.sampler !== undefined
+              ? { sampler: bindingOf.get(sampler.sampler) as BindingRef }
+              : {}),
           },
         ];
       }

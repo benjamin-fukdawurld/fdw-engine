@@ -174,6 +174,23 @@ function bindVertices(gl: WebGL2RenderingContext, state: DrawState): void {
   );
 }
 
+// The sampler object of the textures read by texelFetch (textureLoad): it
+// does not filter, but makes the texture complete whatever its format
+// (r32float cannot be filtered linearly) and reads the depth of depth
+// textures (no comparison).
+const loadSamplers = new WeakMap<WebGL2RenderingContext, WebGLSampler>();
+function loadSampler(gl: WebGL2RenderingContext): WebGLSampler {
+  let sampler = loadSamplers.get(gl);
+  if (!sampler) {
+    sampler = gl.createSampler();
+    gl.samplerParameteri(sampler, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+    gl.samplerParameteri(sampler, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+    gl.samplerParameteri(sampler, GL.TEXTURE_COMPARE_MODE, GL.NONE);
+    loadSamplers.set(gl, sampler);
+  }
+  return sampler;
+}
+
 function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
   const { program } = state.pipeline;
   const resource = (group: number, binding: number) => {
@@ -199,14 +216,16 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
       WebGl2Texture,
       'The texture'
     );
-    const glSampler = unwrap(
-      resource(sampler.group, sampler.binding),
-      WebGl2Sampler,
-      'The sampler'
-    );
+    const glSampler = sampler
+      ? unwrap(
+          resource(sampler.group, sampler.binding),
+          WebGl2Sampler,
+          'The sampler'
+        ).sampler
+      : loadSampler(gl);
     gl.activeTexture(GL.TEXTURE0 + unit);
     gl.bindTexture(glTexture.target, glTexture.texture);
-    gl.bindSampler(unit, glSampler.sampler);
+    gl.bindSampler(unit, glSampler);
   }
   const table = program.objectTable;
   if (table) {

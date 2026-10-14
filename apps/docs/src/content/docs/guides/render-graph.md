@@ -31,14 +31,32 @@ const counts = graph.createBuffer('counts', { size: 16 });
   after the last pass using them: a later pass of the same frame, or the next
   frame, reuses them.
 - A texture size is absolute (`{ width, height }`) or relative to the frame
-  (`{ relative: 0.5 }`); by default, the size of the frame: the first
-  imported texture, or the `size` given to `execute`.
+  (`{ relative: 0.5 }`); by default, the size of the frame: the size the
+  graph was created with, else the first imported texture, or the `size`
+  given to `execute`.
 - `sampleCount: 4` makes a multisampled attachment, resolved into a texture
   with `pass.resolveColor()`.
 - `mipLevelCount` gives a texture levels of detail (`'full'`: down to 1×1,
   for the size it gets). `graph.addMipmapPass(name, texture)` computes them
   from the first level and returns the version to sample (a blur, a bloom,
   an average).
+
+### The size of the frame
+
+Some passes need the size of their textures while they are declared: the
+[occlusion culling](/fdw-engine/tutorials/occlusion-culling/) sizes its
+depth pyramid with it. Create the graph with the size of the frame;
+`graph.pixelSize(handle)` then gives the size in pixels of any texture,
+relative ones included (undefined when the graph does not know it).
+`Renderer.render()` does it with the size of the surface.
+
+```ts
+const current = surface.getCurrentTarget();
+const graph = new RenderGraph({
+  size: { width: current.width, height: current.height },
+});
+graph.pixelSize(half); // { width: current.width / 2, … }, rounded
+```
 
 ## Passes and versions
 

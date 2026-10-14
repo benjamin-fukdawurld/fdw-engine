@@ -51,6 +51,7 @@ import { lightReaches } from './lightVolumes';
 import { Material, MaterialValue } from './Material';
 import { Mesh } from './Mesh';
 import { MaxObjectId, ObjectRows, RowSource } from './ObjectRows';
+import type { OcclusionCuller } from './occlusion';
 import {
   AllLayers,
   Renderable,
@@ -84,12 +85,18 @@ export interface RenderOptions {
   // lighting (unlit) are always drawn; give lit emissive materials an unlit
   // graph, or leave this off. Default false.
   readonly cullUnlit?: boolean;
+  // Leaves out what the opaque items hide: an OcclusionCulling of
+  // @fdw/engine-occlusion, one per view (camera). Not with multisampling.
+  readonly occlusion?: OcclusionCuller;
 }
 
 /** What a view of the last frame drew: see Renderer.stats. */
 export interface ViewStats {
-  // The items the source gave for the camera.
+  // The items the source gave for the camera, but those the occlusion
+  // culling found hidden.
   readonly visible: number;
+  // The items the occlusion culling left out: hidden by the opaque items.
+  readonly occluded: number;
   // The draws of the scene passes (a double-sided transparent item is
   // drawn twice).
   readonly drawn: number;
@@ -626,6 +633,8 @@ export class Renderer {
     WeakMap<Mesh, Map<string, PreparedPipeline>>
   >();
   private readonly _pipelineIds = new Map<string, number>();
+  // The key of a pass variant, computed once per variant object.
+  private readonly _passKeys = new WeakMap<PassVariant, string>();
   private readonly _groupLayouts = new WeakMap<
     PhysicalBindGroup,
     GpuBindGroupLayout
@@ -685,8 +694,12 @@ export class Renderer {
   // Renders a frame to a surface: a render graph with the passes of the
   // scene (see addScenePasses), executed and presented.
   render({ surface, ...options }: RenderOptions): void {
-    const graph = new RenderGraph();
-    const target = graph.importTexture('surface', surface.getCurrentTarget());
+    const current = surface.getCurrentTarget();
+    // The size of the frame: that of the textures it creates.
+    const graph = new RenderGraph({
+      size: { width: current.width, height: current.height },
+    });
+    const target = graph.importTexture('surface', current);
     if (this._hdr) {
       // Linear colors in an HDR target, where transparent materials blend
       // exactly, then tone mapped and encoded by a full screen pass.
@@ -759,6 +772,7 @@ export class Renderer {
       shadows = true,
       cullUnlit = false,
       inputs = {},
+      occlusion,
     }: ScenePassesOptions
   ): ScenePasses {
     const outputs = this.sceneOutputs(
@@ -779,15 +793,37 @@ export class Renderer {
     const frustum = this.frustum(name).setFromMatrix(
       cameraCache.viewProjectionMatrix.value
     );
+    // The opaque items draw the depth the occlusion culling tests against:
+    // the transparent passes only ask it.
+    const testing = occlusion && include !== 'transparent';
+    if (testing) {
+      if (samples > 1) {
+        throw new Error(
+          `"${name}": the occlusion culling reads the depth of the opaque items: draw them with samples: 1`
+        );
+      }
+      occlusion.begin({
+        name,
+        position: camera.position,
+        view: cameraCache.viewMatrix.value,
+        projection: cameraCache.projectionMatrix.value,
+        viewProjection: cameraCache.viewProjectionMatrix.value,
+      });
+    }
     // What the camera sees, and the bounds of these receivers.
     let list: Renderable[] = [];
+    let occluded = 0;
     const receivers = Aabb.empty();
     from.query(
       frustum,
       layers,
       (item) => {
-        list.push(item);
         const bounds = this.worldBounds(item);
+        if (occlusion && !occlusion.visible(item, bounds)) {
+          occluded++;
+          return;
+        }
+        list.push(item);
         if (bounds) {
           receivers.union(bounds);
         }
@@ -837,6 +873,31 @@ export class Renderer {
     const view = this.view(name);
     const blended = (item: Renderable) =>
       item.material.renderState.alphaMode === 'blend';
+    // The variants of the passes, by cull mode and blending: the same
+    // objects for all the items (their keys are computed once).
+    const variants = new Map<string, PassVariant>();
+    const variantOf = (
+      cullMode: PrimitiveState['cullMode'],
+      transparent: boolean
+    ) => {
+      const key = `${cullMode}|${transparent}`;
+      let variant = variants.get(key);
+      if (!variant) {
+        variant = {
+          format: format ?? '',
+          cullMode:
+            faces === 'back' && cullMode === 'back' ? 'front' : cullMode,
+          linear,
+          shadows: shadowPass !== undefined,
+          depthOnly: false,
+          samples,
+          // The transparent items only blend their color.
+          ...(transparent ? {} : outputs.variant),
+        };
+        variants.set(key, variant);
+      }
+      return variant;
+    };
     const prepared = list
       .filter((item) =>
         include === 'all'
@@ -846,27 +907,14 @@ export class Renderer {
       )
       .flatMap((item) =>
         this.passes(item).map((cullMode) =>
-          this.prepare(
-            item,
-            {
-              format: format ?? '',
-              cullMode:
-                faces === 'back' && cullMode === 'back' ? 'front' : cullMode,
-              linear,
-              shadows: shadowPass !== undefined,
-              depthOnly: false,
-              samples,
-              // The transparent items only blend their color.
-              ...(blended(item) ? {} : outputs.variant),
-            },
-            view
-          )
+          this.prepare(item, variantOf(cullMode, blended(item)), view)
         )
       )
       .filter((entry): entry is PreparedItem => entry !== undefined);
     const ordered = this.sort(prepared, cameraCache);
     this._stats.set(name, {
       visible: list.length,
+      occluded,
       drawn: ordered.length,
       drawCalls: this.drawCalls(ordered),
       lights: used.length,
@@ -1004,6 +1052,14 @@ export class Renderer {
       });
       colorVersion = last ? opaque.resolved : opaque.color;
       depthVersion = opaque.depth;
+      if (testing) {
+        occlusion.addPasses(graph, {
+          renderer: this,
+          name,
+          depth: opaque.depth,
+          samples,
+        });
+      }
     }
     const atlas = shadowPass ? { shadows: shadowPass.atlas } : {};
     if (!transparents || !target || !color) {
@@ -1357,6 +1413,18 @@ export class Renderer {
       this._shadowAtlasSize
     );
     let casterCount = 0;
+    const shadowVariant = (cullMode: 'back' | 'none'): PassVariant => ({
+      format,
+      cullMode,
+      linear: false,
+      shadows: false,
+      depthOnly: true,
+      samples: 1,
+    });
+    const shadowVariants = {
+      back: shadowVariant('back'),
+      none: shadowVariant('none'),
+    };
     const draws = tiles.map((tile, index) => {
       const view = this.view(`${name} ${index}`);
       const casters: Renderable[] = [];
@@ -1377,14 +1445,9 @@ export class Renderer {
         .map((item) =>
           this.prepare(
             item,
-            {
-              format,
-              cullMode: item.material.renderState.doubleSided ? 'none' : 'back',
-              linear: false,
-              shadows: false,
-              depthOnly: true,
-              samples: 1,
-            },
+            item.material.renderState.doubleSided
+              ? shadowVariants.none
+              : shadowVariants.back,
             view
           )
         )
@@ -1605,9 +1668,13 @@ export class Renderer {
       byPass = new Map();
       byMesh.set(mesh, byPass);
     }
-    const passKey = `${variant.cullMode}|${variant.format}|${variant.linear}|${
-      variant.shadows
-    }|${variant.depthOnly}|${variant.samples}|${variant.outputsKey ?? ''}`;
+    let passKey = this._passKeys.get(variant);
+    if (passKey === undefined) {
+      passKey = `${variant.cullMode}|${variant.format}|${variant.linear}|${
+        variant.shadows
+      }|${variant.depthOnly}|${variant.samples}|${variant.outputsKey ?? ''}`;
+      this._passKeys.set(variant, passKey);
+    }
     const cached = byPass.get(passKey);
     if (cached && cached.features === material.features) {
       return cached;

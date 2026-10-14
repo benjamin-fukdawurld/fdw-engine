@@ -91,6 +91,8 @@ Démo : une scène avec occlusion ambiante et sélection au pixel, éclairée en
 
 ### P3. Occlusion culling
 
+_Faite_ (14 octobre 2026), avec son tutoriel : le design, les mesures et la suite sont dans [p3-occlusion.md](p3-occlusion.md). Le Hi-Z en passes plein écran (pyramide, test d'un texel par boîte), relu sans attendre, sur les trois backends : un seul chemin, WebGL2 compris, sans repli CPU. La ville de la démo (5184 immeubles, 3600 cachés depuis la rue, 1080p, Vulkan) : 6,7 → 1,7 ms de CPU par frame. Reportés : les deux phases sans retard pilotées par le GPU (après les draws indirects de P3b), le MSAA, le culling des projeteurs d'ombres, le BVH.
+
 - **Le package `engine-occlusion`** : le Hi-Z sur le GPU en deux phases (dessiner d'abord ce qui était visible, construire la pyramide de profondeur, tester le reste), et le CPU en repli pour WebGL2 ([scenegraph §5.5](scenegraph.md#55-locclusion-culling-plus-tard)). Le choix entre une relecture CPU et un rendu piloté par le GPU se fera dans son design.
 - **Prérequis** : les textures de stockage (compute graph et Vulkan), la génération des mipmaps (_faite_ : `addMipmapPass` ; la pyramide Hi-Z demandera une réduction min/max par une passe de calcul plutôt qu'une moyenne).
 - **Ensuite, selon les mesures** : le culling sur le GPU avec des draws indirects ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), et un BVH pour les scènes statiques de CAO et de BIM.
@@ -226,7 +228,7 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 - **P5** avant **P6** (squelettes et clips de glTF), **P7** (sons chargés) et **P8**.
 - **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P13**.
 - **P10** après **P8** (des scènes à tracer) ; ses prérequis sont posés dès P1 (§6).
-- **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; ses draws indirects servent aussi au culling sur le GPU de **P3**. Avant **P8** si la forêt a un terrain.
+- **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; ses draws indirects servent aussi aux deux phases sans retard de **P3** (sa suite). Avant **P8** si la forêt a un terrain.
 - **P12** avant **P13** : les scènes de CAO et de BIM qu'ouvre l'éditeur.
 - **P13** s'appuie sur presque tout : la sélection (le buffer d'identifiants de P2b) et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
 

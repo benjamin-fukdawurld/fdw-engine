@@ -378,6 +378,9 @@ function translateNode(
     case 'texture-sample-compare':
       output('result', type, { kind: 'sample-compare' }, args);
       return;
+    case 'texture-load':
+      output('result', type, { kind: 'texture-load' }, args);
+      return;
     case 'index':
       output('result', type, { kind: 'index' }, args);
       return;

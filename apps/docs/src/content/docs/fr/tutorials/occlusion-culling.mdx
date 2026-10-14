@@ -1,0 +1,167 @@
+---
+title: Occlusion culling
+description: Ne pas dessiner les objets cachés derrière d'autres, sur tous les backends, avec une pyramide de profondeur testée par le GPU.
+sidebar:
+  order: 14
+---
+
+import Example from '../../../../components/Example.astro';
+
+Depuis une rue, les premiers immeubles cachent presque tous les autres. Le
+frustum culling garde tout ce qui est dans le champ, caché ou non ;
+l'**occlusion culling** retire ce que les objets opaques cachent. Ci-dessous,
+une ville de 2304 immeubles : le coin montre le culling vu de dessus, en
+clair ce qui est dessiné, en rouge ce qui est caché. Cliquez sur le canvas
+pour l'éteindre et le rallumer : l'image ne change pas, le nombre d'objets
+dessinés, si.
+
+<Example name="occlusion-culling" />
+
+## L'activer
+
+L'occlusion culling est dans son propre package, `@fdw/engine-occlusion`.
+Donnez un `OcclusionCulling` aux passes de la scène d'une vue :
+
+```ts
+import { OcclusionCulling } from '@fdw/engine-occlusion';
+
+const occlusion = new OcclusionCulling();
+
+// À chaque frame :
+renderer.render({ source: scene, camera, surface, occlusion });
+```
+
+Avec un render graph à vous, l'option est la même ; le graphe doit connaître
+la taille de la frame, avec laquelle le culling dimensionne ses passes (un
+graphe dont les cibles ont une taille absolue n'en a pas besoin) :
+
+```ts
+const current = surface.getCurrentTarget();
+const graph = new RenderGraph({
+  size: { width: current.width, height: current.height },
+});
+renderer.addScenePasses(graph, {
+  source: scene,
+  camera,
+  target: graph.importTexture('surface', current),
+  format: surface.format,
+  occlusion,
+});
+```
+
+Un `OcclusionCulling` par vue : il retient ce que les tests de sa caméra ont
+trouvé. Une scène ou une liste d'objets, toute source convient ; les objets
+doivent avoir des bornes (un objet sans bornes est toujours dessiné).
+
+## Comment il fonctionne
+
+Après les objets opaques, des passes plein écran :
+
+1. **Réduisent le depth buffer en pyramide** (un Hi-Z) : chaque niveau
+   garde, pour chaque texel, la profondeur la plus lointaine de 2 × 2
+   texels du niveau du dessous, jusqu'à un seul texel.
+2. **Testent la boîte de chaque objet** que le frustum a gardé, un texel
+   chacune : ses 8 coins donnent un rectangle de l'écran et son point le
+   plus proche ; le niveau le plus fin où le rectangle couvre 2 × 2 texels
+   donne la profondeur la plus lointaine des objets opaques devant. La
+   boîte est cachée quand son point le plus proche est plus loin.
+3. **Relisent les résultats**, sans attendre : une à trois frames plus tard,
+   les objets trouvés cachés ne sont plus dessinés, jusqu'à ce qu'un test
+   les trouve de nouveau visibles. Les objets cachés sont eux aussi testés à
+   chaque frame.
+
+Rien que des passes plein écran, qui lisent des textures texel par texel :
+le culling fonctionne de la même façon en WebGPU, en Vulkan et en WebGL2,
+qui n'a pas de compute shaders.
+
+Ce qui est caché ne se voit pas : ne pas le dessiner ne change pas l'image.
+Seul **ce qui devient visible** dépend du délai : un objet qu'une caméra en
+mouvement découvre peut apparaître une frame ou deux en retard. Les boîtes
+sont agrandies du mouvement de la caméra pour trouver ces objets un peu plus
+tôt (`motion`, 2 par défaut : deux fois la distance parcourue depuis la
+frame précédente).
+
+## Ce qu'il fait gagner
+
+La ville de la démo (`city` dans l'application de démo), 5184 immeubles,
+depuis une rue, en 1920 × 1080 sur Vulkan (RTX 2060 SUPER) : environ 4000
+immeubles dans le champ, dont 3600 cachés.
+
+|                                | Sans    | Avec                              |
+| ------------------------------ | ------- | --------------------------------- |
+| Objets dessinés                | 3995    | 399                               |
+| CPU par frame                  | 6,7 ms  | 1,7 ms                            |
+| GPU par frame                  | 0,47 ms | 0,53 ms (dont 0,17 ms de culling) |
+| CPU, avec les ombres du soleil | 11,2 ms | 7,0 ms                            |
+
+Le gain est sur le CPU : chaque objet dessiné coûte sa préparation et sa
+place dans les draws. Les passes du culling coûtent environ 0,2 ms de GPU,
+quel que soit le nombre d'objets : elles sont rentables dès que les objets
+sont lourds à dessiner, ou nombreux. Avec peu d'objets, ou une scène vue de
+dessus (rien n'y cache rien), laissez-le éteint.
+
+## Voir ce qu'il fait
+
+```ts
+const stats = renderer.stats.get('scene');
+stats.visible; // dessinés
+stats.occluded; // retirés par l'occlusion culling
+
+occlusion.isHidden(item); // ce que disent les derniers résultats d'un objet
+occlusion.stats; // { tested, hidden, latency } : les derniers résultats
+```
+
+La vue de la démo est une seconde caméra au-dessus de la scène : elle
+dessine les objets que la caméra principale a gardés, en rouge quand
+`isHidden` (voir `CullingView` dans `@fdw/demo-scenes`).
+
+## À savoir
+
+- **Les ombres** : les projeteurs d'ombres ne sont pas retirés par
+  l'occlusion (leurs ombres peuvent tomber dans le champ) ; seuls les objets
+  de la caméra le sont.
+- **Les objets transparents** ne cachent rien (ils n'écrivent pas de
+  profondeur), mais sont retirés quand des objets opaques les cachent.
+- **Le multi-échantillonnage** n'est pas encore pris en charge : le culling
+  lit la profondeur des objets opaques, qui doivent être dessinés avec
+  `samples: 1`.
+- **Les objets qui bougent** sont testés avec leur boîte de la frame du
+  test : un objet qui sort de derrière un mur peut apparaître une frame en
+  retard.
+- **Plusieurs passes** (un G-buffer, puis les objets transparents) : donnez
+  le culling aux deux ; les passes des objets transparents ne font que lire
+  ses résultats.
+- `margin` (0,001) : de combien, relativement, une boîte doit être plus
+  loin que la profondeur devant elle. Il évite qu'un objet se cache
+  lui-même, par l'arrondi des profondeurs.
+
+## Lire des profondeurs dans une passe
+
+Le culling lit le depth buffer avec `std.textureLoadDepth`, et ses niveaux
+`r32float` avec `std.textureLoad` : un texel par ses coordonnées entières,
+sans sampler ni filtrage, dans tous les stages. Toute passe plein écran peut
+en faire autant, avec la profondeur des passes de la scène en entrée :
+
+```ts
+const depth = g.call(std.textureLoadDepth, {
+  texture: g.texture('depth', { sampleType: 'depth' }),
+  coords: pixel, // un vec2i, depuis le coin en haut à gauche
+});
+renderer.addFullscreenPass(graph, 'fog', {
+  material,
+  inputs: { depth: scene.depth },
+  target,
+  format,
+});
+```
+
+`std.textureLoad` lit les textures qui ne peuvent pas être filtrées
+(`r32float`, `rgba32float`) : déclarez-les avec
+`sampleType: 'unfilterable-float'`.
+
+## Ensuite
+
+- [Guide du scene graph](/fdw-engine/fr/guides/scene-graph/#occlusion-culling) :
+  l'occlusion culling avec la scène, ses options.
+- [Guide du render graph](/fdw-engine/fr/guides/render-graph/#la-taille-de-la-frame) :
+  les graphes qui connaissent la taille de leur frame.

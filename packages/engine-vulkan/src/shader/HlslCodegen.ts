@@ -403,6 +403,13 @@ function emitInstructions(
           1
         )}, ${arg(instruction, 2)}, ${arg(instruction, 3)})`;
         break;
+      case 'texture-load':
+        // Load takes the level as the last coordinate.
+        expression = `${arg(instruction, 0)}.Load(int3(${arg(
+          instruction,
+          1
+        )}, ${arg(instruction, 2)}))`;
+        break;
       case 'construct':
         if (
           instruction.args.length === 1 &&

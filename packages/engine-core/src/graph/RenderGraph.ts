@@ -266,9 +266,25 @@ export interface CompiledRenderGraph {
   readonly releases: readonly (readonly number[])[];
 }
 
+export interface RenderGraphOptions {
+  // The size of the frame, when it is known while the passes are declared:
+  // the textures of relative size then have a known size (textureSize),
+  // which some passes need (the pyramid of the occlusion culling). The
+  // runner renders at this size by default.
+  readonly size?: { readonly width: number; readonly height: number };
+}
+
 export class RenderGraph {
   private readonly _resources: ResourceNode[] = [];
   private readonly _passes: PassNode[] = [];
+  /** The size of the frame, when the graph was created with it. */
+  readonly size?: { readonly width: number; readonly height: number };
+
+  constructor(options: RenderGraphOptions = {}) {
+    if (options.size) {
+      this.size = options.size;
+    }
+  }
 
   createTexture(
     name: string,
@@ -577,6 +593,27 @@ export class RenderGraph {
       acquires,
       releases,
     };
+  }
+
+  /**
+   * The size of a texture in pixels, when it is known: its absolute size, an
+   * imported texture's, or a relative size (the frame size by default) with
+   * the size of the frame given to the graph.
+   */
+  pixelSize(
+    handle: TextureHandle
+  ): { width: number; height: number } | undefined {
+    const size = this.textureSize(handle) ?? { relative: 1 };
+    if (!('relative' in size)) {
+      return { width: size.width, height: size.height };
+    }
+    // Rounded as the runner does.
+    return this.size
+      ? {
+          width: Math.max(1, Math.round(this.size.width * size.relative)),
+          height: Math.max(1, Math.round(this.size.height * size.relative)),
+        }
+      : undefined;
   }
 
   /**

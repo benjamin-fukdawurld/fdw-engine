@@ -73,17 +73,17 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 
 ## La bibliothèque standard
 
-| Groupe       | Nœuds                                                                                                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arithmétique | `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `pow`, `sin`, `cos`, `saturate`, `clamp`, `mix`, `step`, `smoothstep`           |
-| Vecteurs     | `dot`, `length`, `normalize`, `cross`, `reflect`, `vec2`, `vec3`, `vec4`, `extend`, `convert`, `transform`, `transform3`                                   |
-| Comparaisons | `less`, `lessEqual`, `greater`, `greaterEqual`, `equal`, `notEqual`, `select`                                                                              |
-| Textures     | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel`                                               |
-| Dérivées     | `dpdx`, `dpdy`, `fwidth` : le changement d'un pixel au suivant (stage fragment seulement, `y` vers le bas)                                                 |
-| Tableaux     | `index`, `arrayLength` (storage buffers)                                                                                                                   |
-| Étapes       | `perFragment` : ce qui en dépend est calculé par pixel                                                                                                     |
-| Lumières     | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                 |
-| Macros       | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`) |
+| Groupe       | Nœuds                                                                                                                                                                                                                            |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arithmétique | `add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`, `fract`, `sqrt`, `pow`, `sin`, `cos`, `saturate`, `clamp`, `mix`, `step`, `smoothstep`                                                                                 |
+| Vecteurs     | `dot`, `length`, `normalize`, `cross`, `reflect`, `vec2`, `vec3`, `vec4`, `extend`, `convert`, `transform`, `transform3`                                                                                                         |
+| Comparaisons | `less`, `lessEqual`, `greater`, `greaterEqual`, `equal`, `notEqual`, `select`                                                                                                                                                    |
+| Textures     | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel` ; `textureLoad`, `textureLoadDepth` : un texel par ses coordonnées entières, sans sampler (profondeurs, `r32float`) |
+| Dérivées     | `dpdx`, `dpdy`, `fwidth` : le changement d'un pixel au suivant (stage fragment seulement, `y` vers le bas)                                                                                                                       |
+| Tableaux     | `index`, `arrayLength` (storage buffers)                                                                                                                                                                                         |
+| Étapes       | `perFragment` : ce qui en dépend est calculé par pixel                                                                                                                                                                           |
+| Lumières     | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                                                                                       |
+| Macros       | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`)                                                                       |
 
 Ils se trouvent tous dans `std`, `stdLights` et `stdMacros` ;
 `createStandardRegistry()` renvoie un registre de tous les types de nœuds

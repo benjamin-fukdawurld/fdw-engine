@@ -175,6 +175,8 @@ export type IntrinsicOp =
   | 'texture-sample-level'
   // Depth comparison with a depth texture (shadow maps).
   | 'texture-sample-compare'
+  // A texel read by its coordinates, without sampler nor filtering.
+  | 'texture-load'
   // Component-wise comparisons, giving booleans.
   | 'less'
   | 'less-equal'
