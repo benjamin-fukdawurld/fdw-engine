@@ -182,8 +182,9 @@ or from the derivatives.
 Displacement mapping moves the **vertices** themselves, along their normal,
 by the height map: the silhouette changes, the relief casts real shadows.
 It needs a mesh with enough vertices: `createPlane(180)` splits the plane in
-180 × 180 cells. Neither WebGPU nor WebGL2 can subdivide the surfaces on the
-GPU (tessellation): the adaptive version will come with phase P3b.
+180 × 180 cells. Neither WebGPU nor WebGL2 has hardware tessellation: the
+adaptive version, patches subdivided by their size on the screen, is in the
+[Tessellation](/fdw-engine/tutorials/tessellation/) tutorial.
 
 ```ts
 const positionOffset = g.call(stdMacros.displacement, {

@@ -1,0 +1,7 @@
+{
+  "name": "engine-tessellation",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-tessellation/src",
+  "projectType": "library",
+  "tags": []
+}

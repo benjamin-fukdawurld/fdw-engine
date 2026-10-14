@@ -5,3 +5,4 @@ export * from './shadows';
 export * from './maze';
 export * from './ssr';
 export * from './city';
+export * from './terrain';

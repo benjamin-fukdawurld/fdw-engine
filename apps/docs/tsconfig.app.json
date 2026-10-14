@@ -41,6 +41,9 @@
     },
     {
       "path": "../../packages/engine-occlusion/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-tessellation/tsconfig.lib.json"
     }
   ]
 }

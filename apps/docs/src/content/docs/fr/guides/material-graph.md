@@ -112,6 +112,24 @@ caméra et les lumières des dernières passes de scène.
 `camera.positionFromDepth` (`uv`, `viewDepth`) donne la position dans le
 monde d'un pixel à partir de sa profondeur.
 
+## Les attributs calculés
+
+`g.vertexAttribute(sémantique, valeur)` calcule un attribut de sommet au
+lieu de le lire dans le mesh : toutes les lectures de l'attribut
+(`g.attribute`, le vertex stage de la surface, les macros,
+`hasAttribute.<sémantique>`) reçoivent la valeur, calculée dans le vertex
+stage. Un sommet généré depuis son numéro (`g.builtin('vertex-index')`)
+donne ainsi sa position, sa normale et ses uv, et le mesh n'a besoin
+d'aucun vertex buffer (`Mesh.setVertexCount`). La valeur ne peut pas lire
+l'attribut qu'elle remplace. C'est ce qu'utilisent les patchs de la
+tessellation : voir [Tessellation](/fdw-engine/fr/tutorials/tessellation/).
+
+```ts
+g.vertexAttribute('position', position);
+g.vertexAttribute('normal', normal);
+g.surface({ baseColor }); // Placée et éclairée avec eux.
+```
+
 ## Fonctions
 
 Une fonction est un graphe doté de nœuds `functionInput` et `functionOutput`,

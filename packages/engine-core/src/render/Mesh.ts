@@ -6,9 +6,9 @@ export type IndexData = Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
 // optional indices. The renderer uploads it when it is first drawn, and again
 // after each change.
 export class Mesh {
-  readonly description: MeshDescription;
   readonly label?: string;
 
+  private _description: MeshDescription;
   private _vertices: ArrayBufferView<ArrayBuffer>[];
   private _indices?: IndexData;
   private _version = 0;
@@ -47,10 +47,14 @@ export class Mesh {
       }
     }
 
-    this.description = description;
+    this._description = description;
     this.label = label;
     this._vertices = [...vertices];
     this._indices = indices;
+  }
+
+  get description(): MeshDescription {
+    return this._description;
   }
 
   get version(): number {
@@ -63,6 +67,20 @@ export class Mesh {
 
   get indices(): IndexData | undefined {
     return this._indices;
+  }
+
+  /**
+   * Changes the number of vertices drawn, without uploading anything: for
+   * the meshes without indices whose vertices are generated in the vertex
+   * shader from their index (the patches of a tessellated surface). Within
+   * the vertex buffers, if it has some.
+   */
+  setVertexCount(count: number): this {
+    if (this._description.indexBuffer) {
+      throw new Error('The vertex count of an indexed mesh cannot change');
+    }
+    this._description = { ...this._description, vertexCount: count };
+    return this;
   }
 
   setVertices(buffer: number, data: ArrayBufferView<ArrayBuffer>): this {

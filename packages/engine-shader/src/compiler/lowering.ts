@@ -408,6 +408,91 @@ export function lowerSurface(
   graph.removeNode(surface.id);
 }
 
+/**
+ * The vertex attributes computed by the graph: every input.attribute whose
+ * semantic has an output.attribute node reads its value instead, and the
+ * output.attribute nodes are removed. After the surface lowering and the
+ * macros, which add attributes of their own.
+ */
+export function lowerComputedAttributes(
+  graph: WorkingGraph,
+  diagnostics: Diagnostic[]
+): void {
+  const outputs = [...graph.nodes.values()].filter(
+    (node) => node.type === 'output.attribute'
+  );
+  const computed = new Map<string, InputSource>();
+  for (const output of outputs) {
+    const semantic = output.params['semantic'] as string;
+    const value = graph.inputSource(output, 'value');
+    graph.removeNode(output.id);
+    if (computed.has(semantic)) {
+      diagnostics.push({
+        severity: 'error',
+        node: output.id,
+        message: `the attribute "${semantic}" is computed twice`,
+      });
+    } else if (value) {
+      computed.set(semantic, value);
+    }
+  }
+
+  for (const [semantic, value] of computed) {
+    const reads = [...graph.nodes.values()].filter(
+      (node) =>
+        node.type === 'input.attribute' && node.params['semantic'] === semantic
+    );
+    if ('ref' in value && dependsOn(graph, value.ref.node, reads)) {
+      diagnostics.push({
+        severity: 'error',
+        node: value.ref.node,
+        message: `the attribute "${semantic}" computed by the graph reads itself`,
+      });
+      continue;
+    }
+    for (const read of reads) {
+      const source =
+        'ref' in value
+          ? value
+          : {
+              ref: {
+                node: graph.addNode('const.value', {
+                  type: read.params['type'] as StaticValue,
+                  value: value.value as StaticValue,
+                }),
+                port: 'value',
+              },
+            };
+      graph.redirectPort({ node: read.id, port: 'value' }, source);
+      graph.removeNode(read.id);
+    }
+  }
+}
+
+// Whether `node` is one of `targets` or computed from one of them.
+function dependsOn(
+  graph: WorkingGraph,
+  node: string,
+  targets: readonly GraphNode[]
+): boolean {
+  const ids = new Set(targets.map((target) => target.id));
+  const visited = new Set<string>();
+  const stack = [node];
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    if (ids.has(current)) {
+      return true;
+    }
+    if (!visited.has(current)) {
+      visited.add(current);
+      for (const edge of graph.incoming(current)) {
+        stack.push(edge.from.node);
+      }
+    }
+  }
+  return false;
+}
+
 // The output.value nodes of a material: used (or not) by the outputs.
 function removeOutputValues(graph: WorkingGraph): void {
   for (const node of [...graph.nodes.values()]) {

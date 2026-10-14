@@ -1,0 +1,153 @@
+---
+title: Tessellation
+description: Adaptive displacement on every backend, without hardware tessellation, with patches drawn from templates at the level their size on the screen asks for.
+sidebar:
+  order: 15
+---
+
+import Example from '../../../components/Example.astro';
+
+Displacement mapping needs vertices: a terrain of a kilometer with a vertex
+every 25 cm would have 16 million of them, most of them far away, smaller
+than a pixel. **Tessellation** subdivides each part of a surface as much as
+its size on the screen asks. Neither WebGPU nor WebGL2 has hardware
+tessellation: the engine draws **patches** from templates subdivided 1, 2,
+4… 64 times, and generates their vertices in the vertex shader. Below, a
+terrain of 32 × 32 patches displaced by a height map; click the canvas to
+color the patches by level, from blue (2 triangles) to red (8192).
+
+<Example name="tessellation" />
+
+## A surface of patches
+
+The tessellation is in its own package, `@fdw/engine-tessellation`. A
+surface is made of quad **patches**; `patchGrid` makes a flat grid of them,
+in the XZ plane, facing +Y, with uvs from 0 to 1:
+
+```ts
+import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
+
+const patches = patchGrid({ width: 1024, depth: 1024, columns: 32, rows: 32 });
+```
+
+Its material calls `patchVertex`: in the vertex shader, it finds the patch
+and the point of its template drawn, interpolates the corners of the patch,
+moves the point along the normal by the height map, and computes the normal
+of the displaced surface. It gives the **position**, **normal** and **uv** of
+the vertex to the rest of the graph: the surface, the macros and
+`g.attribute('uv')` read them as if they came from a mesh.
+
+```ts
+const g = new GraphBuilder('terrain');
+const vertex = patchVertex(g, {
+  displacement: {
+    texture: g.texture('heightMap'),
+    sampler: g.sampler('heightSampler'),
+    scale: 120, // The height of a texel of 1, in meters.
+    texel: 1 / 256, // 1 / the size of the height map: for the normal.
+  },
+});
+g.surface({
+  shadingModel: 'phong',
+  baseColor: colorOf(vertex.height), // The height read, from 0 to 1.
+});
+const material = new Material({
+  graph: g.build(),
+  values: { heightMap, heightSampler },
+});
+```
+
+The surface is a render item. Each frame, `update` chooses the levels for
+the camera, then the renderer draws it with the others:
+
+```ts
+const terrain = new PatchSurface(backend, {
+  patches,
+  material, // One material per surface: it holds the patches drawn.
+  displacement: 120, // How far the points move: the bounds grow by it.
+});
+
+// Each frame:
+terrain.update(camera, surface); // The size of the image, in pixels.
+renderer.render({ items: [terrain, ...others], camera, surface, lights });
+```
+
+## How it works
+
+1. **The templates**: a patch subdivided in 2^level × 2^level quads, from
+   level 0 (2 triangles) to 6 (8192). Nothing is stored: a vertex knows its
+   place in its template from its index.
+2. **The choice of the levels**, on the CPU, each frame: each edge gets the
+   level that makes its triangles about `edgePixels` (8) pixels long on the
+   screen, seen from its closest point; each patch gets the finest level of
+   its four edges. The patches outside the view are left out.
+3. **The draw**: the patches are sorted by level and written into a
+   texture, one texel each. A single draw, without vertex buffer, generates
+   all their vertices: from its index, a vertex finds its level, its patch,
+   its quad, its corner.
+4. **The evaluation**, in the vertex shader: the corners of the patch are
+   read from a texture (`std.textureLoad`), interpolated, displaced by the
+   height map (`std.textureSampleLevel`); the normal comes from the slopes
+   of the height map.
+
+**No cracks.** Two neighbors at different levels would not have the same
+points on their common edge: the fine one would leave gaps along the coarse
+one. Each edge has a single level, shared by its two patches; on the finer
+patch, the points of the edge move to the grid of the edge's level, and the
+two sides have exactly the same points. The patches interpolate their
+corners so that a common edge gives the same positions to the bit.
+
+The same path on WebGPU, Vulkan and WebGL2: only vertex shaders and
+textures, no compute nor hardware tessellation.
+
+## Computed attributes
+
+What `patchVertex` relies on is a general feature of the material graphs:
+`g.vertexAttribute(semantic, value)` computes an attribute instead of
+reading it from the mesh. Every read of the attribute, in the graph, in the
+vertex stage of the surface and in the macros, gets the value:
+
+```ts
+// A vertex placed by its index: the mesh needs no position.
+g.vertexAttribute('position', positionFromIndex);
+g.vertexAttribute('normal', [0, 1, 0]);
+```
+
+The mesh no longer needs these attributes; a mesh without vertex buffers
+draws `setVertexCount(count)` vertices, generated in the shader.
+
+## What it costs
+
+The terrain of the demo (`terrain` in the demo app), 32 × 32 patches over a
+kilometer, at 1280 × 720 on Vulkan (RTX 2060 SUPER): about 470 patches in
+view, **400,000 triangles** adaptive, against 3.8 million with every patch
+at the finest level (5 here: the 2^24 vertices of a frame), 1140 frames per
+second against 660.
+
+The choice of the levels costs 0.4 ms of CPU for 4096 patches (0.6 ms with
+the culling of the patches outside the view), whatever the number of
+triangles.
+
+## What to know
+
+- **One update per frame**: the shadow maps and the other views of the
+  frame draw the patches chosen for the camera given to `update`.
+- **The culled patches cast no shadows**: with a low sun, hills outside the
+  view may cast shadows into it; `cull: false` keeps all the patches.
+- **The levels**: `edgePixels` (8) sets the density, `minLevel` and
+  `maxLevel` (0 and 6) bound it. At most 2^24 vertices a frame: beyond, the
+  surface lowers its levels.
+- **The normal**: computed from the height map, the one of the vertices
+  changes with their level. For a lighting that does not change with the
+  level, read the normal per pixel from the height map (the terrain of the
+  demo does, see `terrainGraph` in `@fdw/demo-scenes`).
+- **Patches of your own**: `new Patches([...])` takes quads by their
+  corners (position, normal, uv). Neighbors must share the corners of their
+  common edges; in the same direction, the seam is exact.
+
+## Next
+
+- [Surface details](/fdw-engine/tutorials/surface-details/): displacement
+  mapping on a subdivided mesh, and the techniques without geometry.
+- [Material graph guide](/fdw-engine/guides/material-graph/#computed-attributes):
+  the attributes computed by the graph.

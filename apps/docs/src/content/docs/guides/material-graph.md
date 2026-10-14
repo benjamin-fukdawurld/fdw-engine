@@ -109,6 +109,23 @@ also be called like any function, `g.call('lighting.pbr', inputs)` with
 camera and the lights of the last scene passes. `camera.positionFromDepth`
 (`uv`, `viewDepth`) gives the world position of a pixel from its depth.
 
+## Computed attributes
+
+`g.vertexAttribute(semantic, value)` computes a vertex attribute instead of
+reading it from the mesh: every read of the attribute (`g.attribute`, the
+vertex stage of the surface, the macros, `hasAttribute.<semantic>`) gets the
+value, computed in the vertex stage. A vertex generated from its index
+(`g.builtin('vertex-index')`) gives its position, normal and uv this way,
+and the mesh needs no vertex buffer (`Mesh.setVertexCount`). The value
+cannot read the attribute it replaces. It is what the patches of the
+tessellation use: see [Tessellation](/fdw-engine/tutorials/tessellation/).
+
+```ts
+g.vertexAttribute('position', position);
+g.vertexAttribute('normal', normal);
+g.surface({ baseColor }); // Placed and lit with them.
+```
+
 ## Functions
 
 A function is a graph with `functionInput` and `functionOutput` nodes,

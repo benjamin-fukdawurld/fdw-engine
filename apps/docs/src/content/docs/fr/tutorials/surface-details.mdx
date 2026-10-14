@@ -189,8 +189,9 @@ Le displacement mapping déplace les **sommets** eux-mêmes, le long de leur
 normale, selon la carte de hauteur : la silhouette change, le relief
 projette de vraies ombres. Il lui faut un mesh avec assez de sommets :
 `createPlane(180)` découpe le plan en 180 × 180 cellules. Ni WebGPU ni WebGL2
-ne savent subdiviser les surfaces sur le GPU (tessellation) : la version
-adaptative viendra avec la phase P3b.
+n'ont de tessellation matérielle : la version adaptative, des patchs
+subdivisés selon leur taille à l'écran, est dans le tutoriel
+[Tessellation](/fdw-engine/fr/tutorials/tessellation/).
 
 ```ts
 const positionOffset = g.call(stdMacros.displacement, {
