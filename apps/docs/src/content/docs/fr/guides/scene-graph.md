@@ -209,13 +209,44 @@ function move(dt: number) {
   parcourant à rebours.
 - **Écouteurs** : `world.onAdded()`, `world.onRemoved()`.
 - Les **systèmes** sont de simples fonctions : le cœur n'impose aucun
-  ordonnanceur.
+  ordonnanceur. Un `Scheduler` les exécute dans l'ordre quand on le veut
+  (ci-dessous).
 
 Les composants de la scène, pour les systèmes : `Hierarchy` (parent, premier
 enfant, frères), `NodeState` (drapeaux, layers, dernière visibilité, nom),
 `MeshRenderer` (mesh, matériau, `noShadow`, volume, englobant monde — la
 table des englobants du GPU culling à venir), `Light`, `CameraView`. Leurs
 drapeaux valent 0 par défaut : `noShadow` plutôt que `castShadow`.
+
+## L'ordonnanceur
+
+Un `Scheduler` exécute des systèmes frame après frame, en quatre phases :
+`begin` (une fois, les entrées), `fixed` (à chaque pas fixe, la logique),
+`update` (une fois, par défaut : caméras, interpolation), `render` (une
+fois, en dernier).
+
+```ts
+const scheduler = new Scheduler({ step: 1 / 60, maxSteps: 5 });
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add('move', move, { phase: 'fixed' });
+scheduler.add('gravity', gravity, { phase: 'fixed', before: ['move'] });
+scheduler.add('draw', () => draw(scheduler.alpha));
+scheduler.add('render', render, { phase: 'render' });
+onFrame((dt) => scheduler.update(dt));
+```
+
+- **Ordre** : l'ordre d'ajout dans une phase, précisé par `before` et
+  `after` (des noms de la même phase ; les noms absents sont ignorés). Un
+  cycle fait lever une erreur à `add()`.
+- **Pas fixe** : autant de pas que la frame en contient, `maxSteps` au
+  plus ; `steps`, `time`, et `alpha` (de 0 à 1, où en est la frame entre
+  les deux derniers pas, pour dessiner entre eux).
+- **Contrôle** : `paused`, `timeScale` et `step()` n'agissent que sur la
+  phase `fixed` ; `system.enabled`, `remove(name)`, `systems(phase)`.
+- Un système est une fonction `(dt) => void` : l'ordonnanceur ne connaît
+  pas de monde, et `FixedStep` s'utilise seul.
+
+Voir le tutoriel [Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/).
 
 ## Autres scènes
 

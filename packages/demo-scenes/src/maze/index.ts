@@ -19,6 +19,5 @@ export * from './sight';
 export * from './exploration';
 export * from './inset';
 export * from './map';
-export * from './fixedStep';
 export * from './game';
 export * from './step4';

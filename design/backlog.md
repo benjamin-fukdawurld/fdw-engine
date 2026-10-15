@@ -91,7 +91,7 @@ Le site de documentation (`apps/docs`, Astro + Starlight, en anglais et en fran�
 - **Murs transparents** : rendre semi-transparents (0 < alpha < 1) les murs entre la caméra et le personnage, qui peuvent le cacher ([scenegraph §11](scenegraph.md#11-les-démos)). Un rayon ou un volume de la caméra au personnage trouve ces murs ; leur matériau passe en `blend`, avec un alpha qui revient en douceur quand ils ne cachent plus rien.
 - **Gestion des entrées, manettes comprises** : _faite_ ([input.md](input.md)) — `engine-input`, `engine-input-web`, `engine-input-native`, le labyrinthe jouable à la manette. Restent hors du périmètre : les vibrations, le verrouillage du pointeur, les contextes d'actions, le texte saisi (input.md §6).
 
-- **Un ordonnanceur de systèmes ECS** (`Scheduler` dans `engine-scene`) : des systèmes ordonnés, une boucle à pas fixe pour la logique, le rendu à la cadence de l'écran. Pour L4, les systèmes sont de simples fonctions `(world, dt) => void` de la démo, et le pas fixe un petit helper : à étudier quand une deuxième application en aura besoin, en gardant l'ECS agnostique (CAO, BIM, jeu).
+- **Un ordonnanceur de systèmes ECS** — _fait_ (P4, voir [p4-scheduler.md](p4-scheduler.md)) : `Scheduler` dans `engine-scene`, des systèmes ordonnés, une boucle à pas fixe pour la logique, le rendu à la cadence de l'écran, l'ECS resté agnostique (CAO, BIM, jeu).
 
 ## 9. Vers un middleware de création 3D
 

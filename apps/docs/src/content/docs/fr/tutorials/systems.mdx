@@ -1,0 +1,171 @@
+---
+title: Les systèmes et le pas fixe
+description: Exécuter les systèmes d'un ECS dans l'ordre avec un ordonnanceur, la logique à pas fixe, le rendu à la cadence de l'écran, dessiné entre deux pas.
+sidebar:
+  order: 18
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un jeu est un ensemble de **systèmes** : les entrées, la physique, l'IA,
+les caméras, le rendu. Chacun est une fonction sur les entités de
+l'[ECS](/fdw-engine/fr/guides/scene-graph/#le-cœur-ecs). Restent deux
+questions :
+
+- **dans quel ordre** s'exécutent-ils ? La gravité avant le mouvement, les
+  collisions après, le rendu en dernier ;
+- **à quelle cadence** ? Le rendu à celle de l'écran ; la logique à **pas
+  fixe**, la même à 30 ou à 144 images par seconde.
+
+Un `Scheduler` (ordonnanceur) répond aux deux. Ici, 40 balles rebondissent
+dans une arène : la physique à 60 pas par seconde, le rendu à la cadence de
+l'écran. Cliquez sur le canvas, puis : **P** met en pause, **N** exécute un
+pas pendant la pause, **S** ralentit, **L** abaisse les pas à 10 par
+seconde, **I** coupe l'interpolation — essayez L, puis I, pour voir à quoi
+elle sert.
+
+<Example name="systems" />
+
+## Les phases d'une frame
+
+```ts
+import { Scheduler } from '@fdw/engine-scene';
+
+const scheduler = new Scheduler({ step: 1 / 60 });
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add('move', (step) => move(step), { phase: 'fixed' });
+scheduler.add('interpolate', () => interpolate(scheduler.alpha));
+scheduler.add('render', () => renderer.render(view), { phase: 'render' });
+
+onFrame((dt) => scheduler.update(dt));
+```
+
+`scheduler.update(dt)` exécute une frame en quatre phases :
+
+| Phase    | S'exécute                    | `dt` reçu       | Pour                                 |
+| -------- | ---------------------------- | --------------- | ------------------------------------ |
+| `begin`  | une fois                     | la frame        | les entrées, les événements          |
+| `fixed`  | à chaque pas, 0 fois ou plus | le pas (1/60 s) | la logique, la physique              |
+| `update` | une fois (par défaut)        | la frame        | les caméras, dessiner entre deux pas |
+| `render` | une fois, en dernier         | la frame        | le rendu                             |
+
+Un système est une simple fonction : il atteint son monde, ses requêtes,
+son renderer par fermeture. L'ordonnanceur n'en sait rien — le même fait
+tourner un jeu, un éditeur ou une visionneuse.
+
+## L'ordre des systèmes
+
+Dans une phase, les systèmes s'exécutent dans l'ordre où ils ont été
+ajoutés, sauf s'ils disent autrement avec `before` et `after` :
+
+```ts
+scheduler.add('move', move, { phase: 'fixed' });
+scheduler.add('bounce', bounce, { phase: 'fixed', after: ['move'] });
+scheduler.add('gravity', gravity, { phase: 'fixed', before: ['move'] });
+scheduler.add('kick', kick, { phase: 'fixed', after: ['bounce'] });
+
+scheduler.systems('fixed').map((system) => system.name);
+// ['gravity', 'move', 'bounce', 'kick']
+```
+
+- Une contrainte nomme des systèmes **de la même phase** ; celle qui nomme
+  un système absent, ou d'une autre phase, est ignorée : un module peut dire
+  « après la physique », qu'elle soit là ou non.
+- Un cycle (`a` après `b`, `b` après `a`) est refusé à l'ajout du système
+  qui le ferme : `add()` lève une erreur, avec les noms.
+- Les noms sont uniques. `scheduler.remove(name)` retire un système, même
+  de la phase en cours.
+- `system.enabled = false` saute un système et lui garde sa place.
+
+## Le pas fixe
+
+La phase `fixed` exécute autant de pas que la durée de la frame en
+contient :
+
+```ts
+advance(dt: number, update: (step: number) => void): number {
+  this._pending = Math.min(this._pending + dt, this.step * this.maxSteps);
+  while (this._pending >= this.step - 1e-9) {
+    update(this.step);
+    this._pending -= this.step;
+  }
+}
+```
+
+À 144 images par seconde, la plupart des frames n'exécutent aucun pas,
+certaines un ; à 30, chacune en exécute deux. La physique voit les mêmes
+pas dans les deux cas : les mêmes entrées donnent le même jeu. Après une
+longue frame (un onglet en arrière-plan), `maxSteps` (5) pas au plus
+s'exécutent : le jeu ralentit plutôt que d'exécuter des centaines de pas
+d'un coup.
+
+`scheduler.steps` est le nombre de pas de la dernière frame,
+`scheduler.time` le temps simulé. `FixedStep` est exporté aussi, pour une
+boucle sans ordonnanceur.
+
+## Dessiner entre deux pas
+
+À 60 pas par seconde sur un écran à 144 Hz, une balle avance une frame sur
+deux ou trois : elle saccade. Le remède : garder aussi l'état du **pas
+précédent**, et dessiner entre les deux :
+
+```ts
+// fixed : retenir, puis avancer.
+Ball.px[e] = Ball.x[e];
+Ball.x[e] += Ball.vx[e] * step;
+
+// update : où en est la frame entre les deux pas, de 0 à 1.
+const a = scheduler.alpha;
+data[o] = Ball.px[e] + (Ball.x[e] - Ball.px[e]) * a;
+scene.transforms.touch(e);
+```
+
+`alpha` est le temps restant après le dernier pas, divisé par le pas.
+L'image a au plus un pas de retard sur la logique — 1/60 s — et bouge à
+chaque frame. Appuyez sur **L** dans l'exemple : 10 pas par seconde,
+toujours fluide ; puis sur **I** : sans interpolation, les balles sautent
+de pas en pas.
+
+## Pause, ralenti, un pas
+
+```ts
+scheduler.paused = true; // la phase fixed s'arrête ; les autres continuent
+scheduler.step(); // un pas, en pause ou non
+scheduler.timeScale = 0.25; // un ralenti
+scheduler.fixed.step = 1 / 30; // la durée d'un pas
+```
+
+`paused` et `timeScale` n'agissent que sur la phase `fixed` : sous un menu
+de pause, les entrées, les caméras et le rendu continuent. `step()` exécute
+une fois les systèmes de la phase `fixed` — le pas à pas d'un débogueur.
+
+## Le labyrinthe, avec un ordonnanceur
+
+Le [tutoriel du jeu](/fdw-engine/fr/game/the-game/) appelle ses systèmes à
+la main, avec un `FixedStep`. Avec un ordonnanceur, sa frame devient :
+
+```ts
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add(
+  'player',
+  (step) => player.update(step, actions, follow.yaw, aim),
+  {
+    phase: 'fixed',
+  }
+);
+scheduler.add('game', (step) => game.update(step), {
+  phase: 'fixed',
+  after: ['player'],
+});
+scheduler.add('camera', (dt) => follow.update(dt, player.position));
+scheduler.add('render', () => view.render(surface, camera), {
+  phase: 'render',
+});
+```
+
+## La suite
+
+- [Guide du scene graph](/fdw-engine/fr/guides/scene-graph/) : les
+  composants, les requêtes, l'ordonnanceur.
+- [Contrôles à la première personne](/fdw-engine/fr/tutorials/first-person/) :
+  les entrées lues dans la phase `begin`.

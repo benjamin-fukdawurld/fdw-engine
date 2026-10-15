@@ -9,7 +9,6 @@ import { mazeActions } from './controls';
 import { resolveCircle } from './collisions';
 import { EnemyState, MazeGame } from './game';
 import { Exploration } from './exploration';
-import { FixedStep } from './fixedStep';
 import { Flashlight } from './flashlight';
 import { Player } from './player';
 import { buildLevel } from './level';
@@ -290,21 +289,6 @@ describe('paths', () => {
     expect(nextStep(maze, 0, 4)).toBe(1);
     expect(nextStep(maze, 7, 4)).toBe(6);
     expect(nextStep(maze, 4, 4)).toBe(4);
-  });
-});
-
-describe('FixedStep', () => {
-  it('runs as many steps as the frames hold, at most a few', () => {
-    const loop = new FixedStep(0.1, 3);
-    let steps = 0;
-    loop.advance(0.25, () => steps++);
-    expect(steps).toBe(2);
-    // The 0.05 left, and 0.05 more: one step.
-    loop.advance(0.05, () => steps++);
-    expect(steps).toBe(3);
-    // A long pause: three steps, not ten.
-    loop.advance(1, () => steps++);
-    expect(steps).toBe(6);
   });
 });
 

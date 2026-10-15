@@ -30,6 +30,25 @@ for (const entity of moving) {
 - **Queries** (`world.query(A, B, not(C))`) are kept up to date as components are added and removed; `entities` and `count` are the fastest way to walk them.
 - **Listeners**: `world.onAdded(component, listener)`, `world.onRemoved(component, listener)`.
 
+## The scheduler
+
+```ts
+import { Scheduler } from '@fdw/engine-scene';
+
+const scheduler = new Scheduler({ step: 1 / 60 });
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add('move', move, { phase: 'fixed' });
+scheduler.add('gravity', gravity, { phase: 'fixed', before: ['move'] });
+scheduler.add('draw', () => draw(scheduler.alpha));
+scheduler.add('render', render, { phase: 'render' });
+onFrame((dt) => scheduler.update(dt));
+```
+
+- **Phases**: `begin` (once), `fixed` (at each fixed step, `dt` is the step), `update` (once, the default), `render` (once, last).
+- **Order**: the order of addition in a phase, refined by `before` and `after`; a cycle makes `add()` throw.
+- **Fixed step**: at most `maxSteps` per frame; `steps`, `time`, `alpha` to draw between the last two steps. `FixedStep` alone for a loop without a scheduler.
+- **Control**: `paused`, `timeScale`, `step()` (the `fixed` phase only), `system.enabled`, `remove(name)`.
+
 ## The scene
 
 ```ts

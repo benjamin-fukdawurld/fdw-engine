@@ -31,7 +31,7 @@ Jusqu'ici, chaque frame déplaçait le personnage de la durée de la frame. La
 logique du jeu s'exécute désormais par **pas fixes** de 1/60 s, autant que la
 frame en contient :
 
-```ts title="maze/fixedStep.ts"
+```ts title="FixedStep (@fdw/engine-scene)"
 advance(dt: number, update: (step: number) => void): void {
   this._pending = Math.min(this._pending + dt, this.step * this.maxSteps);
   while (this._pending >= this.step - 1e-9) {
@@ -123,10 +123,10 @@ update(step: number): void {
 }
 ```
 
-Le moteur n'a ni type de système ni ordonnanceur : ici, ce sont des méthodes
-du jeu, appelées dans l'ordre que choisit le jeu. Un ordonnanceur (systèmes
-ordonnés, pas fixe) pourra venir plus tard, lorsqu'une deuxième application
-en aura besoin.
+Ici, les systèmes sont des méthodes du jeu, appelées dans l'ordre que
+choisit le jeu. Le moteur a aussi un ordonnanceur, qui exécute les systèmes
+dans l'ordre et le pas fixe à votre place : voir
+[Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/).
 
 ## 4. Marcher dans le labyrinthe
 
@@ -355,4 +355,5 @@ la frame.
 - Le clavier, la souris et la manette, à travers les mêmes actions.
 
 Quelques idées laissées pour plus tard : des murs entre la caméra et le
-personnage qui deviennent transparents, et un ordonnanceur de systèmes.
+personnage qui deviennent transparents, et les systèmes exécutés par un
+[ordonnanceur](/fdw-engine/fr/tutorials/systems/).

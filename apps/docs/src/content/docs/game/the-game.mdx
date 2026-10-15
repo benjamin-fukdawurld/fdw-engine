@@ -29,7 +29,7 @@ Until now, each frame moved the character by the time of the frame. The
 game logic now runs by **fixed steps** of 1/60 s, as many as the frame
 holds:
 
-```ts title="maze/fixedStep.ts"
+```ts title="FixedStep (@fdw/engine-scene)"
 advance(dt: number, update: (step: number) => void): void {
   this._pending = Math.min(this._pending + dt, this.step * this.maxSteps);
   while (this._pending >= this.step - 1e-9) {
@@ -118,10 +118,10 @@ update(step: number): void {
 }
 ```
 
-The engine has no system type and no scheduler: here they are methods of
-the game, called in the order the game chooses. A scheduler (ordered
-systems, the fixed step) may come later, once a second application needs
-one.
+Here the systems are methods of the game, called in the order the game
+chooses. The engine also has a scheduler, which runs systems in order and
+the fixed step for you: see
+[Systems and the fixed step](/fdw-engine/tutorials/systems/).
 
 ## 4. Walking through the maze
 
@@ -339,4 +339,5 @@ held — a speed, multiplied by the time of the frame.
 - The keyboard, the mouse and the gamepad, through the same actions.
 
 Some ideas left for later: walls between the camera and the character
-becoming transparent, and a scheduler of systems.
+becoming transparent, and the systems run by a
+[scheduler](/fdw-engine/tutorials/systems/).

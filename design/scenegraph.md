@@ -414,7 +414,7 @@ function move(dt: number) {
 - **Composants** : un schéma de champs typés (`f32`, `f64`, `i32`, `u32`, `u16`, `u8`, ou `ref` pour une référence à un objet). Chaque champ est une **colonne** : un tableau typé indexé par entité, agrandi par doublement. Les références (un mesh, un matériau) sont des colonnes d'objets.
 - **Appartenance** : un masque de bits par entité (les composants qu'elle a), et pour chaque composant un ensemble creux (_sparse set_) de ses entités : ajout et retrait en O(1), parcours dense. Les archétypes (entités groupées par combinaison de composants) parcourent plus vite mais rendent les ajouts et retraits coûteux ; un jeu en fait beaucoup (états, effets).
 - **Requêtes** : `world.query(A, B, not(C))`, tenues à jour à chaque ajout et retrait, et parcourues sans allocation.
-- **Systèmes** : de simples fonctions ; le cœur n'impose ni ordonnanceur ni boucle. La scène et les démos les appellent dans l'ordre qu'elles veulent.
+- **Systèmes** : de simples fonctions ; le cœur n'impose ni ordonnanceur ni boucle. La scène et les démos les appellent dans l'ordre qu'elles veulent, ou les confient au `Scheduler` (P4, [p4-scheduler.md](p4-scheduler.md)).
 
 ### 9.2 La scène
 

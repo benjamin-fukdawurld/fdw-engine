@@ -194,13 +194,43 @@ function move(dt: number) {
   are added and removed. `entities` and `count` walk them fastest; remove
   components while walking backwards.
 - **Listeners**: `world.onAdded()`, `world.onRemoved()`.
-- **Systems** are plain functions: the core imposes no scheduler.
+- **Systems** are plain functions: the core imposes no scheduler. A
+  `Scheduler` runs them in order when wanted (below).
 
 The components of the scene, for the systems: `Hierarchy` (parent, first
 child, siblings), `NodeState` (flags, layers, last visible, name),
 `MeshRenderer` (mesh, material, `noShadow`, volume, world bounds — the
 bounds table of the GPU culling to come), `Light`, `CameraView`. Their flags
 are 0 by default: `noShadow` rather than `castShadow`.
+
+## The scheduler
+
+A `Scheduler` runs systems frame after frame, in four phases: `begin`
+(once, the input), `fixed` (at each fixed step, the logic), `update`
+(once, the default: cameras, interpolation), `render` (once, last).
+
+```ts
+const scheduler = new Scheduler({ step: 1 / 60, maxSteps: 5 });
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add('move', move, { phase: 'fixed' });
+scheduler.add('gravity', gravity, { phase: 'fixed', before: ['move'] });
+scheduler.add('draw', () => draw(scheduler.alpha));
+scheduler.add('render', render, { phase: 'render' });
+onFrame((dt) => scheduler.update(dt));
+```
+
+- **Order**: the order of addition in a phase, refined by `before` and
+  `after` (names of the same phase; absent names are ignored). A cycle
+  makes `add()` throw.
+- **Fixed step**: as many steps as the frame holds, at most `maxSteps`;
+  `steps`, `time`, and `alpha` (from 0 to 1, where the frame is between
+  the last two steps, to draw between them).
+- **Control**: `paused`, `timeScale` and `step()` act on the `fixed` phase
+  only; `system.enabled`, `remove(name)`, `systems(phase)`.
+- A system is a function `(dt) => void`: the scheduler knows nothing of
+  worlds, and `FixedStep` is usable alone.
+
+See the tutorial [Systems and the fixed step](/fdw-engine/tutorials/systems/).
 
 ## Other scenes
 
