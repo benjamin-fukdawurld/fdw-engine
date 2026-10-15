@@ -7,6 +7,7 @@
 // nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden]
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
+// fps (the first person shooter; P pauses),
 // city (the occlusion culling; city-no-occlusion to compare), terrain (the
 // tessellation; terrain-uniform: every patch at the finest level).
 // Escape or closing the window quits.
@@ -30,6 +31,7 @@ import {
   createMazeStep2,
   createMazeStep3,
   createMazeStep4,
+  createFpsScene,
   createPbrScene,
   createShadowsScene,
   SceneFactory,
@@ -43,6 +45,7 @@ const scenes: Record<string, SceneFactory> = {
   'maze-1': createMazeStep1,
   'maze-2': createMazeStep2,
   'maze-3': createMazeStep3,
+  fps: createFpsScene,
   city: createCityScene,
   'city-no-occlusion': createCity({ occlusion: false }),
   terrain: createTerrainScene,

@@ -18,12 +18,12 @@ export function multiplyQuat(a: Quat, b: Quat): Quat {
   };
 }
 
-/** A rotation of `angle` radians around the x or the y axis. */
-export function rotationAround(axis: 'x' | 'y', angle: number): Quat {
+/** A rotation of `angle` radians around the x, y or z axis. */
+export function rotationAround(axis: 'x' | 'y' | 'z', angle: number): Quat {
   return {
     x: axis === 'x' ? Math.sin(angle / 2) : 0,
     y: axis === 'y' ? Math.sin(angle / 2) : 0,
-    z: 0,
+    z: axis === 'z' ? Math.sin(angle / 2) : 0,
     w: Math.cos(angle / 2),
   };
 }
