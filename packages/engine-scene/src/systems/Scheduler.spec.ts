@@ -142,6 +142,25 @@ describe('Scheduler', () => {
     expect(runs).toEqual(['camera 0.2', 'move 0.1', 'camera 0.2']);
   });
 
+  it('drops the steps left when a step pauses', () => {
+    const { scheduler } = recording();
+    let steps = 0;
+    // The game ends at the second step: no third one.
+    scheduler.add(
+      'game',
+      () => {
+        if (++steps === 2) {
+          scheduler.paused = true;
+        }
+      },
+      { phase: 'fixed' }
+    );
+    scheduler.update(0.35);
+    expect(steps).toBe(2);
+    expect(scheduler.steps).toBe(2);
+    expect(scheduler.alpha).toBe(0);
+  });
+
   it('caps the steps of a long frame', () => {
     const { scheduler } = recording();
     let steps = 0;

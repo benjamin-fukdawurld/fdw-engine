@@ -1,6 +1,6 @@
 import { Camera } from '@fdw/engine-core';
 import { FakeInputSource, Input } from '@fdw/engine-input';
-import { FixedStep, Scene } from '@fdw/engine-scene';
+import { Scene, Scheduler } from '@fdw/engine-scene';
 import { followAspect, SceneFactory } from '../scene';
 import { mazeActions } from './controls';
 import { Aim } from './aim';
@@ -75,16 +75,18 @@ export const createMazeStep4: SceneFactory = (
     exploration,
     { cube, sphere }
   );
-  const loop = new FixedStep();
-  let last = 0;
   let lightTime = 0;
   let showCulling = false;
+  let aim: { x: number; z: number } | undefined;
 
-  return {
-    frame: (time) => {
-      const dt = Math.min(time - last, 0.1);
-      last = time;
-      // The events since the previous frame.
+  // The frame, in systems: the input at the start, the logic at a fixed
+  // step, the camera and the map once per frame, the rendering last.
+  const scheduler = new Scheduler();
+
+  // begin: the events since the previous frame, and what they switch.
+  scheduler.add(
+    'input',
+    () => {
       input.update();
       followAspect(camera, surface);
       if (actions.button('flashlight').pressed) {
@@ -98,8 +100,15 @@ export const createMazeStep4: SceneFactory = (
       }
       if (actions.button('restart').pressed && game.state !== 'playing') {
         game.reset();
+        scheduler.paused = false;
       }
-      const aim = aimer.update(
+    },
+    { phase: 'begin' }
+  );
+  scheduler.add(
+    'aim',
+    () => {
+      aim = aimer.update(
         input,
         actions,
         eye,
@@ -107,40 +116,68 @@ export const createMazeStep4: SceneFactory = (
         player.position,
         follow.yaw
       );
-      // The logic, at a fixed step.
-      loop.advance(dt, (step) => {
-        if (game.state !== 'playing') {
-          return;
-        }
-        player.update(step, actions, follow.yaw, aim);
-        exploration.walk(player.position);
-        lightTime += step;
-        if (lightTime >= lightPeriod && flashlight.on) {
-          exploration.light(scene, Solid, flashlight.beam);
-          lightTime = 0;
-        }
-        game.update(step);
-      });
-      follow.update(dt, player.position);
-      marker.transform.position = {
-        x: player.position.x,
-        y: 1,
-        z: player.position.z,
-      };
-      map.setPlayer(player.position, player.heading);
-      map.setMarks([
-        ...game.gemCells().map((cell) => ({
-          cell,
-          color: [50, 210, 255] as const,
-        })),
-        {
-          cell: game.exitCell,
-          color:
-            game.collected === game.total
-              ? ([40, 230, 90] as const)
-              : ([200, 30, 20] as const),
-        },
-      ]);
+    },
+    { phase: 'begin', after: ['input'] }
+  );
+
+  // fixed: the logic.
+  scheduler.add(
+    'player',
+    (step) => player.update(step, actions, follow.yaw, aim),
+    { phase: 'fixed' }
+  );
+  scheduler.add(
+    'exploration',
+    (step) => {
+      exploration.walk(player.position);
+      lightTime += step;
+      if (lightTime >= lightPeriod && flashlight.on) {
+        exploration.light(scene, Solid, flashlight.beam);
+        lightTime = 0;
+      }
+    },
+    { phase: 'fixed', after: ['player'] }
+  );
+  scheduler.add(
+    'game',
+    (step) => {
+      game.update(step);
+      // Won or lost: the logic stops at once, the rest goes on.
+      if (game.state !== 'playing') {
+        scheduler.paused = true;
+      }
+    },
+    { phase: 'fixed', after: ['exploration'] }
+  );
+
+  // update: the camera, the markers.
+  scheduler.add('camera', (dt) => follow.update(dt, player.position));
+  scheduler.add('marks', () => {
+    marker.transform.position = {
+      x: player.position.x,
+      y: 1,
+      z: player.position.z,
+    };
+    map.setPlayer(player.position, player.heading);
+    map.setMarks([
+      ...game.gemCells().map((cell) => ({
+        cell,
+        color: [50, 210, 255] as const,
+      })),
+      {
+        cell: game.exitCell,
+        color:
+          game.collected === game.total
+            ? ([40, 230, 90] as const)
+            : ([200, 30, 20] as const),
+      },
+    ]);
+  });
+
+  // render: the view, and the state of the game.
+  scheduler.add(
+    'render',
+    () => {
       const stats = view.render(surface, camera, {
         cullUnlit: true,
         background: { r: 0, g: 0, b: 0 },
@@ -161,6 +198,15 @@ export const createMazeStep4: SceneFactory = (
           ? `${status} · ${stats.drawn} nodes drawn, ${stats.lights} lights`
           : status
       );
+    },
+    { phase: 'render' }
+  );
+
+  let last = 0;
+  return {
+    frame: (time) => {
+      scheduler.update(Math.min(time - last, 0.1));
+      last = time;
     },
     destroy: () => {
       input.dispose();

@@ -141,27 +141,27 @@ une fois les systèmes de la phase `fixed` — le pas à pas d'un débogueur.
 
 ## Le labyrinthe, avec un ordonnanceur
 
-Le [tutoriel du jeu](/fdw-engine/fr/game/the-game/) appelle ses systèmes à
-la main, avec un `FixedStep`. Avec un ordonnanceur, sa frame devient :
+Le [tutoriel du jeu](/fdw-engine/fr/game/the-game/) exécute sa frame avec un
+ordonnanceur : les entrées et la visée dans `begin`, le joueur,
+l'exploration et le jeu dans `fixed`, la caméra et la carte dans `update`,
+la vue dans `render`. Quand la partie est gagnée ou perdue, le système du
+jeu met l'ordonnanceur en pause :
 
 ```ts
-scheduler.add('input', () => input.update(), { phase: 'begin' });
 scheduler.add(
-  'player',
-  (step) => player.update(step, actions, follow.yaw, aim),
-  {
-    phase: 'fixed',
-  }
+  'game',
+  (step) => {
+    game.update(step);
+    if (game.state !== 'playing') {
+      scheduler.paused = true;
+    }
+  },
+  { phase: 'fixed', after: ['exploration'] }
 );
-scheduler.add('game', (step) => game.update(step), {
-  phase: 'fixed',
-  after: ['player'],
-});
-scheduler.add('camera', (dt) => follow.update(dt, player.position));
-scheduler.add('render', () => view.render(surface, camera), {
-  phase: 'render',
-});
 ```
+
+Mis en pause par un pas, l'ordonnanceur abandonne les pas restants de la
+frame : rien ne bouge après la capture, même dans une frame de cinq pas.
 
 ## La suite
 

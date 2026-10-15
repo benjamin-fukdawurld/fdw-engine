@@ -70,7 +70,10 @@ export interface SchedulerOptions {
 export class Scheduler {
   /** The fixed step: `step`, `maxSteps` and `alpha`. */
   readonly fixed: FixedStep;
-  /** Paused, the `fixed` phase stops; the others still run. */
+  /**
+   * Paused, the `fixed` phase stops; the others still run. Paused by a
+   * fixed system, the steps left in the frame are dropped.
+   */
   paused = false;
   /**
    * The speed of the simulated time: 0.25 for a slow motion. The `fixed`
@@ -173,11 +176,19 @@ export class Scheduler {
     runAll(this.ordered().begin, dt);
     this._steps = 0;
     if (!this.paused) {
-      this._steps = this.fixed.advance(dt * this.timeScale, (step) => {
+      this.fixed.advance(dt * this.timeScale, (step) => {
+        // Paused by a step: the steps left in the frame are dropped.
+        if (this.paused) {
+          return;
+        }
         // Sorted again if a step added or removed a system.
         runAll(this.ordered().fixed, step);
         this._time += step;
+        this._steps++;
       });
+      if (this.paused) {
+        this.fixed.reset();
+      }
     }
     runAll(this.ordered().update, dt);
     runAll(this.ordered().render, dt);

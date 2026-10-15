@@ -242,7 +242,8 @@ onFrame((dt) => scheduler.update(dt));
   plus ; `steps`, `time`, et `alpha` (de 0 à 1, où en est la frame entre
   les deux derniers pas, pour dessiner entre eux).
 - **Contrôle** : `paused`, `timeScale` et `step()` n'agissent que sur la
-  phase `fixed` ; `system.enabled`, `remove(name)`, `systems(phase)`.
+  phase `fixed` (mis en pause par un pas, les pas restants de la frame sont
+  abandonnés) ; `system.enabled`, `remove(name)`, `systems(phase)`.
 - Un système est une fonction `(dt) => void` : l'ordonnanceur ne connaît
   pas de monde, et `FixedStep` s'utilise seul.
 

@@ -48,16 +48,47 @@ advance(dt: number, update: (step: number) => void): void {
   frame.
 
 The rendering stays at the rate of the screen: the camera follows the
-character every frame.
+character every frame. A **scheduler** runs the frame: systems in four
+phases — `begin` once, `fixed` at each step, `update` once, `render` last
+— in the order of their constraints:
 
 ```ts title="maze/step4.ts"
-loop.advance(dt, (step) => {
-  player.update(step, actions, follow.yaw, aim);
-  exploration.walk(player.position);
-  game.update(step);
+const scheduler = new Scheduler(); // steps of 1/60 s, 5 at most
+scheduler.add('input', readInput, { phase: 'begin' });
+scheduler.add('aim', aimAtPointer, { phase: 'begin', after: ['input'] });
+
+scheduler.add('player', (step) => player.update(step, actions, follow.yaw, aim), {
+  phase: 'fixed',
 });
-follow.update(dt, player.position);
+scheduler.add('exploration', explore, { phase: 'fixed', after: ['player'] });
+scheduler.add('game', (step) => {
+  game.update(step);
+  // Won or lost: the logic stops at once, the rest goes on.
+  if (game.state !== 'playing') {
+    scheduler.paused = true;
+  }
+}, { phase: 'fixed', after: ['exploration'] });
+
+scheduler.add('camera', (dt) => follow.update(dt, player.position));
+scheduler.add('marks', placeMarks); // the marker, the map
+scheduler.add('render', render, { phase: 'render' });
+
+frame: (time) => {
+  scheduler.update(Math.min(time - last, 0.1));
+  last = time;
+},
 ```
+
+- `paused` stops the `fixed` phase only: once caught, the enemies and the
+  player freeze, while the camera, the map and the rendering go on. R
+  calls `game.reset()`, then `scheduler.paused = false`.
+- Paused by the `game` system, the steps left in the frame are dropped:
+  nothing moves after the catch.
+- The input is read in `begin`, once per frame, before the steps: a press
+  is seen once, even in a frame of two steps.
+
+The tutorial [Systems and the fixed step](/fdw-engine/tutorials/systems/)
+details the scheduler: the order, the pause, drawing between two steps.
 
 ## 2. Gems and enemies: components of the game
 
@@ -118,10 +149,10 @@ update(step: number): void {
 }
 ```
 
-Here the systems are methods of the game, called in the order the game
-chooses. The engine also has a scheduler, which runs systems in order and
-the fixed step for you: see
-[Systems and the fixed step](/fdw-engine/tutorials/systems/).
+These systems of the game are methods, called in this order by the `game`
+system of the scheduler. Each could be a system of the scheduler of its
+own (`{ phase: 'fixed', after: ['walk'] }`); grouped, they share the timer
+of the sight and the state of the game.
 
 ## 4. Walking through the maze
 
@@ -328,7 +359,8 @@ held — a speed, multiplied by the time of the frame.
 
 ## What we have
 
-- Game logic at a fixed step, the rendering at the rate of the screen.
+- A scheduler: game logic at a fixed step, the rendering at the rate of
+  the screen, a pause when the game ends.
 - Gems and enemies as entities, built with nodes, updated by systems over
   the columns of their components.
 - Enemies walking the graph of the maze, and chasing by its shortest paths.
@@ -339,5 +371,5 @@ held — a speed, multiplied by the time of the frame.
 - The keyboard, the mouse and the gamepad, through the same actions.
 
 Some ideas left for later: walls between the camera and the character
-becoming transparent, and the systems run by a
-[scheduler](/fdw-engine/tutorials/systems/).
+becoming transparent, and the character drawn between two steps (see
+[Systems and the fixed step](/fdw-engine/tutorials/systems/)).
