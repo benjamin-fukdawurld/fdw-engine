@@ -62,6 +62,9 @@
     },
     {
       "path": "./packages/engine-input-native"
+    },
+    {
+      "path": "./packages/engine-resources"
     }
   ]
 }
