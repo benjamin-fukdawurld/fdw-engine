@@ -5,7 +5,7 @@
     "emitDeclarationOnly": true,
     "importHelpers": true,
     "isolatedModules": true,
-    "lib": ["es2022", "DOM"],
+    "lib": ["es2022", "DOM", "ESNext.Disposable"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "noEmitOnError": true,
@@ -36,7 +36,8 @@
       "@fdw/engine-camera": ["packages/engine-camera/src/index.ts"],
       "@fdw/engine-input": ["packages/engine-input/src/index.ts"],
       "@fdw/engine-input-web": ["packages/engine-input-web/src/index.ts"],
-      "@fdw/engine-input-native": ["packages/engine-input-native/src/index.ts"]
+      "@fdw/engine-input-native": ["packages/engine-input-native/src/index.ts"],
+      "@fdw/engine-resources": ["packages/engine-resources/src/index.ts"]
     }
   }
 }
