@@ -24,6 +24,7 @@ import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
 import { Route as MaterialGraphRouteRouteImport } from './routes/material-graph/route'
 import { Route as LoadingModelRouteRouteImport } from './routes/loading-model/route'
 import { Route as IndexBufferRouteRouteImport } from './routes/index-buffer/route'
+import { Route as FpsRouteRouteImport } from './routes/fps/route'
 import { Route as FaceCullingRouteRouteImport } from './routes/face-culling/route'
 import { Route as DepthTestingRouteRouteImport } from './routes/depth-testing/route'
 import { Route as CullingRouteRouteImport } from './routes/culling/route'
@@ -108,6 +109,11 @@ const IndexBufferRouteRoute = IndexBufferRouteRouteImport.update({
   path: '/index-buffer',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FpsRouteRoute = FpsRouteRouteImport.update({
+  id: '/fps',
+  path: '/fps',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FaceCullingRouteRoute = FaceCullingRouteRouteImport.update({
   id: '/face-culling',
   path: '/face-culling',
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/culling': typeof CullingRouteRoute
   '/depth-testing': typeof DepthTestingRouteRoute
   '/face-culling': typeof FaceCullingRouteRoute
+  '/fps': typeof FpsRouteRoute
   '/index-buffer': typeof IndexBufferRouteRoute
   '/loading-model': typeof LoadingModelRouteRoute
   '/material-graph': typeof MaterialGraphRouteRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/culling': typeof CullingRouteRoute
   '/depth-testing': typeof DepthTestingRouteRoute
   '/face-culling': typeof FaceCullingRouteRoute
+  '/fps': typeof FpsRouteRoute
   '/index-buffer': typeof IndexBufferRouteRoute
   '/loading-model': typeof LoadingModelRouteRoute
   '/material-graph': typeof MaterialGraphRouteRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/culling': typeof CullingRouteRoute
   '/depth-testing': typeof DepthTestingRouteRoute
   '/face-culling': typeof FaceCullingRouteRoute
+  '/fps': typeof FpsRouteRoute
   '/index-buffer': typeof IndexBufferRouteRoute
   '/loading-model': typeof LoadingModelRouteRoute
   '/material-graph': typeof MaterialGraphRouteRoute
@@ -237,6 +246,7 @@ export interface FileRouteTypes {
     | '/culling'
     | '/depth-testing'
     | '/face-culling'
+    | '/fps'
     | '/index-buffer'
     | '/loading-model'
     | '/material-graph'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/culling'
     | '/depth-testing'
     | '/face-culling'
+    | '/fps'
     | '/index-buffer'
     | '/loading-model'
     | '/material-graph'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/culling'
     | '/depth-testing'
     | '/face-culling'
+    | '/fps'
     | '/index-buffer'
     | '/loading-model'
     | '/material-graph'
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   CullingRouteRoute: typeof CullingRouteRoute
   DepthTestingRouteRoute: typeof DepthTestingRouteRoute
   FaceCullingRouteRoute: typeof FaceCullingRouteRoute
+  FpsRouteRoute: typeof FpsRouteRoute
   IndexBufferRouteRoute: typeof IndexBufferRouteRoute
   LoadingModelRouteRoute: typeof LoadingModelRouteRoute
   MaterialGraphRouteRoute: typeof MaterialGraphRouteRoute
@@ -437,6 +450,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexBufferRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/fps': {
+      id: '/fps'
+      path: '/fps'
+      fullPath: '/fps'
+      preLoaderRoute: typeof FpsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/face-culling': {
       id: '/face-culling'
       path: '/face-culling'
@@ -505,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   CullingRouteRoute: CullingRouteRoute,
   DepthTestingRouteRoute: DepthTestingRouteRoute,
   FaceCullingRouteRoute: FaceCullingRouteRoute,
+  FpsRouteRoute: FpsRouteRoute,
   IndexBufferRouteRoute: IndexBufferRouteRoute,
   LoadingModelRouteRoute: LoadingModelRouteRoute,
   MaterialGraphRouteRoute: MaterialGraphRouteRoute,

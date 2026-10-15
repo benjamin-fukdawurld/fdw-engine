@@ -25,6 +25,9 @@
       "path": "../engine-input/tsconfig.lib.json"
     },
     {
+      "path": "../engine-camera/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-occlusion/tsconfig.lib.json"
     },
     {
