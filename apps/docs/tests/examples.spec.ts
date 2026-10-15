@@ -20,6 +20,7 @@ const examples: Record<string, string> = {
   tessellation: 'tutorials/tessellation/',
   'camera-operators': 'tutorials/camera-operators/',
   'first-person': 'tutorials/first-person/',
+  systems: 'tutorials/systems/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',
@@ -255,6 +256,40 @@ test('first-person-shot', async ({ page: browser }, info) => {
     })
     .toBeGreaterThan(after + frames);
   await expect(canvas).toHaveScreenshot(`first-person-shot-${backend}.png`, {
+    timeout: 20_000,
+  });
+});
+
+// Systems and the fixed step: P pauses, N runs one step at a time. The
+// clock is stopped: only the steps asked for move the balls.
+test('systems-steps', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/systems/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`
+  );
+  const example = browser.locator('[data-example="systems"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  // The first frame runs the 5 steps of 1.5 s, at most.
+  await expect(status).toContainText('0.08 s simulated');
+  await canvas.click();
+  await browser.keyboard.press('KeyP');
+  await expect(status).toContainText('paused');
+  // One press per frame at most: wait for each step.
+  for (const time of ['0.10', '0.12', '0.13']) {
+    await browser.keyboard.press('KeyN');
+    await expect(status).toContainText(`${time} s simulated`);
+  }
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(`systems-steps-${backend}.png`, {
     timeout: 20_000,
   });
 });

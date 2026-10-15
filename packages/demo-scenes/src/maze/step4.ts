@@ -1,11 +1,10 @@
 import { Camera } from '@fdw/engine-core';
 import { FakeInputSource, Input } from '@fdw/engine-input';
-import { Scene } from '@fdw/engine-scene';
+import { FixedStep, Scene } from '@fdw/engine-scene';
 import { followAspect, SceneFactory } from '../scene';
 import { mazeActions } from './controls';
 import { Aim } from './aim';
 import { Exploration } from './exploration';
-import { FixedStep } from './fixedStep';
 import { Flashlight } from './flashlight';
 import { FollowCamera } from './followCamera';
 import { MazeGame } from './game';

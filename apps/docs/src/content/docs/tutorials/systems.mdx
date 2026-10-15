@@ -1,0 +1,166 @@
+---
+title: Systems and the fixed step
+description: Run the systems of an ECS in order with a scheduler, the logic at a fixed step, the rendering at the rate of the screen, drawn between two steps.
+sidebar:
+  order: 18
+---
+
+import Example from '../../../components/Example.astro';
+
+A game is a set of **systems**: the input, the physics, the AI, the
+cameras, the rendering. Each is a function over the entities of the
+[ECS](/fdw-engine/guides/scene-graph/#the-ecs-core). Two questions remain:
+
+- **in which order** do they run? Gravity before the movement, the
+  collisions after it, the rendering last;
+- **how often**? The rendering at the rate of the screen; the logic at a
+  **fixed step**, the same at 30 or at 144 frames per second.
+
+A `Scheduler` answers both. Here, 40 balls bounce in an arena: the
+physics at 60 steps per second, the rendering at the rate of the screen.
+Click the canvas, then: **P** pauses, **N** runs one step while paused,
+**S** slows down, **L** lowers the steps to 10 per second, **I** turns the
+interpolation off — try L, then I, to see why it is there.
+
+<Example name="systems" />
+
+## The phases of a frame
+
+```ts
+import { Scheduler } from '@fdw/engine-scene';
+
+const scheduler = new Scheduler({ step: 1 / 60 });
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add('move', (step) => move(step), { phase: 'fixed' });
+scheduler.add('interpolate', () => interpolate(scheduler.alpha));
+scheduler.add('render', () => renderer.render(view), { phase: 'render' });
+
+onFrame((dt) => scheduler.update(dt));
+```
+
+`scheduler.update(dt)` runs a frame in four phases:
+
+| Phase    | Runs                          | `dt` received     | For                                |
+| -------- | ----------------------------- | ----------------- | ---------------------------------- |
+| `begin`  | once                          | the frame         | the input, the events of the frame |
+| `fixed`  | at each step, 0 or more times | the step (1/60 s) | the logic, the physics             |
+| `update` | once (the default)            | the frame         | the cameras, drawing between steps |
+| `render` | once, last                    | the frame         | the rendering                      |
+
+A system is a plain function: it reaches its world, its queries, its
+renderer by closure. The scheduler knows nothing of them — the same one
+runs a game, an editor or a viewer.
+
+## The order of the systems
+
+In a phase, the systems run in the order they were added, unless they say
+otherwise with `before` and `after`:
+
+```ts
+scheduler.add('move', move, { phase: 'fixed' });
+scheduler.add('bounce', bounce, { phase: 'fixed', after: ['move'] });
+scheduler.add('gravity', gravity, { phase: 'fixed', before: ['move'] });
+scheduler.add('kick', kick, { phase: 'fixed', after: ['bounce'] });
+
+scheduler.systems('fixed').map((system) => system.name);
+// ['gravity', 'move', 'bounce', 'kick']
+```
+
+- A constraint names systems **of the same phase**; one naming a system
+  absent, or of another phase, is ignored: a module can say "after the
+  physics" whether the physics is there or not.
+- A cycle (`a` after `b`, `b` after `a`) is refused when the system that
+  closes it is added: `add()` throws, with the names.
+- The names are unique. `scheduler.remove(name)` takes a system out, even
+  from the phase that is running.
+- `system.enabled = false` skips a system and keeps its place.
+
+## The fixed step
+
+The `fixed` phase runs as many steps as the time of the frame holds:
+
+```ts
+advance(dt: number, update: (step: number) => void): number {
+  this._pending = Math.min(this._pending + dt, this.step * this.maxSteps);
+  while (this._pending >= this.step - 1e-9) {
+    update(this.step);
+    this._pending -= this.step;
+  }
+}
+```
+
+At 144 frames per second, most frames run no step, some one; at 30, each
+runs two. The physics sees the same steps either way: the same inputs give
+the same game. After a long frame (a tab in the background), at most
+`maxSteps` (5) run: the game slows down rather than running hundreds of
+steps at once.
+
+`scheduler.steps` is the number of steps of the last frame,
+`scheduler.time` the simulated time. `FixedStep` is exported too, for a
+loop without a scheduler.
+
+## Drawing between two steps
+
+At 60 steps per second on a 144 Hz screen, a ball moves at one frame out
+of two or three: it stutters. The remedy is to keep the state of the
+**previous step** too, and to draw between the two:
+
+```ts
+// fixed: remember, then move.
+Ball.px[e] = Ball.x[e];
+Ball.x[e] += Ball.vx[e] * step;
+
+// update: where the frame is between the two steps, from 0 to 1.
+const a = scheduler.alpha;
+data[o] = Ball.px[e] + (Ball.x[e] - Ball.px[e]) * a;
+scene.transforms.touch(e);
+```
+
+`alpha` is the time left after the last step, divided by the step. The
+image is at most one step behind the logic — 1/60 s — and moves at every
+frame. Press **L** in the example: 10 steps per second, still smooth; then
+**I**: without interpolation, the balls jump from step to step.
+
+## Pause, slow motion, one step
+
+```ts
+scheduler.paused = true; // the fixed phase stops; the others run
+scheduler.step(); // one step, paused or not
+scheduler.timeScale = 0.25; // a slow motion
+scheduler.fixed.step = 1 / 30; // the length of a step
+```
+
+`paused` and `timeScale` act on the `fixed` phase only: under a pause menu,
+the input, the cameras and the rendering go on. `step()` runs the systems
+of the `fixed` phase once — a debugger's step.
+
+## The maze, with a scheduler
+
+The [game tutorial](/fdw-engine/game/the-game/) calls its systems by hand,
+with a `FixedStep`. With a scheduler, its frame becomes:
+
+```ts
+scheduler.add('input', () => input.update(), { phase: 'begin' });
+scheduler.add(
+  'player',
+  (step) => player.update(step, actions, follow.yaw, aim),
+  {
+    phase: 'fixed',
+  }
+);
+scheduler.add('game', (step) => game.update(step), {
+  phase: 'fixed',
+  after: ['player'],
+});
+scheduler.add('camera', (dt) => follow.update(dt, player.position));
+scheduler.add('render', () => view.render(surface, camera), {
+  phase: 'render',
+});
+```
+
+## Next
+
+- [Scene graph guide](/fdw-engine/guides/scene-graph/): the components, the
+  queries, the scheduler.
+- [First person controls](/fdw-engine/tutorials/first-person/): the input
+  read in the `begin` phase.
