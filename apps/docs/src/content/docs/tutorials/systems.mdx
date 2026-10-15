@@ -136,27 +136,27 @@ of the `fixed` phase once — a debugger's step.
 
 ## The maze, with a scheduler
 
-The [game tutorial](/fdw-engine/game/the-game/) calls its systems by hand,
-with a `FixedStep`. With a scheduler, its frame becomes:
+The [game tutorial](/fdw-engine/game/the-game/) runs its frame with a
+scheduler: the input and the aim in `begin`, the player, the exploration
+and the game in `fixed`, the camera and the map in `update`, the view in
+`render`. When the game is won or lost, the system of the game pauses the
+scheduler:
 
 ```ts
-scheduler.add('input', () => input.update(), { phase: 'begin' });
 scheduler.add(
-  'player',
-  (step) => player.update(step, actions, follow.yaw, aim),
-  {
-    phase: 'fixed',
-  }
+  'game',
+  (step) => {
+    game.update(step);
+    if (game.state !== 'playing') {
+      scheduler.paused = true;
+    }
+  },
+  { phase: 'fixed', after: ['exploration'] }
 );
-scheduler.add('game', (step) => game.update(step), {
-  phase: 'fixed',
-  after: ['player'],
-});
-scheduler.add('camera', (dt) => follow.update(dt, player.position));
-scheduler.add('render', () => view.render(surface, camera), {
-  phase: 'render',
-});
 ```
+
+Paused by a step, the scheduler drops the steps left in the frame: nothing
+moves after the catch, even in a frame of five steps.
 
 ## Next
 

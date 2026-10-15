@@ -226,7 +226,7 @@ onFrame((dt) => scheduler.update(dt));
   `steps`, `time`, and `alpha` (from 0 to 1, where the frame is between
   the last two steps, to draw between them).
 - **Control**: `paused`, `timeScale` and `step()` act on the `fixed` phase
-  only; `system.enabled`, `remove(name)`, `systems(phase)`.
+  only (paused by a step, the steps left in the frame are dropped); `system.enabled`, `remove(name)`, `systems(phase)`.
 - A system is a function `(dt) => void`: the scheduler knows nothing of
   worlds, and `FixedStep` is usable alone.
 

@@ -51,16 +51,47 @@ advance(dt: number, update: (step: number) => void): void {
   frame suivante.
 
 Le rendu reste au rythme de l'écran : la caméra suit le personnage à chaque
-frame.
+frame. Un **ordonnanceur** exécute la frame : des systèmes en quatre phases
+— `begin` une fois, `fixed` à chaque pas, `update` une fois, `render` en
+dernier — dans l'ordre de leurs contraintes :
 
 ```ts title="maze/step4.ts"
-loop.advance(dt, (step) => {
-  player.update(step, actions, follow.yaw, aim);
-  exploration.walk(player.position);
-  game.update(step);
+const scheduler = new Scheduler(); // des pas de 1/60 s, 5 au plus
+scheduler.add('input', readInput, { phase: 'begin' });
+scheduler.add('aim', aimAtPointer, { phase: 'begin', after: ['input'] });
+
+scheduler.add('player', (step) => player.update(step, actions, follow.yaw, aim), {
+  phase: 'fixed',
 });
-follow.update(dt, player.position);
+scheduler.add('exploration', explore, { phase: 'fixed', after: ['player'] });
+scheduler.add('game', (step) => {
+  game.update(step);
+  // Gagné ou perdu : la logique s'arrête aussitôt, le reste continue.
+  if (game.state !== 'playing') {
+    scheduler.paused = true;
+  }
+}, { phase: 'fixed', after: ['exploration'] });
+
+scheduler.add('camera', (dt) => follow.update(dt, player.position));
+scheduler.add('marks', placeMarks); // le repère, la carte
+scheduler.add('render', render, { phase: 'render' });
+
+frame: (time) => {
+  scheduler.update(Math.min(time - last, 0.1));
+  last = time;
+},
 ```
+
+- `paused` n'arrête que la phase `fixed` : une fois le joueur pris, les
+  ennemis et le personnage se figent, la caméra, la carte et le rendu
+  continuent. R appelle `game.reset()`, puis `scheduler.paused = false`.
+- Mis en pause par le système `game`, les pas restants de la frame sont
+  abandonnés : plus rien ne bouge après la capture.
+- Les entrées sont lues dans `begin`, une fois par frame, avant les pas :
+  un appui n'est vu qu'une fois, même dans une frame de deux pas.
+
+Le tutoriel [Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/)
+détaille l'ordonnanceur : l'ordre, la pause, dessiner entre deux pas.
 
 ## 2. Gemmes et ennemis : des composants du jeu
 
@@ -123,10 +154,10 @@ update(step: number): void {
 }
 ```
 
-Ici, les systèmes sont des méthodes du jeu, appelées dans l'ordre que
-choisit le jeu. Le moteur a aussi un ordonnanceur, qui exécute les systèmes
-dans l'ordre et le pas fixe à votre place : voir
-[Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/).
+Ces systèmes du jeu sont des méthodes, appelées dans cet ordre par le
+système `game` de l'ordonnanceur. Chacun pourrait être un système de
+l'ordonnanceur à part entière (`{ phase: 'fixed', after: ['walk'] }`) ;
+regroupés, ils partagent le minuteur de la vue et l'état du jeu.
 
 ## 4. Marcher dans le labyrinthe
 
@@ -343,7 +374,8 @@ la frame.
 
 ## Ce que nous avons
 
-- Une logique de jeu à pas fixe, le rendu au rythme de l'écran.
+- Un ordonnanceur : la logique du jeu à pas fixe, le rendu au rythme de
+  l'écran, une pause à la fin de la partie.
 - Des gemmes et des ennemis en tant qu'entités, construits avec des nœuds,
   mis à jour par des systèmes sur les colonnes de leurs composants.
 - Des ennemis qui parcourent le graphe du labyrinthe, et poursuivent par ses
@@ -355,5 +387,5 @@ la frame.
 - Le clavier, la souris et la manette, à travers les mêmes actions.
 
 Quelques idées laissées pour plus tard : des murs entre la caméra et le
-personnage qui deviennent transparents, et les systèmes exécutés par un
-[ordonnanceur](/fdw-engine/fr/tutorials/systems/).
+personnage qui deviennent transparents, et le personnage dessiné entre deux
+pas (voir [Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/)).

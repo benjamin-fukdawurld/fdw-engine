@@ -47,7 +47,7 @@ onFrame((dt) => scheduler.update(dt));
 - **Phases**: `begin` (once), `fixed` (at each fixed step, `dt` is the step), `update` (once, the default), `render` (once, last).
 - **Order**: the order of addition in a phase, refined by `before` and `after`; a cycle makes `add()` throw.
 - **Fixed step**: at most `maxSteps` per frame; `steps`, `time`, `alpha` to draw between the last two steps. `FixedStep` alone for a loop without a scheduler.
-- **Control**: `paused`, `timeScale`, `step()` (the `fixed` phase only), `system.enabled`, `remove(name)`.
+- **Control**: `paused`, `timeScale`, `step()` (the `fixed` phase only; paused by a step, the steps left in the frame are dropped), `system.enabled`, `remove(name)`.
 
 ## The scene
 
