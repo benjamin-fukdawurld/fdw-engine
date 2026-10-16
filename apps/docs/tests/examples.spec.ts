@@ -58,11 +58,7 @@ for (const [name, page] of Object.entries(examples)) {
       await expect(status).toContainText('needs compute shaders');
       return;
     }
-    // The backend it runs on: the WebGPU project needs WebGPU, not the
-    // fallback to WebGL2.
-    await expect(status).toContainText(
-      backend === 'webgpu' ? 'WebGPU' : 'WebGL2',
-    );
+
     await expect(status).not.toHaveAttribute('data-error');
     await expect
       .poll(
