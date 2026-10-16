@@ -33,6 +33,7 @@ jobs:
         with:
           # nx affected compares with the base of the change.
           fetch-depth: 0
+          lfs: true
 
       - uses: actions/setup-node@v4
         with:
