@@ -1,0 +1,98 @@
+---
+title: Une promenade en ville
+description: Charger un grand modèle glTF, le ramener à l'échelle de la scène, s'y promener avec une caméra à la première personne, et garder des ombres nettes autour du promeneur.
+sidebar:
+  order: 21
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un pâté de maisons de 550 m sur 550 m, lu dans un seul fichier glTF :
+`modern_city_block.glb`, 25 Mo, 7 matériaux et 21 textures. La caméra
+marche dans ses rues, à hauteur des yeux.
+
+Cliquez dans le canvas pour regarder autour de vous à la souris : WASD
+(ZQSD en AZERTY) fait marcher, Maj fait courir, Q et E (A et E en AZERTY)
+montent et descendent. Échap libère le pointeur.
+
+<Example name="city-walk" />
+
+## Charger un grand modèle
+
+```ts
+const city = resources.load<Model>(ModelType, 'modern_city_block.glb');
+city.progress.value; // de 0 à 1, pendant que ses textures arrivent
+await city.ready;
+```
+
+Le store et ses formats sont ceux du
+[chargement de modèles](/fdw-engine/fr/tutorials/loading-models/). Un
+modèle de cette taille prend un moment : la progression de son handle
+compte ses textures, pour une ligne de chargement sous le canvas.
+
+## L'échelle du modèle
+
+```ts
+instantiate(city, scene, { scale: { x: 0.01, y: 0.01, z: 0.01 } });
+```
+
+glTF parle en mètres, mais un fichier exporté d'un autre outil peut garder
+sa propre unité : celui-ci est en centimètres. Ses bornes feraient 55 000
+unités de large, ses rues 1 000 unités. Une échelle de 0,01 sur l'instance
+le ramène en mètres, l'unité de tout le reste : la hauteur des yeux (1,7),
+la vitesse de marche (4 m/s), les plans proche et lointain de la caméra.
+
+La `matrix` de ses nœuds glTF est décomposée en position, rotation et
+échelle : les nœuds du modèle sont des nœuds de la scène comme les autres.
+
+## Marcher
+
+```ts
+const fly = new FlyOperator(camera, new ActionMap(input, FlyActions), {
+  mode: 'walk',
+  position: { x: -34, y: 1.7, z: 189 },
+  yaw: 0.87,
+  speed: 4,
+});
+
+if (!input.pointer.locked && input.pointer.pressed(0)) {
+  input.lockPointer();
+}
+fly.update(dt);
+```
+
+En mode `walk`, l'opérateur reste à l'horizontale : regarder en l'air ne
+soulève pas le promeneur, seuls Q et E le font. `FlyActions` lie
+`pointer:locked` à `drag` : une fois le pointeur verrouillé, la souris
+tourne la vue sans bouton maintenu (voir les
+[contrôles à la première personne](/fdw-engine/fr/tutorials/first-person/)).
+Il n'y a pas de collision ici : le promeneur traverse les murs.
+
+## Des ombres autour du promeneur
+
+```ts
+sun.shadow = { bounds: { center: fly.position, radius: 80 } };
+```
+
+Par défaut, la carte d'ombre d'une lumière directionnelle couvre les bornes
+de tout ce qui est dessiné : tout le pâté de maisons, 550 m sur une seule
+carte, et un texel de la carte est plus large qu'une voiture. Des bornes de
+80 m autour de la caméra donnent la carte à ce qui est vu de près, et la
+déplacent avec elle.
+
+## Le plan lointain
+
+```ts
+projection: { type: 'perspective', fov: 65, near: 0.1, far: 1000 },
+```
+
+Le plan lointain par défaut, 100, coupe le bout des rues. 1 000 m tiennent
+tout le pâté de maisons ; le plan proche reste à 10 cm, pour les murs que
+le promeneur touche.
+
+## Ensuite
+
+Le [chargement de modèles](/fdw-engine/fr/tutorials/loading-models/) pour
+les formats, les instances et la libération d'un niveau ; les
+[contrôles à la première personne](/fdw-engine/fr/tutorials/first-person/)
+pour un menu, un viseur et la manette.

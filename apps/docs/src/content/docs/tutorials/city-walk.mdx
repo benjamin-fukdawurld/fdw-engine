@@ -1,0 +1,95 @@
+---
+title: A walk in a city
+description: Load a large glTF model, bring it to the scale of the scene, walk in it with a first person camera, and keep sharp shadows around the walker.
+sidebar:
+  order: 21
+---
+
+import Example from '../../../components/Example.astro';
+
+A city block of 550 m by 550 m, read from one glTF file:
+`modern_city_block.glb`, 25 MB, 7 materials and 21 textures. The camera
+walks in its streets, at the height of the eyes.
+
+Click the canvas to look around with the mouse: WASD walks, Shift runs,
+Q and E go up and down. Escape releases the pointer.
+
+<Example name="city-walk" />
+
+## Loading a large model
+
+```ts
+const city = resources.load<Model>(ModelType, 'modern_city_block.glb');
+city.progress.value; // from 0 to 1, while its textures come
+await city.ready;
+```
+
+The store and its formats are those of
+[loading models](/fdw-engine/tutorials/loading-models/). A model of this
+size takes a moment: the progress of its handle counts its textures, for a
+loading line under the canvas.
+
+## The scale of the model
+
+```ts
+instantiate(city, scene, { scale: { x: 0.01, y: 0.01, z: 0.01 } });
+```
+
+glTF says meters, but a file exported from another tool may keep its own
+unit: this one is in centimeters. Its bounds would be 55 000 units wide,
+its streets 1 000 units across. A scale of 0.01 on the instance brings it
+to meters, the unit of everything else: the height of the eyes (1.7), the
+speed of the walk (4 m/s), the near and far planes of the camera.
+
+The `matrix` of its glTF nodes is split into a position, a rotation and a
+scale: the nodes of the model are nodes of the scene like the others.
+
+## Walking
+
+```ts
+const fly = new FlyOperator(camera, new ActionMap(input, FlyActions), {
+  mode: 'walk',
+  position: { x: -34, y: 1.7, z: 189 },
+  yaw: 0.87,
+  speed: 4,
+});
+
+if (!input.pointer.locked && input.pointer.pressed(0)) {
+  input.lockPointer();
+}
+fly.update(dt);
+```
+
+In `walk` mode, the operator stays horizontal: looking up does not lift the
+walker, only Q and E do. `FlyActions` binds `pointer:locked` to `drag`:
+once the pointer is locked, the mouse turns the view without a button held
+(see [first person controls](/fdw-engine/tutorials/first-person/)). There
+is no collision here: the walker goes through the walls.
+
+## Shadows around the walker
+
+```ts
+sun.shadow = { bounds: { center: fly.position, radius: 80 } };
+```
+
+By default, the shadow map of a directional light covers the bounds of
+everything drawn: the whole block, 550 m on one map, and a texel of the
+map is wider than a car. Bounds of 80 m around the camera give the map to
+what is seen near, and move with it.
+
+## The far plane
+
+```ts
+projection: { type: 'perspective', fov: 65, near: 0.1, far: 1000 },
+```
+
+The default far plane, 100, cuts the end of the streets. 1 000 m holds the
+whole block; the near plane stays at 10 cm, for the walls that the walker
+touches.
+
+## Next
+
+[Loading models](/fdw-engine/tutorials/loading-models/) for the formats,
+the instances and the release of a level;
+[first person controls](/fdw-engine/tutorials/first-person/) for a menu, a
+crosshair and the gamepad.
