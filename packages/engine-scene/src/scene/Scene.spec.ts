@@ -148,6 +148,29 @@ describe('Scene', () => {
     expect(seen(scene, box10())).toEqual([]);
   });
 
+  it('takes the bounds given to a renderer instead of those of its mesh', () => {
+    const scene = new Scene();
+    // The triangle is within [0, 1]: out of the box until its bounds grow.
+    const node = scene.root
+      .add({ position: { x: 20 } })
+      .setMesh(triangle(), material());
+    expect(seen(scene, box10())).toEqual([]);
+    const box = new Aabb([-15, 0, 0], [0, 1, 1]);
+    node.setBounds(box);
+    expect(seen(scene, box10())).toEqual([node.entity]);
+    expect(Array.from(scene.bounds(new Aabb(), node.entity).min)).toEqual([
+      5, 0, 0,
+    ]);
+    // Changed in place, then given again.
+    box.min[0] = -5;
+    node.setBounds(box);
+    expect(seen(scene, box10())).toEqual([]);
+    node.setBounds(new Aabb([-12, 0, 0], [0, 1, 1]));
+    expect(seen(scene, box10())).toEqual([node.entity]);
+    node.setBounds(undefined);
+    expect(seen(scene, box10())).toEqual([]);
+  });
+
   it('hides the hidden nodes and their descendants, and filters by layers', () => {
     const scene = new Scene();
     const mesh = triangle();

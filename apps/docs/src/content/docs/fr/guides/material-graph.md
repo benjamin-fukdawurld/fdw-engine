@@ -130,6 +130,32 @@ g.vertexAttribute('normal', normal);
 g.surface({ baseColor }); // Placée et éclairée avec eux.
 ```
 
+Une déformation part de l'attribut du mesh qu'elle remplace :
+`g.meshAttribute(sémantique, type)` lit le mesh même quand le graphe
+calcule l'attribut. Le skinning lit la position du mesh et calcule celle
+que lit le reste du graphe (voir
+[Un personnage animé](/fdw-engine/fr/tutorials/character-animation/)).
+
+```ts
+const rest = g.meshAttribute('position', BuiltinTypes.vec3f);
+g.vertexAttribute('position', g.call(std.add, { a: rest, b: wind }));
+```
+
+Un outil ajoute des nœuds à un graphe qu'il n'a pas construit avec
+`GraphBuilder.extend(graph)` : un builder qui reprend ses nœuds, ses
+arêtes, ses paramètres et ses fonctions, et dont `build()` donne un
+nouveau graphe.
+
+## Le cœur de graph
+
+Les nœuds, les ports typés, les arêtes, les registres, les diagnostics, la
+sérialisation et les vérifications de structure (ports inconnus, entrée qui
+reçoit deux arêtes, cycles) viennent de `@fdw/engine-graph`, commun à tous
+les types de graphes : les material graphs, les animation graphs (voir le
+guide [Animation](/fdw-engine/fr/guides/animation/)) et, plus tard, les
+graphs de comportement. Le material graph y ajoute ses types, son
+inférence et son compilateur.
+
 ## Fonctions
 
 Une fonction est un graphe doté de nœuds `functionInput` et `functionOutput`,

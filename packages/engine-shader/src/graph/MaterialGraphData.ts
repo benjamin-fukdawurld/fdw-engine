@@ -1,12 +1,16 @@
+import type {
+  GraphDocument,
+  GraphEdge as CoreGraphEdge,
+  GraphNode as CoreGraphNode,
+  PortRef,
+} from '@fdw/engine-graph';
 import type { ConstantValue } from '../types/ConstantValue';
 import type { ShaderType } from '../types/ShaderType';
 
-/**
- * Id of a node, unique in its graph.
- *
- * @group Graph model
- */
-export type NodeId = string;
+// The model of the graph core (engine-graph), with the values of the
+// material graphs.
+export { portKey } from '@fdw/engine-graph';
+export type { NodeId, PortRef } from '@fdw/engine-graph';
 
 /**
  * A compile-time value. Shader types are plain objects, so a graph made of
@@ -22,27 +26,13 @@ export type StaticValue =
  *
  * @group Graph model
  */
-export interface GraphNode {
-  /** Id of the node, unique in the graph. */
-  readonly id: NodeId;
+export interface GraphNode extends CoreGraphNode<StaticValue, ConstantValue> {
   /** Id of the NodeDefinition: 'std.mul', 'input.uniform'… */
   readonly type: string;
   /** Compile-time parameters of the node. */
   readonly params: Readonly<Record<string, StaticValue>>;
-  /** Values of unconnected inputs, overriding the port defaults. */
-  readonly defaults?: Readonly<Record<string, ConstantValue>>;
   /** Used to name the generated variables. */
   readonly label?: string;
-}
-
-/**
- * A port of a node.
- *
- * @group Graph model
- */
-export interface PortRef {
-  readonly node: NodeId;
-  readonly port: string;
 }
 
 /**
@@ -50,11 +40,7 @@ export interface PortRef {
  *
  * @group Graph model
  */
-export interface GraphEdge {
-  /** An output port. */
-  readonly from: PortRef;
-  /** An input port. */
-  readonly to: PortRef;
+export interface GraphEdge extends CoreGraphEdge {
   /** Applied to the output value: 'xyz', 'x', 'rg'… */
   readonly swizzle?: string;
 }
@@ -108,26 +94,14 @@ export interface GraphFunctionData {
   readonly graph: MaterialGraphData;
 }
 
-export interface MaterialGraphData {
+export interface MaterialGraphData extends GraphDocument<GraphNode, GraphEdge> {
   readonly format: typeof MaterialGraphFormat;
   readonly version: typeof MaterialGraphVersion;
-  readonly name: string;
-  /** The nodes, in no particular order. */
-  readonly nodes: readonly GraphNode[];
-  /** The connections between the nodes. */
-  readonly edges: readonly GraphEdge[];
   /** Static parameters declared by the graph. */
   readonly parameters?: readonly GraphParameterDeclaration[];
   /** The function graphs called by the graph. */
   readonly functions?: readonly GraphFunctionData[];
 }
-
-/**
- * A string identifying a port: `node:port`.
- *
- * @group Graph model
- */
-export const portKey = (ref: PortRef): string => `${ref.node}:${ref.port}`;
 
 /**
  * A value feeding an input: an output port (possibly swizzled) or a literal.

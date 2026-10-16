@@ -411,8 +411,9 @@ export function lowerSurface(
 /**
  * The vertex attributes computed by the graph: every input.attribute whose
  * semantic has an output.attribute node reads its value instead, and the
- * output.attribute nodes are removed. After the surface lowering and the
- * macros, which add attributes of their own.
+ * output.attribute nodes are removed, except the reads of the mesh (`mesh`:
+ * a deformer reading the attribute it replaces). After the surface lowering
+ * and the macros, which add attributes of their own.
  */
 export function lowerComputedAttributes(
   graph: WorkingGraph,
@@ -440,7 +441,9 @@ export function lowerComputedAttributes(
   for (const [semantic, value] of computed) {
     const reads = [...graph.nodes.values()].filter(
       (node) =>
-        node.type === 'input.attribute' && node.params['semantic'] === semantic,
+        node.type === 'input.attribute' &&
+        node.params['semantic'] === semantic &&
+        node.params['mesh'] !== true,
     );
     if ('ref' in value && dependsOn(graph, value.ref.node, reads)) {
       diagnostics.push({

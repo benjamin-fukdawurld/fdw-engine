@@ -1,0 +1,151 @@
+---
+title: An animated character
+description: Load a skinned glTF character, drive its clips with an animation graph — a blend space, a state machine, a layer — and skin it on the GPU.
+sidebar:
+  order: 22
+---
+
+import Example from '../../../components/Example.astro';
+
+A character read from a glTF file, `character.glb`: a mesh skinned to 18
+joints, and five clips, Idle, Walk, Run, Jump and Wave. An animation graph
+blends idle, walk and run by its speed, jumps in a state machine, and waves
+the right hand on a layer of the upper body. It walks around a circle, its
+footsteps counted.
+
+The example plays a loop of 16 s. Click the canvas to take over: W and S
+change the speed, Space jumps, E waves.
+
+<Example name="character-animation" />
+
+## Skinning the model
+
+```ts
+const handle = resources.load<Model>(ModelType, 'character.glb');
+const model = await handle.ready;
+const character = instantiate(handle, scene);
+const skinning = new Skinning(backend, character, model);
+```
+
+The model is loaded and instantiated as any other (see
+[loading models](/fdw-engine/tutorials/loading-models/)): its joints are
+nodes of the scene. `Skinning` finds the nodes with a glTF skin and gives
+each of their primitives a material of its own: the graph of the material
+of the model, with the skinning added.
+
+- On **WebGPU** and Vulkan, a compute pass skins the vertices once per
+  frame, into a buffer that the vertex stage of every pass reads: the
+  camera, the shadow map, later the ray tracing.
+- On **WebGL2**, without compute, the vertex stage of each pass skins its
+  vertex, the joint matrices read from a texture.
+
+The line under the canvas says which one runs; `{ mode: 'vertex' }` forces
+the second anywhere.
+
+## The skeleton and the clips
+
+```ts
+const skeleton = skinning.skeleton;
+const clips = clipsOf(model, skeleton);
+clips['Walk'] = clips['Walk'].withEvents([
+  { time: 0.22, name: 'step' },
+  { time: 0.77, name: 'step' },
+]);
+```
+
+The skeleton holds the nodes of the model, each after its parent;
+`clipsOf` reads its glTF animations as clips of the skeleton, by name. glTF
+has no events: the moments the feet touch the ground are added here.
+
+## The animation graph
+
+```ts
+const g = new AnimationGraphBuilder('character');
+g.parameter('speed', 'number');
+g.parameter('jump', 'trigger');
+g.parameter('wave', 'number');
+
+const locomotion = g.blend1d(
+  [g.clip('Idle'), g.clip('Walk'), g.clip('Run')],
+  [0, 1.3, 3.6],
+  g.param('speed'),
+);
+```
+
+**A blend space** places a pose at each point of a parameter: idle at 0,
+walk at 1.3 m/s, run at 3.6 m/s. At 2 m/s, walk and run are blended. The
+blend is synchronized: the two clips share a phase, which advances by
+their blended duration, so the feet stay in step whatever the speed.
+
+```ts
+const body = g.stateMachine({
+  label: 'body',
+  states: { locomotion, jump: g.clip('Jump', { loop: false }) },
+  transitions: [
+    { from: 'locomotion', to: 'jump', trigger: 'jump', duration: 0.1 },
+    { from: 'jump', to: 'locomotion', exitTime: 0.95, duration: 0.25 },
+  ],
+});
+```
+
+**A state machine** has a pose per state. The jump starts when its trigger
+is set, with a cross-fade of 0.1 s, and consumes it; it goes back to the
+locomotion at 95 % of its clip (`exitTime`, in cycles of the state).
+Transitions can also hold `conditions` on the parameters, such as
+`{ parameter: 'speed', op: '>', value: 0.1 }`.
+
+```ts
+g.output(
+  g.layer(body, g.clip('Wave'), {
+    mask: 'rightArm',
+    weight: g.param('wave'),
+  }),
+);
+const animator = new Animator(g.build(), {
+  skeleton,
+  clips,
+  masks: {
+    rightArm: BoneMask.branches(skeleton, { 'upperArm.R': 1, head: 0.5 }),
+  },
+});
+```
+
+**A layer** puts a pose over another, on the joints of a mask: the right
+arm and, half, the head. The legs go on walking under it.
+
+The graph is data: `serializeAnimationGraph(graph)` writes it as JSON,
+`parseAnimationGraph` reads it back, for a file or an editor.
+
+## Each frame
+
+```ts
+animator.set('speed', speed).set('wave', waving ? 1 : 0);
+if (jumpPressed) animator.trigger('jump');
+animator.update(dt);
+skinning.applyPose(animator.pose).update();
+renderer.render({ source: scene, camera, surface });
+```
+
+The animator advances the clips, chooses the transitions and gives a pose:
+the local transform of each joint. `applyPose` gives it to the nodes;
+`update` computes the joint matrices from their world matrices, sends them
+to the GPU, runs the compute pass, and moves the bounds of the mesh with
+the joints, so that the culling and the shadows follow the character.
+
+## Events and states
+
+```ts
+animator.onEvent((event) => {
+  if (event.name === 'step') steps++;
+});
+animator.state('body'); // { state: 'jump', next: 'locomotion', progress: 0.4, … }
+```
+
+An update reaches the events of the clips it plays. A blend keeps the
+events of its heavier pose: one step per foot, not one per clip blended;
+a layer keeps the events of both.
+
+## Next
+
+The [Animation](/fdw-engine/guides/animation/) guide for every node, the
+masks, the additive layers and the details of the skinning.

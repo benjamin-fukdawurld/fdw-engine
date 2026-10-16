@@ -150,6 +150,8 @@ Démo : la forêt avec des modèles chargés ; la page « Charger des modèles �
 
 ### P6. Cœur de graph et animation
 
+_Faite_ (16 octobre 2026), avec son tutoriel « Un personnage animé » et le guide « Animation » : le design et ce qui a été fait sont dans [p6-animation.md](p6-animation.md). `engine-graph` (le cœur, le material graph réécrit dessus), `engine-animation` (squelettes, clips, poses, mélanges, masques, l'animation graph et son `Animator`), `engine-skinning` (en calcul en WebGPU et Vulkan, dans le vertex stage en WebGL2). Reportés : la démo jouable du personnage (avec P8), le root motion, les morph targets.
+
 - **Un cœur de graph commun** : extraire du material graph ce qui est général (nœuds, ports typés, sérialisation, validation), pour les matériaux, les animations, les comportements (P9) et, plus tard, leurs éditeurs.
 - **L'animation squelettique** : le skinning dans une passe de calcul, dont les sommets servent au rendu, aux ombres et plus tard au ray tracing (§6) — en WebGL2, sans calcul, le repli est le transform feedback ou le vertex shader —, les clips de glTF, l'échantillonnage et les mélanges.
 - **L'animation graph** : machines à états, mélanges (blend trees), couches et masques, événements (un pas, un coup d'épée).

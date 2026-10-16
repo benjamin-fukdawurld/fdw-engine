@@ -1,12 +1,20 @@
+import {
+  basicParamCheck,
+  checkDefaults,
+  checkParams,
+  hasNoError,
+  incomingEdges,
+  resolveEdges,
+  resolveNodes,
+  topologicalOrder,
+} from '@fdw/engine-graph';
 import { ShaderType } from '../types/ShaderType';
 import { Diagnostic } from './Diagnostic';
 import { NodeTypes, resolveNodeTypes } from './inference';
 import {
-  GraphEdge,
   GraphNode,
   MaterialGraphData,
   NodeId,
-  portKey,
   StaticValue,
 } from './MaterialGraphData';
 import {
@@ -74,24 +82,6 @@ function checkParam(
   value: StaticValue,
 ): string | undefined {
   switch (schema.kind) {
-    case 'string':
-      if (typeof value !== 'string') {
-        return `parameter "${name}" must be a string`;
-      }
-      if (schema.values && !schema.values.includes(value)) {
-        return `parameter "${name}" must be one of ${schema.values
-          .map((allowed) => `"${allowed}"`)
-          .join(', ')}, got "${value}"`;
-      }
-      return undefined;
-    case 'number':
-      return typeof value === 'number'
-        ? undefined
-        : `parameter "${name}" must be a number`;
-    case 'boolean':
-      return typeof value === 'boolean'
-        ? undefined
-        : `parameter "${name}" must be a boolean`;
     case 'type':
       return isShaderTypeValue(value)
         ? undefined
@@ -102,6 +92,8 @@ function checkParam(
         (Array.isArray(value) && value.every((v) => typeof v === 'number'))
         ? undefined
         : `parameter "${name}" must be a number, a boolean or an array of numbers`;
+    default:
+      return basicParamCheck(name, schema, value);
   }
 }
 
@@ -126,36 +118,12 @@ export function resolveGraphNode(
     return undefined;
   }
 
-  const schemas = definition.params ?? {};
-  let paramsValid = true;
-  for (const [name, schema] of Object.entries(schemas)) {
-    const value = node.params[name] ?? schema.default;
-    if (value === undefined) {
-      if (schema.required) {
-        diagnostics.push({
-          severity: 'error',
-          node: node.id,
-          message: `missing required parameter "${name}"`,
-        });
-        paramsValid = false;
-      }
-      continue;
-    }
-    const error = checkParam(name, schema, value);
-    if (error) {
-      diagnostics.push({ severity: 'error', node: node.id, message: error });
-      paramsValid = false;
-    }
-  }
-  for (const name of Object.keys(node.params)) {
-    if (!(name in schemas)) {
-      diagnostics.push({
-        severity: 'warning',
-        node: node.id,
-        message: `unknown parameter "${name}" for node type "${node.type}"`,
-      });
-    }
-  }
+  const paramsValid = checkParams(
+    node,
+    definition.params ?? {},
+    (name, schema, value) => checkParam(name, schema, value as StaticValue),
+    diagnostics,
+  );
   if (!paramsValid) {
     return undefined;
   }
@@ -350,51 +318,6 @@ function checkResourceDeclarations(
   }
 }
 
-// Kahn's algorithm. Returns undefined when the graph has a cycle, after
-// reporting the nodes involved.
-function topologicalOrder(
-  nodes: ReadonlyMap<NodeId, ResolvedNode>,
-  edges: readonly GraphEdge[],
-  diagnostics: Diagnostic[],
-): NodeId[] | undefined {
-  const inDegree = new Map<NodeId, number>();
-  const successors = new Map<NodeId, NodeId[]>();
-  for (const id of nodes.keys()) {
-    inDegree.set(id, 0);
-    successors.set(id, []);
-  }
-  for (const edge of edges) {
-    inDegree.set(edge.to.node, (inDegree.get(edge.to.node) ?? 0) + 1);
-    successors.get(edge.from.node)?.push(edge.to.node);
-  }
-
-  const ready = [...nodes.keys()].filter((id) => inDegree.get(id) === 0);
-  const order: NodeId[] = [];
-  while (ready.length > 0) {
-    const id = ready.shift() as NodeId;
-    order.push(id);
-    for (const successor of successors.get(id) ?? []) {
-      const degree = (inDegree.get(successor) ?? 0) - 1;
-      inDegree.set(successor, degree);
-      if (degree === 0) {
-        ready.push(successor);
-      }
-    }
-  }
-
-  if (order.length < nodes.size) {
-    const cycle = [...nodes.keys()].filter((id) => !order.includes(id));
-    diagnostics.push({
-      severity: 'error',
-      message: `the graph has a cycle involving nodes ${cycle
-        .map((id) => `#${id}`)
-        .join(', ')}`,
-    });
-    return undefined;
-  }
-  return order;
-}
-
 /**
  * Validates a graph: node types and parameters, edges and swizzles, cycles,
  * output nodes, resource declarations and types. Returns the topological
@@ -410,97 +333,29 @@ export function validateGraph(
   registry: NodeRegistry,
 ): GraphValidation {
   const diagnostics: Diagnostic[] = [];
-  const nodes = new Map<NodeId, ResolvedNode>();
-  const seenIds = new Set<NodeId>();
-
-  for (const node of graph.nodes) {
-    if (seenIds.has(node.id)) {
-      diagnostics.push({
-        severity: 'error',
-        node: node.id,
-        message: `duplicate node id "${node.id}"`,
-      });
-      continue;
-    }
-    seenIds.add(node.id);
-
-    const resolved = resolveGraphNode(node, registry, diagnostics);
-    if (resolved) {
-      nodes.set(node.id, resolved);
-    }
-  }
+  const { seen, resolved: nodes } = resolveNodes(
+    graph.nodes,
+    (node) => resolveGraphNode(node, registry, diagnostics),
+    diagnostics,
+  );
 
   // Edges between ports that exist; the others are reported and ignored.
-  const edges: GraphEdge[] = [];
-  const connectedInputs = new Set<string>();
-  for (const edge of graph.edges) {
-    const edgeLabel = `edge ${edge.from.node}.${edge.from.port} → ${edge.to.node}.${edge.to.port}`;
-    if (!seenIds.has(edge.from.node) || !seenIds.has(edge.to.node)) {
-      diagnostics.push({
-        severity: 'error',
-        message: `${edgeLabel} references an unknown node`,
-      });
-      continue;
-    }
-    const source = nodes.get(edge.from.node);
-    const target = nodes.get(edge.to.node);
-    if (!source || !target) {
-      // The node itself is invalid and already reported.
-      continue;
-    }
-    if (!source.outputs.some((port) => port.name === edge.from.port)) {
-      diagnostics.push({
-        severity: 'error',
-        node: edge.from.node,
-        port: edge.from.port,
-        message: `${edgeLabel}: node type "${source.node.type}" has no output "${edge.from.port}"`,
-      });
-      continue;
-    }
-    if (!target.inputs.some((port) => port.name === edge.to.port)) {
-      diagnostics.push({
-        severity: 'error',
-        node: edge.to.node,
-        port: edge.to.port,
-        message: `${edgeLabel}: node type "${target.node.type}" has no input "${edge.to.port}"`,
-      });
-      continue;
-    }
-    if (edge.swizzle !== undefined && !parseSwizzle(edge.swizzle)) {
-      diagnostics.push({
-        severity: 'error',
-        node: edge.to.node,
-        port: edge.to.port,
-        message: `${edgeLabel}: invalid swizzle ".${edge.swizzle}"`,
-      });
-      continue;
-    }
-    const key = portKey(edge.to);
-    if (connectedInputs.has(key)) {
-      diagnostics.push({
-        severity: 'error',
-        node: edge.to.node,
-        port: edge.to.port,
-        message: 'an input can only receive one edge',
-      });
-      continue;
-    }
-    connectedInputs.add(key);
-    edges.push(edge);
-  }
-
-  for (const resolved of nodes.values()) {
-    for (const name of Object.keys(resolved.node.defaults ?? {})) {
-      if (!resolved.inputs.some((port) => port.name === name)) {
-        diagnostics.push({
-          severity: 'warning',
-          node: resolved.node.id,
-          port: name,
-          message: `default value for unknown input "${name}"`,
-        });
-      }
-    }
-  }
+  const edges = resolveEdges(
+    graph.edges,
+    seen,
+    nodes,
+    diagnostics,
+    (edge, label) =>
+      edge.swizzle !== undefined && !parseSwizzle(edge.swizzle)
+        ? {
+            severity: 'error',
+            node: edge.to.node,
+            port: edge.to.port,
+            message: `${label}: invalid swizzle ".${edge.swizzle}"`,
+          }
+        : undefined,
+  );
+  checkDefaults(nodes.values(), diagnostics);
 
   checkResourceDeclarations(nodes, diagnostics);
   checkFunctionPorts(nodes, diagnostics);
@@ -515,11 +370,8 @@ export function validateGraph(
   }
 
   const types = new Map<NodeId, NodeTypes>();
-  const order = topologicalOrder(nodes, edges, diagnostics) ?? [];
-  const incoming = new Map<NodeId, GraphEdge[]>();
-  for (const edge of edges) {
-    incoming.set(edge.to.node, [...(incoming.get(edge.to.node) ?? []), edge]);
-  }
+  const order = topologicalOrder(nodes.keys(), edges, diagnostics) ?? [];
+  const incoming = incomingEdges(edges);
 
   for (const id of order) {
     const resolved = nodes.get(id) as ResolvedNode;
@@ -579,7 +431,7 @@ export function validateGraph(
   }
 
   return {
-    valid: diagnostics.every((diagnostic) => diagnostic.severity !== 'error'),
+    valid: hasNoError(diagnostics),
     diagnostics,
     nodes,
     order,

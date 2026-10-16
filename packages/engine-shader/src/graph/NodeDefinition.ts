@@ -1,3 +1,7 @@
+import {
+  type ParamSchema as CoreParamSchema,
+  resolveParams as resolveCoreParams,
+} from '@fdw/engine-graph';
 import type { ConstantValue } from '../types/ConstantValue';
 import type { NodeRegistry } from './NodeRegistry';
 import type { PortType } from '../types/PortType';
@@ -66,12 +70,9 @@ export type ParamKind = 'string' | 'number' | 'boolean' | 'type' | 'constant';
  *
  * @group Node definitions
  */
-export interface ParamSchema {
+export interface ParamSchema extends CoreParamSchema<ParamKind, StaticValue> {
   readonly kind: ParamKind;
-  /** Allowed values, for string parameters. */
-  readonly values?: readonly string[];
   readonly default?: StaticValue;
-  readonly required?: boolean;
 }
 
 /**
@@ -318,11 +319,5 @@ export function resolveParams(
   definition: NodeDefinition,
   params: StaticParams,
 ): StaticParams {
-  const resolved: Record<string, StaticValue> = {};
-  for (const [name, schema] of Object.entries(definition.params ?? {})) {
-    if (schema.default !== undefined) {
-      resolved[name] = schema.default;
-    }
-  }
-  return { ...resolved, ...params };
+  return resolveCoreParams(definition.params, params);
 }

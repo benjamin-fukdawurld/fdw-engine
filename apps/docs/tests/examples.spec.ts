@@ -24,6 +24,7 @@ const examples: Record<string, string> = {
   'loading-models': 'tutorials/loading-models/',
   resources: 'tutorials/resources/',
   'city-walk': 'tutorials/city-walk/',
+  'character-animation': 'tutorials/character-animation/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',

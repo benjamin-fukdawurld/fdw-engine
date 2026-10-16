@@ -26,7 +26,7 @@ import type { NodeDefinition, StaticParams } from './NodeDefinition';
 import { NodeRegistry } from './NodeRegistry';
 import { composeSwizzles, swizzleType } from './swizzle';
 import { resolveGraphNode, validateGraph } from './validateGraph';
-import { isGraphFunction } from './functions';
+import { isGraphFunction, registryWithFunctions } from './functions';
 
 /**
  * A typed reference to an output port of a node, possibly swizzled.
@@ -168,6 +168,44 @@ export class GraphBuilder {
   constructor(name: string, registry: NodeRegistry = createStandardRegistry()) {
     this.name = name;
     this.registry = registry;
+  }
+
+  /**
+   * A builder that goes on from a graph: its nodes, edges, parameters and
+   * functions, to add nodes to (a tool adding the skinning to the graph of
+   * a material). The graph is not changed; `build()` makes another one.
+   *
+   * @param name - Name of the new graph; that of `graph` by default.
+   */
+  static extend(
+    graph: MaterialGraphData,
+    {
+      name = graph.name,
+      registry = createStandardRegistry(),
+    }: { name?: string; registry?: NodeRegistry } = {},
+  ): GraphBuilder {
+    const builder = new GraphBuilder(
+      name,
+      registryWithFunctions(registry, graph),
+    );
+    builder._nodes.push(...graph.nodes);
+    builder._edges.push(...graph.edges);
+    builder._parameters.push(...(graph.parameters ?? []));
+    for (const node of graph.nodes) {
+      const match = /^n(\d+)$/.exec(node.id);
+      if (match) {
+        builder._nextId = Math.max(builder._nextId, Number(match[1]) + 1);
+      }
+      if (builder.registry.get(node.type)?.category === 'output') {
+        builder._outputTypes.push(node.type);
+      }
+    }
+    // Ids not of the builder: new ones go after them, whatever they are.
+    const ids = new Set(graph.nodes.map((node) => node.id));
+    while (ids.has(`n${builder._nextId}`)) {
+      builder._nextId++;
+    }
+    return builder;
   }
 
   /**
@@ -361,6 +399,24 @@ export class GraphBuilder {
       'input.attribute',
       {},
       { params: { semantic, type }, label },
+    );
+  }
+
+  /**
+   * Reads a vertex attribute of the mesh, even when the graph computes it
+   * ({@link GraphBuilder.vertexAttribute}): the value a deformer starts
+   * from. The skinning reads the position of the mesh and computes the
+   * position that the rest of the graph reads.
+   */
+  meshAttribute(
+    semantic: string,
+    type: ShaderType,
+    label?: string,
+  ): PortHandle {
+    return this.call(
+      'input.attribute',
+      {},
+      { params: { semantic, type, mesh: true }, label },
     );
   }
 

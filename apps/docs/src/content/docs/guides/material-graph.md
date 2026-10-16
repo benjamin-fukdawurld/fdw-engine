@@ -126,6 +126,31 @@ g.vertexAttribute('normal', normal);
 g.surface({ baseColor }); // Placed and lit with them.
 ```
 
+A deformer starts from the attribute of the mesh it replaces:
+`g.meshAttribute(semantic, type)` reads the mesh even when the graph
+computes the attribute. The skinning reads the position of the mesh and
+computes the one the rest of the graph reads (see
+[An animated character](/fdw-engine/tutorials/character-animation/)).
+
+```ts
+const rest = g.meshAttribute('position', BuiltinTypes.vec3f);
+g.vertexAttribute('position', g.call(std.add, { a: rest, b: wind }));
+```
+
+A tool adds nodes to a graph it did not build with
+`GraphBuilder.extend(graph)`: a builder holding its nodes, edges,
+parameters and functions, whose `build()` gives a new graph.
+
+## The graph core
+
+The nodes, the typed ports, the edges, the registries, the diagnostics,
+the serialization and the structural checks (unknown ports, an input
+receiving two edges, cycles) come from `@fdw/engine-graph`, shared by
+every kind of graph: the material graphs, the animation graphs (see the
+[Animation](/fdw-engine/guides/animation/) guide), and the behavior graphs
+to come. The material graph adds its types, its inference and its
+compiler.
+
 ## Functions
 
 A function is a graph with `functionInput` and `functionOutput` nodes,

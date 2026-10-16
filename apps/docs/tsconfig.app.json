@@ -62,6 +62,15 @@
     },
     {
       "path": "../../packages/engine-gltf/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-graph/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-animation/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-skinning/tsconfig.lib.json"
     }
   ]
 }

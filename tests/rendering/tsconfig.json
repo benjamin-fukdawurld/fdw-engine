@@ -8,28 +8,37 @@
   "include": ["vitest.config.mts", "src/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/engine-core"
+      "path": "../../packages/engine-tessellation"
     },
     {
-      "path": "../../packages/engine-shader"
+      "path": "../../packages/engine-skinning"
     },
     {
-      "path": "../../packages/engine-webgpu"
-    },
-    {
-      "path": "../../packages/engine-webgl2"
-    },
-    {
-      "path": "../../packages/engine-backend"
-    },
-    {
-      "path": "../../packages/engine-vulkan"
+      "path": "../../packages/engine-scene"
     },
     {
       "path": "../../packages/engine-occlusion"
     },
     {
-      "path": "../../packages/engine-tessellation"
+      "path": "../../packages/engine-assets"
+    },
+    {
+      "path": "../../packages/engine-webgl2"
+    },
+    {
+      "path": "../../packages/engine-vulkan"
+    },
+    {
+      "path": "../../packages/engine-webgpu"
+    },
+    {
+      "path": "../../packages/engine-backend"
+    },
+    {
+      "path": "../../packages/engine-shader"
+    },
+    {
+      "path": "../../packages/engine-core"
     }
   ]
 }
