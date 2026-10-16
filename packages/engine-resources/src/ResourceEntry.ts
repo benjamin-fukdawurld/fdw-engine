@@ -63,13 +63,16 @@ export interface Staged {
 
 export interface HandleHost {
   releaseHandle(handle: HandleImpl<any>): void;
+  cloneHandle<T>(handle: HandleImpl<T>): HandleImpl<T>;
 }
 
 export class ResourceEntry<T> {
   readonly status = signal<ResourceStatus>('pending');
   readonly error = signal<ResourceError | undefined>(undefined);
   readonly version = signal(0);
-  readonly selfProgress = signal<{ loaded: number; total?: number }>({ loaded: 0 });
+  readonly selfProgress = signal<{ loaded: number; total?: number }>({
+    loaded: 0,
+  });
   /** The dependencies being loaded (or loaded), for the aggregated progress. */
   readonly depHandles = signal<readonly HandleImpl<any>[]>([]);
   readonly totalBytes: ReadonlySignal<number | undefined>;
@@ -89,6 +92,8 @@ export class ResourceEntry<T> {
   dirty: false | 'update' | 'replace' = false;
   disposed = false;
   watched = false;
+  /** Its bytes are a sub-resource of another entry: that one is watched. */
+  virtual = false;
   unwatch: Array<() => void> = [];
   debounce?: ReturnType<typeof setTimeout>;
 
@@ -122,7 +127,10 @@ export class ResourceEntry<T> {
         },
       ];
       for (const dep of this.depHandles.value) {
-        parts.push({ fraction: dep.entry.progress.value, weight: dep.entry.totalBytes.value });
+        parts.push({
+          fraction: dep.entry.progress.value,
+          weight: dep.entry.totalBytes.value,
+        });
       }
       const weighted = parts.every((p) => p.weight !== undefined);
       const sum = weighted ? parts.reduce((s, p) => s + p.weight!, 0) : 0;
@@ -174,7 +182,10 @@ export class HandleImpl<T> implements ResourceHandle<T> {
       const aborted = () => new ResourceError('aborted', this.entry.uri);
       // Already loaded: the current value, which a reload may have changed
       // since the first load.
-      if (this.entry.status.peek() === 'ready' && this.entry.value !== undefined) {
+      if (
+        this.entry.status.peek() === 'ready' &&
+        this.entry.value !== undefined
+      ) {
         resolve(this.entry.value);
         return;
       }
@@ -191,11 +202,18 @@ export class HandleImpl<T> implements ResourceHandle<T> {
 
   require(): T {
     const status = this.entry.status.peek();
-    if (status === 'ready' && this.entry.value !== undefined) return this.entry.value;
+    if (status === 'ready' && this.entry.value !== undefined)
+      return this.entry.value;
     throw (
       (status === 'failed' ? this.entry.error.peek() : undefined) ??
       new Error(`Resource ${this.entry.uri} is not ready (${status})`)
     );
+  }
+
+  clone(): ResourceHandle<T> {
+    if (this.state.released)
+      throw new Error(`The handle of ${this.entry.uri} is released`);
+    return this.host.cloneHandle(this);
   }
 
   release(): void {

@@ -1,6 +1,10 @@
 import type { ResourceBytes } from '@fdw/engine-resources';
 import { createImageBitmapDecoder } from './BitmapImageDecoder';
-import type { DecodedImage, ImageDecodeOptions, ImageDecoder } from './ImageDecoder';
+import type {
+  DecodedImage,
+  ImageDecodeOptions,
+  ImageDecoder,
+} from './ImageDecoder';
 import { serveWorker, type WorkerPool, type WorkerScope } from './WorkerPool';
 
 interface DecodeRequest {
@@ -23,7 +27,10 @@ export function createWorkerImageDecoder(
   { transferBytes = true }: WorkerImageDecoderOptions = {}
 ): ImageDecoder {
   return {
-    decode(bytes: ResourceBytes, { signal, mimeType }: ImageDecodeOptions = {}): Promise<DecodedImage> {
+    decode(
+      bytes: ResourceBytes,
+      { signal, mimeType }: ImageDecodeOptions = {}
+    ): Promise<DecodedImage> {
       const request: DecodeRequest = { bytes, mimeType };
       return pool.run<DecodedImage>(request, {
         transfer: transferBytes ? [bytes.buffer] : undefined,
@@ -47,4 +54,6 @@ export function serveImageDecoder(
 
 /** A worker running `serveImageDecoder`, for `new WorkerPool({ create })`. */
 export const createImageDecoderWorker = (): Worker =>
-  new Worker(new URL('./imageDecoder.worker.ts', import.meta.url), { type: 'module' });
+  new Worker(new URL('./imageDecoder.worker.ts', import.meta.url), {
+    type: 'module',
+  });

@@ -8,7 +8,11 @@ import type {
   RenderTargetDescriptor,
 } from '@fdw/engine-backend';
 import { BufferFactory } from '../gpu/BufferFactory';
-import { MaxAnisotropy, TextureFactory } from '../gpu/TextureFactory';
+import {
+  compressedFormats,
+  MaxAnisotropy,
+  TextureFactory,
+} from '../gpu/TextureFactory';
 import { cameraMath, transformMath } from '../math';
 import {
   WebGpuCommandBuffer,
@@ -31,6 +35,8 @@ export class WebGpuRenderBackend implements RenderBackend {
   constructor(readonly device: GPUDevice) {
     this.capabilities = {
       renderableFormats: ['rgba16float'],
+      // Those of the features of the device (see WebGpuEngine).
+      compressedFormats: compressedFormats(device.features),
       // The object data in a table of storage buffers.
       objectTable: true,
       maxAnisotropy: MaxAnisotropy,

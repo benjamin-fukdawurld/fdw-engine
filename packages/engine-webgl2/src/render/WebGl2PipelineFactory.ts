@@ -18,7 +18,10 @@ import {
 } from '@fdw/engine-backend';
 import type { CompiledProgram } from '@fdw/engine-shader';
 import { GL, lazy } from '../gl';
-import { combinedSamplers } from '../shader/combinedSamplers';
+import {
+  combinedSamplers,
+  orientationUniform,
+} from '../shader/combinedSamplers';
 import {
   GlslEsCodegen,
   glslBlockName,
@@ -41,6 +44,9 @@ export interface WebGl2Program {
     readonly texture: BindingRef;
     // None for the textures read by textureLoad (texelFetch).
     readonly sampler?: BindingRef;
+    // The orientation of a 2d texture (see orientationUniform), set when
+    // it is bound.
+    readonly orientation?: WebGLUniformLocation;
   }[];
   // The object table: its two data textures on the units after those of
   // the samplers, and the uniform of the first instance of a draw.
@@ -371,6 +377,8 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
           return [];
         }
         gl.uniform1i(location, unit);
+        const name = orientationUniform(sampler);
+        const orientation = name && gl.getUniformLocation(program, name);
         return [
           {
             unit,
@@ -378,6 +386,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
             ...(sampler.sampler !== undefined
               ? { sampler: bindingOf.get(sampler.sampler) as BindingRef }
               : {}),
+            ...(orientation ? { orientation } : {}),
           },
         ];
       }

@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { addonPath } from './addon';
 import { VulkanEngine } from './VulkanEngine';
 import { VulkanOffscreenSurface } from './VulkanOffscreenSurface';
+import { compressedBlock } from '@fdw/engine-backend';
 import { canRun } from '@fdw/engine-backend/testing';
 
 const built = canRun(
@@ -85,6 +86,88 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
     );
     texture.destroy();
     hdr.destroy();
+  });
+
+  it('writes the levels given, and a level alone', async () => {
+    const pixels = (count: number, color: number[]) =>
+      Uint8Array.from({ length: count * 4 }, (_, i) => color[i % 4]);
+    const texture = backend().textures.createTexture({
+      type: '2d',
+      format: 'rgba8unorm',
+      dimensions: { width: 4, height: 4 },
+      usage: ['sampled', 'copy-src', 'copy-dst'],
+      levels: [
+        pixels(16, [255, 0, 0, 255]),
+        pixels(4, [0, 255, 0, 255]),
+        pixels(1, [0, 0, 255, 255]),
+      ],
+    });
+    expect(texture.mipLevelCount).toBe(3);
+    expect([...new Uint8Array(await texture.read()).subarray(0, 4)]).toEqual([
+      255, 0, 0, 255,
+    ]);
+    // The first level is kept.
+    backend().textures.writeTexture(texture, pixels(4, [9, 9, 9, 9]), {
+      level: 1,
+    });
+    expect([...new Uint8Array(await texture.read()).subarray(60)]).toEqual([
+      255, 0, 0, 255,
+    ]);
+    expect(() =>
+      backend().textures.writeTexture(texture, pixels(2, [0, 0, 0, 0]), {
+        level: 1,
+      })
+    ).toThrow(/level 1 takes 16 bytes, not 8/);
+
+    // A face of a cube: the others are kept.
+    const cube = backend().textures.createTexture({
+      type: 'cube',
+      format: 'rgba8unorm',
+      dimensions: { width: 2, height: 2, layers: 6 },
+      usage: ['sampled', 'copy-src', 'copy-dst'],
+      source: pixels(24, [1, 2, 3, 4]),
+    });
+    backend().textures.writeTexture(cube, pixels(4, [5, 6, 7, 8]), {
+      layer: 3,
+    });
+    // The first face is read back.
+    expect([...new Uint8Array(await cube.read()).subarray(0, 4)]).toEqual([
+      1, 2, 3, 4,
+    ]);
+    texture.destroy();
+    cube.destroy();
+  });
+
+  it('writes the compressed formats the device has', () => {
+    const formats = backend().capabilities.compressedFormats ?? [];
+    for (const format of formats) {
+      // 8 × 8 with 4 levels: 4 blocks, then 1 for 4 × 4, 2 × 2 and 1 × 1.
+      const bytes = compressedBlock(format)?.bytes ?? 0;
+      const texture = backend().textures.createTexture({
+        type: '2d',
+        format,
+        dimensions: { width: 8, height: 8 },
+        usage: ['sampled', 'copy-src', 'copy-dst'],
+        levels: [4, 1, 1, 1].map((blocks) => new Uint8Array(blocks * bytes)),
+      });
+      backend().textures.writeTexture(texture, new Uint8Array(bytes), {
+        level: 2,
+      });
+      expect(() => texture.read()).toThrow(/cannot be read back/);
+      texture.destroy();
+    }
+    expect(() =>
+      backend().textures.createTexture({
+        type: '2d',
+        format: 'bc7-rgba-unorm',
+        dimensions: { width: 4, height: 4 },
+        source: new Uint8Array(4),
+      })
+    ).toThrow(
+      formats.includes('bc7-rgba-unorm')
+        ? /takes 16 bytes, not 4/
+        : /not supported by the device/
+    );
   });
 
   it('keeps the content of a loaded attachment, and copies textures', async () => {

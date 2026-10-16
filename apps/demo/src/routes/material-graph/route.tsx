@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
-import { Engine, RenderBackend, Surface } from '@fdw/engine-backend';
+import { Engine, Surface } from '@fdw/engine-backend';
+import { TextureType, type Texture } from '@fdw/engine-assets';
+import type { ResourceScope } from '@fdw/engine-resources';
 import {
   Camera,
   DirectionalLight,
@@ -13,7 +15,7 @@ import {
 } from '@fdw/engine-core';
 import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import Layout from '../../components/Layout';
-import { axisAngle, createCube } from '../../utils3d/geometry';
+import { axisAngle, createCube, demoResources } from '../../utils3d';
 
 export const Route = createFileRoute('/material-graph')({
   component: RouteComponent,
@@ -72,26 +74,10 @@ function glassGraph() {
   return g.build();
 }
 
-// Color textures are sRGB, decoded to linear colors by the GPU; data
-// textures (specular, shininess…) are linear.
-async function loadTexture(
-  backend: RenderBackend,
-  url: string,
-  colorSpace: 'srgb' | 'linear' = 'srgb'
-) {
-  const image = await createImageBitmap(await (await fetch(url)).blob());
-  return backend.textures.createTexture({
-    label: url,
-    type: '2d',
-    format: colorSpace === 'srgb' ? 'rgba8unorm-srgb' : 'rgba8unorm',
-    dimensions: { width: image.width, height: image.height },
-    source: image,
-  });
-}
-
 function RouteComponent() {
   const frameRef = useRef<number | undefined>(undefined);
   const rendererRef = useRef<Renderer | undefined>(undefined);
+  const scopeRef = useRef<ResourceScope | undefined>(undefined);
 
   // Stop rendering when leaving the route.
   useEffect(
@@ -100,6 +86,7 @@ function RouteComponent() {
         cancelAnimationFrame(frameRef.current);
       }
       rendererRef.current?.destroy();
+      scopeRef.current?.dispose();
     },
     []
   );
@@ -112,13 +99,15 @@ function RouteComponent() {
     const renderer = new Renderer(backend);
     rendererRef.current = renderer;
 
+    // A color texture (sRGB by default) with its sampler, from the store
+    // of the demo.
+    const scope = demoResources(backend).scope('material-graph');
+    scopeRef.current = scope;
+    const map = await scope.load<Texture>(TextureType, 'cube.png').ready;
     const cube = createCube();
     const textured = new Material({
       graph: texturedGraph(),
-      values: {
-        map: await loadTexture(backend, '/cube.png'),
-        mapSampler: backend.textures.createSampler(),
-      },
+      values: { map: map.texture, mapSampler: map.sampler },
     });
     const pulsing = new Material({ graph: pulsingGraph() });
     const glass = new Material({

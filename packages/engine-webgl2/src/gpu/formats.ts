@@ -7,6 +7,9 @@ export interface GlTextureFormat {
   readonly type: GLenum;
   readonly bytesPerPixel: number;
   readonly depth?: boolean;
+  // The extension of a compressed format (written by blocks with
+  // compressedTexSubImage*, its format, type and bytesPerPixel unused).
+  readonly extension?: string;
 }
 
 const color = (
@@ -80,8 +83,65 @@ const formats = lazy(
   })
 );
 
+// The compressed formats, by extension: the constants are those of the
+// extensions, absent from WebGL2RenderingContext.
+const compressedFormats: Record<string, Record<string, GLenum>> = {
+  WEBGL_compressed_texture_s3tc: {
+    'bc1-rgba-unorm': 0x83f1, // COMPRESSED_RGBA_S3TC_DXT1_EXT
+    'bc3-rgba-unorm': 0x83f3, // COMPRESSED_RGBA_S3TC_DXT5_EXT
+  },
+  WEBGL_compressed_texture_s3tc_srgb: {
+    'bc1-rgba-unorm-srgb': 0x8c4d, // COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT
+    'bc3-rgba-unorm-srgb': 0x8c4f, // COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT
+  },
+  EXT_texture_compression_rgtc: {
+    'bc4-r-unorm': 0x8dbb, // COMPRESSED_RED_RGTC1_EXT
+    'bc5-rg-unorm': 0x8dbd, // COMPRESSED_RED_GREEN_RGTC2_EXT
+  },
+  EXT_texture_compression_bptc: {
+    'bc6h-rgb-ufloat': 0x8e8f, // COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT
+    'bc7-rgba-unorm': 0x8e8c, // COMPRESSED_RGBA_BPTC_UNORM_EXT
+    'bc7-rgba-unorm-srgb': 0x8e8d, // COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT
+  },
+  WEBGL_compressed_texture_etc: {
+    'etc2-rgb8unorm': 0x9274, // COMPRESSED_RGB8_ETC2
+    'etc2-rgb8unorm-srgb': 0x9275, // COMPRESSED_SRGB8_ETC2
+    'etc2-rgba8unorm': 0x9278, // COMPRESSED_RGBA8_ETC2_EAC
+    'etc2-rgba8unorm-srgb': 0x9279, // COMPRESSED_SRGB8_ALPHA8_ETC2_EAC
+    'eac-r11unorm': 0x9270, // COMPRESSED_R11_EAC
+    'eac-rg11unorm': 0x9272, // COMPRESSED_RG11_EAC
+  },
+  WEBGL_compressed_texture_astc: {
+    'astc-4x4-unorm': 0x93b0, // COMPRESSED_RGBA_ASTC_4x4_KHR
+    'astc-4x4-unorm-srgb': 0x93d0, // COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR
+  },
+};
+
+const compressed: Record<string, GlTextureFormat> = Object.fromEntries(
+  Object.entries(compressedFormats).flatMap(([extension, formats]) =>
+    Object.entries(formats).map(([format, internalFormat]) => [
+      format,
+      { internalFormat, format: 0, type: 0, bytesPerPixel: 0, extension },
+    ])
+  )
+);
+
+/**
+ * The compressed formats of a context: those of the extensions it has,
+ * enabled by the call.
+ */
+export function glCompressedFormats(
+  gl: WebGL2RenderingContext
+): GpuTextureFormat[] {
+  return Object.entries(compressedFormats).flatMap(([extension, formats]) =>
+    gl.getExtension(extension) ? Object.keys(formats) : []
+  );
+}
+
 export function glTextureFormat(format: GpuTextureFormat): GlTextureFormat {
-  const result = formats()[format];
+  const result = Object.hasOwn(compressed, format)
+    ? compressed[format]
+    : formats()[format];
   if (!result) {
     throw new Error(`Texture format ${format} is not supported by WebGL2`);
   }

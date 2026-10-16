@@ -1,7 +1,12 @@
 import {
-  checkMipLevelCount,
+  canGenerateMipmaps,
   checkReadRegion,
+  checkTextureContent,
+  checkTextureWrite,
+  GpuTextureFormatNames,
+  isCompressedFormat,
   samplerAnisotropy,
+  textureLayerCount,
 } from '@fdw/engine-backend';
 import type {
   GpuRenderTarget,
@@ -16,6 +21,7 @@ import type {
   GpuTextureRegion,
   GpuTextureType,
   GpuTextureUsage,
+  GpuTextureWriteOptions,
 } from '@fdw/engine-backend';
 import {
   ContextHandle,
@@ -85,13 +91,27 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
 
   /**
    * Writes the first level of every layer, rows from the top, tightly
-   * packed, then computes the other levels.
+   * packed, then computes the other levels where they can be.
    */
   write(data: ArrayBufferView): void {
     this._addon.writeTexture(this.handle, data);
-    if (this.mipLevelCount > 1) {
+    if (this.mipLevelCount > 1 && canGenerateMipmaps(this.format)) {
       this._addon.generateMipmaps(this.handle);
     }
+  }
+
+  /**
+   * Writes the layers [layer, layer + layers) of a level (the depth of a
+   * 3d texture): rows from the top, tightly packed, by blocks for the
+   * compressed formats. The other levels are kept.
+   */
+  writeLevel(
+    data: ArrayBufferView,
+    level: number,
+    layer: number,
+    layers: number
+  ): void {
+    this._addon.writeTextureLevel(this.handle, data, level, layer, layers);
   }
 
   /**
@@ -185,19 +205,38 @@ export class VulkanTextureFactory
   implements GpuTextureFactory<never>, GpuSamplerFactory
 {
   defaultMaxAnisotropy = 1;
+  // The compressed formats the device can write and sample.
+  readonly compressedFormats: readonly GpuTextureFormat[];
 
   constructor(
     private readonly _addon: VulkanAddon,
     private readonly _context: ContextHandle
-  ) {}
+  ) {
+    this.compressedFormats = GpuTextureFormatNames.filter(
+      (format) =>
+        isCompressedFormat(format) && _addon.formatSupported(_context, format)
+    );
+  }
 
   createTexture(
     descriptor: GpuTextureConfiguration & {
       source?: ArrayBufferView<ArrayBuffer>;
+      levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
     }
   ): VulkanTexture {
-    const { type, format, dimensions, label, source, readwrite } = descriptor;
+    const { type, format, dimensions, label, source, levels, readwrite } =
+      descriptor;
+    const mipLevelCount = checkTextureContent(descriptor);
+    // A clear error rather than a validation one.
+    if (
+      isCompressedFormat(format) &&
+      !this.compressedFormats.includes(format)
+    ) {
+      throw new Error(
+        `Texture format ${format} is not supported by the device`
+      );
+    }
     const usage: GpuTextureUsage[] = [
       ...(descriptor.usage ?? ['sampled', 'copy-dst']),
       ...(readwrite ? (['render-attachment'] as const) : []),
@@ -210,17 +249,30 @@ export class VulkanTextureFactory
       dimensions,
       usage,
       descriptor.sampleCount ?? 1,
-      checkMipLevelCount(descriptor),
+      mipLevelCount,
       label
     );
     if (source) {
       texture.write(source);
     }
+    // Written as they are, every layer of each.
+    levels?.forEach((data, level) =>
+      texture.writeLevel(data, level, 0, textureLayerCount(texture))
+    );
     return texture;
   }
 
-  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
-    (texture as VulkanTexture).write(data);
+  writeTexture(
+    texture: GpuTexture,
+    data: ArrayBufferView<ArrayBuffer>,
+    options?: GpuTextureWriteOptions
+  ): void {
+    if (options?.level === undefined && options?.layer === undefined) {
+      (texture as VulkanTexture).write(data);
+      return;
+    }
+    const { level, layer, layers } = checkTextureWrite(texture, data, options);
+    (texture as VulkanTexture).writeLevel(data, level, layer, layers);
   }
 
   readTexture(

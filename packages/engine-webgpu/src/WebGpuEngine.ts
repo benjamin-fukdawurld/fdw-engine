@@ -1,5 +1,6 @@
 import { Engine, EngineState } from '@fdw/engine-backend';
 import { signal, Signal } from '@preact/signals-core';
+import { CompressionFeatures } from './gpu/TextureFactory';
 import { WebGpuRenderBackend } from './render/WebGpuRenderBackend';
 
 export type WebGpuEngineOptions = {
@@ -49,11 +50,13 @@ export class WebGpuEngine extends EventTarget implements Engine {
         throw new Error('Failed to get GPU adapter');
       }
       this.adapter = adapter;
-      // Timestamps, to measure the passes, where the adapter has them.
+      // Timestamps, to measure the passes, and the compressed formats,
+      // where the adapter has them.
+      const features = ['timestamp-query', ...Object.keys(CompressionFeatures)];
       this.device = await adapter.requestDevice({
-        requiredFeatures: adapter.features.has('timestamp-query')
-          ? ['timestamp-query']
-          : [],
+        requiredFeatures: features.filter((feature) =>
+          adapter.features.has(feature)
+        ) as GPUFeatureName[],
       });
       this.backend = new WebGpuRenderBackend(this.device);
       this.backend.textures.defaultMaxAnisotropy = this._maxAnisotropy;

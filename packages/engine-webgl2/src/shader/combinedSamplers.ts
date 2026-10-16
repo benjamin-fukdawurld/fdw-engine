@@ -24,6 +24,16 @@ export interface CombinedSampler {
   readonly comparison: boolean;
 }
 
+// The uniform of the orientation of a 2d texture (undefined for the other
+// types): a vec2 (a, b), its v read as a + b × v. 2d textures are stored
+// bottom row first when they are uploaded flipped or rendered to, (1, -1);
+// top row first for the compressed ones, whose blocks cannot be flipped,
+// (0, 1) (see WebGl2Texture.flipped). Set by the pipeline at draw time.
+export const orientationUniform = (
+  sampler: CombinedSampler
+): string | undefined =>
+  sampler.type.dimension === '2d' ? `${sampler.name}_v` : undefined;
+
 // The pairs sampled by a program, in order of first use (vertex stage
 // first): the same order for the code generator and the pipeline.
 export function combinedSamplers(

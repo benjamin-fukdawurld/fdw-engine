@@ -149,6 +149,15 @@ FDW_VK_API uint32_t fdw_vk_texture_pixel_size(const fdw_vk_texture *texture);
 FDW_VK_API int fdw_vk_texture_write(fdw_vk_context *context,
                                     fdw_vk_texture *texture, const void *data,
                                     uint64_t size);
+// Writes the layers [layer, layer + layer_count) of a level (the depth of
+// a 3d texture): rows from the top, tightly packed, layer after layer; rows
+// of blocks for the compressed formats (a level of 2 × 2 pixels is a block
+// of 4 × 4). In the order of the queue; the other levels are kept.
+FDW_VK_API int fdw_vk_texture_write_level(fdw_vk_context *context,
+                                          fdw_vk_texture *texture,
+                                          uint32_t level, uint32_t layer,
+                                          uint32_t layer_count,
+                                          const void *data, uint64_t size);
 // Computes the levels of a texture after the first one, in the order of the
 // queue (after the writes before), as FDW_VK_CMD_GENERATE_MIPMAPS.
 FDW_VK_API int fdw_vk_texture_generate_mipmaps(fdw_vk_context *context,
@@ -187,6 +196,10 @@ FDW_VK_API int32_t fdw_vk_independent_blend(const fdw_vk_context *context);
 // The highest max_anisotropy of the samplers (1: no anisotropic filtering);
 // higher ones are clamped to it.
 FDW_VK_API float fdw_vk_max_anisotropy(const fdw_vk_context *context);
+// Whether the device can write and sample textures of a format of the
+// engine ("bc7-rgba-unorm"…): 1 or 0.
+FDW_VK_API int32_t fdw_vk_format_supported(const fdw_vk_context *context,
+                                           const char *format);
 FDW_VK_API void fdw_vk_sampler_destroy(fdw_vk_context *context,
                                        fdw_vk_sampler *sampler);
 FDW_VK_API uint32_t fdw_vk_sampler_id(const fdw_vk_sampler *sampler);

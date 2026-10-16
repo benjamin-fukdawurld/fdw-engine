@@ -1,6 +1,7 @@
 export * from './types';
 export * from './errors';
 export * from './uri';
+export * from './sniff';
 export * from './LoadContext';
 export * from './ResourceLoader';
 export * from './ResourceSource';

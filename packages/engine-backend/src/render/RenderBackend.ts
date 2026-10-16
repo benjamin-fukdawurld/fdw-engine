@@ -67,6 +67,9 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   // Color formats usable as render pass attachments, besides rgba8unorm and
   // the formats of the surfaces (e.g. rgba16float for HDR rendering).
   readonly renderableFormats?: readonly GpuTextureFormat[];
+  // The compressed formats the device can sample (bc7-rgba-unorm…, see
+  // compressedBlock): the loaders pick among them. None when absent.
+  readonly compressedFormats?: readonly GpuTextureFormat[];
   // The highest anisotropy of the samplers (1: no anisotropic filtering).
   // Higher values are clamped to it.
   readonly maxAnisotropy?: number;

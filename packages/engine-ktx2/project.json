@@ -1,0 +1,7 @@
+{
+  "name": "engine-ktx2",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-ktx2/src",
+  "projectType": "library",
+  "tags": []
+}

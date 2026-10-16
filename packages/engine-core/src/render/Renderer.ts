@@ -295,6 +295,8 @@ type PipelineEntry =
 
 interface GpuMesh {
   version: number;
+  // Stops listening to the destruction of the mesh.
+  unsubscribe: () => void;
   vertexBuffers: GpuBuffer[];
   indexBuffer?: GpuBuffer;
 }
@@ -1262,6 +1264,21 @@ export class Renderer {
     return targets ? written : written.color;
   }
 
+  /**
+   * Frees the GPU buffers of a mesh now; they are made again if it is drawn
+   * later. Called by `mesh.destroy()` for every renderer that uploaded it.
+   */
+  releaseMesh(mesh: Mesh): void {
+    const gpu = this._meshes.get(mesh);
+    if (!gpu) {
+      return;
+    }
+    this._meshes.delete(mesh);
+    gpu.unsubscribe();
+    gpu.vertexBuffers.forEach((buffer) => buffer.destroy());
+    gpu.indexBuffer?.destroy();
+  }
+
   destroy(): void {
     for (const view of this._views.values()) {
       view.buffer?.destroy();
@@ -2215,12 +2232,18 @@ export class Renderer {
     if (gpu && gpu.version === mesh.version) {
       return gpu;
     }
+    if (mesh.destroyed) {
+      throw new Error(`The mesh "${mesh.label ?? 'mesh'}" is destroyed`);
+    }
     gpu?.vertexBuffers.forEach((buffer) => buffer.destroy());
     gpu?.indexBuffer?.destroy();
+    const unsubscribe =
+      gpu?.unsubscribe ?? mesh.onDestroy(() => this.releaseMesh(mesh));
 
     const label = mesh.label ?? 'mesh';
     gpu = {
       version: mesh.version,
+      unsubscribe,
       vertexBuffers: mesh.vertices.map((data, i) =>
         this.backend.buffers.create({
           label: `${label} vertices ${i}`,

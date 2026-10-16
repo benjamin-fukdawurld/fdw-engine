@@ -25,6 +25,8 @@ export interface ResourceHandle<T> {
   require(): T; // throws when not ready
   readonly dependencies: readonly ResourceHandle<unknown>[];
 
+  /** Another handle to the same entry, released on its own (a model instance keeps its model). */
+  clone(): ResourceHandle<T>;
   // Idempotent. The last handle of an entry that is loading cancels the load.
   release(): void;
   [Symbol.dispose](): void; // `using handle = store.load(…)`

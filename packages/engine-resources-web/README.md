@@ -1,6 +1,6 @@
 # @fdw/engine-resources-web
 
-The web platform extensions of FdwEngine's resource system: browser image decoding, file sources, hot-reload watching and worker-based processing. Built on top of `@fdw/engine-resources`, without a graphics backend dependency. See [design/resources.md](../../design/resources.md) (in French).
+The web platform extensions of FdwEngine's resource system: browser image decoding, file sources, hot-reload watching and worker-based processing. Built on top of `@fdw/engine-resources`, without a graphics backend dependency. See [design/p5-resources.md](../../design/p5-resources.md) (in French).
 
 The package provides the browser-specific implementations while `@fdw/engine-resources` owns resource identity, caching, dependencies, cancellation and lifetime management.
 
@@ -15,10 +15,18 @@ The package provides the browser-specific implementations while `@fdw/engine-res
 ## Usage
 
 ```ts
-import { WorkerPool, createImageBitmapDecoder, createWorkerImageDecoder,
-         createImageDecoderWorker, FileSource, hotChannel, withChangeChannel } from '@fdw/engine-resources-web';
+import {
+  WorkerPool,
+  createImageBitmapDecoder,
+  createWorkerImageDecoder,
+  createImageDecoderWorker,
+  FileSource,
+  hotChannel,
+  withChangeChannel,
+} from '@fdw/engine-resources-web';
 
-// Decode on the main thread…
+// Decode on the main thread… (`bitmapCodec(decoder)` of @fdw/engine-assets
+// makes it an image codec of the store)
 const decoder = createImageBitmapDecoder();
 // …or in a pool of workers (the buffer is transferred, not copied).
 const pool = new WorkerPool({ create: createImageDecoderWorker });
@@ -30,7 +38,14 @@ resources.mount('files', files);
 dropZone.ondrop = (e) => files.addFromDataTransfer(e.dataTransfer!);
 
 // Hot reload from the Vite dev server.
-resources.mount('http', withChangeChannel(new HttpSource({ base: '/' }), hotChannel(import.meta.hot!)), { default: true });
+resources.mount(
+  'http',
+  withChangeChannel(
+    new HttpSource({ base: '/' }),
+    hotChannel(import.meta.hot!)
+  ),
+  { default: true }
+);
 resources.watch(true);
 ```
 

@@ -12,6 +12,8 @@ export class Mesh {
   private _vertices: ArrayBufferView<ArrayBuffer>[];
   private _indices?: IndexData;
   private _version = 0;
+  private _destroyed = false;
+  private _onDestroy?: Set<(mesh: Mesh) => void>;
 
   constructor({
     description,
@@ -53,6 +55,34 @@ export class Mesh {
     this._indices = indices;
   }
 
+  // Destroyed meshes cannot be drawn.
+  get destroyed(): boolean {
+    return this._destroyed;
+  }
+
+  /**
+   * Calls `listener` when the mesh is destroyed: the renderers that
+   * uploaded it free its buffers. Returns the function that unsubscribes.
+   */
+  onDestroy(listener: (mesh: Mesh) => void): () => void {
+    (this._onDestroy ??= new Set()).add(listener);
+    return () => this._onDestroy?.delete(listener);
+  }
+
+  /**
+   * Frees the GPU buffers of the mesh in every renderer that drew it, at
+   * once rather than when it is collected. Idempotent.
+   */
+  destroy(): void {
+    if (this._destroyed) {
+      return;
+    }
+    this._destroyed = true;
+    const listeners = this._onDestroy;
+    this._onDestroy = undefined;
+    listeners?.forEach((listener) => listener(this));
+  }
+
   get description(): MeshDescription {
     return this._description;
   }
@@ -80,6 +110,27 @@ export class Mesh {
       throw new Error('The vertex count of an indexed mesh cannot change');
     }
     this._description = { ...this._description, vertexCount: count };
+    return this;
+  }
+
+  /**
+   * Replaces the indices, as many as before, in the same format: a model
+   * reloaded in place.
+   */
+  setIndices(data: IndexData): this {
+    const description = this._description.indexBuffer;
+    if (!description) {
+      throw new Error('The mesh has no index buffer');
+    }
+    const expected =
+      description.format === 'uint16' ? Uint16Array : Uint32Array;
+    if (!(data instanceof expected) || data.length !== description.count) {
+      throw new Error(
+        `The indices must be ${description.count} values in a ${expected.name}`
+      );
+    }
+    this._indices = data;
+    this._version++;
     return this;
   }
 

@@ -1,0 +1,14 @@
+# The material of the sphere: Phong with diffuse, specular and shininess
+# maps. The shininess map multiplies Ns by its red channel.
+newmtl sphere
+  Ns 255.0000
+  Ni 1.5000
+  d 1.0000
+  illum 2
+  Ka 0.0000 0.0000 0.0000
+  Kd 1.0000 1.0000 1.0000
+  Ks 1.0000 1.0000 1.0000
+  Ke 0.0000 0.0000 0.0000
+  map_Kd sphere-diffuse.png
+  map_Ks sphere-specular.png
+  map_Ns sphere-shininess.png

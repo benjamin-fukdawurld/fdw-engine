@@ -38,3 +38,10 @@ export interface LoadGroup {
 }
 
 export type ResourceBytes = Uint8Array<ArrayBuffer>;
+
+/**
+ * The bytes of a sub-resource (an image embedded in a GLB), provided by the
+ * loader of its parent with `ctx.provide(ResourceBytesType, 'image/0', bytes)`.
+ * `ctx.bytes()` of `model.glb#image/0` reads them instead of the file.
+ */
+export const ResourceBytesType = defineResourceType<ResourceBytes>('bytes');

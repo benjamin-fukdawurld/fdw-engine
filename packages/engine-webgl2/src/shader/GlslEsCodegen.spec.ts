@@ -176,7 +176,7 @@ describe('GlslEsCodegen', () => {
     // The reference depth after the uv, whose v is flipped as for every 2d
     // texture.
     expect(fragment).toMatch(
-      /textureLod\(ts0_shadowMap_shadowSampler, vec3\(vec2\((v\d+)\.x, 1\.0 - \1\.y\), v\d+\), 0\.0\)/
+      /textureLod\(ts0_shadowMap_shadowSampler, vec3\(vec2\((v\d+)\.x, ts0_shadowMap_shadowSampler_v\.x \+ ts0_shadowMap_shadowSampler_v\.y \* \1\.y\), v\d+\), 0\.0\)/
     );
     expect(glslSamplerType(BuiltinTypes.depthTexture2d, true)).toBe(
       'sampler2DShadow'
@@ -254,8 +254,10 @@ describe('GlslEsCodegen', () => {
     expect(fragment).toContain('precision highp sampler2D;');
     expect(fragment).toContain('uniform sampler2D ts0_map_mapSampler;');
     expect(fragment).toContain(
-      'vec4 v4_texel = texture(ts0_map_mapSampler, vec2(v3.x, 1.0 - v3.y)); // #n4'
+      'vec4 v4_texel = texture(ts0_map_mapSampler, vec2(v3.x, ts0_map_mapSampler_v.x + ts0_map_mapSampler_v.y * v3.y)); // #n4'
     );
+    // The orientation of the texture: v read as a + b × v.
+    expect(fragment).toContain('uniform vec2 ts0_map_mapSampler_v;');
     // Declared in both stages, as GLSL requires shared uniforms to match.
     expect(vertex).toContain('uniform sampler2D ts0_map_mapSampler;');
   });
@@ -546,10 +548,10 @@ describe('GlslEsCodegen', () => {
     const { fragment } = emit(program.module, layout);
     expect(fragment).toContain('uniform sampler2D ts1_depth_load;');
     expect(fragment).toMatch(
-      /vec4 v\d+ = texelFetch\(ts0_values_load, ivec2\((v\d+)\.x, textureSize\(ts0_values_load, (v\d+)\)\.y - 1 - \1\.y\), \2\);/
+      /vec4 v\d+ = texelFetch\(ts0_values_load, ivec2\((v\d+)\.x, int\(ts0_values_load_v\.x\) \* \(textureSize\(ts0_values_load, (v\d+)\)\.y - 1\) \+ int\(ts0_values_load_v\.y\) \* \1\.y\), \2\);/
     );
     expect(fragment).toMatch(
-      /float v\d+ = texelFetch\(ts1_depth_load, ivec2\(v\d+\.x, textureSize\(ts1_depth_load, v\d+\)\.y - 1 - v\d+\.y\), v\d+\)\.r;/
+      /float v\d+ = texelFetch\(ts1_depth_load, ivec2\(v\d+\.x, int\(ts1_depth_load_v\.x\) \* \(textureSize\(ts1_depth_load, v\d+\)\.y - 1\) \+ int\(ts1_depth_load_v\.y\) \* v\d+\.y\), v\d+\)\.r;/
     );
   });
 

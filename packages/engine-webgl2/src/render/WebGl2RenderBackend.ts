@@ -11,6 +11,7 @@ import {
   wgpuMatrixPrimitives,
 } from '@fdw/engine-backend';
 import { GL } from '../gl';
+import { glCompressedFormats } from '../gpu/formats';
 import { WebGl2BufferFactory } from '../gpu/WebGl2Buffer';
 import { maxAnisotropy, WebGl2TextureFactory } from '../gpu/WebGl2Texture';
 import {
@@ -51,6 +52,8 @@ export class WebGl2RenderBackend implements RenderBackend {
       renderableFormats: gl.getExtension('EXT_color_buffer_float')
         ? ['rgba16float']
         : [],
+      // Those of the extensions the context has, enabled here.
+      compressedFormats: glCompressedFormats(gl),
       maxAnisotropy: maxAnisotropy(gl),
       maxColorAttachments: Math.min(
         gl.getParameter(GL.MAX_DRAW_BUFFERS),

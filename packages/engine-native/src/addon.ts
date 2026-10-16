@@ -80,6 +80,20 @@ export interface NativeAddon {
     weak: number,
     durationMs: number
   ): boolean;
+  // Decodes a PNG, JPEG, TGA, BMP, GIF (first frame) or HDR image with
+  // stb_image, on the thread pool: RGBA pixels, floats for HDR images.
+  decodeImage(bytes: Uint8Array): Promise<DecodedNativeImage>;
+}
+
+/** An image decoded by the addon. */
+export interface DecodedNativeImage {
+  readonly width: number;
+  readonly height: number;
+  // The channels of the file (1 to 4); the pixels always have 4.
+  readonly channels: number;
+  readonly hdr: boolean;
+  // RGBA, rows from the top, straight alpha.
+  readonly pixels: Uint8Array<ArrayBuffer> | Float32Array<ArrayBuffer>;
 }
 
 /** The window system of a window and its native handles. */

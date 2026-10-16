@@ -383,6 +383,12 @@ int createDevice(fdw_vk_context *context) {
   }
   features.features.independentBlend = available.independentBlend;
   context->independentBlend = available.independentBlend;
+  // The compressed formats, where the device has them (their support is
+  // read per format: fdw_vk_format_supported).
+  features.features.textureCompressionBC = available.textureCompressionBC;
+  features.features.textureCompressionETC2 = available.textureCompressionETC2;
+  features.features.textureCompressionASTC_LDR =
+      available.textureCompressionASTC_LDR;
   {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(context->physicalDevice, &properties);

@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-gltf",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/**/*.bench.ts",
+    "src/testing/**/*.ts"
+  ],
+  "references": [
+    { "path": "../engine-resources/tsconfig.lib.json" },
+    { "path": "../engine-backend/tsconfig.lib.json" },
+    { "path": "../engine-assets/tsconfig.lib.json" },
+    { "path": "../engine-core/tsconfig.lib.json" },
+    { "path": "../engine-scene/tsconfig.lib.json" }
+  ]
+}

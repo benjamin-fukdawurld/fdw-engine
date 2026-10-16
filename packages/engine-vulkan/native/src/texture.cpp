@@ -53,6 +53,41 @@ constexpr FormatInfo formats[] = {
     {"depth32float", VK_FORMAT_D32_SFLOAT, 4, VK_IMAGE_ASPECT_DEPTH_BIT},
     {"depth24plus-stencil8", VK_FORMAT_D32_SFLOAT_S8_UINT, 8,
      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT},
+    // Compressed formats, by blocks of 4 × 4 pixels, where the device has
+    // them (fdw_vk_format_supported).
+    {"bc1-rgba-unorm", VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc1-rgba-unorm-srgb", VK_FORMAT_BC1_RGBA_SRGB_BLOCK, 8,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc3-rgba-unorm", VK_FORMAT_BC3_UNORM_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc3-rgba-unorm-srgb", VK_FORMAT_BC3_SRGB_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc4-r-unorm", VK_FORMAT_BC4_UNORM_BLOCK, 8, VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc5-rg-unorm", VK_FORMAT_BC5_UNORM_BLOCK, 16, VK_IMAGE_ASPECT_COLOR_BIT,
+     4},
+    {"bc6h-rgb-ufloat", VK_FORMAT_BC6H_UFLOAT_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc7-rgba-unorm", VK_FORMAT_BC7_UNORM_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"bc7-rgba-unorm-srgb", VK_FORMAT_BC7_SRGB_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"etc2-rgb8unorm", VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK, 8,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"etc2-rgb8unorm-srgb", VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK, 8,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"etc2-rgba8unorm", VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"etc2-rgba8unorm-srgb", VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"eac-r11unorm", VK_FORMAT_EAC_R11_UNORM_BLOCK, 8,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"eac-rg11unorm", VK_FORMAT_EAC_R11G11_UNORM_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"astc-4x4-unorm", VK_FORMAT_ASTC_4x4_UNORM_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
+    {"astc-4x4-unorm-srgb", VK_FORMAT_ASTC_4x4_SRGB_BLOCK, 16,
+     VK_IMAGE_ASPECT_COLOR_BIT, 4},
 };
 
 VkFilter filter(const char *name) {
@@ -258,6 +293,7 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
   texture->layers = layers;
   texture->levels = levels;
   texture->pixelSize = format->pixelSize;
+  texture->block = format->block;
   texture->samples = info.samples;
   texture->is3d = is3d;
   VkResult result = vmaCreateImage(context->allocator, &info, &allocation,
@@ -318,11 +354,30 @@ uint32_t fdw_vk_texture_pixel_size(const fdw_vk_texture *texture) {
 
 int fdw_vk_texture_write(fdw_vk_context *context, fdw_vk_texture *texture,
                          const void *data, uint64_t size) {
-  const uint64_t expected = static_cast<uint64_t>(texture->width) *
-                            texture->height * texture->layers *
-                            texture->pixelSize;
+  return fdw_vk_texture_write_level(context, texture, 0, 0, texture->layers,
+                                    data, size);
+}
+
+int fdw_vk_texture_write_level(fdw_vk_context *context,
+                               fdw_vk_texture *texture, uint32_t level,
+                               uint32_t layer, uint32_t layer_count,
+                               const void *data, uint64_t size) {
+  if (level >= texture->levels) {
+    return fail("The texture has no level " + std::to_string(level));
+  }
+  if (layer_count == 0 || layer >= texture->layers ||
+      layer_count > texture->layers - layer) {
+    return fail("The layers written are not inside the texture");
+  }
+  const uint32_t width = std::max(texture->width >> level, 1u);
+  const uint32_t height = std::max(texture->height >> level, 1u);
+  // Rows of blocks for the compressed formats, the last ones partly
+  // outside of the level.
+  const uint64_t columns = (width + texture->block - 1) / texture->block;
+  const uint64_t rows = (height + texture->block - 1) / texture->block;
+  const uint64_t expected = columns * rows * layer_count * texture->pixelSize;
   if (size != expected) {
-    return fail("The texture takes " + std::to_string(expected) +
+    return fail("The level takes " + std::to_string(expected) +
                 " bytes, not " + std::to_string(size));
   }
   HostBuffer staging;
@@ -333,11 +388,19 @@ int fdw_vk_texture_write(fdw_vk_context *context, fdw_vk_texture *texture,
   vmaFlushAllocation(context->allocator, staging.allocation, 0, size);
 
   VkCommandBuffer commands = transfers(context);
-  // The whole texture is written: its content can be discarded.
+  // When the whole texture is written, its content can be discarded; the
+  // other levels and layers are kept otherwise.
+  const bool whole = texture->levels == 1 && layer_count == texture->layers;
   useTexture(commands, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
              VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-             true);
-  VkBufferImageCopy region = wholeTexture(texture, texture->layers);
+             whole);
+  // Tightly packed rows (bufferRowLength 0), of blocks for the compressed
+  // formats; the extent of the level, which ends at its edges.
+  VkBufferImageCopy region = wholeTexture(texture, layer_count);
+  region.imageSubresource.mipLevel = level;
+  region.imageSubresource.baseArrayLayer = texture->is3d ? 0 : layer;
+  region.imageOffset = {0, 0, texture->is3d ? static_cast<int32_t>(layer) : 0};
+  region.imageExtent = {width, height, texture->is3d ? layer_count : 1};
   vkCmdCopyBufferToImage(commands, staging.buffer, texture->image,
                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
   VmaAllocator allocator = context->allocator;
@@ -449,6 +512,20 @@ uint32_t fdw_vk_max_color_attachments(const fdw_vk_context *context) {
 
 int32_t fdw_vk_independent_blend(const fdw_vk_context *context) {
   return context->independentBlend ? 1 : 0;
+}
+
+int32_t fdw_vk_format_supported(const fdw_vk_context *context,
+                                const char *name) {
+  const FormatInfo *format = findFormat(name);
+  if (!format) {
+    return 0;
+  }
+  VkFormatProperties properties;
+  vkGetPhysicalDeviceFormatProperties(context->physicalDevice, format->format,
+                                      &properties);
+  const VkFormatFeatureFlags needed =
+      VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+  return (properties.optimalTilingFeatures & needed) == needed ? 1 : 0;
 }
 
 uint32_t fdw_vk_sampler_id(const fdw_vk_sampler *sampler) {

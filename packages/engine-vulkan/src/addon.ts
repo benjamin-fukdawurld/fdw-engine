@@ -121,6 +121,16 @@ export interface VulkanAddon {
   textureId(texture: TextureHandle): number;
   // Every layer, rows from the top, tightly packed.
   writeTexture(texture: TextureHandle, data: ArrayBufferView): void;
+  // The layers [layer, layer + layerCount) of a level, rows from the top,
+  // tightly packed (rows of blocks for the compressed formats); the other
+  // levels kept.
+  writeTextureLevel(
+    texture: TextureHandle,
+    data: ArrayBufferView,
+    level: number,
+    layer: number,
+    layerCount: number
+  ): void;
   // Computes the levels after the first one, in the order of the queue.
   generateMipmaps(texture: TextureHandle): void;
   // A ticket for the pixels of a region of the first layer (from the top
@@ -152,6 +162,8 @@ export interface VulkanAddon {
   maxColorAttachments(context: ContextHandle): number;
   // Whether the color targets of a pipeline can blend differently.
   independentBlend(context: ContextHandle): boolean;
+  // Whether the device can write and sample textures of a format.
+  formatSupported(context: ContextHandle, format: string): boolean;
   samplerId(sampler: SamplerHandle): number;
   // Whether the queue writes timestamps.
   timestampsSupported(context: ContextHandle): boolean;

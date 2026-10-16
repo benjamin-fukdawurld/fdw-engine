@@ -47,6 +47,21 @@
     },
     {
       "path": "../../packages/engine-tessellation/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-resources/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-assets/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-obj/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-gltf/tsconfig.lib.json"
     }
   ]
 }

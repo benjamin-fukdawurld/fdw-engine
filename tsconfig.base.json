@@ -37,7 +37,17 @@
       "@fdw/engine-input": ["packages/engine-input/src/index.ts"],
       "@fdw/engine-input-web": ["packages/engine-input-web/src/index.ts"],
       "@fdw/engine-input-native": ["packages/engine-input-native/src/index.ts"],
-      "@fdw/engine-resources": ["packages/engine-resources/src/index.ts"]
+      "@fdw/engine-resources": ["packages/engine-resources/src/index.ts"],
+      "@fdw/engine-resources-web": [
+        "packages/engine-resources-web/src/index.ts"
+      ],
+      "@fdw/engine-resources-native": [
+        "packages/engine-resources-native/src/index.ts"
+      ],
+      "@fdw/engine-assets": ["packages/engine-assets/src/index.ts"],
+      "@fdw/engine-obj": ["packages/engine-obj/src/index.ts"],
+      "@fdw/engine-gltf": ["packages/engine-gltf/src/index.ts"],
+      "@fdw/engine-ktx2": ["packages/engine-ktx2/src/index.ts"]
     }
   }
 }

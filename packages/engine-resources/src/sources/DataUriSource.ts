@@ -13,7 +13,9 @@ export class DataUriSource implements ResourceSource {
     }
     const comma = path.indexOf(',');
     if (comma < 0) {
-      return Promise.reject(new ResourceError('decode', path, 'Malformed data URI'));
+      return Promise.reject(
+        new ResourceError('decode', path, 'Malformed data URI')
+      );
     }
     const meta = path.slice(0, comma);
     const payload = path.slice(comma + 1);

@@ -3,7 +3,11 @@
 The resource system of FdwEngine: asynchronous loading, caching and lifetime management for assets and other data, independent of the graphics backend. Resources are identified by a type and a URI, and loaded by registered loaders. Pure TypeScript, with no graphics dependency. Sources can be mounted like a virtual file system (`MemorySource`, `HttpSource`, archives, and platform-specific file sources). See the [P5 roadmap](../../design/roadmap.md#p5-ressources).
 
 ```ts
-import { defineResourceType, HttpSource, ResourceStore } from '@fdw/engine-resources';
+import {
+  defineResourceType,
+  HttpSource,
+  ResourceStore,
+} from '@fdw/engine-resources';
 
 interface LevelConfig {
   readonly name: string;

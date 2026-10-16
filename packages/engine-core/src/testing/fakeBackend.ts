@@ -6,7 +6,9 @@ import {
   GpuBindGroupEntry,
   GpuBuffer,
   GpuRenderTarget,
+  GpuTexture,
   GpuTextureConfiguration,
+  GpuTextureWriteOptions,
   matchVertexLayout,
   PhysicalLayoutStrategy,
   PhysicalProgramLayout,
@@ -171,6 +173,15 @@ export const rowOf = (
 ): Float32Array =>
   log.rows.subarray(index * RowFloats, (index + 1) * RowFloats);
 
+// The compressed formats of the fake backends, unless their capabilities
+// say otherwise.
+export const fakeCompressedFormats = [
+  'bc7-rgba-unorm',
+  'bc7-rgba-unorm-srgb',
+  'etc2-rgba8unorm',
+  'astc-4x4-unorm',
+] as const;
+
 export function fakeBackend(capabilities?: BackendCapabilities) {
   const log = {
     buffers: [] as FakeBuffer[],
@@ -192,7 +203,16 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       firstInstance?: number;
     }[],
     submits: 0,
-    textures: [] as GpuTextureConfiguration[],
+    // The descriptors of the textures created, with their levels.
+    textures: [] as (GpuTextureConfiguration & {
+      levels?: readonly ArrayBufferView[];
+    })[],
+    // The writes of writeTexture, with their options.
+    textureWrites: [] as {
+      texture: GpuTexture;
+      data: ArrayBufferView;
+      options?: GpuTextureWriteOptions;
+    }[],
     renderPasses: [] as string[],
     // The descriptors of the render passes, with their attachments.
     passes: [] as RenderPassDescriptor[],
@@ -222,7 +242,9 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         log.textures.push(descriptor);
         return { ...descriptor, destroy: () => undefined };
       },
-      writeTexture: () => undefined,
+      writeTexture: (texture, data, options) => {
+        log.textureWrites.push({ texture, data, ...(options && { options }) });
+      },
       // Zeros, of the size of the region.
       readTexture: async (texture, region) => {
         const read = checkReadRegion(texture, region);
@@ -282,7 +304,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     cameraMath,
     transformMath,
     depthFormat: 'depth24plus',
-    capabilities,
+    capabilities: { compressedFormats: fakeCompressedFormats, ...capabilities },
     // An object table recording its writes.
     createObjectTable: ({ rows, instances }: ObjectTableDescriptor) => {
       log.objectTables.push({ rows, instances });

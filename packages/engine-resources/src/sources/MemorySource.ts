@@ -10,12 +10,16 @@ const encoder = new TextEncoder();
  * the watchers, which makes it the reference source for hot reload tests.
  */
 export class MemorySource implements ResourceSource {
-  private readonly files = new Map<string, { data: ResourceBytes; revision: number }>();
+  private readonly files = new Map<
+    string,
+    { data: ResourceBytes; revision: number }
+  >();
   private readonly watchers = new Map<string, Set<() => void>>();
   private revisionCounter = 0;
 
   constructor(files?: Record<string, Uint8Array | string>) {
-    if (files) for (const [path, data] of Object.entries(files)) this.put(path, data);
+    if (files)
+      for (const [path, data] of Object.entries(files)) this.put(path, data);
   }
 
   private static key(path: string): string {

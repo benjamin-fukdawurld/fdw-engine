@@ -2,8 +2,13 @@ import {
   canGenerateMipmaps,
   checkMipLevelCount,
   checkReadRegion,
+  checkTextureContent,
+  checkTextureWrite,
   defaultTextureUsage,
+  levelDimensions,
   samplerAnisotropy,
+  textureLayerCount,
+  textureLevelSize,
 } from '@fdw/engine-backend';
 import type {
   CompareFunction,
@@ -20,6 +25,7 @@ import type {
   GpuTextureType,
   GpuTextureUsage,
   GpuTextureWrapMode,
+  GpuTextureWriteOptions,
 } from '@fdw/engine-backend';
 import { GL, lazy } from '../gl';
 import { glTextureFormat } from './formats';
@@ -58,23 +64,28 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     readonly mipLevelCount = 1,
     // As in WebGPU, where they are checked: the copy-src usage is needed to
     // read the texture back.
-    readonly usage: readonly GpuTextureUsage[] = defaultTextureUsage
+    readonly usage: readonly GpuTextureUsage[] = defaultTextureUsage,
+    // Whether its levels are written rather than computed (see
+    // checkMipLevelCount).
+    levelsProvided = false
   ) {
-    checkMipLevelCount({
-      type,
-      format,
-      dimensions,
-      label,
-      sampleCount,
-      mipLevelCount,
-    });
+    checkMipLevelCount(
+      { type, format, dimensions, label, sampleCount, mipLevelCount },
+      { provided: levelsProvided }
+    );
     const target = textureTargets()[type];
     if (target === undefined) {
       throw new Error(`Texture type ${type} is not supported by WebGL2`);
     }
     this.target = target;
-    const { internalFormat } = glTextureFormat(format);
+    const { internalFormat, extension } = glTextureFormat(format);
     const { width, height = 1, layers = 1 } = dimensions;
+    // The compressed formats need their extension (see glCompressedFormats).
+    if (extension && !_gl.getExtension(extension)) {
+      throw new Error(
+        `Texture format ${format} is not supported (${extension})`
+      );
+    }
 
     if (sampleCount > 1) {
       if (target !== GL.TEXTURE_2D) {
@@ -130,6 +141,18 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     return this.dimensions.height ?? 1;
   }
 
+  /**
+   * Whether the rows of a 2d texture are stored bottom row first, as OpenGL
+   * renders them: those uploaded are flipped to match. The compressed ones
+   * are stored top row first, their blocks written as they are. The
+   * shaders read both with v pointing down (see orientationUniform).
+   */
+  get flipped(): boolean {
+    return (
+      this.target === GL.TEXTURE_2D && !glTextureFormat(this.format).extension
+    );
+  }
+
   // Textures can be rendered to: the first level of a 2d texture.
   attachTo(gl: WebGL2RenderingContext, point: GLenum): void {
     if (this._renderbuffer) {
@@ -183,86 +206,157 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     return this._texture;
   }
 
-  // Writes the first level, then computes the others.
+  // Writes the first level, then computes the others where they can be.
   upload(source: WebGl2TextureSource | ArrayBufferView<ArrayBuffer>): void {
-    this.writeFirstLevel(source);
-    this.generateMipmaps(this._gl);
+    if (isImageSource(source)) {
+      this.writeImage(source);
+    } else {
+      this.writeLevel(source, 0, 0, textureLayerCount(this));
+    }
+    if (canGenerateMipmaps(this.format)) {
+      this.generateMipmaps(this._gl);
+    }
   }
 
-  private writeFirstLevel(
-    source: WebGl2TextureSource | ArrayBufferView<ArrayBuffer>
+  // Rows are tightly packed, without premultiplication, as
+  // copyExternalImageToTexture in WebGPU. 2d textures are stored bottom row
+  // first, like the images OpenGL renders: the first row of the data goes
+  // last, and the shaders sample at (u, 1 - v) (see orientationUniform). Uploaded
+  // and rendered textures then read the same way, with v pointing down as
+  // in WebGPU (see flipped).
+  private unpack(flip: boolean): void {
+    const gl = this._gl;
+    gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(
+      GL.UNPACK_FLIP_Y_WEBGL,
+      flip && this.target === GL.TEXTURE_2D
+    );
+    gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  }
+
+  private writeImage(source: WebGl2TextureSource): void {
+    const gl = this._gl;
+    const { format, type } = glTextureFormat(this.format);
+    if (this.target !== GL.TEXTURE_2D) {
+      throw new Error('Images can only be uploaded to 2d textures');
+    }
+    gl.bindTexture(this.target, this.texture);
+    this.unpack(true);
+    gl.texSubImage2D(
+      GL.TEXTURE_2D,
+      0,
+      0,
+      0,
+      this.width,
+      this.height,
+      format,
+      type,
+      source
+    );
+  }
+
+  /**
+   * Writes the layers [layer, layer + layers) of a level (the depth of a 3d
+   * texture), rows from the top, tightly packed: by blocks for the
+   * compressed formats.
+   */
+  writeLevel(
+    source: ArrayBufferView<ArrayBuffer>,
+    level: number,
+    layer: number,
+    layers: number
   ): void {
     const gl = this._gl;
-    const { format, type, bytesPerPixel } = glTextureFormat(this.format);
-    const { width, height = 1, layers = 1 } = this.dimensions;
+    const { internalFormat, format, type, extension } = glTextureFormat(
+      this.format
+    );
+    const { width, height } = levelDimensions(this.dimensions, level);
     gl.bindTexture(this.target, this.texture);
-    // Rows are tightly packed, without premultiplication, as
-    // copyExternalImageToTexture in WebGPU. 2d textures are stored bottom row
-    // first, like the images OpenGL renders: the first row of the data goes
-    // last, and the shaders sample at (u, 1 - v) (see GlslEsCodegen). Uploaded
-    // and rendered textures then read the same way, with v pointing down as
-    // in WebGPU.
-    gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
-    gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, this.target === GL.TEXTURE_2D);
-    gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    // The blocks are written as they are, top row first: the flip does not
+    // apply to them (see flipped).
+    this.unpack(!extension);
+    const bytes = new Uint8Array(
+      source.buffer,
+      source.byteOffset,
+      source.byteLength
+    );
 
-    if (isImageSource(source)) {
-      if (this.target !== GL.TEXTURE_2D) {
-        throw new Error('Images can only be uploaded to 2d textures');
-      }
-      gl.texSubImage2D(
-        GL.TEXTURE_2D,
-        0,
-        0,
-        0,
-        width,
-        height,
-        format,
-        type,
-        source
-      );
-      return;
-    }
     if (this.target === GL.TEXTURE_2D) {
-      gl.texSubImage2D(
-        GL.TEXTURE_2D,
-        0,
-        0,
-        0,
-        width,
-        height,
-        format,
-        type,
-        source
-      );
-    } else if (this.target === GL.TEXTURE_CUBE_MAP) {
-      // The six faces follow each other: +x, -x, +y, -y, +z, -z.
-      const faceBytes = width * height * bytesPerPixel;
-      const bytes = new Uint8Array(
-        source.buffer,
-        source.byteOffset,
-        source.byteLength
-      );
-      for (let face = 0; face < 6; face++) {
-        gl.texSubImage2D(
-          GL.TEXTURE_CUBE_MAP_POSITIVE_X + face,
+      if (extension) {
+        gl.compressedTexSubImage2D(
+          GL.TEXTURE_2D,
+          level,
           0,
+          0,
+          width,
+          height,
+          internalFormat,
+          bytes
+        );
+      } else {
+        gl.texSubImage2D(
+          GL.TEXTURE_2D,
+          level,
           0,
           0,
           width,
           height,
           format,
           type,
-          bytes.subarray(face * faceBytes, (face + 1) * faceBytes)
+          source
         );
       }
+    } else if (this.target === GL.TEXTURE_CUBE_MAP) {
+      // The faces follow each other: +x, -x, +y, -y, +z, -z.
+      const faceBytes = textureLevelSize(this.format, this.dimensions, level);
+      for (let i = 0; i < layers; i++) {
+        const face = bytes.subarray(i * faceBytes, (i + 1) * faceBytes);
+        const target = GL.TEXTURE_CUBE_MAP_POSITIVE_X + layer + i;
+        if (extension) {
+          gl.compressedTexSubImage2D(
+            target,
+            level,
+            0,
+            0,
+            width,
+            height,
+            internalFormat,
+            face
+          );
+        } else {
+          gl.texSubImage2D(
+            target,
+            level,
+            0,
+            0,
+            width,
+            height,
+            format,
+            type,
+            face
+          );
+        }
+      }
+    } else if (extension) {
+      gl.compressedTexSubImage3D(
+        this.target,
+        level,
+        0,
+        0,
+        layer,
+        width,
+        height,
+        layers,
+        internalFormat,
+        bytes
+      );
     } else {
       gl.texSubImage3D(
         this.target,
+        level,
         0,
         0,
-        0,
-        0,
+        layer,
         width,
         height,
         layers,
@@ -444,10 +538,12 @@ export class WebGl2TextureFactory
   createTexture(
     descriptor: GpuTextureConfiguration & {
       source?: WebGl2TextureSource | ArrayBufferView<ArrayBuffer>;
+      levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
     }
   ): WebGl2Texture {
-    const { type, format, dimensions, source, label, sampleCount } = descriptor;
+    const { type, format, dimensions, source, levels, label, sampleCount } =
+      descriptor;
     const texture = new WebGl2Texture(
       this._gl,
       type,
@@ -455,17 +551,31 @@ export class WebGl2TextureFactory
       dimensions,
       label,
       sampleCount,
-      descriptor.mipLevelCount,
-      descriptor.usage
+      checkTextureContent(descriptor),
+      descriptor.usage,
+      levels !== undefined
     );
     if (source) {
       texture.upload(source);
     }
+    // Written as they are, every layer of each.
+    levels?.forEach((data, level) =>
+      texture.writeLevel(data, level, 0, textureLayerCount(texture))
+    );
     return texture;
   }
 
-  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
-    (texture as WebGl2Texture).upload(data);
+  writeTexture(
+    texture: GpuTexture,
+    data: ArrayBufferView<ArrayBuffer>,
+    options?: GpuTextureWriteOptions
+  ): void {
+    if (options?.level === undefined && options?.layer === undefined) {
+      (texture as WebGl2Texture).upload(data);
+      return;
+    }
+    const { level, layer, layers } = checkTextureWrite(texture, data, options);
+    (texture as WebGl2Texture).writeLevel(data, level, layer, layers);
   }
 
   readTexture(

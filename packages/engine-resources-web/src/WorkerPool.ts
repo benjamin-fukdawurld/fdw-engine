@@ -4,7 +4,10 @@ import { ResourceError } from '@fdw/engine-resources';
 export interface PoolWorker {
   postMessage(message: unknown, transfer?: Transferable[]): void;
   terminate(): void;
-  addEventListener(type: 'message' | 'error' | 'messageerror', listener: (event: any) => void): void;
+  addEventListener(
+    type: 'message' | 'error' | 'messageerror',
+    listener: (event: any) => void
+  ): void;
 }
 
 export interface WorkerPoolOptions {
@@ -34,7 +37,8 @@ interface Slot {
 }
 
 const defaultSize = () => {
-  const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0;
+  const cores =
+    typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0;
   return Math.max(1, Math.min(4, (cores || 2) - 1));
 };
 
@@ -53,12 +57,18 @@ export class WorkerPool {
   }
 
   run<R = unknown>(payload: unknown, options: RunOptions<R> = {}): Promise<R> {
-    if (this.terminated) return Promise.reject(new ResourceError('aborted', 'worker pool', 'The pool is terminated'));
+    if (this.terminated)
+      return Promise.reject(
+        new ResourceError('aborted', 'worker pool', 'The pool is terminated')
+      );
     const { signal, transfer, discard } = options;
-    if (signal?.aborted) return Promise.reject(new ResourceError('aborted', 'worker pool'));
+    if (signal?.aborted)
+      return Promise.reject(new ResourceError('aborted', 'worker pool'));
 
     // The least busy worker; ties go to the first, so idle ones are not started.
-    const slot = this.slots.reduce((best, s) => (s.jobs.size < best.jobs.size ? s : best));
+    const slot = this.slots.reduce((best, s) =>
+      s.jobs.size < best.jobs.size ? s : best
+    );
     const worker = (slot.worker ??= this.spawn(slot));
     const id = this.nextId++;
 
@@ -81,14 +91,22 @@ export class WorkerPool {
       } catch (e) {
         slot.jobs.delete(id);
         job.cleanup?.();
-        reject(new ResourceError('io', 'worker pool', 'Cannot post to the worker', { cause: e }));
+        reject(
+          new ResourceError('io', 'worker pool', 'Cannot post to the worker', {
+            cause: e,
+          })
+        );
       }
     });
   }
 
   terminate(): void {
     this.terminated = true;
-    for (const slot of this.slots) this.drop(slot, new ResourceError('aborted', 'worker pool', 'The pool is terminated'));
+    for (const slot of this.slots)
+      this.drop(
+        slot,
+        new ResourceError('aborted', 'worker pool', 'The pool is terminated')
+      );
   }
 
   private spawn(slot: Slot): PoolWorker {
@@ -108,12 +126,23 @@ export class WorkerPool {
       if (error) {
         const e = new Error(error.message);
         e.name = error.name ?? 'Error';
-        job.reject(new ResourceError('decode', 'worker pool', error.message, { cause: e }));
+        job.reject(
+          new ResourceError('decode', 'worker pool', error.message, {
+            cause: e,
+          })
+        );
       } else job.resolve(result);
     });
     // A crashed worker takes its jobs with it; the next job starts a new one.
     worker.addEventListener('error', (event: ErrorEvent) => {
-      this.drop(slot, new ResourceError('io', 'worker pool', `Worker failed: ${event.message ?? 'unknown error'}`));
+      this.drop(
+        slot,
+        new ResourceError(
+          'io',
+          'worker pool',
+          `Worker failed: ${event.message ?? 'unknown error'}`
+        )
+      );
     });
     return worker;
   }
@@ -137,7 +166,10 @@ export class WorkerPool {
 // --- The worker side --------------------------------------------------------
 
 export interface WorkerScope {
-  addEventListener(type: 'message', listener: (event: MessageEvent) => void): void;
+  addEventListener(
+    type: 'message',
+    listener: (event: MessageEvent) => void
+  ): void;
   postMessage(message: unknown, transfer: Transferable[]): void;
 }
 
@@ -157,7 +189,10 @@ export function serveWorker<I, O>(
       const { result, transfer } = await handler(payload);
       scope.postMessage({ id, result }, transfer ?? []);
     } catch (e) {
-      const error = e instanceof Error ? { name: e.name, message: e.message } : { name: 'Error', message: String(e) };
+      const error =
+        e instanceof Error
+          ? { name: e.name, message: e.message }
+          : { name: 'Error', message: String(e) };
       scope.postMessage({ id, error }, []);
     }
   });

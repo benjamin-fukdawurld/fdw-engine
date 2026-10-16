@@ -1,0 +1,133 @@
+---
+title: Charger des modèles
+description: Charger des fichiers glTF et OBJ avec leurs matériaux et textures, afficher la progression, planter de nombreuses instances d'un modèle dans une scène, et tout libérer avec le niveau.
+sidebar:
+  order: 19
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une clairière de 40 arbres et une sphère, lus dans deux fichiers :
+`tree.glb`, un modèle glTF d'un tronc et de deux houppiers, et
+`sphere.obj`, avec son fichier MTL et trois cartes. Les arbres sont des
+instances d'un même modèle : ils partagent ses meshes et ses matériaux, et
+sont dessinés en quelques appels.
+
+<Example name="loading-models" />
+
+## Le store et les formats
+
+```ts
+const resources = new ResourceStore();
+resources.mount('http', new HttpSource({ base: '/models/' }), {
+  default: true,
+});
+installAssets(resources, {
+  backend,
+  codecs: [bitmapCodec(createImageBitmapDecoder())],
+});
+installGltf(resources);
+installObj(resources);
+```
+
+- Le **store** charge, partage et libère les ressources. Ses fichiers
+  viennent d'une **source** : une `HttpSource` ici, des fichiers sur disque
+  dans Node.
+- `installAssets` enregistre les ressources graphiques — textures, meshes,
+  matériaux, modèles — pour un backend, avec le **codec** qui décode les
+  images : `createImageBitmap` dans une page, couleurs et alpha laissés tels
+  quels.
+- `installGltf` et `installObj` enregistrent les formats. Un format ne fait
+  que lire des octets en données côté CPU ; les meshes, matériaux et
+  textures du moteur sont fabriqués depuis ces données, pour le backend
+  donné.
+
+## Charger, avec une progression
+
+```ts
+const level = resources.scope('forest');
+const tree = level.load<Model>(ModelType, 'tree.glb');
+const sphere = level.load<Model>(ModelType, 'sphere.obj');
+
+const loading = resources.group([tree, sphere]);
+loading.progress.value; // de 0 à 1 : une barre de chargement
+await loading.ready;
+```
+
+`load()` rend une **poignée** tout de suite, et le chargement continue : en
+parallèle, annulable, sans lire deux fois un fichier. La progression d'un
+modèle compte ce dont il dépend — le fichier MTL, ses cartes —, donc un
+groupe donne la progression de tout un écran de chargement. `ready` est
+rejetée au premier échec, une `ResourceError` avec la chaîne des fichiers :
+`sphere.obj → sphere.mtl → sphere-diffuse.png`.
+
+Ce dont un modèle a besoin est chargé avec lui : les textures du glTF, le
+fichier MTL de l'OBJ et ses cartes, cherchés à côté du modèle. Une texture
+illisible affiche un damier magenta, et un avertissement la nomme.
+
+## Des instances dans une scène
+
+```ts
+for (const position of spots) {
+  instantiate(tree, scene, { position, rotation, scale });
+}
+instantiate(sphere, scene, { position: { y: 0.8 } });
+```
+
+`instantiate` crée les nœuds du modèle — ici un tronc et deux houppiers —
+sous un nouveau nœud, placé comme demandé. Il rend une `ModelInstance` :
+sa `root` pour la déplacer, ses `nodes`, `dispose()` pour la retirer.
+
+Les instances **partagent** les meshes et matériaux du modèle : les 40
+arbres font 120 objets, mais seulement quelques appels de dessin, affichés
+sous le canevas. Le moteur dessine ensemble les objets qui partagent un
+mesh et un matériau (voir [la scène](/fdw-engine/fr/tutorials/scene/)).
+
+## Quitter le niveau
+
+```ts
+for (const instance of instances) instance.dispose();
+level.dispose();
+```
+
+Le scope rend ses poignées ; le modèle libère ses meshes, matériaux et
+textures, sauf si quelqu'un d'autre s'en sert encore. Une instance créée
+depuis une poignée garde la sienne : le modèle reste tant qu'une de ses
+instances existe.
+
+Rien n'est détruit tout de suite : un modèle inutilisé reste en cache,
+jusqu'au budget du store, donc revenir dans le niveau est immédiat.
+`resources.trim(0)` libère tout ce qui ne sert pas, et détruit les
+ressources GPU.
+
+## Les données et leur réalisation
+
+Les formats et les objets du moteur sont deux niveaux :
+
+| Données (CPU, tout backend)            | Réalisation                                                     |
+| -------------------------------------- | --------------------------------------------------------------- |
+| `ModelData`                            | `Model` : les meshes et matériaux de ses parties                |
+| `MeshData`                             | `Mesh`                                                          |
+| `PbrMaterialData`, `PhongMaterialData` | `Material`, son graphe fait pour ses textures                   |
+| `ImageAsset`                           | `Texture`, en sRGB pour les couleurs, linéaire pour les données |
+
+Les meshes et matériaux d'un modèle sont des **sous-ressources** de son
+URI : `tree.glb#mesh/Crown/0`, `tree.glb#material/Leaves`. Une fois le
+modèle chargé, ce sont des ressources comme les autres :
+
+```ts
+const leaves = await resources.load(MaterialType, 'tree.glb#material/Leaves')
+  .ready;
+```
+
+C'est ce découpage qui permet à un autre backend — le bouton WebGPU /
+WebGL2 de la démo — de tout réaliser à nouveau sans relire un fichier :
+`resources.provideService(RenderBackendService, other)`.
+
+## Ensuite
+
+[Ressources et rechargement à chaud](/fdw-engine/fr/tutorials/resources/) :
+vos propres types de ressources et formats d'image, et des ressources
+rechargées pendant qu'elles sont dessinées. Le
+[guide des ressources](/fdw-engine/fr/guides/resources/) liste les sources,
+les formats et leurs extensions.

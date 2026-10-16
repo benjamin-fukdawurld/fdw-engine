@@ -83,7 +83,10 @@ struct fdw_vk_texture {
   uint32_t layers = 1;
   // Levels of detail.
   uint32_t levels = 1;
+  // Bytes per pixel, or per block of block × block pixels for the
+  // compressed formats.
   uint32_t pixelSize = 4;
+  uint32_t block = 1;
   VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
   bool is3d = false;
   // An image of a swapchain: owned by it, not destroyed as a texture.
@@ -221,12 +224,14 @@ void defer(fdw_vk_context *context, std::function<void()> run);
 void setName(fdw_vk_context *context, VkObjectType type, uint64_t handle,
              const char *name);
 
-// A texture format of the engine.
+// A texture format of the engine. The compressed formats store blocks of
+// block × block pixels, of pixelSize bytes.
 struct FormatInfo {
   const char *name;
   VkFormat format;
   uint32_t pixelSize;
   VkImageAspectFlags aspect;
+  uint32_t block = 1;
 };
 const FormatInfo *findFormat(const char *name);
 

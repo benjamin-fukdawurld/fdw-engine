@@ -1,4 +1,9 @@
-import type { GpuBuffer, RenderBackend, Surface } from '@fdw/engine-backend';
+import type {
+  GpuBuffer,
+  GpuTexture,
+  RenderBackend,
+  Surface,
+} from '@fdw/engine-backend';
 import {
   arrayType,
   BuiltinTypes,
@@ -413,6 +418,133 @@ export function describeRenderer(
             usage: ['render-attachment'],
           })
         ).toThrow(/single level/);
+      });
+
+      // Renders the quad sampled at each level of a texture, over the whole
+      // view: the pixels of each.
+      const sampleLevels = async (map: GpuTexture, levels: number) => {
+        const material = new Material({
+          graph: levelGraph(),
+          values: {
+            map,
+            mapSampler: backend.textures.createSampler({
+              minFilter: 'nearest',
+              magFilter: 'nearest',
+              mipmapFilter: 'nearest',
+            }),
+            level: 0,
+          },
+        });
+        const items = [
+          {
+            mesh: quad(),
+            material,
+            transform: new Transform({ scale: { x: 2, y: 2, z: 1 } }),
+          },
+        ];
+        const frames: ((x: number, y: number) => number[])[] = [];
+        for (let level = 0; level < levels; level++) {
+          material.setValue('level', level);
+          frames.push(await render(items));
+        }
+        return frames;
+      };
+      // The pixels of a level of one color.
+      const filled = (count: number, [r, g, b]: number[]) =>
+        Uint8Array.from({ length: count * 4 }, (_, i) =>
+          i % 4 === 3 ? 255 : [r, g, b][i % 4]
+        );
+
+      it('samples the levels given, and a level written alone', async () => {
+        const map = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 4, height: 4 },
+          levels: [filled(16, red), filled(4, green), filled(1, blue)],
+        });
+        let frames = await sampleLevels(map, 3);
+        expectColor(frames[0](32, 32), [255, 0, 0, 255]);
+        expectColor(frames[1](32, 32), [0, 255, 0, 255]);
+        expectColor(frames[2](32, 32), [0, 0, 255, 255]);
+
+        // The second level replaced, the others kept.
+        backend.textures.writeTexture(map, filled(4, white), { level: 1 });
+        frames = await sampleLevels(map, 3);
+        expectColor(frames[0](32, 32), [255, 0, 0, 255]);
+        expectColor(frames[1](32, 32), [255, 255, 255, 255]);
+        expectColor(frames[2](32, 32), [0, 0, 255, 255]);
+        map.destroy();
+      });
+
+      // A BC7 block of one color, in mode 5: both endpoints the color (7
+      // bits per color channel, 8 for alpha), every index 0.
+      const bc7Block = (color: number[]) => {
+        const bytes = new Uint8Array(16);
+        let bit = 0;
+        const put = (value: number, count: number) => {
+          for (let i = 0; i < count; i++, bit++) {
+            bytes[bit >> 3] |= ((value >> i) & 1) << (bit & 7);
+          }
+        };
+        // Mode 5, no rotation.
+        put(1 << 5, 6);
+        put(0, 2);
+        color.forEach((channel) => put((channel >> 1) * 0x81, 14));
+        put(0xffff, 16);
+        return bytes;
+      };
+      // An ETC2 RGB block of one color, in the individual mode of ETC1: a
+      // base color of 4 bits per channel (0 or 15), every pixel modified by
+      // -2 (table 0): 255 reads 253.
+      const etc2Block = (color: number[]) =>
+        Uint8Array.of(
+          ...color.map((channel) => (channel ? 0xff : 0)),
+          0,
+          0xff,
+          0xff,
+          0,
+          0
+        );
+      const compressed = [
+        { format: 'bc7-rgba-unorm', block: bc7Block, max: 255 },
+        { format: 'etc2-rgb8unorm', block: etc2Block, max: 253 },
+      ];
+
+      it('samples the levels of the compressed formats the device has', async (context) => {
+        const formats = compressed.filter(({ format }) =>
+          backend.capabilities?.compressedFormats?.includes(format)
+        );
+        context.skip(formats.length === 0, 'no BC7 or ETC2 textures');
+        for (const { format, block, max } of formats) {
+          const blocks = (count: number, color: number[]) => {
+            const one = block(color);
+            const data = new Uint8Array(count * one.length);
+            for (let i = 0; i < count; i++) {
+              data.set(one, i * one.length);
+            }
+            return data;
+          };
+          // 8 × 8: 2 × 2 blocks, the top row red, the bottom one blue (the
+          // orientation is checked); then a block for 4 × 4, 2 × 2 and 1 × 1.
+          const map = backend.textures.createTexture({
+            type: '2d',
+            format,
+            dimensions: { width: 8, height: 8 },
+            levels: [
+              Uint8Array.of(...blocks(2, red), ...blocks(2, blue)),
+              blocks(1, green),
+              blocks(1, blue),
+              blocks(1, white),
+            ],
+          });
+          const frames = await sampleLevels(map, 4);
+          expectColor(frames[0](32, 8), [max, 0, 0, 255]);
+          expectColor(frames[0](32, 56), [0, 0, max, 255]);
+          expectColor(frames[1](32, 32), [0, max, 0, 255]);
+          expectColor(frames[2](32, 32), [0, 0, max, 255]);
+          expectColor(frames[3](32, 32), [max, max, max, 255]);
+          map.destroy();
+        }
       });
 
       it('gives the samplers the anisotropy the device allows', async () => {

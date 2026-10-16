@@ -7,15 +7,33 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createImageBitmapDecoder } from './BitmapImageDecoder';
 import { FileSource } from './FileSource';
-import { sniffImageFormat, type DecodedImage, type ImageDecoder } from './ImageDecoder';
-import { hotChannel, withChangeChannel, withPolling, type HotContext } from './watch';
-import { createWorkerImageDecoder, serveImageDecoder } from './WorkerImageDecoder';
-import { serveWorker, WorkerPool, type PoolWorker, type WorkerScope } from './WorkerPool';
+import {
+  sniffImageFormat,
+  type DecodedImage,
+  type ImageDecoder,
+} from './ImageDecoder';
+import {
+  hotChannel,
+  withChangeChannel,
+  withPolling,
+  type HotContext,
+} from './watch';
+import {
+  createWorkerImageDecoder,
+  serveImageDecoder,
+} from './WorkerImageDecoder';
+import {
+  serveWorker,
+  WorkerPool,
+  type PoolWorker,
+  type WorkerScope,
+} from './WorkerPool';
 
 const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 const signal = () => new AbortController().signal;
 const bytesOf = (...n: number[]) => new Uint8Array(n) as ResourceBytes;
-const fakeBitmap = (w = 2, h = 3) => ({ width: w, height: h, close: vi.fn() }) as unknown as ImageBitmap;
+const fakeBitmap = (w = 2, h = 3) =>
+  ({ width: w, height: h, close: vi.fn() } as unknown as ImageBitmap);
 
 // Type-level: a real Worker can be pooled.
 const _pooled: PoolWorker = null as unknown as Worker;
@@ -23,13 +41,23 @@ void _pooled;
 
 describe('sniffImageFormat', () => {
   it('recognizes formats by their magic bytes', () => {
-    expect(sniffImageFormat(bytesOf(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a))).toBe('png');
+    expect(sniffImageFormat(bytesOf(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a))).toBe(
+      'png'
+    );
     expect(sniffImageFormat(bytesOf(0xff, 0xd8, 0xff, 0xe0))).toBe('jpeg');
     expect(sniffImageFormat(new TextEncoder().encode('GIF89a'))).toBe('gif');
-    expect(sniffImageFormat(new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 '))).toBe('webp');
-    expect(sniffImageFormat(new TextEncoder().encode('\0\0\0\x1cftypavif'))).toBe('avif');
-    expect(sniffImageFormat(bytesOf(0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb))).toBe('ktx2');
-    expect(sniffImageFormat(new TextEncoder().encode('hello world'))).toBeUndefined();
+    expect(
+      sniffImageFormat(new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 '))
+    ).toBe('webp');
+    expect(
+      sniffImageFormat(new TextEncoder().encode('\0\0\0\x1cftypavif'))
+    ).toBe('avif');
+    expect(
+      sniffImageFormat(bytesOf(0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb))
+    ).toBe('ktx2');
+    expect(
+      sniffImageFormat(new TextEncoder().encode('hello world'))
+    ).toBeUndefined();
     expect(sniffImageFormat(new Uint8Array())).toBeUndefined();
   });
 });
@@ -38,14 +66,22 @@ describe('createImageBitmapDecoder', () => {
   it('asks for raw pixels: no color conversion, no premultiplied alpha', async () => {
     const bitmap = fakeBitmap(4, 5);
     const create = vi.fn(async () => bitmap);
-    const image = await createImageBitmapDecoder({ createImageBitmap: create }).decode(bytesOf(1, 2, 3), {
+    const image = await createImageBitmapDecoder({
+      createImageBitmap: create,
+    }).decode(bytesOf(1, 2, 3), {
       mimeType: 'image/png',
     });
     expect(image).toEqual({ width: 4, height: 5, bitmap });
-    const [blob, options] = create.mock.calls[0] as unknown as [Blob, ImageBitmapOptions];
+    const [blob, options] = create.mock.calls[0] as unknown as [
+      Blob,
+      ImageBitmapOptions
+    ];
     expect(blob.size).toBe(3);
     expect(blob.type).toBe('image/png');
-    expect(options).toEqual({ colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+    expect(options).toEqual({
+      colorSpaceConversion: 'none',
+      premultiplyAlpha: 'none',
+    });
   });
 
   it('wraps decoding failures', async () => {
@@ -54,7 +90,9 @@ describe('createImageBitmapDecoder', () => {
         throw new DOMException('bad', 'InvalidStateError');
       },
     });
-    await expect(decoder.decode(bytesOf(0))).rejects.toMatchObject({ code: 'decode' });
+    await expect(decoder.decode(bytesOf(0))).rejects.toMatchObject({
+      code: 'decode',
+    });
   });
 
   it('closes the bitmap when aborted meanwhile', async () => {
@@ -63,7 +101,9 @@ describe('createImageBitmapDecoder', () => {
     const decoder = createImageBitmapDecoder({
       createImageBitmap: async () => (ctl.abort(), bitmap),
     });
-    await expect(decoder.decode(bytesOf(0), { signal: ctl.signal })).rejects.toMatchObject({ code: 'aborted' });
+    await expect(
+      decoder.decode(bytesOf(0), { signal: ctl.signal })
+    ).rejects.toMatchObject({ code: 'aborted' });
     expect(bitmap.close).toHaveBeenCalled();
   });
 
@@ -72,7 +112,9 @@ describe('createImageBitmapDecoder', () => {
     // @ts-expect-error jsdom has none, make it explicit
     globalThis.createImageBitmap = undefined;
     try {
-      await expect(createImageBitmapDecoder().decode(bytesOf(0))).rejects.toMatchObject({ code: 'unsupported' });
+      await expect(
+        createImageBitmapDecoder().decode(bytesOf(0))
+      ).rejects.toMatchObject({ code: 'unsupported' });
     } finally {
       globalThis.createImageBitmap = original;
     }
@@ -100,13 +142,20 @@ function fakeWorkerFactory(
     constructor() {
       const scope: WorkerScope = {
         addEventListener: (_type, l) => void this.scopeListeners.push(l),
-        postMessage: (message) => void setTimeout(() => this.emit('message', { data: message }), 0),
+        postMessage: (message) =>
+          void setTimeout(() => this.emit('message', { data: message }), 0),
       };
       setup(scope);
     }
     postMessage(message: unknown, transfer?: Transferable[]) {
       this.transfers.push(transfer ?? []);
-      setTimeout(() => this.scopeListeners.forEach((l) => l({ data: message } as MessageEvent)), 0);
+      setTimeout(
+        () =>
+          this.scopeListeners.forEach((l) =>
+            l({ data: message } as MessageEvent)
+          ),
+        0
+      );
     }
     terminate() {
       this.terminated = true;
@@ -130,11 +179,14 @@ function fakeWorkerFactory(
 
 describe('WorkerPool', () => {
   const echo = (scope: WorkerScope) =>
-    serveWorker<{ n: number; fail?: boolean; delay?: number }, number>(async ({ n, fail, delay }) => {
-      if (delay) await sleep(delay);
-      if (fail) throw new RangeError('boom');
-      return { result: n * 2 };
-    }, scope);
+    serveWorker<{ n: number; fail?: boolean; delay?: number }, number>(
+      async ({ n, fail, delay }) => {
+        if (delay) await sleep(delay);
+        if (fail) throw new RangeError('boom');
+        return { result: n * 2 };
+      },
+      scope
+    );
 
   it('runs jobs and starts workers only when needed', async () => {
     const { create, log } = fakeWorkerFactory(echo);
@@ -142,14 +194,21 @@ describe('WorkerPool', () => {
     expect(await pool.run({ n: 2 })).toBe(4);
     expect(await pool.run({ n: 3 })).toBe(6);
     expect(log.workers).toHaveLength(1); // sequential jobs reuse the idle worker
-    const both = await Promise.all([pool.run({ n: 1, delay: 5 }), pool.run({ n: 2, delay: 5 }), pool.run({ n: 3, delay: 5 })]);
+    const both = await Promise.all([
+      pool.run({ n: 1, delay: 5 }),
+      pool.run({ n: 2, delay: 5 }),
+      pool.run({ n: 3, delay: 5 }),
+    ]);
     expect(both).toEqual([2, 4, 6]);
     expect(log.workers).toHaveLength(3);
   });
 
   it('rejects with the error of the worker', async () => {
     const pool = new WorkerPool({ ...fakeWorkerFactory(echo), size: 1 });
-    await expect(pool.run({ n: 1, fail: true })).rejects.toMatchObject({ code: 'decode', message: 'boom' });
+    await expect(pool.run({ n: 1, fail: true })).rejects.toMatchObject({
+      code: 'decode',
+      message: 'boom',
+    });
     expect(await pool.run({ n: 5 })).toBe(10); // still usable
   });
 
@@ -162,7 +221,9 @@ describe('WorkerPool', () => {
     await expect(p).rejects.toMatchObject({ code: 'aborted' });
     await sleep(20);
     expect(discard).toHaveBeenCalledWith(14);
-    await expect(pool.run({ n: 1 }, { signal: ctl.signal })).rejects.toMatchObject({ code: 'aborted' });
+    await expect(
+      pool.run({ n: 1 }, { signal: ctl.signal })
+    ).rejects.toMatchObject({ code: 'aborted' });
   });
 
   it('replaces a crashed worker and fails its jobs', async () => {
@@ -189,13 +250,16 @@ describe('WorkerPool', () => {
 
 describe('createWorkerImageDecoder', () => {
   const inWorker: ImageDecoder = {
-    decode: vi.fn(async (bytes: ResourceBytes): Promise<DecodedImage> => ({
-      width: bytes.byteLength,
-      height: 1,
-      bitmap: fakeBitmap(),
-    })),
+    decode: vi.fn(
+      async (bytes: ResourceBytes): Promise<DecodedImage> => ({
+        width: bytes.byteLength,
+        height: 1,
+        bitmap: fakeBitmap(),
+      })
+    ),
   };
-  const factory = () => fakeWorkerFactory((scope) => serveImageDecoder(scope, inWorker));
+  const factory = () =>
+    fakeWorkerFactory((scope) => serveImageDecoder(scope, inWorker));
 
   it('decodes in the worker and transfers the buffer', async () => {
     const f = factory();
@@ -208,7 +272,10 @@ describe('createWorkerImageDecoder', () => {
 
   it('can copy instead of transferring', async () => {
     const f = factory();
-    const decoder = createWorkerImageDecoder(new WorkerPool({ ...f, size: 1 }), { transferBytes: false });
+    const decoder = createWorkerImageDecoder(
+      new WorkerPool({ ...f, size: 1 }),
+      { transferBytes: false }
+    );
     await decoder.decode(bytesOf(1, 2));
     expect(f.log.workers[0].transfers[0]).toEqual([]);
   });
@@ -216,7 +283,9 @@ describe('createWorkerImageDecoder', () => {
   it('closes a bitmap that arrives after the abort', async () => {
     const bitmap = fakeBitmap();
     const slow: ImageDecoder = {
-      decode: async (bytes) => (await sleep(5), { width: bytes.byteLength, height: 1, bitmap }),
+      decode: async (bytes) => (
+        await sleep(5), { width: bytes.byteLength, height: 1, bitmap }
+      ),
     };
     const f = fakeWorkerFactory((scope) => serveImageDecoder(scope, slow));
     const decoder = createWorkerImageDecoder(new WorkerPool({ ...f, size: 1 }));
@@ -232,17 +301,22 @@ describe('createWorkerImageDecoder', () => {
 // --- Files -------------------------------------------------------------------
 
 describe('FileSource', () => {
-  const file = (name: string, content: string) => new File([content], name, { lastModified: 1000 });
+  const file = (name: string, content: string) =>
+    new File([content], name, { lastModified: 1000 });
   const read = async (s: FileSource, p: string) =>
     new TextDecoder().decode(await s.read(p, { signal: signal() }));
 
   it('reads, lists and stats the files it was given', async () => {
-    const s = new FileSource().add(file('a.txt', 'hello')).add(file('b.txt', 'x'), 'dir/b.txt');
+    const s = new FileSource()
+      .add(file('a.txt', 'hello'))
+      .add(file('b.txt', 'x'), 'dir/b.txt');
     expect(await read(s, 'a.txt')).toBe('hello');
     expect(await read(s, './dir/b.txt')).toBe('x');
     expect(await s.list('dir/')).toEqual(['dir/b.txt']);
     expect(await s.stat('a.txt')).toEqual({ size: 5, revision: '1000' });
-    await expect(s.read('nope', { signal: signal() })).rejects.toMatchObject({ code: 'not-found' });
+    await expect(s.read('nope', { signal: signal() })).rejects.toMatchObject({
+      code: 'not-found',
+    });
   });
 
   it('notifies the watchers when a path is replaced or removed', () => {
@@ -263,7 +337,8 @@ describe('FileSource', () => {
       isFile: true,
       isDirectory: false,
       fullPath: path,
-      file: (ok: (f: File) => void) => ok(file(path.split('/').pop()!, content)),
+      file: (ok: (f: File) => void) =>
+        ok(file(path.split('/').pop()!, content)),
     });
     const dirEntry = (path: string, children: unknown[]) => {
       const batches = [children.slice(0, 1), children.slice(1), []];
@@ -271,7 +346,9 @@ describe('FileSource', () => {
         isFile: false,
         isDirectory: true,
         fullPath: path,
-        createReader: () => ({ readEntries: (ok: (e: unknown[]) => void) => ok(batches.shift()!) }),
+        createReader: () => ({
+          readEntries: (ok: (e: unknown[]) => void) => ok(batches.shift()!),
+        }),
       };
     };
     const tree = dirEntry('/model', [
@@ -287,7 +364,11 @@ describe('FileSource', () => {
     } as unknown as DataTransfer;
     const s = new FileSource();
     const added = await s.addFromDataTransfer(data);
-    expect(added.sort()).toEqual(['model/m.mtl', 'model/m.obj', 'model/tex/a.png']);
+    expect(added.sort()).toEqual([
+      'model/m.mtl',
+      'model/m.obj',
+      'model/tex/a.png',
+    ]);
     expect(await read(s, 'model/tex/a.png')).toBe('png');
   });
 });
@@ -311,7 +392,10 @@ describe('watching', () => {
 
   it('builds a channel from a Vite hot context', () => {
     const handlers = new Map<string, (d: unknown) => void>();
-    const hot: HotContext = { on: (e, cb) => void handlers.set(e, cb), off: (e) => void handlers.delete(e) };
+    const hot: HotContext = {
+      on: (e, cb) => void handlers.set(e, cb),
+      off: (e) => void handlers.delete(e),
+    };
     const listener = vi.fn();
     const stop = hotChannel(hot).subscribe(listener);
     handlers.get('fdw:resource-changed')!('tex/a.png');
@@ -343,7 +427,9 @@ describe('watching', () => {
   });
 
   it('refuses to poll a source that cannot stat', () => {
-    expect(() => withPolling({ read: async () => new Uint8Array() as ResourceBytes })).toThrow(/stat/);
+    expect(() =>
+      withPolling({ read: async () => new Uint8Array() as ResourceBytes })
+    ).toThrow(/stat/);
   });
 });
 
@@ -369,7 +455,8 @@ describe('with a ResourceStore', () => {
       type: ImageType,
       extensions: ['png'],
       sniff: (head) => sniffImageFormat(head) === 'png',
-      load: async (ctx) => decoder.decode(await ctx.bytes(), { signal: ctx.signal }),
+      load: async (ctx) =>
+        decoder.decode(await ctx.bytes(), { signal: ctx.signal }),
       dispose: (image) => image.bitmap.close(),
     });
 

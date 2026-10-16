@@ -55,6 +55,7 @@ function fakeAddon() {
       calls.push(`rumble ${id} ${strong} ${weak} ${ms}`);
       return id === 7;
     },
+    decodeImage: () => Promise.reject(new Error('no images here')),
   };
   return { addon, calls, queue };
 }
