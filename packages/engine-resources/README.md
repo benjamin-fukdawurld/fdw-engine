@@ -3,7 +3,7 @@
 The resource system of FdwEngine: asynchronous loading, caching and lifetime management for assets and other data, independent of the graphics backend. Resources are identified by a type and a URI, and loaded by registered loaders. Pure TypeScript, with no graphics dependency. Sources can be mounted like a virtual file system (`MemorySource`, `HttpSource`, archives, and platform-specific file sources). See the [P5 roadmap](../../design/roadmap.md#p5-ressources).
 
 ```ts
-import { defineResourceType, ResourceStore } from '@fdw/engine-resources';
+import { defineResourceType, HttpSource, ResourceStore } from '@fdw/engine-resources';
 
 interface LevelConfig {
   readonly name: string;
@@ -42,4 +42,5 @@ scope.dispose();
 - **Deterministic cleanup**: release handles explicitly or group them in a `ResourceScope`. Unused entries can remain cached within a configurable memory budget.
 - **Backend-independent data**: format loaders produce CPU-side data. Graphics resources are realized separately by `@fdw/engine-assets`, allowing resources to be rebuilt for another rendering backend without coupling format loaders to the GPU.
 - **Frame-budgeted updates**: `update()` applies pending replacements and resource updates within a configurable time budget, helping avoid frame-time spikes.
+- **Typed errors**: failures are `ResourceError`s with a `code` (`not-found`, `decode`, `unsupported`, `aborted`, `dependency`, `io`) and the chain of URIs that failed (`oak.glb → bark.png`).
 - **Testable without a GPU**: loaders and resource dependencies can be tested with in-memory sources and test data.
