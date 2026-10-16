@@ -229,7 +229,7 @@ export function skinningKernel(
   const g = new GraphBuilder(name);
   const { call, add, mul, transform, blend } = helpers(g);
   const u32 = (value: number) => g.constant(BuiltinTypes.u32, value);
-  const vertex = g.builtin('global-invocation-id').swizzle('x');
+  const invocation = g.builtin('global-invocation-id').swizzle('x');
   const stride = skinStride(attributes);
   const vec4Array = arrayType(BuiltinTypes.vec4f);
   const rest = g.storage(SkinValues.rest, vec4Array);
@@ -241,6 +241,15 @@ export function skinningKernel(
   });
   const index = (array: PortHandle, i: Value) =>
     g.call(std.index, { array, index: i });
+  // The threads past the last vertex write nothing, but read the last
+  // vertex: Vulkan does not bound the reads out of a buffer (lavapipe
+  // crashes on them), unlike WebGPU.
+  const count = call(std.arrayLength, { array: weights });
+  const when = call(std.less, { a: invocation, b: count });
+  const vertex = call(std.min, {
+    a: invocation,
+    b: call(std.sub, { a: count, b: u32(1) }),
+  });
   const columns = blend(
     index(joints, vertex),
     index(weights, vertex),
@@ -248,10 +257,6 @@ export function skinningKernel(
   );
   const first = mul(vertex, u32(stride));
   const at = (k: number) => (k === 0 ? first : add(first, u32(k)));
-  const when = call(std.less, {
-    a: vertex,
-    b: call(std.arrayLength, { array: weights }),
-  });
   const write = (k: number, value: PortHandle) =>
     g.write(out, { index: at(k), value, when });
   write(
