@@ -1,0 +1,18 @@
+{
+  "name": "@fdw/engine-resources-web",
+  "version": "0.0.1",
+  "dependencies": {
+    "@fdw/engine-resources": "0.0.1",
+    "tslib": "^2.3.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw/engine-resources-web": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}

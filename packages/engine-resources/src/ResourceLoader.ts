@@ -1,8 +1,6 @@
 import { ResourceType } from './types';
 import { LoadContext } from './LoadContext';
 
-// --- Loaders --------------------------------------------------------------
-
 export interface LoadOptions<O> {
   readonly options?: O;
   readonly priority?: 'high' | 'normal' | 'low';
