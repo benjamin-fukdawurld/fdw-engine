@@ -17,6 +17,10 @@ a part of the engine:
 | [3. The flashlight](/fdw-engine/game/flashlight/) | A spot carried by the character, aimed with the mouse, in the dark                                     | Lights and shadows limited to the view              |
 | [4. The game](/fdw-engine/game/the-game/)         | Gems to collect, enemies wandering, lines of sight, a map revealed by exploration                      | The ECS core and its systems, rays, texture updates |
 
+A second game, [a first person shooter](/fdw-engine/game/fps/), takes these
+bricks again in one page: an arena, a weapon in the hand, waves of drones
+shot down with rays, a pause menu.
+
 ## Where the code is
 
 The code of the game is in `packages/demo-scenes/src/maze/`, shared by:
@@ -37,7 +41,7 @@ differs, `WebInputSource` or `NativeInputSource`.
 export const createMazeStep1: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   // … build the game …
   return {

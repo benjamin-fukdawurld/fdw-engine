@@ -40,7 +40,7 @@ const bytesOf = (array: ArrayBufferView) =>
 /** A GLB file from its JSON and its BIN chunk. */
 export function writeGlb(
   json: object,
-  bin?: Uint8Array
+  bin?: Uint8Array,
 ): Uint8Array<ArrayBuffer> {
   const pad = (bytes: Uint8Array, fill: number) => {
     const out = new Uint8Array(Math.ceil(bytes.byteLength / 4) * 4).fill(fill);
@@ -91,7 +91,7 @@ export class GltfBuilder {
 
   bufferView(
     bytes: ArrayBufferView,
-    extra: Record<string, unknown> = {}
+    extra: Record<string, unknown> = {},
   ): number {
     const byteOffset = this.append(bytes);
     return this.add('bufferViews', {
@@ -106,7 +106,7 @@ export class GltfBuilder {
   accessor(
     array: TypedArray,
     type: GltfAccessorType,
-    extra: Partial<GltfAccessor> = {}
+    extra: Partial<GltfAccessor> = {},
   ): number {
     const componentType = componentTypes.get(array.constructor)!;
     return this.add('accessors', {
@@ -144,7 +144,7 @@ export class GltfBuilder {
   gltf(uri?: string): string {
     const base64 = () =>
       `data:application/octet-stream;base64,${Buffer.from(this.data).toString(
-        'base64'
+        'base64',
       )}`;
     this.json.buffers = [
       { uri: uri ?? base64(), byteLength: this.data.byteLength },

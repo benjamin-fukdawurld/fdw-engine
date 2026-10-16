@@ -33,14 +33,14 @@ const nested = () => {
   const x = inner.functionInput('x', BuiltinTypes.vec3f);
   inner.functionOutput(
     'result',
-    inner.call(std.mul, { a: inner.call(std.sin, { x }), b: 0.5 })
+    inner.call(std.mul, { a: inner.call(std.sin, { x }), b: 0.5 }),
   );
   const innerFunction = defineFunction(inner.build(), { id: 'bench.inner' });
   const outer = new GraphBuilder('outer');
   const y = outer.functionInput('y', BuiltinTypes.vec3f);
   outer.functionOutput(
     'result',
-    outer.call(innerFunction, { x: outer.call(innerFunction, { x: y }) })
+    outer.call(innerFunction, { x: outer.call(innerFunction, { x: y }) }),
   );
   const outerFunction = defineFunction(outer.build(), {
     id: 'bench.outer',

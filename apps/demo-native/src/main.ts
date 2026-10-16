@@ -135,7 +135,7 @@ const loop = runLoop(
       loop.stop();
     }
   },
-  throttle ? { throttle } : {}
+  throttle ? { throttle } : {},
 );
 window.addEventListener('close', () => loop.stop());
 window.addEventListener('keydown', (event) => {
@@ -149,7 +149,7 @@ const seconds = (performance.now() - start) / 1000;
 console.log(
   `${name}: ${frames} frames in ${seconds.toFixed(1)} s (${(
     frames / seconds
-  ).toFixed(1)} fps)${info ? `, ${info}` : ''}`
+  ).toFixed(1)} fps)${info ? `, ${info}` : ''}`,
 );
 if (engine instanceof VulkanEngine) {
   const messages = engine.device?.takeMessages() ?? [];

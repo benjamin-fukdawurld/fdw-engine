@@ -26,7 +26,7 @@ export type TextureSlot =
 
 /** The textures of a material data, by slot. */
 export function texturesOf(
-  data: MaterialData
+  data: MaterialData,
 ): Partial<Record<TextureSlot, TextureRef>> {
   const slots: Partial<Record<TextureSlot, TextureRef | undefined>> =
     data.kind === 'pbr'
@@ -45,7 +45,7 @@ export function texturesOf(
           emissive: data.emissiveTexture,
         };
   return Object.fromEntries(
-    Object.entries(slots).filter(([, ref]) => ref !== undefined)
+    Object.entries(slots).filter(([, ref]) => ref !== undefined),
   );
 }
 
@@ -99,7 +99,7 @@ export function uvTransformRows({
 
 function sampler(
   g: GraphBuilder,
-  textures: Partial<Record<TextureSlot, TextureRef>>
+  textures: Partial<Record<TextureSlot, TextureRef>>,
 ) {
   const uvs = new Map<number, PortHandle>();
   const uvOf = (set: number) => {
@@ -107,7 +107,7 @@ function sampler(
     if (!uv)
       uvs.set(
         set,
-        (uv = g.attribute(set === 0 ? 'uv' : `uv${set}`, BuiltinTypes.vec2f))
+        (uv = g.attribute(set === 0 ? 'uv' : `uv${set}`, BuiltinTypes.vec2f)),
       );
     return uv;
   };
@@ -146,7 +146,7 @@ function sampler(
 
 function pbrGraph(
   data: MaterialData & { kind: 'pbr' },
-  key: string
+  key: string,
 ): MaterialGraphData {
   const g = new GraphBuilder(key);
   const textures = texturesOf(data);
@@ -164,7 +164,7 @@ function pbrGraph(
       b: g.call(
         stdMacros.optionalAttribute,
         { fallback: [1, 1, 1, 1] },
-        { params: { semantic: 'color', type: vec4f } }
+        { params: { semantic: 'color', type: vec4f } },
       ),
     });
   }
@@ -218,7 +218,7 @@ function pbrGraph(
 
 function phongGraph(
   data: MaterialData & { kind: 'phong' },
-  key: string
+  key: string,
 ): MaterialGraphData {
   const g = new GraphBuilder(key);
   const textures = texturesOf(data);

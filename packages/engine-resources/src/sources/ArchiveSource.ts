@@ -24,7 +24,7 @@ export const inflateRaw: Inflate = async (data) => {
     throw new ResourceError(
       'unsupported',
       'zip',
-      "DecompressionStream('deflate-raw') is unavailable: pass an `inflate` function (fflate)"
+      "DecompressionStream('deflate-raw') is unavailable: pass an `inflate` function (fflate)",
     );
   }
   const stream = new Blob([data])
@@ -66,7 +66,7 @@ export class ZipReader implements ArchiveReader {
       throw new ResourceError(
         'unsupported',
         'zip',
-        'ZIP64 archives are not supported'
+        'ZIP64 archives are not supported',
       );
     }
 
@@ -89,7 +89,7 @@ export class ZipReader implements ArchiveReader {
       const commentLen = view.getUint16(offset + 32, true);
       const local = view.getUint32(offset + 42, true);
       const name = decoder.decode(
-        bytes.subarray(offset + 46, offset + 46 + nameLen)
+        bytes.subarray(offset + 46, offset + 46 + nameLen),
       );
       offset += 46 + nameLen + extraLen + commentLen;
       if (name.endsWith('/')) continue; // directory
@@ -123,7 +123,7 @@ export class ZipReader implements ArchiveReader {
           throw new ResourceError(
             'unsupported',
             path,
-            `Zip compression method ${method}`
+            `Zip compression method ${method}`,
           );
         },
       });
@@ -182,7 +182,7 @@ export class ArchiveSource implements ResourceSource {
 
   async read(
     path: string,
-    { signal, onProgress }: ReadOptions
+    { signal, onProgress }: ReadOptions,
   ): Promise<ResourceBytes> {
     const entry = await this.entry(path);
     if (signal.aborted) throw new ResourceError('aborted', path);

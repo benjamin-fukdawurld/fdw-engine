@@ -6,7 +6,7 @@ export class ColorView implements IColor {
   constructor(buffer?: ArrayBuffer, byteOffset?: number) {
     this._buffer = new DataView<ArrayBuffer>(
       buffer ?? new ArrayBuffer(4 * 4),
-      byteOffset ?? 0
+      byteOffset ?? 0,
     );
   }
 

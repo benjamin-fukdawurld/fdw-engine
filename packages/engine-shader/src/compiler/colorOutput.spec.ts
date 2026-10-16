@@ -12,7 +12,7 @@ const graph = () => {
 
 const fragmentInstructions = (program: ReturnType<typeof compile>) => {
   const fragment = program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === 'fragment'
+    (entryPoint) => entryPoint.stage === 'fragment',
   ) as IrEntryPoint;
   const all: IrInstruction[] = [];
   forEachInstruction(fragment.body, (instruction) => all.push(instruction));
@@ -44,8 +44,8 @@ describe('color output', () => {
         (value) =>
           Array.isArray(value) &&
           value.length === 3 &&
-          value.every((component) => Math.abs(component - 1 / 2.4) < 1e-6)
-      )
+          value.every((component) => Math.abs(component - 1 / 2.4) < 1e-6),
+      ),
     ).toBe(true);
     expect(program.variantKey).toEqual({ outputEncoding: 'srgb' });
   });
@@ -59,7 +59,7 @@ describe('color output', () => {
 
   it('rejects unknown tone mappings', () => {
     expect(() =>
-      compile(graph(), { features: { toneMapping: 'magic' } })
+      compile(graph(), { features: { toneMapping: 'magic' } }),
     ).toThrow(/unknown tone mapping "magic"/);
   });
 
@@ -72,7 +72,7 @@ describe('color output', () => {
           { toneMapping: 'aces' },
           { toneMapping: 'aces', outputEncoding: 'srgb' },
         ] as Record<string, string>[]
-      ).map((features) => compile(graph(), { features }).programKey)
+      ).map((features) => compile(graph(), { features }).programKey),
     );
     expect(keys.size).toBe(4);
   });

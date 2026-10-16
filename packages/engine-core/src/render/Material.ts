@@ -80,7 +80,7 @@ export class Material {
       if (node.type === 'input.uniform' && value !== undefined) {
         this._defaults.set(
           node.params['name'] as string,
-          value as ConstantValue
+          value as ConstantValue,
         );
       }
     }

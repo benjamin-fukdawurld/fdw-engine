@@ -26,7 +26,7 @@ import { WebGpuRenderTarget } from './WebGpuRenderTarget';
 function unwrap<T>(
   value: unknown,
   type: abstract new (...args: never[]) => T,
-  what: string
+  what: string,
 ): T {
   if (!(value instanceof type)) {
     throw new Error(`${what} was not created by the WebGPU backend`);
@@ -67,28 +67,28 @@ class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
 
   setPipeline(pipeline: GpuRenderPipeline): void {
     this._pass.setPipeline(
-      unwrap(pipeline, WebGpuRenderPipeline, 'The pipeline').pipeline
+      unwrap(pipeline, WebGpuRenderPipeline, 'The pipeline').pipeline,
     );
   }
 
   setBindGroup(index: number, group: GpuBindGroup): void {
     this._pass.setBindGroup(
       index,
-      unwrap(group, WebGpuBindGroup, 'The bind group').group
+      unwrap(group, WebGpuBindGroup, 'The bind group').group,
     );
   }
 
   setVertexBuffer(slot: number, buffer: GpuBuffer): void {
     this._pass.setVertexBuffer(
       slot,
-      unwrap(buffer, Buffer, 'The vertex buffer').buffer
+      unwrap(buffer, Buffer, 'The vertex buffer').buffer,
     );
   }
 
   setIndexBuffer(buffer: GpuBuffer, format: IndexFormat): void {
     this._pass.setIndexBuffer(
       unwrap(buffer, Buffer, 'The index buffer').buffer,
-      format
+      format,
     );
   }
 
@@ -110,14 +110,14 @@ class WebGpuComputePassEncoder implements GpuComputePassEncoder {
 
   setPipeline(pipeline: GpuComputePipeline): void {
     this._pass.setPipeline(
-      unwrap(pipeline, WebGpuComputePipeline, 'The pipeline').pipeline
+      unwrap(pipeline, WebGpuComputePipeline, 'The pipeline').pipeline,
     );
   }
 
   setBindGroup(index: number, group: GpuBindGroup): void {
     this._pass.setBindGroup(
       index,
-      unwrap(group, WebGpuBindGroup, 'The bind group').group
+      unwrap(group, WebGpuBindGroup, 'The bind group').group,
     );
   }
 
@@ -128,7 +128,7 @@ class WebGpuComputePassEncoder implements GpuComputePassEncoder {
   dispatchWorkgroupsIndirect(buffer: GpuBuffer, offset: number): void {
     this._pass.dispatchWorkgroupsIndirect(
       unwrap(buffer, Buffer, 'The indirect buffer').buffer,
-      offset
+      offset,
     );
   }
 
@@ -141,7 +141,7 @@ export class WebGpuCommandBuffer {
   constructor(
     readonly commands: GPUCommandBuffer,
     // The pass timers resolved into it: told once it is submitted.
-    readonly timers: ReadonlySet<WebGpuPassTimer> = new Set()
+    readonly timers: ReadonlySet<WebGpuPassTimer> = new Set(),
   ) {}
 }
 
@@ -162,7 +162,7 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
 
   constructor(
     private readonly _encoder: GPUCommandEncoder,
-    private readonly _textures: TextureFactory
+    private readonly _textures: TextureFactory,
   ) {}
 
   /** The WebGPU encoder. */
@@ -181,7 +181,7 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
           ? {
               resolveTarget: attachmentView(
                 attachment.resolveTarget,
-                'The resolve target'
+                'The resolve target',
               ),
             }
           : {}),
@@ -216,7 +216,7 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
       this._encoder.beginComputePass({
         ...(label ? { label } : {}),
         ...timestampWrites(timing),
-      })
+      }),
     );
   }
 
@@ -225,26 +225,26 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
     sourceOffset: number,
     destination: GpuBuffer,
     destinationOffset: number,
-    size: number
+    size: number,
   ): void {
     this._encoder.copyBufferToBuffer(
       unwrap(source, Buffer, 'The source buffer').buffer,
       sourceOffset,
       unwrap(destination, Buffer, 'The destination buffer').buffer,
       destinationOffset,
-      size
+      size,
     );
   }
 
   copyTextureToTexture(
     source: GpuAttachmentTarget,
     destination: GpuAttachmentTarget,
-    size: { readonly width: number; readonly height: number }
+    size: { readonly width: number; readonly height: number },
   ): void {
     this._encoder.copyTextureToTexture(
       { texture: gpuTexture(source, 'The source texture') },
       { texture: gpuTexture(destination, 'The destination texture') },
-      [size.width, size.height]
+      [size.width, size.height],
     );
   }
 
@@ -255,7 +255,7 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
     }
     this._textures.encodeMipmaps(
       this._encoder,
-      gpuTexture(texture, 'The texture')
+      gpuTexture(texture, 'The texture'),
     );
   }
 

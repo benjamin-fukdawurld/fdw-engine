@@ -20,8 +20,7 @@ export type OrthographicProjectionData = {
 };
 
 export type ProjectionData =
-  | PerspectiveProjectionData
-  | OrthographicProjectionData;
+  PerspectiveProjectionData | OrthographicProjectionData;
 
 export type CameraData = SpatialTransformData & {
   projection: ProjectionData;

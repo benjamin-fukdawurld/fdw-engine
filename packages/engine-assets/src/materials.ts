@@ -26,7 +26,7 @@ export const MaterialType = defineResourceType<Material>('material');
 
 /** The uniform values of a material data, by the names of its graph. */
 export function materialFactors(
-  data: MaterialData
+  data: MaterialData,
 ): Record<string, MaterialValue> {
   const values: Record<string, MaterialValue> =
     data.kind === 'pbr'
@@ -64,7 +64,7 @@ export function materialFactors(
 /** The options of the texture of a slot: its color space and sampler. */
 export const textureOptions = (
   slot: TextureSlot,
-  ref: TextureRef
+  ref: TextureRef,
 ): TextureOptions => ({
   colorSpace: colorSlots.has(slot) ? 'srgb' : 'linear',
   sampler: ref.sampler,
@@ -81,7 +81,7 @@ const madeWith = new WeakMap<Material, Record<string, MaterialValue>>();
  */
 export async function realizeMaterial(
   ctx: LoadContext<unknown>,
-  data: MaterialData
+  data: MaterialData,
 ): Promise<Material> {
   const config = ctx.service(AssetsConfigService);
   let backend: RenderBackend | undefined;
@@ -90,7 +90,7 @@ export async function realizeMaterial(
       const handle = ctx.use<Texture, TextureOptions>(
         TextureType,
         ref.image,
-        textureOptions(slot as TextureSlot, ref)
+        textureOptions(slot as TextureSlot, ref),
       );
       try {
         return [slot, await handle.ready] as const;
@@ -99,12 +99,12 @@ export async function realizeMaterial(
         config.warn(
           `${ctx.uri}: texture ${ref.image} replaced by a placeholder (${
             (e as Error).message
-          })`
+          })`,
         );
         backend ??= ctx.service(RenderBackendService);
         return [slot, placeholderTexture(backend)] as const;
       }
-    })
+    }),
   );
   const values = materialFactors(data);
   for (const [slot, texture] of textures) {

@@ -19,7 +19,7 @@ function minkowski(
   a: ConvexVolume,
   b: ConvexVolume,
   d: ReadonlyVec3,
-  out: Vec3
+  out: Vec3,
 ): Vec3 {
   a.support(d, supportA);
   b.support(scale(negated, d, -1), supportB);

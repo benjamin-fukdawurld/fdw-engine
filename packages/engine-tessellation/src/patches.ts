@@ -16,7 +16,7 @@ export type Patch = readonly [
   PatchCorner,
   PatchCorner,
   PatchCorner,
-  PatchCorner
+  PatchCorner,
 ];
 
 /** The finest template: 2^6 = 64 quads along each edge of a patch. */
@@ -100,7 +100,7 @@ export class Patches {
           edgeOf(c01, c11),
           edgeOf(c00, c01),
         ],
-        p * 4
+        p * 4,
       );
     });
     this.edgeEnds = new Float64Array(ends);

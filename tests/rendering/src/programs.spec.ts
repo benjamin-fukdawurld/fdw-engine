@@ -51,12 +51,12 @@ const sdk = !!(
 const skipHlsl = !canRun(
   'hlsl',
   !!dawn && sdk,
-  'needs Dawn and the Vulkan SDK (dxc, spirv-val, spirv-cross)'
+  'needs Dawn and the Vulkan SDK (dxc, spirv-val, spirv-cross)',
 );
 const skipGlsl = !canRun(
   'glsl',
   !!dawn && !!glslang,
-  'needs Dawn and glslangValidator (Vulkan SDK)'
+  'needs Dawn and glslangValidator (Vulkan SDK)',
 );
 const skip = skipHlsl && skipGlsl;
 
@@ -73,39 +73,39 @@ function recordPrograms(backend: RenderBackend): void {
     };
   pipelines.createRenderPipeline = record(pipelines.createRenderPipeline);
   pipelines.createRenderPipelineAsync = record(
-    pipelines.createRenderPipelineAsync
+    pipelines.createRenderPipelineAsync,
   );
   pipelines.createComputePipeline = record(pipelines.createComputePipeline);
   pipelines.createComputePipelineAsync = record(
-    pipelines.createComputePipelineAsync
+    pipelines.createComputePipelineAsync,
   );
 }
 
 describeRenderer(
   'Rendering suite on Dawn, recording its programs',
   () => createDawnFixture(recordPrograms),
-  { skip }
+  { skip },
 );
 
 // The offsets of the uniform blocks of a module are those of the layout.
 async function expectLayout(
   spirv: Uint8Array,
   layout: PhysicalProgramLayout,
-  name: string
+  name: string,
 ): Promise<void> {
   const reflected = [...(await reflectUniformBlocks(spirv)).values()];
   for (const group of layout.groups) {
     for (const { binding, block, resource } of group.bindings) {
       const found = reflected.find(
         (candidate) =>
-          candidate.set === group.index && candidate.binding === binding
+          candidate.set === group.index && candidate.binding === binding,
       );
       if (!block || !found) {
         continue;
       }
       expect(
         found.members.map((member) => member.offset),
-        `${name}: ${resource.name}`
+        `${name}: ${resource.name}`,
       ).toEqual(block.members.map((member) => member.offset));
     }
   }
@@ -144,7 +144,7 @@ async function validateGlsl(vertex: string, fragment: string): Promise<void> {
     await promisify(execFile)(glslang as string, ['-l', ...files]).catch(
       (error: { stdout?: string; stderr?: string }) => {
         throw new Error(error.stdout || error.stderr || String(error));
-      }
+      },
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -162,10 +162,10 @@ describe.skipIf(skipGlsl)(
         // WebGL2 has no compute stage, nor storage buffers: those programs
         // only run where the backend has them.
         const compute = program.module.entryPoints.some(
-          (entry) => entry.stage === 'compute'
+          (entry) => entry.stage === 'compute',
         );
         const storage = program.layout.groups.some((group) =>
-          group.bindings.some((binding) => binding.kind === 'storage-buffer')
+          group.bindings.some((binding) => binding.kind === 'storage-buffer'),
         );
         if (compute || storage) {
           continue;
@@ -185,5 +185,5 @@ describe.skipIf(skipGlsl)(
       expect(failures).toEqual([]);
       expect(validated).toBeGreaterThan(25);
     });
-  }
+  },
 );

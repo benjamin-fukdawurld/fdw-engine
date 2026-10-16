@@ -16,7 +16,7 @@ import { createMazeWorld, surfaceMaterial } from './world';
 export const createMazeStep2: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   const scene = new Scene();
   const { level, cube, sphere } = createMazeWorld(scene);
@@ -49,7 +49,7 @@ export const createMazeStep2: SceneFactory = (
   });
   const follow = new FollowCamera(
     scene.root.add({ name: 'camera' }).setCamera(camera),
-    actions
+    actions,
   );
   // The character, seen from above: too small at the scale of the top view.
   const marker = scene.root
@@ -80,7 +80,7 @@ export const createMazeStep2: SceneFactory = (
       const stats = view.render(surface, camera);
       if (stats) {
         context.info?.(
-          `${stats.drawn} of ${nodes} nodes drawn, ${stats.casters} shadow casters`
+          `${stats.drawn} of ${nodes} nodes drawn, ${stats.casters} shadow casters`,
         );
       }
     },

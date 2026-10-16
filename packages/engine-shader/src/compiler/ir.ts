@@ -260,7 +260,7 @@ export interface ShaderModuleIR {
  */
 export function forEachInstruction(
   body: readonly IrInstruction[],
-  visit: (instruction: IrInstruction) => void
+  visit: (instruction: IrInstruction) => void,
 ): void {
   for (const instruction of body) {
     visit(instruction);

@@ -15,7 +15,7 @@ const frame = (passes: number) => {
   let previous = graph.addRasterPass('pass 0', (pass) => ({
     color: pass.writeColor(
       graph.createTexture('texture 0', { format: 'rgba16float' }),
-      { load: 'clear' }
+      { load: 'clear' },
     ),
     execute: () => undefined,
   })).color;
@@ -26,7 +26,7 @@ const frame = (passes: number) => {
       return {
         color: pass.writeColor(
           graph.createTexture(`texture ${i}`, { format: 'rgba16float' }),
-          { load: 'clear' }
+          { load: 'clear' },
         ),
         execute: () => undefined,
       };

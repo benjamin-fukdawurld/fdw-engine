@@ -8,7 +8,7 @@ import { generateMaze } from './maze';
 // The PBR material of the game: a color, and how rough it is.
 export function surfaceMaterial(
   color: [number, number, number],
-  roughness: number
+  roughness: number,
 ): Material {
   const g = new GraphBuilder('surface');
   g.surface({
@@ -33,7 +33,7 @@ export interface MazeWorld {
  */
 export function createMazeWorld(
   scene: Scene,
-  { seed = 7, sun: daylight = true }: { seed?: number; sun?: boolean } = {}
+  { seed = 7, sun: daylight = true }: { seed?: number; sun?: boolean } = {},
 ): MazeWorld {
   const cube = createCube();
   const sphere = createSphere(24, 12);

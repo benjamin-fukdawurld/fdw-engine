@@ -3,12 +3,12 @@ export type Mat3Api = {
   premultiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   multiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   invert: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
   transpose: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
@@ -17,12 +17,12 @@ export type Mat3Api = {
   multiplyScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   add: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   determinant: (mat: ArrayLike<number>) => number;
@@ -35,7 +35,7 @@ export type Mat3Api = {
   equals: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    epsilon?: number
+    epsilon?: number,
   ) => boolean;
   zero: (out?: Float32Array) => Float32Array;
   one: (out?: Float32Array) => Float32Array;

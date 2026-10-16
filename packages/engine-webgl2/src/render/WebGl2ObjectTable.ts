@@ -19,7 +19,7 @@ class DataTexture {
       type: GLenum;
       // Components per texel.
       components: number;
-    }
+    },
   ) {
     const gl = _gl;
     const height = Math.max(1, Math.ceil(texels / ObjectTableWidth));
@@ -30,7 +30,7 @@ class DataTexture {
       1,
       _format.internal,
       ObjectTableWidth,
-      height
+      height,
     );
     // Integer textures are complete only without filtering.
     gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
@@ -64,7 +64,7 @@ class DataTexture {
         format,
         type,
         values,
-        written * components
+        written * components,
       );
       written += count;
     }
@@ -89,7 +89,7 @@ export class WebGl2ObjectTable implements GpuObjectTable {
 
   constructor(
     gl: WebGL2RenderingContext,
-    { rows, instances, rowStride }: ObjectTableDescriptor
+    { rows, instances, rowStride }: ObjectTableDescriptor,
   ) {
     this.rows = Math.max(rows, 1);
     this.instances = Math.max(instances, 1);
@@ -111,7 +111,7 @@ export class WebGl2ObjectTable implements GpuObjectTable {
   writeRows(firstRow: number, data: ArrayBufferView<ArrayBuffer>): void {
     this.rowTexture.write(
       firstRow * this._rowTexels,
-      new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4)
+      new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4),
     );
   }
 

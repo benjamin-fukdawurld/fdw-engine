@@ -22,7 +22,7 @@ const any = generic('T', 'any');
 const port = (
   name: string,
   type: PortType,
-  defaultValue?: number
+  defaultValue?: number,
 ): PortSchema =>
   defaultValue === undefined
     ? { name, type }
@@ -33,7 +33,7 @@ function intrinsic(
   op: IntrinsicOp,
   inputs: readonly PortSchema[],
   result: PortType,
-  stage?: ShaderStage
+  stage?: ShaderStage,
 ): FunctionDefinition {
   return {
     id: `std.${id}`,
@@ -72,7 +72,7 @@ export const index = intrinsic(
   'index',
   'index',
   [port('array', array), port('index', integer)],
-  arrayElementOf('A')
+  arrayElementOf('A'),
 );
 
 /** The number of elements of a runtime-sized array (a storage buffer). */
@@ -80,7 +80,7 @@ export const arrayLength = intrinsic(
   'arrayLength',
   'array-length',
   [port('array', array)],
-  BuiltinTypes.u32
+  BuiltinTypes.u32,
 );
 
 export const less = comparison('less', 'less');
@@ -126,7 +126,7 @@ export const step = intrinsic(
   'step',
   'step',
   [port('edge', float), port('x', float)],
-  float
+  float,
 );
 
 /**
@@ -139,70 +139,70 @@ export const perFragment = intrinsic(
   'identity',
   [port('value', any)],
   any,
-  'fragment'
+  'fragment',
 );
 
 export const pow = intrinsic(
   'pow',
   'pow',
   [port('base', float), port('exponent', float)],
-  float
+  float,
 );
 
 export const dot = intrinsic(
   'dot',
   'dot',
   [port('a', floatVector), port('b', floatVector)],
-  elementOf('T')
+  elementOf('T'),
 );
 
 export const length = intrinsic(
   'length',
   'length',
   [port('x', floatVector)],
-  elementOf('T')
+  elementOf('T'),
 );
 
 export const normalize = intrinsic(
   'normalize',
   'normalize',
   [port('x', floatVector)],
-  floatVector
+  floatVector,
 );
 
 export const cross = intrinsic(
   'cross',
   'cross',
   [port('a', BuiltinTypes.vec3f), port('b', BuiltinTypes.vec3f)],
-  BuiltinTypes.vec3f
+  BuiltinTypes.vec3f,
 );
 
 export const reflect = intrinsic(
   'reflect',
   'reflect',
   [port('incident', floatVector), port('normal', floatVector)],
-  floatVector
+  floatVector,
 );
 
 export const mix = intrinsic(
   'mix',
   'mix',
   [port('a', float), port('b', float), port('t', float)],
-  float
+  float,
 );
 
 export const clamp = intrinsic(
   'clamp',
   'clamp',
   [port('x', numeric), port('low', numeric), port('high', numeric)],
-  numeric
+  numeric,
 );
 
 export const smoothstep = intrinsic(
   'smoothstep',
   'smoothstep',
   [port('low', float), port('high', float), port('x', float)],
-  float
+  float,
 );
 
 /** Branchless choice between two values: the graph has no control flow. */
@@ -214,7 +214,7 @@ export const select = intrinsic(
     port('ifTrue', any),
     port('condition', BuiltinTypes.bool),
   ],
-  any
+  any,
 );
 
 /**
@@ -230,7 +230,7 @@ export const textureSample = intrinsic(
     port('uv', BuiltinTypes.vec2f),
   ],
   BuiltinTypes.vec4f,
-  'fragment'
+  'fragment',
 );
 
 /**
@@ -247,7 +247,7 @@ export const textureSampleLevel = intrinsic(
     port('uv', BuiltinTypes.vec2f),
     port('level', BuiltinTypes.f32, 0),
   ],
-  BuiltinTypes.vec4f
+  BuiltinTypes.vec4f,
 );
 
 /**
@@ -266,7 +266,7 @@ export const textureSampleCompare = intrinsic(
     port('uv', BuiltinTypes.vec2f),
     port('depthRef', BuiltinTypes.f32),
   ],
-  BuiltinTypes.f32
+  BuiltinTypes.f32,
 );
 
 /**
@@ -284,7 +284,7 @@ export const textureLoad = intrinsic(
     port('coords', BuiltinTypes.vec2i),
     port('level', BuiltinTypes.i32, 0),
   ],
-  BuiltinTypes.vec4f
+  BuiltinTypes.vec4f,
 );
 
 /**
@@ -300,7 +300,7 @@ export const textureLoadDepth = intrinsic(
     port('coords', BuiltinTypes.vec2i),
     port('level', BuiltinTypes.i32, 0),
   ],
-  BuiltinTypes.f32
+  BuiltinTypes.f32,
 );
 
 /**
@@ -316,7 +316,7 @@ export const textureSampleCube = intrinsic(
     port('direction', BuiltinTypes.vec3f),
   ],
   BuiltinTypes.vec4f,
-  'fragment'
+  'fragment',
 );
 
 /**
@@ -333,14 +333,14 @@ export const textureSampleCubeLevel = intrinsic(
     port('direction', BuiltinTypes.vec3f),
     port('level', BuiltinTypes.f32, 0),
   ],
-  BuiltinTypes.vec4f
+  BuiltinTypes.vec4f,
 );
 
 export const vec2 = intrinsic(
   'vec2',
   'construct',
   [port('x', BuiltinTypes.f32, 0), port('y', BuiltinTypes.f32, 0)],
-  BuiltinTypes.vec2f
+  BuiltinTypes.vec2f,
 );
 
 export const vec3 = intrinsic(
@@ -351,7 +351,7 @@ export const vec3 = intrinsic(
     port('y', BuiltinTypes.f32, 0),
     port('z', BuiltinTypes.f32, 0),
   ],
-  BuiltinTypes.vec3f
+  BuiltinTypes.vec3f,
 );
 
 export const vec4 = intrinsic(
@@ -363,7 +363,7 @@ export const vec4 = intrinsic(
     port('z', BuiltinTypes.f32, 0),
     port('w', BuiltinTypes.f32, 0),
   ],
-  BuiltinTypes.vec4f
+  BuiltinTypes.vec4f,
 );
 
 /** vec4(xyz, w): typically a color with its alpha, or a position with w = 1. */
@@ -371,7 +371,7 @@ export const extend = intrinsic(
   'extend',
   'construct',
   [port('xyz', BuiltinTypes.vec3f), port('w', BuiltinTypes.f32, 1)],
-  BuiltinTypes.vec4f
+  BuiltinTypes.vec4f,
 );
 
 /** Matrix × vector products: transforming positions and directions. */
@@ -384,21 +384,21 @@ export const mat3 = intrinsic(
     port('c1', BuiltinTypes.vec3f),
     port('c2', BuiltinTypes.vec3f),
   ],
-  BuiltinTypes.mat3f
+  BuiltinTypes.mat3f,
 );
 
 export const transform = intrinsic(
   'transform',
   'mul',
   [port('matrix', BuiltinTypes.mat4f), port('vector', BuiltinTypes.vec4f)],
-  BuiltinTypes.vec4f
+  BuiltinTypes.vec4f,
 );
 
 export const transform3 = intrinsic(
   'transform3',
   'mul',
   [port('matrix', BuiltinTypes.mat3f), port('vector', BuiltinTypes.vec3f)],
-  BuiltinTypes.vec3f
+  BuiltinTypes.vec3f,
 );
 
 export const convert: FunctionDefinition = {

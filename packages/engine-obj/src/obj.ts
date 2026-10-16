@@ -65,7 +65,7 @@ class Builder {
  */
 export function parseObj(
   text: string,
-  { flipV = true, warn = () => undefined }: ObjOptions = {}
+  { flipV = true, warn = () => undefined }: ObjOptions = {},
 ): ParsedObj {
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -129,7 +129,7 @@ export function parseObj(
           (group = {
             name: parts.slice(1).join(' ') || 'default',
             materials: new Map(),
-          })
+          }),
         );
         break;
       case 'usemtl':
@@ -164,8 +164,8 @@ export function parseObj(
           positions,
           uvs,
           normals,
-          hasUv
-        )
+          hasUv,
+        ),
       );
     }
     if (primitives.size > 0) groups.push({ name, primitives });
@@ -179,7 +179,7 @@ function meshOf(
   positions: readonly number[],
   uvs: readonly number[],
   normals: readonly number[],
-  hasUv: boolean
+  hasUv: boolean,
 ): MeshData {
   const count = b.corners.length / 3;
   const floats = hasUv ? 8 : 6;
@@ -233,7 +233,7 @@ function meshOf(
 function smoothNormals(
   data: Float32Array,
   floats: number,
-  indices: ArrayLike<number>
+  indices: ArrayLike<number>,
 ): void {
   const count = data.length / floats;
   const sums = new Float32Array(count * 3);
@@ -285,7 +285,7 @@ const idOf = (name: string) => name.replace(/[/#]/g, '_');
 export async function objModel(
   ctx: LoadContext<unknown>,
   parsed: ParsedObj,
-  warn: (message: string) => void
+  warn: (message: string) => void,
 ): Promise<ModelData> {
   const libraries: MtlLibrary[] = [];
   for (const lib of parsed.mtllibs) {
@@ -295,7 +295,7 @@ export async function objModel(
       warn(
         `${ctx.uri}: ${lib} cannot be read, default materials (${
           (e as Error).message
-        })`
+        })`,
       );
     }
   }
@@ -357,7 +357,7 @@ export function objLoader(options: ObjOptions = {}): ResourceLoader<ModelData> {
       return objModel(
         ctx,
         parseObj(await ctx.text(), { ...options, warn }),
-        warn
+        warn,
       );
     },
   };

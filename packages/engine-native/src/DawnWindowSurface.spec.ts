@@ -23,7 +23,7 @@ function fakeWindow(width: number, height: number) {
       for (let row = 0; row < h; row++) {
         rows.set(
           pixels.subarray(row * stride, row * stride + w * 4),
-          row * w * 4
+          row * w * 4,
         );
       }
       shown.push({ pixels: rows, width: w, height: h });
@@ -80,7 +80,7 @@ const camera = new Camera({
 });
 
 describe.skipIf(
-  !canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load')
+  !canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load'),
 )('DawnWindowSurface', () => {
   let engine: WebGpuEngine;
   beforeAll(async () => {

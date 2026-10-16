@@ -33,7 +33,7 @@ export function fpsControls(input: Input): FpsControls {
       },
       locked: { type: 'button', bindings: ['pointer:locked'] },
     },
-    { enabled: false }
+    { enabled: false },
   );
   const menu = new ActionMap(input, {
     up: {

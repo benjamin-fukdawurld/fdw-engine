@@ -7,10 +7,10 @@ import type { IrEntryPoint } from './ir';
 
 const entryPoint = (
   program: ReturnType<typeof compile>,
-  stage: IrEntryPoint['stage']
+  stage: IrEntryPoint['stage'],
 ) =>
   program.module.entryPoints.find(
-    (candidate) => candidate.stage === stage
+    (candidate) => candidate.stage === stage,
   ) as IrEntryPoint;
 
 const postProcess = () => {
@@ -37,12 +37,12 @@ describe('output.fullscreen', () => {
     expect(vertex.inputs).toEqual([]);
     expect(
       vertex.body.some(
-        (i) => i.op.kind === 'load-builtin' && i.op.builtin === 'vertex-index'
-      )
+        (i) => i.op.kind === 'load-builtin' && i.op.builtin === 'vertex-index',
+      ),
     ).toBe(true);
     // The material resources, in the usual groups.
     const material = program.layout.groups.find(
-      (group) => group.slot === 'material'
+      (group) => group.slot === 'material',
     );
     expect(material?.bindings.map((binding) => binding.name)).toEqual([
       'source',
@@ -55,7 +55,7 @@ describe('output.fullscreen', () => {
     const vertex = entryPoint(program, 'vertex');
     const fragment = entryPoint(program, 'fragment');
     const uv = fragment.inputs.find(
-      (input) => input.type.kind === 'vector' && input.type.size === 2
+      (input) => input.type.kind === 'vector' && input.type.size === 2,
     );
     expect(uv).toBeDefined();
     expect(vertex.outputs.map((output) => output.name)).toContain(uv?.name);
@@ -80,11 +80,11 @@ describe('output.fullscreen', () => {
     const program = compile(g.build());
     const intrinsics = (stage: IrEntryPoint['stage']) =>
       entryPoint(program, stage).body.flatMap((i) =>
-        i.op.kind === 'intrinsic' ? [i.op.name] : []
+        i.op.kind === 'intrinsic' ? [i.op.name] : [],
       );
     expect(intrinsics('vertex')).not.toContain('length');
     expect(intrinsics('fragment')).toEqual(
-      expect.arrayContaining(['length', 'smoothstep'])
+      expect.arrayContaining(['length', 'smoothstep']),
     );
   });
 
@@ -114,8 +114,8 @@ describe('output.fullscreen', () => {
     const fragment = entryPoint(program, 'fragment');
     expect(
       fragment.body.some(
-        (i) => i.op.kind === 'load-resource' && i.op.member === 'exposure'
-      )
+        (i) => i.op.kind === 'load-resource' && i.op.member === 'exposure',
+      ),
     ).toBe(true);
     expect(fragment.outputs[0].type).toEqual(BuiltinTypes.vec4f);
   });
@@ -127,7 +127,7 @@ describe('std.textureLoad', () => {
     const coords = g.call(
       std.convert,
       { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
-      { params: { to: BuiltinTypes.vec2i } }
+      { params: { to: BuiltinTypes.vec2i } },
     );
     const texel = g.call(std.textureLoad, {
       texture: g.texture('values', { sampleType: 'unfilterable-float' }),
@@ -145,20 +145,20 @@ describe('std.textureLoad', () => {
   it('reads texels without sampler, from float and depth textures', () => {
     const program = compile(loads());
     const material = program.layout.groups.find(
-      (group) => group.slot === 'material'
+      (group) => group.slot === 'material',
     );
     expect(
       material?.bindings.map((binding) => [
         binding.name,
         binding.kind === 'texture' ? binding.type.sampleType : binding.kind,
-      ])
+      ]),
     ).toEqual([
       ['depth', 'depth'],
       ['values', 'unfilterable-float'],
     ]);
     const fragment = entryPoint(program, 'fragment');
     const texelLoads = fragment.body.filter(
-      (instruction) => instruction.op.kind === 'texture-load'
+      (instruction) => instruction.op.kind === 'texture-load',
     );
     expect(texelLoads.map((instruction) => instruction.type)).toEqual([
       BuiltinTypes.vec4f,
@@ -172,7 +172,7 @@ describe('std.textureLoad', () => {
       g.call(std.textureLoad, {
         texture: g.texture('environment', { dimension: 'cube' }),
         coords: [0, 0],
-      })
+      }),
     ).toThrow(/float-texture-2d/);
   });
 });

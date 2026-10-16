@@ -8,7 +8,7 @@ export const QuatApi: IQuatApi = {
   multiply: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.multiply(a, b, out);
   },
@@ -24,21 +24,21 @@ export const QuatApi: IQuatApi = {
   subtract: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.subtract(a, b, out);
   },
   multiplyScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.mulScalar(a, scalar, out);
   },
   divideScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.divScalar(a, scalar, out);
   },
@@ -50,7 +50,7 @@ export const QuatApi: IQuatApi = {
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.slerp(a, b, t, out);
   },
@@ -58,7 +58,7 @@ export const QuatApi: IQuatApi = {
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.lerp(a, b, t, out);
   },
@@ -79,13 +79,13 @@ export const QuatApi: IQuatApi = {
   fromAxisAngle: (
     axis: Float32Array,
     rad: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.fromAxisAngle(axis, rad, out);
   },
   toAxisAngle: (
     a: Float32Array,
-    outAxis?: Float32Array
+    outAxis?: Float32Array,
   ): { angle: number; axis: Float32Array } => {
     return quat.toAxisAngle(a, outAxis);
   },
@@ -94,7 +94,7 @@ export const QuatApi: IQuatApi = {
     y: number,
     z: number,
     order?: RotationOrder,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return quat.fromEuler(x, y, z, order ?? 'xyz', out);
   },
@@ -116,7 +116,7 @@ export const QuatApi: IQuatApi = {
   },
   equals: (a: Float32Array, b: Float32Array, epsilon?: number): boolean => {
     return a.every(
-      (value, index) => Math.abs(value - b[index]) <= (epsilon ?? 0)
+      (value, index) => Math.abs(value - b[index]) <= (epsilon ?? 0),
     );
   },
   toArray: (mat: Float32Array, out?: number[]): number[] => {

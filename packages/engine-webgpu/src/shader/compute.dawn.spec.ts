@@ -125,20 +125,20 @@ describe('WGSL compute stages', () => {
   it('generates a cs_main entry point with its writes after the body', () => {
     const sources = new WgslCodegen().emit(
       scaleModule,
-      wgslLayoutStrategy.resolve(layout)
+      wgslLayoutStrategy.resolve(layout),
     );
     if (sources.kind !== 'single-module') {
       throw new Error('expected a single module');
     }
     expect(sources.entryPoints).toEqual({ compute: 'cs_main' });
     expect(sources.code).toContain(
-      '@group(0) @binding(2) var<storage, read_write> b_output: array<f32>;'
+      '@group(0) @binding(2) var<storage, read_write> b_output: array<f32>;',
     );
     expect(sources.code).toContain(
-      '@compute @workgroup_size(64, 1, 1)\nfn cs_main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {'
+      '@compute @workgroup_size(64, 1, 1)\nfn cs_main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {',
     );
     expect(sources.code).toMatch(
-      /let v8: bool = v2_index < v7;\n {2}if \(v8\) \{\n {4}b_output\[v2_index\] = v6_scaled;\n {2}\}\n\}/
+      /let v8: bool = v2_index < v7;\n {2}if \(v8\) \{\n {4}b_output\[v2_index\] = v6_scaled;\n {2}\}\n\}/,
     );
   });
 });
@@ -188,7 +188,7 @@ describe.skipIf(!ready)('compute stages on WebGPU (Dawn)', () => {
     backend.pipelines.layoutStrategy.writeUniform(
       uniforms,
       block.members[0],
-      2.5
+      2.5,
     );
     const uniformBuffer = backend.buffers.create({
       size: block.size,
@@ -202,7 +202,7 @@ describe.skipIf(!ready)('compute stages on WebGPU (Dawn)', () => {
     ];
     const bindGroup = backend.pipelines.createBindGroup(
       backend.pipelines.createBindGroupLayout(group),
-      entries
+      entries,
     );
 
     const pipeline = await backend.pipelines.createComputePipelineAsync({
@@ -218,7 +218,7 @@ describe.skipIf(!ready)('compute stages on WebGPU (Dawn)', () => {
 
     const result = new Float32Array(await output.read());
     expect([...result.subarray(0, count)]).toEqual(
-      [...values].map((value) => value * 2.5)
+      [...values].map((value) => value * 2.5),
     );
     // The guard kept the threads past the end of the input from writing.
     expect(result[count]).toBe(-1);

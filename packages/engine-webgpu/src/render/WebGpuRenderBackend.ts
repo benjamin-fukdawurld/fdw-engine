@@ -70,14 +70,14 @@ export class WebGpuRenderBackend implements RenderBackend {
       width,
       height,
       format,
-      texture
+      texture,
     );
   }
 
   createCommandEncoder(): GpuCommandEncoder {
     return new WebGpuCommandEncoder(
       this.device.createCommandEncoder(),
-      this.textures
+      this.textures,
     );
   }
 
@@ -97,7 +97,7 @@ export class WebGpuRenderBackend implements RenderBackend {
     const buffers = commands.map((command) => {
       if (!(command instanceof WebGpuCommandBuffer)) {
         throw new Error(
-          'The command buffer was not created by the WebGPU backend'
+          'The command buffer was not created by the WebGPU backend',
         );
       }
       return command;

@@ -38,7 +38,7 @@ export class Obb implements ConvexVolume {
       [1, 0, 0],
       [0, 1, 0],
       [0, 0, 1],
-    ]
+    ],
   ) {
     this.center = copy(vec3(), center);
     this.halfExtents = copy(vec3(), halfExtents);
@@ -74,13 +74,13 @@ export class Obb implements ConvexVolume {
       transformDirection(
         vec3(),
         matrix,
-        scale(vec3(), axis, this.halfExtents[i])
-      )
+        scale(vec3(), axis, this.halfExtents[i]),
+      ),
     );
     const e0 = normalize(vec3(), edges[0]);
     const e1 = normalize(
       vec3(),
-      scaleAndAdd(vec3(), edges[1], e0, -dot(edges[1], e0))
+      scaleAndAdd(vec3(), edges[1], e0, -dot(edges[1], e0)),
     );
     if (length(e0) === 0 || length(e1) === 0) {
       // A flattened box: its bounds on the world axes.
@@ -89,12 +89,12 @@ export class Obb implements ConvexVolume {
     const e2 = cross(vec3(), e0, e1);
     const axes = [e0, e1, e2] as const;
     const halfExtents = axes.map((e) =>
-      edges.reduce((sum, edge) => sum + Math.abs(dot(edge, e)), 0)
+      edges.reduce((sum, edge) => sum + Math.abs(dot(edge, e)), 0),
     ) as Vec3;
     return new Obb(
       transformPoint(vec3(), matrix, this.center),
       halfExtents,
-      axes
+      axes,
     );
   }
 
@@ -105,7 +105,7 @@ export class Obb implements ConvexVolume {
   containsPoint(point: ReadonlyVec3): boolean {
     sub(offset, point, this.center);
     return this.axes.every(
-      (axis, i) => Math.abs(dot(offset, axis)) <= this.halfExtents[i]
+      (axis, i) => Math.abs(dot(offset, axis)) <= this.halfExtents[i],
     );
   }
 
@@ -118,14 +118,14 @@ export class Obb implements ConvexVolume {
       localDirection,
       dot(ray.direction, a0),
       dot(ray.direction, a1),
-      dot(ray.direction, a2)
+      dot(ray.direction, a2),
     );
     const [h0, h1, h2] = this.halfExtents;
     return raycastBox(
       localOrigin,
       localDirection,
       [-h0, -h1, -h2],
-      [h0, h1, h2]
+      [h0, h1, h2],
     );
   }
 

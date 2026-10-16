@@ -32,8 +32,10 @@ export type GpuSamplerConfiguration = {
   maxAnisotropy?: number;
 };
 
-export interface GpuSampler
-  extends Omit<Readonly<GpuSamplerConfiguration>, 'label'> {
+export interface GpuSampler extends Omit<
+  Readonly<GpuSamplerConfiguration>,
+  'label'
+> {
   readonly label?: string;
   destroy(): void;
 }
@@ -57,7 +59,7 @@ export interface GpuSamplerFactory {
 export function samplerAnisotropy(
   configuration: GpuSamplerConfiguration,
   defaultMaxAnisotropy: number,
-  limit: number
+  limit: number,
 ): number {
   const linear =
     (configuration.minFilter ?? 'linear') === 'linear' &&
@@ -68,14 +70,14 @@ export function samplerAnisotropy(
     throw new Error(
       `Sampler "${
         configuration.label ?? '(unlabeled)'
-      }": invalid maxAnisotropy ${asked}`
+      }": invalid maxAnisotropy ${asked}`,
     );
   }
   if (asked !== undefined && asked > 1 && !linear) {
     throw new Error(
       `Sampler "${
         configuration.label ?? '(unlabeled)'
-      }": anisotropic filtering needs linear min, mag and mipmap filters`
+      }": anisotropic filtering needs linear min, mag and mipmap filters`,
     );
   }
   // Comparison samplers read depths (shadow maps): not stretched textures.

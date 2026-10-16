@@ -15,7 +15,7 @@ export class WebGl2OffscreenSurface implements Surface {
   constructor(
     width: number,
     height: number,
-    format: GpuTextureFormat = 'rgba8unorm'
+    format: GpuTextureFormat = 'rgba8unorm',
   ) {
     this._width = width;
     this._height = height;
@@ -56,7 +56,7 @@ export class WebGl2OffscreenSurface implements Surface {
       this._width,
       this._height,
       this.format,
-      'offscreen surface'
+      'offscreen surface',
     );
     return this._target;
   }
@@ -79,7 +79,7 @@ export class WebGl2OffscreenSurface implements Surface {
         y: 0,
         width: this._width,
         height: this._height,
-      })
+      }),
     );
   }
 

@@ -74,38 +74,38 @@ export interface GltfExtension {
   bufferView?(
     ext: unknown,
     view: GltfBufferView,
-    context: GltfContext
+    context: GltfContext,
   ): Promise<Uint8Array<ArrayBuffer>>;
   /** The decoded geometry of a primitive (`KHR_draco_mesh_compression`). */
   primitive?(
     ext: unknown,
     primitive: GltfPrimitive,
-    context: GltfContext
+    context: GltfContext,
   ): Promise<GltfDecodedPrimitive>;
   material?(
     ext: unknown,
     data: PbrMaterialData,
     context: GltfContext,
-    material: GltfMaterial
+    material: GltfMaterial,
   ): PbrMaterialData;
   /** The image of a texture, instead of its `source` (`KHR_texture_basisu`). */
   textureSource?(
     ext: unknown,
     texture: GltfTexture,
-    context: GltfContext
+    context: GltfContext,
   ): number | undefined;
   /** A texture as a material reads it (`KHR_texture_transform`). */
   textureInfo?(
     ext: unknown,
     ref: TextureRef,
     context: GltfContext,
-    info: GltfTextureInfo
+    info: GltfTextureInfo,
   ): TextureRef;
   node?(
     ext: unknown,
     data: ModelNodeData,
     context: GltfContext,
-    node: GltfNode
+    node: GltfNode,
   ): ModelNodeData;
   /** The model, with the extension of the root object (`KHR_lights_punctual`). */
   model?(ext: unknown, data: ModelData, context: GltfContext): ModelData;

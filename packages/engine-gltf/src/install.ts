@@ -12,7 +12,7 @@ import { GltfConfigService, type GltfOptions } from './options';
  */
 export function installGltf(
   store: ResourceStore,
-  options: GltfOptions = {}
+  options: GltfOptions = {},
 ): ResourceStore {
   const extensions = new Map(gltfExtensions.map((e) => [e.name, e]));
   for (const extension of options.extensions ?? [])

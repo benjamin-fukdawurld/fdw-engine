@@ -58,7 +58,7 @@ function isScalarLiteralCompatible(value: number | boolean, kind: ScalarKind) {
  */
 export function isConstantCompatible(
   value: ConstantValue,
-  type: ShaderType
+  type: ShaderType,
 ): boolean {
   switch (type.kind) {
     case 'scalar':
@@ -71,7 +71,7 @@ export function isConstantCompatible(
         return (
           value.length === type.size &&
           value.every((component) =>
-            isScalarLiteralCompatible(component, type.scalar)
+            isScalarLiteralCompatible(component, type.scalar),
           )
         );
       }

@@ -14,7 +14,7 @@ const URL_PREFIX = /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?\/\/[^/]*/;
  */
 export function parseUri(
   uri: string,
-  isScheme: (scheme: string) => boolean = () => false
+  isScheme: (scheme: string) => boolean = () => false,
 ): ParsedUri {
   let fragment: string | undefined;
   const hash = uri.indexOf('#');

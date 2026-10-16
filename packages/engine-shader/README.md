@@ -149,7 +149,7 @@ const color = g.call(
   { fallback: [1, 1, 1] },
   {
     params: { semantic: 'color', type: BuiltinTypes.vec3f },
-  }
+  },
 );
 g.surface({ baseColor: color });
 // A mesh with colors and a mesh without get two programs; a graph that does

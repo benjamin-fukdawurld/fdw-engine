@@ -19,7 +19,7 @@ export class Node implements SceneNode {
   constructor(
     readonly scene: Scene,
     readonly entity: number,
-    private readonly _generation: number
+    private readonly _generation: number,
   ) {}
 
   /**
@@ -117,7 +117,7 @@ export class Node implements SceneNode {
   /** Gives a component to the entity of the node, or writes its values. */
   attach<S extends Schema>(
     component: Component<S>,
-    values?: ComponentValues<S>
+    values?: ComponentValues<S>,
   ): this {
     this.check();
     this.scene.world.add(this.entity, component, values);
@@ -142,7 +142,7 @@ export class Node implements SceneNode {
     {
       castShadow = true,
       volume,
-    }: { castShadow?: boolean; volume?: Volume } = {}
+    }: { castShadow?: boolean; volume?: Volume } = {},
   ): this {
     return this.attach(this.scene.MeshRenderer, {
       mesh,

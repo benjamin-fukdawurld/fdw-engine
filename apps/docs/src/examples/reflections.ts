@@ -73,7 +73,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
             ...color.map((c) => Math.round(Math.min(c, 1) ** (1 / 2.2) * 255)),
             255,
           ],
-          ((face * faceSize + y) * faceSize + x) * 4
+          ((face * faceSize + y) * faceSize + x) * 4,
         );
       }
     }
@@ -127,7 +127,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const sampleEnvironment = (
     g: GraphBuilder,
     direction: PortHandle,
-    level: PortHandle | number = 0
+    level: PortHandle | number = 0,
   ) =>
     g
       .call(std.textureSampleCubeLevel, {
@@ -177,7 +177,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       a: sampleEnvironment(
         c,
         reflected,
-        c.call(std.mul, { a: roughness, b: levels - 1 })
+        c.call(std.mul, { a: roughness, b: levels - 1 }),
       ),
       b: [0.95, 0.93, 0.88],
     }),
@@ -257,7 +257,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     n.call(std.extend, {
       xyz: n.functionInput('worldNormal', BuiltinTypes.vec3f),
       w: n.functionInput('viewDepth', BuiltinTypes.f32),
-    })
+    }),
   );
   const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
 
@@ -283,7 +283,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       xyz: withSky(
         m,
         read(m, 'color', mirrorUv).swizzle('rgb'),
-        read(m, 'normalDepth', mirrorUv).swizzle('w')
+        read(m, 'normalDepth', mirrorUv).swizzle('w'),
       ),
     }),
   });

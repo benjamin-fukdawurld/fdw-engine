@@ -25,7 +25,7 @@ export interface LoadContext<O> {
   use<U, P = void>(
     type: ResourceType<U>,
     uri: ResourceUri,
-    options?: P
+    options?: P,
   ): ResourceHandle<U>;
   // Registers a sub-resource, addressable as `uri#id`, owned by this entry.
   provide<U>(type: ResourceType<U>, id: string, value: U): ResourceHandle<U>;

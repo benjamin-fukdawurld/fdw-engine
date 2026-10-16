@@ -50,7 +50,7 @@ export function wgslType(type: ShaderType): string {
         const name = depthTextureNames[type.dimension];
         if (!name) {
           throw new Error(
-            `No WGSL depth texture for dimension ${type.dimension}`
+            `No WGSL depth texture for dimension ${type.dimension}`,
           );
         }
         return type.multisampled ? 'texture_depth_multisampled_2d' : name;
@@ -69,7 +69,7 @@ export function wgslType(type: ShaderType): string {
       throw new Error('Runtime-sized arrays are not supported yet');
     default:
       throw new Error(
-        `${typeToString(type)} is not supported by the WGSL generator`
+        `${typeToString(type)} is not supported by the WGSL generator`,
       );
   }
 }
@@ -99,7 +99,7 @@ function literal(type: ShaderType, value: ConstantValue): string {
   }
   if (type.kind === 'vector' || type.kind === 'matrix') {
     const components = (value as readonly number[]).map((component) =>
-      scalarLiteral(component, type.scalar)
+      scalarLiteral(component, type.scalar),
     );
     return `${wgslType(type)}(${components.join(', ')})`;
   }
@@ -195,7 +195,7 @@ const valueName = (instruction: IrInstruction) =>
 
 function emitBody(
   entryPoint: IrEntryPoint,
-  resources: ReadonlyMap<string, string>
+  resources: ReadonlyMap<string, string>,
 ): BodyState {
   const state: BodyState = {
     lines: [],
@@ -210,7 +210,7 @@ function emitInstructions(
   body: readonly IrInstruction[],
   resources: ReadonlyMap<string, string>,
   state: BodyState,
-  indent: string
+  indent: string,
 ): void {
   const { lines, expressions, builtins } = state;
   const arg = (instruction: IrInstruction, index: number) =>
@@ -228,13 +228,13 @@ function emitInstructions(
         const count = arg(instruction, 0);
         lines.push(
           `${indent}var ${sum}: ${wgslType(type)} = ${wgslType(type)}();`,
-          `${indent}for (var ${index}: u32 = 0u; ${index} < ${count}; ${index} = ${index} + 1u) {`
+          `${indent}for (var ${index}: u32 = 0u; ${index} < ${count}; ${index} = ${index} + 1u) {`,
         );
         expressions.set(op.index, index);
         emitInstructions(op.body, resources, state, `${indent}  `);
         lines.push(
           `${indent}  ${sum} = ${sum} + ${expressions.get(op.result)};`,
-          `${indent}}`
+          `${indent}}`,
         );
         expressions.set(instruction.id, sum);
         continue;
@@ -281,7 +281,7 @@ function emitInstructions(
       case 'load-object':
         expression = `${objectTable(resources)}[${arg(
           instruction,
-          0
+          0,
         )}].${memberIdentifier(op.member)}`;
         break;
       case 'binary':
@@ -289,7 +289,7 @@ function emitInstructions(
         // Comparisons are component-wise for vectors in WGSL.
         expression = `${arg(instruction, 0)} ${op.operator} ${arg(
           instruction,
-          1
+          1,
         )}`;
         break;
       case 'intrinsic':
@@ -328,7 +328,7 @@ function emitInstructions(
       ? ` // #${instruction.sourceNode}`
       : '';
     lines.push(
-      `${indent}let ${name}: ${wgslType(type)} = ${expression};${comment}`
+      `${indent}let ${name}: ${wgslType(type)} = ${expression};${comment}`,
     );
     expressions.set(instruction.id, name);
   }
@@ -350,7 +350,7 @@ function objectTable(resources: ReadonlyMap<string, string>): string {
 // code, by binding name.
 function declareResources(
   layout: PhysicalProgramLayout,
-  sections: string[]
+  sections: string[],
 ): Map<string, string> {
   const resources = new Map<string, string>();
   for (const group of layout.groups) {
@@ -365,11 +365,11 @@ function declareResources(
             `struct ${struct} {`,
             ...resource.members.map(
               (member) =>
-                `  ${memberIdentifier(member.name)}: ${wgslType(member.type)},`
+                `  ${memberIdentifier(member.name)}: ${wgslType(member.type)},`,
             ),
             '};',
             `${location} var<uniform> ${name}: ${struct};`,
-          ].join('\n')
+          ].join('\n'),
         );
       } else if (resource.kind === 'object-table') {
         // The rows, then the row of each instance, at the next binding.
@@ -380,14 +380,14 @@ function declareResources(
             `struct ${struct} {`,
             ...resource.members.map(
               (member) =>
-                `  ${memberIdentifier(member.name)}: ${wgslType(member.type)},`
+                `  ${memberIdentifier(member.name)}: ${wgslType(member.type)},`,
             ),
             '};',
             `${location} var<storage, read> ${name}: array<${struct}>;`,
             `@group(${group.index}) @binding(${
               binding + 1
             }) var<storage, read> ${instancesIdentifier(name)}: array<u32>;`,
-          ].join('\n')
+          ].join('\n'),
         );
       } else if (resource.kind === 'texture') {
         sections.push(`${location} var ${name}: ${wgslType(resource.type)};`);
@@ -395,13 +395,13 @@ function declareResources(
         sections.push(
           `${location} var<storage, ${
             resource.access === 'read-write' ? 'read_write' : 'read'
-          }> ${name}: array<${wgslType(resource.type.element)}>;`
+          }> ${name}: array<${wgslType(resource.type.element)}>;`,
         );
       } else {
         sections.push(
           `${location} var ${name}: ${
             resource.comparison ? 'sampler_comparison' : 'sampler'
-          };`
+          };`,
         );
       }
     }
@@ -412,7 +412,7 @@ function declareResources(
 // A compute stage: the body, then the writes, in order.
 function emitCompute(
   compute: IrEntryPoint,
-  resources: ReadonlyMap<string, string>
+  resources: ReadonlyMap<string, string>,
 ): string {
   const body = emitBody(compute, resources);
   const [x, y, z] = compute.workgroupSize ?? [1, 1, 1];
@@ -422,7 +422,7 @@ function emitCompute(
       throw new Error(`Binding "${write.resource}" is not in the layout`);
     }
     const statement = `${target}[${body.expressions.get(
-      write.index
+      write.index,
     )}] = ${body.expressions.get(write.value)};`;
     return write.condition === undefined
       ? [`  ${statement}`]
@@ -434,7 +434,7 @@ function emitCompute(
   });
   const parameters = [...body.builtins].map(
     (builtin) =>
-      builtinParameters[builtin as keyof typeof builtinParameters].declaration
+      builtinParameters[builtin as keyof typeof builtinParameters].declaration,
   );
   return [
     `@compute @workgroup_size(${x}, ${y}, ${z})`,
@@ -457,7 +457,7 @@ export class WgslCodegen implements ShaderCodegen {
     const resources = declareResources(layout, sections);
 
     const compute = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'compute'
+      (entryPoint) => entryPoint.stage === 'compute',
     );
     if (compute) {
       sections.push(emitCompute(compute, resources));
@@ -469,14 +469,14 @@ export class WgslCodegen implements ShaderCodegen {
     }
 
     const vertex = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'vertex'
+      (entryPoint) => entryPoint.stage === 'vertex',
     );
     const fragment = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'fragment'
+      (entryPoint) => entryPoint.stage === 'fragment',
     );
     if (!vertex || !fragment) {
       throw new Error(
-        'A program needs a vertex and a fragment entry point, or a compute one'
+        'A program needs a vertex and a fragment entry point, or a compute one',
       );
     }
     if (vertex.inputs.length > 0) {
@@ -485,13 +485,13 @@ export class WgslCodegen implements ShaderCodegen {
           'struct VertexInput {',
           ...vertex.inputs.map(stageVariable),
           '};',
-        ].join('\n')
+        ].join('\n'),
       );
     }
     sections.push(
       ['struct Varyings {', ...vertex.outputs.map(stageVariable), '};'].join(
-        '\n'
-      )
+        '\n',
+      ),
     );
 
     const vertexBody = emitBody(vertex, resources);
@@ -500,7 +500,7 @@ export class WgslCodegen implements ShaderCodegen {
       ...[...vertexBody.builtins].map(
         (builtin) =>
           builtinParameters[builtin as keyof typeof builtinParameters]
-            .declaration
+            .declaration,
       ),
     ];
     sections.push(
@@ -512,12 +512,12 @@ export class WgslCodegen implements ShaderCodegen {
         ...vertex.outputs.map(
           (output) =>
             `  out.${output.name} = ${vertexBody.expressions.get(
-              vertex.results[output.name]
-            )};`
+              vertex.results[output.name],
+            )};`,
         ),
         '  return out;',
         '}',
-      ].join('\n')
+      ].join('\n'),
     );
 
     const fragmentBody = emitBody(fragment, resources);
@@ -526,7 +526,7 @@ export class WgslCodegen implements ShaderCodegen {
       ...[...fragmentBody.builtins].map(
         (builtin) =>
           builtinParameters[builtin as keyof typeof builtinParameters]
-            .declaration
+            .declaration,
       ),
     ];
     // Depth-only programs have no color; several targets go in a structure.
@@ -542,11 +542,11 @@ export class WgslCodegen implements ShaderCodegen {
           ...targets.map(
             (target) =>
               `  @location(${target.location}) o_${identifier(
-                target.name
-              )}: ${wgslType(target.type)},`
+                target.name,
+              )}: ${wgslType(target.type)},`,
           ),
           '}',
-        ].join('\n')
+        ].join('\n'),
       );
     }
     sections.push(
@@ -556,15 +556,15 @@ export class WgslCodegen implements ShaderCodegen {
           color
             ? ` -> @location(${color.location}) ${wgslType(color.type)}`
             : targets.length > 0
-            ? ' -> FragmentOutputs'
-            : ''
+              ? ' -> FragmentOutputs'
+              : ''
         } {`,
         ...fragmentBody.lines,
         // After the whole body: every texture sample has run.
         ...(fragment.results['discard'] !== undefined
           ? [
               `  if (${fragmentBody.expressions.get(
-                fragment.results['discard']
+                fragment.results['discard'],
               )}) {`,
               '    discard;',
               '  }',
@@ -573,7 +573,7 @@ export class WgslCodegen implements ShaderCodegen {
         ...(color
           ? [
               `  return ${fragmentBody.expressions.get(
-                fragment.results[color.name]
+                fragment.results[color.name],
               )};`,
             ]
           : []),
@@ -583,16 +583,16 @@ export class WgslCodegen implements ShaderCodegen {
               ...targets.map(
                 (target) =>
                   `  targets.o_${identifier(
-                    target.name
+                    target.name,
                   )} = ${fragmentBody.expressions.get(
-                    fragment.results[target.name]
-                  )};`
+                    fragment.results[target.name],
+                  )};`,
               ),
               '  return targets;',
             ]
           : []),
         '}',
-      ].join('\n')
+      ].join('\n'),
     );
 
     return {

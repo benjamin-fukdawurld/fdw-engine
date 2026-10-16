@@ -75,7 +75,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   let selection = new Set<number>();
   const show = () =>
     info(
-      `hover ${hover || '—'} · selected ${[...selection].join(', ') || '—'}`
+      `hover ${hover || '—'} · selected ${[...selection].join(', ') || '—'}`,
     );
   show();
 
@@ -135,8 +135,8 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
               width: to.x - from.x,
               height: to.y - from.y,
             }
-          : to
-      )
+          : to,
+      ),
     );
     show();
   });
@@ -153,8 +153,8 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         material: selection.has(id)
           ? selected
           : id === hover
-          ? hovered
-          : normal,
+            ? hovered
+            : normal,
         transform,
         id,
       })),
@@ -170,7 +170,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
           value: 'object-id',
           target: frame.importTexture(
             'identifiers',
-            idTexture(target.width, target.height)
+            idTexture(target.width, target.height),
           ),
         },
       },

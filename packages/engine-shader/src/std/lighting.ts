@@ -43,7 +43,7 @@ import * as lights from './lights';
 export function defineShadingModel(
   name: string,
   graph: MaterialGraphData,
-  options: { description?: string; registry?: NodeRegistry } = {}
+  options: { description?: string; registry?: NodeRegistry } = {},
 ): FunctionDefinition {
   const definition = defineFunction(graph, {
     id: `lighting.${name}`,
@@ -97,7 +97,7 @@ function lightGeometry(
   f: GraphBuilder,
   position: PortHandle,
   normal: PortHandle,
-  light: Readonly<Record<string, PortHandle>>
+  light: Readonly<Record<string, PortHandle>>,
 ) {
   // w = 1 for a point or spot light, 0 for a directional one:
   // normalize(xyz - P × w) is the direction to the light in all cases.
@@ -184,7 +184,7 @@ function shadowMap(registry: NodeRegistry): FunctionDefinition {
     b: toClip(position).swizzle('w'),
   });
   const clip = toClip(
-    f.call(add, { a: position, b: f.call(mul, { a: normal, b: offset }) })
+    f.call(add, { a: position, b: f.call(mul, { a: normal, b: offset }) }),
   );
   const ndc = f.call(div, {
     a: clip.swizzle('xyz'),
@@ -261,7 +261,7 @@ function unlit(registry: NodeRegistry): FunctionDefinition {
   f.functionInput('worldPosition', BuiltinTypes.vec4f);
   f.functionOutput(
     'color',
-    f.call(functions.extend, { xyz: baseColor, w: alpha })
+    f.call(functions.extend, { xyz: baseColor, w: alpha }),
   );
   return defineShadingModel('unlit', f.build(), {
     description: 'The base color, without lighting.',
@@ -477,7 +477,7 @@ function pbr(registry: NodeRegistry): FunctionDefinition {
  * node types, without the shading models.
  */
 export function createShadingModels(
-  registry: NodeRegistry
+  registry: NodeRegistry,
 ): FunctionDefinition[] {
   return [shadowMap(registry), unlit(registry), phong(registry), pbr(registry)];
 }

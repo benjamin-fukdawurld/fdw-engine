@@ -16,7 +16,7 @@ export const MeshType = defineResourceType<Mesh>('mesh');
 
 const hasAttribute = (mesh: Mesh, semantic: string) =>
   mesh.description.vertexBuffers.some((b) =>
-    b.attributes.some((a) => a.semantic === semantic)
+    b.attributes.some((a) => a.semantic === semantic),
   );
 
 /**

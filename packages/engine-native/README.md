@@ -51,7 +51,7 @@ const loop = runLoop(
   (time) => renderer.render({ items, camera, surface, time: time / 1000 }),
   {
     throttle: () => surface.throttle(),
-  }
+  },
 );
 window.addEventListener('close', () => loop.stop());
 await loop.done;

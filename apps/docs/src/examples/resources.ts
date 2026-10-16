@@ -99,8 +99,8 @@ const example: Example = async ({ backend, surface, onFrame, info }) => {
   };
   const palettes = await Promise.all(
     ['warm', 'cold'].map(
-      (name) => resources.load(PaletteType, `palettes/${name}.json`).ready
-    )
+      (name) => resources.load(PaletteType, `palettes/${name}.json`).ready,
+    ),
   );
   files.set('checker.ppm', checker(palettes[0]));
 

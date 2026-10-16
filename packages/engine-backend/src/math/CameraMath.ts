@@ -13,9 +13,9 @@ export class CameraMath {
     const worldMatrix = this.primitiveApis.mat4.multiply(
       this.primitiveApis.mat4.translate(
         this.primitiveApis.mat4.identity(),
-        position
+        position,
       ),
-      this.primitiveApis.mat4.fromQuat(rotation)
+      this.primitiveApis.mat4.fromQuat(rotation),
     );
 
     return this.primitiveApis.mat4.invert(worldMatrix);
@@ -27,7 +27,7 @@ export class CameraMath {
         (projection.fov * Math.PI) / 180,
         projection.aspect,
         projection.near,
-        projection.far
+        projection.far,
       );
     }
 
@@ -37,7 +37,7 @@ export class CameraMath {
       projection.bottom,
       projection.top,
       projection.near,
-      projection.far
+      projection.far,
     );
   }
 

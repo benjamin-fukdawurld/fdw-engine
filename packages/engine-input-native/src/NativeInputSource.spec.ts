@@ -15,7 +15,7 @@ function fakeAddon(queue: RawWindowEvent[], calls: string[] = []): NativeAddon {
   return {
     init: () => undefined,
     quit: () => undefined,
-    createWindow: () => ({} as WindowHandle),
+    createWindow: () => ({}) as WindowHandle,
     destroyWindow: () => undefined,
     windowId: () => 1,
     windowSize: () => [200, 100],
@@ -33,6 +33,14 @@ function fakeAddon(queue: RawWindowEvent[], calls: string[] = []): NativeAddon {
     },
     gamepadRumble: (id, strong, weak, ms) =>
       calls.push(`rumble ${id} ${strong} ${weak} ${ms}`) > 0,
+    decodeImage: (_) =>
+      Promise.resolve({
+        width: 1,
+        height: 1,
+        channels: 4,
+        hdr: true,
+        pixels: new Uint8Array(4),
+      }),
   };
 }
 
@@ -48,7 +56,7 @@ describe('NativeInputSource', () => {
       { type: 'keydown', window: 1, key: 'Z', code: 'KeyW' },
       { type: 'pointermove', window: 1, x: 50, y: 25 },
       { type: 'pointerdown', window: 1, button: 0 },
-      { type: 'wheel', window: 1, dy: 2 }
+      { type: 'wheel', window: 1, dy: 2 },
     );
     NativeWindow.pollEvents();
     input.update();
@@ -76,7 +84,7 @@ describe('NativeInputSource', () => {
     // Relative: x and y stay, dx and dy move.
     queue.push(
       { type: 'pointermove', window: 1, x: 100, y: 50, dx: 20, dy: 0 },
-      { type: 'pointermove', window: 1, x: 100, y: 50, dx: 20, dy: -10 }
+      { type: 'pointermove', window: 1, x: 100, y: 50, dx: 20, dy: -10 },
     );
     NativeWindow.pollEvents();
     input.update();

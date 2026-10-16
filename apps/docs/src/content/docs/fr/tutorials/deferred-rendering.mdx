@@ -62,7 +62,7 @@ n.functionOutput(
   n.call(std.extend, {
     xyz: n.functionInput('worldNormal', BuiltinTypes.vec3f),
     w: n.functionInput('viewDepth', BuiltinTypes.f32),
-  })
+  }),
 );
 const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
 
@@ -74,7 +74,7 @@ p.functionOutput(
     x: p.functionInput('roughness', BuiltinTypes.f32),
     y: p.functionInput('metallic', BuiltinTypes.f32),
     w: 1,
-  })
+  }),
 );
 const properties = defineFunction(p.build(), { id: 'example.properties' });
 ```

@@ -6,14 +6,14 @@ import type { IrEntryPoint, IrInstruction } from './ir';
 
 const fragment = (program: ReturnType<typeof compile>) =>
   program.module.entryPoints.find(
-    (candidate) => candidate.stage === 'fragment'
+    (candidate) => candidate.stage === 'fragment',
   ) as IrEntryPoint;
 
 const instructions = (body: readonly IrInstruction[]): IrInstruction[] =>
   body.flatMap((instruction) =>
     instruction.op.kind === 'loop-sum'
       ? [instruction, ...instructions(instruction.op.body)]
-      : [instruction]
+      : [instruction],
   );
 
 // The lighting pass of a deferred renderer: the surface read from the
@@ -46,7 +46,7 @@ describe('shading models in full screen passes', () => {
     const program = compile(lightingPass('lighting.phong'));
     const body = fragment(program).body;
     expect(body.some((instruction) => instruction.op.kind === 'loop-sum')).toBe(
-      true
+      true,
     );
     const frame = program.layout.groups.find((group) => group.slot === 'frame');
     const members =
@@ -59,14 +59,14 @@ describe('shading models in full screen passes', () => {
         'view',
         'cameraPosition',
         'lightCount',
-      ])
+      ]),
     );
   });
 
   it('reads the shadow atlas with the shadows feature only', () => {
     const reads = (features: Record<string, boolean>) =>
       instructions(
-        fragment(compile(lightingPass('lighting.pbr'), { features })).body
+        fragment(compile(lightingPass('lighting.pbr'), { features })).body,
       ).some((instruction) => instruction.op.kind === 'sample-compare');
     expect(reads({})).toBe(false);
     expect(reads({ shadows: true })).toBe(true);

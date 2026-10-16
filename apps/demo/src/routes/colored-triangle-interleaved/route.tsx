@@ -15,7 +15,7 @@ function RouteComponent() {
       onSurfaceReady={async (
         engine: Engine,
         surface: Surface,
-        canvas: HTMLCanvasElement
+        canvas: HTMLCanvasElement,
       ) => {
         const wengine = engine as WebGpuEngine;
         const wsurface = surface as WebGpuSurface;

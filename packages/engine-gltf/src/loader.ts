@@ -24,7 +24,7 @@ const defaultConfig: GltfConfig = {
 // (the built-in extensions, no decoders) and without installAssets.
 function optionalService<S>(
   ctx: LoadContext<unknown>,
-  key: ServiceKey<S>
+  key: ServiceKey<S>,
 ): S | undefined {
   try {
     return ctx.service(key);
@@ -66,14 +66,14 @@ export const gltfLoader: ResourceLoader<ModelData> = {
         'decode',
         ctx.uri,
         `${ctx.uri}: not a valid glTF file (${(e as Error).message})`,
-        { cause: e }
+        { cause: e },
       );
     }
     if (!json.asset?.version?.startsWith('2.')) {
       throw new ResourceError(
         'unsupported',
         ctx.uri,
-        `${ctx.uri}: glTF version ${json.asset?.version} is not supported`
+        `${ctx.uri}: glTF version ${json.asset?.version} is not supported`,
       );
     }
     const reader = new GltfReader(ctx, json, bin, config, warn);

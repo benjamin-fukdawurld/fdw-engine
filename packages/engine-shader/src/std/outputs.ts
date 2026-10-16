@@ -33,7 +33,7 @@ export const surface: NodeDefinition = {
     const model = context?.registry?.get(`lighting.${name}`);
     if (!model) {
       throw new Error(
-        `unknown shading model "${name}" (no lighting.${name} node type)`
+        `unknown shading model "${name}" (no lighting.${name} node type)`,
       );
     }
     const ports = model
@@ -41,7 +41,7 @@ export const surface: NodeDefinition = {
       .filter((port) => port.name !== 'worldPosition')
       // The interpolated normal of the mesh when unconnected.
       .map((port) =>
-        port.name === 'normal' ? { ...port, optional: true } : port
+        port.name === 'normal' ? { ...port, optional: true } : port,
       );
     return [
       // Vertex stage: displacement of the vertex, in object space.

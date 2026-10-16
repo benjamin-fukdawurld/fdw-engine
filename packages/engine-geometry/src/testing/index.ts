@@ -29,7 +29,7 @@ export const randomPoint = (next: () => number, extent: number): Vec3 => [
 export function compose(
   [tx, ty, tz]: readonly number[],
   [x, y, z, w]: readonly number[],
-  [sx, sy, sz]: readonly number[]
+  [sx, sy, sz]: readonly number[],
 ): Float64Array {
   const xx = x * x;
   const yy = y * y;
@@ -56,13 +56,13 @@ export function compose(
     tx,
     ty,
     tz,
-    1
+    1,
   );
 }
 
 /** A random unit quaternion. */
 export function randomRotation(
-  next: () => number
+  next: () => number,
 ): [number, number, number, number] {
   const q = [next() - 0.5, next() - 0.5, next() - 0.5, next() - 0.5];
   const l = Math.hypot(...q) || 1;
@@ -78,7 +78,7 @@ export function perspective(
   aspect: number,
   near: number,
   far: number,
-  eye: readonly number[] = [0, 0, 0]
+  eye: readonly number[] = [0, 0, 0],
 ): Float64Array {
   const f = 1 / Math.tan(fovY / 2);
   const projection = Float64Array.of(
@@ -97,7 +97,7 @@ export function perspective(
     0,
     0,
     (near * far) / (near - far),
-    0
+    0,
   );
   // × view: a translation by -eye.
   const out = Float64Array.from(projection);

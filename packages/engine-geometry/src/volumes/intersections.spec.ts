@@ -16,14 +16,14 @@ class Cylinder implements ConvexVolume {
   constructor(
     readonly center: ReadonlyVec3,
     readonly radius: number,
-    readonly halfHeight: number
+    readonly halfHeight: number,
   ) {}
 
   bounds(out = new Aabb()): Aabb {
     const [x, y, z] = this.center;
     return out.setFrom(
       [x - this.radius, y - this.halfHeight, z - this.radius],
-      [x + this.radius, y + this.halfHeight, z + this.radius]
+      [x + this.radius, y + this.halfHeight, z + this.radius],
     );
   }
   transform(): Volume {
@@ -46,7 +46,7 @@ class Cylinder implements ConvexVolume {
       out,
       cx + (horizontal > 0 ? (dx / horizontal) * this.radius : 0),
       cy + (dy >= 0 ? this.halfHeight : -this.halfHeight),
-      cz + (horizontal > 0 ? (dz / horizontal) * this.radius : 0)
+      cz + (horizontal > 0 ? (dz / horizontal) * this.radius : 0),
     );
   }
 }
@@ -56,7 +56,7 @@ function distanceToCylinder(point: ReadonlyVec3, cylinder: Cylinder): number {
   const [cx, cy, cz] = cylinder.center;
   const radial = Math.max(
     0,
-    Math.hypot(point[0] - cx, point[2] - cz) - cylinder.radius
+    Math.hypot(point[0] - cx, point[2] - cz) - cylinder.radius,
   );
   const vertical = Math.max(0, Math.abs(point[1] - cy) - cylinder.halfHeight);
   return Math.hypot(radial, vertical);
@@ -69,7 +69,7 @@ const randomBox = (): Aabb => {
   const half = randomPoint(next, 1.5).map((v) => Math.abs(v) + 0.1);
   return new Aabb(
     center.map((c, i) => c - half[i]) as Vec3,
-    center.map((c, i) => c + half[i]) as Vec3
+    center.map((c, i) => c + half[i]) as Vec3,
   );
 };
 const randomSphere = (): Sphere =>
@@ -78,7 +78,7 @@ const randomCapsule = (): Capsule =>
   new Capsule(
     randomPoint(next, 3),
     randomPoint(next, 3),
-    between(next, 0.1, 1)
+    between(next, 0.1, 1),
   );
 
 // Grows or shrinks a volume: two volumes that still intersect when shrunk,
@@ -91,13 +91,13 @@ const resized = (volume: Volume, margin: number): ConvexVolume => {
     return new Capsule(
       volume.start,
       volume.end,
-      Math.max(0, volume.radius + margin)
+      Math.max(0, volume.radius + margin),
     );
   }
   const box = volume as Aabb;
   return new Aabb(
     box.min.map((v) => v - margin) as Vec3,
-    box.max.map((v) => v + margin) as Vec3
+    box.max.map((v) => v + margin) as Vec3,
   );
 };
 
@@ -133,7 +133,7 @@ describe('intersects', () => {
       const cylinder = new Cylinder(
         randomPoint(next, 2),
         between(next, 0.2, 1),
-        between(next, 0.2, 1.5)
+        between(next, 0.2, 1.5),
       );
       const sphere = randomSphere();
       const distance = distanceToCylinder(sphere.center, cylinder);
@@ -154,14 +154,14 @@ describe('intersects', () => {
         [1, 1, 0],
         [-1, 1, 0],
         [0, 0, 1],
-      ]
+      ],
     );
     // Along the diagonal: touches a box at (1.2, 1.2, 0), not one at (1.2, -1.2, 0).
     expect(intersects(turned, new Aabb([1, 1, -0.2], [1.4, 1.4, 0.2]))).toBe(
-      true
+      true,
     );
     expect(intersects(turned, new Aabb([1, -1.4, -0.2], [1.4, -1, 0.2]))).toBe(
-      false
+      false,
     );
   });
 
@@ -185,7 +185,7 @@ describe('intersects', () => {
     }
     // Not convex (no support function): needs a registered test.
     expect(() =>
-      intersects(new Point([0, 0, 0]), new Sphere([0, 0, 0], 1))
+      intersects(new Point([0, 0, 0]), new Sphere([0, 0, 0], 1)),
     ).toThrow(/No intersection test between "test-point" and "sphere"/);
     registerIntersection<Point, Sphere>(
       'test-point',
@@ -193,14 +193,14 @@ describe('intersects', () => {
       (point, sphere) => {
         calls++;
         return sphere.containsPoint(point.at);
-      }
+      },
     );
     expect(intersects(new Point([0, 0, 0]), new Sphere([0, 0, 0], 1))).toBe(
-      true
+      true,
     );
     // Both orders.
     expect(intersects(new Sphere([0, 0, 0], 1), new Point([3, 0, 0]))).toBe(
-      false
+      false,
     );
     expect(calls).toBe(2);
   });

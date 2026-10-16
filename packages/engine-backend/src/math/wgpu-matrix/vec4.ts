@@ -9,7 +9,7 @@ export const Vec4Api: IVec4Api = {
   subtract: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.subtract(a, b, out);
   },
@@ -17,7 +17,7 @@ export const Vec4Api: IVec4Api = {
   multiply: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.multiply(a, b, out);
   },
@@ -25,7 +25,7 @@ export const Vec4Api: IVec4Api = {
   divide: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.divide(a, b, out);
   },
@@ -45,7 +45,7 @@ export const Vec4Api: IVec4Api = {
   multiplyScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.mulScalar(a, scalar, out);
   },
@@ -53,7 +53,7 @@ export const Vec4Api: IVec4Api = {
   divideScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.divScalar(a, scalar, out);
   },
@@ -61,7 +61,7 @@ export const Vec4Api: IVec4Api = {
   multiplyMat4: (
     v: Float32Array,
     m: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.transformMat4(v, m, out);
   },
@@ -90,7 +90,7 @@ export const Vec4Api: IVec4Api = {
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec4.lerp(a, b, t, out);
   },

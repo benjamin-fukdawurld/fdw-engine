@@ -27,7 +27,7 @@ function std140(type: ShaderType): { align: number; size: number } {
     return { align: 16, size: type.columns * 16 };
   }
   throw new Error(
-    `${typeToString(type)} is not supported in a std140 uniform block`
+    `${typeToString(type)} is not supported in a std140 uniform block`,
   );
 }
 
@@ -45,7 +45,7 @@ const storageStride = (element: ShaderType) => {
 };
 
 function uniformBlock(
-  resource: Extract<LogicalBinding, { kind: 'uniform-block' }>
+  resource: Extract<LogicalBinding, { kind: 'uniform-block' }>,
 ): PhysicalUniformBlock {
   let offset = 0;
   const members = resource.members.map((member) => {
@@ -67,7 +67,7 @@ function uniformBlock(
  * blocks of a TransformPool, so that rows are copied as they are.
  */
 export function objectRowLayout(
-  members: readonly { readonly name: string; readonly type: ShaderType }[]
+  members: readonly { readonly name: string; readonly type: ShaderType }[],
 ): PhysicalUniformBlock {
   return uniformBlock({ kind: 'uniform-block', name: 'row', members });
 }
@@ -76,7 +76,7 @@ function writeScalar(
   target: DataView,
   offset: number,
   scalar: string,
-  value: number | boolean
+  value: number | boolean,
 ): void {
   const number = typeof value === 'boolean' ? Number(value) : value;
   switch (scalar) {
@@ -95,7 +95,7 @@ function writeScalar(
 function writeUniform(
   target: DataView,
   { name, type, offset }: PhysicalUniformMember,
-  value: UniformValue
+  value: UniformValue,
 ): void {
   const components = (count: number): ArrayLike<number> => {
     if (
@@ -104,7 +104,7 @@ function writeUniform(
       value.length < count
     ) {
       throw new Error(
-        `Uniform "${name}" expects ${count} components (${typeToString(type)})`
+        `Uniform "${name}" expects ${count} components (${typeToString(type)})`,
       );
     }
     return value;
@@ -114,7 +114,7 @@ function writeUniform(
     case 'scalar':
       if (typeof value !== 'number' && typeof value !== 'boolean') {
         throw new Error(
-          `Uniform "${name}" expects a number (${typeToString(type)})`
+          `Uniform "${name}" expects a number (${typeToString(type)})`,
         );
       }
       writeScalar(target, offset, type.scalar, value);
@@ -137,7 +137,7 @@ function writeUniform(
           target.setFloat32(
             offset + column * 16 + row * 4,
             source[column * sourceStride + row],
-            true
+            true,
           );
         }
       }
@@ -151,26 +151,26 @@ function writeUniform(
         element.kind === 'scalar'
           ? 1
           : element.kind === 'vector'
-          ? element.size
-          : element.kind === 'matrix'
-          ? element.columns * element.rows
-          : 0;
+            ? element.size
+            : element.kind === 'matrix'
+              ? element.columns * element.rows
+              : 0;
       if (count === 0 || typeof value !== 'object') {
         throw new Error(
-          `Uniform "${name}": ${typeToString(type)} values are not supported`
+          `Uniform "${name}": ${typeToString(type)} values are not supported`,
         );
       }
       const source = Array.from(value);
       const stride = arrayStride(element);
       const length = Math.min(
         type.length ?? 0,
-        Math.floor(source.length / count)
+        Math.floor(source.length / count),
       );
       for (let i = 0; i < length; i++) {
         writeUniform(
           target,
           { name, type: element, offset: offset + i * stride, size: stride },
-          source.slice(i * count, (i + 1) * count)
+          source.slice(i * count, (i + 1) * count),
         );
       }
       return;
@@ -197,20 +197,20 @@ export const std140LayoutStrategy: PhysicalLayoutStrategy = {
           resource.kind === 'uniform-block'
             ? { binding, resource, block: uniformBlock(resource) }
             : resource.kind === 'object-table'
-            ? {
-                binding,
-                resource,
-                objectRow: objectRowLayout(resource.members),
-              }
-            : resource.kind === 'storage-buffer'
-            ? {
-                binding,
-                resource,
-                storage: {
-                  elementStride: storageStride(resource.type.element),
-                },
-              }
-            : { binding, resource }
+              ? {
+                  binding,
+                  resource,
+                  objectRow: objectRowLayout(resource.members),
+                }
+              : resource.kind === 'storage-buffer'
+                ? {
+                    binding,
+                    resource,
+                    storage: {
+                      elementStride: storageStride(resource.type.element),
+                    },
+                  }
+                : { binding, resource },
         ),
       })),
     };

@@ -33,7 +33,7 @@ export class StructBuilder {
     });
     this.blueprint.alignment = Math.max(
       this.blueprint.alignment,
-      fieldAlignment
+      fieldAlignment,
     );
     this.blueprint.stride = fieldOffset + fieldSize;
     this.blueprint.size = this.blueprint.stride;
@@ -82,7 +82,7 @@ export class StructBuilder {
 
 export function struct<T>(
   strategy: StructBuildStrategy,
-  fields: Omit<GpuStructField<unknown>, 'offset'>[]
+  fields: Omit<GpuStructField<unknown>, 'offset'>[],
 ): GpuStruct<T> {
   return new StructBuilder(strategy).withFields(fields).build<T>();
 }

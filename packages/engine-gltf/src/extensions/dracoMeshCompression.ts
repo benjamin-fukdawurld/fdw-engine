@@ -14,7 +14,7 @@ export const KHR_draco_mesh_compression: GltfExtension = {
     };
     return context.options.draco!.decode(
       await context.bufferView(bufferView),
-      attributes
+      attributes,
     );
   },
 };

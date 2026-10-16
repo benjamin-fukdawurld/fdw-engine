@@ -45,7 +45,7 @@ export class CameraAdapter {
         const position = dependencies[0].value.position;
         buffer.write(
           0,
-          new Float32Array([position.x, position.y, position.z]).buffer
+          new Float32Array([position.x, position.y, position.z]).buffer,
         );
         return buffer;
       },

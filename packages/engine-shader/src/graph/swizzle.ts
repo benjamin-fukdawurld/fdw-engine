@@ -29,7 +29,7 @@ export function parseSwizzle(swizzle: string): number[] | undefined {
  */
 export function swizzleType(
   type: ShaderType,
-  swizzle: string
+  swizzle: string,
 ): ShaderType | string {
   if (type.kind !== 'vector') {
     return `cannot swizzle a value of kind ${type.kind}`;
@@ -54,7 +54,7 @@ export function swizzleType(
  */
 export function composeSwizzles(
   inner: string,
-  outer: string
+  outer: string,
 ): string | undefined {
   const innerIndices = parseSwizzle(inner);
   const outerIndices = parseSwizzle(outer);

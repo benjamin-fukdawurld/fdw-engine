@@ -49,7 +49,7 @@ export class TransformCache implements TransformParentProvider {
         return transformMath.getLocalMatrix(
           position.asArray(),
           rotation.asArray(),
-          scale.asArray()
+          scale.asArray(),
         );
       },
       dependencies: [
@@ -79,7 +79,7 @@ export class TransformCache implements TransformParentProvider {
       updateStrategy: (_, dependencies) =>
         transformMath.getWorldMatrix(
           dependencies[0].value,
-          transformParentProvider?.worldMatrix.value
+          transformParentProvider?.worldMatrix.value,
         ),
       dependencies: [
         this.localMatrix,
@@ -96,7 +96,7 @@ export class TransformCache implements TransformParentProvider {
       updateStrategy: (_, dependencies) =>
         transformMath.getWorldNormalMatrix(
           dependencies[0].value,
-          transformParentProvider?.worldNormalMatrix.value
+          transformParentProvider?.worldNormalMatrix.value,
         ),
       dependencies: [
         this.normalMatrix,

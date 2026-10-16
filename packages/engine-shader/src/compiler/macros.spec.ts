@@ -10,13 +10,13 @@ import { forEachInstruction, IrEntryPoint, IrInstruction, IrOp } from './ir';
 
 const stage = (program: CompiledProgram, name: 'vertex' | 'fragment') =>
   program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === name
+    (entryPoint) => entryPoint.stage === name,
   ) as IrEntryPoint;
 const ops = (entryPoint: IrEntryPoint, kind: IrOp['kind']) =>
   entryPoint.body.filter((instruction) => instruction.op.kind === kind);
 const resources = (program: CompiledProgram) =>
   program.layout.groups.flatMap((group) =>
-    group.bindings.map((binding) => binding.name)
+    group.bindings.map((binding) => binding.name),
   );
 
 const errorOf = (graph: MaterialGraphData, options?: CompileOptions) => {
@@ -44,7 +44,7 @@ describe('macro.staticSwitch', () => {
         ifTrue: textured.swizzle('rgb'),
         ifFalse: g.uniform('color', BuiltinTypes.vec3f),
       },
-      { params: { feature: 'useTexture' } }
+      { params: { feature: 'useTexture' } },
     );
     g.surface({ baseColor: chosen });
     return g.build();
@@ -57,7 +57,7 @@ describe('macro.staticSwitch', () => {
 
     const textured = compile(graph(), { features: { useTexture: true } });
     expect(resources(textured)).toEqual(
-      expect.arrayContaining(['map', 'mapSampler'])
+      expect.arrayContaining(['map', 'mapSampler']),
     );
     expect(resources(textured)).not.toContain('materialUniforms');
     expect(textured.variantKey).toEqual({ useTexture: true });
@@ -76,7 +76,7 @@ describe('macro.optionalAttribute', () => {
       { fallback: [1, 1, 1] },
       {
         params: { semantic: 'color', type: BuiltinTypes.vec3f },
-      }
+      },
     );
     g.surface({ baseColor: color });
     return g.build();
@@ -132,7 +132,7 @@ describe('macro.repeat', () => {
       alpha: g.call(
         stdMacros.repeat,
         { initial: g.uniform('start', BuiltinTypes.f32) },
-        { params: { body: 'test.addIndex', count } }
+        { params: { body: 'test.addIndex', count } },
       ),
     });
     return g.build();
@@ -144,7 +144,7 @@ describe('macro.repeat', () => {
     // start + 0 + 1 + 2
     expect(ops(fragment, 'binary')).toHaveLength(3);
     expect(
-      ops(fragment, 'constant').map((i) => (i.op as { value: number }).value)
+      ops(fragment, 'constant').map((i) => (i.op as { value: number }).value),
     ).toEqual(expect.arrayContaining([0, 1, 2]));
   });
 
@@ -155,7 +155,7 @@ describe('macro.repeat', () => {
 
   it('reports invalid counts', () => {
     expect(errorOf(repeated(-1), { registry: registry() })).toMatch(
-      /macro.repeat: count must be a non-negative integer, got -1/
+      /macro.repeat: count must be a non-negative integer, got -1/,
     );
   });
 
@@ -170,7 +170,7 @@ describe('macro.repeat', () => {
     const g = new GraphBuilder('unimplemented', r);
     g.surface({ alpha: g.call('test.unimplemented', { value: 1 }) });
     expect(errorOf(g.build(), { registry: r })).toMatch(
-      /node type "test.unimplemented" has no implementation/
+      /node type "test.unimplemented" has no implementation/,
     );
   });
 });
@@ -196,11 +196,11 @@ describe('macro.normalMapping', () => {
       vertexAttributes: [...base, 'tangent'],
     });
     expect(program.vertexInputs.map((input) => input.semantic)).toContain(
-      'tangent'
+      'tangent',
     );
     expect(program.variantKey).toEqual({ 'hasAttribute.tangent': true });
     expect(
-      ops(stage(program, 'fragment'), 'intrinsic').map((i) => i.op)
+      ops(stage(program, 'fragment'), 'intrinsic').map((i) => i.op),
     ).toContainEqual({
       kind: 'intrinsic',
       name: 'cross',
@@ -210,14 +210,14 @@ describe('macro.normalMapping', () => {
   it('builds the frame from the derivatives without tangents', () => {
     const program = compile(graph(), { vertexAttributes: base });
     expect(program.vertexInputs.map((input) => input.semantic)).not.toContain(
-      'tangent'
+      'tangent',
     );
     expect(program.variantKey).toEqual({
       'hasAttribute.tangent': false,
       'hasAttribute.uv': true,
     });
     const names = ops(stage(program, 'fragment'), 'intrinsic').map(
-      (i) => (i.op as { name: string }).name
+      (i) => (i.op as { name: string }).name,
     );
     expect(names).toEqual(expect.arrayContaining(['dpdx', 'dpdy']));
     expect(resources(program)).toContain('normalMap');
@@ -233,7 +233,7 @@ describe('macro.normalMapping', () => {
       vertexAttributes: ['position', 'normal'],
     });
     const names = ops(stage(program, 'fragment'), 'intrinsic').map(
-      (i) => (i.op as { name: string }).name
+      (i) => (i.op as { name: string }).name,
     );
     expect(names).not.toContain('dpdx');
   });
@@ -246,7 +246,7 @@ describe('surface details', () => {
   });
   const intrinsics = (
     program: CompiledProgram,
-    name: 'vertex' | 'fragment'
+    name: 'vertex' | 'fragment',
   ) => {
     const found: string[] = [];
     forEachInstruction(stage(program, name).body, (instruction) => {
@@ -284,7 +284,7 @@ describe('surface details', () => {
     });
     const program = compile(g.build(), { vertexAttributes: attributes });
     expect(intrinsics(program, 'fragment')).toEqual(
-      expect.arrayContaining(['dpdx', 'dpdy', 'cross'])
+      expect.arrayContaining(['dpdx', 'dpdy', 'cross']),
     );
     expect(intrinsics(program, 'vertex')).not.toContain('dpdx');
   });
@@ -297,7 +297,7 @@ describe('surface details', () => {
       }),
     });
     expect(errorOf(g.build(), { vertexAttributes: attributes })).toMatch(
-      /fragment/
+      /fragment/,
     );
   });
 
@@ -379,7 +379,7 @@ describe('lighting.phong', () => {
         'lightAttenuations',
         'lightSpotDirections',
         'lightSpotCones',
-      ])
+      ]),
     );
     const indices = op.body.filter((i) => i.op.kind === 'index');
     expect(indices.every((i) => i.args[1] === op.index)).toBe(true);
@@ -394,7 +394,7 @@ describe('lighting.phong', () => {
       'normalize',
     ]);
     expect(intrinsics(op.body)).toEqual(
-      expect.arrayContaining(['normalize', 'dot', 'reflect', 'pow', 'length'])
+      expect.arrayContaining(['normalize', 'dot', 'reflect', 'pow', 'length']),
     );
     expect(program.vertexInputs.map((input) => input.semantic)).toEqual([
       'position',
@@ -424,7 +424,7 @@ describe('lighting.phong', () => {
         'pow',
         'step',
         'length',
-      ])
+      ]),
     );
   });
 

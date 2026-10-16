@@ -2,28 +2,28 @@ export type Vec3Api = {
   add: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   subtract: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   multiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   divide: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   invert: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
   cross: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   dot: (a: ArrayLike<number>, b: ArrayLike<number>) => number;
   negate: (a: ArrayLike<number>, out?: Float32Array) => Float32Array;
@@ -31,30 +31,30 @@ export type Vec3Api = {
   multiplyScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   divideScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   multiplyMat3: (
     v: ArrayLike<number>,
     m: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   multiplyMat4: (
     v: ArrayLike<number>,
     m: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   multiplyQuat: (
     v: ArrayLike<number>,
     q: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   angle: (a: ArrayLike<number>, b: ArrayLike<number>) => number;
@@ -69,7 +69,7 @@ export type Vec3Api = {
     a: ArrayLike<number>,
     b: ArrayLike<number>,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   create(): Float32Array;
@@ -78,7 +78,7 @@ export type Vec3Api = {
   equals: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    epsilon?: number
+    epsilon?: number,
   ) => boolean;
   zero: (out?: Float32Array) => Float32Array;
   one: (out?: Float32Array) => Float32Array;

@@ -22,7 +22,7 @@ export interface SceneContext {
 export type SceneFactory = (
   backend: RenderBackend,
   surface: Surface,
-  context?: SceneContext
+  context?: SceneContext,
 ) => Scene;
 
 // Keeps the aspect of a perspective camera equal to the one of the surface,

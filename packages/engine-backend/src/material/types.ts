@@ -18,9 +18,7 @@ export type MaterialBindingSlotName = (typeof MaterialBindingSlotNames)[number];
 export type MaterialBindingSlot = MaterialBindingSlotName | (string & {});
 
 export type MaterialUniformType<T = unknown> =
-  | GpuType<T>
-  | GpuStruct<T>
-  | GpuArray<T>;
+  GpuType<T> | GpuStruct<T> | GpuArray<T>;
 
 export type MaterialUniformBindingShape<T = unknown> = {
   kind: 'uniform' | 'storage';
@@ -38,18 +36,19 @@ export type MaterialTextureBindingShape = {
 };
 
 export type MaterialBindingShape =
-  | MaterialUniformBindingShape
-  | MaterialTextureBindingShape;
+  MaterialUniformBindingShape | MaterialTextureBindingShape;
 
 export type MaterialUniformBinding<
   T = unknown,
-  TDependencies extends readonly SnapshotProvider<unknown>[] = SnapshotProvider<unknown>[]
+  TDependencies extends readonly SnapshotProvider<unknown>[] =
+    SnapshotProvider<unknown>[],
 > = MaterialUniformBindingShape<T> & {
   value: CachedValue<T, TDependencies>;
 };
 
 export type MaterialTextureBinding<
-  TDependencies extends readonly SnapshotProvider<unknown>[] = SnapshotProvider<unknown>[]
+  TDependencies extends readonly SnapshotProvider<unknown>[] =
+    SnapshotProvider<unknown>[],
 > = MaterialTextureBindingShape & {
   texture: CachedValue<GpuTexture, TDependencies>;
   sampler?: GpuSampler;

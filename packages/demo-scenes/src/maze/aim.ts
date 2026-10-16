@@ -12,7 +12,7 @@ export function pointerOnPlane(
   world: ArrayLike<number>,
   camera: Camera,
   pointer: { readonly x: number; readonly y: number },
-  height = 0
+  height = 0,
 ): { x: number; z: number } | undefined {
   const projection = camera.projection;
   if (projection.type !== 'perspective') {
@@ -24,7 +24,7 @@ export function pointerOnPlane(
   const sx = (pointer.x * 2 - 1) * tan * projection.aspect;
   const sy = (1 - pointer.y * 2) * tan;
   const direction = [0, 1, 2].map(
-    (i) => world[i] * sx + world[4 + i] * sy - world[8 + i]
+    (i) => world[i] * sx + world[4 + i] * sy - world[8 + i],
   );
   const origin = [world[12], world[13], world[14]];
   if (direction[1] >= -1e-6) {
@@ -50,7 +50,7 @@ export class Aim {
     eye: { readonly worldMatrix: ArrayLike<number> },
     camera: Camera,
     around: { readonly x: number; readonly z: number },
-    cameraYaw: number
+    cameraYaw: number,
   ): { x: number; z: number } | undefined {
     const { x, y } = actions.vector('aim', this._stick);
     const pushed = Math.hypot(x, y) > 0.3;

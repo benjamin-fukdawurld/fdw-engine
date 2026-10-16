@@ -36,7 +36,7 @@ export const createShadowsScene: SceneFactory = (backend, surface) => {
   const material = (
     baseColor: [number, number, number],
     metallic = 0,
-    roughness = 0.6
+    roughness = 0.6,
   ) => new Material({ graph, values: { baseColor, metallic, roughness } });
   const cube = createCube();
   const sphere = createSphere(48, 24);

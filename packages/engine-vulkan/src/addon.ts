@@ -87,13 +87,13 @@ export interface VulkanAddon {
     context: ContextHandle,
     size: number,
     usage: number,
-    label?: string
+    label?: string,
   ): BufferHandle;
   destroyBuffer(buffer: BufferHandle): void;
   writeBuffer(
     buffer: BufferHandle,
     offset: number,
-    data: ArrayBufferView
+    data: ArrayBufferView,
   ): void;
   // A ticket, ready when readReady says so.
   readBuffer(buffer: BufferHandle, offset: number, size: number): number;
@@ -101,7 +101,7 @@ export interface VulkanAddon {
   readTake(
     context: ContextHandle,
     ticket: number,
-    target: ArrayBufferView
+    target: ArrayBufferView,
   ): void;
   bufferId(buffer: BufferHandle): number;
 
@@ -115,7 +115,7 @@ export interface VulkanAddon {
     sampleCount: number,
     mipLevelCount: number,
     usage: number,
-    label?: string
+    label?: string,
   ): TextureHandle;
   destroyTexture(texture: TextureHandle): void;
   textureId(texture: TextureHandle): number;
@@ -129,7 +129,7 @@ export interface VulkanAddon {
     data: ArrayBufferView,
     level: number,
     layer: number,
-    layerCount: number
+    layerCount: number,
   ): void;
   // Computes the levels after the first one, in the order of the queue.
   generateMipmaps(texture: TextureHandle): void;
@@ -140,7 +140,7 @@ export interface VulkanAddon {
     x: number,
     y: number,
     width: number,
-    height: number
+    height: number,
   ): number;
 
   createSampler(
@@ -153,7 +153,7 @@ export interface VulkanAddon {
     wrapW: string,
     maxAnisotropy: number,
     compare: string | undefined,
-    label?: string
+    label?: string,
   ): SamplerHandle;
   destroySampler(sampler: SamplerHandle): void;
   // The highest anisotropy of the samplers (1: none).
@@ -177,7 +177,7 @@ export interface VulkanAddon {
     pool: QueryPoolHandle,
     first: number,
     count: number,
-    nanoseconds: Float64Array
+    nanoseconds: Float64Array,
   ): boolean;
 
   // Replays the commands (Commands) and submits them.
@@ -189,29 +189,29 @@ export interface VulkanAddon {
     context: ContextHandle,
     hlsl: string,
     args: readonly string[],
-    label?: string
+    label?: string,
   ): ShaderHandle;
   destroyShader(shader: ShaderHandle): void;
   createGroupLayout(
     context: ContextHandle,
-    bindings: readonly { binding: number; kind: number }[]
+    bindings: readonly { binding: number; kind: number }[],
   ): GroupLayoutHandle;
   createGroup(
     context: ContextHandle,
     layout: GroupLayoutHandle,
-    entries: readonly { binding: number; object: number }[]
+    entries: readonly { binding: number; object: number }[],
   ): GroupHandle;
   destroyGroup(group: GroupHandle): void;
   groupId(group: GroupHandle): number;
   createRenderPipeline(
     context: ContextHandle,
-    options: NativeRenderPipelineOptions
+    options: NativeRenderPipelineOptions,
   ): PipelineHandle;
   createComputePipeline(
     context: ContextHandle,
     shader: ShaderHandle,
     groups: readonly (GroupLayoutHandle | null)[],
-    label?: string
+    label?: string,
   ): PipelineHandle;
   destroyPipeline(pipeline: PipelineHandle): void;
 
@@ -220,7 +220,7 @@ export interface VulkanAddon {
     window: NativeWindowHandle,
     width: number,
     height: number,
-    vsync: boolean
+    vsync: boolean,
   ): SwapchainHandle;
   destroySwapchain(swapchain: SwapchainHandle): void;
   swapchainFormat(swapchain: SwapchainHandle): string;
@@ -229,7 +229,7 @@ export interface VulkanAddon {
   acquireImage(
     swapchain: SwapchainHandle,
     width: number,
-    height: number
+    height: number,
   ): { index: number; recreated: boolean; width: number; height: number };
   present(swapchain: SwapchainHandle): void;
   pipelineId(pipeline: PipelineHandle): number;
@@ -295,7 +295,7 @@ export function loadVulkanAddon(): VulkanAddon {
     } catch (error) {
       throw new Error(
         `The native addon of @fdw/engine-vulkan is not built (${path}): run "node packages/engine-vulkan/scripts/build.mjs" with the Vulkan SDK`,
-        { cause: error }
+        { cause: error },
       );
     }
   }

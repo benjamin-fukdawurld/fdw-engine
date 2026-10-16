@@ -47,7 +47,7 @@ function fakeContext(extensions: string[]) {
     generateMipmap: record('generateMipmap'),
   };
   const factory = new WebGl2TextureFactory(
-    gl as unknown as WebGL2RenderingContext
+    gl as unknown as WebGL2RenderingContext,
   );
   // The calls of a name, without the data.
   const named = (name: string) =>
@@ -64,7 +64,7 @@ describe('WebGl2TextureFactory', () => {
       'WEBGL_compressed_texture_etc',
     ]);
     const formats = glCompressedFormats(
-      gl as unknown as WebGL2RenderingContext
+      gl as unknown as WebGL2RenderingContext,
     );
     expect(formats).toContain('bc7-rgba-unorm-srgb');
     expect(formats).toContain('bc6h-rgb-ufloat');
@@ -102,7 +102,7 @@ describe('WebGl2TextureFactory', () => {
         type: '2d',
         format: 'rgba8unorm',
         dimensions: { width: 4, height: 4 },
-      }).flipped
+      }).flipped,
     ).toBe(true);
   });
 
@@ -113,7 +113,7 @@ describe('WebGl2TextureFactory', () => {
         type: '2d',
         format: 'astc-4x4-unorm',
         dimensions: { width: 4, height: 4 },
-      })
+      }),
     ).toThrow(/not supported \(WEBGL_compressed_texture_astc\)/);
   });
 
@@ -134,7 +134,7 @@ describe('WebGl2TextureFactory', () => {
     expect(
       named('texSubImage2D')
         .slice(1)
-        .map((call) => call.slice(0, 2))
+        .map((call) => call.slice(0, 2)),
     ).toEqual([10, 11, 12, 13, 14, 15].map((face) => [face, 1]));
     expect(named('generateMipmap')).toEqual([]);
 
@@ -157,7 +157,7 @@ describe('WebGl2TextureFactory', () => {
       [3, 0, 0, 0, 2, 4, 4, 1, 0x9274],
     ]);
     expect(() =>
-      factory.writeTexture(array, new Uint8Array(16), { layer: 2 })
+      factory.writeTexture(array, new Uint8Array(16), { layer: 2 }),
     ).toThrow(/takes 8 bytes, not 16/);
   });
 });

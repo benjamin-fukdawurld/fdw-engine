@@ -18,7 +18,7 @@ import type { ShaderType } from '../types/ShaderType';
  * @group Functions
  */
 export function isGraphFunction(
-  definition: NodeDefinition | undefined
+  definition: NodeDefinition | undefined,
 ): definition is FunctionDefinition & {
   readonly implementation: { readonly kind: 'graph' };
 } {
@@ -38,7 +38,7 @@ export function isGraphFunction(
  */
 export function registryWithFunctions(
   registry: NodeRegistry,
-  graph: MaterialGraphData
+  graph: MaterialGraphData,
 ): NodeRegistry {
   if (!graph.functions?.length) {
     return registry;
@@ -54,7 +54,7 @@ export function registryWithFunctions(
         continue;
       }
       extended.register(
-        defineFunction(body, { id, description, registry: extended })
+        defineFunction(body, { id, description, registry: extended }),
       );
     }
   };
@@ -88,11 +88,11 @@ export function defineFunction(
     id,
     description,
     registry = createStandardRegistry(),
-  }: { id: string; description?: string; registry?: NodeRegistry }
+  }: { id: string; description?: string; registry?: NodeRegistry },
 ): FunctionDefinition {
   const validation = validateGraph(
     graph,
-    registryWithFunctions(registry, graph)
+    registryWithFunctions(registry, graph),
   );
   if (!validation.valid) {
     throw new GraphError(validation.diagnostics);

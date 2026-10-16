@@ -55,7 +55,7 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
     readonly label?: string,
     // An image owned by the native side (a swapchain image): wrapped, not
     // created.
-    existing?: TextureHandle
+    existing?: TextureHandle,
   ) {
     this._handle =
       existing ??
@@ -69,7 +69,7 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
         sampleCount,
         mipLevelCount,
         usage.reduce((flags, name) => flags | TextureUsageFlags[name], 0),
-        label
+        label,
       );
     this.id = _addon.textureId(this._handle);
   }
@@ -109,7 +109,7 @@ export class VulkanTexture implements GpuTexture, GpuRenderTarget {
     data: ArrayBufferView,
     level: number,
     layer: number,
-    layers: number
+    layers: number,
   ): void {
     this._addon.writeTextureLevel(this.handle, data, level, layer, layers);
   }
@@ -163,7 +163,7 @@ export class VulkanSampler implements GpuSampler {
     private readonly _addon: VulkanAddon,
     context: ContextHandle,
     config: GpuSamplerConfiguration = {},
-    defaultMaxAnisotropy = 1
+    defaultMaxAnisotropy = 1,
   ) {
     this.wrapModeS = config.wrapModeS ?? 'repeat';
     this.wrapModeT = config.wrapModeT ?? 'repeat';
@@ -174,7 +174,7 @@ export class VulkanSampler implements GpuSampler {
     this.maxAnisotropy = samplerAnisotropy(
       config,
       defaultMaxAnisotropy,
-      _addon.maxAnisotropy(context)
+      _addon.maxAnisotropy(context),
     );
     this.compare = config.compare;
     this.label = config.label;
@@ -188,7 +188,7 @@ export class VulkanSampler implements GpuSampler {
       this.wrapModeR,
       this.maxAnisotropy,
       this.compare,
-      this.label
+      this.label,
     );
     this.id = _addon.samplerId(this._handle);
   }
@@ -210,11 +210,11 @@ export class VulkanTextureFactory
 
   constructor(
     private readonly _addon: VulkanAddon,
-    private readonly _context: ContextHandle
+    private readonly _context: ContextHandle,
   ) {
     this.compressedFormats = GpuTextureFormatNames.filter(
       (format) =>
-        isCompressedFormat(format) && _addon.formatSupported(_context, format)
+        isCompressedFormat(format) && _addon.formatSupported(_context, format),
     );
   }
 
@@ -223,7 +223,7 @@ export class VulkanTextureFactory
       source?: ArrayBufferView<ArrayBuffer>;
       levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
-    }
+    },
   ): VulkanTexture {
     const { type, format, dimensions, label, source, levels, readwrite } =
       descriptor;
@@ -234,7 +234,7 @@ export class VulkanTextureFactory
       !this.compressedFormats.includes(format)
     ) {
       throw new Error(
-        `Texture format ${format} is not supported by the device`
+        `Texture format ${format} is not supported by the device`,
       );
     }
     const usage: GpuTextureUsage[] = [
@@ -250,14 +250,14 @@ export class VulkanTextureFactory
       usage,
       descriptor.sampleCount ?? 1,
       mipLevelCount,
-      label
+      label,
     );
     if (source) {
       texture.write(source);
     }
     // Written as they are, every layer of each.
     levels?.forEach((data, level) =>
-      texture.writeLevel(data, level, 0, textureLayerCount(texture))
+      texture.writeLevel(data, level, 0, textureLayerCount(texture)),
     );
     return texture;
   }
@@ -265,7 +265,7 @@ export class VulkanTextureFactory
   writeTexture(
     texture: GpuTexture,
     data: ArrayBufferView<ArrayBuffer>,
-    options?: GpuTextureWriteOptions
+    options?: GpuTextureWriteOptions,
   ): void {
     if (options?.level === undefined && options?.layer === undefined) {
       (texture as VulkanTexture).write(data);
@@ -277,7 +277,7 @@ export class VulkanTextureFactory
 
   readTexture(
     texture: GpuTexture,
-    region?: GpuTextureRegion
+    region?: GpuTextureRegion,
   ): Promise<ArrayBuffer> {
     return (texture as VulkanTexture).read(region);
   }
@@ -287,7 +287,7 @@ export class VulkanTextureFactory
       this._addon,
       this._context,
       descriptor,
-      this.defaultMaxAnisotropy
+      this.defaultMaxAnisotropy,
     );
   }
 }

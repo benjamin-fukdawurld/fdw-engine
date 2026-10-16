@@ -6,7 +6,7 @@ import { ActionMap, ActionMapOptions, Input } from '@fdw/engine-input';
  */
 export function mazeActions(
   input: Input,
-  options?: ActionMapOptions
+  options?: ActionMapOptions,
 ): ActionMap {
   return new ActionMap(
     input,
@@ -64,6 +64,6 @@ export function mazeActions(
       culling: { type: 'button', bindings: ['key:KeyC'] },
       restart: { type: 'button', bindings: ['key:KeyR', 'gamepad:start'] },
     },
-    options
+    options,
   );
 }

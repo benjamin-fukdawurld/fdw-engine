@@ -35,7 +35,7 @@ export class Capsule implements ConvexVolume {
   constructor(
     start: ReadonlyVec3 = [0, 0, 0],
     end: ReadonlyVec3 = [0, 0, 0],
-    radius = 0
+    radius = 0,
   ) {
     this.start = copy(vec3(), start);
     this.end = copy(vec3(), end);
@@ -54,7 +54,7 @@ export class Capsule implements ConvexVolume {
     return new Capsule(
       transformPoint(vec3(), matrix, this.start),
       transformPoint(vec3(), matrix, this.end),
-      this.radius * maxScale(matrix)
+      this.radius * maxScale(matrix),
     );
   }
 
@@ -125,7 +125,7 @@ export class Capsule implements ConvexVolume {
         this.start,
         this.end,
         capsule.start,
-        capsule.end
+        capsule.end,
       ) <=
       r * r
     );

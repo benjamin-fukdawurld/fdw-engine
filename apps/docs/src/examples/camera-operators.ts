@@ -120,7 +120,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     info(
       orbit.enabled
         ? 'orbit · drag, right drag, wheel, WASD, arrows, sticks · C: walk'
-        : 'walk · WASD, drag, arrows, Q/E, sticks, triggers · C: orbit'
+        : 'walk · WASD, drag, arrows, Q/E, sticks, triggers · C: orbit',
     );
   show();
 

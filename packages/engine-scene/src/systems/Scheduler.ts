@@ -247,14 +247,14 @@ function sort(systems: System[]): Record<Phase, System[]> {
     while (done.size < own.length) {
       // The first system added whose previous ones all ran.
       const next = own.findIndex(
-        (_, i) => !done.has(i) && [...previous[i]].every((j) => done.has(j))
+        (_, i) => !done.has(i) && [...previous[i]].every((j) => done.has(j)),
       );
       if (next < 0) {
         const cycle = own
           .filter((_, i) => !done.has(i))
           .map((system) => system.name);
         throw new Error(
-          `Systems of phase "${phase}" in a cycle: ${cycle.join(', ')}`
+          `Systems of phase "${phase}" in a cycle: ${cycle.join(', ')}`,
         );
       }
       done.add(next);

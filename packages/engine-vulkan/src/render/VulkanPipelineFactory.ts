@@ -46,7 +46,10 @@ const bindingKind = (resource: LogicalBinding): number => {
 };
 
 export class VulkanBindGroupLayout implements GpuBindGroupLayout {
-  constructor(readonly key: string, readonly handle: GroupLayoutHandle) {}
+  constructor(
+    readonly key: string,
+    readonly handle: GroupLayoutHandle,
+  ) {}
 }
 
 export class VulkanBindGroup implements GpuBindGroup {
@@ -54,7 +57,7 @@ export class VulkanBindGroup implements GpuBindGroup {
     readonly layout: VulkanBindGroupLayout,
     readonly handle: GroupHandle,
     // Identifies the group in the commands.
-    readonly id: number
+    readonly id: number,
   ) {}
 }
 
@@ -63,7 +66,7 @@ export class VulkanRenderPipeline implements GpuRenderPipeline {
     readonly handle: PipelineHandle,
     readonly id: number,
     readonly vertexBuffers: readonly number[],
-    readonly label?: string
+    readonly label?: string,
   ) {}
 }
 
@@ -71,7 +74,7 @@ export class VulkanComputePipeline implements GpuComputePipeline {
   constructor(
     readonly handle: PipelineHandle,
     readonly id: number,
-    readonly label?: string
+    readonly label?: string,
   ) {}
 }
 
@@ -86,7 +89,7 @@ function resourceId(entry: GpuBindGroupEntry): number {
     return resource.id;
   }
   throw new Error(
-    `The resource of binding ${entry.binding} was not created by the Vulkan backend`
+    `The resource of binding ${entry.binding} was not created by the Vulkan backend`,
   );
 }
 
@@ -109,7 +112,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
 
   constructor(
     private readonly _addon: VulkanAddon,
-    private readonly _context: ContextHandle
+    private readonly _context: ContextHandle,
   ) {}
 
   resolveLayout(program: CompiledProgram): PhysicalProgramLayout {
@@ -122,7 +125,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
   }
 
   createRenderPipeline(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): VulkanRenderPipeline {
     const { program, primitive, depthStencil, targets } = descriptor;
     const layout = this.resolveLayout(program);
@@ -161,12 +164,12 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       handle,
       this._addon.pipelineId(handle),
       buffers.map((buffer) => buffer.buffer),
-      label
+      label,
     );
   }
 
   async createRenderPipelineAsync(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline> {
     return this.createRenderPipeline(descriptor);
   }
@@ -190,7 +193,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
         this._context,
         sources.code,
         dxcArguments('compute', entryPoint),
-        `${program.name} (compute)`
+        `${program.name} (compute)`,
       );
       this._computeShaders.set(program.programKey, shader);
     }
@@ -199,17 +202,17 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       this._context,
       shader,
       this.groupLayouts(layout),
-      name
+      name,
     );
     return new VulkanComputePipeline(
       handle,
       this._addon.pipelineId(handle),
-      name
+      name,
     );
   }
 
   async createComputePipelineAsync(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): Promise<GpuComputePipeline> {
     return this.createComputePipeline(descriptor);
   }
@@ -222,14 +225,14 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
             binding: binding + offset,
             kind: BindingKinds.storageRead,
           }))
-        : [{ binding, kind: bindingKind(resource) }]
+        : [{ binding, kind: bindingKind(resource) }],
     );
     const key = JSON.stringify(bindings);
     let layout = this._groupLayouts.get(key);
     if (!layout) {
       layout = new VulkanBindGroupLayout(
         key,
-        this._addon.createGroupLayout(this._context, bindings)
+        this._addon.createGroupLayout(this._context, bindings),
       );
       this._groupLayouts.set(key, layout);
     }
@@ -238,7 +241,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
 
   createBindGroup(
     layout: GpuBindGroupLayout,
-    entries: readonly GpuBindGroupEntry[]
+    entries: readonly GpuBindGroupEntry[],
   ): VulkanBindGroup {
     if (!(layout instanceof VulkanBindGroupLayout)) {
       throw new Error('The layout was not created by the Vulkan backend');
@@ -255,27 +258,27 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
                 object: entry.resource.instanceBuffer.id,
               },
             ]
-          : [{ binding: entry.binding, object: resourceId(entry) }]
-      )
+          : [{ binding: entry.binding, object: resourceId(entry) }],
+      ),
     );
     return new VulkanBindGroup(layout, handle, this._addon.groupId(handle));
   }
 
   // The layouts of the groups of a program (null for the empty ones).
   private groupLayouts(
-    layout: PhysicalProgramLayout
+    layout: PhysicalProgramLayout,
   ): (GroupLayoutHandle | null)[] {
     return layout.groups.map((group) =>
       group.bindings.length > 0
         ? this.createBindGroupLayout(group).handle
-        : null
+        : null,
     );
   }
 
   // The vertex and fragment shader modules of a program, compiled once.
   private renderShaders(
     program: CompiledProgram,
-    layout: PhysicalProgramLayout
+    layout: PhysicalProgramLayout,
   ): { vertex: ShaderHandle; fragment: ShaderHandle } {
     let shaders = this._shaders.get(program.programKey);
     if (!shaders) {
@@ -286,7 +289,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
         !sources.entryPoints.fragment
       ) {
         throw new Error(
-          `Program "${program.name}" has no vertex and fragment stages`
+          `Program "${program.name}" has no vertex and fragment stages`,
         );
       }
       const compile = (stage: 'vertex' | 'fragment', entryPoint: string) =>
@@ -294,7 +297,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
           this._context,
           sources.code,
           dxcArguments(stage, entryPoint),
-          `${program.name} (${stage})`
+          `${program.name} (${stage})`,
         );
       shaders = {
         vertex: compile('vertex', sources.entryPoints.vertex),

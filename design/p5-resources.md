@@ -168,7 +168,7 @@ export interface LoadContext<O> {
   use<U, P>(
     type: ResourceType<U>,
     uri: ResourceUri,
-    options?: P
+    options?: P,
   ): ResourceHandle<U>;
   // Registers a sub-resource, addressable as `uri#id`, owned by this entry.
   provide<U>(type: ResourceType<U>, id: string, value: U): ResourceHandle<U>;
@@ -181,11 +181,7 @@ export interface LoadContext<O> {
 // --- Handles ---------------------------------------------------------------
 
 export type ResourceStatus =
-  | 'pending'
-  | 'loading'
-  | 'ready'
-  | 'failed'
-  | 'cancelled';
+  'pending' | 'loading' | 'ready' | 'failed' | 'cancelled';
 
 export interface ResourceHandle<T> {
   readonly type: ResourceType<T>;
@@ -227,20 +223,20 @@ export class ResourceStore {
   mount(
     scheme: string,
     source: ResourceSource,
-    options?: { priority?: number; default?: boolean }
+    options?: { priority?: number; default?: boolean },
   ): this;
   provideService<S>(key: ServiceKey<S>, value: S): this;
 
   load<T, O = void>(
     type: ResourceType<T>,
     uri: ResourceUri,
-    options?: LoadOptions<O>
+    options?: LoadOptions<O>,
   ): ResourceHandle<T>;
   // A handle to an entry already known, without starting a load. Like any
   // handle, it must be released.
   peek<T>(
     type: ResourceType<T>,
-    uri: ResourceUri
+    uri: ResourceUri,
   ): ResourceHandle<T> | undefined;
   // A resource made in memory (a generated mesh) with the same handle
   // semantics. It cannot be read again: it is disposed with its last handle,
@@ -248,7 +244,7 @@ export class ResourceStore {
   define<T>(
     type: ResourceType<T>,
     uri: ResourceUri,
-    value: T
+    value: T,
   ): ResourceHandle<T>;
 
   scope(name?: string): ResourceScope;

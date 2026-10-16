@@ -40,7 +40,7 @@ export class DawnWindowSurface implements Surface {
 
   constructor(
     readonly window: NativeWindow,
-    { framesInFlight = 2 }: DawnWindowSurfaceOptions = {}
+    { framesInFlight = 2 }: DawnWindowSurfaceOptions = {},
   ) {
     this._framesInFlight = framesInFlight;
   }
@@ -85,7 +85,7 @@ export class DawnWindowSurface implements Surface {
         width,
         height,
         this.format,
-        texture
+        texture,
       );
     }
     return this._target;
@@ -109,7 +109,7 @@ export class DawnWindowSurface implements Surface {
     encoder.copyTextureToBuffer(
       { texture },
       { buffer: slot.buffer, bytesPerRow: slot.stride },
-      [width, height]
+      [width, height],
     );
     this.device.queue.submit([encoder.finish()]);
 
@@ -123,7 +123,7 @@ export class DawnWindowSurface implements Surface {
             new Uint8Array(slot.buffer.getMappedRange()),
             slot.width,
             slot.height,
-            slot.stride
+            slot.stride,
           );
         }
         slot.buffer.unmap();

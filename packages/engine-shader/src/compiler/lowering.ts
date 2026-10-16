@@ -45,7 +45,7 @@ export interface SurfaceOutput {
 
 /** The type a target of `channels` components of `scalar` takes. */
 export function surfaceOutputType(
-  output: Pick<SurfaceOutput, 'channels' | 'scalar'>
+  output: Pick<SurfaceOutput, 'channels' | 'scalar'>,
 ): ShaderType {
   return output.channels === 1
     ? { kind: 'scalar', scalar: output.scalar }
@@ -74,7 +74,7 @@ const swizzled = (source: InputSource, swizzle: string): InputSource =>
     : {
         ...source,
         swizzle: source.swizzle
-          ? composeSwizzles(source.swizzle, swizzle) ?? swizzle
+          ? (composeSwizzles(source.swizzle, swizzle) ?? swizzle)
           : swizzle,
       };
 
@@ -95,13 +95,13 @@ const isZero = (source: InputSource): boolean =>
  */
 export function lowerFullscreen(
   graph: WorkingGraph,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   const nodes = [...graph.nodes.values()];
   const output = nodes.find((node) => node.type === 'output.fullscreen');
   const screenUvs = nodes.filter(
     (node) =>
-      node.type === 'input.builtin' && node.params['builtin'] === 'screen-uv'
+      node.type === 'input.builtin' && node.params['builtin'] === 'screen-uv',
   );
   if (!output) {
     for (const node of screenUvs) {
@@ -131,17 +131,17 @@ export function lowerFullscreen(
           graph.addNode(
             'std.equal',
             {},
-            { a: out(index, 'value'), b: { value: vertex } }
-          )
+            { a: out(index, 'value'), b: { value: vertex } },
+          ),
         ),
-      }
+      },
     );
   const x = coordinate(1);
   const y = coordinate(2);
   const clip = graph.addNode(
     'std.vec4',
     {},
-    { x: out(x), y: out(y), z: { value: 0 }, w: { value: 1 } }
+    { x: out(x), y: out(y), z: { value: 0 }, w: { value: 1 } },
   );
   graph.addNode('output.vertex', {}, { clipPosition: out(clip) });
 
@@ -152,10 +152,10 @@ export function lowerFullscreen(
       {},
       {
         a: out(
-          graph.addNode('std.add', {}, { a: out(value), b: { value: 1 } })
+          graph.addNode('std.add', {}, { a: out(value), b: { value: 1 } }),
         ),
         b: { value: 0.5 },
-      }
+      },
     );
   const uv = graph.addNode(
     'std.vec2',
@@ -163,9 +163,9 @@ export function lowerFullscreen(
     {
       x: out(half(x)),
       y: out(
-        graph.addNode('std.sub', {}, { a: { value: 1 }, b: out(half(y)) })
+        graph.addNode('std.sub', {}, { a: { value: 1 }, b: out(half(y)) }),
       ),
-    }
+    },
   );
   // Interpolated, then read per fragment: the uv is linear over the
   // triangle, but what depends on it rarely is (a vignette, a distortion),
@@ -174,7 +174,7 @@ export function lowerFullscreen(
   for (const node of screenUvs) {
     graph.redirectPort(
       { node: node.id, port: 'value' },
-      { ref: { node: fragmentUv, port: 'result' } }
+      { ref: { node: fragmentUv, port: 'result' } },
     );
     graph.removeNode(node.id);
   }
@@ -182,7 +182,7 @@ export function lowerFullscreen(
   graph.addNode(
     'output.fragment',
     {},
-    { color: graph.inputSource(output, 'color') ?? { value: [0, 0, 0, 1] } }
+    { color: graph.inputSource(output, 'color') ?? { value: [0, 0, 0, 1] } },
   );
   graph.removeNode(output.id);
 }
@@ -216,10 +216,10 @@ export function lowerSurface(
   diagnostics: Diagnostic[],
   feature: (name: string) => StaticValue | undefined = () => undefined,
   outputs: readonly SurfaceOutput[] = [],
-  withColor = true
+  withColor = true,
 ): void {
   const surface = [...graph.nodes.values()].find(
-    (node) => node.type === 'output.surface'
+    (node) => node.type === 'output.surface',
   );
   if (!surface) {
     return;
@@ -263,18 +263,18 @@ export function lowerSurface(
   const displaced = isZero(offset)
     ? out(position, 'value')
     : out(
-        graph.addNode('std.add', {}, { a: out(position, 'value'), b: offset })
+        graph.addNode('std.add', {}, { a: out(position, 'value'), b: offset }),
       );
   const local = graph.addNode(
     'std.extend',
     {},
-    { xyz: displaced, w: { value: 1 } }
+    { xyz: displaced, w: { value: 1 } },
   );
   const world = graph.addNode('input.engine', { value: 'object.world' });
   const worldPosition = graph.addNode(
     'std.transform',
     {},
-    { matrix: out(world, 'value'), vector: out(local) }
+    { matrix: out(world, 'value'), vector: out(local) },
   );
   const viewProjection = graph.addNode('input.engine', {
     value: 'camera.viewProjection',
@@ -282,7 +282,7 @@ export function lowerSurface(
   const clipPosition = graph.addNode(
     'std.transform',
     {},
-    { matrix: out(viewProjection, 'value'), vector: out(worldPosition) }
+    { matrix: out(viewProjection, 'value'), vector: out(worldPosition) },
   );
   graph.addNode('output.vertex', {}, { clipPosition: out(clipPosition) });
 
@@ -314,10 +314,10 @@ export function lowerSurface(
       const worldNormal = graph.addNode(
         'std.transform3',
         {},
-        { matrix: out(normalMatrix, 'value'), vector: out(normal, 'value') }
+        { matrix: out(normalMatrix, 'value'), vector: out(normal, 'value') },
       );
       meshNormal = out(
-        graph.addNode('std.perFragment', {}, { value: out(worldNormal) })
+        graph.addNode('std.perFragment', {}, { value: out(worldNormal) }),
       );
     }
     return meshNormal;
@@ -357,7 +357,7 @@ export function lowerSurface(
     {
       ...surfaceInputs,
       worldPosition: out(worldPosition),
-    }
+    },
   );
   let output = out(color, 'color');
   const toneMapping = feature('toneMapping') ?? 'none';
@@ -383,7 +383,7 @@ export function lowerSurface(
       const exposed = graph.addNode(
         'std.mul',
         {},
-        { a: rgb, b: out(exposure, 'value') }
+        { a: rgb, b: out(exposure, 'value') },
       );
       rgb = out(graph.addNode(operator, {}, { color: out(exposed) }));
     }
@@ -394,15 +394,15 @@ export function lowerSurface(
       graph.addNode(
         'std.extend',
         {},
-        { xyz: rgb, w: { ...out(color, 'color'), swizzle: 'w' } }
-      )
+        { xyz: rgb, w: { ...out(color, 'color'), swizzle: 'w' } },
+      ),
     );
   }
 
   graph.addNode(
     'output.fragment',
     {},
-    discard ? { color: output, discard } : { color: output }
+    discard ? { color: output, discard } : { color: output },
   );
 
   graph.removeNode(surface.id);
@@ -416,10 +416,10 @@ export function lowerSurface(
  */
 export function lowerComputedAttributes(
   graph: WorkingGraph,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   const outputs = [...graph.nodes.values()].filter(
-    (node) => node.type === 'output.attribute'
+    (node) => node.type === 'output.attribute',
   );
   const computed = new Map<string, InputSource>();
   for (const output of outputs) {
@@ -440,7 +440,7 @@ export function lowerComputedAttributes(
   for (const [semantic, value] of computed) {
     const reads = [...graph.nodes.values()].filter(
       (node) =>
-        node.type === 'input.attribute' && node.params['semantic'] === semantic
+        node.type === 'input.attribute' && node.params['semantic'] === semantic,
     );
     if ('ref' in value && dependsOn(graph, value.ref.node, reads)) {
       diagnostics.push({
@@ -473,7 +473,7 @@ export function lowerComputedAttributes(
 function dependsOn(
   graph: WorkingGraph,
   node: string,
-  targets: readonly GraphNode[]
+  targets: readonly GraphNode[],
 ): boolean {
   const ids = new Set(targets.map((target) => target.id));
   const visited = new Set<string>();
@@ -514,7 +514,7 @@ function lowerOutputs(
     readonly surfaceInputs: Readonly<Record<string, InputSource | undefined>>;
     readonly interpolatedNormal: () => InputSource;
     readonly worldPosition: InputSource;
-  }
+  },
 ): boolean {
   const out = (node: string, port = 'result'): InputSource => ({
     ref: { node, port },
@@ -526,7 +526,7 @@ function lowerOutputs(
   const values = new Map<string, { source: InputSource; type: ShaderType }>();
   const cached = (
     name: string,
-    build: () => { source: InputSource; type: ShaderType }
+    build: () => { source: InputSource; type: ShaderType },
   ) => {
     let value = values.get(name);
     if (!value) {
@@ -539,7 +539,7 @@ function lowerOutputs(
     cached('camera.view', () => ({
       source: out(
         graph.addNode('input.engine', { value: 'camera.view' }),
-        'value'
+        'value',
       ),
       type: BuiltinTypes.mat4f,
     }));
@@ -551,8 +551,8 @@ function lowerOutputs(
           {},
           {
             x: context.surfaceInputs['normal'] ?? context.interpolatedNormal(),
-          }
-        )
+          },
+        ),
       ),
       type: BuiltinTypes.vec3f,
     }));
@@ -574,18 +574,18 @@ function lowerOutputs(
               graph.addNode(
                 'std.extend',
                 {},
-                { xyz: worldNormal().source, w: { value: 0 } }
-              )
+                { xyz: worldNormal().source, w: { value: 0 } },
+              ),
             ),
-          }
+          },
         );
         return {
           source: out(
             graph.addNode(
               'std.normalize',
               {},
-              { x: swizzled(out(direction), 'xyz') }
-            )
+              { x: swizzled(out(direction), 'xyz') },
+            ),
           ),
           type: BuiltinTypes.vec3f,
         };
@@ -599,7 +599,7 @@ function lowerOutputs(
         const position = graph.addNode(
           'std.transform',
           {},
-          { matrix: view().source, vector: context.worldPosition }
+          { matrix: view().source, vector: context.worldPosition },
         );
         // The camera looks at -z.
         return {
@@ -607,8 +607,8 @@ function lowerOutputs(
             graph.addNode(
               'std.mul',
               {},
-              { a: swizzled(out(position), 'z'), b: { value: -1 } }
-            )
+              { a: swizzled(out(position), 'z'), b: { value: -1 } },
+            ),
           ),
           type: BuiltinTypes.f32,
         };
@@ -617,7 +617,7 @@ function lowerOutputs(
       cached('objectId', () => ({
         source: out(
           graph.addNode('input.engine', { value: 'object.id' }),
-          'value'
+          'value',
         ),
         type: BuiltinTypes.u32,
       })),
@@ -628,7 +628,7 @@ function lowerOutputs(
             semantic: 'uv',
             type: BuiltinTypes.vec2f,
           }),
-          'value'
+          'value',
         ),
         type: BuiltinTypes.vec2f,
       })),
@@ -687,7 +687,7 @@ function lowerOutputs(
   const materialValues = new Map(
     [...graph.nodes.values()]
       .filter((node) => node.type === 'output.value')
-      .map((node) => [node.params['name'] as string, node] as const)
+      .map((node) => [node.params['name'] as string, node] as const),
   );
   for (const output of context.outputs) {
     const expected = surfaceOutputType(output);
@@ -719,7 +719,7 @@ function lowerOutputs(
           return error(
             `the input "${port.name}" of the output function "${
               fn.id
-            }" is not a value of the surface: ${known()}`
+            }" is not a value of the surface: ${known()}`,
           );
         }
       }
@@ -732,13 +732,13 @@ function lowerOutputs(
       const found = named(camelCase(output.value));
       if (!found) {
         return error(
-          `unknown output value "${output.value}": ${known()}, or 'material'`
+          `unknown output value "${output.value}": ${known()}, or 'material'`,
         );
       }
       const shaped = shape(graph, found, expected);
       if (!shaped) {
         return error(
-          `the output "${output.name}" cannot hold "${output.value}" in a format of ${output.channels} ${output.scalar} components`
+          `the output "${output.name}" cannot hold "${output.value}" in a format of ${output.channels} ${output.scalar} components`,
         );
       }
       value = shaped;
@@ -746,7 +746,7 @@ function lowerOutputs(
     graph.addNode(
       'output.target',
       { name: output.name, location: output.location },
-      { value }
+      { value },
     );
   }
   return true;
@@ -757,7 +757,7 @@ function lowerOutputs(
 function shape(
   graph: WorkingGraph,
   { source, type }: { source: InputSource; type: ShaderType },
-  expected: ShaderType
+  expected: ShaderType,
 ): InputSource | undefined {
   const size = (t: ShaderType) =>
     t.kind === 'vector' ? t.size : t.kind === 'scalar' ? 1 : 0;
@@ -817,7 +817,7 @@ function shape(
 function maskDiscard(
   graph: WorkingGraph,
   source: (port: string) => InputSource | undefined,
-  feature: (name: string) => StaticValue | undefined
+  feature: (name: string) => StaticValue | undefined,
 ): InputSource | undefined {
   if (feature('alphaMode') !== 'mask') {
     return undefined;
@@ -836,7 +836,7 @@ function maskDiscard(
         {
           a: source('alpha') ?? { value: 1 },
           b: { ref: { node: cutoff, port: 'value' } },
-        }
+        },
       ),
       port: 'result',
     },
@@ -849,7 +849,7 @@ function lowerDepthOnly(
   graph: WorkingGraph,
   surface: GraphNode,
   source: (port: string) => InputSource | undefined,
-  feature: (name: string) => StaticValue | undefined
+  feature: (name: string) => StaticValue | undefined,
 ): void {
   const discard = maskDiscard(graph, source, feature);
   graph.addNode('output.fragment', {}, discard ? { discard } : {});

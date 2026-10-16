@@ -29,7 +29,7 @@ function expandMacro(
   registry: NodeRegistry,
   resolved: ResolvedNode,
   types: NodeTypes,
-  feature: (name: string) => StaticValue | undefined
+  feature: (name: string) => StaticValue | undefined,
 ): void {
   const { node, definition, params } = resolved;
   if (!isMacroDefinition(definition)) {
@@ -80,7 +80,7 @@ function expandMacro(
     let source = results[output.name];
     if (!source) {
       throw new Error(
-        `the macro gave no value for its output "${output.name}"`
+        `the macro gave no value for its output "${output.name}"`,
       );
     }
     if ('value' in source) {
@@ -99,10 +99,10 @@ function expandMacro(
 function bodySource(
   body: MaterialGraphData,
   node: GraphNode,
-  port: string
+  port: string,
 ): ValueSource | undefined {
   const edge = body.edges.find(
-    (candidate) => candidate.to.node === node.id && candidate.to.port === port
+    (candidate) => candidate.to.node === node.id && candidate.to.port === port,
   );
   if (edge) {
     return edge.swizzle === undefined
@@ -118,7 +118,7 @@ function bodySource(
 function callChain(
   id: string,
   registry: NodeRegistry,
-  chain: readonly string[] = []
+  chain: readonly string[] = [],
 ): string[] | undefined {
   if (chain.includes(id)) {
     return [...chain, id];
@@ -144,7 +144,7 @@ function inlineFunction(
   graph: WorkingGraph,
   registry: NodeRegistry,
   resolved: ResolvedNode,
-  types: NodeTypes
+  types: NodeTypes,
 ): void {
   const { node, definition } = resolved;
   if (!isGraphFunction(definition)) {
@@ -160,7 +160,7 @@ function inlineFunction(
     throw new Error(
       `invalid function graph: ${validation.diagnostics
         .map((diagnostic) => diagnostic.message)
-        .join('; ')}`
+        .join('; ')}`,
     );
   }
   const bodyNodes = new Map(body.nodes.map((inner) => [inner.id, inner]));
@@ -204,7 +204,7 @@ function inlineFunction(
     const swizzle =
       given.swizzle && source.swizzle
         ? composeSwizzles(given.swizzle, source.swizzle)
-        : given.swizzle ?? source.swizzle;
+        : (given.swizzle ?? source.swizzle);
     if (swizzle === undefined && (given.swizzle || source.swizzle)) {
       throw new Error(`invalid swizzle of input "${name}"`);
     }
@@ -228,14 +228,15 @@ function inlineFunction(
     }
     copies.set(
       id,
-      graph.addNode(inner.type, inner.params, inputs, inner.label)
+      graph.addNode(inner.type, inner.params, inputs, inner.label),
     );
   }
 
   for (const output of resolved.outputs) {
     const outputNode = body.nodes.find(
       (inner) =>
-        inner.type === 'function.output' && inner.params['name'] === output.name
+        inner.type === 'function.output' &&
+        inner.params['name'] === output.name,
     ) as GraphNode;
     let source = map(bodySource(body, outputNode, 'value'));
     if (!source) {
@@ -276,7 +277,7 @@ export function expandMacros({
     const validation = validateGraph(graph.toData(), registry);
     if (!validation.valid) {
       diagnostics.push(
-        ...validation.diagnostics.filter((d) => d.severity === 'error')
+        ...validation.diagnostics.filter((d) => d.severity === 'error'),
       );
       return;
     }

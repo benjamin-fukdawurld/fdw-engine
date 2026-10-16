@@ -5,7 +5,7 @@ export type SnapshotProvider<T> = {
 
 export type CachedValueProps<
   T,
-  TDependencies extends readonly SnapshotProvider<any>[]
+  TDependencies extends readonly SnapshotProvider<any>[],
 > = {
   initialValue: T;
   dependencies?: TDependencies;

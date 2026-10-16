@@ -29,7 +29,7 @@ function insetMaterial(backend: RenderBackend): Material {
           sampler: g.sampler('viewSampler'),
           uv: local,
         })
-        .swizzle('rgb')
+        .swizzle('rgb'),
     ),
     values: {
       viewSampler: backend.textures.createSampler({
@@ -62,7 +62,7 @@ export class TopView implements Inset {
     private readonly _renderer: Renderer,
     private readonly _scene: Scene,
     level: Level,
-    backend: RenderBackend
+    backend: RenderBackend,
   ) {
     const extent = Math.max(level.halfWidth, level.halfDepth) * 1.05;
     // Straight down, the whole level in view.
@@ -99,7 +99,7 @@ export class TopView implements Inset {
             }
           },
           // Not a camera query: it must not change what was retained.
-          'shadow'
+          'shadow',
         ),
       // A light of its own, from above: the top view shows what was kept,
       // lit or not (in the dark, the scene has no sun).
@@ -114,7 +114,7 @@ export class TopView implements Inset {
   add(
     graph: RenderGraph,
     target: TextureHandle,
-    surface: Surface
+    surface: Surface,
   ): TextureHandle {
     // The query the main view just made.
     this._stamp = this._scene.cameraQueries;

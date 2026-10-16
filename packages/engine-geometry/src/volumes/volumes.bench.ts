@@ -20,12 +20,12 @@ const boxes = Array.from({ length: count }, () => {
   const center = randomPoint(next, 50);
   return new Aabb(
     center.map((c) => c - 1) as [number, number, number],
-    center.map((c) => c + 1) as [number, number, number]
+    center.map((c) => c + 1) as [number, number, number],
   );
 });
 const frustum = Frustum.fromMatrix(perspective(1, 1.6, 0.1, 100));
 const matrices = Array.from({ length: count }, () =>
-  compose(randomPoint(next, 10), randomRotation(next), [1, 2, 1])
+  compose(randomPoint(next, 10), randomRotation(next), [1, 2, 1]),
 );
 const out = new Aabb();
 const pairs = Array.from({ length: 1000 }, () => [
@@ -36,7 +36,7 @@ const pairs = Array.from({ length: 1000 }, () => [
       [1, 1, 0],
       [-1, 1, 0],
       [0, 0, 1],
-    ]
+    ],
   ),
   new Capsule(randomPoint(next, 2), randomPoint(next, 2), 0.4),
 ]);

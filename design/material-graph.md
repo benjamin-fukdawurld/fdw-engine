@@ -160,18 +160,9 @@ Le système de types décrit **ce que manipule le shader**, pas sa représentati
 export type ScalarKind = 'f32' | 'f16' | 'i32' | 'u32' | 'bool';
 
 export type TextureDimension =
-  | '1d'
-  | '2d'
-  | '2d-array'
-  | '3d'
-  | 'cube'
-  | 'cube-array';
+  '1d' | '2d' | '2d-array' | '3d' | 'cube' | 'cube-array';
 export type TextureSampleType =
-  | 'float'
-  | 'unfilterable-float'
-  | 'depth'
-  | 'sint'
-  | 'uint';
+  'float' | 'unfilterable-float' | 'depth' | 'sint' | 'uint';
 
 export type ShaderType =
   | { kind: 'scalar'; scalar: ScalarKind }
@@ -311,11 +302,7 @@ Chaque type de nœud est décrit par une `NodeDefinition`, enregistrée dans un 
 
 ```ts
 export type NodeCategory =
-  | 'input'
-  | 'constant'
-  | 'function'
-  | 'macro'
-  | 'output';
+  'input' | 'constant' | 'function' | 'macro' | 'output';
 
 export interface PortSchema {
   readonly name: string;
@@ -384,8 +371,9 @@ export type FunctionImplementation =
 Une macro est **évaluée à la compilation** : elle reçoit ses paramètres statiques et ses entrées, et elle **génère des nœuds** qui la remplacent dans le graphe. Après l'expansion, il ne reste aucune macro.
 
 ```ts
-export interface MacroDefinition<P extends StaticParams = StaticParams>
-  extends NodeDefinition<P> {
+export interface MacroDefinition<
+  P extends StaticParams = StaticParams,
+> extends NodeDefinition<P> {
   readonly category: 'macro';
   expand(context: MacroContext<P>): Readonly<Record<string, PortRef>>; // sorties → ports générés
 }
@@ -526,7 +514,7 @@ export interface CompiledProgram {
 
 export function compile(
   graph: MaterialGraphData,
-  options: CompileOptions
+  options: CompileOptions,
 ): CompiledProgram;
 ```
 
@@ -638,7 +626,7 @@ export interface PhysicalLayoutStrategy {
   // ShaderType logique → GpuType avec taille et alignement réels
   typeOf(
     type: ShaderType,
-    addressSpace: 'uniform' | 'storage'
+    addressSpace: 'uniform' | 'storage',
   ): GpuType<unknown> | GpuStruct<unknown>;
   // ProgramLayout logique → numéros de binding concrets, offsets, tailles de buffers
   resolve(layout: ProgramLayout): PhysicalProgramLayout;
@@ -718,12 +706,7 @@ export interface ShaderModuleIR {
 ```ts
 // engine-backend
 export type ShaderLanguage =
-  | 'wgsl'
-  | 'glsl-es-300'
-  | 'glsl-450'
-  | 'msl'
-  | 'hlsl'
-  | 'spirv';
+  'wgsl' | 'glsl-es-300' | 'glsl-450' | 'msl' | 'hlsl' | 'spirv';
 
 export interface ShaderCodegen {
   readonly language: ShaderLanguage;
@@ -797,10 +780,7 @@ export interface RenderPipelineDescriptor {
   readonly vertex: MeshDescription; // existe déjà dans engine-backend
   readonly primitive: {
     readonly topology:
-      | 'triangle-list'
-      | 'triangle-strip'
-      | 'line-list'
-      | 'point-list';
+      'triangle-list' | 'triangle-strip' | 'line-list' | 'point-list';
     readonly cullMode: 'none' | 'front' | 'back';
     readonly frontFace: 'ccw' | 'cw';
   };
@@ -822,12 +802,12 @@ export interface GpuPipelineFactory {
   readonly capabilities: BackendCapabilities;
   createRenderPipeline(descriptor: RenderPipelineDescriptor): GpuRenderPipeline;
   createRenderPipelineAsync(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline>;
   createBindGroupLayout(group: PhysicalBindGroupLayout): GpuBindGroupLayout;
   createBindGroup(
     layout: GpuBindGroupLayout,
-    entries: readonly GpuBindGroupEntry[]
+    entries: readonly GpuBindGroupEntry[],
   ): GpuBindGroup;
 }
 ```
@@ -887,7 +867,7 @@ export interface GpuRenderPassEncoder {
   setBindGroup(
     index: number,
     group: GpuBindGroup,
-    dynamicOffsets?: readonly number[]
+    dynamicOffsets?: readonly number[],
   ): void;
   setVertexBuffer(slot: number, buffer: GpuBuffer, offset?: number): void;
   setIndexBuffer(buffer: GpuBuffer, format: IndexFormat, offset?: number): void;
@@ -895,14 +875,14 @@ export interface GpuRenderPassEncoder {
     vertexCount: number,
     instanceCount?: number,
     firstVertex?: number,
-    firstInstance?: number
+    firstInstance?: number,
   ): void;
   drawIndexed(
     indexCount: number,
     instanceCount?: number,
     firstIndex?: number,
     baseVertex?: number,
-    firstInstance?: number
+    firstInstance?: number,
   ): void;
   end(): void;
 }
@@ -977,7 +957,7 @@ export interface Renderer {
     items: Iterable<RenderItem>,
     camera: Camera,
     lights: readonly Light[],
-    surface: Surface
+    surface: Surface,
   ): void;
 }
 ```

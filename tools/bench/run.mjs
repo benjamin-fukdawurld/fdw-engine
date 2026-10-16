@@ -20,8 +20,8 @@ const root = resolve(rootIndex >= 0 ? args[rootIndex + 1] : '.');
 // The first argument that is not --root nor its value.
 const output = resolve(
   args.find(
-    (arg, i) => !arg.startsWith('--') && (rootIndex < 0 || i !== rootIndex + 1)
-  ) ?? 'bench.json'
+    (arg, i) => !arg.startsWith('--') && (rootIndex < 0 || i !== rootIndex + 1),
+  ) ?? 'bench.json',
 );
 
 // The packages with benchmarks.
@@ -29,7 +29,7 @@ const hasBench = (dir) =>
   readdirSync(dir, { withFileTypes: true }).some((entry) =>
     entry.isDirectory()
       ? hasBench(join(dir, entry.name))
-      : entry.name.endsWith('.bench.ts')
+      : entry.name.endsWith('.bench.ts'),
   );
 const packages = readdirSync(join(root, 'packages')).filter((name) => {
   const src = join(root, 'packages', name, 'src');

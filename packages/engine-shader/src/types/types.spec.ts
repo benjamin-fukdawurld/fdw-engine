@@ -15,7 +15,7 @@ import {
 describe('typeEquals', () => {
   it('compares scalars, vectors and matrices structurally', () => {
     expect(
-      typeEquals(BuiltinTypes.f32, { kind: 'scalar', scalar: 'f32' })
+      typeEquals(BuiltinTypes.f32, { kind: 'scalar', scalar: 'f32' }),
     ).toBe(true);
     expect(typeEquals(BuiltinTypes.vec3f, vec(3, 'f32'))).toBe(true);
     expect(typeEquals(BuiltinTypes.vec3f, BuiltinTypes.vec3i)).toBe(false);
@@ -26,10 +26,13 @@ describe('typeEquals', () => {
 
   it('compares arrays, structs and textures', () => {
     expect(
-      typeEquals(arrayType(BuiltinTypes.f32, 4), arrayType(BuiltinTypes.f32, 4))
+      typeEquals(
+        arrayType(BuiltinTypes.f32, 4),
+        arrayType(BuiltinTypes.f32, 4),
+      ),
     ).toBe(true);
     expect(
-      typeEquals(arrayType(BuiltinTypes.f32, 4), arrayType(BuiltinTypes.f32))
+      typeEquals(arrayType(BuiltinTypes.f32, 4), arrayType(BuiltinTypes.f32)),
     ).toBe(false);
     const light = structType('Light', [
       { name: 'color', type: BuiltinTypes.vec3f },
@@ -37,18 +40,18 @@ describe('typeEquals', () => {
     expect(
       typeEquals(
         light,
-        structType('Light', [{ name: 'color', type: BuiltinTypes.vec3f }])
-      )
+        structType('Light', [{ name: 'color', type: BuiltinTypes.vec3f }]),
+      ),
     ).toBe(true);
     expect(
       typeEquals(
         light,
-        structType('Light', [{ name: 'color', type: BuiltinTypes.vec4f }])
-      )
+        structType('Light', [{ name: 'color', type: BuiltinTypes.vec4f }]),
+      ),
     ).toBe(false);
     expect(typeEquals(BuiltinTypes.texture2d, texture('2d'))).toBe(true);
     expect(
-      typeEquals(BuiltinTypes.texture2d, BuiltinTypes.depthTexture2d)
+      typeEquals(BuiltinTypes.texture2d, BuiltinTypes.depthTexture2d),
     ).toBe(false);
   });
 });
@@ -60,7 +63,7 @@ describe('typeToString', () => {
     expect(typeToString(arrayType(BuiltinTypes.f32, 4))).toBe('array<f32, 4>');
     expect(typeToString(BuiltinTypes.texture2d)).toBe('texture_2d<float>');
     expect(typeToString(BuiltinTypes.comparisonSampler)).toBe(
-      'sampler_comparison'
+      'sampler_comparison',
     );
   });
 });
@@ -107,7 +110,7 @@ describe('literals', () => {
     expect(isConstantCompatible([1, 2, 3], BuiltinTypes.vec3f)).toBe(true);
     expect(isConstantCompatible([1, 2], BuiltinTypes.vec3f)).toBe(false);
     expect(
-      isConstantCompatible(new Array(16).fill(0), BuiltinTypes.mat4f)
+      isConstantCompatible(new Array(16).fill(0), BuiltinTypes.mat4f),
     ).toBe(true);
     expect(isConstantCompatible(1, BuiltinTypes.mat4f)).toBe(false);
     expect(isConstantCompatible(1, BuiltinTypes.texture2d)).toBe(false);

@@ -6,7 +6,7 @@ export class Vec2View implements IVec2 {
   constructor(buffer?: ArrayBuffer, byteOffset?: number) {
     this._buffer = new DataView<ArrayBuffer>(
       buffer ?? new ArrayBuffer(2 * 4),
-      byteOffset ?? 0
+      byteOffset ?? 0,
     );
   }
 

@@ -84,9 +84,9 @@ export const modelLoader: ResourceLoader<Model> = {
               material(p.material),
             ]);
             return { mesh, material: mat };
-          })
-        )
-      )
+          }),
+        ),
+      ),
     );
     return new Model(data, meshes);
   },

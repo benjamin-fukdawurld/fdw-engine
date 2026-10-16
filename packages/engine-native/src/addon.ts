@@ -43,7 +43,7 @@ export interface NativeAddon {
     title: string,
     width: number,
     height: number,
-    flags: number
+    flags: number,
   ): WindowHandle;
   destroyWindow(window: WindowHandle): void;
   windowId(window: WindowHandle): number;
@@ -59,7 +59,7 @@ export interface NativeAddon {
     pixels: Uint8Array,
     width: number,
     height: number,
-    stride: number
+    stride: number,
   ): void;
   pollEvents(): RawWindowEvent[];
   // The window system and the native handles of a window.
@@ -71,14 +71,14 @@ export interface NativeAddon {
   gamepadState(
     id: number,
     buttons: Float32Array,
-    axes: Float32Array
+    axes: Float32Array,
   ): string | undefined;
   // Shakes a gamepad, the motors from 0 to 1: false when it cannot.
   gamepadRumble(
     id: number,
     strong: number,
     weak: number,
-    durationMs: number
+    durationMs: number,
   ): boolean;
   // Decodes a PNG, JPEG, TGA, BMP, GIF (first frame) or HDR image with
   // stb_image, on the thread pool: RGBA pixels, floats for HDR images.
@@ -136,7 +136,7 @@ export function loadAddon(): NativeAddon {
     } catch (error) {
       throw new Error(
         `The native addon of @fdw/engine-native is not built (${path}): run "node packages/engine-native/scripts/build.mjs"`,
-        { cause: error }
+        { cause: error },
       );
     }
   }

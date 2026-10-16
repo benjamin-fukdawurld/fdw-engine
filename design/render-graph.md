@@ -190,7 +190,7 @@ const graph = new RenderGraph();
 
 const backbuffer = graph.importTexture(
   'backbuffer',
-  surface.getCurrentTarget()
+  surface.getCurrentTarget(),
 );
 const hdr = graph.createTexture('hdr', {
   format: 'rgba16float',

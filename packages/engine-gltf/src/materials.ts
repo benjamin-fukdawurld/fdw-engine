@@ -32,13 +32,13 @@ const mipmapFilters: Readonly<
  * a sampler or a filter, it repeats and filters linearly, mipmaps included.
  */
 export function samplerConfiguration(
-  sampler: GltfSampler | undefined
+  sampler: GltfSampler | undefined,
 ): GpuSamplerConfiguration {
   const min = sampler?.minFilter;
   const [minFilter, mipmapFilter] =
     min === undefined
       ? ['linear', 'linear']
-      : mipmapFilters[min] ?? [filters[min] ?? 'linear', undefined];
+      : (mipmapFilters[min] ?? [filters[min] ?? 'linear', undefined]);
   return {
     wrapModeS: wrapModes[sampler?.wrapS ?? 10497] ?? 'repeat',
     wrapModeT: wrapModes[sampler?.wrapT ?? 10497] ?? 'repeat',
@@ -50,7 +50,7 @@ export function samplerConfiguration(
 
 /** Resolves a texture of a material: undefined when it has no usable image. */
 export type TextureResolver = (
-  info: GltfTextureInfo
+  info: GltfTextureInfo,
 ) => Promise<TextureRef | undefined>;
 
 /**
@@ -60,7 +60,7 @@ export type TextureResolver = (
 export async function pbrMaterialData(
   material: GltfMaterial,
   texture: TextureResolver,
-  vertexColors: boolean
+  vertexColors: boolean,
 ): Promise<PbrMaterialData> {
   const pbr = material.pbrMetallicRoughness ?? {};
   const optional = (info: GltfTextureInfo | undefined) =>
@@ -82,8 +82,8 @@ export async function pbrMaterialData(
     material.alphaMode === 'MASK'
       ? 'mask'
       : material.alphaMode === 'BLEND'
-      ? 'blend'
-      : 'opaque';
+        ? 'blend'
+        : 'opaque';
   return {
     kind: 'pbr',
     ...(material.name !== undefined ? { name: material.name } : {}),

@@ -23,21 +23,19 @@ export const KHR_lights_punctual: GltfExtension = {
   model(ext, data) {
     const lights = (
       (ext as { lights?: readonly GltfLight[] }).lights ?? []
-    ).map(
-      (light): LightData => ({
-        type: light.type,
-        ...(light.name !== undefined ? { name: light.name } : {}),
-        color: light.color ?? [1, 1, 1],
-        intensity: light.intensity ?? 1,
-        ...(light.range !== undefined ? { range: light.range } : {}),
-        ...(light.type === 'spot'
-          ? {
-              innerConeAngle: light.spot?.innerConeAngle ?? 0,
-              outerConeAngle: light.spot?.outerConeAngle ?? Math.PI / 4,
-            }
-          : {}),
-      })
-    );
+    ).map((light): LightData => ({
+      type: light.type,
+      ...(light.name !== undefined ? { name: light.name } : {}),
+      color: light.color ?? [1, 1, 1],
+      intensity: light.intensity ?? 1,
+      ...(light.range !== undefined ? { range: light.range } : {}),
+      ...(light.type === 'spot'
+        ? {
+            innerConeAngle: light.spot?.innerConeAngle ?? 0,
+            outerConeAngle: light.spot?.outerConeAngle ?? Math.PI / 4,
+          }
+        : {}),
+    }));
     return { ...data, lights };
   },
 };

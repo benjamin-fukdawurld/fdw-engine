@@ -57,7 +57,7 @@ export class WebGl2RenderBackend implements RenderBackend {
       maxAnisotropy: maxAnisotropy(gl),
       maxColorAttachments: Math.min(
         gl.getParameter(GL.MAX_DRAW_BUFFERS),
-        gl.getParameter(GL.MAX_COLOR_ATTACHMENTS)
+        gl.getParameter(GL.MAX_COLOR_ATTACHMENTS),
       ),
       independentBlend: false,
     };
@@ -79,7 +79,7 @@ export class WebGl2RenderBackend implements RenderBackend {
   // Where the browser gives the timer queries.
   createPassTimer(capacity: number): GpuPassTimer | undefined {
     const extension = this.gl.getExtension(
-      'EXT_disjoint_timer_query_webgl2'
+      'EXT_disjoint_timer_query_webgl2',
     ) as TimerQueryExtension | null;
     return extension
       ? new WebGl2PassTimer(this.gl, extension, capacity)
@@ -94,7 +94,7 @@ export class WebGl2RenderBackend implements RenderBackend {
     for (const command of commands) {
       if (!(command instanceof WebGl2CommandBuffer)) {
         throw new Error(
-          'The command buffer was not created by the WebGL2 backend'
+          'The command buffer was not created by the WebGL2 backend',
         );
       }
       command.execute(this.gl);

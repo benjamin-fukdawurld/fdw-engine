@@ -46,7 +46,7 @@ const apiLabelTranslations = {
         sidebar: config.sidebar?.map((item) =>
           item.label === apiLabel
             ? { ...item, translations: { fr: 'Référence API' } }
-            : item
+            : item,
         ),
       });
     },
@@ -77,7 +77,7 @@ export default defineConfig({
       plugins: [
         starlightTypeDoc({
           entryPoints: packages.map(
-            (name) => `${root}packages/${name}/src/index.ts`
+            (name) => `${root}packages/${name}/src/index.ts`,
           ),
           tsconfig: './tsconfig.typedoc.json',
           output: 'api',

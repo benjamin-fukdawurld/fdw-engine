@@ -15,21 +15,21 @@ const randomBox = (next: () => number, extent: number, size: number): Aabb => {
   const half = [0, 1, 2].map(() => between(next, 0.01, size));
   return new Aabb(
     center.map((c, i) => c - half[i]) as Vec3,
-    center.map((c, i) => c + half[i]) as Vec3
+    center.map((c, i) => c + half[i]) as Vec3,
   );
 };
 
 const frustumResults = (index: SpatialIndex<number>, frustum: Frustum) => {
   const results: string[] = [];
   index.queryFrustum(frustum, (item, inside) =>
-    results.push(`${item}:${inside}`)
+    results.push(`${item}:${inside}`),
   );
   return results.sort();
 };
 
 const volumeResults = (
   index: SpatialIndex<number>,
-  volume: Capsule | Sphere | Aabb
+  volume: Capsule | Sphere | Aabb,
 ) => {
   const results: number[] = [];
   index.queryVolume(volume, (item) => {
@@ -45,7 +45,7 @@ const rayResults = (index: SpatialIndex<number>, ray: Ray, max?: number) => {
     (item, distance) => {
       results.push([item, distance]);
     },
-    max
+    max,
   );
   return results;
 };
@@ -55,14 +55,14 @@ const rayResults = (index: SpatialIndex<number>, ray: Ray, max?: number) => {
 function compare(
   octree: Octree<number>,
   linear: LinearIndex<number>,
-  next: () => number
+  next: () => number,
 ) {
   expect(octree.size).toBe(linear.size);
   let found = 0;
   for (let q = 0; q < 10; q++) {
     const eye = randomPoint(next, 60);
     const frustum = Frustum.fromMatrix(
-      perspective(between(next, 0.5, 1.5), 1.5, 0.5, 80, eye)
+      perspective(between(next, 0.5, 1.5), 1.5, 0.5, 80, eye),
     );
     const visible = frustumResults(linear, frustum);
     expect(frustumResults(octree, frustum)).toEqual(visible);
@@ -73,13 +73,13 @@ function compare(
       new Capsule(
         randomPoint(next, 50),
         randomPoint(next, 50),
-        between(next, 0.5, 5)
+        between(next, 0.5, 5),
       ),
       randomBox(next, 50, 10),
     ];
     for (const volume of volumes) {
       expect(volumeResults(octree, volume)).toEqual(
-        volumeResults(linear, volume)
+        volumeResults(linear, volume),
       );
     }
 
@@ -88,7 +88,7 @@ function compare(
     const actual = rayResults(octree, ray);
     // Same items, nearest first (ties in any order).
     expect(actual.map(([item]) => item).sort()).toEqual(
-      expected.map(([item]) => item).sort()
+      expected.map(([item]) => item).sort(),
     );
     for (let i = 1; i < actual.length; i++) {
       expect(actual[i][1]).toBeGreaterThanOrEqual(actual[i - 1][1]);
@@ -145,7 +145,7 @@ describe('Octree', () => {
       new Aabb([-1e4, -1e4, -1e4], [1e4, 1e4, 1e4]),
       (item) => {
         found.push(item);
-      }
+      },
     );
     expect(found.sort()).toEqual([1, 2, 3]);
     expect(octree.bounds(new Aabb()).min).toEqual([-2000, -500, 0]);
@@ -172,7 +172,7 @@ describe('Octree', () => {
     const linear = new LinearIndex<number>();
     const entries = Array.from(
       { length: 3000 },
-      (_, i) => [i, randomBox(next, 80, 1.5)] as const
+      (_, i) => [i, randomBox(next, 80, 1.5)] as const,
     );
     octree.insertAll(entries);
     for (const [item, box] of entries) {

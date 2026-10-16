@@ -59,7 +59,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
   });
   const cube = createCube();
   const transforms = [-1.5, 0, 1.5].map(
-    (x) => new Transform({ position: { x, y: 0, z: 0 } })
+    (x) => new Transform({ position: { x, y: 0, z: 0 } }),
   );
   const camera = new Camera({
     position: { x: 0, y: 0, z: 4 },

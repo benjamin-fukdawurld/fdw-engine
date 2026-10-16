@@ -88,7 +88,7 @@ export class World {
       this._components.length,
       name,
       schema,
-      this._capacity
+      this._capacity,
     );
     this._components.push(component);
     this._queriesOf.push([]);
@@ -154,7 +154,7 @@ export class World {
   add<S extends Schema>(
     entity: number,
     component: Component<S>,
-    values?: ComponentValues<S>
+    values?: ComponentValues<S>,
   ): void {
     if (!this._alive[entity]) {
       throw new Error(`Entity ${entity} is not alive`);
@@ -177,7 +177,7 @@ export class World {
   addMany<S extends Schema>(
     entities: ArrayLike<number>,
     component: Component<S>,
-    values?: ComponentValues<S>
+    values?: ComponentValues<S>,
   ): void {
     const added: number[] = [];
     for (let i = 0; i < entities.length; i++) {
@@ -255,7 +255,7 @@ export class World {
   /** Calls `listener` before an entity loses the component (its values are still there). */
   onRemoved(
     component: ComponentStore,
-    listener: ComponentListener
+    listener: ComponentListener,
   ): () => void {
     return subscribe(this._removed[component.id], listener);
   }

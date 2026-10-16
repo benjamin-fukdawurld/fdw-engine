@@ -88,7 +88,7 @@ function RouteComponent() {
       rendererRef.current?.destroy();
       scopeRef.current?.dispose();
     },
-    []
+    [],
   );
 
   const onSurfaceReady = async (engine: Engine, surface: Surface) => {
@@ -116,7 +116,7 @@ function RouteComponent() {
     });
 
     const transforms = [-1.6, 0, 1.6].map(
-      (x) => new Transform({ position: { x, y: 0, z: 0 } })
+      (x) => new Transform({ position: { x, y: 0, z: 0 } }),
     );
     const items: RenderItem[] = [
       { mesh: cube, material: textured, transform: transforms[0] },

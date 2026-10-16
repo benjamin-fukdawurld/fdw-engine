@@ -13,7 +13,7 @@ export class FixedStep {
     public step = 1 / 60,
     // At most this many steps per frame: after a long pause, the game
     // slows down instead of running hundreds of steps at once.
-    public maxSteps = 5
+    public maxSteps = 5,
   ) {}
 
   /**

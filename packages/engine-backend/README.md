@@ -130,7 +130,7 @@ const viewMatrix = new CachedValue({
   updateStrategy: (_, [camera]) =>
     cameraMath.getViewMatrix(
       camera.value.position.asArray(),
-      camera.value.rotation.asArray()
+      camera.value.rotation.asArray(),
     ),
 });
 

@@ -7,7 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const out = fileURLToPath(
-  new URL('../../apps/docs/public/models/tree.glb', import.meta.url)
+  new URL('../../apps/docs/public/models/tree.glb', import.meta.url),
 );
 
 // A cone (or a cylinder with top > 0) around y, from y0 to y1, with smooth
@@ -74,10 +74,10 @@ const push = (array, target, extra) => {
 const gltfMeshes = meshes.map((m, i) => {
   const p = new Float32Array(m.positions);
   const min = [0, 1, 2].map((k) =>
-    Math.min(...m.positions.filter((_, j) => j % 3 === k))
+    Math.min(...m.positions.filter((_, j) => j % 3 === k)),
   );
   const max = [0, 1, 2].map((k) =>
-    Math.max(...m.positions.filter((_, j) => j % 3 === k))
+    Math.max(...m.positions.filter((_, j) => j % 3 === k)),
   );
   const position = push(p, 34962, {
     componentType: 5126,
@@ -169,6 +169,6 @@ writeFileSync(
     text,
     chunkHeader(bin.length, 0x004e4942),
     bin,
-  ])
+  ]),
 );
 console.log(`${out}: ${total} bytes`);

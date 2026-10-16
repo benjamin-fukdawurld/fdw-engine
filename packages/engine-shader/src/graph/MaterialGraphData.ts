@@ -15,11 +15,7 @@ export type NodeId = string;
  * @group Graph model
  */
 export type StaticValue =
-  | string
-  | number
-  | boolean
-  | readonly number[]
-  | ShaderType;
+  string | number | boolean | readonly number[] | ShaderType;
 
 /**
  * A node of a graph: an instance of a {@link NodeDefinition}.

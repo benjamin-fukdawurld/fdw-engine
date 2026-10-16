@@ -32,7 +32,7 @@ export class CameraCache {
         updateStrategy: (_, dependencies) =>
           cameraMath.getViewMatrix(
             dependencies[0].value.position.asArray(),
-            dependencies[0].value.rotation.asArray()
+            dependencies[0].value.rotation.asArray(),
           ),
         dependencies: [
           new SnapshotValue<CameraSnapshot>({
@@ -40,7 +40,7 @@ export class CameraCache {
             versionGetter: () => this._camera.transformVersion,
           }),
         ],
-      }
+      },
     );
 
     this.projectionMatrix = new CachedValue<
@@ -66,7 +66,7 @@ export class CameraCache {
       updateStrategy: (_, dependencies) =>
         cameraMath.getViewProjectionMatrix(
           dependencies[0].value,
-          dependencies[1].value
+          dependencies[1].value,
         ),
       dependencies: [this.viewMatrix, this.projectionMatrix],
     });

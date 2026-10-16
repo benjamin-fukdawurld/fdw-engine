@@ -37,7 +37,10 @@ export class FakeBuffer implements GpuBuffer {
   writes = 0;
   data = new ArrayBuffer(0);
   destroyed = false;
-  constructor(readonly size: number, readonly label?: string) {}
+  constructor(
+    readonly size: number,
+    readonly label?: string,
+  ) {}
   write(_: number, value: ArrayBuffer): void {
     this.writes++;
     this.data = value.slice(0);
@@ -54,8 +57,8 @@ export const sizeOf = (type: ShaderType): number =>
   type.kind === 'matrix'
     ? 64
     : type.kind === 'array'
-    ? sizeOf(type.element) * (type.length ?? 0)
-    : 16;
+      ? sizeOf(type.element) * (type.length ?? 0)
+      : 16;
 
 // Every member in its own 16-byte slot (64 for matrices, 16 per element of
 // arrays), values as floats.
@@ -133,7 +136,7 @@ export const fakeProjection = Float32Array.of(
   0,
   0,
   0.5,
-  1
+  1,
 );
 
 // a × b, column-major.
@@ -169,7 +172,7 @@ const RowFloats = 28;
 /** The row `index` written to the object tables of a fake backend. */
 export const rowOf = (
   log: { readonly rows: Float32Array },
-  index: number
+  index: number,
 ): Float32Array =>
   log.rows.subarray(index * RowFloats, (index + 1) * RowFloats);
 
@@ -249,7 +252,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       readTexture: async (texture, region) => {
         const read = checkReadRegion(texture, region);
         return new ArrayBuffer(
-          read.region.width * read.region.height * read.bytesPerPixel
+          read.region.width * read.region.height * read.bytesPerPixel,
         );
       },
       defaultMaxAnisotropy: 1,
@@ -273,7 +276,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           label: descriptor.label,
           vertexBuffers: matchVertexLayout(
             descriptor.program.vertexInputs,
-            descriptor.vertex
+            descriptor.vertex,
           ).map((b) => b.buffer),
         };
       },
@@ -283,7 +286,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           label: descriptor.label,
           vertexBuffers: matchVertexLayout(
             descriptor.program.vertexInputs,
-            descriptor.vertex
+            descriptor.vertex,
           ).map((b) => b.buffer),
         };
       },
@@ -317,7 +320,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           const floats = new Float32Array(
             data.buffer,
             data.byteOffset,
-            data.byteLength / 4
+            data.byteLength / 4,
           );
           const end = first * RowFloats + floats.length;
           if (end > log.rows.length) {

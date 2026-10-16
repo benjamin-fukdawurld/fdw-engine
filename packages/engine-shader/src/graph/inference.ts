@@ -68,7 +68,7 @@ type Bindings = Map<string, ShaderType>;
 
 function resolvePortType(
   type: PortType,
-  bindings: Bindings
+  bindings: Bindings,
 ): ShaderType | undefined {
   switch (type.kind) {
     case 'generic':
@@ -103,7 +103,7 @@ function resolvePortType(
 // absorbed by a vector of the same scalar kind: add(f32, vec3<f32>) binds
 // T = vec3<f32>.
 function unify(
-  candidates: readonly { port: string; type: ShaderType }[]
+  candidates: readonly { port: string; type: ShaderType }[],
 ): { type: ShaderType } | PortTypeError {
   let bound = candidates[0].type;
   for (const { port, type } of candidates.slice(1)) {
@@ -117,7 +117,7 @@ function unify(
     return {
       port,
       message: `got ${typeToString(type)}, incompatible with ${typeToString(
-        bound
+        bound,
       )} connected to "${candidates[0].port}"`,
     };
   }
@@ -125,7 +125,7 @@ function unify(
 }
 
 function collectGenerics(
-  ports: readonly PortSchema[]
+  ports: readonly PortSchema[],
 ): Map<string, GenericPortType> {
   const generics = new Map<string, GenericPortType>();
   for (const port of ports) {
@@ -161,7 +161,7 @@ export function resolveNodeTypes({
 
   for (const generic of generics.values()) {
     const ports = inputs.filter(
-      (port) => port.type.kind === 'generic' && port.type.name === generic.name
+      (port) => port.type.kind === 'generic' && port.type.name === generic.name,
     );
     const candidates = ports
       .filter((port) => connected[port.name] !== undefined)
@@ -199,7 +199,7 @@ export function resolveNodeTypes({
       // Literals are floats, except for integer generics: the index of an
       // array, written 0, is a u32 (an i32 when negative).
       const values = literals.flatMap((value) =>
-        typeof value === 'number' ? [value] : Array.isArray(value) ? value : []
+        typeof value === 'number' ? [value] : Array.isArray(value) ? value : [],
       );
       if (
         generic.constraint === 'integer' &&
@@ -247,7 +247,7 @@ export function resolveNodeTypes({
         errors.push({
           port: port.name,
           message: `expects ${typeToString(expected)}, got ${typeToString(
-            actual
+            actual,
           )}`,
         });
       }
@@ -260,7 +260,7 @@ export function resolveNodeTypes({
         errors.push({
           port: port.name,
           message: `default value ${JSON.stringify(
-            value
+            value,
           )} is not a valid ${typeToString(expected)}`,
         });
       }
@@ -268,7 +268,7 @@ export function resolveNodeTypes({
       errors.push({
         port: port.name,
         message: `input of type ${portTypeToString(
-          port.type
+          port.type,
         )} must be connected`,
       });
     }

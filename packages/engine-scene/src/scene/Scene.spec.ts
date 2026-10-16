@@ -45,14 +45,14 @@ const box10 = () => {
 const seen = (
   scene: Scene,
   frustum: Frustum,
-  view: 'camera' | 'shadow' = 'camera'
+  view: 'camera' | 'shadow' = 'camera',
 ) => {
   const entities: number[] = [];
   scene.query(
     frustum,
     0xffffffff,
     (item) => entities.push((item as unknown as { entity: number }).entity),
-    view
+    view,
   );
   return entities.sort((a, b) => a - b);
 };
@@ -158,14 +158,14 @@ describe('Scene', () => {
     expect(seen(scene, box10())).toEqual([other.entity]);
     group.visible = true;
     expect(seen(scene, box10())).toEqual(
-      [inside.entity, other.entity].sort((a, b) => a - b)
+      [inside.entity, other.entity].sort((a, b) => a - b),
     );
     const layer2: number[] = [];
     scene.query(
       box10(),
       0b10,
       (item) => layer2.push((item as unknown as { entity: number }).entity),
-      'camera'
+      'camera',
     );
     expect(layer2).toEqual([other.entity]);
   });
@@ -176,17 +176,17 @@ describe('Scene', () => {
     const walls = Array.from({ length: 50 }, (_, i) =>
       scene.root
         .add({ position: { x: i - 25 }, static: true })
-        .setMesh(mesh, material())
+        .setMesh(mesh, material()),
     );
     // Points (the test triangle has its vertices at the origin): from -9 to
     // 9, the walls at ±10 are on the planes, outside after rounding.
     expect(seen(scene, box10())).toHaveLength(19);
     const versions = walls.map((wall) =>
-      scene.transforms.worldVersion(wall.entity)
+      scene.transforms.worldVersion(wall.entity),
     );
     scene.flush();
     expect(
-      walls.map((wall) => scene.transforms.worldVersion(wall.entity))
+      walls.map((wall) => scene.transforms.worldVersion(wall.entity)),
     ).toEqual(versions);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     walls[0].transform.position = { x: 0 };
@@ -203,7 +203,7 @@ describe('Scene', () => {
     const parent = scene.root.add({ position: { y: 10 } });
     const count = 50;
     const positions = Float32Array.from({ length: count * 3 }, (_, i) =>
-      i % 3 === 0 ? Math.floor(i / 3) - 25 : 0
+      i % 3 === 0 ? Math.floor(i / 3) - 25 : 0,
     );
     const scales = new Float32Array(count * 3).fill(2);
     const entities = scene.createBatch({
@@ -247,12 +247,12 @@ describe('Scene', () => {
           0,
           -0.1,
           0.5,
-          1
-        )
+          1,
+        ),
       ),
       0xffffffff,
       (item) => items.push(item as never),
-      'camera'
+      'camera',
     );
     expect(items).toHaveLength(count);
     expect(items[0]).toMatchObject({
@@ -265,7 +265,7 @@ describe('Scene', () => {
   it('refuses a batch drawing a mesh without a material', () => {
     const scene = new Scene();
     expect(() => scene.createBatch({ count: 1, mesh: triangle() })).toThrow(
-      /material/
+      /material/,
     );
   });
 
@@ -273,7 +273,7 @@ describe('Scene', () => {
     const scene = new Scene();
     const mesh = triangle();
     const nodes = [3, 6, 9].map((x) =>
-      scene.root.add({ position: { x, y: 0, z: 0 } }).setMesh(mesh, material())
+      scene.root.add({ position: { x, y: 0, z: 0 } }).setMesh(mesh, material()),
     );
     // A volume of its own: a capsule above the last one.
     nodes[2].setMesh(mesh, material(), {
@@ -284,7 +284,7 @@ describe('Scene', () => {
       hits.push([node.entity, Math.round(distance * 10) / 10]);
     });
     expect(hits.map(([entity]) => entity)).toEqual(
-      nodes.map((node) => node.entity)
+      nodes.map((node) => node.entity),
     );
     expect(hits[2][1]).toBe(8.5);
     const near: number[] = [];
@@ -348,7 +348,7 @@ describe('Scene', () => {
     scene.occlusion = { visible: (_scene, entity) => entity !== b.entity };
     expect(seen(scene, box10(), 'camera')).toEqual([a.entity]);
     expect(seen(scene, box10(), 'shadow')).toEqual(
-      [a.entity, b.entity].sort((x, y) => x - y)
+      [a.entity, b.entity].sort((x, y) => x - y),
     );
     expect(a.lastVisible).toBe(scene.cameraQueries);
     expect(b.lastVisible).toBe(0);
@@ -363,18 +363,18 @@ describe('Scene', () => {
     const random = () =>
       ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
     const groups = Array.from({ length: 10 }, () =>
-      scene.root.add({ position: { x: random() * 30 } })
+      scene.root.add({ position: { x: random() * 30 } }),
     );
     const leaves = Array.from({ length: 300 }, (_, i) =>
       groups[i % 10]
         .add({
           position: { x: random() * 20, y: random() * 20, z: random() * 20 },
         })
-        .setMesh(mesh, material())
+        .setMesh(mesh, material()),
     );
     for (let round = 0; round < 5; round++) {
       groups.forEach(
-        (group) => (group.transform.position = { x: random() * 30 })
+        (group) => (group.transform.position = { x: random() * 30 }),
       );
       leaves
         .slice(0, 100)
@@ -411,7 +411,7 @@ describe('Scene with a Renderer', () => {
         drawn: 10,
         lights: 1,
         shadowMaps: 1,
-      })
+      }),
     );
     // A row per object drawn (the 10 visible, maybe some casters beyond),
     // at its place.

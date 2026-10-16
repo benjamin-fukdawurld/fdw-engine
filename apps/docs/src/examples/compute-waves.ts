@@ -32,7 +32,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
   const point = c.call(
     std.convert,
     { value: id.swizzle('xy') },
-    { params: { to: BuiltinTypes.vec2f } }
+    { params: { to: BuiltinTypes.vec2f } },
   );
   const distance = c.call(std.length, {
     x: c.call(std.sub, { a: point, b: (side - 1) / 2 }),

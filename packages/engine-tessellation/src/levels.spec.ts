@@ -26,7 +26,7 @@ describe('LevelSelection', () => {
     const selection = new LevelSelection(patches).update(
       identity,
       from(-31, 10, 0),
-      options
+      options,
     );
     const levels = Array.from(selection.levels);
     expect(levels[0]).toBeGreaterThan(levels[15]);
@@ -35,10 +35,10 @@ describe('LevelSelection', () => {
     }
     levels.forEach((level, patch) => {
       const edges = Array.from(
-        patches.edges.subarray(patch * 4, patch * 4 + 4)
+        patches.edges.subarray(patch * 4, patch * 4 + 4),
       );
       expect(level).toBe(
-        Math.max(...edges.map((edge) => selection.edgeLevels[edge]))
+        Math.max(...edges.map((edge) => selection.edgeLevels[edge])),
       );
     });
     expect(selection.drawn).toBe(16);
@@ -65,7 +65,7 @@ describe('LevelSelection', () => {
     const selection = new LevelSelection(patches).update(
       identity,
       { position: [100, 100, 100], pixelScale: 64, orthographic: true },
-      options
+      options,
     );
     // 2 units, 128 pixels, 16 edges.
     expect(new Set(selection.levels)).toEqual(new Set([4]));
@@ -82,7 +82,7 @@ describe('LevelSelection', () => {
     const selection = new LevelSelection(patches).update(
       identity,
       view,
-      options
+      options,
     );
     // Patches from x = -4 to 4, 2 wide: only [0, 2] is in, until they grow.
     expect(Array.from(selection.levels).map((level) => level >= 0)).toEqual([

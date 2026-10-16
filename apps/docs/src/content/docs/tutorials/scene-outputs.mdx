@@ -88,7 +88,7 @@ n.functionOutput(
       }),
       b: 0.5,
     }),
-  })
+  }),
 );
 const encodeNormal = defineFunction(n.build(), { id: 'example.normal' });
 ```
@@ -102,7 +102,7 @@ const c = new GraphBuilder('identifier color');
 const id = c.call(
   std.convert,
   { value: c.functionInput('objectId', BuiltinTypes.u32) },
-  { params: { to: BuiltinTypes.f32 } }
+  { params: { to: BuiltinTypes.f32 } },
 );
 c.functionOutput(
   'value',
@@ -110,7 +110,7 @@ c.functionOutput(
     xyz: c.call(std.fract, {
       x: c.call(std.mul, { a: id, b: [0.61, 0.37, 0.83] }),
     }),
-  })
+  }),
 );
 ```
 

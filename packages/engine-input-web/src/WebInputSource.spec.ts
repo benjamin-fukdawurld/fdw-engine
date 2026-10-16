@@ -48,10 +48,10 @@ describe('WebInputSource', () => {
       innerHeight: 200,
     }) as unknown as Window;
     const input = new Input(
-      new WebInputSource(target, { gamepads: undefined })
+      new WebInputSource(target, { gamepads: undefined }),
     );
     target.dispatchEvent(
-      Object.assign(new Event('pointermove'), { clientX: 100, clientY: 50 })
+      Object.assign(new Event('pointermove'), { clientX: 100, clientY: 50 }),
     );
     input.update();
     expect([input.pointer.x, input.pointer.y]).toEqual([0.25, 0.25]);

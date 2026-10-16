@@ -248,7 +248,7 @@ export class TransformPool {
   private grow(capacity: number): void {
     const grow = <A extends Float32Array | Uint32Array | Uint8Array>(
       array: A,
-      length: number
+      length: number,
     ): A => {
       const grown = new (array.constructor as new (n: number) => A)(length);
       grown.set(array);

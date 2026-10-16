@@ -25,8 +25,8 @@ const notchesOf = (event: WheelEvent) =>
   event.deltaMode === 1
     ? event.deltaY / 3
     : event.deltaMode === 2
-    ? event.deltaY
-    : event.deltaY / 100;
+      ? event.deltaY
+      : event.deltaY / 100;
 
 /**
  * The inputs of a page: the keyboard, the pointer and the wheel over an
@@ -48,7 +48,7 @@ export class WebInputSource implements InputSource {
 
   constructor(
     private readonly _target: HTMLElement | Window,
-    options: WebInputSourceOptions = {}
+    options: WebInputSourceOptions = {},
   ) {
     this._gamepads =
       options.gamepads ??
@@ -74,12 +74,12 @@ export class WebInputSource implements InputSource {
     const listen = <K extends keyof HTMLElementEventMap & keyof WindowEventMap>(
       type: K,
       listener: (event: HTMLElementEventMap[K]) => void,
-      options?: AddEventListenerOptions
+      options?: AddEventListenerOptions,
     ) => {
       const wrapped = listener as EventListener;
       target.addEventListener(type, wrapped, options);
       this._remove.push(() =>
-        target.removeEventListener(type, wrapped, options)
+        target.removeEventListener(type, wrapped, options),
       );
     };
     listen('keydown', (event) => sink.keyDown(event.code, event.key));
@@ -89,11 +89,11 @@ export class WebInputSource implements InputSource {
       const overWindow = 'innerWidth' in target;
       const width = Math.max(
         overWindow ? target.innerWidth : target.clientWidth,
-        1
+        1,
       );
       const height = Math.max(
         overWindow ? target.innerHeight : target.clientHeight,
-        1
+        1,
       );
       const x = (overWindow ? event.clientX : event.offsetX) / width;
       const y = (overWindow ? event.clientY : event.offsetY) / height;
@@ -111,7 +111,7 @@ export class WebInputSource implements InputSource {
           x,
           y,
           event.movementX / width,
-          event.movementY / height
+          event.movementY / height,
         );
       }
     });
@@ -126,7 +126,7 @@ export class WebInputSource implements InputSource {
       const changed = () => sink.pointerLock(this.locked);
       document.addEventListener('pointerlockchange', changed);
       this._remove.push(() =>
-        document.removeEventListener('pointerlockchange', changed)
+        document.removeEventListener('pointerlockchange', changed),
       );
     }
   }
@@ -152,7 +152,7 @@ export class WebInputSource implements InputSource {
     gamepad: number,
     strong: number,
     weak: number,
-    duration: number
+    duration: number,
   ): void {
     const pad = this._gamepads?.getGamepads()[gamepad];
     const actuator = pad?.vibrationActuator;

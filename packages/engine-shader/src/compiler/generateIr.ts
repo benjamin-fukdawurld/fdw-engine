@@ -30,7 +30,7 @@ import type { WorkingGraph } from './WorkingGraph';
 // for vectors and matrices.
 function normalizeConstant(
   value: ConstantValue,
-  type: ShaderType
+  type: ShaderType,
 ): ConstantValue {
   if (typeof value !== 'number') {
     return value;
@@ -71,14 +71,14 @@ class StageBuilder {
      * Values read from a stage input instead of being computed: varyings in
      * the fragment stage.
      */
-    private readonly _stageInputs: ReadonlyMap<string, string>
+    private readonly _stageInputs: ReadonlyMap<string, string>,
   ) {}
 
   emit(
     type: ShaderType,
     op: IrOp,
     args: readonly ValueId[] = [],
-    node?: GraphNode
+    node?: GraphNode,
   ): ValueId {
     const id = this.newId();
     this.currentBody.push({
@@ -146,7 +146,7 @@ class StageBuilder {
       const input = this._stageInputs.get(key);
       if (input === undefined) {
         throw new Error(
-          `internal error: ${key} is not available in this stage`
+          `internal error: ${key} is not available in this stage`,
         );
       }
       id = this.emit(type, { kind: 'load-input', input });
@@ -159,7 +159,7 @@ class StageBuilder {
   input(
     node: GraphNode,
     port: PortSchema,
-    expected: ShaderType
+    expected: ShaderType,
   ): ValueId | undefined {
     const source = this._graph.inputSource(node, port.name);
     let value: { id: ValueId; type: ShaderType };
@@ -174,7 +174,7 @@ class StageBuilder {
           id = this.emit(
             type,
             { kind: 'swizzle', components: source.swizzle },
-            [value.id]
+            [value.id],
           );
           this.set(key, id);
         }
@@ -204,7 +204,7 @@ class StageBuilder {
 function translateCurrentLight(
   builder: StageBuilder,
   node: GraphNode,
-  usedPorts: ReadonlySet<string>
+  usedPorts: ReadonlySet<string>,
 ): void {
   const index = builder.loopIndex;
   if (index === undefined) {
@@ -228,7 +228,7 @@ function translateCurrentLight(
       value = builder.emit(
         type,
         { kind: 'swizzle', components: 'xyzw'.slice(0, type.size) },
-        [value]
+        [value],
       );
     }
     builder.define({ node: node.id, port }, value);
@@ -240,19 +240,19 @@ function translateNode(
   resolved: ResolvedNode,
   types: NodeTypes,
   results: Record<string, ValueId>,
-  usedPorts: ReadonlySet<string> = new Set()
+  usedPorts: ReadonlySet<string> = new Set(),
 ): void {
   const { node, definition, params, inputs } = resolved;
   const output = (
     port: string,
     type: ShaderType,
     op: IrOp,
-    args: readonly ValueId[] = []
+    args: readonly ValueId[] = [],
   ) =>
     builder.define({ node: node.id, port }, builder.emit(type, op, args, node));
   const inputValues = () =>
     inputs.map(
-      (port) => builder.input(node, port, types.inputs[port.name]) as ValueId
+      (port) => builder.input(node, port, types.inputs[port.name]) as ValueId,
     );
 
   switch (node.type) {
@@ -307,7 +307,7 @@ function translateNode(
         'value',
         types.outputs['value'],
         { kind: 'load-object', member: params['member'] as string },
-        inputValues()
+        inputValues(),
       );
       return;
     case 'input.builtin':
@@ -342,7 +342,7 @@ function translateNode(
     definition.implementation.kind !== 'intrinsic'
   ) {
     throw new Error(
-      `internal error: cannot translate node type "${node.type}"`
+      `internal error: cannot translate node type "${node.type}"`,
     );
   }
   const op = definition.implementation.op;
@@ -361,7 +361,7 @@ function translateNode(
         'result',
         type,
         { kind: 'binary', operator: binaryOperators[op] },
-        args
+        args,
       );
       return;
     case 'construct':
@@ -397,7 +397,7 @@ function translateNode(
         'result',
         type,
         { kind: 'compare', operator: comparisons[op] },
-        args
+        args,
       );
       return;
     default:
@@ -405,7 +405,7 @@ function translateNode(
         'result',
         type,
         { kind: 'intrinsic', name: op as IrIntrinsic },
-        args
+        args,
       );
   }
 }
@@ -451,7 +451,7 @@ function translate(
   context: StageContext,
   builder: StageBuilder,
   id: NodeId,
-  results: Record<string, ValueId>
+  results: Record<string, ValueId>,
 ): void {
   const resolved = context.nodes.get(id) as ResolvedNode;
   if (resolved.node.type === 'light.sum') {
@@ -463,7 +463,7 @@ function translate(
     resolved,
     context.types.get(id) as NodeTypes,
     results,
-    context.usedPorts.get(id)
+    context.usedPorts.get(id),
   );
 }
 
@@ -473,7 +473,7 @@ function translate(
 function translateLightSum(
   context: StageContext,
   builder: StageBuilder,
-  { node, inputs }: ResolvedNode
+  { node, inputs }: ResolvedNode,
 ): void {
   const types = context.types.get(node.id) as NodeTypes;
   const body = new Set<NodeId>();
@@ -502,7 +502,7 @@ function translateLightSum(
   const result = builder.input(
     node,
     inputs[0],
-    types.inputs['value']
+    types.inputs['value'],
   ) as ValueId;
   const instructions = builder.endLoop();
   builder.define(
@@ -511,8 +511,8 @@ function translateLightSum(
       types.outputs['result'],
       { kind: 'loop-sum', index, body: instructions, result },
       [count],
-      node
-    )
+      node,
+    ),
   );
 }
 
@@ -520,7 +520,7 @@ function translateStage(
   context: StageContext,
   builder: StageBuilder,
   stageNodes: ReadonlySet<NodeId>,
-  results: Record<string, ValueId>
+  results: Record<string, ValueId>,
 ): void {
   for (const id of context.order) {
     // Loop bodies are translated with their light.sum.
@@ -580,7 +580,7 @@ export function generateComputeIr({
       builder.input(
         node,
         inputs.find((port) => port.name === name) as PortSchema,
-        portTypes.inputs[name]
+        portTypes.inputs[name],
       );
     const array = graph.inputSource(node, 'array');
     const storage =
@@ -652,7 +652,7 @@ export function generateIr({
     plan.attributes.map((attribute) => [
       `${attribute.node}:value`,
       attribute.name,
-    ])
+    ]),
   );
   const vertex = new StageBuilder(graph, types, attributeInputs);
   const vertexResults: Record<string, ValueId> = {};
@@ -666,7 +666,7 @@ export function generateIr({
     plan.varyings.map((varying) => [
       `${varying.source.node}:${varying.source.port}`,
       varying.name,
-    ])
+    ]),
   );
   const fragment = new StageBuilder(graph, types, varyingInputs);
   const fragmentResults: Record<string, ValueId> = {};
@@ -708,7 +708,7 @@ export function generateIr({
 function fragmentOutputs(
   graph: WorkingGraph,
   types: ReadonlyMap<NodeId, NodeTypes>,
-  results: Readonly<Record<string, ValueId>>
+  results: Readonly<Record<string, ValueId>>,
 ): IrStageVariable[] {
   const outputs: IrStageVariable[] =
     results['color'] !== undefined

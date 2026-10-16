@@ -69,7 +69,7 @@ describe('OcclusionCulling', () => {
         label,
         format,
         dimensions,
-      }))
+      })),
     ).toEqual(
       expect.arrayContaining([
         {
@@ -82,7 +82,7 @@ describe('OcclusionCulling', () => {
           format: 'r8unorm',
           dimensions: { width: 256, height: 4 },
         },
-      ])
+      ]),
     );
   });
 
@@ -119,7 +119,7 @@ describe('OcclusionCulling', () => {
       renderer.render({ items, camera, surface, occlusion });
     }
     expect(
-      log.renderPasses.filter((name) => name === 'scene occlusion test')
+      log.renderPasses.filter((name) => name === 'scene occlusion test'),
     ).toHaveLength(2);
   });
 
@@ -147,7 +147,7 @@ describe('OcclusionCulling', () => {
         target: graph.createTexture('color', { format: 'rgba8unorm' }),
         format: 'rgba8unorm',
         occlusion,
-      })
+      }),
     ).toThrow(/new RenderGraph\(\{ size \}\)/);
   });
 });

@@ -17,16 +17,16 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
     super(
       'point',
       new ArrayBuffer(
-        BaseLight.bufferSize + LightAttenuationDataSize + 3 * 4 // Vec3 for position, 3 floats, each float is 4 bytes
+        BaseLight.bufferSize + LightAttenuationDataSize + 3 * 4, // Vec3 for position, 3 floats, each float is 4 bytes
       ),
-      data
+      data,
     );
     this._position = new Vec3View(this._buffer, BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
     this._attenuation = new DataView(
       this._buffer,
       BaseLight.bufferSize + 3 * 4,
-      3 * 4
+      3 * 4,
     );
     this.constantAttenuation = data?.constantAttenuation ?? 1.0;
     this.linearAttenuation = data?.linearAttenuation ?? 0.0;

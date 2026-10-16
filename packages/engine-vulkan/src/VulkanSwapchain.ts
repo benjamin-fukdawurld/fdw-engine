@@ -32,7 +32,7 @@ export class VulkanSwapchain {
     window: NativeWindowHandle,
     width: number,
     height: number,
-    { vsync = true }: VulkanSwapchainOptions = {}
+    { vsync = true }: VulkanSwapchainOptions = {},
   ) {
     this._addon = loadVulkanAddon();
     this._handle = this._addon.createSwapchain(
@@ -40,7 +40,7 @@ export class VulkanSwapchain {
       window,
       width,
       height,
-      vsync
+      vsync,
     );
     this.format = this._addon.swapchainFormat(this._handle);
   }
@@ -74,8 +74,8 @@ export class VulkanSwapchain {
               1,
               1,
               `swapchain image ${index}`,
-              image
-            )
+              image,
+            ),
         );
     }
     return this._images[acquired.index];

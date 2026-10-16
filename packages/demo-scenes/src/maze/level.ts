@@ -31,7 +31,7 @@ export function buildLevel(
   scene: Scene,
   maze: Maze,
   { cube, floor, wall }: { cube: Mesh; floor: Material; wall: Material },
-  { cellSize = 2, wallHeight = 2, wallThickness = 0.2 }: LevelOptions = {}
+  { cellSize = 2, wallHeight = 2, wallThickness = 0.2 }: LevelOptions = {},
 ): Level {
   const halfWidth = (maze.width * cellSize) / 2;
   const halfDepth = (maze.height * cellSize) / 2;

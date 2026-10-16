@@ -27,6 +27,7 @@ const examples: Record<string, string> = {
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',
   'maze-4': 'game/the-game/',
+  fps: 'game/fps/',
 };
 
 // The examples that need compute shaders: on WebGL2, they say so.
@@ -59,7 +60,7 @@ for (const [name, page] of Object.entries(examples)) {
     // The backend it runs on: the WebGPU project needs WebGPU, not the
     // fallback to WebGL2.
     await expect(status).toContainText(
-      backend === 'webgpu' ? 'WebGPU' : 'WebGL2'
+      backend === 'webgpu' ? 'WebGPU' : 'WebGL2',
     );
     await expect(status).not.toHaveAttribute('data-error');
     await expect
@@ -67,7 +68,7 @@ for (const [name, page] of Object.entries(examples)) {
         async () => Number((await canvas.getAttribute('data-frames')) ?? 0),
         {
           timeout: 30_000,
-        }
+        },
       )
       .toBe(count);
     await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`, {
@@ -82,7 +83,7 @@ test('picking under the mouse', async ({ page: browser }, info) => {
   await browser.goto(
     `/fdw-engine/tutorials/picking/?time=${time}&frames=${frames}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
-    }`
+    }`,
   );
   const example = browser.locator('[data-example="picking"]').first();
   await example.scrollIntoViewIfNeeded();
@@ -123,7 +124,7 @@ test('ambient occlusion alone', async ({ page: browser }, info) => {
   await browser.goto(
     `/fdw-engine/tutorials/ambient-occlusion/?time=${time}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
-    }`
+    }`,
   );
   const example = browser.locator('[data-example="ambient-occlusion"]').first();
   await example.scrollIntoViewIfNeeded();
@@ -141,7 +142,7 @@ test('ambient occlusion alone', async ({ page: browser }, info) => {
     .toBeGreaterThan(after + frames);
   await expect(canvas).toHaveScreenshot(
     `ambient-occlusion-alone-${backend}.png`,
-    { timeout: 20_000 }
+    { timeout: 20_000 },
   );
 });
 
@@ -176,7 +177,7 @@ for (const mode of modes) {
     await browser.goto(
       `/fdw-engine/${mode.page}?time=${time}${
         backend === 'webgl2' ? '&backend=webgl2' : ''
-      }`
+      }`,
     );
     const example = browser.locator(`[data-example="${mode.example}"]`).first();
     await example.scrollIntoViewIfNeeded();
@@ -192,7 +193,7 @@ for (const mode of modes) {
     await expect
       .poll(
         async () => Number((await canvas.getAttribute('data-frames')) ?? 0),
-        { timeout: 30_000 }
+        { timeout: 30_000 },
       )
       .toBeGreaterThan(after + frames);
     await expect(canvas).toHaveScreenshot(`${mode.shot}-${backend}.png`, {
@@ -208,7 +209,7 @@ test('camera-operators-walk', async ({ page: browser }, info) => {
   await browser.goto(
     `/fdw-engine/tutorials/camera-operators/?time=${time}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
-    }`
+    }`,
   );
   const example = browser.locator('[data-example="camera-operators"]').first();
   await example.scrollIntoViewIfNeeded();
@@ -228,7 +229,7 @@ test('camera-operators-walk', async ({ page: browser }, info) => {
     `camera-operators-walk-${backend}.png`,
     {
       timeout: 20_000,
-    }
+    },
   );
 });
 
@@ -240,7 +241,7 @@ test('first-person-shot', async ({ page: browser }, info) => {
   await browser.goto(
     `/fdw-engine/tutorials/first-person/?time=${time}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
-    }`
+    }`,
   );
   const example = browser.locator('[data-example="first-person"]').first();
   await example.scrollIntoViewIfNeeded();
@@ -269,7 +270,7 @@ test('systems-steps', async ({ page: browser }, info) => {
   await browser.goto(
     `/fdw-engine/tutorials/systems/?time=${time}${
       backend === 'webgl2' ? '&backend=webgl2' : ''
-    }`
+    }`,
   );
   const example = browser.locator('[data-example="systems"]').first();
   await example.scrollIntoViewIfNeeded();

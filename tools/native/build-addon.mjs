@@ -16,7 +16,7 @@ export function findNodeApi() {
     ...(process.env.PATH ?? '')
       .split(delimiter)
       .map((dir) =>
-        join(dir, process.platform === 'win32' ? 'node.exe' : 'node')
+        join(dir, process.platform === 'win32' ? 'node.exe' : 'node'),
       )
       .filter((path) => existsSync(path)),
   ];
@@ -24,16 +24,16 @@ export function findNodeApi() {
     process.env.NODE_API_INCLUDE_DIR,
     ...binaries.flatMap((binary) =>
       [binary, realpathSync(binary)].map((path) =>
-        resolve(dirname(path), '..', 'include', 'node')
-      )
+        resolve(dirname(path), '..', 'include', 'node'),
+      ),
     ),
   ].filter(Boolean);
   const found = candidates.find((dir) => existsSync(join(dir, 'node_api.h')));
   if (!found) {
     throw new Error(
       `node_api.h not found (looked in ${candidates.join(
-        ', '
-      )}): set NODE_API_INCLUDE_DIR`
+        ', ',
+      )}): set NODE_API_INCLUDE_DIR`,
     );
   }
   return found;
@@ -54,7 +54,7 @@ export function buildAddon(root, extraArguments = []) {
     'build',
     `-DCMAKE_BUILD_TYPE=${buildType}`,
     `-DNODE_API_INCLUDE_DIR=${findNodeApi()}`,
-    ...extraArguments
+    ...extraArguments,
   );
   run('--build', 'build', '--config', buildType, '--parallel');
 }

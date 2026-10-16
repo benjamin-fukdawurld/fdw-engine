@@ -16,7 +16,7 @@ it('profiles', () => {
         scene.root.add({
           position: { x: i % 1000, z: Math.floor(i / 1000) },
           static: true,
-        })
+        }),
       );
     }
     const t1 = performance.now();
@@ -26,8 +26,8 @@ it('profiles', () => {
     const t3 = performance.now();
     console.log(
       `create ${(t1 - t0).toFixed(0)} ms, setMesh ${(t2 - t1).toFixed(
-        0
-      )} ms, first query (index) ${(t3 - t2).toFixed(0)} ms`
+        0,
+      )} ms, first query (index) ${(t3 - t2).toFixed(0)} ms`,
     );
   }
 });

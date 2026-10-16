@@ -55,7 +55,7 @@ export class ObjectRows {
   private _count = 0;
   private readonly _free: number[] = [];
   private readonly _freed = new FinalizationRegistry<number>((index) =>
-    this._free.push(index)
+    this._free.push(index),
   );
   // The rows to write: from the lowest to the highest changed.
   private _dirtyFirst = Infinity;
@@ -103,7 +103,7 @@ export class ObjectRows {
     const count = entries.length;
     if (first + count > this._instances.length) {
       const grown = new Uint32Array(
-        Math.max(this._instances.length * 2, first + count)
+        Math.max(this._instances.length * 2, first + count),
       );
       grown.set(this._instances.subarray(0, first));
       this._instances = grown;
@@ -184,8 +184,8 @@ export class ObjectRows {
       this._dirtyFirst,
       this._rows.subarray(
         this._dirtyFirst * RowFloats,
-        this._dirtyEnd * RowFloats
-      )
+        this._dirtyEnd * RowFloats,
+      ),
     );
     this._dirtyFirst = Infinity;
     this._dirtyEnd = 0;

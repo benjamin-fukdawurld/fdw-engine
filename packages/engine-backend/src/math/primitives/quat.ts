@@ -5,7 +5,7 @@ export type QuatApi = {
   multiply: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   invert: (a: Float32Array, out?: Float32Array) => Float32Array;
   conjugate: (a: Float32Array, out?: Float32Array) => Float32Array;
@@ -13,17 +13,17 @@ export type QuatApi = {
   subtract: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   multiplyScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   divideScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   dot: (a: Float32Array, b: Float32Array) => number;
 
@@ -31,13 +31,13 @@ export type QuatApi = {
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   lerp: (
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   length: (a: Float32Array) => number;
@@ -48,18 +48,18 @@ export type QuatApi = {
   fromAxisAngle: (
     axis: Float32Array,
     rad: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   toAxisAngle: (
     a: Float32Array,
-    outAxis?: Float32Array
+    outAxis?: Float32Array,
   ) => { angle: number; axis: Float32Array };
   fromEuler: (
     x: number,
     y: number,
     z: number,
     order?: RotationOrder,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   fromMat3: (m: Float32Array, out?: Float32Array) => Float32Array;
   fromMat4: (m: Float32Array, out?: Float32Array) => Float32Array;

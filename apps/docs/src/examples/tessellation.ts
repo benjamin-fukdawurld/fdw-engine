@@ -40,7 +40,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     const z = Math.sin(angle) * 300;
     const ground = Math.max(
       terrain.heightAt(x, z),
-      terrain.heightAt(x - Math.sin(angle) * 60, z + Math.cos(angle) * 60)
+      terrain.heightAt(x - Math.sin(angle) * 60, z + Math.cos(angle) * 60),
     );
     camera.position = { x, y: ground + 30, z };
     // Turned along the circle (about y), then down a little (about x):
@@ -68,8 +68,8 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     const stats = terrain.surface.stats;
     info(
       `${stats.drawn} of ${stats.patches} patches in view, ${Math.round(
-        stats.triangles / 1000
-      )}k triangles (click: ${levels ? 'colors' : 'levels'})`
+        stats.triangles / 1000,
+      )}k triangles (click: ${levels ? 'colors' : 'levels'})`,
     );
   });
 };

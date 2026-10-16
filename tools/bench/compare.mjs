@@ -16,7 +16,7 @@ const load = (path) =>
     JSON.parse(readFileSync(path, 'utf8')).benchmarks.map((bench) => [
       bench.name,
       bench,
-    ])
+    ]),
   );
 const base = load(basePath);
 const head = load(headPath);
@@ -48,8 +48,8 @@ for (const [name, after] of head) {
   const sign = change > 0 ? '+' : '';
   rows.push(
     `| ${name} | ${time(before.mean)} | ${time(
-      after.mean
-    )} | ${sign}${change.toFixed(1)} % | ${mark} |`
+      after.mean,
+    )} | ${sign}${change.toFixed(1)} % | ${mark} |`,
   );
 }
 for (const name of base.keys()) {

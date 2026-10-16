@@ -82,7 +82,7 @@ export class WebGl2RenderPipeline implements GpuRenderPipeline {
         }
       | undefined,
     readonly blend: WebGl2BlendState | undefined,
-    readonly label?: string
+    readonly label?: string,
   ) {}
 
   get vertexBuffers(): readonly number[] {
@@ -98,43 +98,37 @@ export class WebGl2BindGroup implements GpuBindGroup {
   constructor(
     readonly layout: WebGl2BindGroupLayout,
     // Resources by binding number.
-    readonly resources: ReadonlyMap<number, GpuBindGroupEntry['resource']>
+    readonly resources: ReadonlyMap<number, GpuBindGroupEntry['resource']>,
   ) {}
 }
 
-const topologies = lazy(
-  (): Record<PrimitiveTopology, GLenum> => ({
-    'triangle-list': GL.TRIANGLES,
-    'triangle-strip': GL.TRIANGLE_STRIP,
-    'line-list': GL.LINES,
-    'line-strip': GL.LINE_STRIP,
-    'point-list': GL.POINTS,
-  })
-);
+const topologies = lazy((): Record<PrimitiveTopology, GLenum> => ({
+  'triangle-list': GL.TRIANGLES,
+  'triangle-strip': GL.TRIANGLE_STRIP,
+  'line-list': GL.LINES,
+  'line-strip': GL.LINE_STRIP,
+  'point-list': GL.POINTS,
+}));
 
-const compareFunctions = lazy(
-  (): Record<CompareFunction, GLenum> => ({
-    never: GL.NEVER,
-    less: GL.LESS,
-    equal: GL.EQUAL,
-    'less-equal': GL.LEQUAL,
-    greater: GL.GREATER,
-    'not-equal': GL.NOTEQUAL,
-    'greater-equal': GL.GEQUAL,
-    always: GL.ALWAYS,
-  })
-);
+const compareFunctions = lazy((): Record<CompareFunction, GLenum> => ({
+  never: GL.NEVER,
+  less: GL.LESS,
+  equal: GL.EQUAL,
+  'less-equal': GL.LEQUAL,
+  greater: GL.GREATER,
+  'not-equal': GL.NOTEQUAL,
+  'greater-equal': GL.GEQUAL,
+  always: GL.ALWAYS,
+}));
 
-const blendFactors = lazy(
-  (): Record<BlendFactor, GLenum> => ({
-    zero: GL.ZERO,
-    one: GL.ONE,
-    'src-alpha': GL.SRC_ALPHA,
-    'one-minus-src-alpha': GL.ONE_MINUS_SRC_ALPHA,
-    'dst-alpha': GL.DST_ALPHA,
-    'one-minus-dst-alpha': GL.ONE_MINUS_DST_ALPHA,
-  })
-);
+const blendFactors = lazy((): Record<BlendFactor, GLenum> => ({
+  zero: GL.ZERO,
+  one: GL.ONE,
+  'src-alpha': GL.SRC_ALPHA,
+  'one-minus-src-alpha': GL.ONE_MINUS_SRC_ALPHA,
+  'dst-alpha': GL.DST_ALPHA,
+  'one-minus-dst-alpha': GL.ONE_MINUS_DST_ALPHA,
+}));
 
 const blendOperations = lazy(() => ({
   add: GL.FUNC_ADD,
@@ -158,7 +152,7 @@ function shaderLog(
   gl: WebGL2RenderingContext,
   shader: WebGLShader,
   stage: string,
-  source: string
+  source: string,
 ): string | undefined {
   if (gl.getShaderParameter(shader, GL.COMPILE_STATUS)) {
     return undefined;
@@ -175,7 +169,7 @@ function shaderLog(
 function linked(
   gl: WebGL2RenderingContext,
   program: WebGLProgram,
-  completionStatus: GLenum
+  completionStatus: GLenum,
 ): Promise<void> {
   return new Promise((resolve) => {
     const poll = () => {
@@ -220,7 +214,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         binding,
         resource.kind,
         resource.kind === 'texture' ? resource.type : block?.size,
-      ])
+      ]),
     );
     let layout = this._bindGroupLayouts.get(key);
     if (!layout) {
@@ -232,21 +226,21 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
 
   createBindGroup(
     layout: GpuBindGroupLayout,
-    entries: readonly GpuBindGroupEntry[]
+    entries: readonly GpuBindGroupEntry[],
   ): GpuBindGroup {
     if (!(layout instanceof WebGl2BindGroupLayout)) {
       throw new Error(
-        'The bind group layout was not created by the WebGL2 backend'
+        'The bind group layout was not created by the WebGL2 backend',
       );
     }
     return new WebGl2BindGroup(
       layout,
-      new Map(entries.map((entry) => [entry.binding, entry.resource]))
+      new Map(entries.map((entry) => [entry.binding, entry.resource])),
     );
   }
 
   createRenderPipeline(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): GpuRenderPipeline {
     const { program } = descriptor;
     let linkedProgram = this._linkedPrograms.get(program.programKey);
@@ -266,7 +260,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
   }
 
   async createRenderPipelineAsync(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline> {
     const { program } = descriptor;
     let pending = this._programs.get(program.programKey);
@@ -277,7 +271,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
           ? linked(
               this.gl,
               glProgram,
-              this._parallelCompile.COMPLETION_STATUS_KHR
+              this._parallelCompile.COMPLETION_STATUS_KHR,
             )
           : Promise.resolve()
       ).then(() => finish(glProgram));
@@ -327,7 +321,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         ].filter(Boolean);
         gl.deleteProgram(linkedProgram);
         throw new Error(
-          `Program "${compiled.name}" failed to link:\n${logs.join('\n')}`
+          `Program "${compiled.name}" failed to link:\n${logs.join('\n')}`,
         );
       }
       gl.deleteShader(vertex);
@@ -345,7 +339,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
   private assignBindings(
     program: WebGLProgram,
     compiled: CompiledProgram,
-    layout: PhysicalProgramLayout
+    layout: PhysicalProgramLayout,
   ): WebGl2Program {
     const gl = this.gl;
     const bindingOf = new Map<string, BindingRef>();
@@ -358,7 +352,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         }
         const index = gl.getUniformBlockIndex(
           program,
-          glslBlockName(resource.name)
+          glslBlockName(resource.name),
         );
         if (index === GL.INVALID_INDEX) {
           continue;
@@ -389,7 +383,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
             ...(orientation ? { orientation } : {}),
           },
         ];
-      }
+      },
     );
     const objectTable = this.objectTable(program, layout, samplers.length);
     gl.useProgram(null);
@@ -407,7 +401,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
   private objectTable(
     program: WebGLProgram,
     layout: PhysicalProgramLayout,
-    units: number
+    units: number,
   ): WebGl2Program['objectTable'] {
     const gl = this.gl;
     for (const group of layout.groups) {
@@ -420,7 +414,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         const rows = gl.getUniformLocation(program, ObjectTableNames.rows);
         const instances = gl.getUniformLocation(
           program,
-          ObjectTableNames.instances
+          ObjectTableNames.instances,
         );
         if (rows) {
           gl.uniform1i(rows, rowsUnit);
@@ -434,7 +428,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
           instancesUnit,
           firstInstance: gl.getUniformLocation(
             program,
-            ObjectTableNames.firstInstance
+            ObjectTableNames.firstInstance,
           ),
         };
       }
@@ -444,12 +438,12 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
 
   private pipeline(
     descriptor: RenderPipelineDescriptor,
-    program: WebGl2Program
+    program: WebGl2Program,
   ): WebGl2RenderPipeline {
     const { primitive, depthStencil, targets } = descriptor;
     const buffers = matchVertexLayout(
       descriptor.program.vertexInputs,
-      descriptor.vertex
+      descriptor.vertex,
     );
     // One blend state for every color target (no independent blending
     // without OES_draw_buffers_indexed); integer targets are never blended.
@@ -457,13 +451,13 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
     const blend = blended[0]?.blend;
     if (
       blended.some(
-        (target) => JSON.stringify(target.blend) !== JSON.stringify(blend)
+        (target) => JSON.stringify(target.blend) !== JSON.stringify(blend),
       )
     ) {
       throw new Error(
         `Pipeline "${
           descriptor.label ?? descriptor.program.name
-        }": WebGL2 blends every color target the same way (capability independentBlend)`
+        }": WebGL2 blends every color target the same way (capability independentBlend)`,
       );
     }
     return new WebGl2RenderPipeline(
@@ -474,8 +468,8 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
       primitive.cullMode === 'none'
         ? undefined
         : primitive.cullMode === 'front'
-        ? GL.FRONT
-        : GL.BACK,
+          ? GL.FRONT
+          : GL.BACK,
       primitive.frontFace === 'ccw' ? GL.CCW : GL.CW,
       depthStencil
         ? {
@@ -492,7 +486,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
           }
         : undefined,
       blend ? blendState(blend) : undefined,
-      descriptor.label ?? descriptor.program.name
+      descriptor.label ?? descriptor.program.name,
     );
   }
 }

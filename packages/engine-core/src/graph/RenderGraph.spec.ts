@@ -152,7 +152,7 @@ describe('RenderGraph', () => {
         pass.read(first.color, 'sampled');
         pass.read(second.color, 'copy-src');
         return { execute: () => undefined };
-      })
+      }),
     ).toThrow(/uses "color" twice/);
 
     const ordered = new RenderGraph();
@@ -188,7 +188,7 @@ describe('RenderGraph', () => {
     const graph = new RenderGraph();
     const color = graph.createTexture('color', { format: 'rgba8unorm' });
     expect(() => graph.createTexture('color', { format: 'r8unorm' })).toThrow(
-      /already has a resource "color"/
+      /already has a resource "color"/,
     );
     graph.addRasterPass('first', (pass) => ({
       color: pass.writeColor(color, { load: 'clear' }),
@@ -199,7 +199,7 @@ describe('RenderGraph', () => {
       graph.addRasterPass('second', (pass) => ({
         color: pass.writeColor(color, { load: 'clear' }),
         execute: () => undefined,
-      }))
+      })),
     ).toThrow(/write its latest version/);
 
     const unwritten = new RenderGraph();
@@ -213,7 +213,7 @@ describe('RenderGraph', () => {
       };
     });
     expect(() => unwritten.compile()).toThrow(
-      /reads "empty" before any pass writes it/
+      /reads "empty" before any pass writes it/,
     );
   });
 });
@@ -222,7 +222,7 @@ describe('RenderGraphRunner', () => {
   // A temporary texture rendered, then sampled into the backbuffer.
   const twoPasses = (
     log: { events: string[] },
-    size?: { relative: number }
+    size?: { relative: number },
   ) => {
     const graph = new RenderGraph();
     const backbuffer = graph.importTexture('backbuffer', surface);
@@ -246,7 +246,7 @@ describe('RenderGraphRunner', () => {
           // The real texture of the handle.
           expect(context.texture(first.color)).toBe(
             (log as { textures?: unknown[] }).textures?.at(-1) ??
-              context.texture(first.color)
+              context.texture(first.color),
           );
         },
       };
@@ -407,7 +407,7 @@ describe('RenderGraphRunner', () => {
       },
     }));
     expect(() => new RenderGraphRunner(backend).execute(graph)).toThrow(
-      /uses "other" without declaring it/
+      /uses "other" without declaring it/,
     );
     void log;
   });
@@ -531,7 +531,7 @@ describe('RenderGraphRunner, memory and debugging', () => {
       wrong.addRasterPass('draw', (pass) => ({
         color: pass.resolveColor(texture),
         execute: () => undefined,
-      }))
+      })),
     ).toThrow(/without a color attachment to resolve/);
   });
 
@@ -585,7 +585,7 @@ describe('RenderGraphRunner, memory and debugging', () => {
     expect(dot).toMatch(/^digraph "render graph" \{/);
     expect(dot).toContain('p0 [shape=box, label="1. draw a"];');
     expect(dot).toContain(
-      'p4 [shape=box, label="culled", style=dashed, color=gray];'
+      'p4 [shape=box, label="culled", style=dashed, color=gray];',
     );
     expect(dot).toContain('p0 -> r1v1 [label="color-attachment"];');
     expect(dot).toContain('r1v1 -> p1 [label="sampled"];');

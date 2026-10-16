@@ -49,11 +49,11 @@ function pad(
   array: GltfTypedArray,
   from: number,
   to: number,
-  fill: number
+  fill: number,
 ): GltfTypedArray {
   const count = array.length / from;
   const out = new (array.constructor as new (length: number) => GltfTypedArray)(
-    count * to
+    count * to,
   );
   out.fill(fill);
   for (let i = 0; i < count; i++)
@@ -75,7 +75,7 @@ const formatName = (kind: string, components: number) =>
  */
 export function vertexAttribute(
   semantic: string,
-  data: GltfAttributeData
+  data: GltfAttributeData,
 ): {
   readonly format: VertexAttributeFormat;
   readonly array: GltfTypedArray;
@@ -88,14 +88,14 @@ export function vertexAttribute(
   const kind = !integer
     ? undefined
     : data.normalized
-    ? array instanceof Int8Array || array instanceof Int16Array
-      ? 'snorm'
-      : 'unorm'
-    : /^joints\d*$/.test(semantic)
-    ? array instanceof Int8Array || array instanceof Int16Array
-      ? 'sint'
-      : 'uint'
-    : undefined;
+      ? array instanceof Int8Array || array instanceof Int16Array
+        ? 'snorm'
+        : 'unorm'
+      : /^joints\d*$/.test(semantic)
+        ? array instanceof Int8Array || array instanceof Int16Array
+          ? 'sint'
+          : 'uint'
+        : undefined;
   if (!kind) {
     array = toFloat32(data);
     if (color && components === 3) {
@@ -112,7 +112,7 @@ export function vertexAttribute(
       array,
       components,
       padded,
-      color ? normalizationDivisor(array) : 0
+      color ? normalizationDivisor(array) : 0,
     );
     components = padded;
   }
@@ -127,7 +127,7 @@ export function vertexAttribute(
 export function triangleList(
   mode: number,
   indices: ArrayLike<number> | undefined,
-  vertexCount: number
+  vertexCount: number,
 ): ArrayLike<number> | undefined {
   if (mode === GltfMode.TRIANGLES) return indices;
   const at = indices ? (i: number) => indices[i] : (i: number) => i;
@@ -146,7 +146,7 @@ export function triangleList(
         i % 2 === 0
           ? [at(i), at(i + 1), at(i + 2)]
           : [at(i + 1), at(i), at(i + 2)],
-        i * 3
+        i * 3,
       );
   }
   return out;
@@ -154,7 +154,7 @@ export function triangleList(
 
 /** Indices as a `Mesh` takes them: uint8 widened to uint16 (WebGPU has no 8-bit indices). */
 export function indexData(
-  indices: ArrayLike<number>
+  indices: ArrayLike<number>,
 ): Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer> {
   if (indices instanceof Uint16Array || indices instanceof Uint32Array) {
     return indices as Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
@@ -176,7 +176,7 @@ function flatNormals(
   buffers: VertexBuffer[],
   positions: Float32Array,
   indices: ArrayLike<number> | undefined,
-  vertexCount: number
+  vertexCount: number,
 ) {
   const count = Math.floor((indices ? indices.length : vertexCount) / 3) * 3;
   const at = indices ? (i: number) => indices[i] : (i: number) => i;
@@ -184,20 +184,22 @@ function flatNormals(
     const source = new Uint8Array(
       array.buffer,
       array.byteOffset,
-      array.byteLength
+      array.byteLength,
     );
     const out = new Uint8Array(count * layout.stride);
     for (let i = 0; i < count; i++)
       out.set(
         source.subarray(at(i) * layout.stride, (at(i) + 1) * layout.stride),
-        i * layout.stride
+        i * layout.stride,
       );
     // In the type of the source: the vertices read as they were.
     return {
       layout,
-      array: new (array.constructor as new (
-        buffer: ArrayBuffer
-      ) => ArrayBufferView<ArrayBuffer>)(out.buffer),
+      array: new (
+        array.constructor as new (
+          buffer: ArrayBuffer,
+        ) => ArrayBufferView<ArrayBuffer>
+      )(out.buffer),
     };
   });
   const normals = new Float32Array(count * 3);
@@ -276,7 +278,7 @@ export function primitiveMeshData({
       buffers,
       toFloat32(position),
       list,
-      vertexCount
+      vertexCount,
     ));
     list = undefined;
   }

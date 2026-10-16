@@ -45,7 +45,7 @@ function fakeDevice(features: string[] = []) {
         destination: GPUTexelCopyTextureInfo,
         data: ArrayBufferView,
         layout: GPUTexelCopyBufferLayout,
-        size: number[]
+        size: number[],
       ) => {
         log.writes.push({ destination, bytes: data.byteLength, layout, size });
       },
@@ -67,7 +67,7 @@ describe('TextureFactory', () => {
       new Set([
         'texture-compression-etc2',
         'texture-compression-astc',
-      ]) as GPUSupportedFeatures
+      ]) as GPUSupportedFeatures,
     );
     expect(formats).toContain('etc2-rgba8unorm-srgb');
     expect(formats).toContain('eac-rg11unorm');
@@ -87,7 +87,7 @@ describe('TextureFactory', () => {
     // Sampled and written only: compressed textures cannot be rendered to.
     expect(log.textures[0].mipLevelCount).toBe(3);
     expect(log.textures[0].usage).toBe(
-      GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     );
     expect(log.writes.map((write) => write.destination.mipLevel)).toEqual([
       0, 1, 2,
@@ -112,7 +112,7 @@ describe('TextureFactory', () => {
         type: '2d',
         format: 'astc-4x4-unorm',
         dimensions: { width: 4, height: 4 },
-      })
+      }),
     ).toThrow(/astc-4x4-unorm is not supported by the device/);
   });
 
@@ -139,7 +139,7 @@ describe('TextureFactory', () => {
     expect(log.writes[1].size).toEqual([2, 2, 6]);
     expect(log.submits).toBe(0);
     expect(() =>
-      factory.writeTexture(cube, new Uint8Array(4), { level: 3 })
+      factory.writeTexture(cube, new Uint8Array(4), { level: 3 }),
     ).toThrow(/no level 3/);
 
     // Without options: the first level of every layer, the others computed.
@@ -158,7 +158,7 @@ describe('TextureFactory', () => {
       levels: [new Uint32Array(4), new Uint32Array(1)],
     });
     expect(log.textures[0].usage).toBe(
-      GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     );
     expect(log.writes).toHaveLength(2);
     // The first level rewritten: the second one kept.

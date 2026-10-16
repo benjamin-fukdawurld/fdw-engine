@@ -116,7 +116,7 @@ const ModelFormat: ResourceLoader<ModelData> = {
 
 function setup(
   files: Record<string, string> = {},
-  keepCpuData: 'always' | 'never' = 'never'
+  keepCpuData: 'always' | 'never' = 'never',
 ) {
   const { backend, log } = fakeBackend();
   const destroyed: unknown[] = [];
@@ -141,7 +141,7 @@ function setup(
 
 const textured = (
   image: string,
-  extra: Partial<PbrMaterialData> = {}
+  extra: Partial<PbrMaterialData> = {},
 ): PbrMaterialData => ({
   ...defaultPbrMaterial,
   baseColorTexture: {
@@ -346,8 +346,8 @@ describe('models', () => {
     const mesh = model.meshes[0][0].mesh;
     expect(
       mesh.description.vertexBuffers.some((b) =>
-        b.attributes.some((a) => a.semantic === 'tangent')
-      )
+        b.attributes.some((a) => a.semantic === 'tangent'),
+      ),
     ).toBe(true);
     expect(store.peek(MeshType, 'm.model#mesh/0')).toBeUndefined(); // the entry has options
   });

@@ -25,7 +25,7 @@ export interface SpatialIndex<T> {
    */
   queryFrustum(
     frustum: Frustum,
-    visit: (item: T, inside: boolean) => void
+    visit: (item: T, inside: boolean) => void,
   ): void;
   /**
    * The items whose bounds intersect a volume (any Volume: its bounds first,
@@ -40,7 +40,7 @@ export interface SpatialIndex<T> {
   raycast(
     ray: Ray,
     visit: (item: T, distance: number) => boolean | void,
-    maxDistance?: number
+    maxDistance?: number,
   ): void;
   /** The bounds of all the items, written into `out` (empty without items). */
   bounds(out: Aabb): Aabb;

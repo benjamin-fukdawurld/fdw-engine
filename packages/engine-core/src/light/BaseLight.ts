@@ -22,7 +22,7 @@ export class BaseLight implements BaseLightSnapshot {
   protected constructor(
     type: LightType,
     buffer: ArrayBuffer,
-    data?: Partial<LightColorData>
+    data?: Partial<LightColorData>,
   ) {
     this.type = type;
     this._buffer = buffer;

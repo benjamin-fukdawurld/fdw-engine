@@ -38,7 +38,7 @@ export class ComputeRunner {
   // back with buffer.read().
   dispatch(
     program: CompiledProgram,
-    { values = {}, workgroups }: ComputeDispatch
+    { values = {}, workgroups }: ComputeDispatch,
   ): void {
     const { pipelines } = this.backend;
     let pipeline = this._pipelines.get(program.programKey);
@@ -58,14 +58,14 @@ export class ComputeRunner {
             resource: this.uniformBuffer(
               `${program.programKey}:${group.index}:${binding.binding}`,
               binding.block,
-              values
+              values,
             ),
           };
         }
         const value = values[binding.resource.name];
         if (value === undefined || isUniformValue(value)) {
           throw new Error(
-            `Compute "${program.name}": no ${binding.resource.kind} given for "${binding.resource.name}"`
+            `Compute "${program.name}": no ${binding.resource.kind} given for "${binding.resource.name}"`,
           );
         }
         return {
@@ -77,8 +77,8 @@ export class ComputeRunner {
         group.index,
         pipelines.createBindGroup(
           pipelines.createBindGroupLayout(group),
-          entries
-        )
+          entries,
+        ),
       );
     }
     if (Array.isArray(workgroups)) {
@@ -108,7 +108,7 @@ export class ComputeRunner {
   private uniformBuffer(
     key: string,
     block: PhysicalUniformBlock,
-    values: Readonly<Record<string, MaterialValue>>
+    values: Readonly<Record<string, MaterialValue>>,
   ): GpuBuffer {
     const data = new DataView(new ArrayBuffer(block.size));
     for (const member of block.members) {
@@ -120,7 +120,7 @@ export class ComputeRunner {
         this.backend.pipelines.layoutStrategy.writeUniform(
           data,
           member,
-          value as UniformValue
+          value as UniformValue,
         );
       }
     }

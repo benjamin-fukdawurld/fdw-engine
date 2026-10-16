@@ -26,7 +26,7 @@ const randomVolumes = (): ConvexVolume[] => [
       [1, 1, 0],
       [-1, 1, 0],
       [0, 0, 1],
-    ]
+    ],
   ),
   new Capsule([-1, 0, 0], [1, 0.5, 0.2], 0.6),
 ];
@@ -121,7 +121,7 @@ describe('volumes', () => {
           const point = randomPoint(next, 3);
           if (volume.containsPoint(point)) {
             expect(
-              transformed.containsPoint(transformPoint(vec3(), matrix, point))
+              transformed.containsPoint(transformPoint(vec3(), matrix, point)),
             ).toBe(true);
           }
         }
@@ -169,8 +169,8 @@ describe('transformAabb', () => {
       transformAabb(
         Aabb.empty(),
         compose([1, 2, 3], [0, 0, 0, 1], [1, 1, 1]),
-        new Aabb()
-      ).isEmpty()
+        new Aabb(),
+      ).isEmpty(),
     ).toBe(true);
   });
 });

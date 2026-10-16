@@ -50,7 +50,7 @@ describe('uniform struct strategy (WGSL uniform address space)', () => {
     ]);
     expect([outer.size, outer.alignment]).toEqual([48, 16]);
     expect(outer.serialize().replace(/\s+/g, ' ')).toBe(
-      '{ a: f32, @align(16) @size(16) inner: { x: f32 }, b: f32 }'
+      '{ a: f32, @align(16) @size(16) inner: { x: f32 }, b: f32 }',
     );
   });
 
@@ -70,13 +70,13 @@ describe('uniform struct strategy (WGSL uniform address space)', () => {
     expect(() =>
       uniformStructBuilder([
         { name: 'weights', type: fixedArray('float32', 4) },
-      ])
+      ]),
     ).toThrow(/stride of 4 bytes.*use vec4/);
   });
 
   it('rejects runtime-sized arrays', () => {
     expect(() =>
-      uniformStructBuilder([{ name: 'items', type: uniformArrays.float32 }])
+      uniformStructBuilder([{ name: 'items', type: uniformArrays.float32 }]),
     ).toThrow(/not allowed in uniform structs/);
   });
 });
@@ -111,7 +111,7 @@ describe('storage struct strategy', () => {
       { name: 'items', type: uniformArrays.float32 },
     ]);
     expect(() => storageStruct([{ name: 'r', type: runtime }])).toThrow(
-      /cannot be members of other structs/
+      /cannot be members of other structs/,
     );
   });
 
@@ -120,7 +120,7 @@ describe('storage struct strategy', () => {
       storageStruct([
         { name: 'items', type: uniformArrays.float32 },
         { name: 'count', type: P.uint32 },
-      ])
+      ]),
     ).toThrow(/must be the last field/);
   });
 });

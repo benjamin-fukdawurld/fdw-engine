@@ -6,7 +6,7 @@ export class Vec3View implements IVec3 {
   constructor(buffer?: ArrayBuffer, byteOffset?: number) {
     this._buffer = new DataView<ArrayBuffer>(
       buffer ?? new ArrayBuffer(3 * 4),
-      byteOffset ?? 0
+      byteOffset ?? 0,
     );
   }
 

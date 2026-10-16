@@ -131,7 +131,7 @@ export function parseKtx2(bytes: Uint8Array, uri = 'ktx2'): Ktx2Container {
     levels,
     dataFormat: parseDataFormat(
       range(u32(48), u32(52), 'data format descriptor'),
-      fail
+      fail,
     ),
     keyValues: parseKeyValues(range(u32(56), u32(60), 'key/value data')),
     globalData: range(u64(64), u64(72), 'supercompression global data'),
@@ -140,7 +140,7 @@ export function parseKtx2(bytes: Uint8Array, uri = 'ktx2'): Ktx2Container {
 
 function parseDataFormat(
   dfd: Uint8Array,
-  fail: (message: string) => Error
+  fail: (message: string) => Error,
 ): Ktx2DataFormat {
   // The total size, then the basic block: its header is 24 bytes, then 16 per sample.
   if (dfd.byteLength < 28) throw fail('truncated data format descriptor');
@@ -148,7 +148,7 @@ function parseDataFormat(
   const blockSize = view.getUint16(4 + 6, true);
   const sampleCount = Math.max(
     0,
-    Math.floor((Math.min(blockSize, dfd.byteLength - 4) - 24) / 16)
+    Math.floor((Math.min(blockSize, dfd.byteLength - 4) - 24) / 16),
   );
   const samples: Ktx2Sample[] = [];
   for (let i = 0; i < sampleCount; i++) {
@@ -178,13 +178,13 @@ function parseKeyValues(kvd: Uint8Array): Map<string, Uint8Array> {
     const length = view.getUint32(at, true);
     const pair = kvd.subarray(
       at + 4,
-      Math.min(at + 4 + length, kvd.byteLength)
+      Math.min(at + 4 + length, kvd.byteLength),
     );
     const nul = pair.indexOf(0);
     if (nul > 0) {
       values.set(
         textDecoder.decode(pair.subarray(0, nul)),
-        pair.subarray(nul + 1)
+        pair.subarray(nul + 1),
       );
     }
     at += 4 + Math.ceil(length / 4) * 4;

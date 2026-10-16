@@ -118,7 +118,7 @@ const graphs: Record<string, () => MaterialGraphData> = {
     const scale = g.call(
       std.convert,
       { value: chosen },
-      { params: { to: BuiltinTypes.f32 } }
+      { params: { to: BuiltinTypes.f32 } },
     );
     g.surface({
       baseColor: g.call(std.clamp, { x: mixed, low: 0, high: scale }),
@@ -225,7 +225,7 @@ describe.skipIf(!ready)('generated WGSL, validated by Dawn', () => {
       const device = engine.device!;
       const program = compile(graphs[name](), {
         vertexAttributes: mesh.vertexBuffers.flatMap((buffer) =>
-          buffer.attributes.map((attribute) => attribute.semantic)
+          buffer.attributes.map((attribute) => attribute.semantic),
         ),
       });
 
@@ -248,6 +248,6 @@ describe.skipIf(!ready)('generated WGSL, validated by Dawn', () => {
       const error = await device.popErrorScope();
 
       expect(error?.message).toBeUndefined();
-    }
+    },
   );
 });

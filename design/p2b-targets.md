@@ -71,7 +71,7 @@ const metallic = f.functionInput('metallic', BuiltinTypes.f32);
 const occlusion = f.functionInput('occlusion', BuiltinTypes.f32);
 f.functionOutput(
   'value',
-  f.call(std.vec4, { x: roughness, y: metallic, z: occlusion, w: 1 })
+  f.call(std.vec4, { x: roughness, y: metallic, z: occlusion, w: 1 }),
 );
 const properties = defineFunction(f.build(), { id: 'app.properties' });
 

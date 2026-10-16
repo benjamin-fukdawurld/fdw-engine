@@ -123,7 +123,7 @@ export type PortType =
  */
 export const generic = (
   name: string,
-  constraint: TypeConstraint = 'any'
+  constraint: TypeConstraint = 'any',
 ): GenericPortType => ({ kind: 'generic', name, constraint });
 
 /**
@@ -202,7 +202,7 @@ export function scalarKindOf(type: ShaderType): ScalarKind | undefined {
  */
 export function satisfiesConstraint(
   type: ShaderType,
-  constraint: TypeConstraint
+  constraint: TypeConstraint,
 ): boolean {
   if (constraint === 'any') {
     return true;

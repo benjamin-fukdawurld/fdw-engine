@@ -5,7 +5,7 @@ export const Vec3Api: IVec3Api = {
   add: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.add(a, b, out);
   },
@@ -13,7 +13,7 @@ export const Vec3Api: IVec3Api = {
   subtract: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.subtract(a, b, out);
   },
@@ -21,7 +21,7 @@ export const Vec3Api: IVec3Api = {
   multiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.multiply(a, b, out);
   },
@@ -29,7 +29,7 @@ export const Vec3Api: IVec3Api = {
   divide: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.divide(a, b, out);
   },
@@ -41,7 +41,7 @@ export const Vec3Api: IVec3Api = {
   cross: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.cross(a, b, out);
   },
@@ -57,7 +57,7 @@ export const Vec3Api: IVec3Api = {
   multiplyScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.mulScalar(a, scalar, out);
   },
@@ -65,7 +65,7 @@ export const Vec3Api: IVec3Api = {
   divideScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.divScalar(a, scalar, out);
   },
@@ -73,7 +73,7 @@ export const Vec3Api: IVec3Api = {
   multiplyMat3: (
     v: ArrayLike<number>,
     m: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.transformMat3(v, m, out);
   },
@@ -81,7 +81,7 @@ export const Vec3Api: IVec3Api = {
   multiplyMat4: (
     v: ArrayLike<number>,
     m: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.transformMat4(v, m, out);
   },
@@ -89,7 +89,7 @@ export const Vec3Api: IVec3Api = {
   multiplyQuat: (
     v: ArrayLike<number>,
     q: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.transformQuat(v, q, out);
   },
@@ -122,7 +122,7 @@ export const Vec3Api: IVec3Api = {
     a: ArrayLike<number>,
     b: ArrayLike<number>,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec3.lerp(a, b, t, out);
   },
@@ -142,7 +142,7 @@ export const Vec3Api: IVec3Api = {
   equals: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    epsilon?: number
+    epsilon?: number,
   ): boolean => {
     epsilon = epsilon ?? 1e-6;
     for (let i = 0; i < 3; i++) {

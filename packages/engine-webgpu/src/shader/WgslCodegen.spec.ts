@@ -18,7 +18,7 @@ const codegen = new WgslCodegen();
 
 const emit = (
   module: ShaderModuleIR,
-  layout: PhysicalProgramLayout = { groups: [] }
+  layout: PhysicalProgramLayout = { groups: [] },
 ) => {
   const sources = codegen.emit(module, layout);
   if (sources.kind !== 'single-module') {
@@ -36,7 +36,7 @@ const clipPosition = {
 // A module whose fragment stage is the given body.
 const fragmentModule = (
   body: IrInstruction[],
-  result = body[body.length - 1].id
+  result = body[body.length - 1].id,
 ): ShaderModuleIR => {
   const vertex: IrEntryPoint = {
     stage: 'vertex',
@@ -81,7 +81,7 @@ describe('wgslType', () => {
 
   it('rejects types that are not supported yet', () => {
     expect(() =>
-      wgslType({ kind: 'array', element: BuiltinTypes.f32 })
+      wgslType({ kind: 'array', element: BuiltinTypes.f32 }),
     ).toThrow(/not supported/);
   });
 });
@@ -126,7 +126,7 @@ describe('WgslCodegen', () => {
           op: { kind: 'constant', value: [1, 0.5, 0, 1] },
           args: [],
         },
-      ])
+      ]),
     );
     expect(code).toContain('let v1: f32 = 1.0;');
     expect(code).toContain('let v2: f32 = 1e-7;');
@@ -134,7 +134,7 @@ describe('WgslCodegen', () => {
     expect(code).toContain('let v4: u32 = 3u;');
     expect(code).toContain('let v5: bool = true;');
     expect(code).toContain(
-      'let v6: vec4<f32> = vec4<f32>(1.0, 0.5, 0.0, 1.0);'
+      'let v6: vec4<f32> = vec4<f32>(1.0, 0.5, 0.0, 1.0);',
     );
   });
 
@@ -194,11 +194,11 @@ describe('WgslCodegen', () => {
           sourceNode: 'n4',
         },
       ]),
-      layout
+      layout,
     );
     expect(code).not.toMatch(/let v\d+: (texture|sampler)/);
     expect(code).toContain(
-      'let v4_texel: vec4<f32> = textureSample(t_map, s_mapSampler, v3); // #n4'
+      'let v4_texel: vec4<f32> = textureSample(t_map, s_mapSampler, v3); // #n4',
     );
   });
 
@@ -229,10 +229,10 @@ describe('WgslCodegen', () => {
           op: { kind: 'select' },
           args: [3, 2, 1],
         },
-      ])
+      ]),
     );
     expect(code).toContain(
-      'fn fs_main(in: Varyings, @builtin(front_facing) frontFacing: bool)'
+      'fn fs_main(in: Varyings, @builtin(front_facing) frontFacing: bool)',
     );
     expect(code).toContain('let v2: vec4<f32> = in.clipPosition;');
     expect(code).toContain('let v4: vec4<f32> = select(v3, v2, v1);');
@@ -292,16 +292,16 @@ describe('WgslCodegen', () => {
     const program = compile(g.build());
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toContain('u_lightCount: u32,');
     expect(code).toContain('u_lightDiffuses: array<vec4<f32>, 16>,');
     expect(code).toMatch(
-      /var (v\d+): vec3<f32> = vec3<f32>\(\);\n {2}for \(var (v\d+): u32 = 0u; \2 < v\d+; \2 = \2 \+ 1u\) \{/
+      /var (v\d+): vec3<f32> = vec3<f32>\(\);\n {2}for \(var (v\d+): u32 = 0u; \2 < v\d+; \2 = \2 \+ 1u\) \{/,
     );
     // The light arrays are indexed in place, in the loop body.
     expect(code).toMatch(
-      / {4}let v\d+: vec4<f32> = frameUniforms\.u_lightDiffuses\[v\d+\];/
+      / {4}let v\d+: vec4<f32> = frameUniforms\.u_lightDiffuses\[v\d+\];/,
     );
     expect(code).toMatch(/ {4}(v\d+) = \1 \+ v\d+;\n {2}\}/);
   });
@@ -317,15 +317,15 @@ describe('WgslCodegen', () => {
     const program = compile(g.build(), { features: { alphaMode: 'mask' } });
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     const fragment = code.slice(code.indexOf('@fragment'));
     expect(fragment).toMatch(
-      /let (v\d+): bool = v\d+ < v\d+;[\s\S]*\n {2}if \(\1\) \{\n {4}discard;\n {2}\}\n {2}return v\d+;\n\}/
+      /let (v\d+): bool = v\d+ < v\d+;[\s\S]*\n {2}if \(\1\) \{\n {4}discard;\n {2}\}\n {2}return v\d+;\n\}/,
     );
     // The texture is sampled before the test.
     expect(fragment.indexOf('textureSample')).toBeLessThan(
-      fragment.indexOf('discard')
+      fragment.indexOf('discard'),
     );
   });
 
@@ -341,19 +341,19 @@ describe('WgslCodegen', () => {
     const program = compile(graph, { ...options, features: { shadows: true } });
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toContain(
-      '@group(0) @binding(1) var t_shadowMap: texture_depth_2d;'
+      '@group(0) @binding(1) var t_shadowMap: texture_depth_2d;',
     );
     expect(code).toContain(
-      '@group(0) @binding(2) var s_shadowSampler: sampler_comparison;'
+      '@group(0) @binding(2) var s_shadowSampler: sampler_comparison;',
     );
     // In the light loop: no uniformity requirement.
     expect(
       code.match(
-        /textureSampleCompareLevel\(t_shadowMap, s_shadowSampler, v\d+, v\d+\)/g
-      )
+        /textureSampleCompareLevel\(t_shadowMap, s_shadowSampler, v\d+, v\d+\)/g,
+      ),
     ).toHaveLength(9);
   });
 
@@ -362,7 +362,7 @@ describe('WgslCodegen', () => {
     const coords = g.call(
       std.convert,
       { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
-      { params: { to: BuiltinTypes.vec2i } }
+      { params: { to: BuiltinTypes.vec2i } },
     );
     const texel = g.call(std.textureLoad, {
       texture: g.texture('values', { sampleType: 'unfilterable-float' }),
@@ -377,12 +377,12 @@ describe('WgslCodegen', () => {
     const program = compile(g.build());
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toMatch(/var t_values: texture_2d<f32>;/);
     expect(code).toMatch(/var t_depth: texture_depth_2d;/);
     expect(code).toMatch(
-      /let v\d+: vec4<f32> = textureLoad\(t_values, v\d+, v\d+\);/
+      /let v\d+: vec4<f32> = textureLoad\(t_values, v\d+, v\d+\);/,
     );
     expect(code).toMatch(/let v\d+: f32 = textureLoad\(t_depth, v\d+, v\d+\);/);
   });
@@ -402,7 +402,7 @@ describe('WgslCodegen', () => {
     });
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     const fragment = code.slice(code.indexOf('@fragment'));
     expect(fragment).toMatch(/^@fragment\nfn fs_main\(in: Varyings\) \{/);
@@ -427,10 +427,10 @@ describe('WgslCodegen', () => {
     const program = compile(g.build());
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toContain(
-      '@group(1) @binding(0) var<storage, read> b_palette: array<vec4<f32>>;'
+      '@group(1) @binding(0) var<storage, read> b_palette: array<vec4<f32>>;',
     );
     expect(code).toMatch(/let v\d+: u32 = arrayLength\(&b_palette\);/);
     expect(code).toMatch(/let v\d+: vec4<f32> = b_palette\[v\d+\];/);
@@ -444,7 +444,7 @@ describe('WgslCodegen', () => {
     const program = compile(g.build());
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toContain(
       [
@@ -453,7 +453,7 @@ describe('WgslCodegen', () => {
         '  @location(1) o_uv: vec2<f32>,',
         '  @location(2) o_id: u32,',
         '}',
-      ].join('\n')
+      ].join('\n'),
     );
     expect(code).toMatch(/-> FragmentOutputs \{/);
     expect(code).toMatch(/targets\.o_id = v\d+;\n {2}return targets;\n\}/);
@@ -470,13 +470,13 @@ describe('WgslCodegen', () => {
     const color = g.call(
       std.mul,
       { a: texel, b: g.uniform('tint', BuiltinTypes.vec4f) },
-      { label: 'color' }
+      { label: 'color' },
     );
     g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
     const program = compile(g.build());
     const code = emit(
       program.module,
-      wgslLayoutStrategy.resolve(program.layout)
+      wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toMatchSnapshot();
   });

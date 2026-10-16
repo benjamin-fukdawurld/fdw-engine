@@ -16,12 +16,12 @@ export interface BitmapImageDecoderOptions {
  * which corrupts data textures (a normal map is not a picture).
  */
 export function createImageBitmapDecoder(
-  options: BitmapImageDecoderOptions = {}
+  options: BitmapImageDecoderOptions = {},
 ): ImageDecoder {
   return {
     async decode(
       bytes: ResourceBytes,
-      { signal, mimeType }: ImageDecodeOptions = {}
+      { signal, mimeType }: ImageDecodeOptions = {},
     ): Promise<DecodedImage> {
       const aborted = () => new ResourceError('aborted', 'image decode');
       if (signal?.aborted) throw aborted();
@@ -31,7 +31,7 @@ export function createImageBitmapDecoder(
         throw new ResourceError(
           'unsupported',
           'image decode',
-          'createImageBitmap is unavailable'
+          'createImageBitmap is unavailable',
         );
       }
       let bitmap: ImageBitmap;
@@ -41,14 +41,14 @@ export function createImageBitmapDecoder(
           {
             colorSpaceConversion: 'none',
             premultiplyAlpha: 'none',
-          }
+          },
         );
       } catch (e) {
         throw new ResourceError(
           'decode',
           'image decode',
           'Cannot decode the image',
-          { cause: e }
+          { cause: e },
         );
       }
       if (signal?.aborted) {

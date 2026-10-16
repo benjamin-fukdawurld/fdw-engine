@@ -70,10 +70,10 @@ export const CompressionFeatures: Readonly<
 
 /** The compressed formats of the features of a device. */
 export const compressedFormats = (
-  features: GPUSupportedFeatures
+  features: GPUSupportedFeatures,
 ): GpuTextureFormatName[] =>
   Object.entries(CompressionFeatures).flatMap(([feature, formats]) =>
-    features.has(feature) ? formats : []
+    features.has(feature) ? formats : [],
   );
 
 // WebGPU accepts any anisotropy and clamps it to what the device can do:
@@ -100,7 +100,7 @@ export class TextureFactory
       source?: ImageBitmap | ArrayBufferView<ArrayBuffer>;
       levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
-    }
+    },
   ): GpuTexture {
     const {
       type,
@@ -121,7 +121,7 @@ export class TextureFactory
       !this.compressedFormats.includes(format)
     ) {
       throw new Error(
-        `Texture format ${format} is not supported by the device`
+        `Texture format ${format} is not supported by the device`,
       );
     }
 
@@ -169,7 +169,7 @@ export class TextureFactory
     }
     // Written as they are, every layer of each.
     levels?.forEach((data, level) =>
-      this.writeLevel(texture, format, dimensions, data, level, 0, layers)
+      this.writeLevel(texture, format, dimensions, data, level, 0, layers),
     );
 
     return new Texture({
@@ -193,7 +193,7 @@ export class TextureFactory
     }
     if (!canGenerateMipmaps(texture.format)) {
       throw new Error(
-        `The levels of texture "${texture.label}" (${texture.format}) cannot be computed`
+        `The levels of texture "${texture.label}" (${texture.format}) cannot be computed`,
       );
     }
     this.mipmaps.encode(encoder, texture);
@@ -213,7 +213,7 @@ export class TextureFactory
   writeTexture(
     texture: GpuTexture,
     data: ArrayBufferView<ArrayBuffer>,
-    options?: GpuTextureWriteOptions
+    options?: GpuTextureWriteOptions,
   ): void {
     const target = (texture as Texture).texture;
     if (!target) {
@@ -239,7 +239,7 @@ export class TextureFactory
     data: ArrayBufferView<ArrayBuffer>,
     level: number,
     layer: number,
-    layers: number
+    layers: number,
   ): void {
     const { width, height } = levelDimensions(dimensions, level);
     const block = compressedBlock(format) ?? {
@@ -255,13 +255,13 @@ export class TextureFactory
       // Rows of blocks for the compressed formats.
       { bytesPerRow: columns * block.bytes, rowsPerImage: rows },
       // Whole blocks: a level of 2×2 pixels is written as a block of 4×4.
-      [columns * block.width, rows * block.height, layers]
+      [columns * block.width, rows * block.height, layers],
     );
   }
 
   readTexture(
     texture: GpuTexture,
-    region?: GpuTextureRegion
+    region?: GpuTextureRegion,
   ): Promise<ArrayBuffer> {
     const checked = checkReadRegion(texture, region);
     const source = (texture as Texture).texture;
@@ -272,7 +272,7 @@ export class TextureFactory
       this.device,
       source,
       checked.region,
-      checked.bytesPerPixel
+      checked.bytesPerPixel,
     );
   }
 
@@ -287,7 +287,7 @@ export class TextureFactory
       maxAnisotropy: samplerAnisotropy(
         descriptor ?? {},
         this.defaultMaxAnisotropy,
-        MaxAnisotropy
+        MaxAnisotropy,
       ),
       ...(descriptor?.compare ? { compare: descriptor.compare } : {}),
     };
@@ -300,7 +300,7 @@ export class TextureFactory
   }
 
   private static textureFormatToGPUTextureFormat(
-    format: string
+    format: string,
   ): GPUTextureFormat {
     if (GpuTextureFormatNames.includes(format as GpuTextureFormatName)) {
       return format as GPUTextureFormat;

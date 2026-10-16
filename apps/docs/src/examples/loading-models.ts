@@ -58,7 +58,7 @@ const example: Example = async ({ backend, surface, onFrame, info }) => {
     .add({ position: { y: -0.05 }, scale: { x: 9, y: 0.1, z: 9 } })
     .setMesh(
       createCube(),
-      new Material({ graph: g.build(), values: { color: [0.25, 0.32, 0.18] } })
+      new Material({ graph: g.build(), values: { color: [0.25, 0.32, 0.18] } }),
     );
 
   // 40 instances of one model around a clearing, with some variety.
@@ -83,14 +83,12 @@ const example: Example = async ({ backend, surface, onFrame, info }) => {
     position: { y: 0.8 },
     scale: { x: 0.8, y: 0.8, z: 0.8 },
   });
-  scene.root
-    .add({ rotation: axisAngle(1, 0.3, 0, -0.9) })
-    .setLight(
-      new DirectionalLight({
-        castShadow: true,
-        diffuse: { x: 1.2, y: 1.1, z: 1 },
-      })
-    );
+  scene.root.add({ rotation: axisAngle(1, 0.3, 0, -0.9) }).setLight(
+    new DirectionalLight({
+      castShadow: true,
+      diffuse: { x: 1.2, y: 1.1, z: 1 },
+    }),
+  );
 
   const camera = new Camera({
     projection: {
@@ -113,7 +111,7 @@ const example: Example = async ({ backend, surface, onFrame, info }) => {
     };
     camera.rotation = multiplyQuat(
       axisAngle(0, 1, 0, angle),
-      axisAngle(1, 0, 0, -0.55)
+      axisAngle(1, 0, 0, -0.55),
     );
     resources.update();
     renderer.render({

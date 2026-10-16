@@ -27,7 +27,7 @@ export interface ShadowTile {
 }
 
 export const castsShadow = (
-  light: BaseLight
+  light: BaseLight,
 ): light is DirectionalLight | SpotLight =>
   (light instanceof DirectionalLight || light instanceof SpotLight) &&
   light.castShadow;
@@ -38,7 +38,7 @@ const normalize = ({ x, y, z }: Readonly<IVec3>): [number, number, number] => {
 };
 const cross = (
   a: readonly number[],
-  b: readonly number[]
+  b: readonly number[],
 ): [number, number, number] => [
   a[1] * b[2] - a[2] * b[1],
   a[2] * b[0] - a[0] * b[2],
@@ -140,7 +140,7 @@ export class ShadowCameras {
     lights: readonly (DirectionalLight | SpotLight)[],
     receivers: Sphere,
     scene: Aabb | undefined,
-    atlasSize: number
+    atlasSize: number,
   ): ShadowTile[] {
     const columns = Math.ceil(Math.sqrt(lights.length));
     const size = Math.floor(atlasSize / columns);
@@ -170,7 +170,7 @@ export class ShadowCameras {
     light: DirectionalLight | SpotLight,
     receivers: Sphere,
     scene: Aabb | undefined,
-    size: number
+    size: number,
   ): { matrix: Float32Array; normalOffset: number } {
     let entry = this._cameras.get(light);
     if (!entry) {
@@ -196,7 +196,7 @@ export class ShadowCameras {
       // shimmer as the camera moves.
       const radius = Math.max(
         2 ** (Math.ceil(Math.log2(Math.max(bounds.radius, 1e-3)) * 4) / 4),
-        1e-3
+        1e-3,
       );
       // A camera at the origin, looking along the light: the bounds, in its
       // space, give the box of the orthographic projection. Its center
@@ -227,7 +227,7 @@ export class ShadowCameras {
           top: cy + radius,
           near: depth - towardsLight * 1.01,
           far: depth + radius * 1.01,
-        }
+        },
       );
       normalOffset = texel;
     } else {
@@ -238,7 +238,7 @@ export class ShadowCameras {
       const distance = Math.hypot(
         receivers.center[0] - x,
         receivers.center[1] - y,
-        receivers.center[2] - z
+        receivers.center[2] - z,
       );
       const far = Math.max(distance + receivers.radius, 1e-2);
       const near = far * 0.002;
@@ -261,7 +261,7 @@ function setIfChanged(
   camera: Camera,
   position: IVec3,
   rotation: { x: number; y: number; z: number; w: number },
-  projection: Camera['projection']
+  projection: Camera['projection'],
 ): void {
   // The camera stores 32-bit floats.
   const f = Math.fround;

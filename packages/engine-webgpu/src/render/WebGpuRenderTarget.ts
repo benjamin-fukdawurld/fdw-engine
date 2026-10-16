@@ -7,7 +7,7 @@ export class WebGpuRenderTarget implements GpuRenderTarget {
     readonly height: number,
     readonly format: GpuTextureFormat,
     // Set when the target owns its texture (offscreen and depth targets).
-    readonly texture?: GPUTexture
+    readonly texture?: GPUTexture,
   ) {}
 
   destroy(): void {

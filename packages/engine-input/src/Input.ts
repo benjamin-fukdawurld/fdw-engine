@@ -210,7 +210,7 @@ export class Gamepad {
    */
   stick(
     side: 'left' | 'right',
-    out: { x: number; y: number } = { x: 0, y: 0 }
+    out: { x: number; y: number } = { x: 0, y: 0 },
   ): { x: number; y: number } {
     const axes = this._state.axes;
     const x = side === 'left' ? axes[0] : axes[2];
@@ -239,7 +239,7 @@ export class Gamepad {
       this.id,
       clamp01(strong),
       clamp01(weak),
-      Math.max(0, duration)
+      Math.max(0, duration),
     );
   }
 
@@ -303,7 +303,7 @@ export class Input {
         if (key.length > 0) {
           keyboard._labels.set(
             code,
-            key.length === 1 ? key.toUpperCase() : key
+            key.length === 1 ? key.toUpperCase() : key,
           );
         }
       },

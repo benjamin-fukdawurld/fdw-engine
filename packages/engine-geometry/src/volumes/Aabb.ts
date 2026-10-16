@@ -73,7 +73,7 @@ export class Aabb implements ConvexVolume {
       out,
       (this.min[0] + this.max[0]) / 2,
       (this.min[1] + this.max[1]) / 2,
-      (this.min[2] + this.max[2]) / 2
+      (this.min[2] + this.max[2]) / 2,
     );
   }
 
@@ -83,7 +83,7 @@ export class Aabb implements ConvexVolume {
       out,
       (this.max[0] - this.min[0]) / 2,
       (this.max[1] - this.min[1]) / 2,
-      (this.max[2] - this.min[2]) / 2
+      (this.max[2] - this.min[2]) / 2,
     );
   }
 
@@ -137,7 +137,7 @@ export class Aabb implements ConvexVolume {
       out,
       direction[0] >= 0 ? this.max[0] : this.min[0],
       direction[1] >= 0 ? this.max[1] : this.min[1],
-      direction[2] >= 0 ? this.max[2] : this.min[2]
+      direction[2] >= 0 ? this.max[2] : this.min[2],
     );
   }
 }
@@ -185,7 +185,7 @@ export function raycastBox(
   origin: ReadonlyVec3,
   direction: ReadonlyVec3,
   min: ReadonlyVec3,
-  max: ReadonlyVec3
+  max: ReadonlyVec3,
 ): number | undefined {
   let near = 0;
   let far = Infinity;

@@ -39,7 +39,7 @@ export interface ImageAsset {
   /** For `'universal'` data: a format among those the backend samples, `rgba8unorm` as the last resort. */
   transcode?(
     formats: readonly GpuTextureFormat[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<TranscodedImage>;
 }
 

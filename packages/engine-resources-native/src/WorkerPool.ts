@@ -43,7 +43,7 @@ export class WorkerPool {
   constructor(private readonly options: WorkerPoolOptions) {
     const size = Math.max(
       1,
-      options.size ?? Math.min(4, availableParallelism() - 1)
+      options.size ?? Math.min(4, availableParallelism() - 1),
     );
     this.slots = Array.from({ length: size }, () => ({ jobs: new Map() }));
   }
@@ -51,7 +51,7 @@ export class WorkerPool {
   run<R = unknown>(payload: unknown, options: RunOptions<R> = {}): Promise<R> {
     if (this.terminated) {
       return Promise.reject(
-        new ResourceError('aborted', 'worker pool', 'The pool is terminated')
+        new ResourceError('aborted', 'worker pool', 'The pool is terminated'),
       );
     }
     const { signal, transfer, discard } = options;
@@ -59,7 +59,7 @@ export class WorkerPool {
       return Promise.reject(new ResourceError('aborted', 'worker pool'));
 
     const slot = this.slots.reduce((best, s) =>
-      s.jobs.size < best.jobs.size ? s : best
+      s.jobs.size < best.jobs.size ? s : best,
     );
     const worker = (slot.worker ??= this.spawn(slot));
     const id = this.nextId++;
@@ -86,7 +86,7 @@ export class WorkerPool {
         reject(
           new ResourceError('io', 'worker pool', 'Cannot post to the worker', {
             cause: e,
-          })
+          }),
         );
       }
     });
@@ -98,9 +98,9 @@ export class WorkerPool {
       this.slots.map((slot) =>
         this.drop(
           slot,
-          new ResourceError('aborted', 'worker pool', 'The pool is terminated')
-        )
-      )
+          new ResourceError('aborted', 'worker pool', 'The pool is terminated'),
+        ),
+      ),
     );
   }
 
@@ -131,10 +131,12 @@ export class WorkerPool {
             name: error.name,
           });
           job.reject(
-            new ResourceError('decode', 'worker pool', error.message, { cause })
+            new ResourceError('decode', 'worker pool', error.message, {
+              cause,
+            }),
           );
         } else job.resolve(result);
-      }
+      },
     );
     // A crashed worker takes its jobs with it; the next job starts a new one.
     worker.on('error', (e) => {
@@ -143,7 +145,7 @@ export class WorkerPool {
         slot,
         new ResourceError('io', 'worker pool', `Worker failed: ${e.message}`, {
           cause: e,
-        })
+        }),
       );
     });
     worker.on('exit', (code) => {
@@ -153,8 +155,8 @@ export class WorkerPool {
         new ResourceError(
           'io',
           'worker pool',
-          `Worker exited with code ${code}`
-        )
+          `Worker exited with code ${code}`,
+        ),
       );
     });
     worker.unref();
@@ -189,7 +191,7 @@ export interface WorkerResult<O> {
 
 /** Answers the messages of a `WorkerPool`. Call it from the worker module. */
 export function serveWorker<I, O>(
-  handler: (payload: I) => WorkerResult<O> | Promise<WorkerResult<O>>
+  handler: (payload: I) => WorkerResult<O> | Promise<WorkerResult<O>>,
 ): void {
   const port = parentPort;
   if (!port) throw new Error('serveWorker must be called from a worker thread');

@@ -34,11 +34,11 @@ export interface SceneGraph extends RenderSource {
     ray: Ray,
     visit: (node: SceneNode, distance: number) => boolean | void,
     options?: SceneQueryOptions,
-    maxDistance?: number
+    maxDistance?: number,
   ): void;
   queryVolume(
     volume: Volume,
     visit: (node: SceneNode) => boolean | void,
-    options?: SceneQueryOptions
+    options?: SceneQueryOptions,
   ): void;
 }

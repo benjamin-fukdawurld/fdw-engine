@@ -203,12 +203,12 @@ fichiers statiques ne déclenchent pas le HMR d'eux-mêmes) :
 
 ```ts
 // vite.config.ts
-plugins: [
+plugins: ([
   {
     name: 'fdw-resources',
     configureServer(server) {
       server.watcher.on('change', (file) =>
-        server.ws.send('fdw:resource-changed', { path: file })
+        server.ws.send('fdw:resource-changed', { path: file }),
       );
     },
   },
@@ -218,10 +218,10 @@ plugins: [
     'http',
     withChangeChannel(
       new HttpSource({ base: '/' }),
-      hotChannel(import.meta.hot!)
+      hotChannel(import.meta.hot!),
     ),
-    { default: true }
-  );
+    { default: true },
+  ));
 ```
 
 ## Les ressources graphiques

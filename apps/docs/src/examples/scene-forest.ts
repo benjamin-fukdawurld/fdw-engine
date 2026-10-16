@@ -60,13 +60,13 @@ const example: Example = ({ backend, surface, onFrame, info }) => {
       .add({
         position: { x: random() * 300 - 150, y: 8, z: random() * 300 - 150 },
       })
-      .setMesh(sphere, feathers)
+      .setMesh(sphere, feathers),
   );
   scene.root.add({ rotation: axisAngle(1, 0, 0, -1) }).setLight(
     new DirectionalLight({
       castShadow: true,
       diffuse: { x: 1.2, y: 1.1, z: 1 },
-    })
+    }),
   );
 
   const camera = new Camera({
@@ -102,7 +102,7 @@ const example: Example = ({ backend, surface, onFrame, info }) => {
     const stats = renderer.stats.get('scene');
     if (stats) {
       info(
-        `${stats.drawn} of 8201 objects drawn, ${stats.casters} shadow casters`
+        `${stats.drawn} of 8201 objects drawn, ${stats.casters} shadow casters`,
       );
     }
   });

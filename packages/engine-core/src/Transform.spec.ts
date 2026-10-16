@@ -11,7 +11,7 @@ describe('Transform', () => {
     expect([
       ...pool.data.subarray(
         o + TransformLayout.position,
-        o + TransformLayout.position + 3
+        o + TransformLayout.position + 3,
       ),
     ]).toEqual([1, 2, 3]);
     transform.scale = { y: 4 };

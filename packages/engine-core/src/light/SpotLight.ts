@@ -31,9 +31,9 @@ export class SpotLight
         BaseLight.bufferSize +
           LightAttenuationDataSize +
           LightCutoffDataSize +
-          6 * 4 // 2 Vec3s for position and direction, each with 3 floats, each float is 4 bytes
+          6 * 4, // 2 Vec3s for position and direction, each with 3 floats, each float is 4 bytes
       ),
-      data
+      data,
     );
     this._position = new Vec3View(this._buffer, BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
@@ -44,7 +44,7 @@ export class SpotLight
     this._attenuation = new DataView(
       this._buffer,
       BaseLight.bufferSize + 6 * 4,
-      3 * 4
+      3 * 4,
     );
     this.constantAttenuation = data?.constantAttenuation ?? 1.0;
     this.linearAttenuation = data?.linearAttenuation ?? 0.0;
@@ -52,7 +52,7 @@ export class SpotLight
     this._cutoff = new DataView(
       this._buffer,
       BaseLight.bufferSize + 9 * 4,
-      2 * 4
+      2 * 4,
     );
     this.innerCutoff = data?.innerCutoff ?? 0.0;
     this.outerCutoff = data?.outerCutoff ?? 17.5;

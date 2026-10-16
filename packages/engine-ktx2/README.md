@@ -52,7 +52,7 @@ const transcoder: BasisTranscoder = {
               level,
               layer,
               face,
-              formats[target]
+              formats[target],
             );
             const image = new Uint8Array(size);
             file.transcodeImage(
@@ -63,7 +63,7 @@ const transcoder: BasisTranscoder = {
               formats[target],
               0,
               -1,
-              -1
+              -1,
             );
             images.push(image);
           }

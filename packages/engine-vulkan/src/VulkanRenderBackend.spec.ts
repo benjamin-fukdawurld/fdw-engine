@@ -9,7 +9,7 @@ import { canRun } from '@fdw/engine-backend/testing';
 const built = canRun(
   'vulkan',
   existsSync(addonPath()),
-  'the Vulkan addon is not built (VULKAN_SDK)'
+  'the Vulkan addon is not built (VULKAN_SDK)',
 );
 
 describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
@@ -75,14 +75,14 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
       source: new Uint16Array(12).fill(0x3c00),
     });
     expect([...new Uint16Array(await hdr.read())]).toEqual(
-      Array(12).fill(0x3c00)
+      Array(12).fill(0x3c00),
     );
     // A region: the second column, rows from the top.
     expect(
-      new Uint8Array(await texture.read({ x: 1, y: 0, width: 1, height: 2 }))
+      new Uint8Array(await texture.read({ x: 1, y: 0, width: 1, height: 2 })),
     ).toEqual(data.filter((_, i) => i % 8 >= 4));
     expect(() => texture.read({ x: 1, y: 1, width: 2, height: 1 })).toThrow(
-      /not inside/
+      /not inside/,
     );
     texture.destroy();
     hdr.destroy();
@@ -116,7 +116,7 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
     expect(() =>
       backend().textures.writeTexture(texture, pixels(2, [0, 0, 0, 0]), {
         level: 1,
-      })
+      }),
     ).toThrow(/level 1 takes 16 bytes, not 8/);
 
     // A face of a cube: the others are kept.
@@ -162,11 +162,11 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
         format: 'bc7-rgba-unorm',
         dimensions: { width: 4, height: 4 },
         source: new Uint8Array(4),
-      })
+      }),
     ).toThrow(
       formats.includes('bc7-rgba-unorm')
         ? /takes 16 bytes, not 4/
-        : /not supported by the device/
+        : /not supported by the device/,
     );
   });
 
@@ -280,7 +280,7 @@ describe.skipIf(!built)('VulkanRenderBackend: textures and passes', () => {
       })
       .end();
     expect(() => backend().submit([encoder.finish()])).toThrow(
-      /Unknown color target/
+      /Unknown color target/,
     );
   });
 });

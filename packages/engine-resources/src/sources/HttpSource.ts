@@ -46,7 +46,7 @@ export class HttpSource implements ResourceSource {
 
   async read(
     path: string,
-    { signal, onProgress }: ReadOptions
+    { signal, onProgress }: ReadOptions,
   ): Promise<ResourceBytes> {
     let response: Response;
     try {
@@ -59,7 +59,7 @@ export class HttpSource implements ResourceSource {
       throw new ResourceError(
         'io',
         path,
-        `HTTP ${response.status} ${response.statusText}: ${path}`
+        `HTTP ${response.status} ${response.statusText}: ${path}`,
       );
     }
     try {
@@ -100,7 +100,7 @@ export class HttpSource implements ResourceSource {
     try {
       response = await this.fetchFn(
         this.url(path),
-        this.init(undefined, 'HEAD')
+        this.init(undefined, 'HEAD'),
       );
     } catch (e) {
       this.fail(path, e);

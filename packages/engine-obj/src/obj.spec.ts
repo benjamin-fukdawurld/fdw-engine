@@ -68,7 +68,7 @@ describe('parseMtl', () => {
   it('reads colors, maps and their options', () => {
     const materials = parseMtl(
       'newmtl Red\nKd 1 0 0\nKs 0.5 0.5 0.5\nNs 64\nd 0.5\nmap_Kd -s 2 2 1 -clamp on tex/red.png\nnorm n.png\nbump b.png\n',
-      (p) => `base/${p}`
+      (p) => `base/${p}`,
     );
     const red = materials.get('Red')!;
     expect(red).toMatchObject({
@@ -130,7 +130,7 @@ describe('with a ResourceStore', () => {
       ?.value as PhongMaterialData;
     expect(red.diffuseTexture?.image).toBe('mem:models/red.png');
     expect(
-      model.meshes[0][0].material.getValue('diffuseTexture')
+      model.meshes[0][0].material.getValue('diffuseTexture'),
     ).toMatchObject({ label: 'mem:models/red.png' });
   });
 

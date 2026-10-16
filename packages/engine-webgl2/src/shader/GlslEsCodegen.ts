@@ -25,7 +25,7 @@ const vectorPrefixes = { f32: 'vec', i32: 'ivec', u32: 'uvec', bool: 'bvec' };
 export function glslType(type: ShaderType): string {
   const unsupported = () =>
     new Error(
-      `${typeToString(type)} is not supported by the GLSL ES generator`
+      `${typeToString(type)} is not supported by the GLSL ES generator`,
     );
   switch (type.kind) {
     case 'scalar':
@@ -76,7 +76,7 @@ export function glslSamplerType(type: TextureType, comparison = false): string {
     throw new Error(
       `${typeToString(type)} cannot be sampled${
         comparison ? ' with comparison' : ''
-      } in GLSL ES 3.0`
+      } in GLSL ES 3.0`,
     );
   }
   return comparison
@@ -111,7 +111,7 @@ function literal(type: ShaderType, value: ConstantValue): string {
     // Matrix constructors take their components column by column, like the
     // IR.
     const components = (value as readonly number[]).map((component) =>
-      scalarLiteral(component, type.scalar)
+      scalarLiteral(component, type.scalar),
     );
     return `${glslType(type)}(${components.join(', ')})`;
   }
@@ -174,13 +174,13 @@ interface BodyState {
 
 const valueName = (instruction: IrInstruction) =>
   identifier(
-    `v${instruction.id}${instruction.name ? `_${instruction.name}` : ''}`
+    `v${instruction.id}${instruction.name ? `_${instruction.name}` : ''}`,
   );
 
 function emitBody(
   entryPoint: IrEntryPoint,
   samplers: readonly CombinedSampler[],
-  table?: ObjectTableCode
+  table?: ObjectTableCode,
 ): BodyState {
   const state: BodyState = {
     lines: [],
@@ -196,7 +196,7 @@ function emitInstructions(
   body: readonly IrInstruction[],
   samplers: readonly CombinedSampler[],
   state: BodyState,
-  indent: string
+  indent: string,
 ): void {
   const { lines, expressions, instructions } = state;
   const arg = (instruction: IrInstruction, index: number) =>
@@ -217,14 +217,14 @@ function emitInstructions(
           `${indent}${glslType(type)} ${sum} = ${glslType(type)}(0.0);`,
           `${indent}for (uint ${index} = 0u; ${index} < ${arg(
             instruction,
-            0
-          )}; ${index}++) {`
+            0,
+          )}; ${index}++) {`,
         );
         expressions.set(op.index, index);
         emitInstructions(op.body, samplers, state, `${indent}  `);
         lines.push(
           `${indent}  ${sum} += ${expressions.get(op.result)};`,
-          `${indent}}`
+          `${indent}}`,
         );
         expressions.set(instruction.id, sum);
         continue;
@@ -274,18 +274,18 @@ function emitInstructions(
           expression = op.binding;
         } else if (op.member) {
           expression = `${identifier(op.binding)}.${memberIdentifier(
-            op.member
+            op.member,
           )}`;
         } else {
           throw new Error(
-            `Binding "${op.binding}" can only be read through its members`
+            `Binding "${op.binding}" can only be read through its members`,
           );
         }
         break;
       case 'binary':
         expression = `${arg(instruction, 0)} ${op.operator} ${arg(
           instruction,
-          1
+          1,
         )}`;
         break;
       case 'compare': {
@@ -302,15 +302,15 @@ function emitInstructions(
           op.name === 'saturate'
             ? `clamp(${arg(instruction, 0)}, 0.0, 1.0)`
             : op.name === 'dpdx'
-            ? `dFdx(${arg(instruction, 0)})`
-            : op.name === 'dpdy'
-            ? // The window y points up in OpenGL: down, as in WGSL.
-              `(-dFdy(${arg(instruction, 0)}))`
-            : `${op.name}(${args(instruction)})`;
+              ? `dFdx(${arg(instruction, 0)})`
+              : op.name === 'dpdy'
+                ? // The window y points up in OpenGL: down, as in WGSL.
+                  `(-dFdy(${arg(instruction, 0)}))`
+                : `${op.name}(${args(instruction)})`;
         break;
       case 'select': {
         const [ifFalse, ifTrue, condition] = [0, 1, 2].map((i) =>
-          arg(instruction, i)
+          arg(instruction, i),
         );
         const conditionType = typeOf(instruction.args[2]);
         if (conditionType.kind !== 'vector') {
@@ -335,7 +335,7 @@ function emitInstructions(
         const sampler = arg(instruction, 1);
         const combined = samplers.find(
           (candidate) =>
-            candidate.texture === texture && candidate.sampler === sampler
+            candidate.texture === texture && candidate.sampler === sampler,
         );
         if (!combined) {
           throw new Error(`No combined sampler for ${texture} and ${sampler}`);
@@ -351,7 +351,7 @@ function emitInstructions(
           // The reference depth is the last coordinate of shadow samplers.
           expression = `textureLod(${combined.name}, vec3(${coordinates}, ${arg(
             instruction,
-            3
+            3,
           )}), 0.0)`;
           break;
         }
@@ -360,7 +360,7 @@ function emitInstructions(
           op.kind === 'sample-level'
             ? `textureLod(${combined.name}, ${coordinates}, ${arg(
                 instruction,
-                3
+                3,
               )})`
             : `texture(${combined.name}, ${coordinates})`
         }${type.kind === 'scalar' ? '.r' : ''}`;
@@ -370,7 +370,7 @@ function emitInstructions(
         const texture = arg(instruction, 0);
         const combined = samplers.find(
           (candidate) =>
-            candidate.texture === texture && candidate.sampler === undefined
+            candidate.texture === texture && candidate.sampler === undefined,
         );
         if (!combined) {
           throw new Error(`No combined sampler to load ${texture}`);
@@ -397,7 +397,7 @@ function emitInstructions(
       case 'load-object':
         expression = objectTableCode(state).member(
           op.member,
-          arg(instruction, 0)
+          arg(instruction, 0),
         );
         break;
       case 'swizzle':
@@ -462,7 +462,7 @@ function objectTableCode(state: BodyState): ObjectTableCode {
 }
 
 function objectTable(
-  layout: PhysicalProgramLayout
+  layout: PhysicalProgramLayout,
 ): ObjectTableCode | undefined {
   const binding = layout.groups
     .flatMap((group) => group.bindings)
@@ -494,7 +494,7 @@ function objectTable(
     instances: `${instances}Row`,
     member: (name, row) => {
       const member = binding.objectRow?.members.find(
-        (candidate) => candidate.name === name
+        (candidate) => candidate.name === name,
       );
       if (!member) {
         throw new Error(`The object table has no member "${name}"`);
@@ -512,7 +512,7 @@ function objectTable(
         return texel(0);
       }
       throw new Error(
-        `Object table members of type ${glslType(type)} are not supported`
+        `Object table members of type ${glslType(type)} are not supported`,
       );
     },
   };
@@ -523,10 +523,10 @@ export class GlslEsCodegen implements ShaderCodegen {
 
   emit(module: ShaderModuleIR, layout: PhysicalProgramLayout): ShaderSources {
     const vertex = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'vertex'
+      (entryPoint) => entryPoint.stage === 'vertex',
     );
     const fragment = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'fragment'
+      (entryPoint) => entryPoint.stage === 'fragment',
     );
     if (module.entryPoints.some((entry) => entry.stage === 'compute')) {
       throw new Error('GLSL ES 3.00 has no compute shaders');
@@ -539,8 +539,8 @@ export class GlslEsCodegen implements ShaderCodegen {
     const samplerTypes = [
       ...new Set(
         samplers.map((sampler) =>
-          glslSamplerType(sampler.type, sampler.comparison)
-        )
+          glslSamplerType(sampler.type, sampler.comparison),
+        ),
       ),
     ].sort();
 
@@ -566,10 +566,10 @@ export class GlslEsCodegen implements ShaderCodegen {
             `layout(std140) uniform ${glslBlockName(resource.name)} {`,
             ...resource.members.map(
               (member) =>
-                `  ${declaration(member.type, memberIdentifier(member.name))};`
+                `  ${declaration(member.type, memberIdentifier(member.name))};`,
             ),
             `} ${identifier(resource.name)};`,
-          ].join('\n')
+          ].join('\n'),
         );
       }
     }
@@ -585,7 +585,7 @@ export class GlslEsCodegen implements ShaderCodegen {
               ...(orientation ? [`uniform vec2 ${orientation};`] : []),
             ];
           })
-          .join('\n')
+          .join('\n'),
       );
     }
 
@@ -603,7 +603,7 @@ export class GlslEsCodegen implements ShaderCodegen {
           (input) =>
             `layout(location = ${input.location}) in ${glslType(input.type)} ${
               input.name
-            };`
+            };`,
         ),
         ...vertexOutputs.map((output) => varying(output, 'out')),
       ].join('\n'),
@@ -635,8 +635,8 @@ export class GlslEsCodegen implements ShaderCodegen {
         ...targets.map(
           (target) =>
             `layout(location = ${target.location ?? 0}) out ${glslType(
-              target.type
-            )} o_${identifier(target.name)};`
+              target.type,
+            )} o_${identifier(target.name)};`,
         ),
       ].join('\n'),
       [
@@ -646,7 +646,7 @@ export class GlslEsCodegen implements ShaderCodegen {
         ...(fragment.results['discard'] !== undefined
           ? [
               `  if (${fragmentBody.expressions.get(
-                fragment.results['discard']
+                fragment.results['discard'],
               )}) {`,
               '    discard;',
               '  }',
@@ -655,8 +655,8 @@ export class GlslEsCodegen implements ShaderCodegen {
         ...targets.map(
           (target) =>
             `  o_${identifier(target.name)} = ${fragmentBody.expressions.get(
-              fragment.results[target.name]
-            )};`
+              fragment.results[target.name],
+            )};`,
         ),
         '}',
       ].join('\n'),

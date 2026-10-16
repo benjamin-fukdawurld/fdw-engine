@@ -75,9 +75,9 @@ export class LevelSelection {
                     (cy - ends[i + 1]) * dy +
                     (cz - ends[i + 2]) * dz) /
                     lengthSquared,
-                  0
+                  0,
                 ),
-                1
+                1,
               )
             : 0;
         const px = ends[i] + dx * along - cx;
@@ -89,7 +89,7 @@ export class LevelSelection {
       const level = segments > 1 ? Math.ceil(Math.log2(segments)) : 0;
       edgeLevels[edge] = Math.min(
         Math.max(level, options.minLevel),
-        options.maxLevel
+        options.maxLevel,
       );
     }
 
@@ -110,7 +110,7 @@ export class LevelSelection {
         edgeLevels[edges[e]],
         edgeLevels[edges[e + 1]],
         edgeLevels[edges[e + 2]],
-        edgeLevels[edges[e + 3]]
+        edgeLevels[edges[e + 3]],
       );
       levels[patch] = level;
       counts[level]++;
@@ -123,7 +123,7 @@ export class LevelSelection {
 function transformPoints(
   points: Float64Array,
   m: Matrix4,
-  out: Float64Array
+  out: Float64Array,
 ): void {
   for (let i = 0; i < points.length; i += 3) {
     const x = points[i];
@@ -140,7 +140,7 @@ function transformBoxes(
   boxes: Float64Array,
   m: Matrix4,
   grow: number,
-  out: Float64Array
+  out: Float64Array,
 ): void {
   for (let i = 0; i < boxes.length; i += 6) {
     for (let axis = 0; axis < 3; axis++) {

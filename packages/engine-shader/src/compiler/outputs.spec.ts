@@ -10,10 +10,10 @@ import type { SurfaceOutput } from './lowering';
 
 const stage = (
   program: ReturnType<typeof compile>,
-  name: IrEntryPoint['stage']
+  name: IrEntryPoint['stage'],
 ) =>
   program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === name
+    (entryPoint) => entryPoint.stage === name,
   ) as IrEntryPoint;
 
 const pbr = () => {
@@ -28,7 +28,7 @@ const pbr = () => {
 
 const options = (
   outputs: readonly SurfaceOutput[],
-  color = true
+  color = true,
 ): CompileOptions => ({
   vertexAttributes: ['position', 'normal', 'uv'],
   capabilities: { objectTable: true },
@@ -78,11 +78,15 @@ describe('surface outputs', () => {
           channels: 1,
           scalar: 'f32',
         },
-      ])
+      ]),
     );
     const fragment = stage(program, 'fragment');
     expect(
-      fragment.outputs.map(({ name, type, location }) => [name, type, location])
+      fragment.outputs.map(({ name, type, location }) => [
+        name,
+        type,
+        location,
+      ]),
     ).toEqual([
       ['color', BuiltinTypes.vec4f, 0],
       ['normal', BuiltinTypes.vec4f, 1],
@@ -95,7 +99,7 @@ describe('surface outputs', () => {
       expect.objectContaining({
         type: BuiltinTypes.u32,
         interpolation: 'flat',
-      })
+      }),
     );
   });
 
@@ -113,15 +117,15 @@ describe('surface outputs', () => {
             scalar: 'f32',
           },
         ],
-        false
-      )
+        false,
+      ),
     );
     const fragment = stage(gbuffer, 'fragment');
     expect(fragment.outputs.map((output) => output.name)).toEqual(['normal']);
     // No light loop, no frame light uniform read.
     const loops = (program: ReturnType<typeof compile>) =>
       stage(program, 'fragment').body.filter(
-        (instruction) => instruction.op.kind === 'loop-sum'
+        (instruction) => instruction.op.kind === 'loop-sum',
       ).length;
     expect(loops(lit)).toBeGreaterThan(0);
     expect(loops(gbuffer)).toBe(0);
@@ -135,7 +139,7 @@ describe('surface outputs', () => {
     const metallic = f.functionInput('metallic', BuiltinTypes.f32);
     f.functionOutput(
       'value',
-      f.call(std.vec4, { x: roughness, y: metallic, z: 0, w: 1 })
+      f.call(std.vec4, { x: roughness, y: metallic, z: 0, w: 1 }),
     );
     const properties = defineFunction(f.build(), { id: 'test.properties' });
     const program = compile(
@@ -148,7 +152,7 @@ describe('surface outputs', () => {
           channels: 4,
           scalar: 'f32',
         },
-      ])
+      ]),
     );
     expect(stage(program, 'fragment').outputs[1]).toEqual({
       name: 'properties',
@@ -172,11 +176,11 @@ describe('surface outputs', () => {
               channels: 2,
               scalar: 'f32',
             },
-          ])
-        )
-      )[0]
+          ]),
+        ),
+      )[0],
     ).toMatch(
-      /the input "velocity" of the output function "test.unknown" is not a value of the surface: normal, worldNormal, viewNormal/
+      /the input "velocity" of the output function "test.unknown" is not a value of the surface: normal, worldNormal, viewNormal/,
     );
   });
 
@@ -198,7 +202,7 @@ describe('surface outputs', () => {
         members: expect.arrayContaining([
           { name: 'speed', type: BuiltinTypes.vec2f },
         ]),
-      })
+      }),
     );
     // Without output.value: the default, a constant.
     const plain = compile(pbr().build(), options([velocity]));
@@ -223,9 +227,9 @@ describe('surface outputs', () => {
               channels: 2,
               scalar: 'f32',
             },
-          ])
-        )
-      )
+          ]),
+        ),
+      ),
     ).toEqual([
       'the output "velocity" is a vec3<f32>, its format takes a vec2<f32>',
     ]);
@@ -241,9 +245,9 @@ describe('surface outputs', () => {
               channels: 4,
               scalar: 'f32',
             },
-          ])
-        )
-      )[0]
+          ]),
+        ),
+      )[0],
     ).toMatch(/unknown output value "view-normals"/);
     expect(
       errors(() =>
@@ -257,9 +261,9 @@ describe('surface outputs', () => {
               channels: 4,
               scalar: 'u32',
             },
-          ])
-        )
-      )[0]
+          ]),
+        ),
+      )[0],
     ).toMatch(/cannot hold "view-normal" in a format of 4 u32 components/);
   });
 
@@ -272,7 +276,7 @@ describe('surface outputs', () => {
           {
             value: g.engine('object.id'),
           },
-          { params: { to: BuiltinTypes.f32 } }
+          { params: { to: BuiltinTypes.f32 } },
         ),
       }),
     });
@@ -280,7 +284,7 @@ describe('surface outputs', () => {
       'object.id needs the objectTable capability',
     ]);
     expect(() =>
-      compile(g.build(), { capabilities: { objectTable: true } })
+      compile(g.build(), { capabilities: { objectTable: true } }),
     ).not.toThrow();
   });
 
@@ -291,7 +295,7 @@ describe('surface outputs', () => {
       g.output('velocity', [0, 0]);
       g.build();
     }).toThrow(
-      /output.value nodes belong to graphs ending with output.surface/
+      /output.value nodes belong to graphs ending with output.surface/,
     );
   });
 });

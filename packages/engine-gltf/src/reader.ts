@@ -75,10 +75,10 @@ const decodeUri = (uri: string): string => {
  */
 export function subResourceKeys(
   items: readonly { readonly name?: string }[],
-  reserved: ReadonlySet<string> = new Set()
+  reserved: ReadonlySet<string> = new Set(),
 ): string[] {
   const names = items.map((item) =>
-    item.name ? item.name.replace(/[/#]/g, '_') : undefined
+    item.name ? item.name.replace(/[/#]/g, '_') : undefined,
   );
   const counts = new Map<string, number>();
   for (const name of names)
@@ -86,7 +86,7 @@ export function subResourceKeys(
   return names.map((name, i) =>
     name && counts.get(name) === 1 && !/^\d+$/.test(name) && !reserved.has(name)
       ? name
-      : String(i)
+      : String(i),
   );
 }
 
@@ -94,7 +94,7 @@ export function subResourceKeys(
 export function modelName(uri: ResourceUri): string {
   const path = uri.split('#', 1)[0];
   const file = path.slice(
-    Math.max(path.lastIndexOf('/'), path.lastIndexOf(':')) + 1
+    Math.max(path.lastIndexOf('/'), path.lastIndexOf(':')) + 1,
   );
   const dot = file.lastIndexOf('.');
   return dot > 0 ? file.slice(0, dot) : file;
@@ -124,7 +124,7 @@ export class GltfReader {
     private readonly json: GltfJson,
     private readonly bin: Uint8Array<ArrayBuffer> | undefined,
     private readonly config: GltfConfig,
-    warn: (message: string) => void
+    warn: (message: string) => void,
   ) {
     this.context = {
       uri: ctx.uri,
@@ -161,11 +161,11 @@ export class GltfReader {
         throw new ResourceError(
           'unsupported',
           this.ctx.uri,
-          `${this.ctx.uri}: the required glTF extension ${name} ${why}`
+          `${this.ctx.uri}: the required glTF extension ${name} ${why}`,
         );
       }
       this.context.warn(
-        `${this.ctx.uri}: the glTF extension ${name} ${why}; ignored`
+        `${this.ctx.uri}: the glTF extension ${name} ${why}; ignored`,
       );
     }
   }
@@ -173,7 +173,7 @@ export class GltfReader {
   // The active extensions of an object that have a hook, with their JSON.
   private hooks<K extends Hook>(
     owner: GltfProperty | undefined,
-    hook: K
+    hook: K,
   ): [unknown, Required<Pick<GltfExtension, K>>][] {
     return Object.entries(owner?.extensions ?? {}).flatMap(([name, ext]) => {
       const extension = this.active.get(name);
@@ -198,7 +198,7 @@ export class GltfReader {
   }
 
   private async readBufferView(
-    index: number
+    index: number,
   ): Promise<Uint8Array<ArrayBuffer>> {
     const view = this.json.bufferViews?.[index];
     if (!view) throw new Error(`Missing buffer view ${index}`);
@@ -231,11 +231,11 @@ export class GltfReader {
       }
       this.ctx.provide(ResourceBytesType, `image/${index}`, bytes);
       return this.ctx.resolve(`#image/${index}`);
-    }
+    },
   );
 
   private async textureRef(
-    info: GltfTextureInfo
+    info: GltfTextureInfo,
   ): Promise<TextureRef | undefined> {
     const texture = this.json.textures?.[info.index];
     if (!texture) throw new Error(`Missing texture ${info.index}`);
@@ -245,7 +245,7 @@ export class GltfReader {
     }
     if (source === undefined) {
       this.context.warn(
-        `${this.ctx.uri}: texture ${info.index} has no image the loader can read; left out`
+        `${this.ctx.uri}: texture ${info.index} has no image the loader can read; left out`,
       );
       return undefined;
     }
@@ -279,7 +279,7 @@ export class GltfReader {
     const colored = new Set(
       primitives
         .filter((p) => p.attributes['COLOR_0'] !== undefined)
-        .map((p) => p.material ?? -1)
+        .map((p) => p.material ?? -1),
     );
     const gltfMaterials = this.json.materials ?? [];
     const keys = subResourceKeys(gltfMaterials, new Set(['default']));
@@ -288,13 +288,13 @@ export class GltfReader {
         let data = await pbrMaterialData(
           material,
           (info) => this.textureRef(info),
-          colored.has(i)
+          colored.has(i),
         );
         for (const [ext, extension] of this.hooks(material, 'material'))
           data = extension.material(ext, data, this.context, material);
         this.ctx.provide(MaterialDataType, `material/${keys[i]}`, data);
         return data;
-      })
+      }),
     );
     let fallback: PbrMaterialData | undefined;
     if (primitives.some((p) => p.material === undefined)) {
@@ -309,7 +309,7 @@ export class GltfReader {
   private async primitiveData(
     primitive: GltfPrimitive,
     name: string | undefined,
-    normals: boolean
+    normals: boolean,
   ): Promise<MeshData> {
     let decoded: GltfDecodedPrimitive | undefined;
     const [decoder] = this.hooks(primitive, 'primitive');
@@ -321,8 +321,8 @@ export class GltfReader {
           [
             attribute,
             decoded?.attributes[attribute] ?? (await this.accessor(index)),
-          ] as const
-      )
+          ] as const,
+      ),
     );
     let indices: ArrayLike<number> | undefined = decoded?.indices;
     if (!indices && primitive.indices !== undefined) {
@@ -342,7 +342,7 @@ export class GltfReader {
 
   /** Provides a `MeshData` per drawn primitive, `mesh/<name or index>/<primitive>`. */
   private async readMeshes(
-    materials: Awaited<ReturnType<GltfReader['readMaterials']>>
+    materials: Awaited<ReturnType<GltfReader['readMaterials']>>,
   ): Promise<ModelMeshData[]> {
     const meshes = this.json.meshes ?? [];
     const keys = subResourceKeys(meshes);
@@ -350,7 +350,7 @@ export class GltfReader {
       meshes.map(async (mesh, m) => {
         if (mesh.primitives.some((p) => p.targets?.length)) {
           this.context.warn(
-            `${this.ctx.uri}: the morph targets of mesh ${keys[m]} are not read`
+            `${this.ctx.uri}: the morph targets of mesh ${keys[m]} are not read`,
           );
         }
         const primitives = await Promise.all(
@@ -360,7 +360,7 @@ export class GltfReader {
                 const mode =
                   modeNames[primitive.mode!] ?? `mode ${primitive.mode}`;
                 this.context.warn(
-                  `${this.ctx.uri}: primitive ${i} of mesh ${keys[m]} skipped: ${mode} (only triangles are drawn)`
+                  `${this.ctx.uri}: primitive ${i} of mesh ${keys[m]} skipped: ${mode} (only triangles are drawn)`,
                 );
                 return undefined;
               }
@@ -376,7 +376,7 @@ export class GltfReader {
               this.ctx.provide(
                 MeshDataType,
                 id,
-                await this.primitiveData(primitive, mesh.name, !material.unlit)
+                await this.primitiveData(primitive, mesh.name, !material.unlit),
               );
               return {
                 mesh: id,
@@ -385,14 +385,14 @@ export class GltfReader {
                     ? materials.ids[index]
                     : 'material/default',
               };
-            }
-          )
+            },
+          ),
         );
         return {
           ...(mesh.name !== undefined ? { name: mesh.name } : {}),
           primitives: primitives.filter((p) => p !== undefined),
         };
-      })
+      }),
     );
   }
 
@@ -402,12 +402,12 @@ export class GltfReader {
     const [meshes, skins, animations] = await Promise.all([
       this.readMeshes(materials),
       Promise.all(
-        (json.skins ?? []).map((skin) => skinData(skin, this.accessor))
+        (json.skins ?? []).map((skin) => skinData(skin, this.accessor)),
       ),
       Promise.all(
         (json.animations ?? []).map((animation) =>
-          animationData(animation, this.accessor)
-        )
+          animationData(animation, this.accessor),
+        ),
       ),
     ]);
     const nodes = (json.nodes ?? []).map((node) => {

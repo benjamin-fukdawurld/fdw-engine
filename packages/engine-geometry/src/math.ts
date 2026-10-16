@@ -45,13 +45,13 @@ export function scaleAndAdd(
   out: Vec3,
   a: ReadonlyVec3,
   b: ReadonlyVec3,
-  factor: number
+  factor: number,
 ): Vec3 {
   return set(
     out,
     a[0] + b[0] * factor,
     a[1] + b[1] * factor,
-    a[2] + b[2] * factor
+    a[2] + b[2] * factor,
   );
 }
 
@@ -60,7 +60,7 @@ export function cross(out: Vec3, a: ReadonlyVec3, b: ReadonlyVec3): Vec3 {
     out,
     a[1] * b[2] - a[2] * b[1],
     a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0]
+    a[0] * b[1] - a[1] * b[0],
   );
 }
 
@@ -74,13 +74,13 @@ export function normalize(out: Vec3, a: ReadonlyVec3): Vec3 {
 export function transformPoint(
   out: Vec3,
   m: Matrix4,
-  [x, y, z]: ReadonlyVec3
+  [x, y, z]: ReadonlyVec3,
 ): Vec3 {
   return set(
     out,
     m[0] * x + m[4] * y + m[8] * z + m[12],
     m[1] * x + m[5] * y + m[9] * z + m[13],
-    m[2] * x + m[6] * y + m[10] * z + m[14]
+    m[2] * x + m[6] * y + m[10] * z + m[14],
   );
 }
 
@@ -88,13 +88,13 @@ export function transformPoint(
 export function transformDirection(
   out: Vec3,
   m: Matrix4,
-  [x, y, z]: ReadonlyVec3
+  [x, y, z]: ReadonlyVec3,
 ): Vec3 {
   return set(
     out,
     m[0] * x + m[4] * y + m[8] * z,
     m[1] * x + m[5] * y + m[9] * z,
-    m[2] * x + m[6] * y + m[10] * z
+    m[2] * x + m[6] * y + m[10] * z,
   );
 }
 
@@ -104,8 +104,8 @@ export function maxScale(m: Matrix4): number {
     Math.max(
       m[0] * m[0] + m[1] * m[1] + m[2] * m[2],
       m[4] * m[4] + m[5] * m[5] + m[6] * m[6],
-      m[8] * m[8] + m[9] * m[9] + m[10] * m[10]
-    )
+      m[8] * m[8] + m[9] * m[9] + m[10] * m[10],
+    ),
   );
 }
 
@@ -165,6 +165,6 @@ export function invert(m: Matrix4): Float64Array | undefined {
     (a11 * b07 - a10 * b09 - a12 * b06) * inverse,
     (a00 * b09 - a01 * b07 + a02 * b06) * inverse,
     (a31 * b01 - a30 * b03 - a32 * b00) * inverse,
-    (a20 * b03 - a21 * b01 + a22 * b00) * inverse
+    (a20 * b03 - a21 * b01 + a22 * b00) * inverse,
   );
 }

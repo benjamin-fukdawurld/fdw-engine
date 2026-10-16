@@ -56,7 +56,7 @@ const player = new Player(scene, Solid, level.cellCenter(0, 0), {
 });
 const follow = new FollowCamera(
   scene.root.add({ name: 'camera' }).setCamera(camera),
-  actions
+  actions,
 );
 const view = new MazeView(backend, scene, level);
 ```

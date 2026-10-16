@@ -22,7 +22,7 @@ const repeat: GpuSamplerConfiguration = {
  */
 export function parseMtlTexture(
   value: string,
-  resolve: (path: string) => string
+  resolve: (path: string) => string,
 ): TextureRef {
   const parts = value.trim().split(/\s+/);
   // The number of values of each option.
@@ -93,7 +93,7 @@ const newMaterial = (name: string): Mutable<PhongMaterialData> => ({
 export function parseMtl(
   text: string,
   resolve: (path: string) => string = (path) => path,
-  warn: (message: string) => void = () => undefined
+  warn: (message: string) => void = () => undefined,
 ): Map<string, PhongMaterialData> {
   const materials = new Map<string, PhongMaterialData>();
   let current: Mutable<PhongMaterialData> | undefined;

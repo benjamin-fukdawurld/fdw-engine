@@ -38,13 +38,7 @@ export const GltfComponentType = {
 } as const;
 
 export type GltfAccessorType =
-  | 'SCALAR'
-  | 'VEC2'
-  | 'VEC3'
-  | 'VEC4'
-  | 'MAT2'
-  | 'MAT3'
-  | 'MAT4';
+  'SCALAR' | 'VEC2' | 'VEC3' | 'VEC4' | 'MAT2' | 'MAT3' | 'MAT4';
 
 export interface GltfAccessorSparse extends GltfProperty {
   readonly count: number;

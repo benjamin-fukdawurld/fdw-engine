@@ -54,7 +54,7 @@ const testCodec: ImageCodec = {
 
 function setup(
   files: Record<string, string | Uint8Array> = {},
-  options: GltfOptions = {}
+  options: GltfOptions = {},
 ) {
   const { backend, log } = fakeBackend();
   const store = new ResourceStore({ debounceMs: 0, warn: () => undefined });
@@ -72,8 +72,7 @@ function setup(
     store.peek<MeshData>(MeshDataType, `mem:${uri}`)?.value;
   const material = (uri: string) =>
     store.peek(MaterialDataType, `mem:${uri}`)?.value as
-      | PbrMaterialData
-      | undefined;
+      PbrMaterialData | undefined;
   return { store, mem, backend, log, warnings, data, mesh, material };
 }
 
@@ -83,13 +82,13 @@ const image = (r: number, g: number, b: number) =>
 const formats = (data: MeshData | undefined) =>
   Object.fromEntries(
     data!.description.vertexBuffers.flatMap((b) =>
-      b.attributes.map((a) => [a.semantic, a.format])
-    )
+      b.attributes.map((a) => [a.semantic, a.format]),
+    ),
   );
 
 const vertices = (data: MeshData, semantic: string) => {
   const i = data.description.vertexBuffers.findIndex((b) =>
-    b.attributes.some((a) => a.semantic === semantic)
+    b.attributes.some((a) => a.semantic === semantic),
   );
   return data.vertices[i];
 };
@@ -99,11 +98,11 @@ function texturedTriangle(b = new GltfBuilder()) {
   const position = b.accessor(
     new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
     'VEC3',
-    { min: [0, 0, 0], max: [1, 1, 0] }
+    { min: [0, 0, 0], max: [1, 1, 0] },
   );
   const normal = b.accessor(
     new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
-    'VEC3'
+    'VEC3',
   );
   const uv = b.accessor(new Float32Array([0, 0, 1, 0, 0, 1]), 'VEC2');
   const indices = b.accessor(new Uint16Array([0, 1, 2]), 'SCALAR');
@@ -131,7 +130,7 @@ function texturedTriangle(b = new GltfBuilder()) {
       indices,
       material: 0,
     },
-    'Tri'
+    'Tri',
   );
   b.add('scenes', { nodes: [node] });
   b.json.scene = 0;
@@ -145,7 +144,7 @@ function unlit(b: GltfBuilder): number {
   ];
   b.json.materials ??= [];
   const found = b.json.materials.findIndex(
-    (m: { name?: string }) => m.name === 'unlit'
+    (m: { name?: string }) => m.name === 'unlit',
   );
   return found >= 0
     ? found
@@ -158,7 +157,7 @@ function unlit(b: GltfBuilder): number {
 /** A primitive of positions only, with the given mode and indices. */
 function positions(b: GltfBuilder, count: number, primitive: object = {}) {
   const values = new Float32Array(count * 3).map((_, i) =>
-    i % 3 === 0 ? i : i % 3 === 1 ? i % 2 : 0
+    i % 3 === 0 ? i : i % 3 === 1 ? i % 2 : 0,
   );
   return b.meshNode({
     attributes: { POSITION: b.accessor(values, 'VEC3') },
@@ -189,14 +188,14 @@ describe('a Khronos sample: BoxTextured', () => {
 
   it('loads, realizes, instantiates and renders it', async () => {
     const glb = await readFile(
-      new URL('./testing/BoxTextured.glb', import.meta.url)
+      new URL('./testing/BoxTextured.glb', import.meta.url),
     );
     const { store, log, backend, mesh, material, warnings } = setup({
       'BoxTextured.glb': new Uint8Array(glb),
     });
     store.provideService(
       ImageCodecsService,
-      new ImageCodecRegistry([pngCodec])
+      new ImageCodecRegistry([pngCodec]),
     );
     const handle = store.load<Model>(ModelType, 'BoxTextured.glb');
     const model = await handle.ready;
@@ -245,7 +244,7 @@ describe('a Khronos sample: BoxTextured', () => {
     const [{ mesh: boxMesh, material: boxMaterial }] = model.meshes[0];
     expect(boxMesh).toBeInstanceOf(Mesh);
     const uploaded = log.textures.find(
-      (t) => t.label === 'mem:BoxTextured.glb#image/0'
+      (t) => t.label === 'mem:BoxTextured.glb#image/0',
     )!;
     expect(uploaded.format).toBe('rgba8unorm-srgb');
     expect(uploaded.dimensions.width).toBeGreaterThan(1);
@@ -315,7 +314,7 @@ describe('glTF models', () => {
     });
     const bytes = store.peek(
       ResourceBytesType,
-      'mem:models/x.glb#image/0'
+      'mem:models/x.glb#image/0',
     )?.value;
     expect(new TextDecoder().decode(bytes)).toBe('img 1 1 255 0 0 255');
 
@@ -348,14 +347,14 @@ describe('glTF models', () => {
     });
     await data('scene/a.gltf');
     expect(material('scene/a.gltf#material/Red')?.baseColorTexture?.image).toBe(
-      'mem:textures/red brick.img'
+      'mem:textures/red brick.img',
     );
     expect(store.peek(BufferType, 'mem:bin/data.bin')?.value?.byteLength).toBe(
-      b.bin.byteLength
+      b.bin.byteLength,
     );
     const model = await store.load<Model>(ModelType, 'scene/a.gltf').ready;
     expect(
-      model.meshes[0][0].material.getValue('baseColorTexture')
+      model.meshes[0][0].material.getValue('baseColorTexture'),
     ).toMatchObject({ label: 'mem:textures/red brick.img' });
   });
 
@@ -364,7 +363,7 @@ describe('glTF models', () => {
     b.json.images = [
       {
         uri: `data:image/x-test;base64,${Buffer.from(image(0, 255, 0)).toString(
-          'base64'
+          'base64',
         )}`,
       },
     ];
@@ -372,11 +371,11 @@ describe('glTF models', () => {
     await data('a.gltf');
     expect(mesh('a.gltf#mesh/Tri/0')?.description.vertexCount).toBe(3);
     expect(material('a.gltf#material/Red')?.baseColorTexture?.image).toBe(
-      'mem:a.gltf#image/0'
+      'mem:a.gltf#image/0',
     );
     const texture = await store.load<Model>(ModelType, 'a.gltf').ready;
     expect(
-      texture.meshes[0][0].material.getValue('baseColorTexture')
+      texture.meshes[0][0].material.getValue('baseColorTexture'),
     ).toMatchObject({ label: 'mem:a.gltf#image/0' });
   });
 
@@ -458,31 +457,31 @@ describe('glTF geometry', () => {
       POSITION: b.accessor(
         new Int16Array([0, 0, 0, 32767, 0, 0, 0, 32767, 0]),
         'VEC3',
-        { normalized: true }
+        { normalized: true },
       ),
       NORMAL: b.accessor(
         new Int8Array([0, 0, 127, 0, 0, 127, 0, 0, 127]),
         'VEC3',
-        { normalized: true }
+        { normalized: true },
       ),
       TEXCOORD_0: b.accessor(
         new Uint16Array([0, 0, 65535, 0, 0, 65535]),
         'VEC2',
-        { normalized: true }
+        { normalized: true },
       ),
       TEXCOORD_1: b.accessor(new Uint8Array([0, 0, 2, 0, 0, 2]), 'VEC2'),
       COLOR_0: b.accessor(
         new Uint8Array([255, 0, 0, 0, 255, 0, 0, 0, 255]),
         'VEC3',
-        { normalized: true }
+        { normalized: true },
       ),
       JOINTS_0: b.accessor(
         new Uint8Array([0, 1, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0]),
-        'VEC4'
+        'VEC4',
       ),
       WEIGHTS_0: b.accessor(
         new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]),
-        'VEC4'
+        'VEC4',
       ),
     };
     b.meshNode({ attributes, material: 0 });
@@ -490,7 +489,7 @@ describe('glTF geometry', () => {
       attributes: {
         POSITION: b.accessor(
           new Int16Array([0, 0, 0, 4, 0, 0, 0, -4, 0]),
-          'VEC3'
+          'VEC3',
         ),
       },
     });
@@ -516,14 +515,14 @@ describe('glTF geometry', () => {
       0, 0, 2, 0, 0, 2,
     ]);
     expect(q.description.vertexBuffers.every((v) => v.stride % 4 === 0)).toBe(
-      true
+      true,
     );
     expect(material('q.glb#material/0')?.vertexColors).toBe(true);
     // Integer positions are converted to floats: the shaders read floats.
     const integer = mesh('q.glb#mesh/1/0')!;
     expect(formats(integer).position).toBe('float32x3');
     expect(
-      [...(vertices(integer, 'position') as Float32Array)].slice(3, 9)
+      [...(vertices(integer, 'position') as Float32Array)].slice(3, 9),
     ).toEqual([4, 0, 0, 0, -4, 0]);
     // And the quantized mesh realizes and draws (its formats match the graph).
     const model = await store.load<Model>(ModelType, 'q.glb').ready;
@@ -534,7 +533,7 @@ describe('glTF geometry', () => {
     const b = new GltfBuilder();
     const base = b.accessor(
       new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
-      'VEC3'
+      'VEC3',
     );
     const accessor = b.add('accessors', {
       ...b.json.accessors[base],
@@ -582,7 +581,7 @@ describe('glTF geometry', () => {
     });
     const position = b.accessor(
       new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, -1]),
-      'VEC3'
+      'VEC3',
     );
     const indices = b.accessor(new Uint16Array([0, 1, 2, 0, 3, 1]), 'SCALAR');
     b.meshNode({ attributes: { POSITION: position }, indices, material: 0 });
@@ -713,7 +712,7 @@ describe('glTF materials and extensions', () => {
     const { data, material } = setup({ 'k.glb': b.glb() });
     await data('k.glb');
     expect(material('k.glb#material/0')?.baseColorTexture?.image).toBe(
-      'mem:color.ktx2'
+      'mem:color.ktx2',
     );
   });
 
@@ -792,7 +791,7 @@ describe('glTF materials and extensions', () => {
             }),
           },
         ],
-      }
+      },
     );
     await data('t.glb');
     expect(material('t.glb#material/Red')?.baseColor).toEqual([0, 1, 0, 1]);
@@ -814,13 +813,13 @@ describe('glTF compression', () => {
       source: ArrayBufferView,
       count: number,
       size: number,
-      mode: string
+      mode: string,
     ) => {
       const bytes = MeshoptEncoder.encodeGltfBuffer(
         new Uint8Array(source.buffer),
         count,
         size,
-        mode
+        mode,
       );
       return { offset: b.append(bytes), length: bytes.byteLength };
     };
@@ -838,7 +837,7 @@ describe('glTF compression', () => {
       o: { offset: number; length: number },
       byteStride: number | undefined,
       count: number,
-      mode: string
+      mode: string,
     ) =>
       b.add('bufferViews', {
         buffer: 1,
@@ -878,7 +877,7 @@ describe('glTF compression', () => {
   it('decodes EXT_meshopt_compression with the decoder of meshoptimizer', async () => {
     const { data, mesh } = setup(
       { 'c.glb': await meshoptFile() },
-      { meshopt: MeshoptDecoder }
+      { meshopt: MeshoptDecoder },
     );
     await data('c.glb');
     const c = mesh('c.glb#mesh/0/0')!;
@@ -950,7 +949,7 @@ describe('glTF compression', () => {
             };
           },
         },
-      }
+      },
     );
     await data('d.glb');
     expect(calls).toEqual([['draco!', { POSITION: 0, TEXCOORD_0: 1 }]]);
@@ -1034,7 +1033,7 @@ describe('glTF hierarchy, skins and animations', () => {
     const rotations = b.accessor(
       new Int16Array([0, 0, 0, 32767, 0, 0, 32767, 0, 0, 0, -32767, 0]),
       'VEC4',
-      { normalized: true }
+      { normalized: true },
     );
     const moves = b.accessor(new Float32Array([0, 0, 0, 1, 0, 0]), 'VEC3');
     const moveTimes = b.accessor(new Float32Array([0, 1]), 'SCALAR');

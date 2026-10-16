@@ -20,7 +20,7 @@ const scene = (
   count: number,
   materials: number,
   shadows = false,
-  spacing = 1
+  spacing = 1,
 ) => {
   const { backend } = fakeBackend();
   const renderer = new Renderer(backend);
@@ -28,7 +28,7 @@ const scene = (
   const mesh = triangle();
   const shared = Array.from(
     { length: materials },
-    (_, i) => new Material({ graph: colorGraph(), label: `material ${i}` })
+    (_, i) => new Material({ graph: colorGraph(), label: `material ${i}` }),
   );
   const items = Array.from({ length: count }, (_, i) => ({
     mesh,

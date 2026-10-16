@@ -33,7 +33,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
         }),
         b: 0.5,
       }),
-    })
+    }),
   );
   const encodeNormal = defineFunction(n.build(), { id: 'example.normal' });
 
@@ -49,7 +49,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
           b: 0.25,
         }),
       }),
-    })
+    }),
   );
   const encodeDepth = defineFunction(d.build(), { id: 'example.depth' });
 
@@ -58,7 +58,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
   const id = c.call(
     std.convert,
     { value: c.functionInput('objectId', BuiltinTypes.u32) },
-    { params: { to: BuiltinTypes.f32 } }
+    { params: { to: BuiltinTypes.f32 } },
   );
   c.functionOutput(
     'value',
@@ -66,7 +66,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
       xyz: c.call(std.fract, {
         x: c.call(std.mul, { a: id, b: [0.61, 0.37, 0.83] }),
       }),
-    })
+    }),
   );
   const identifierColor = defineFunction(c.build(), { id: 'example.id' });
 
@@ -117,7 +117,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
   });
   const cube = createCube();
   const transforms = [-1.3, 0, 1.3].map(
-    (x, i) => new Transform({ position: { x, y: 0, z: -i * 0.8 } })
+    (x, i) => new Transform({ position: { x, y: 0, z: -i * 0.8 } }),
   );
   const camera = new Camera({
     position: { x: 0, y: 0, z: 4 },

@@ -62,7 +62,7 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
     material: Material,
     position: { x: number; y: number; z: number },
     scale: { x: number; y: number; z: number },
-    name: string
+    name: string,
   ) =>
     level
       .add({ name, position, scale, static: true, occluder: true })
@@ -81,13 +81,13 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
         wall,
         { x: along, y: height / 2, z: side * (half + 0.5) },
         { x: length, y: height, z: 1 },
-        'wall'
+        'wall',
       );
       solid(
         wall,
         { x: side * (half + 0.5), y: height / 2, z: along },
         { x: 1, y: height, z: length },
-        'wall'
+        'wall',
       );
     }
   }
@@ -107,7 +107,7 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
       alongX
         ? { x: gate + 2, y: height, z: 1 }
         : { x: 1, y: height, z: gate + 2 },
-      'recess'
+      'recess',
     );
   }
 
@@ -119,7 +119,7 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
       pillar,
       { x: Math.cos(angle) * 9, y: height / 2, z: Math.sin(angle) * 9 },
       { x: 1.2, y: height, z: 1.2 },
-      'pillar'
+      'pillar',
     );
   }
   const crates = [
@@ -141,7 +141,7 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
       crates[k % 2],
       { x, y: size / 2, z },
       { x: size, y: size, z: size },
-      'crate'
+      'crate',
     );
   }
 
@@ -170,7 +170,7 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
         diffuse: { x: 2.4, y: 1.7, z: 0.9 },
         specular: { x: 0.6, y: 0.45, z: 0.25 },
         quadraticAttenuation: 0.06,
-      })
+      }),
     );
   }
 
@@ -183,7 +183,7 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
         ambient: { x: 0.16, y: 0.17, z: 0.24 },
         diffuse: { x: 1.4, y: 1.05, z: 0.75 },
         specular: { x: 1, y: 0.8, z: 0.6 },
-      })
+      }),
     );
   return { cube, sphere, Solid, half, gates };
 }

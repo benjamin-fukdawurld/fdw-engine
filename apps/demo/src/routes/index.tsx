@@ -13,7 +13,7 @@ function RouteComponent() {
       onSurfaceReady={(
         engine: Engine,
         surface: Surface,
-        canvas: HTMLCanvasElement
+        canvas: HTMLCanvasElement,
       ) => {
         const wgsl = `struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,

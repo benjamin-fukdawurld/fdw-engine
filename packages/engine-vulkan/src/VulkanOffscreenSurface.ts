@@ -14,7 +14,7 @@ export class VulkanOffscreenSurface implements Surface {
   constructor(
     width: number,
     height: number,
-    format: GpuTextureFormat = 'rgba8unorm'
+    format: GpuTextureFormat = 'rgba8unorm',
   ) {
     this._width = width;
     this._height = height;

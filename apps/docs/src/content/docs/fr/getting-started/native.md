@@ -92,7 +92,7 @@ const renderer = new Renderer(engine.backend!);
 const loop = runLoop(
   (now) => renderer.render({ items, camera, surface, time: now / 1000 }),
   // At most two frames in flight.
-  { throttle: () => surface.throttle() }
+  { throttle: () => surface.throttle() },
 );
 window.addEventListener('close', () => loop.stop());
 await loop.done;

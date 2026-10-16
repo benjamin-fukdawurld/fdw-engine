@@ -10,7 +10,7 @@ const offset = vec3();
 export function raycastSphere(
   ray: Ray,
   center: ReadonlyVec3,
-  radius: number
+  radius: number,
 ): number | undefined {
   // |o + t d - c|² = r², with d of unit length.
   sub(offset, ray.origin, center);

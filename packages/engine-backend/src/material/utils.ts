@@ -1,7 +1,7 @@
 import { MaterialBindingSlot, MaterialBindingSlotNames } from './types';
 
 export function getMaterialBindingSlotOrder(
-  slots: MaterialBindingSlot[]
+  slots: MaterialBindingSlot[],
 ): MaterialBindingSlot[] {
   return [
     ...MaterialBindingSlotNames,

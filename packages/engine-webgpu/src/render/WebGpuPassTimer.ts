@@ -29,7 +29,10 @@ export class WebGpuPassTimer implements GpuPassTimer {
   private _latest?: PassTimes;
   private _destroyed = false;
 
-  constructor(device: GPUDevice, readonly capacity: number) {
+  constructor(
+    device: GPUDevice,
+    readonly capacity: number,
+  ) {
     this._querySet = device.createQuerySet({
       label: 'pass timer',
       type: 'timestamp',
@@ -121,7 +124,7 @@ export class WebGpuPassTimer implements GpuPassTimer {
         () => {
           // The device was lost or the timer destroyed.
           slot.state = 'free';
-        }
+        },
       );
     }
   }

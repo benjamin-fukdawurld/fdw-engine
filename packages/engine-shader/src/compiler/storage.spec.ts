@@ -8,7 +8,7 @@ import type { IrEntryPoint } from './ir';
 // The last color of a palette read from a storage buffer.
 const paletteGraph = (
   type: ShaderType = arrayType(BuiltinTypes.vec4f),
-  access?: 'read' | 'read-write'
+  access?: 'read' | 'read-write',
 ) => {
   const g = new GraphBuilder('palette');
   const palette = g.storage('palette', type, access ? { access } : {});
@@ -28,7 +28,7 @@ describe('storage buffers', () => {
   it('declares a storage buffer binding in the slot of the node', () => {
     const program = compile(paletteGraph());
     const material = program.layout.groups.find(
-      (group) => group.slot === 'material'
+      (group) => group.slot === 'material',
     );
     expect(material?.bindings).toEqual([
       {
@@ -42,11 +42,11 @@ describe('storage buffers', () => {
 
   it('reads the elements and the length of the array', () => {
     const fragment = compile(paletteGraph()).module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'fragment'
+      (entryPoint) => entryPoint.stage === 'fragment',
     ) as IrEntryPoint;
     const kinds = fragment.body.map((instruction) => instruction.op.kind);
     expect(kinds).toEqual(
-      expect.arrayContaining(['load-resource', 'array-length', 'index'])
+      expect.arrayContaining(['load-resource', 'array-length', 'index']),
     );
     const element = fragment.body.find((i) => i.op.kind === 'index');
     expect(element?.type).toEqual(BuiltinTypes.vec4f);
@@ -61,27 +61,27 @@ describe('storage buffers', () => {
       g.call(std.index, {
         array: values,
         index: g.uniform('i', BuiltinTypes.u32),
-      }).type
+      }).type,
     ).toEqual(BuiltinTypes.mat3f);
     // The index is an integer.
     expect(() =>
       g.call(std.index, {
         array: values,
         index: g.uniform('f', BuiltinTypes.f32),
-      })
+      }),
     ).toThrow(/integer/);
     // Only arrays are indexed.
     expect(() =>
       g.call(std.index, {
         array: g.uniform('v', BuiltinTypes.vec4f),
         index: g.uniform('j', BuiltinTypes.u32),
-      })
+      }),
     ).toThrow(/array/);
   });
 
   it('rejects storage buffers that are not runtime-sized numeric arrays', () => {
     expect(() =>
-      compile(paletteGraph(arrayType(BuiltinTypes.vec4f, 4)))
+      compile(paletteGraph(arrayType(BuiltinTypes.vec4f, 4))),
     ).toThrow(/must be a runtime-sized array/);
     // Checked even when the buffer is not read.
     const g = new GraphBuilder('flags');
@@ -92,13 +92,13 @@ describe('storage buffers', () => {
 
   it('only lets compute graphs write storage buffers', () => {
     expect(() =>
-      compile(paletteGraph(arrayType(BuiltinTypes.vec4f), 'read-write'))
+      compile(paletteGraph(arrayType(BuiltinTypes.vec4f), 'read-write')),
     ).toThrow(/only compute graphs write storage buffers/);
   });
 
   it('rejects storage buffers on backends without them', () => {
     expect(() =>
-      compile(paletteGraph(), { capabilities: { storageBuffers: false } })
+      compile(paletteGraph(), { capabilities: { storageBuffers: false } }),
     ).toThrow(/the backend has no storage buffers/);
   });
 });

@@ -81,11 +81,7 @@ export type GpuTextureDimensions = {
 // How a texture can be used: sampled by shaders, written by compute stages,
 // rendered to, copied from or to.
 export type GpuTextureUsage =
-  | 'sampled'
-  | 'storage'
-  | 'render-attachment'
-  | 'copy-src'
-  | 'copy-dst';
+  'sampled' | 'storage' | 'render-attachment' | 'copy-src' | 'copy-dst';
 
 export interface GpuTextureConfiguration {
   label?: string;
@@ -125,7 +121,7 @@ export const fullMipLevelCount = ({
 /** The size of a level of a texture, in pixels: at least 1×1. */
 export const levelDimensions = (
   { width, height = 1 }: GpuTextureDimensions,
-  level: number
+  level: number,
 ): { width: number; height: number } => ({
   width: Math.max(width >> level, 1),
   height: Math.max(height >> level, 1),
@@ -140,7 +136,7 @@ export const levelDimensions = (
  */
 export function checkMipLevelCount(
   configuration: GpuTextureConfiguration,
-  { provided = false }: { provided?: boolean } = {}
+  { provided = false }: { provided?: boolean } = {},
 ): number {
   const {
     mipLevelCount = 1,
@@ -155,7 +151,7 @@ export function checkMipLevelCount(
   }
   if (mipLevelCount > full) {
     throw new Error(
-      `${what}: ${mipLevelCount} levels, more than the ${full} of its size`
+      `${what}: ${mipLevelCount} levels, more than the ${full} of its size`,
     );
   }
   if (mipLevelCount > 1 && sampleCount > 1) {
@@ -172,7 +168,7 @@ export function checkMipLevelCount(
     !canGenerateMipmaps(configuration.format)
   ) {
     throw new Error(
-      `${what}: the levels of ${configuration.format} cannot be computed`
+      `${what}: the levels of ${configuration.format} cannot be computed`,
     );
   }
   return mipLevelCount;
@@ -198,7 +194,7 @@ const compressedBlocks: Record<string, GpuCompressedBlock> = (() => {
   const blocks: Record<string, GpuCompressedBlock> = {};
   const add = (bytes: number, ...formats: string[]) =>
     formats.forEach(
-      (format) => (blocks[format] = { width: 4, height: 4, bytes })
+      (format) => (blocks[format] = { width: 4, height: 4, bytes }),
     );
   add(8, 'bc1-rgba-unorm', 'bc1-rgba-unorm-srgb', 'bc4-r-unorm');
   add(8, 'etc2-rgb8unorm', 'etc2-rgb8unorm-srgb', 'eac-r11unorm');
@@ -211,7 +207,7 @@ const compressedBlocks: Record<string, GpuCompressedBlock> = (() => {
 
 /** The blocks of a compressed format: undefined for the other formats. */
 export function compressedBlock(
-  format: GpuTextureFormat
+  format: GpuTextureFormat,
 ): GpuCompressedBlock | undefined {
   return Object.hasOwn(compressedBlocks, format)
     ? compressedBlocks[format]
@@ -230,7 +226,7 @@ export const isCompressedFormat = (format: GpuTextureFormat): boolean =>
 export function textureLevelSize(
   format: GpuTextureFormat,
   dimensions: GpuTextureDimensions,
-  level: number
+  level: number,
 ): number {
   const { width, height } = levelDimensions(dimensions, level);
   const block = compressedBlock(format);
@@ -250,8 +246,8 @@ export function textureLevelSize(
 
 /** The layers of a texture: 6 for a cube, the depth of a 3d texture. */
 export const textureLayerCount = (
-  texture: Pick<GpuTextureConfiguration, 'type' | 'dimensions'>
-): number => (texture.type === 'cube' ? 6 : texture.dimensions.layers ?? 1);
+  texture: Pick<GpuTextureConfiguration, 'type' | 'dimensions'>,
+): number => (texture.type === 'cube' ? 6 : (texture.dimensions.layers ?? 1));
 
 /** Where writeTexture writes: a level, and a layer of it. */
 export interface GpuTextureWriteOptions {
@@ -271,7 +267,7 @@ export interface GpuTextureWriteOptions {
 export function checkTextureWrite(
   texture: Readonly<GpuTextureConfiguration>,
   data: ArrayBufferView,
-  { level = 0, layer }: GpuTextureWriteOptions
+  { level = 0, layer }: GpuTextureWriteOptions,
 ): { level: number; layer: number; layers: number } {
   const what = `Texture "${texture.label ?? '(unlabeled)'}"`;
   const levels = texture.mipLevelCount ?? 1;
@@ -292,7 +288,7 @@ export function checkTextureWrite(
     textureLevelSize(texture.format, texture.dimensions, level) * layers;
   if (data.byteLength !== expected) {
     throw new Error(
-      `${what}: level ${level} takes ${expected} bytes, not ${data.byteLength}`
+      `${what}: level ${level} takes ${expected} bytes, not ${data.byteLength}`,
     );
   }
   return { level, layer: layer ?? 0, layers };
@@ -308,7 +304,7 @@ export function checkTextureContent(
   descriptor: GpuTextureConfiguration & {
     source?: unknown;
     levels?: readonly ArrayBufferView[];
-  }
+  },
 ): number {
   const { source, levels, format, label } = descriptor;
   const what = `Texture "${label ?? '(unlabeled)'}"`;
@@ -328,15 +324,15 @@ export function checkTextureContent(
       ...descriptor,
       mipLevelCount: descriptor.mipLevelCount ?? levels?.length,
     },
-    { provided: levels !== undefined }
+    { provided: levels !== undefined },
   );
   if (levels && levels.length > mipLevelCount) {
     throw new Error(
-      `${what}: ${levels.length} levels given, for ${mipLevelCount}`
+      `${what}: ${levels.length} levels given, for ${mipLevelCount}`,
     );
   }
   levels?.forEach((data, level) =>
-    checkTextureWrite({ ...descriptor, mipLevelCount }, data, { level })
+    checkTextureWrite({ ...descriptor, mipLevelCount }, data, { level }),
   );
   return mipLevelCount;
 }
@@ -361,10 +357,10 @@ export interface GpuTexelLayout {
  * formats and the packed ones (rgb10a2unorm).
  */
 export function texelLayout(
-  format: GpuTextureFormat
+  format: GpuTextureFormat,
 ): GpuTexelLayout | undefined {
   const match = /^(rg?b?a?)(8|16|32)(unorm|float|uint|sint)(-srgb)?$/.exec(
-    format.replace(/^bgra/, 'rgba')
+    format.replace(/^bgra/, 'rgba'),
   );
   if (!match) {
     return undefined;
@@ -393,7 +389,7 @@ export function texelBytes(format: GpuTextureFormat): number | undefined {
  */
 export function checkReadRegion(
   texture: GpuTexture,
-  region?: GpuTextureRegion
+  region?: GpuTextureRegion,
 ): { region: GpuTextureRegion; bytesPerPixel: number } {
   const what = `Texture "${texture.label ?? '(unlabeled)'}"`;
   // Undefined for the depth and compressed formats.
@@ -420,8 +416,8 @@ export function checkReadRegion(
   if (!valid) {
     throw new Error(
       `${what}: the region ${JSON.stringify(
-        read
-      )} is not inside its ${width}×${height} pixels`
+        read,
+      )} is not inside its ${width}×${height} pixels`,
     );
   }
   return { region: read, bytesPerPixel };
@@ -442,7 +438,7 @@ export interface GpuTextureFactory<TextureSource = never> {
       source?: TextureSource | ArrayBufferView<ArrayBuffer>;
       levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
-    }
+    },
   ): GpuTexture;
 
   /**
@@ -461,7 +457,7 @@ export interface GpuTextureFactory<TextureSource = never> {
   writeTexture(
     texture: GpuTexture,
     data: ArrayBufferView<ArrayBuffer>,
-    options?: GpuTextureWriteOptions
+    options?: GpuTextureWriteOptions,
   ): void;
 
   /**
@@ -476,6 +472,6 @@ export interface GpuTextureFactory<TextureSource = never> {
    */
   readTexture(
     texture: GpuTexture,
-    region?: GpuTextureRegion
+    region?: GpuTextureRegion,
   ): Promise<ArrayBuffer>;
 }

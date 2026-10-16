@@ -338,7 +338,7 @@ export class Scene implements SceneGraph {
   destroy(entity: number): void {
     this.flush();
     const { Hierarchy } = this;
-    for (let child = Hierarchy.first[entity]; child !== None; ) {
+    for (let child = Hierarchy.first[entity]; child !== None;) {
       const next = Hierarchy.next[child];
       this.destroy(child);
       child = next;
@@ -535,7 +535,7 @@ export class Scene implements SceneGraph {
       const o = entity * stride + World0;
       box.setFrom(
         [m[o + 12], m[o + 13], m[o + 14]],
-        [m[o + 12], m[o + 13], m[o + 14]]
+        [m[o + 12], m[o + 13], m[o + 14]],
       );
     }
     const b = MeshRenderer.bounds;
@@ -579,7 +579,7 @@ export class Scene implements SceneGraph {
     if (!this._warnedStatic) {
       this._warnedStatic = true;
       console.warn(
-        'A static node moved: its index is updated, at a cost. Static nodes are meant not to move.'
+        'A static node moved: its index is updated, at a cost. Static nodes are meant not to move.',
       );
     }
   }
@@ -669,7 +669,7 @@ export class Scene implements SceneGraph {
   occluders(): number[] {
     this.flush();
     return [...this._meshRenderers.entities].filter(
-      (entity) => this.NodeState.flags[entity] & NodeFlags.Occluder
+      (entity) => this.NodeState.flags[entity] & NodeFlags.Occluder,
     );
   }
 
@@ -684,7 +684,7 @@ export class Scene implements SceneGraph {
     frustum: Frustum,
     layers: number,
     visit: (item: Renderable) => void,
-    view: 'camera' | 'shadow'
+    view: 'camera' | 'shadow',
   ): void {
     this.flush();
     const camera = view === 'camera';
@@ -732,7 +732,7 @@ export class Scene implements SceneGraph {
     ray: Ray,
     visit: (entity: number, distance: number) => boolean | void,
     options: QueryOptions = {},
-    maxDistance = Infinity
+    maxDistance = Infinity,
   ): void {
     this.flush();
     const hits: { entity: number; distance: number }[] = [];
@@ -762,7 +762,7 @@ export class Scene implements SceneGraph {
   queryVolumeEntities(
     volume: Volume,
     visit: (entity: number) => boolean | void,
-    options: QueryOptions = {}
+    options: QueryOptions = {},
   ): void {
     this.flush();
     let stopped = false;
@@ -791,13 +791,13 @@ export class Scene implements SceneGraph {
     ray: Ray,
     visit: (node: Node, distance: number) => boolean | void,
     options: QueryOptions = {},
-    maxDistance = Infinity
+    maxDistance = Infinity,
   ): void {
     this.raycastEntities(
       ray,
       (entity, distance) => visit(this.node(entity), distance),
       options,
-      maxDistance
+      maxDistance,
     );
   }
 
@@ -805,12 +805,12 @@ export class Scene implements SceneGraph {
   queryVolume(
     volume: Volume,
     visit: (node: Node) => boolean | void,
-    options: QueryOptions = {}
+    options: QueryOptions = {},
   ): void {
     this.queryVolumeEntities(
       volume,
       (entity) => visit(this.node(entity)),
-      options
+      options,
     );
   }
 
@@ -827,7 +827,7 @@ export class Scene implements SceneGraph {
 
   private selected(
     entity: number,
-    { layers = AllLayers, hidden = false }: QueryOptions
+    { layers = AllLayers, hidden = false }: QueryOptions,
   ): boolean {
     return (
       (hidden || !(this.NodeState.flags[entity] & NodeFlags.HiddenInTree)) &&
@@ -888,12 +888,15 @@ export class SceneItem implements RenderItem {
   private _bounds?: Aabb;
   private _transform?: Transform;
 
-  constructor(private readonly _scene: Scene, readonly entity: number) {}
+  constructor(
+    private readonly _scene: Scene,
+    readonly entity: number,
+  ) {}
 
   get transform(): Transform {
     return (this._transform ??= Transform.of(
       this._scene.transforms,
-      this.entity
+      this.entity,
     ));
   }
 

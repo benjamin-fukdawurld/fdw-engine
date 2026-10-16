@@ -52,7 +52,7 @@ function writeKtx2(file: Ktx2File): Uint8Array {
   const dfdSize = 4 + 24 + 16 * channels.length;
   const encoder = new TextEncoder();
   const pairs = Object.entries(file.keyValues ?? {}).map(([k, v]) =>
-    encoder.encode(`${k}\0${v}\0`)
+    encoder.encode(`${k}\0${v}\0`),
   );
   const kvdSize = pairs.reduce((sum, p) => sum + 4 + align(p.byteLength, 4), 0);
   const globalData = file.globalData ?? new Uint8Array(0);
@@ -61,7 +61,7 @@ function writeKtx2(file: Ktx2File): Uint8Array {
   const kvdOffset = dfdOffset + dfdSize;
   const sgdOffset = globalData.byteLength ? align(kvdOffset + kvdSize) : 0;
   let end = align(
-    sgdOffset ? sgdOffset + globalData.byteLength : kvdOffset + kvdSize
+    sgdOffset ? sgdOffset + globalData.byteLength : kvdOffset + kvdSize,
   );
   const offsets: number[] = [];
   for (let i = levels.length - 1; i >= 0; i--) {
@@ -97,7 +97,7 @@ function writeKtx2(file: Ktx2File): Uint8Array {
     view.setBigUint64(
       at + 16,
       BigInt(file.uncompressed?.[i] ?? data.byteLength),
-      true
+      true,
     );
     bytes.set(data, offsets[i]);
   });
@@ -153,7 +153,7 @@ const decode = (bytes: Uint8Array, options?: Ktx2Options, uri = 'a.ktx2') =>
 const rejection = async (promise: Promise<unknown>): Promise<ResourceError> => {
   const error = await promise.then(
     () => undefined,
-    (e: unknown) => e
+    (e: unknown) => e,
   );
   expect(error).toBeInstanceOf(ResourceError);
   return error as ResourceError;
@@ -190,7 +190,7 @@ describe('KTX2 container', () => {
     expect(ktx.levels.map((l) => l.byteLength)).toEqual([64, 16, 4]);
     expect(ktx.levels[0].byteOffset).toBeGreaterThan(ktx.levels[2].byteOffset);
     expect(
-      ktx.dataFormat.samples.map((s) => [s.channelId, s.bitLength])
+      ktx.dataFormat.samples.map((s) => [s.channelId, s.bitLength]),
     ).toEqual([
       [0, 8],
       [1, 8],
@@ -198,7 +198,7 @@ describe('KTX2 container', () => {
       [15, 8],
     ]);
     expect(new TextDecoder().decode(ktx.keyValues.get('KTXwriter'))).toBe(
-      'test\0'
+      'test\0',
     );
     expect(ktx.keyValues.has('KTXorientation')).toBe(true);
   });
@@ -206,7 +206,7 @@ describe('KTX2 container', () => {
   it('fails with decode for a file that is not KTX2 or points outside of itself', async () => {
     expect(
       (await rejection(decode(new TextEncoder().encode('not a ktx2 file'))))
-        .code
+        .code,
     ).toBe('decode');
     const truncated = mipmapped().subarray(0, 150);
     expect((await rejection(decode(truncated))).code).toBe('decode');
@@ -235,7 +235,7 @@ describe('ktx2Codec', () => {
       expect(
         image.levels.map((l) => [
           ...new Uint8Array(l.buffer, l.byteOffset, l.byteLength),
-        ])
+        ]),
       ).toEqual(mipLevels.map((l) => [...l]));
     }
   });
@@ -247,7 +247,7 @@ describe('ktx2Codec', () => {
         width: 2,
         height: 1,
         levels: [filled(16)],
-      })
+      }),
     );
     expect(image).toMatchObject({
       type: '2d',
@@ -266,7 +266,7 @@ describe('ktx2Codec', () => {
         height: 2,
         faces: 6,
         levels: [faces],
-      })
+      }),
     );
     expect(image).toMatchObject({
       type: 'cube',
@@ -283,7 +283,7 @@ describe('ktx2Codec', () => {
   it('decodes a 2d array with its levels', async () => {
     const levels = [filled(3 * 4 * 4, 0), filled(3 * 2 * 2, 50), filled(3, 90)];
     const image = await decode(
-      writeKtx2({ vkFormat: R8_UNORM, width: 4, height: 4, layers: 3, levels })
+      writeKtx2({ vkFormat: R8_UNORM, width: 4, height: 4, layers: 3, levels }),
     );
     expect(image).toMatchObject({
       type: '2d-array',
@@ -332,10 +332,10 @@ describe('ktx2Codec', () => {
     expect(image.levels.map((l) => l.byteLength)).toEqual([64, 16]);
     expect(image.transcode).toBeUndefined();
     expect(
-      supportsImage({ compressedFormats: ['bc7-rgba-unorm'] }, image)
+      supportsImage({ compressedFormats: ['bc7-rgba-unorm'] }, image),
     ).toBe(true);
     expect(
-      supportsImage({ compressedFormats: ['astc-4x4-unorm'] }, image)
+      supportsImage({ compressedFormats: ['astc-4x4-unorm'] }, image),
     ).toBe(false);
     expect(supportsImage(undefined, await decode(mipmapped()))).toBe(true);
     expect(() => ensureSupported({}, image, 'a.ktx2')).toThrow(ResourceError);
@@ -349,7 +349,7 @@ describe('ktx2Codec', () => {
   it('inflates zstd supercompression with the decoder of the application', async () => {
     // The "compression" of the test reverses the bytes and appends a marker.
     const compressed = mipLevels.map((l) =>
-      Uint8Array.from([...l].reverse().concat(0xff))
+      Uint8Array.from([...l].reverse().concat(0xff)),
     );
     const file = writeKtx2({
       vkFormat: R8G8B8A8_UNORM,
@@ -373,7 +373,7 @@ describe('ktx2Codec', () => {
       [5, 4],
     ]);
     expect(image.levels.map((l) => [...(l as Uint8Array)])).toEqual(
-      mipLevels.map((l) => [...l])
+      mipLevels.map((l) => [...l]),
     );
 
     const error = await rejection(decode(file));
@@ -393,7 +393,7 @@ describe('ktx2Codec', () => {
     });
     const image = await decode(file);
     expect(image.levels.map((l) => [...(l as Uint8Array)])).toEqual(
-      mipLevels.map((l) => [...l])
+      mipLevels.map((l) => [...l]),
     );
   });
 });
@@ -470,10 +470,10 @@ describe('Basis Universal', () => {
     const pick = (
       formats: GpuTextureFormat[],
       kind: 'etc1s' | 'uastc' = 'etc1s',
-      alpha = false
+      alpha = false,
     ) => basisTarget(formats, kind, alpha);
     expect(
-      pick(['etc2-rgba8unorm', 'astc-4x4-unorm', 'bc7-rgba-unorm'])
+      pick(['etc2-rgba8unorm', 'astc-4x4-unorm', 'bc7-rgba-unorm']),
     ).toEqual({ target: 'bc7', format: 'bc7-rgba-unorm' });
     expect(pick(['etc2-rgba8unorm', 'astc-4x4-unorm'])).toEqual({
       target: 'astc-4x4',
@@ -514,7 +514,7 @@ describe('Basis Universal', () => {
 
     const opaque = await decode(etc1s(false), { transcoder });
     expect(
-      (await opaque.transcode!(['etc2-rgb8unorm', 'etc2-rgba8unorm'])).format
+      (await opaque.transcode!(['etc2-rgb8unorm', 'etc2-rgba8unorm'])).format,
     ).toBe('etc2-rgb8unorm');
     expect(calls.at(-1)).toEqual({
       target: 'etc1',
@@ -550,11 +550,9 @@ describe('Basis Universal', () => {
     expect(
       (
         await rejection(
-          (
-            await decode(etc1s(), { transcoder: wrong })
-          ).transcode!([])
+          (await decode(etc1s(), { transcoder: wrong })).transcode!([]),
         )
-      ).code
+      ).code,
     ).toBe('decode');
   });
 });
@@ -566,7 +564,7 @@ describe('textures from KTX2 files', () => {
     store.mount('mem', new MemorySource(files), { default: true });
     installKtx2(
       installAssets(store, { backend, warn: () => undefined }),
-      options
+      options,
     );
     return { store, log };
   }
@@ -607,14 +605,14 @@ describe('textures from KTX2 files', () => {
     });
     const { store, log } = setup(
       { 'bc7.ktx2': bc7File(), 'basis.ktx2': basis },
-      { transcoder }
+      { transcoder },
     );
     await store.load(TextureType, 'bc7.ktx2', {
       options: { colorSpace: 'linear' },
     }).ready;
     await store.load<Texture>(TextureType, 'basis.ktx2').ready;
     expect(
-      log.textures.map((t) => [t.format, t.mipLevelCount, t.levels?.length])
+      log.textures.map((t) => [t.format, t.mipLevelCount, t.levels?.length]),
     ).toEqual([
       ['bc7-rgba-unorm', 2, 2],
       ['bc7-rgba-unorm-srgb', 1, undefined],

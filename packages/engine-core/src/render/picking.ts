@@ -33,12 +33,12 @@ const idArrays: Record<
 export async function pickIds(
   backend: RenderBackend,
   texture: GpuTexture,
-  region: PickRegion
+  region: PickRegion,
 ): Promise<number[]> {
   const Ids = idArrays[texture.format];
   if (!Ids) {
     throw new Error(
-      `pickIds reads textures of identifiers (r32uint), not ${texture.format}`
+      `pickIds reads textures of identifiers (r32uint), not ${texture.format}`,
     );
   }
   const { width: textureWidth, height: textureHeight = 1 } = texture.dimensions;

@@ -47,10 +47,10 @@ describe('FileSource', () => {
       code: 'not-found',
     });
     await expect(files.read('../readme.txt', { signal })).rejects.toMatchObject(
-      { code: 'not-found' }
+      { code: 'not-found' },
     );
     await expect(files.read('oak', { signal })).rejects.toBeInstanceOf(
-      ResourceError
+      ResourceError,
     ); // a directory
   });
 
@@ -108,7 +108,7 @@ describe('WorkerPool', () => {
     const controller = new AbortController();
     const slow = pool.run(
       { delay: 50, echo: 'late' },
-      { signal: controller.signal }
+      { signal: controller.signal },
     );
     controller.abort();
     await expect(slow).rejects.toMatchObject({ code: 'aborted' });
@@ -146,7 +146,7 @@ describe('stb image decoder', () => {
     });
     const aborted = AbortSignal.abort();
     await expect(
-      decoder.decode(new Uint8Array(1), { signal: aborted })
+      decoder.decode(new Uint8Array(1), { signal: aborted }),
     ).rejects.toMatchObject({ code: 'aborted' });
   });
 
@@ -158,18 +158,21 @@ describe('stb image decoder', () => {
 
   const addon = new URL(
     '../../engine-native/build/fdw_native.node',
-    import.meta.url
+    import.meta.url,
   ).pathname;
   it.skipIf(!existsSync(addon))(
     'decodes a PNG with the real addon',
     async () => {
       const png = await readFile(
-        new URL('../../../apps/demo/public/sphere-diffuse.png', import.meta.url)
+        new URL(
+          '../../../apps/demo/public/sphere-diffuse.png',
+          import.meta.url,
+        ),
       );
       const image = await createStbImageDecoder().decode(new Uint8Array(png));
       expect([image.width, image.height, image.hdr]).toEqual([416, 585, false]);
       expect(image.pixels).toBeInstanceOf(Uint8Array);
       expect(image.pixels.length).toBe(416 * 585 * 4);
-    }
+    },
   );
 });

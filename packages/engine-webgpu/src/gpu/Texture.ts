@@ -79,7 +79,7 @@ export class Texture implements GpuTexture {
   }
 
   private static textureTypeToGPUTextureViewDimension(
-    type: GpuTextureType
+    type: GpuTextureType,
   ): GPUTextureViewDimension {
     switch (type) {
       case '2d':
