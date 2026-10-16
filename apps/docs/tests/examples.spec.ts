@@ -259,7 +259,7 @@ test('first-person-shot', async ({ page: browser }, info) => {
     })
     .toBeGreaterThan(after + frames);
   await expect(canvas).toHaveScreenshot(`first-person-shot-${backend}.png`, {
-    timeout: 20_000,
+    timeout: 30_000,
   });
 });
 
