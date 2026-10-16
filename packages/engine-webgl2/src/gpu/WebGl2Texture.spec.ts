@@ -144,6 +144,24 @@ describe('WebGl2TextureFactory', () => {
     expect(named('generateMipmap')).toHaveLength(1);
   });
 
+  it('reads an ImageBitmap top row first: WebGL never flips it', () => {
+    class FakeBitmap {}
+    Object.assign(globalThis, { ImageBitmap: FakeBitmap });
+    const { factory, calls } = fakeContext([]);
+    const texture = factory.createTexture({
+      type: '2d',
+      format: 'rgba8unorm',
+      dimensions: { width: 4, height: 4 },
+      source: new FakeBitmap() as ImageBitmap,
+    });
+    expect(calls).toContainEqual(['pixelStorei', 20, false]);
+    expect(texture.flipped).toBe(false);
+    // Pixels written over it: flipped again.
+    factory.writeTexture(texture, new Uint8Array(64));
+    expect(calls).toContainEqual(['pixelStorei', 20, true]);
+    expect(texture.flipped).toBe(true);
+  });
+
   it('writes a layer of an array', () => {
     const { factory, named } = fakeContext(['WEBGL_compressed_texture_etc']);
     const array = factory.createTexture({

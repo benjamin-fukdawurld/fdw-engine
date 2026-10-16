@@ -51,6 +51,9 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
   // Multisampled textures are renderbuffers: they can only be rendered to,
   // then resolved (blitted) into a texture.
   private _renderbuffer?: WebGLRenderbuffer;
+  // Its first level written from an ImageBitmap: top row first, as WebGL
+  // ignores UNPACK_FLIP_Y_WEBGL for them (see flipped).
+  private _bitmap = false;
 
   constructor(
     private readonly _gl: WebGL2RenderingContext,
@@ -142,12 +145,15 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
   /**
    * Whether the rows of a 2d texture are stored bottom row first, as OpenGL
    * renders them: those uploaded are flipped to match. The compressed ones
-   * are stored top row first, their blocks written as they are. The
-   * shaders read both with v pointing down (see orientationUniform).
+   * are stored top row first, their blocks written as they are, and so are
+   * the ImageBitmaps, which WebGL never flips. The shaders read both with v
+   * pointing down (see orientationUniform).
    */
   get flipped(): boolean {
     return (
-      this.target === GL.TEXTURE_2D && !glTextureFormat(this.format).extension
+      this.target === GL.TEXTURE_2D &&
+      !this._bitmap &&
+      !glTextureFormat(this.format).extension
     );
   }
 
@@ -239,7 +245,11 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       throw new Error('Images can only be uploaded to 2d textures');
     }
     gl.bindTexture(this.target, this.texture);
-    this.unpack(true);
+    // UNPACK_FLIP_Y_WEBGL is ignored for an ImageBitmap: written as it is,
+    // top row first, and read so.
+    this._bitmap =
+      typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap;
+    this.unpack(!this._bitmap);
     gl.texSubImage2D(
       GL.TEXTURE_2D,
       0,
@@ -273,6 +283,9 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     // The blocks are written as they are, top row first: the flip does not
     // apply to them (see flipped).
     this.unpack(!extension);
+    if (level === 0) {
+      this._bitmap = false;
+    }
     const bytes = new Uint8Array(
       source.buffer,
       source.byteOffset,
