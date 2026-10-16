@@ -27,7 +27,7 @@ function targetOf(usage: readonly GpuBufferUsage[]): GLenum {
 
 function usageHint(
   usage: readonly GpuBufferUsage[],
-  frequency: GpuBufferUpdateFrequency | undefined
+  frequency: GpuBufferUpdateFrequency | undefined,
 ): GLenum {
   switch (frequency ?? (usage.includes('copy-dst') ? 'dynamic' : 'static')) {
     case 'stream':
@@ -48,7 +48,7 @@ export class WebGl2Buffer implements GpuBuffer {
     readonly size: number,
     readonly usage: readonly GpuBufferUsage[],
     frequency: GpuBufferUpdateFrequency | undefined,
-    readonly label?: string
+    readonly label?: string,
   ) {
     this.target = targetOf(usage);
     this._buffer = _gl.createBuffer();
@@ -67,24 +67,24 @@ export class WebGl2Buffer implements GpuBuffer {
     offset: number,
     value: ArrayBuffer,
     dataOffset = 0,
-    size?: number
+    size?: number,
   ): void {
     const byteLength = size ?? value.byteLength - dataOffset;
     if (dataOffset + byteLength > value.byteLength) {
       throw new Error(
-        `Write of ${byteLength} bytes from offset ${dataOffset} exceeds source data size ${value.byteLength}`
+        `Write of ${byteLength} bytes from offset ${dataOffset} exceeds source data size ${value.byteLength}`,
       );
     }
     if (offset + byteLength > this.size) {
       throw new Error(
-        `Write of ${byteLength} bytes at ${offset} exceeds buffer size ${this.size}`
+        `Write of ${byteLength} bytes at ${offset} exceeds buffer size ${this.size}`,
       );
     }
     this.bind();
     this._gl.bufferSubData(
       this.target,
       offset,
-      new Uint8Array(value, dataOffset, byteLength)
+      new Uint8Array(value, dataOffset, byteLength),
     );
   }
 
@@ -135,7 +135,7 @@ export class WebGl2BufferFactory implements GpuBufferFactory {
     }
     if (initialData && initialData.byteLength !== size) {
       throw new Error(
-        `Initial data size (${initialData.byteLength}) does not match the buffer size (${size}).`
+        `Initial data size (${initialData.byteLength}) does not match the buffer size (${size}).`,
       );
     }
     const buffer = new WebGl2Buffer(
@@ -143,14 +143,14 @@ export class WebGl2BufferFactory implements GpuBufferFactory {
       size,
       usage,
       updateFrequency,
-      label
+      label,
     );
     if (initialData) {
       buffer.write(
         0,
         initialData.buffer,
         initialData.byteOffset,
-        initialData.byteLength
+        initialData.byteLength,
       );
     }
     return buffer;

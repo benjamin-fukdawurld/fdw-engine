@@ -78,6 +78,4 @@ export type SpotLightSnapshot = BaseLightSnapshot & {
   Readonly<LightCutoffData>;
 
 export type LightSnapshot =
-  | DirectionalLightSnapshot
-  | PointLightSnapshot
-  | SpotLightSnapshot;
+  DirectionalLightSnapshot | PointLightSnapshot | SpotLightSnapshot;

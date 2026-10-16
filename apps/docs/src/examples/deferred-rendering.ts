@@ -33,7 +33,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     n.call(std.extend, {
       xyz: n.functionInput('worldNormal', BuiltinTypes.vec3f),
       w: n.functionInput('viewDepth', BuiltinTypes.f32),
-    })
+    }),
   );
   const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
   // The roughness and the metallic factor, in two channels of an rgba8unorm.
@@ -44,7 +44,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       x: p.functionInput('roughness', BuiltinTypes.f32),
       y: p.functionInput('metallic', BuiltinTypes.f32),
       w: 1,
-    })
+    }),
   );
   const properties = defineFunction(p.build(), { id: 'example.properties' });
   const outputs = {
@@ -93,8 +93,8 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     shown(
       2,
       g.call(std.add, { a: g.call(std.mul, { a: normal, b: 0.5 }), b: 0.5 }),
-      shown(1, baseColor, lit.swizzle('rgb'))
-    )
+      shown(1, baseColor, lit.swizzle('rgb')),
+    ),
   );
   // Where no object was drawn (depth 0), the background.
   g.fullscreen({
@@ -143,7 +143,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     color: [number, number, number],
     roughness: number,
     metallic = 0,
-    alpha?: number
+    alpha?: number,
   ) => {
     const m = new GraphBuilder('pbr');
     m.surface({
@@ -169,7 +169,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     x: number,
     y: number,
     z: number,
-    scale: { x: number; y: number; z: number }
+    scale: { x: number; y: number; z: number },
   ) => new Transform({ position: { x, y, z }, scale });
   const items = [
     {

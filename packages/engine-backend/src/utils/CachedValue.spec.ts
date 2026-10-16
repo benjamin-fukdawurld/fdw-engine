@@ -6,7 +6,7 @@ describe('CachedValue', () => {
   it('computes lazily and only when a dependency version changes', () => {
     let version = 0;
     const update = vi.fn(
-      (_: number, [source]: [SnapshotValue<number>]) => source.value * 2
+      (_: number, [source]: [SnapshotValue<number>]) => source.value * 2,
     );
     const source = new SnapshotValue({
       valueGetter: () => version + 1,

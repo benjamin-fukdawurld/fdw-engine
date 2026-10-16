@@ -14,7 +14,7 @@ const next = random(31);
 const box = (center: Vec3, half: number) =>
   new Aabb(
     center.map((c) => c - half) as Vec3,
-    center.map((c) => c + half) as Vec3
+    center.map((c) => c + half) as Vec3,
   );
 // Objects on a 400 × 400 ground.
 const place = (): Vec3 => {
@@ -25,7 +25,7 @@ const place = (): Vec3 => {
 const count = 10_000;
 const entries = Array.from(
   { length: count },
-  (_, i) => [i, box(place(), 0.5 + next())] as const
+  (_, i) => [i, box(place(), 0.5 + next())] as const,
 );
 const octree = new Octree<number>();
 octree.insertAll(entries);
@@ -35,7 +35,7 @@ for (const [item, bounds] of entries) {
 }
 // A camera above the ground, looking down at a part of it.
 const frustum = Frustum.fromMatrix(
-  perspective(0.8, 1.6, 0.5, 120, [0, 40, 60])
+  perspective(0.8, 1.6, 0.5, 120, [0, 40, 60]),
 );
 let visible = 0;
 octree.queryFrustum(frustum, () => visible++);
@@ -46,7 +46,7 @@ const moving = entries.slice(0, 1000).map(([item, bounds]) => ({
 }));
 const staticEntries = Array.from(
   { length: 100_000 },
-  (_, i) => [i, box(place(), 0.5)] as const
+  (_, i) => [i, box(place(), 0.5)] as const,
 );
 
 describe(`spatial index, ${count} items (${visible} in the frustum)`, () => {
@@ -78,6 +78,6 @@ describe(`spatial index, ${count} items (${visible} in the frustum)`, () => {
     () => {
       new Octree<number>().insertAll(staticEntries);
     },
-    { iterations: 5 }
+    { iterations: 5 },
   );
 });

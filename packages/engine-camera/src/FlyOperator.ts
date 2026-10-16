@@ -125,7 +125,7 @@ export class FlyOperator {
   constructor(
     private readonly _target: CameraTarget,
     private readonly _actions: ActionMap,
-    options: FlyOperatorOptions = {}
+    options: FlyOperatorOptions = {},
   ) {
     this.position = { x: 0, y: 0, z: 0, ...options.position };
     this.yaw = options.yaw ?? 0;
@@ -179,7 +179,7 @@ export class FlyOperator {
     const forward = forwardOf(
       this.yaw,
       this.mode === 'walk' ? 0 : this.pitch,
-      this._forward
+      this._forward,
     );
     const right = rightOf(this.yaw, this._right);
     const lift = actions.axis(names.lift);
@@ -199,7 +199,7 @@ export class FlyOperator {
     this.pitch = clamp(
       Math.atan2(dy, Math.hypot(dx, dz)),
       this.minPitch,
-      this.maxPitch
+      this.maxPitch,
     );
     this.apply();
   }

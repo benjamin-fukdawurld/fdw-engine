@@ -4,12 +4,19 @@ import type { ResourceHandle } from './ResourceHandle';
 import type { ResourceLoader } from './ResourceLoader';
 import { ResourceStore } from './ResourceStore';
 import { MemorySource } from './sources/MemorySource';
-import { defineResourceType, defineServiceKey, ResourceBytesType } from './types';
+import {
+  defineResourceType,
+  defineServiceKey,
+  ResourceBytesType,
+} from './types';
 
 const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 const TextType = defineResourceType<string>('text');
 const ChildType = defineResourceType<{ text: string }>('child');
-const ParentType = defineResourceType<{ child: { text: string }; label: string }>('parent');
+const ParentType = defineResourceType<{
+  child: { text: string };
+  label: string;
+}>('parent');
 
 interface Harness {
   store: ResourceStore;
@@ -19,8 +26,15 @@ interface Harness {
 }
 
 /** A store with a memory source mounted as default and a text loader. */
-function harness(files: Record<string, string> = {}, options: ConstructorParameters<typeof ResourceStore>[0] = {}): Harness {
-  const store = new ResourceStore({ debounceMs: 0, warn: () => undefined, ...options });
+function harness(
+  files: Record<string, string> = {},
+  options: ConstructorParameters<typeof ResourceStore>[0] = {},
+): Harness {
+  const store = new ResourceStore({
+    debounceMs: 0,
+    warn: () => undefined,
+    ...options,
+  });
   const mem = new MemorySource(files);
   store.mount('mem', mem, { default: true });
   const disposed: unknown[] = [];
@@ -74,7 +88,10 @@ describe('sharing and lifetime', () => {
   });
 
   it('evicts the least recently used entries beyond the budget', async () => {
-    const { store, disposed } = harness({ a: 'aaaa', b: 'bbbb', c: 'cccc' }, { budget: 8 });
+    const { store, disposed } = harness(
+      { a: 'aaaa', b: 'bbbb', c: 'cccc' },
+      { budget: 8 },
+    );
     for (const name of ['a', 'b', 'c']) {
       const h = store.load(TextType, name);
       await h.ready;
@@ -164,7 +181,9 @@ describe('define and peek', () => {
     expect(await h.ready).toBe('cube');
     const peeked = store.peek(TextType, 'generated:cube');
     expect(peeked?.value).toBe('cube');
-    expect(() => store.define(TextType, 'generated:cube', 'again')).toThrow(/already defined/);
+    expect(() => store.define(TextType, 'generated:cube', 'again')).toThrow(
+      /already defined/,
+    );
     h.release();
     expect(disposed).toEqual([]);
     peeked!.release();
@@ -270,7 +289,12 @@ describe('the queue', () => {
       gates.get(order.at(-1)!)!();
       await sleep();
     }
-    expect(order).toEqual(['mem:high1', 'mem:normal1', 'mem:normal2', 'mem:low1']);
+    expect(order).toEqual([
+      'mem:high1',
+      'mem:normal1',
+      'mem:normal2',
+      'mem:low1',
+    ]);
     gates.get(order.at(-1)!)!();
     await Promise.all(hs.map((h) => h.ready));
   });
@@ -309,7 +333,10 @@ describe('dependencies', () => {
   }
 
   it('loads dependencies relative to the resource and keeps them alive', async () => {
-    const h = harness({ 'dir/p.txt': 'own', 'dir/child.txt': 'kid' }, { budget: 0 });
+    const h = harness(
+      { 'dir/p.txt': 'own', 'dir/child.txt': 'kid' },
+      { budget: 0 },
+    );
     withParent(h);
     const p = h.store.load(ParentType, 'dir/p.txt');
     const value = await p.ready;
@@ -317,11 +344,16 @@ describe('dependencies', () => {
     expect(p.dependencies).toHaveLength(1);
     expect(p.dependencies[0].uri).toBe('mem:dir/child.txt');
     // The dependency is held by the parent: no handle of its own, yet alive.
-    expect(h.store.peek(ChildType, 'dir/child.txt')?.value).toEqual({ text: 'kid' });
+    expect(h.store.peek(ChildType, 'dir/child.txt')?.value).toEqual({
+      text: 'kid',
+    });
   });
 
   it('releases dependencies with their parent', async () => {
-    const h = harness({ 'dir/p.txt': 'own', 'dir/child.txt': 'kid' }, { budget: 0 });
+    const h = harness(
+      { 'dir/p.txt': 'own', 'dir/child.txt': 'kid' },
+      { budget: 0 },
+    );
     withParent(h);
     const p = h.store.load(ParentType, 'dir/p.txt');
     await p.ready;
@@ -331,7 +363,10 @@ describe('dependencies', () => {
   });
 
   it('shares a dependency between parents', async () => {
-    const h = harness({ 'd/p1.txt': '1', 'd/p2.txt': '2', 'd/child.txt': 'kid' }, { budget: 0 });
+    const h = harness(
+      { 'd/p1.txt': '1', 'd/p2.txt': '2', 'd/child.txt': 'kid' },
+      { budget: 0 },
+    );
     withParent(h);
     const loads = vi.fn();
     h.store.registerLoader({
@@ -354,7 +389,10 @@ describe('dependencies', () => {
       type: ChildType,
       load: (ctx) =>
         new Promise((_res, rej) =>
-          ctx.signal.addEventListener('abort', () => (aborted.push(ctx.uri), rej(new Error('x'))))
+          ctx.signal.addEventListener(
+            'abort',
+            () => (aborted.push(ctx.uri), rej(new Error('x'))),
+          ),
         ),
     });
     store.registerLoader({
@@ -373,7 +411,7 @@ describe('dependencies', () => {
   it('does not deadlock when parents fill every slot', async () => {
     const h = harness(
       { 'd/p1.txt': '1', 'd/p2.txt': '2', 'd/child.txt': 'kid' },
-      { concurrency: 1 }
+      { concurrency: 1 },
     );
     withParent(h);
     const a = h.store.load(ParentType, 'd/p1.txt');
@@ -395,9 +433,17 @@ describe('dependencies', () => {
 
   it('refuses a dependency cycle with its path', async () => {
     const store = new ResourceStore({ warn: () => undefined });
-    store.mount('mem', new MemorySource({ 'a.txt': '', 'b.txt': '', 'c.txt': '' }), { default: true });
+    store.mount(
+      'mem',
+      new MemorySource({ 'a.txt': '', 'b.txt': '', 'c.txt': '' }),
+      { default: true },
+    );
     const Node = defineResourceType<string>('node');
-    const next: Record<string, string> = { 'mem:a.txt': 'b.txt', 'mem:b.txt': 'c.txt', 'mem:c.txt': 'a.txt' };
+    const next: Record<string, string> = {
+      'mem:a.txt': 'b.txt',
+      'mem:b.txt': 'c.txt',
+      'mem:c.txt': 'a.txt',
+    };
     store.registerLoader({
       type: Node,
       async load(ctx) {
@@ -412,7 +458,9 @@ describe('dependencies', () => {
     expect(err.message).toMatch(/cycle/i);
     expect(err.cycle).toBe(true);
     expect(err.path[0]).toBe(err.path.at(-1)); // the cycle closes on itself
-    expect(new Set(err.path)).toEqual(new Set(['mem:a.txt', 'mem:b.txt', 'mem:c.txt']));
+    expect(new Set(err.path)).toEqual(
+      new Set(['mem:a.txt', 'mem:b.txt', 'mem:c.txt']),
+    );
   });
 
   it('refuses a resource that depends on itself', async () => {
@@ -425,7 +473,9 @@ describe('dependencies', () => {
         return '';
       },
     });
-    await expect(store.load(TextType, 'a.txt').ready).rejects.toMatchObject({ code: 'dependency' });
+    await expect(store.load(TextType, 'a.txt').ready).rejects.toMatchObject({
+      code: 'dependency',
+    });
   });
 });
 
@@ -469,14 +519,20 @@ describe('progress and groups', () => {
 
   it('reports the progress of a group and rejects with the first failure', async () => {
     const { store } = harness({ a: '1', b: '2' });
-    const ok = store.group([store.load(TextType, 'a'), store.load(TextType, 'b')]);
+    const ok = store.group([
+      store.load(TextType, 'a'),
+      store.load(TextType, 'b'),
+    ]);
     expect(ok.pending.value).toBe(2);
     expect(ok.progress.value).toBe(0);
     await ok.ready;
     expect(ok.pending.value).toBe(0);
     expect(ok.progress.value).toBe(1);
 
-    const bad = store.group([store.load(TextType, 'a'), store.load(TextType, 'missing')]);
+    const bad = store.group([
+      store.load(TextType, 'a'),
+      store.load(TextType, 'missing'),
+    ]);
     await expect(bad.ready).rejects.toMatchObject({ code: 'not-found' });
   });
 });
@@ -500,14 +556,30 @@ describe('choosing a loader', () => {
     const store = new ResourceStore({ warn: () => undefined });
     store.mount('mem', new MemorySource(files), { default: true });
     store
-      .registerLoader({ type: ModelType, extensions: ['gltf', 'glb'], load: async () => 'gltf' })
-      .registerLoader({ type: ModelType, extensions: ['obj'], load: async () => 'obj' })
-      .registerLoader({ type: ModelType, sniff: (h) => h[0] === 0x23, load: async () => 'sniffed' });
+      .registerLoader({
+        type: ModelType,
+        extensions: ['gltf', 'glb'],
+        load: async () => 'gltf',
+      })
+      .registerLoader({
+        type: ModelType,
+        extensions: ['obj'],
+        load: async () => 'obj',
+      })
+      .registerLoader({
+        type: ModelType,
+        sniff: (h) => h[0] === 0x23,
+        load: async () => 'sniffed',
+      });
     return store;
   }
 
   it('picks by extension, then by sniffing the first bytes', async () => {
-    const store = modelStore({ 'a.GLB': 'x', 'b.obj': 'x', 'c.bin': '# comment' });
+    const store = modelStore({
+      'a.GLB': 'x',
+      'b.obj': 'x',
+      'c.bin': '# comment',
+    });
     expect(await store.load(ModelType, 'a.GLB').ready).toBe('gltf');
     expect(await store.load(ModelType, 'b.obj').ready).toBe('obj');
     expect(await store.load(ModelType, 'c.bin').ready).toBe('sniffed');
@@ -515,10 +587,14 @@ describe('choosing a loader', () => {
 
   it('fails with unsupported when nothing matches', async () => {
     const store = modelStore({ 'd.bin': 'zzz' });
-    await expect(store.load(ModelType, 'd.bin').ready).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(store.load(ModelType, 'd.bin').ready).rejects.toMatchObject({
+      code: 'unsupported',
+    });
     const empty = new ResourceStore();
     empty.mount('mem', new MemorySource({ a: '' }), { default: true });
-    await expect(empty.load(ModelType, 'a').ready).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(empty.load(ModelType, 'a').ready).rejects.toMatchObject({
+      code: 'unsupported',
+    });
   });
 });
 
@@ -526,8 +602,14 @@ describe('sources', () => {
   it('layers sources under a scheme by priority, falling through on not-found', async () => {
     const store = new ResourceStore({ warn: () => undefined });
     store.registerLoader({ type: TextType, load: (ctx) => ctx.text() });
-    store.mount('game', new MemorySource({ 'a.txt': 'base', 'b.txt': 'base-b' }), { default: true });
-    store.mount('game', new MemorySource({ 'a.txt': 'patch' }), { priority: 10 });
+    store.mount(
+      'game',
+      new MemorySource({ 'a.txt': 'base', 'b.txt': 'base-b' }),
+      { default: true },
+    );
+    store.mount('game', new MemorySource({ 'a.txt': 'patch' }), {
+      priority: 10,
+    });
     expect(await store.load(TextType, 'a.txt').ready).toBe('patch');
     expect(await store.load(TextType, 'b.txt').ready).toBe('base-b');
   });
@@ -539,19 +621,28 @@ describe('sources', () => {
     store.mount('two', new MemorySource({ a: '2' }));
     expect(await store.load(TextType, 'one:a').ready).toBe('1');
     expect(await store.load(TextType, 'two:a').ready).toBe('2');
-    await expect(store.load(TextType, 'a').ready).rejects.toMatchObject({ code: 'not-found' });
+    await expect(store.load(TextType, 'a').ready).rejects.toMatchObject({
+      code: 'not-found',
+    });
   });
 
   it('wraps a loader exception as a decode error', async () => {
     const { store } = harness({ a: '{' });
-    store.registerLoader({ type: ChildType, load: async (ctx) => JSON.parse(await ctx.text()) });
-    await expect(store.load(ChildType, 'a').ready).rejects.toMatchObject({ code: 'decode' });
+    store.registerLoader({
+      type: ChildType,
+      load: async (ctx) => JSON.parse(await ctx.text()),
+    });
+    await expect(store.load(ChildType, 'a').ready).rejects.toMatchObject({
+      code: 'decode',
+    });
   });
 });
 
 describe('sub-resources', () => {
   const MeshType = defineResourceType<{ name: string }>('mesh');
-  const ModelType = defineResourceType<{ meshes: ResourceHandle<{ name: string }>[] }>('model');
+  const ModelType = defineResourceType<{
+    meshes: ResourceHandle<{ name: string }>[];
+  }>('model');
 
   function modelStore(files: Record<string, string>) {
     const store = new ResourceStore({ debounceMs: 0, warn: () => undefined });
@@ -569,7 +660,11 @@ describe('sub-resources', () => {
       type: ModelType,
       async load(ctx) {
         const names = (await ctx.text()).split(',');
-        return { meshes: names.map((n, i) => ctx.provide(MeshType, `mesh/${i}`, { name: n })) };
+        return {
+          meshes: names.map((n, i) =>
+            ctx.provide(MeshType, `mesh/${i}`, { name: n }),
+          ),
+        };
       },
     });
     return { store, mem, disposed };
@@ -613,7 +708,9 @@ describe('sub-resources', () => {
       type: PackType,
       async load(ctx) {
         const parts = (await ctx.text()).split('|');
-        parts.forEach((p, i) => ctx.provide(ResourceBytesType, `part/${i}`, encoder.encode(p)));
+        parts.forEach((p, i) =>
+          ctx.provide(ResourceBytesType, `part/${i}`, encoder.encode(p)),
+        );
         return parts;
       },
     });
@@ -641,7 +738,9 @@ describe('services', () => {
       type: ChildType,
       load: async (ctx) => ({ text: ctx.service(Backend).name }),
     });
-    await expect(store.load(ChildType, 'x').ready).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(store.load(ChildType, 'x').ready).rejects.toMatchObject({
+      code: 'unsupported',
+    });
     store.provideService(Backend, { name: 'webgpu' });
     expect(await store.load(ChildType, 'y').ready).toEqual({ text: 'webgpu' });
   });
@@ -698,7 +797,10 @@ describe('hot reload', () => {
   it('keeps the old value and publishes the error when a reload fails', async () => {
     const h = harness({ 'a.json': '{"v":1}' });
     const J = defineResourceType<{ v: number }>('json');
-    h.store.registerLoader({ type: J, load: async (ctx) => JSON.parse(await ctx.text()) });
+    h.store.registerLoader({
+      type: J,
+      load: async (ctx) => JSON.parse(await ctx.text()),
+    });
     h.store.watch(true);
     const handle = h.store.load(J, 'a.json');
     await handle.ready;
@@ -768,7 +870,10 @@ describe('hot reload', () => {
       type: ParentType,
       async load(ctx) {
         const child = ctx.use(ChildType, ctx.resolve('child.txt'));
-        return { child: await child.ready, label: `p+${(await child.ready).text}` };
+        return {
+          child: await child.ready,
+          label: `p+${(await child.ready).text}`,
+        };
       },
       dispose: (v) => void h.disposed.push(v.label),
     });
@@ -810,7 +915,9 @@ describe('hot reload', () => {
     h.store.update();
     expect(handle.value).toBe('2');
     h.mem.delete('a');
-    await expect(h.store.reload('a')).rejects.toMatchObject({ code: 'not-found' });
+    await expect(h.store.reload('a')).rejects.toMatchObject({
+      code: 'not-found',
+    });
     expect(handle.value).toBe('2');
   });
 

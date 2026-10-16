@@ -20,7 +20,7 @@ describe('canRun', () => {
     expect(canRun('vulkan', false)).toBe(false);
     process.env['FDW_REQUIRE_SUITES'] = 'dawn, vulkan';
     expect(() => canRun('vulkan', false, 'no addon')).toThrow(
-      /vulkan.*no addon/
+      /vulkan.*no addon/,
     );
     expect(canRun('window', false)).toBe(false);
     process.env['FDW_REQUIRE_SUITES'] = 'all';

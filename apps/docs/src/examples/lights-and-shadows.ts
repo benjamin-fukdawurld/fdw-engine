@@ -31,7 +31,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
   const material = (
     baseColor: [number, number, number],
     metallic: number,
-    roughness: number
+    roughness: number,
   ) => new Material({ graph, values: { baseColor, metallic, roughness } });
 
   const cube = createCube();

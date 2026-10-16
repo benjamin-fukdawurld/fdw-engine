@@ -1,10 +1,5 @@
 export type ResourceErrorCode =
-  | 'not-found'
-  | 'decode'
-  | 'unsupported'
-  | 'aborted'
-  | 'dependency'
-  | 'io';
+  'not-found' | 'decode' | 'unsupported' | 'aborted' | 'dependency' | 'io';
 
 export interface ResourceErrorOptions {
   readonly cause?: unknown;
@@ -25,7 +20,7 @@ export class ResourceError extends Error {
     code: ResourceErrorCode,
     uri: string,
     message?: string,
-    options?: ResourceErrorOptions
+    options?: ResourceErrorOptions,
   ) {
     super(message ?? `${code}: ${uri}`, { cause: options?.cause });
     this.name = 'ResourceError';

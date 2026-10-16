@@ -16,7 +16,7 @@ import { createMazeWorld, surfaceMaterial } from './world';
 export const createMazeStep1: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   const scene = new Scene();
   const { level, sphere } = createMazeWorld(scene);
@@ -36,7 +36,7 @@ export const createMazeStep1: SceneFactory = (
   const actions = mazeActions(input);
   const fly = new FlyCamera(
     scene.root.add({ name: 'camera' }).setCamera(camera),
-    actions
+    actions,
   );
   // Where the camera is, for the top view only.
   const marker = scene.root
@@ -62,7 +62,7 @@ export const createMazeStep1: SceneFactory = (
       const stats = view.render(surface, camera);
       if (stats) {
         context.info?.(
-          `${stats.drawn} of ${nodes} nodes drawn, ${stats.casters} shadow casters`
+          `${stats.drawn} of ${nodes} nodes drawn, ${stats.casters} shadow casters`,
         );
       }
     },

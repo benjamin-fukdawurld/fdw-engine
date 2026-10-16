@@ -7,7 +7,7 @@ import { isConvex, Volume } from './Volume';
 /** An exact intersection test between two kinds of volumes. */
 export type IntersectionTest<
   A extends Volume = Volume,
-  B extends Volume = Volume
+  B extends Volume = Volume,
 > = (a: A, b: B) => boolean;
 
 const tests = new Map<string, IntersectionTest>();
@@ -20,7 +20,7 @@ const key = (a: string, b: string) => `${a}\u0000${b}`;
 export function registerIntersection<A extends Volume, B extends Volume>(
   kindA: string,
   kindB: string,
-  test: IntersectionTest<A, B>
+  test: IntersectionTest<A, B>,
 ): void {
   tests.set(key(kindA, kindB), test as IntersectionTest);
   tests.set(key(kindB, kindA), (b, a) => test(a as A, b as B));
@@ -39,20 +39,20 @@ export function intersects(a: Volume, b: Volume): boolean {
     return gjkIntersects(a, b);
   }
   throw new Error(
-    `No intersection test between "${a.kind}" and "${b.kind}": give the volumes a support function, or register a test with registerIntersection()`
+    `No intersection test between "${a.kind}" and "${b.kind}": give the volumes a support function, or register a test with registerIntersection()`,
   );
 }
 
 registerIntersection<Aabb, Aabb>('aabb', 'aabb', (a, b) => a.intersectsAabb(b));
 registerIntersection<Sphere, Sphere>('sphere', 'sphere', (a, b) =>
-  a.intersectsSphere(b)
+  a.intersectsSphere(b),
 );
 registerIntersection<Sphere, Aabb>('sphere', 'aabb', (a, b) =>
-  a.intersectsAabb(b)
+  a.intersectsAabb(b),
 );
 registerIntersection<Capsule, Capsule>('capsule', 'capsule', (a, b) =>
-  a.intersectsCapsule(b)
+  a.intersectsCapsule(b),
 );
 registerIntersection<Capsule, Sphere>('capsule', 'sphere', (a, b) =>
-  a.intersectsSphere(b.center, b.radius)
+  a.intersectsSphere(b.center, b.radius),
 );

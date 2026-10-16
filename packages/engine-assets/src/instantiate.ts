@@ -74,7 +74,7 @@ export function createLight(data: LightData): BaseLight {
 export function instantiate(
   model: Model | ResourceHandle<Model>,
   scene: Scene,
-  options: InstantiateOptions = {}
+  options: InstantiateOptions = {},
 ): ModelInstance {
   const handle = 'require' in model ? model.clone() : undefined;
   const target = (): Model => (handle ? handle.require() : (model as Model));
@@ -83,13 +83,13 @@ export function instantiate(
     parent === undefined
       ? scene.root.entity
       : typeof parent === 'number'
-      ? parent
-      : parent.entity;
+        ? parent
+        : parent.entity;
   const root = scene.node(
     scene.create(parentEntity, {
       name: target().data.name ?? 'model',
       ...nodeOptions,
-    })
+    }),
   );
   let nodes: Node[] = [];
 
@@ -113,10 +113,10 @@ export function instantiate(
             w: n.rotation[3],
           },
           scale: n.scale && { x: n.scale[0], y: n.scale[1], z: n.scale[2] },
-        })
+        }),
       );
       nodes[index] = node;
-      const primitives = n.mesh !== undefined ? meshes[n.mesh] ?? [] : [];
+      const primitives = n.mesh !== undefined ? (meshes[n.mesh] ?? []) : [];
       if (primitives.length === 1) {
         node.setMesh(primitives[0].mesh, primitives[0].material, {
           castShadow,
@@ -125,7 +125,7 @@ export function instantiate(
         primitives.forEach(({ mesh, material }, i) =>
           node
             .add({ name: `${node.name}#${i}` })
-            .setMesh(mesh, material, { castShadow })
+            .setMesh(mesh, material, { castShadow }),
         );
       }
       if (lights && n.light !== undefined && data.lights[n.light])

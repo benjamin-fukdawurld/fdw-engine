@@ -18,7 +18,7 @@ const call = (
   g: GraphBuilder,
   fn: typeof std.add,
   a: Value,
-  b: Value
+  b: Value,
 ): PortHandle => g.call(fn, { a, b } as never);
 
 const toInt = (g: GraphBuilder, value: PortHandle) =>
@@ -33,7 +33,7 @@ const pixelOf = (g: GraphBuilder, size: PortHandle) =>
 // texel of an odd row covers one texel only).
 function farthestOf(
   g: GraphBuilder,
-  read: (coords: PortHandle) => PortHandle
+  read: (coords: PortHandle) => PortHandle,
 ): PortHandle {
   const size = g.uniform('size', BuiltinTypes.vec2f);
   const last = call(g, sub, g.uniform('sourceSize', BuiltinTypes.vec2f), 1);
@@ -46,7 +46,7 @@ function farthestOf(
     [1, 1],
   ]) {
     const depth = read(
-      toInt(g, call(g, min, call(g, add, first, offset), last))
+      toInt(g, call(g, min, call(g, add, first, offset), last)),
     );
     farthest = farthest ? call(g, max, farthest, depth) : depth;
   }
@@ -65,7 +65,7 @@ export function firstLevelGraph(): MaterialGraphData {
   const g = new GraphBuilder('occlusion pyramid, first level');
   const depth = g.texture('depth', { sampleType: 'depth' });
   const farthest = farthestOf(g, (coords) =>
-    g.call(std.textureLoadDepth, { texture: depth, coords })
+    g.call(std.textureLoadDepth, { texture: depth, coords }),
   );
   // The point of the view at that depth, on the axis.
   const point = g.call(std.transform, {
@@ -74,7 +74,7 @@ export function firstLevelGraph(): MaterialGraphData {
   });
   write(
     g,
-    call(g, div, call(g, mul, point.swizzle('z'), -1), point.swizzle('w'))
+    call(g, div, call(g, mul, point.swizzle('z'), -1), point.swizzle('w')),
   );
   return g.build();
 }
@@ -86,8 +86,8 @@ export function nextLevelGraph(): MaterialGraphData {
   write(
     g,
     farthestOf(g, (coords) =>
-      g.call(std.textureLoad, { texture: source, coords }).swizzle('r')
-    )
+      g.call(std.textureLoad, { texture: source, coords }).swizzle('r'),
+    ),
   );
   return g.build();
 }
@@ -126,7 +126,7 @@ export function testGraph(levels: number): MaterialGraphData {
           g.call(std.vec2, {
             x: call(g, add, call(g, mul, texel.swizzle('x'), 2), dx),
             y: texel.swizzle('y'),
-          })
+          }),
         ),
       })
       .swizzle('xyz');
@@ -150,7 +150,7 @@ export function testGraph(levels: number): MaterialGraphData {
       g,
       mul,
       g.call(std.transform, { matrix: view, vector: point }).swizzle('z'),
-      -1
+      -1,
     );
     const clip = g.call(std.transform, {
       matrix: viewProjection,
@@ -176,9 +176,9 @@ export function testGraph(levels: number): MaterialGraphData {
             g,
             add,
             call(g, mul, g.call(std.vec2, { x, y }), [0.5, -0.5]),
-            0.5
+            0.5,
           ),
-          depthSize
+          depthSize,
         ),
       }),
       low: [0, 0],
@@ -210,7 +210,7 @@ export function testGraph(levels: number): MaterialGraphData {
           texture,
           coords: toInt(
             g,
-            g.call(std.vec2, { x: x.swizzle('x'), y: y.swizzle('y') })
+            g.call(std.vec2, { x: x.swizzle('x'), y: y.swizzle('y') }),
           ),
         })
         .swizzle('r');

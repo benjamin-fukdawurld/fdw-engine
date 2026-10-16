@@ -32,7 +32,11 @@ export class Weapon {
   private _flash = 0;
   private _marker = 0;
 
-  constructor(eye: Node, private readonly _cube: Mesh, sphere: Mesh) {
+  constructor(
+    eye: Node,
+    private readonly _cube: Mesh,
+    sphere: Mesh,
+  ) {
     const layers = ViewLayer;
     const metal = surfaceMaterial([0.12, 0.13, 0.15], 0.35);
     const grip = surfaceMaterial([0.25, 0.18, 0.12], 0.8);
@@ -40,7 +44,7 @@ export class Weapon {
     const part = (
       position: { x?: number; y?: number; z?: number },
       scale: { x: number; y: number; z: number },
-      material = metal
+      material = metal,
     ) =>
       this.node
         .add({ position, scale, layers })
@@ -51,7 +55,7 @@ export class Weapon {
     part(
       { y: 0.04, z: 0.07 },
       { x: 0.012, y: 0.012, z: 0.012 },
-      glowMaterial([0.2, 1, 0.9])
+      glowMaterial([0.2, 1, 0.9]),
     );
 
     // The muzzle: a glowing ball and an orange light, shown at a shot.
@@ -70,7 +74,7 @@ export class Weapon {
         diffuse: { x: 3, y: 1.8, z: 0.7 },
         specular: { x: 1, y: 0.7, z: 0.3 },
         quadraticAttenuation: 0.5,
-      })
+      }),
     );
 
     // The crosshair: a dot in front of the eye.
@@ -113,7 +117,7 @@ export class Weapon {
       this._crosshair.setMesh(
         this._cube,
         this._crosshairMaterials[this._marker > 0 ? 1 : 0],
-        { castShadow: false }
+        { castShadow: false },
       );
     }
     const size = this._marker > 0 ? 0.008 : 0.004;
@@ -145,7 +149,7 @@ export class Sparks {
       this._nodes.push(
         scene.root
           .add({ name: 'spark', layers: ViewLayer, visible: false })
-          .setMesh(cube, material, { castShadow: false })
+          .setMesh(cube, material, { castShadow: false }),
       );
       this._times.push(0);
     }

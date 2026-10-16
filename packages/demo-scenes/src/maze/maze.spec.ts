@@ -54,10 +54,10 @@ describe('generateMaze', () => {
 
   it('is the same for the same seed', () => {
     expect(generateMaze(10, 10, 5).cells).toEqual(
-      generateMaze(10, 10, 5).cells
+      generateMaze(10, 10, 5).cells,
     );
     expect(generateMaze(10, 10, 5).cells).not.toEqual(
-      generateMaze(10, 10, 6).cells
+      generateMaze(10, 10, 6).cells,
     );
   });
 });
@@ -83,7 +83,7 @@ describe('buildLevel', () => {
     const border = 2 * (8 + 6);
     expect(level.walls.children).toHaveLength((sides - border) / 2 + border);
     expect(
-      level.walls.children.every((wall) => wall.static && wall.occluder)
+      level.walls.children.every((wall) => wall.static && wall.occluder),
     ).toBe(true);
     expect(level.cellCenter(0, 0)).toEqual({ x: -7, z: -5 });
   });
@@ -197,7 +197,7 @@ describe('collisions', () => {
         sphere: createSphere(8, 4),
         cube: createCube(),
         body: material,
-      }
+      },
     );
     source.keyDown('KeyW');
     input.update();
@@ -331,7 +331,7 @@ describe('MazeGame', () => {
       flashlight,
       exploration,
       { cube, sphere: createSphere(8, 4) },
-      options
+      options,
     );
     const centerOf = (cell: number) =>
       level.cellCenter(cell % level.maze.width, Math.floor(cell / 12));
@@ -378,7 +378,7 @@ describe('MazeGame', () => {
     const path = [from];
     while (path.length < 3) {
       const ahead = openNeighbors(maze, path[path.length - 1]).filter(
-        (cell) => !path.includes(cell)
+        (cell) => !path.includes(cell),
       );
       path.push(ahead[0] ?? path[path.length - 1]);
     }
@@ -395,7 +395,7 @@ describe('MazeGame', () => {
     const player = game['_player'] as Player;
     player.heading = Math.atan2(
       -(x - player.position.x),
-      -(z - player.position.z)
+      -(z - player.position.z),
     );
     player.update(0, idle(), 0);
     game.update(0.1);

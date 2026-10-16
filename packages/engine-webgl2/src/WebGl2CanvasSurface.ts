@@ -64,7 +64,7 @@ export class WebGl2CanvasSurface implements Surface {
         this.width,
         this.height,
         this.format,
-        'canvas surface'
+        'canvas surface',
       );
     }
     return this._target;
@@ -95,7 +95,7 @@ export class WebGl2CanvasSurface implements Surface {
       width,
       height,
       GL.COLOR_BUFFER_BIT,
-      GL.NEAREST
+      GL.NEAREST,
     );
     if (this._bitmap && 'transferToImageBitmap' in canvas) {
       this._bitmap.transferFromImageBitmap(canvas.transferToImageBitmap());

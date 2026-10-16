@@ -10,7 +10,7 @@ function setLocal(
   index: number,
   p: number[],
   r: number[],
-  s: number[]
+  s: number[],
 ) {
   const o = index * stride;
   pool.data.set(p, o + position);
@@ -43,7 +43,7 @@ describe('TransformPool', () => {
         // (M⁻¹)ᵀ at (row, column) is M⁻¹ at (column, row).
         expect(pool.data[o + normal + column * 4 + row]).toBeCloseTo(
           inverse[row * 4 + column],
-          5
+          5,
         );
       }
       expect(pool.data[o + normal + column * 4 + 3]).toBe(0);
@@ -60,7 +60,7 @@ describe('TransformPool', () => {
       for (let row = 0; row < 3; row++) {
         expect(pool.data[o + normal + column * 4 + row]).toBeCloseTo(
           pool.data[o + world + column * 4 + row],
-          6
+          6,
         );
       }
     }
@@ -89,7 +89,7 @@ describe('TransformPool', () => {
     // 4, 6, 9, 14.
     expect(pool.capacity).toBe(14);
     expect(
-      indices.map((index) => pool.data[index * stride + position])
+      indices.map((index) => pool.data[index * stride + position]),
     ).toEqual(indices.map((_, i) => i));
     expect(() => new TransformPool({ growth: 1 })).toThrow(/above 1/);
   });

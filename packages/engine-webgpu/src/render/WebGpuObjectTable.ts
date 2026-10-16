@@ -16,7 +16,7 @@ export class WebGpuObjectTable implements GpuObjectTable {
 
   constructor(
     private readonly _device: GPUDevice,
-    { rows, instances, rowStride, label }: ObjectTableDescriptor
+    { rows, instances, rowStride, label }: ObjectTableDescriptor,
   ) {
     this.rows = Math.max(rows, 1);
     this.instances = Math.max(instances, 1);
@@ -40,7 +40,7 @@ export class WebGpuObjectTable implements GpuObjectTable {
       firstRow * this._rowStride,
       data.buffer,
       data.byteOffset,
-      data.byteLength
+      data.byteLength,
     );
   }
 
@@ -50,7 +50,7 @@ export class WebGpuObjectTable implements GpuObjectTable {
       firstInstance * 4,
       rows.buffer,
       rows.byteOffset,
-      rows.byteLength
+      rows.byteLength,
     );
   }
 

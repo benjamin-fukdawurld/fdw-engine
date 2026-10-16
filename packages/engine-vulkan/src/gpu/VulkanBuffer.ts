@@ -30,13 +30,13 @@ export class VulkanBuffer implements GpuBuffer {
     private readonly _context: ContextHandle,
     readonly size: number,
     readonly usage: readonly GpuBufferUsage[],
-    readonly label?: string
+    readonly label?: string,
   ) {
     this._handle = _addon.createBuffer(
       _context,
       size,
       usage.reduce((flags, name) => flags | BufferUsageFlags[name], 0),
-      label
+      label,
     );
     this.id = _addon.bufferId(this._handle);
   }
@@ -53,12 +53,12 @@ export class VulkanBuffer implements GpuBuffer {
     offset: number,
     value: ArrayBuffer,
     dataOffset = 0,
-    size = value.byteLength - dataOffset
+    size = value.byteLength - dataOffset,
   ): void {
     this._addon.writeBuffer(
       this.handle,
       offset,
-      new Uint8Array(value, dataOffset, size)
+      new Uint8Array(value, dataOffset, size),
     );
   }
 
@@ -84,7 +84,7 @@ export class VulkanBuffer implements GpuBuffer {
 export class VulkanBufferFactory implements GpuBufferFactory {
   constructor(
     private readonly _addon: VulkanAddon,
-    private readonly _context: ContextHandle
+    private readonly _context: ContextHandle,
   ) {}
 
   create({
@@ -104,14 +104,14 @@ export class VulkanBufferFactory implements GpuBufferFactory {
       this._context,
       size,
       usage,
-      label
+      label,
     );
     if (initialData) {
       buffer.write(
         0,
         initialData.buffer,
         initialData.byteOffset,
-        initialData.byteLength
+        initialData.byteLength,
       );
     }
     return buffer;

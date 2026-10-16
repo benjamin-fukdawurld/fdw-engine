@@ -10,7 +10,7 @@ export function premultiplyAt(
   a: Float32Array,
   ao: number,
   out: Float32Array,
-  o: number
+  o: number,
 ): void {
   const a00 = a[ao];
   const a01 = a[ao + 1];
@@ -42,7 +42,7 @@ export function premultiplyAt(
  */
 export function rotationOf(
   m: ArrayLike<number>,
-  o = 0
+  o = 0,
 ): { x: number; y: number; z: number; w: number } {
   const sx = Math.hypot(m[o], m[o + 1], m[o + 2]) || 1;
   const sy = Math.hypot(m[o + 4], m[o + 5], m[o + 6]) || 1;

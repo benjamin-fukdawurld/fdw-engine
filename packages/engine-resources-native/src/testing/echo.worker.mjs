@@ -15,6 +15,6 @@ parentPort.on('message', async ({ id, payload }) => {
   const bytes = payload.bytes;
   parentPort.postMessage(
     { id, result: { length: bytes?.length ?? 0, echo: payload.echo } },
-    []
+    [],
   );
 });

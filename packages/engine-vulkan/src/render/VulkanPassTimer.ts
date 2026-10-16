@@ -43,7 +43,7 @@ export class VulkanPassTimer implements GpuPassTimer {
   constructor(
     private readonly _addon: VulkanAddon,
     context: ContextHandle,
-    readonly capacity: number
+    readonly capacity: number,
   ) {
     this._pool = _addon.createQueryPool(context, Slots * capacity * 2);
     this._id = _addon.queryPoolId(this._pool);
@@ -100,7 +100,7 @@ export class VulkanPassTimer implements GpuPassTimer {
           this._pool,
           slot.first,
           slot.used * 2,
-          this._stamps
+          this._stamps,
         )
       ) {
         continue;

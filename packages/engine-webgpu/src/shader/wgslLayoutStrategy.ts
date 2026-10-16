@@ -36,7 +36,7 @@ function uniformLayoutOf(type: ShaderType): { align: number; size: number } {
     };
   }
   throw new Error(
-    `${typeToString(type)} is not supported in a WGSL uniform block`
+    `${typeToString(type)} is not supported in a WGSL uniform block`,
   );
 }
 
@@ -46,8 +46,8 @@ function arrayStride(element: ShaderType): number {
   if (stride % 16 !== 0) {
     throw new Error(
       `array<${typeToString(
-        element
-      )}> needs a stride multiple of 16 in a WGSL uniform block`
+        element,
+      )}> needs a stride multiple of 16 in a WGSL uniform block`,
     );
   }
   return stride;
@@ -59,7 +59,7 @@ function storageStride(element: ShaderType): number {
 }
 
 function uniformBlock(
-  resource: Extract<LogicalBinding, { kind: 'uniform-block' }>
+  resource: Extract<LogicalBinding, { kind: 'uniform-block' }>,
 ): PhysicalUniformBlock {
   let offset = 0;
   let blockAlign = 16;
@@ -78,7 +78,7 @@ function writeScalar(
   target: DataView,
   offset: number,
   scalar: string,
-  value: number | boolean
+  value: number | boolean,
 ): void {
   const number = typeof value === 'boolean' ? Number(value) : value;
   switch (scalar) {
@@ -96,7 +96,7 @@ function writeScalar(
 function writeUniform(
   target: DataView,
   { name, type, offset }: PhysicalUniformMember,
-  value: UniformValue
+  value: UniformValue,
 ): void {
   const components = (count: number): ArrayLike<number> => {
     if (
@@ -105,7 +105,7 @@ function writeUniform(
       value.length < count
     ) {
       throw new Error(
-        `Uniform "${name}" expects ${count} components (${typeToString(type)})`
+        `Uniform "${name}" expects ${count} components (${typeToString(type)})`,
       );
     }
     return value;
@@ -115,7 +115,7 @@ function writeUniform(
     case 'scalar':
       if (typeof value !== 'number' && typeof value !== 'boolean') {
         throw new Error(
-          `Uniform "${name}" expects a number (${typeToString(type)})`
+          `Uniform "${name}" expects a number (${typeToString(type)})`,
         );
       }
       writeScalar(target, offset, type.scalar, value);
@@ -140,7 +140,7 @@ function writeUniform(
           target.setFloat32(
             offset + column * columnStride + row * 4,
             source[column * sourceStride + row],
-            true
+            true,
           );
         }
       }
@@ -155,25 +155,25 @@ function writeUniform(
         element.kind === 'scalar'
           ? 1
           : element.kind === 'vector'
-          ? element.size
-          : element.kind === 'matrix'
-          ? element.columns * element.rows
-          : 0;
+            ? element.size
+            : element.kind === 'matrix'
+              ? element.columns * element.rows
+              : 0;
       if (count === 0 || typeof value !== 'object') {
         throw new Error(
-          `Uniform "${name}": ${typeToString(type)} values are not supported`
+          `Uniform "${name}": ${typeToString(type)} values are not supported`,
         );
       }
       const stride = arrayStride(element);
       const length = Math.min(
         type.length ?? 0,
-        Math.floor(source.length / count)
+        Math.floor(source.length / count),
       );
       for (let i = 0; i < length; i++) {
         writeUniform(
           target,
           { name, type: element, offset: offset + i * stride, size: stride },
-          source.slice(i * count, (i + 1) * count)
+          source.slice(i * count, (i + 1) * count),
         );
       }
       return;
@@ -197,21 +197,21 @@ export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
           resource.kind === 'uniform-block'
             ? { binding, resource, block: uniformBlock(resource) }
             : resource.kind === 'object-table'
-            ? // Two bindings (rows, instances): alone in its group.
-              {
-                binding,
-                resource,
-                objectRow: objectRowLayout(resource.members),
-              }
-            : resource.kind === 'storage-buffer'
-            ? {
-                binding,
-                resource,
-                storage: {
-                  elementStride: storageStride(resource.type.element),
-                },
-              }
-            : { binding, resource }
+              ? // Two bindings (rows, instances): alone in its group.
+                {
+                  binding,
+                  resource,
+                  objectRow: objectRowLayout(resource.members),
+                }
+              : resource.kind === 'storage-buffer'
+                ? {
+                    binding,
+                    resource,
+                    storage: {
+                      elementStride: storageStride(resource.type.element),
+                    },
+                  }
+                : { binding, resource },
         ),
       })),
     };

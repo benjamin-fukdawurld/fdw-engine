@@ -45,6 +45,4 @@ export type IColor = {
 };
 
 export type ColorLike =
-  | IColor
-  | [number, number, number, number]
-  | Float32Array;
+  IColor | [number, number, number, number] | Float32Array;

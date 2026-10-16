@@ -9,7 +9,7 @@ export function toHalf(value: number): number {
   const exponent = (x >>> 23) & 0xff;
   let mantissa = x & 0x7fffff;
   if (exponent === 0xff) return sign | 0x7c00 | (mantissa ? 0x200 : 0);
-  let e = exponent - 127 + 15;
+  const e = exponent - 127 + 15;
   if (e >= 0x1f) return sign | 0x7c00; // too large: infinity
   if (e <= 0) {
     // A subnormal half, or zero.

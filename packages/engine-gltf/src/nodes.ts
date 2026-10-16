@@ -125,7 +125,7 @@ type AccessorFn = (index: number) => Promise<GltfAttributeData>;
 
 export async function skinData(
   skin: GltfSkin,
-  accessor: AccessorFn
+  accessor: AccessorFn,
 ): Promise<SkinData> {
   return {
     ...(skin.name !== undefined ? { name: skin.name } : {}),
@@ -133,7 +133,7 @@ export async function skinData(
     ...(skin.inverseBindMatrices !== undefined
       ? {
           inverseBindMatrices: toFloat32(
-            await accessor(skin.inverseBindMatrices)
+            await accessor(skin.inverseBindMatrices),
           ),
         }
       : {}),
@@ -155,12 +155,12 @@ const animatedPaths: ReadonlySet<string> = new Set([
  */
 export async function animationData(
   animation: GltfAnimation,
-  accessor: AccessorFn
+  accessor: AccessorFn,
 ): Promise<AnimationClipData> {
   const channels = await Promise.all(
     animation.channels
       .filter(
-        (c) => c.target.node !== undefined && animatedPaths.has(c.target.path)
+        (c) => c.target.node !== undefined && animatedPaths.has(c.target.path),
       )
       .map(async (channel): Promise<AnimationChannelData> => {
         const sampler = animation.samplers[channel.sampler];
@@ -177,11 +177,11 @@ export async function animationData(
           times: toFloat32(times),
           values: toFloat32(values),
         };
-      })
+      }),
   );
   const duration = channels.reduce(
     (max, c) => Math.max(max, c.times.length ? c.times[c.times.length - 1] : 0),
-    0
+    0,
   );
   return {
     ...(animation.name !== undefined ? { name: animation.name } : {}),

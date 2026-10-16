@@ -108,7 +108,7 @@ export class NativeWindow extends EventTarget {
       (resizable ? WindowFlags.resizable : 0) |
         (hidden ? WindowFlags.hidden : 0) |
         (fullscreen ? WindowFlags.fullscreen : 0) |
-        (vulkan ? WindowFlags.vulkan : 0)
+        (vulkan ? WindowFlags.vulkan : 0),
     );
     this.id = this._addon.windowId(this._handle);
     [this._width, this._height] = this._addon.windowSize(this._handle);
@@ -147,7 +147,7 @@ export class NativeWindow extends EventTarget {
   static readGamepad(
     id: number,
     buttons: Float32Array,
-    axes: Float32Array
+    axes: Float32Array,
   ): string | undefined {
     return windows.size === 0
       ? undefined
@@ -163,7 +163,7 @@ export class NativeWindow extends EventTarget {
     id: number,
     strong: number,
     weak: number,
-    duration: number
+    duration: number,
   ): boolean {
     return (
       windows.size > 0 &&
@@ -171,7 +171,7 @@ export class NativeWindow extends EventTarget {
         id,
         strong,
         weak,
-        Math.round(Math.max(0, duration) * 1000)
+        Math.round(Math.max(0, duration) * 1000),
       )
     );
   }
@@ -219,7 +219,7 @@ export class NativeWindow extends EventTarget {
     pixels: Uint8Array,
     width: number,
     height: number,
-    stride = width * 4
+    stride = width * 4,
   ): void {
     this._addon.presentRgba(this.handle, pixels, width, height, stride);
   }

@@ -29,7 +29,7 @@ const program = () => {
     alpha: g.call(
       std.convert,
       { value: g.uniform('mode', BuiltinTypes.u32, { slot: 'pass' }) },
-      { params: { to: BuiltinTypes.f32 } }
+      { params: { to: BuiltinTypes.f32 } },
     ),
   });
   return compile(g.build());
@@ -58,7 +58,7 @@ describe('wgslLayoutStrategy', () => {
       group('material').bindings.map((binding) => [
         binding.binding,
         binding.resource.name,
-      ])
+      ]),
     ).toEqual([
       [0, 'materialUniforms'],
       [1, 'diffuseMap'],
@@ -113,7 +113,7 @@ describe('wgslLayoutStrategy', () => {
     expect(
       group('material')
         .bindings.slice(1)
-        .map((binding) => binding.block)
+        .map((binding) => binding.block),
     ).toEqual([undefined, undefined]);
   });
 });
@@ -124,7 +124,7 @@ describe('wgslLayoutStrategy.writeUniform', () => {
     wgslLayoutStrategy.writeUniform(
       view,
       { name: 'u', type, offset: 0, size },
-      value
+      value,
     );
     return view;
   };
@@ -146,12 +146,12 @@ describe('wgslLayoutStrategy.writeUniform', () => {
   it('pads the columns of a mat3, from packed or padded data', () => {
     const expected = [1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0];
     expect(
-      floats(write(BuiltinTypes.mat3f, [1, 2, 3, 4, 5, 6, 7, 8, 9], 48))
+      floats(write(BuiltinTypes.mat3f, [1, 2, 3, 4, 5, 6, 7, 8, 9], 48)),
     ).toEqual(expected);
     expect(
       floats(
-        write(BuiltinTypes.mat3f, [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99], 48)
-      )
+        write(BuiltinTypes.mat3f, [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99], 48),
+      ),
     ).toEqual(expected);
   });
 
@@ -209,7 +209,7 @@ describe('wgslLayoutStrategy.writeUniform', () => {
             ],
           },
         ],
-      })
+      }),
     ).toThrow(/multiple of 16/);
   });
 
@@ -220,7 +220,7 @@ describe('wgslLayoutStrategy.writeUniform', () => {
 
   it('rejects values of the wrong shape', () => {
     expect(() => write(BuiltinTypes.vec3f, [1, 2])).toThrow(
-      /expects 3 components/
+      /expects 3 components/,
     );
     expect(() => write(BuiltinTypes.f32, [1])).toThrow(/expects a number/);
   });

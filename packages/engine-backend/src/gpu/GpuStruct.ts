@@ -16,8 +16,7 @@ export interface GpuStructFieldBluePrint {
 }
 
 export interface GpuStruct<T = unknown>
-  extends GpuType<T>,
-    Readonly<GpuStructFieldBluePrint> {
+  extends GpuType<T>, Readonly<GpuStructFieldBluePrint> {
   runtimeSize(value: T): number;
 }
 
@@ -35,10 +34,10 @@ export interface StructBuildStrategy {
     alignment: number;
   }): number;
   getRuntimeSizeCallback<T = unknown>(
-    blueprint: GpuStructFieldBluePrint
+    blueprint: GpuStructFieldBluePrint,
   ): (value: T) => number;
   getWriteCallback(
-    blueprint: GpuStructFieldBluePrint
+    blueprint: GpuStructFieldBluePrint,
   ): (target: ArrayBuffer, offset: number, value: unknown) => void;
   getSerializeCallback(blueprint: GpuStructFieldBluePrint): () => string;
 }

@@ -71,7 +71,7 @@ function isShaderTypeValue(value: StaticValue): value is ShaderType {
 function checkParam(
   name: string,
   schema: ParamSchema,
-  value: StaticValue
+  value: StaticValue,
 ): string | undefined {
   switch (schema.kind) {
     case 'string':
@@ -114,7 +114,7 @@ function checkParam(
 export function resolveGraphNode(
   node: GraphNode,
   registry: NodeRegistry,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): ResolvedNode | undefined {
   const definition = registry.get(node.type);
   if (!definition) {
@@ -186,7 +186,7 @@ export function resolveGraphNode(
  * @group Validation
  */
 export function checkOutputNodes(
-  outputs: readonly Pick<GraphNode, 'id' | 'type'>[]
+  outputs: readonly Pick<GraphNode, 'id' | 'type'>[],
 ): string | undefined {
   if (outputs.length === 0) {
     return 'the graph has no output node';
@@ -211,7 +211,7 @@ export function checkOutputNodes(
     if (
       others.some(
         (node) =>
-          node.type === 'output.fullscreen' || node.type === 'function.output'
+          node.type === 'output.fullscreen' || node.type === 'function.output',
       )
     ) {
       return 'output.attribute nodes belong to graphs ending with output.surface, or with output.vertex and output.fragment';
@@ -242,7 +242,7 @@ export function checkOutputNodes(
   }
   // A function graph: function.output nodes only.
   const functionOutputs = outputs.filter(
-    (node) => node.type === 'function.output'
+    (node) => node.type === 'function.output',
   );
   if (functionOutputs.length > 0) {
     return functionOutputs.length === outputs.length
@@ -267,14 +267,14 @@ export function checkOutputNodes(
   return `the graph has ${outputs.length} output nodes (${outputs
     .map((node) => `#${node.id} ${node.type}`)
     .join(
-      ', '
+      ', ',
     )}): use either one output.surface, or one output.vertex and one output.fragment`;
 }
 
 // The inputs and the outputs of a function graph have distinct names.
 function checkFunctionPorts(
   nodes: ReadonlyMap<NodeId, ResolvedNode>,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   for (const type of ['function.input', 'function.output']) {
     const names = new Set<string>();
@@ -307,7 +307,7 @@ const resourceNodeTypes = new Set([
 
 function checkResourceDeclarations(
   nodes: ReadonlyMap<NodeId, ResolvedNode>,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   const declarations = new Map<string, { id: NodeId; signature: string }>();
   const attributes = new Map<string, { id: NodeId; signature: string }>();
@@ -355,7 +355,7 @@ function checkResourceDeclarations(
 function topologicalOrder(
   nodes: ReadonlyMap<NodeId, ResolvedNode>,
   edges: readonly GraphEdge[],
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): NodeId[] | undefined {
   const inDegree = new Map<NodeId, number>();
   const successors = new Map<NodeId, NodeId[]>();
@@ -407,7 +407,7 @@ function topologicalOrder(
  */
 export function validateGraph(
   graph: MaterialGraphData,
-  registry: NodeRegistry
+  registry: NodeRegistry,
 ): GraphValidation {
   const diagnostics: Diagnostic[] = [];
   const nodes = new Map<NodeId, ResolvedNode>();
@@ -508,7 +508,7 @@ export function validateGraph(
   const outputError = checkOutputNodes(
     [...nodes.values()]
       .filter((resolved) => resolved.definition.category === 'output')
-      .map((resolved) => resolved.node)
+      .map((resolved) => resolved.node),
   );
   if (outputError) {
     diagnostics.push({ severity: 'error', message: outputError });

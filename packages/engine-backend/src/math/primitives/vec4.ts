@@ -3,17 +3,17 @@ export type Vec4Api = {
   subtract: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   multiply: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   divide: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   invert: (a: Float32Array, out?: Float32Array) => Float32Array;
   dot: (a: Float32Array, b: Float32Array) => number;
@@ -22,18 +22,18 @@ export type Vec4Api = {
   multiplyScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
   divideScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   multiplyMat4: (
     v: Float32Array,
     m: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   length: (a: Float32Array) => number;
@@ -47,7 +47,7 @@ export type Vec4Api = {
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ) => Float32Array;
 
   create(): Float32Array;

@@ -17,7 +17,7 @@ function RouteComponent() {
       onSurfaceReady={async (
         engine: Engine,
         surface: Surface,
-        canvas: HTMLCanvasElement
+        canvas: HTMLCanvasElement,
       ) => {
         const wengine = engine as WebGpuEngine;
         const wsurface = surface as WebGpuSurface;
@@ -37,7 +37,7 @@ function RouteComponent() {
         wengine.device!.queue.copyExternalImageToTexture(
           { source: imageBitmap },
           { texture },
-          { width: imageBitmap.width, height: imageBitmap.height }
+          { width: imageBitmap.width, height: imageBitmap.height },
         );
 
         const sampler = wengine.device!.createSampler({

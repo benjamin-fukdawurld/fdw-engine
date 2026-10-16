@@ -49,14 +49,14 @@ describe('vertex formats', () => {
 
   it('accepts attributes with more components than the input', () => {
     expect(isVertexFormatCompatible('float32x4', BuiltinTypes.vec3f)).toBe(
-      true
+      true,
     );
     expect(isVertexFormatCompatible('float32x2', BuiltinTypes.vec3f)).toBe(
-      false
+      false,
     );
     expect(isVertexFormatCompatible('uint32', BuiltinTypes.f32)).toBe(false);
     expect(isVertexFormatCompatible('float32x4', BuiltinTypes.mat4f)).toBe(
-      false
+      false,
     );
   });
 });
@@ -66,8 +66,8 @@ describe('matchVertexLayout', () => {
     expect(
       matchVertexLayout(
         [input('position'), input('uv', BuiltinTypes.vec2f, 1)],
-        mesh
-      )
+        mesh,
+      ),
     ).toEqual([
       {
         buffer: 0,
@@ -94,10 +94,10 @@ describe('matchVertexLayout', () => {
 
   it('reports missing and incompatible attributes', () => {
     expect(() => matchVertexLayout([input('tangent')], mesh)).toThrow(
-      'The mesh has no "tangent" attribute'
+      'The mesh has no "tangent" attribute',
     );
     expect(() =>
-      matchVertexLayout([input('uv', BuiltinTypes.vec3f)], mesh)
+      matchVertexLayout([input('uv', BuiltinTypes.vec3f)], mesh),
     ).toThrow(/float32x2, which cannot feed a vec3<f32>/);
   });
 

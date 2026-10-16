@@ -28,7 +28,7 @@ function boundsOf(mesh: Mesh): MeshBounds {
   mesh.description.vertexBuffers.forEach((layout, buffer) => {
     const attribute = layout.attributes.find(
       (candidate) =>
-        candidate.semantic === 'position' && candidate.format === 'float32x3'
+        candidate.semantic === 'position' && candidate.format === 'float32x3',
     );
     if (!attribute || sphere) {
       return;
@@ -36,7 +36,7 @@ function boundsOf(mesh: Mesh): MeshBounds {
     const data = mesh.vertices[buffer];
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     const count = Math.floor(
-      (data.byteLength - attribute.offset + layout.stride - 12) / layout.stride
+      (data.byteLength - attribute.offset + layout.stride - 12) / layout.stride,
     );
     if (count <= 0) {
       return;
@@ -60,8 +60,8 @@ function boundsOf(mesh: Mesh): MeshBounds {
         Math.hypot(
           position(i, 0) - center[0],
           position(i, 1) - center[1],
-          position(i, 2) - center[2]
-        )
+          position(i, 2) - center[2],
+        ),
       );
     }
     sphere = { center, radius };

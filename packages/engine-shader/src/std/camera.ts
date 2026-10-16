@@ -66,7 +66,7 @@ function positionFromDepth(registry: NodeRegistry): FunctionDefinition {
  * registry: `camera.positionFromDepth`.
  */
 export function createCameraFunctions(
-  registry: NodeRegistry
+  registry: NodeRegistry,
 ): FunctionDefinition[] {
   return [positionFromDepth(registry)];
 }

@@ -2,9 +2,8 @@ import type { SnapshotProvider, CachedValueProps } from './types';
 
 export class CachedValue<
   T,
-  TDependencies extends readonly SnapshotProvider<any>[]
-> implements SnapshotProvider<T>
-{
+  TDependencies extends readonly SnapshotProvider<any>[],
+> implements SnapshotProvider<T> {
   private _version: number;
   private _value: T;
   private _dependencies: TDependencies;
@@ -43,7 +42,7 @@ export class CachedValue<
     return (
       this._dependencyVersions === undefined ||
       this._dependencies.some(
-        (dep, index) => dep.version !== this._dependencyVersions![index]
+        (dep, index) => dep.version !== this._dependencyVersions![index],
       )
     );
   }
@@ -51,7 +50,7 @@ export class CachedValue<
   private ensureUpdated() {
     if (this._updating) {
       throw new Error(
-        'Circular dependency detected while updating CachedValue.'
+        'Circular dependency detected while updating CachedValue.',
       );
     }
 

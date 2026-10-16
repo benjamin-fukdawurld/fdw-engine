@@ -18,7 +18,7 @@ export interface GpuBuffer {
     offset: number,
     value: ArrayBuffer,
     dataOffset?: number,
-    size?: number
+    size?: number,
   ): void;
 
   // Reads the content of the buffer back, once the GPU commands submitted so

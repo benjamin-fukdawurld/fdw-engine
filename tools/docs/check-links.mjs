@@ -39,7 +39,7 @@ const idsOf = (file) => {
     const html = readFileSync(file, 'utf8');
     ids.set(
       file,
-      new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]))
+      new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])),
     );
   }
   return ids.get(file);

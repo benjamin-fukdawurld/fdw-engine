@@ -42,9 +42,9 @@ resources.mount(
   'http',
   withChangeChannel(
     new HttpSource({ base: '/' }),
-    hotChannel(import.meta.hot!)
+    hotChannel(import.meta.hot!),
   ),
-  { default: true }
+  { default: true },
 );
 resources.watch(true);
 ```

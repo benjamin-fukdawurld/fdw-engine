@@ -57,7 +57,7 @@ export class FileSource implements ResourceSource {
   private async walk(entry: FileSystemEntry, added: string[]): Promise<void> {
     if (entry.isFile) {
       const file = await new Promise<File>((resolve, reject) =>
-        (entry as FileSystemFileEntry).file(resolve, reject)
+        (entry as FileSystemFileEntry).file(resolve, reject),
       );
       const path = entry.fullPath.replace(/^\/+/, '');
       this.add(file, path);
@@ -69,7 +69,7 @@ export class FileSource implements ResourceSource {
     // `readEntries` returns a batch at a time, until an empty one.
     for (;;) {
       const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
-        reader.readEntries(resolve, reject)
+        reader.readEntries(resolve, reject),
       );
       if (batch.length === 0) break;
       for (const child of batch) await this.walk(child, added);
@@ -95,7 +95,7 @@ export class FileSource implements ResourceSource {
 
   async read(
     path: string,
-    { signal, onProgress }: ReadOptions
+    { signal, onProgress }: ReadOptions,
   ): Promise<ResourceBytes> {
     const file = this.file(path);
     if (signal.aborted) throw new ResourceError('aborted', path);

@@ -24,7 +24,7 @@ export class MazeView {
   constructor(
     backend: RenderBackend,
     private readonly _scene: Scene,
-    level: Level
+    level: Level,
   ) {
     this.renderer = new Renderer(backend, {
       output: { toneMapping: 'neutral', encoding: 'srgb' },
@@ -45,7 +45,7 @@ export class MazeView {
       cullUnlit?: boolean;
       background?: { r: number; g: number; b: number };
       inset?: Inset;
-    } = {}
+    } = {},
   ): ViewStats | undefined {
     const graph = new RenderGraph();
     const output = graph.importTexture('surface', surface.getCurrentTarget());

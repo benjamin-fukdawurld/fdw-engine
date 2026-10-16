@@ -138,7 +138,7 @@ export class Frustum implements ConvexVolume {
       bounds[offset + 2],
       bounds[offset + 3],
       bounds[offset + 4],
-      bounds[offset + 5]
+      bounds[offset + 5],
     );
   }
 
@@ -148,7 +148,7 @@ export class Frustum implements ConvexVolume {
     minZ: number,
     maxX: number,
     maxY: number,
-    maxZ: number
+    maxZ: number,
   ): Classification {
     const p = this.planes;
     let inside = true;

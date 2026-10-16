@@ -49,7 +49,7 @@ export interface BasisTranscoder {
   transcode(
     ktx2: Uint8Array,
     target: BasisTarget,
-    options: BasisTranscodeOptions
+    options: BasisTranscodeOptions,
   ): BasisTranscodeResult | Promise<BasisTranscodeResult>;
 }
 
@@ -61,7 +61,7 @@ export interface BasisTranscodeResult {
 export interface ZstdDecoder {
   decode(
     bytes: Uint8Array,
-    uncompressedSize: number
+    uncompressedSize: number,
   ): Uint8Array | Promise<Uint8Array>;
 }
 
@@ -92,12 +92,12 @@ const basisTargets: readonly {
 export function basisTarget(
   formats: readonly GpuTextureFormat[],
   kind: 'etc1s' | 'uastc',
-  hasAlpha: boolean
+  hasAlpha: boolean,
 ): { target: BasisTarget; format: GpuTextureFormat } {
   const found = basisTargets.find(
     (t) =>
       formats.includes(t.format) &&
-      (!t.opaqueEtc1s || (kind === 'etc1s' && !hasAlpha))
+      (!t.opaqueEtc1s || (kind === 'etc1s' && !hasAlpha)),
   );
   return found
     ? { target: found.target, format: found.format }
@@ -111,7 +111,7 @@ export function basisTarget(
  */
 export function supportsImage(
   capabilities: BackendCapabilities | undefined,
-  image: ImageAsset
+  image: ImageAsset,
 ): boolean {
   if (image.format === 'universal') return image.transcode !== undefined;
   return (
@@ -128,7 +128,7 @@ export function supportsImage(
 export function ensureSupported(
   capabilities: BackendCapabilities | undefined,
   image: ImageAsset,
-  uri = 'image'
+  uri = 'image',
 ): void {
   if (!supportsImage(capabilities, image)) {
     const what =
@@ -138,7 +138,7 @@ export function ensureSupported(
     throw new ResourceError(
       'unsupported',
       uri,
-      `${uri}: the backend cannot sample ${what}`
+      `${uri}: the backend cannot sample ${what}`,
     );
   }
 }
@@ -181,7 +181,7 @@ function checkLevels(
   shape: Shape,
   format: GpuTextureFormat,
   levels: readonly ImageLevel[],
-  uri: string
+  uri: string,
 ): void {
   levels.forEach((data, level) => {
     const expected =
@@ -190,7 +190,7 @@ function checkLevels(
       throw new ResourceError(
         'decode',
         uri,
-        `${uri}: level ${level} of ${format} holds ${data.byteLength} bytes, not ${expected}`
+        `${uri}: level ${level} of ${format} holds ${data.byteLength} bytes, not ${expected}`,
       );
     }
   });
@@ -203,7 +203,7 @@ const owned = (bytes: Uint8Array): Uint8Array<ArrayBuffer> =>
     : new Uint8Array(bytes);
 
 async function inflate(
-  data: Uint8Array<ArrayBuffer>
+  data: Uint8Array<ArrayBuffer>,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const stream = new Blob([data])
     .stream()
@@ -217,7 +217,7 @@ async function readLevels(
   ktx: Ktx2Container,
   options: Ktx2Options,
   uri: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ImageLevel[]> {
   const scheme = ktx.supercompressionScheme;
   const { zstd } = options;
@@ -225,7 +225,7 @@ async function readLevels(
     throw new ResourceError(
       'unsupported',
       uri,
-      `${uri}: zstd supercompression needs a decoder (installKtx2(registry, { zstd }))`
+      `${uri}: zstd supercompression needs a decoder (installKtx2(registry, { zstd }))`,
     );
   }
   if (
@@ -236,7 +236,7 @@ async function readLevels(
     throw new ResourceError(
       'unsupported',
       uri,
-      `${uri}: supercompression scheme ${scheme} for a GPU format`
+      `${uri}: supercompression scheme ${scheme} for a GPU format`,
     );
   }
   const levels: ImageLevel[] = [];
@@ -244,7 +244,7 @@ async function readLevels(
     signal?.throwIfAborted();
     const data = bytes.subarray(
       level.byteOffset,
-      level.byteOffset + level.byteLength
+      level.byteOffset + level.byteLength,
     );
     if (scheme === Ktx2Supercompression.none) {
       levels.push(data);
@@ -254,14 +254,14 @@ async function readLevels(
       levels.push(
         scheme === Ktx2Supercompression.zlib
           ? await inflate(data)
-          : owned(await zstd!.decode(data, level.uncompressedByteLength))
+          : owned(await zstd!.decode(data, level.uncompressedByteLength)),
       );
     } catch (cause) {
       throw new ResourceError(
         'decode',
         uri,
         `${uri}: cannot inflate level ${levels.length}`,
-        { cause }
+        { cause },
       );
     }
   }
@@ -275,20 +275,20 @@ function universalImage(
   ktx: Ktx2Container,
   shape: Shape,
   options: Ktx2Options,
-  uri: string
+  uri: string,
 ): ImageAsset {
   const { colorModel, samples } = ktx.dataFormat;
   const kind =
     colorModel === Ktx2ColorModel.etc1s
       ? 'etc1s'
       : colorModel === Ktx2ColorModel.uastc
-      ? 'uastc'
-      : undefined;
+        ? 'uastc'
+        : undefined;
   if (!kind)
     throw new ResourceError(
       'unsupported',
       uri,
-      `${uri}: undefined format with the color model ${colorModel}`
+      `${uri}: undefined format with the color model ${colorModel}`,
     );
   const scheme = ktx.supercompressionScheme;
   const expected =
@@ -299,7 +299,7 @@ function universalImage(
     throw new ResourceError(
       'unsupported',
       uri,
-      `${uri}: ${kind} data with the supercompression scheme ${scheme}`
+      `${uri}: ${kind} data with the supercompression scheme ${scheme}`,
     );
   }
   // ETC1S: an alpha slice as the second sample; UASTC: the RGBA (3) and RRRG (5) channels.
@@ -321,7 +321,7 @@ function universalImage(
         throw new ResourceError(
           'unsupported',
           uri,
-          `${uri}: Basis Universal data needs a transcoder (installKtx2(registry, { transcoder }))`
+          `${uri}: Basis Universal data needs a transcoder (installKtx2(registry, { transcoder }))`,
         );
       }
       signal?.throwIfAborted();
@@ -339,7 +339,7 @@ function universalImage(
           'decode',
           uri,
           `${uri}: cannot transcode to ${target}`,
-          { cause }
+          { cause },
         );
       }
       signal?.throwIfAborted();
@@ -347,7 +347,7 @@ function universalImage(
         throw new ResourceError(
           'decode',
           uri,
-          `${uri}: the transcoder gave ${result.levels.length} levels, not ${ktx.levels.length}`
+          `${uri}: the transcoder gave ${result.levels.length} levels, not ${ktx.levels.length}`,
         );
       }
       const levels = result.levels.map(owned);
@@ -380,7 +380,7 @@ export function ktx2Codec(options: Ktx2Options = {}): ImageCodec {
         throw new ResourceError(
           'unsupported',
           uri,
-          `${uri}: VkFormat ${ktx.vkFormat} is not supported`
+          `${uri}: VkFormat ${ktx.vkFormat} is not supported`,
         );
       const levels = await readLevels(bytes, ktx, options, uri, signal);
       checkLevels(shape, format, levels, uri);
@@ -403,7 +403,7 @@ export function ktx2Codec(options: Ktx2Options = {}): ImageCodec {
  */
 export function installKtx2(
   registry: ImageCodecRegistry,
-  options: Ktx2Options = {}
+  options: Ktx2Options = {},
 ): ImageCodec {
   const codec = ktx2Codec(options);
   registry.register(codec);

@@ -35,7 +35,7 @@ export class WebGl2PassTimer implements GpuPassTimer {
   constructor(
     private readonly _gl: WebGL2RenderingContext,
     private readonly _extension: TimerQueryExtension,
-    readonly capacity: number
+    readonly capacity: number,
   ) {
     this._slots = Array.from({ length: Slots }, () => ({
       queries: Array.from({ length: capacity }, () => _gl.createQuery()),

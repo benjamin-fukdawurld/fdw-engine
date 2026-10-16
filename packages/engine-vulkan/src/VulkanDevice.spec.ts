@@ -9,7 +9,7 @@ import { canRun } from '@fdw/engine-backend/testing';
 const built = canRun(
   'vulkan',
   existsSync(addonPath()),
-  'the Vulkan addon is not built (VULKAN_SDK)'
+  'the Vulkan addon is not built (VULKAN_SDK)',
 );
 
 describe.skipIf(!built)('VulkanDevice', () => {
@@ -54,7 +54,7 @@ describe.skipIf(!built)('VulkanDevice', () => {
       reads.push(buffer.read(0, 4));
     }
     const values = (await Promise.all(reads)).map(
-      (data) => new Float32Array(data)[0]
+      (data) => new Float32Array(data)[0],
     );
     expect(values).toEqual(Array.from({ length: 20 }, (_, i) => i));
     buffer.destroy();
@@ -73,7 +73,7 @@ describe.skipIf(!built)('VulkanDevice', () => {
   it('reports the misuses', () => {
     const buffer = device.buffers.create({ size: 8, usage: ['index'] });
     expect(() => buffer.write(4, new ArrayBuffer(8))).toThrow(
-      /outside of the buffer \(8 bytes\)/
+      /outside of the buffer \(8 bytes\)/,
     );
     buffer.destroy();
   });

@@ -119,7 +119,7 @@ type TypedArrayType =
 function repack(
   attachment: FramebufferAttachment,
   read: Uint8Array | Uint32Array | Int32Array | Float32Array,
-  pixels: number
+  pixels: number,
 ): Uint8Array {
   const layout = texelLayout(attachment.format);
   if (!layout) {
@@ -162,7 +162,7 @@ function repack(
 export async function readAttachment(
   gl: WebGL2RenderingContext,
   attachment: FramebufferAttachment,
-  region: GpuTextureRegion
+  region: GpuTextureRegion,
 ): Promise<ArrayBuffer> {
   const { x, y, width, height } = region;
   const { format, type, read } = readFormat(attachment);
@@ -181,7 +181,7 @@ export async function readAttachment(
     height,
     format,
     type,
-    0
+    0,
   );
   gl.bindBuffer(GL.PIXEL_PACK_BUFFER, null);
   try {

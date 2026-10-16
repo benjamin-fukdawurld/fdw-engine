@@ -1,10 +1,547 @@
 ---
 title: A first person shooter
-description: WIP
+description: A second game, seen through the eyes of the player — an arena, a weapon in the hand, waves of drones shot down with rays, a pause menu.
 sidebar:
   order: 6
 ---
 
 import Example from '../../../components/Example.astro';
 
+A second game, in first person this time. The player stands in a walled
+arena, at the end of the day; drones come in through the four gates, in
+waves, and fly at the player to strike it. The weapon in the hand shoots
+them down, three hits each. Each wave is bigger than the last; the game
+ends when the health of the player falls to zero.
+
+The game reuses what the maze built — static nodes, a tag `Solid`, the
+collisions of circles, unlit materials, components with columns, a
+scheduler — and adds what a first person game needs: a camera at the
+height of the eyes, the pointer locked, a weapon that follows the view,
+shots traced with rays, enemies drawn between two steps.
+
 <Example name="fps" code={false} />
+
+Click the arena, then **Play**: the **mouse** looks around, **W A S D**
+walks, **Shift** runs, **Space** jumps, a **click** (or **F**, held for
+automatic fire) shoots. **Escape** or **P** opens the menu: the arrows
+choose, Enter or a click confirms. With a gamepad: the left stick to walk,
+the right stick to look, the south button to jump, the right trigger to
+shoot, Start for the menu.
+
+## Where the code is
+
+The code of the game is in `packages/demo-scenes/src/fps/`, shared by:
+
+- the browser demo: `npx nx serve demo`, then the **FPS** route;
+- the native demo: `npx nx run demo-native:start -- fps` (Escape quits the
+  native demo: **P** pauses there);
+- this page.
+
+| File          | Contents                                                       |
+| ------------- | -------------------------------------------------------------- |
+| `arena.ts`    | The level: floor, walls, gates, cover, lamps, the sun          |
+| `controls.ts` | The actions of the game and of the menu                        |
+| `player.ts`   | The camera at the height of the eyes, walking, jumping, recoil |
+| `weapon.ts`   | The weapon in the hand, the crosshair, the sparks              |
+| `drones.ts`   | The enemies: a component, and the systems that go through it   |
+| `game.ts`     | The rules: the shots, the blows, the waves, the score          |
+| `fps.ts`      | The `SceneFactory`: the menu, and the frame run by a scheduler |
+
+## 1. The arena: a static level
+
+The arena is 40 m across, centered on the origin. Everything in it is built
+once, and never moves: every node is **static**, indexed once in the octree
+of the scene.
+
+```ts title="fps/arena.ts"
+const Solid = scene.world.defineComponent('solid', {});
+const level = scene.root.add({ name: 'arena', static: true });
+
+const solid = (material, position, scale, name) =>
+  level
+    .add({ name, position, scale, static: true, occluder: true })
+    .setMesh(cube, material)
+    .attach(Solid);
+```
+
+- The floor is made of tiles of 2 m, in two shades: a scale for the eye, to
+  feel the speed of walking. The tiles cast no shadow, and are not solid.
+- The walls are 4 m high, with a gate of 3 m in the middle of each, and a
+  dark recess behind it: the drones come out of the dark.
+- Eight pillars in a ring and a score of crates give cover. The crates are
+  placed by a seeded random generator, away from the four lanes from the
+  gates: the drones always find their way in.
+- What blocks is `Solid`, as in the maze: the player and the drones collide
+  with the same entities. Marked `occluder` too, the walls, the pillars
+  and the crates are ready for the
+  [occlusion culling](/fdw-engine/tutorials/occlusion-culling/): they hide
+  what is behind them.
+
+The light is a **low sun**, casting long shadows across the floor, and four
+lamps on posts at the corners — point lights, with a glowing bulb each. The
+bulbs use the unlit `glowMaterial` of the maze (step 4): their color does
+not depend on the lights. The game uses it for everything that glows — the
+bulbs, the eyes of the drones, the muzzle flash, the sparks, the crosshair.
+
+## 2. Two contexts of actions
+
+The game reads two `ActionMap`s, as in
+[First person controls](/fdw-engine/tutorials/first-person/): one for the
+game, one for the menu. The game starts in the menu, so its map starts
+disabled.
+
+```ts title="fps/controls.ts"
+const game = new ActionMap(
+  input,
+  {
+    ...FlyActions,
+    lift: { type: 'axis', bindings: [] },
+    jump: { type: 'button', bindings: ['key:Space', 'gamepad:south'] },
+    fire: {
+      type: 'button',
+      bindings: ['pointer:0', 'key:KeyF', 'gamepad:rightTrigger'],
+    },
+    // Escape quits the native demo: P pauses everywhere.
+    pause: {
+      type: 'button',
+      bindings: ['key:Escape', 'key:KeyP', 'gamepad:start'],
+    },
+    locked: { type: 'button', bindings: ['pointer:locked'] },
+  },
+  { enabled: false },
+);
+```
+
+- `FlyActions` are the actions the `FlyOperator` reads: `move`, `look`,
+  `run`, `lift`. The game takes them all, and empties `lift`: a walker does
+  not fly up and down. Bound to nothing, the axis stays at 0.
+- `locked` is a button **down while the pointer is locked**. In a browser,
+  Escape is the key that releases the lock: the game watches `locked`
+  being released, and opens the menu then.
+
+## 3. The player: a camera at the height of the eyes
+
+The player is no body seen from afar: it is the **node of the camera**. A
+`FlyOperator` in `walk` mode turns it with the mouse or the right stick,
+and walks it horizontally, wherever it looks:
+
+```ts title="fps/player.ts"
+this.eye = scene.root.add({ name: 'eye' }).setCamera(camera);
+this.fly = new FlyOperator(target, actions, {
+  mode: 'walk',
+  speed: 5,
+  runFactor: 1.6,
+  pointerSpeed: 2,
+});
+```
+
+The operator moves a `CameraTarget`: an object with a `position`, a
+`rotation` and a `projection`. Here, its position and rotation are those of
+the transform of the node, and its projection that of the camera — the
+operator reads the aspect, so that the pointer turns the view as much in
+both directions.
+
+```ts title="fps/player.ts"
+const target: CameraTarget = {
+  get position() {
+    return eye.transform.position;
+  },
+  set position(position: Vec3Like) {
+    eye.transform.position = position;
+  },
+  // … the same for rotation …
+  get projection() {
+    return camera.projection;
+  },
+};
+```
+
+The operator moves the eye; the player then corrects it. Each frame:
+
+```ts title="fps/player.ts"
+fly.update(dt); // looks, walks
+if (this._actions.button('jump').pressed && this.grounded) {
+  this._fall = jumpSpeed;
+}
+this._fall -= gravity * dt;
+this._feet = Math.max(0, this._feet + this._fall * dt);
+
+// A circle at the height of the knees: the crates stop it too.
+probe.x = fly.position.x;
+probe.y = this._feet + 0.5;
+probe.z = fly.position.z;
+resolveCircle(this._scene, this._solid, probe, this.radius);
+
+fly.position.y = this._feet + eyeHeight;
+fly.apply();
+```
+
+- **The jump** is a vertical speed, pulled down by gravity, until the feet
+  are back at 0. `grounded` forbids a second jump in the air.
+- **The collisions** are those of the maze (step 2): a circle of 40 cm,
+  pushed out of the solid boxes near it, sliding along them. The circle is
+  tested at the height of the knees, not of the eyes: a crate of 1 m
+  stops the player, as a wall does. The circle rises with the feet: at the
+  top of a jump, about 95 cm up, it passes over a small crate.
+- The gates lead out, into the recesses: the position is also clamped to
+  the inside of the arena.
+- `fly.apply()` writes the position and the angles back into the node,
+  after the corrections.
+
+**The recoil.** At each shot, the view kicks up a little, then comes back
+down, slower:
+
+```ts title="fps/player.ts"
+kick(amount: number): void {
+  const pitch = Math.min(this.fly.pitch + amount, this.fly.maxPitch);
+  this._recoil += pitch - this.fly.pitch;
+  this.fly.pitch = pitch;
+  this.fly.apply();
+}
+```
+
+The recoil left is remembered apart: only what the shots added is taken
+back, while the player keeps aiming with the mouse in between.
+
+## 4. The weapon in the hand
+
+The weapon is a few cubes — a body, a barrel, a grip, a glowing sight —
+**children of the node of the camera**. The hierarchy does the rest: the
+weapon follows every movement of the view, without a line of code.
+
+```ts title="fps/weapon.ts"
+export const ViewLayer = 1 << 1;
+
+this.node = eye.add({ name: 'weapon', layers: ViewLayer });
+this.node
+  .add({ position, scale, layers: ViewLayer })
+  .setMesh(cube, metal, { castShadow: false });
+```
+
+- About 25 cm from the eye, the weapon needs a camera that sees close: its
+  `near` is 5 cm. The muzzle is 46 cm ahead, the player keeps 40 cm from
+  the walls: against a wall, the barrel sinks into it.
+- The weapon casts no shadow: it is part of the view, not of the arena.
+- Each frame, it is placed in the lower right of the view, **swaying with
+  the steps** — the distance walked, not the time, so it is still when the
+  player stops — and kicked back after a shot.
+
+**The flash.** At the muzzle, a glowing ball and a point light, hidden. A
+shot shows them for 50 ms: the light lights the weapon, and the walls
+close by.
+
+```ts title="fps/weapon.ts"
+trigger(): boolean {
+  if (this._cooldown > 0) {
+    return false;
+  }
+  this._cooldown = period; // 0.12 s: about 8 shots per second
+  this._kick = 1;
+  this._flash = flashTime;
+  return true;
+}
+```
+
+**The crosshair** is a small cube, also a child of the eye, half a meter
+ahead, in the center of the view. A drone hit turns it red and bigger for a
+moment: its node gets another material.
+
+### What the player carries is on its own layer
+
+The weapon, the crosshair and the sparks are on a **layer** of their own,
+`ViewLayer`. The renderer draws every layer; the shots search all the
+others:
+
+```ts title="fps/game.ts"
+this._scene.raycastEntities(ray, onHit, { layers: ~ViewLayer }, range);
+```
+
+Without it, the first thing every shot would hit is the weapon, or the
+crosshair right in front of the eye, or the spark of the previous shot.
+
+## 5. The drones: a component, and its systems
+
+Each drone is a node — a body, a red eye, two wings, children of its node —
+and an **entity** with a `drone` component:
+
+```ts title="fps/drones.ts"
+const droneSchema = {
+  x: 'f32',
+  y: 'f32',
+  z: 'f32',
+  // Where it was at the step before.
+  px: 'f32',
+  py: 'f32',
+  pz: 'f32',
+  health: 'f32',
+  cooldown: 'f32', // before it can strike again
+  flash: 'f32', // the white flash of a hit
+  down: 'f32', // shot down: the time since; 0 while it flies
+  phase: 'f32', // so that the drones do not bob together
+  body: 'ref',
+} as const;
+```
+
+The logic of the drones runs at the **fixed step**, in three systems that
+go through the columns:
+
+- `steer` flies each drone towards the player, at 3.2 m/s, pushed away
+  from the drones closer than 1.6 m, out of the walls with the same
+  `resolveCircle` as the player, bobbing up and down. Close enough, it
+  stops and hovers.
+- `strike`: a drone within 1.5 m of the player strikes it, for 12 points,
+  then waits 1.2 s.
+- `fade`: the white of a hit fades; a drone shot down falls, then its node
+  is removed.
+
+Removing a node removes its entity from the store. A loop that removes
+entities goes over a copy:
+
+```ts title="fps/drones.ts"
+for (const e of [...this.Drone.entities]) {
+  // …
+  if (down[e] >= fallTime) {
+    this._scene.node(e).remove();
+  }
+}
+```
+
+### Drawn between two steps
+
+The logic moves the drones 60 times per second; the screen may draw 144
+frames. Moved only at the steps, they would stutter. `steer` keeps the
+position of the previous step (`px`, `py`, `pz`) before moving, and the
+frame draws each drone **between the two**:
+
+```ts title="fps/drones.ts"
+draw(alpha: number, player: { x: number; z: number }): void {
+  const { x, y, z, px, py, pz, down } = this.Drone;
+  for (const e of this.Drone.entities) {
+    const node = this._scene.node(e);
+    const cx = px[e] + (x[e] - px[e]) * alpha;
+    const cz = pz[e] + (z[e] - pz[e]) * alpha;
+    node.transform.position = { x: cx, y: py[e] + (y[e] - py[e]) * alpha, z: cz };
+    // Facing the player, rolling on its side when falling.
+    const yaw = Math.atan2(-(player.x - cx), -(player.z - cz));
+    node.transform.rotation = multiplyQuat(
+      rotationAround('y', yaw),
+      rotationAround('z', down[e] * 12)
+    );
+    // …
+  }
+}
+```
+
+`alpha`, from the scheduler, tells where the frame is between the last two
+steps, from 0 to 1. The columns are the truth of the logic; the nodes, what
+is drawn. [Systems and the fixed step](/fdw-engine/tutorials/systems/)
+details the technique.
+
+## 6. Shooting: a ray from the eyes
+
+The trigger held and the weapon ready, a shot is a **ray** from the eyes,
+along the view, to the first thing it meets:
+
+```ts title="fps/game.ts"
+shoot(): void {
+  if (!this._actions.button('fire').down || !this.weapon.trigger()) {
+    return;
+  }
+  const { position, forward } = this.player;
+  // … the ray from position, along forward …
+  let hit: { entity: number; distance: number } | undefined;
+  this._scene.raycastEntities(
+    ray,
+    (entity, distance) => {
+      hit = { entity, distance };
+      return false; // the nearest hit is enough
+    },
+    { layers: ~ViewLayer },
+    range
+  );
+  // …
+}
+```
+
+- `button('fire').down`, not `pressed`: the trigger held fires again as
+  soon as the weapon is ready — automatic fire, at the rate of `period`.
+- The hits come nearest first: the first one stops the walk. A crate
+  between the player and a drone takes the shot.
+- `forward` is the direction of the view, from the angles of the operator:
+  the ray goes through the crosshair.
+
+The ray hits a **part** of a drone — its body, its eye, a wing — not the
+node of the drone, which has no mesh. The drone is the parent of the part:
+
+```ts title="fps/drones.ts"
+droneOf(entity: number): number | undefined {
+  const parent = this._scene.node(entity).parent;
+  return parent &&
+    this.Drone.has(parent.entity) &&
+    !this.Drone.down[parent.entity]
+    ? parent.entity
+    : undefined;
+}
+```
+
+Then:
+
+- **A drone hit** flashes white (its body gets the glowing material for
+  80 ms), the crosshair turns red; at the third hit, it is shot down, and
+  the score grows by 100 times the number of the wave.
+- **The arena hit**: a spark flies 5 cm before the surface, not inside it.
+  The sparks are twelve glowing cubes, reused: the oldest moves to the new
+  hit, shrinks and spins, then hides.
+- Hit or miss, the view kicks up, and the gamepad rumbles: a little for a
+  miss, more for a hit, most for a drone shot down.
+
+## 7. The frame, with a scheduler
+
+`fps.ts` puts everything into the four phases of a `Scheduler`:
+
+```ts title="fps/fps.ts"
+// begin: the events since the previous frame; the menu, the pause.
+scheduler.add('input', readInputAndMenu, { phase: 'begin' });
+
+// fixed: the drones, their blows, the waves; paused under the menu.
+scheduler.add('drones', (step) => game.drones.steer(step, player.position), {
+  phase: 'fixed',
+});
+scheduler.add('strikes', strikes, { phase: 'fixed', after: ['drones'] });
+scheduler.add('fade', (step) => game.drones.fade(step), {
+  phase: 'fixed',
+  after: ['strikes'],
+});
+scheduler.add('waves', (step) => game.waves(step), {
+  phase: 'fixed',
+  after: ['fade'],
+});
+
+// update: the player at the rate of the screen; the drones drawn between
+// their last two steps, then the shots, which hit what is drawn.
+scheduler.add('player', (dt) => {
+  if (actions.enabled) {
+    player.update(dt);
+  }
+});
+scheduler.add('draw', () => game.drones.draw(scheduler.alpha, player.position));
+scheduler.add('shoot', () => game.shoot(), { after: ['player', 'draw'] });
+scheduler.add('effects', effects, { after: ['shoot'] });
+
+// render: the view; the line of the state.
+scheduler.add('render', render, { phase: 'render' });
+scheduler.add('status', status, { phase: 'render', after: ['render'] });
+```
+
+Two choices differ from the maze:
+
+- **The player is not at the fixed step.** The view must follow the mouse
+  at every frame: turned at 60 steps per second on a 144 Hz screen, it
+  would judder at each movement of the hand. Walking goes with it, and the
+  collisions are tested each frame, with the time of the frame — at most
+  0.1 s, as `frame` caps it.
+- **The shots come after `draw`.** The ray tests the nodes where they are
+  drawn, between two steps: the player hits what they see, not where the
+  logic was a fraction of a step ago.
+
+## 8. The menu and the pause
+
+The menu is open at the start, at a pause, at the end of a game. Opening
+it switches the contexts, pauses the scheduler and releases the pointer:
+
+```ts title="fps/fps.ts"
+const play = () => {
+  if (game.state === 'over') {
+    game.reset();
+  }
+  started = true;
+  menu.enabled = false;
+  actions.enabled = true;
+  scheduler.paused = false;
+  // After a click or a key: the browser accepts the lock.
+  input.lockPointer();
+};
+const pause = () => {
+  actions.enabled = false;
+  menu.enabled = true;
+  scheduler.paused = true;
+  selected = 0;
+  input.lockPointer(false);
+};
+```
+
+- `scheduler.paused` stops the `fixed` phase only: under the menu, the
+  drones freeze, and the frame goes on — the input, the menu, the
+  rendering.
+- `play` is called from a click or a key: a browser only locks the pointer
+  in answer to a gesture of the user.
+- The menu has four entries: Play (Resume, Play again), the rumble, the
+  inverted vertical axis, the sensitivity of the pointer. These settings
+  are properties of the game and of the operator: `game.rumble`,
+  `fly.invertY`, `fly.pointerSpeed`.
+
+When the health of the player falls to 0, the `strikes` system ends the
+game and opens the menu, at once: the steps left in the frame are dropped.
+
+**The view tells the state.** The exposure of the rendering dims the arena
+under the menu, and darkens it for a moment at each blow:
+
+```ts title="fps/fps.ts"
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  exposure: menu.enabled ? 0.35 : 1 - game.hurt * 2,
+  clearColor: { r: 0.55, g: 0.45, b: 0.42, a: 1 },
+});
+```
+
+The line under the canvas gives the wave, the drones flying, the health,
+the score and the hits; under the menu, its entries, the selected one in
+brackets.
+
+## 9. The waves
+
+When no drone is left — the last one fallen and removed — the game waits
+two seconds, then sends the next wave:
+
+```ts title="fps/game.ts"
+const count = Math.min(1 + 2 * this.wave, maxDrones); // 3, 5, 7… 12
+for (let k = 0; k < count; k++) {
+  const gate = gates[k % gates.length];
+  const offset = [0, -1.1, 1.1][Math.floor(k / gates.length) % 3];
+  // …
+  this.drones.spawn(x, z, k * 1.7);
+}
+```
+
+The drones come in through the gates in turn — north first, ahead of the
+player at the start — three abreast at most in each. Their phases differ,
+so they do not bob together.
+
+## Testing it
+
+The game runs without a page and without a GPU: `FpsGame` takes a scene, an
+arena, a camera and an `ActionMap`, and a `FakeInputSource` drives the
+actions. `fps/fps.spec.ts` walks the player into a wall, makes it jump,
+shoots a drone down in three hits, shoots at the floor without hitting
+what the player carries, lets the drones strike until the game is over,
+and checks that a wave down brings a bigger one.
+
+## What we have
+
+- A level of static nodes, solid and occluding, lit by a low sun and lamps.
+- A player that is a camera: a `FlyOperator` in `walk` mode, corrected for
+  the jump and the collisions.
+- A weapon made of children of the camera, on a layer of its own, that the
+  shots do not see.
+- Drones as entities, moved by systems at the fixed step, drawn between two
+  steps.
+- Shots traced with rays of the scene, from the parts hit back to the
+  drone.
+- A pause menu: two contexts of actions, the pointer locked and released,
+  the scheduler paused.
+
+Some ideas left for later: drones that shoot back, with rays of their own;
+a weapon drawn in a pass of its own, so that it never sinks into a wall; a
+minimap, as in the maze.

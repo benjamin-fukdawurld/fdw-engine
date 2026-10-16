@@ -145,7 +145,7 @@ export class OcclusionCulling implements OcclusionCuller {
       ? Math.hypot(
           x - this._previous[0],
           y - this._previous[1],
-          z - this._previous[2]
+          z - this._previous[2],
         ) * this._motion
       : 0;
     this._previous = [x, y, z];
@@ -183,20 +183,20 @@ export class OcclusionCulling implements OcclusionCuller {
     const size = graph.pixelSize(depth);
     if (!size) {
       throw new Error(
-        `"${name}": the occlusion culling needs the size of the depth: create the graph with the size of the frame (new RenderGraph({ size }))`
+        `"${name}": the occlusion culling needs the size of the depth: create the graph with the size of the frame (new RenderGraph({ size }))`,
       );
     }
     const backend = renderer.backend;
     const renderable = backend.capabilities?.renderableFormats;
     if (renderable && !renderable.includes('rgba16float')) {
       throw new Error(
-        `"${name}": the occlusion culling renders to ${PyramidFormat} textures, which the backend cannot (EXT_color_buffer_float in WebGL2)`
+        `"${name}": the occlusion culling renders to ${PyramidFormat} textures, which the backend cannot (EXT_color_buffer_float in WebGL2)`,
       );
     }
     const textures = this.textures(backend, items.length);
     backend.textures.writeTexture(
       textures.bounds,
-      this._bounds.subarray(0, textures.rows * SlotsPerRow * 8)
+      this._bounds.subarray(0, textures.rows * SlotsPerRow * 8),
     );
 
     // The pyramid: each level half the previous one, rounded up.
@@ -218,7 +218,7 @@ export class OcclusionCulling implements OcclusionCuller {
       if (level === 0) {
         material.setValue(
           'inverseProjection',
-          backend.cameraMath.getInverseMatrix(view.projection)
+          backend.cameraMath.getInverseMatrix(view.projection),
         );
       }
       const passName = `${name} occlusion level ${level}`;
@@ -250,14 +250,14 @@ export class OcclusionCulling implements OcclusionCuller {
       {
         material: test,
         inputs: Object.fromEntries(
-          levels.map((level, i) => [levelName(i), level])
+          levels.map((level, i) => [levelName(i), level]),
         ),
         target: graph.importTexture(
           `${name} occlusion results`,
-          textures.visibility
+          textures.visibility,
         ),
         format: 'r8unorm',
-      }
+      },
     );
     const frame = this._frame;
     graph.addCopyPass(`${name} occlusion readback`, (pass) => {
@@ -305,7 +305,7 @@ export class OcclusionCulling implements OcclusionCuller {
   // larger ones when they do not fit.
   private textures(
     backend: RenderBackend,
-    count: number
+    count: number,
   ): NonNullable<OcclusionCulling['_textures']> {
     const rows = Math.ceil(count / SlotsPerRow);
     const current = this._textures;
@@ -351,7 +351,7 @@ export class OcclusionCulling implements OcclusionCuller {
   private async read(
     textures: NonNullable<OcclusionCulling['_textures']>,
     items: readonly Renderable[],
-    frame: number
+    frame: number,
   ): Promise<void> {
     try {
       const rows = Math.ceil(items.length / SlotsPerRow);
@@ -361,7 +361,7 @@ export class OcclusionCulling implements OcclusionCuller {
           y: 0,
           width: SlotsPerRow,
           height: rows,
-        })
+        }),
       );
       if (this._destroyed) {
         return;

@@ -94,7 +94,7 @@ function declaration(type: ShaderType, name: string): string {
   if (type.kind === 'array') {
     if (type.length === undefined) {
       throw new Error(
-        `${typeToString(type)}: runtime-sized arrays are storage buffers`
+        `${typeToString(type)}: runtime-sized arrays are storage buffers`,
       );
     }
     return `${declaration(type.element, name)}[${type.length}]`;
@@ -248,7 +248,7 @@ const valueName = (instruction: IrInstruction) =>
 
 function emitBody(
   entryPoint: IrEntryPoint,
-  resources: ReadonlyMap<string, string>
+  resources: ReadonlyMap<string, string>,
 ): BodyState {
   const state: BodyState = {
     lines: [],
@@ -264,7 +264,7 @@ function emitInstructions(
   body: readonly IrInstruction[],
   resources: ReadonlyMap<string, string>,
   state: BodyState,
-  indent: string
+  indent: string,
 ): void {
   const { lines, expressions, types, builtins } = state;
   const arg = (instruction: IrInstruction, index: number) =>
@@ -285,14 +285,14 @@ function emitInstructions(
         const count = arg(instruction, 0);
         lines.push(
           `${indent}${hlslType(type)} ${sum} = (${hlslType(type)})0;`,
-          `${indent}for (uint ${index} = 0u; ${index} < ${count}; ${index} = ${index} + 1u) {`
+          `${indent}for (uint ${index} = 0u; ${index} < ${count}; ${index} = ${index} + 1u) {`,
         );
         expressions.set(op.index, index);
         types.set(op.index, { kind: 'scalar', scalar: 'u32' });
         emitInstructions(op.body, resources, state, `${indent}  `);
         lines.push(
           `${indent}  ${sum} = ${sum} + ${expressions.get(op.result)};`,
-          `${indent}}`
+          `${indent}}`,
         );
         expressions.set(instruction.id, sum);
         continue;
@@ -308,8 +308,8 @@ function emitInstructions(
           `${indent}uint ${name}_stride;`,
           `${indent}${arg(
             instruction,
-            0
-          )}.GetDimensions(${name}, ${name}_stride);`
+            0,
+          )}.GetDimensions(${name}, ${name}_stride);`,
         );
         expressions.set(instruction.id, name);
         continue;
@@ -369,12 +369,12 @@ function emitInstructions(
         // Comparisons are component-wise for vectors, as in WGSL.
         expression = `(${arg(instruction, 0)} ${op.operator} ${arg(
           instruction,
-          1
+          1,
         )})`;
         break;
       case 'intrinsic':
         expression = `${intrinsicNames[op.name] ?? op.name}(${args(
-          instruction
+          instruction,
         )})`;
         break;
       case 'select':
@@ -382,32 +382,32 @@ function emitInstructions(
         // condition first.
         expression = `select(${arg(instruction, 2)}, ${arg(
           instruction,
-          1
+          1,
         )}, ${arg(instruction, 0)})`;
         break;
       case 'sample':
         expression = `${arg(instruction, 0)}.Sample(${arg(
           instruction,
-          1
+          1,
         )}, ${arg(instruction, 2)})`;
         break;
       case 'sample-level':
         expression = `${arg(instruction, 0)}.SampleLevel(${arg(
           instruction,
-          1
+          1,
         )}, ${arg(instruction, 2)}, ${arg(instruction, 3)})`;
         break;
       case 'sample-compare':
         expression = `${arg(instruction, 0)}.SampleCmpLevelZero(${arg(
           instruction,
-          1
+          1,
         )}, ${arg(instruction, 2)}, ${arg(instruction, 3)})`;
         break;
       case 'texture-load':
         // Load takes the level as the last coordinate.
         expression = `${arg(instruction, 0)}.Load(int3(${arg(
           instruction,
-          1
+          1,
         )}, ${arg(instruction, 2)}))`;
         break;
       case 'construct':
@@ -420,7 +420,7 @@ function emitInstructions(
         } else if (type.kind === 'matrix') {
           // From columns; HLSL constructors take rows.
           expression = `transpose(float${type.columns}x${type.rows}(${args(
-            instruction
+            instruction,
           )}))`;
         } else {
           expression = `${hlslType(type)}(${args(instruction)})`;
@@ -432,7 +432,7 @@ function emitInstructions(
       case 'load-object':
         expression = `${objectTable(resources)}[${arg(
           instruction,
-          0
+          0,
         )}].${memberIdentifier(op.member)}`;
         break;
       case 'swizzle':
@@ -449,7 +449,7 @@ function emitInstructions(
       ? ` // #${instruction.sourceNode}`
       : '';
     lines.push(
-      `${indent}const ${hlslType(type)} ${name} = ${expression};${comment}`
+      `${indent}const ${hlslType(type)} ${name} = ${expression};${comment}`,
     );
     expressions.set(instruction.id, name);
   }
@@ -459,7 +459,7 @@ function emitInstructions(
 // code, by binding name.
 function declareResources(
   layout: PhysicalProgramLayout,
-  sections: string[]
+  sections: string[],
 ): Map<string, string> {
   const resources = new Map<string, string>();
   for (const group of layout.groups) {
@@ -471,7 +471,7 @@ function declareResources(
       if (resource.kind === 'object-table') {
         resources.set(ObjectTableKey, name);
         sections.push(
-          declareObjectTable(physical, location, name, group.index)
+          declareObjectTable(physical, location, name, group.index),
         );
         continue;
       }
@@ -484,7 +484,7 @@ function declareResources(
 function declareResource(
   { resource, block }: PhysicalBinding,
   location: string,
-  name: string
+  name: string,
 ): string {
   switch (resource.kind) {
     case 'uniform-block': {
@@ -498,8 +498,8 @@ function declareResource(
           (member) =>
             `  [[vk::offset(${member.offset})]] ${declaration(
               member.type,
-              memberIdentifier(member.name)
-            )};`
+              memberIdentifier(member.name),
+            )};`,
         ),
         '};',
         `${location} ConstantBuffer<${struct}> ${name};`,
@@ -528,7 +528,7 @@ function declareObjectTable(
   { resource, binding, objectRow }: PhysicalBinding,
   location: string,
   name: string,
-  group: number
+  group: number,
 ): string {
   if (!objectRow) {
     throw new Error(`Object table "${resource.name}" has no row layout`);
@@ -540,8 +540,8 @@ function declareObjectTable(
       (member) =>
         `  [[vk::offset(${member.offset})]] ${declaration(
           member.type,
-          memberIdentifier(member.name)
-        )};`
+          memberIdentifier(member.name),
+        )};`,
     ),
     '};',
     `${location} StructuredBuffer<${struct}> ${name};`,
@@ -560,7 +560,7 @@ function stageVariable(variable: IrStageVariable, semantic: string): string {
   const interpolation =
     variable.interpolation === 'flat' ? 'nointerpolation ' : '';
   return `  [[vk::location(${variable.location})]] ${interpolation}${hlslType(
-    variable.type
+    variable.type,
   )} ${variable.name} : ${semantic}${variable.location};`;
 }
 
@@ -569,14 +569,15 @@ const builtinDeclarations = (builtins: ReadonlySet<string>) =>
     .filter((builtin) => builtin !== 'num-workgroups')
     .map(
       (builtin) =>
-        builtinParameters[builtin as keyof typeof builtinParameters].declaration
+        builtinParameters[builtin as keyof typeof builtinParameters]
+          .declaration,
     );
 
 // A compute stage: the body, then the writes, in order.
 function emitCompute(
   compute: IrEntryPoint,
   resources: ReadonlyMap<string, string>,
-  sections: string[]
+  sections: string[],
 ): void {
   const body = emitBody(compute, resources);
   const [x, y, z] = compute.workgroupSize ?? [1, 1, 1];
@@ -586,7 +587,7 @@ function emitCompute(
       throw new Error(`Binding "${write.resource}" is not in the layout`);
     }
     const statement = `${target}[${body.expressions.get(
-      write.index
+      write.index,
     )}] = ${body.expressions.get(write.value)};`;
     return write.condition === undefined
       ? [`  ${statement}`]
@@ -606,7 +607,7 @@ function emitCompute(
       ...body.lines,
       ...writes,
       '}',
-    ].join('\n')
+    ].join('\n'),
   );
 }
 
@@ -617,7 +618,7 @@ function emitCompute(
  */
 export function dxcArguments(
   stage: 'vertex' | 'fragment' | 'compute',
-  entryPoint: string
+  entryPoint: string,
 ): string[] {
   const profiles = { vertex: 'vs_6_0', fragment: 'ps_6_0', compute: 'cs_6_0' };
   return [
@@ -649,7 +650,7 @@ export class HlslCodegen implements ShaderCodegen {
     const resources = declareResources(layout, sections);
 
     const compute = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'compute'
+      (entryPoint) => entryPoint.stage === 'compute',
     );
     if (compute) {
       emitCompute(compute, resources, sections);
@@ -661,14 +662,14 @@ export class HlslCodegen implements ShaderCodegen {
     }
 
     const vertex = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'vertex'
+      (entryPoint) => entryPoint.stage === 'vertex',
     );
     const fragment = module.entryPoints.find(
-      (entryPoint) => entryPoint.stage === 'fragment'
+      (entryPoint) => entryPoint.stage === 'fragment',
     );
     if (!vertex || !fragment) {
       throw new Error(
-        'A program needs a vertex and a fragment entry point, or a compute one'
+        'A program needs a vertex and a fragment entry point, or a compute one',
       );
     }
     if (vertex.inputs.length > 0) {
@@ -677,7 +678,7 @@ export class HlslCodegen implements ShaderCodegen {
           'struct VertexInput {',
           ...vertex.inputs.map((input) => stageVariable(input, 'ATTRIBUTE')),
           '};',
-        ].join('\n')
+        ].join('\n'),
       );
     }
     sections.push(
@@ -685,7 +686,7 @@ export class HlslCodegen implements ShaderCodegen {
         'struct Varyings {',
         ...vertex.outputs.map((output) => stageVariable(output, 'VARYING')),
         '};',
-      ].join('\n')
+      ].join('\n'),
     );
 
     const vertexBody = emitBody(vertex, resources);
@@ -701,12 +702,12 @@ export class HlslCodegen implements ShaderCodegen {
         ...vertex.outputs.map(
           (output) =>
             `  result.${output.name} = ${vertexBody.expressions.get(
-              vertex.results[output.name]
-            )};`
+              vertex.results[output.name],
+            )};`,
         ),
         '  return result;',
         '}',
-      ].join('\n')
+      ].join('\n'),
     );
 
     const fragmentBody = emitBody(fragment, resources);
@@ -727,11 +728,11 @@ export class HlslCodegen implements ShaderCodegen {
           ...targets.map(
             (target) =>
               `  ${hlslType(target.type)} o_${identifier(
-                target.name
-              )} : SV_Target${target.location ?? 0};`
+                target.name,
+              )} : SV_Target${target.location ?? 0};`,
           ),
           '};',
-        ].join('\n')
+        ].join('\n'),
       );
     }
     sections.push(
@@ -740,8 +741,8 @@ export class HlslCodegen implements ShaderCodegen {
           color
             ? hlslType(color.type)
             : targets.length > 0
-            ? 'FragmentOutputs'
-            : 'void'
+              ? 'FragmentOutputs'
+              : 'void'
         } ps_main(${fragmentParameters.join(', ')})${
           color ? ` : SV_Target${color.location ?? 0}` : ''
         } {`,
@@ -750,7 +751,7 @@ export class HlslCodegen implements ShaderCodegen {
         ...(fragment.results['discard'] !== undefined
           ? [
               `  if (${fragmentBody.expressions.get(
-                fragment.results['discard']
+                fragment.results['discard'],
               )}) {`,
               '    discard;',
               '  }',
@@ -759,7 +760,7 @@ export class HlslCodegen implements ShaderCodegen {
         ...(color
           ? [
               `  return ${fragmentBody.expressions.get(
-                fragment.results[color.name]
+                fragment.results[color.name],
               )};`,
             ]
           : []),
@@ -769,16 +770,16 @@ export class HlslCodegen implements ShaderCodegen {
               ...targets.map(
                 (target) =>
                   `  targets.o_${identifier(
-                    target.name
+                    target.name,
                   )} = ${fragmentBody.expressions.get(
-                    fragment.results[target.name]
-                  )};`
+                    fragment.results[target.name],
+                  )};`,
               ),
               '  return targets;',
             ]
           : []),
         '}',
-      ].join('\n')
+      ].join('\n'),
     );
 
     return {

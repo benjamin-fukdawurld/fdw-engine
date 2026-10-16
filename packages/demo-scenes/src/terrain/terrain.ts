@@ -94,7 +94,7 @@ function toHalf(value: number): number {
 export function heightTexture(
   backend: RenderBackend,
   heights: Float32Array,
-  resolution: number
+  resolution: number,
 ): GpuTexture {
   const pixels = new Uint16Array(resolution * resolution * 4);
   heights.forEach((height, i) => {
@@ -178,7 +178,7 @@ export function terrainGraph({
   const ground = mix(
     mix([0.22, 0.34, 0.12], [0.38, 0.33, 0.28], rock),
     [0.92, 0.94, 0.97],
-    snow
+    snow,
   );
   // The level of the patch, from blue to red.
   const level = g.call(std.div, { a: vertex.level, b: 6 });
@@ -209,7 +209,7 @@ export function terrainGraph({
 /** A terrain of hills and ridges, centered on the origin. */
 export function buildTerrain(
   backend: RenderBackend,
-  options: TerrainOptions = {}
+  options: TerrainOptions = {},
 ): Terrain {
   const size = options.size ?? 1024;
   const height = options.height ?? 120;

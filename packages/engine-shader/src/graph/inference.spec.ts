@@ -71,7 +71,7 @@ describe('resolveNodeTypes', () => {
       connected: { a: BuiltinTypes.bool, b: BuiltinTypes.bool },
     });
     expect(errors[0].message).toMatch(
-      /does not satisfy the constraint "numeric"/
+      /does not satisfy the constraint "numeric"/,
     );
   });
 

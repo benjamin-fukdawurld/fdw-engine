@@ -235,10 +235,10 @@ interface ComputePipelineDescriptor {
 interface GpuPipelineFactory {
   // …
   createComputePipeline(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): GpuComputePipeline;
   createComputePipelineAsync(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): Promise<GpuComputePipeline>;
 }
 

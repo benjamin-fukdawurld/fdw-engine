@@ -95,7 +95,7 @@ export class PatchSurface implements WorldRenderItem {
     const minLevel = options.minLevel ?? 0;
     if (maxLevel > MaxLevel || minLevel < 0 || minLevel > maxLevel) {
       throw new Error(
-        `The levels of a patch surface go from 0 to ${MaxLevel} (minLevel ${minLevel}, maxLevel ${maxLevel})`
+        `The levels of a patch surface go from 0 to ${MaxLevel} (minLevel ${minLevel}, maxLevel ${maxLevel})`,
       );
     }
     this._backend = backend;
@@ -247,7 +247,7 @@ export class PatchSurface implements WorldRenderItem {
       }
       const capacity = Math.max(
         rows,
-        (this._draws.length / PatchTextureWidth / 4) * 2
+        (this._draws.length / PatchTextureWidth / 4) * 2,
       );
       this._draws = new Float32Array(capacity * PatchTextureWidth * 4);
       this._drawTexture = this._backend.textures.createTexture({

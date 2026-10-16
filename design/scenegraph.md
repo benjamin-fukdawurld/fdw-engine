@@ -288,7 +288,7 @@ interface RenderSource {
     visit: (item: Renderable) => void,
     // What the query is for: what a camera sees, or the casters of a
     // shadow map.
-    view: 'camera' | 'shadow'
+    view: 'camera' | 'shadow',
   ): void;
   // The lights of the source, when the frame does not give its own.
   lights?(): Iterable<BaseLight>;
@@ -357,7 +357,7 @@ interface SpatialIndex<T> {
   // test can be skipped.
   queryFrustum(
     frustum: Frustum,
-    visit: (item: T, inside: boolean) => void
+    visit: (item: T, inside: boolean) => void,
   ): void;
   // The items whose bounds touch a volume (any Volume, through its bounds,
   // then intersects()); visit returns false to stop.

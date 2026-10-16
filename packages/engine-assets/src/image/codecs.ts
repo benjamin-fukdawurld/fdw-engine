@@ -23,7 +23,7 @@ export interface ImageCodec {
   sniff?(head: Uint8Array): boolean;
   decode(
     bytes: ResourceBytes,
-    options?: ImageCodecOptions
+    options?: ImageCodecOptions,
   ): Promise<ImageAsset>;
 }
 
@@ -60,7 +60,7 @@ export class ImageCodecRegistry {
   /** Decodes with the codec of the bytes; `unsupported` when none knows them. */
   decode(
     bytes: ResourceBytes,
-    options: ImageCodecOptions = {}
+    options: ImageCodecOptions = {},
   ): Promise<ImageAsset> {
     const uri = options.uri ?? 'image';
     const codec = this.find(bytes, uri);
@@ -70,8 +70,8 @@ export class ImageCodecRegistry {
         new ResourceError(
           'unsupported',
           uri,
-          `No image codec recognizes ${uri} (codecs: ${known})`
-        )
+          `No image codec recognizes ${uri} (codecs: ${known})`,
+        ),
       );
     }
     return codec.decode(bytes, options);
@@ -89,7 +89,7 @@ const sniffing =
 export interface BitmapDecoder {
   decode(
     bytes: ResourceBytes,
-    options?: { signal?: AbortSignal; mimeType?: string }
+    options?: { signal?: AbortSignal; mimeType?: string },
   ): Promise<{
     readonly width: number;
     readonly height: number;
@@ -104,7 +104,7 @@ export interface BitmapDecoder {
  */
 export function bitmapCodec(
   decoder: BitmapDecoder,
-  name = 'browser'
+  name = 'browser',
 ): ImageCodec {
   return {
     name,
@@ -128,7 +128,7 @@ export function bitmapCodec(
 export interface PixelDecoder {
   decode(
     bytes: ResourceBytes,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<{
     readonly width: number;
     readonly height: number;

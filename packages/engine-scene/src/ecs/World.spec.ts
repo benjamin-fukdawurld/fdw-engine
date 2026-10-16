@@ -108,7 +108,7 @@ describe('World', () => {
     });
     expect(world.capacity).toBeGreaterThanOrEqual(100);
     expect(entities.map((entity) => Velocity.x[entity])).toEqual(
-      entities.map((_, i) => i)
+      entities.map((_, i) => i),
     );
     expect(Position.value[99 * 3 + 2]).toBe(99);
     expect(query.count).toBe(100);
@@ -119,7 +119,7 @@ describe('World', () => {
     const events: string[] = [];
     const stop = world.onAdded(Velocity, (entity) => events.push(`+${entity}`));
     world.onRemoved(Velocity, (entity) =>
-      events.push(`-${entity}:${Velocity.x[entity]}`)
+      events.push(`-${entity}:${Velocity.x[entity]}`),
     );
     const entity = world.create();
     world.add(entity, Velocity, { x: 2 });
@@ -145,7 +145,7 @@ describe('World', () => {
   it('refuses the reserved field names and dead entities', () => {
     const { world, Velocity } = setup();
     expect(() => world.defineComponent('bad', { count: 'u32' })).toThrow(
-      /"count" is a reserved name/
+      /"count" is a reserved name/,
     );
     const entity = world.create();
     world.destroy(entity);

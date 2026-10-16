@@ -108,7 +108,7 @@ export class ActionMap {
   constructor(
     private readonly _input: Input,
     definitions: Readonly<Record<string, ActionDefinition>>,
-    private readonly _options: ActionMapOptions = {}
+    private readonly _options: ActionMapOptions = {},
   ) {
     for (const [name, definition] of Object.entries(definitions)) {
       this._definitions.set(name, definition);
@@ -226,7 +226,7 @@ export class ActionMap {
    */
   vector(
     name: string,
-    out: { x: number; y: number } = { x: 0, y: 0 }
+    out: { x: number; y: number } = { x: 0, y: 0 },
   ): { x: number; y: number } {
     const definition = this.definition(name, 'vector');
     let bestX = 0;
@@ -271,7 +271,7 @@ export class ActionMap {
 
   private definition(
     name: string,
-    type?: ActionDefinition['type']
+    type?: ActionDefinition['type'],
   ): ActionDefinition {
     const definition = this._definitions.get(name);
     if (!definition) {
@@ -279,7 +279,7 @@ export class ActionMap {
     }
     if (type && definition.type !== type) {
       throw new Error(
-        `The action "${name}" is a ${definition.type}, not a ${type}`
+        `The action "${name}" is a ${definition.type}, not a ${type}`,
       );
     }
     return definition;
@@ -386,8 +386,8 @@ export class ActionMap {
       control === 'gamepad:leftStick'
         ? 'left'
         : control === 'gamepad:rightStick'
-        ? 'right'
-        : undefined;
+          ? 'right'
+          : undefined;
     if (!side) {
       throw new Error(`Not a stick: "${control}"`);
     }

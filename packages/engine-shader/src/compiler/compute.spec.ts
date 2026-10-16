@@ -60,7 +60,7 @@ describe('compute graphs', () => {
       program.layout.groups[0].bindings.map((binding) => [
         binding.kind,
         binding.name,
-      ])
+      ]),
     ).toEqual([
       ['uniform-block', 'materialUniforms'],
       ['storage-buffer', 'input'],
@@ -75,7 +75,7 @@ describe('compute graphs', () => {
     g.write(output, { index: 0, value: g.engine('time') });
     g.compute();
     expect(compile(g.build()).layout.groups.map((group) => group.slot)).toEqual(
-      ['frame', 'material']
+      ['frame', 'material'],
     );
   });
 
@@ -112,7 +112,7 @@ describe('compute graphs', () => {
     });
     g.compute();
     expect(() => compile(g.build())).toThrow(
-      /std.textureSample is only available in the fragment stage: use std.textureSampleLevel/
+      /std.textureSample is only available in the fragment stage: use std.textureSampleLevel/,
     );
   });
 
@@ -127,7 +127,7 @@ describe('compute graphs', () => {
     });
     g.compute();
     expect(() => compile(g.build())).toThrow(
-      /"values" is written by the graph: it cannot be read/
+      /"values" is written by the graph: it cannot be read/,
     );
   });
 
@@ -157,13 +157,13 @@ describe('compute graphs', () => {
     size.write(out, { index: 0, value: 1 });
     size.compute({ workgroupSize: [0, 1, 1] });
     expect(() => compile(size.build())).toThrow(
-      /workgroupSize must be three positive integers/
+      /workgroupSize must be three positive integers/,
     );
   });
 
   it('are rejected on backends without compute shaders', () => {
     expect(() =>
-      compile(scaleGraph().build(), { capabilities: { compute: false } })
+      compile(scaleGraph().build(), { capabilities: { compute: false } }),
     ).toThrow(/the backend has no compute shaders/);
   });
 });

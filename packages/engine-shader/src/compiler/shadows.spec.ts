@@ -19,10 +19,10 @@ const attributes = { vertexAttributes: ['position', 'normal'] };
 
 const stage = (
   program: ReturnType<typeof compile>,
-  name: IrEntryPoint['stage']
+  name: IrEntryPoint['stage'],
 ) =>
   program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === name
+    (entryPoint) => entryPoint.stage === name,
   ) as IrEntryPoint;
 
 const instructions = (entryPoint: IrEntryPoint) => {
@@ -42,8 +42,8 @@ describe('shadows', () => {
     expect(frameBindings(program)).toEqual(['frameUniforms']);
     expect(
       instructions(stage(program, 'fragment')).some(
-        (i) => i.op.kind === 'sample-compare'
-      )
+        (i) => i.op.kind === 'sample-compare',
+      ),
     ).toBe(false);
   });
 
@@ -61,7 +61,7 @@ describe('shadows', () => {
         'shadowSampler',
       ]);
       const loop = stage(program, 'fragment').body.find(
-        (i) => i.op.kind === 'loop-sum'
+        (i) => i.op.kind === 'loop-sum',
       );
       const body =
         loop?.op.kind === 'loop-sum' ? (loop.op.body as IrInstruction[]) : [];
@@ -73,8 +73,8 @@ describe('shadows', () => {
         body.some(
           (i) =>
             i.op.kind === 'load-resource' &&
-            i.op.member === 'lightShadowMatrices'
-        )
+            i.op.member === 'lightShadowMatrices',
+        ),
       ).toBe(true);
     }
   });
@@ -96,7 +96,7 @@ describe('shadows', () => {
         sampler: g.sampler('colorSampler'),
         uv: [0, 0],
         depthRef: 0.5,
-      })
+      }),
     ).toThrow();
     const valid = g.call(std.textureSampleCompare, {
       texture: g.texture('depth', { sampleType: 'depth' }),

@@ -35,20 +35,20 @@ export interface GpuPipelineFactory {
   resolveLayout(program: CompiledProgram): PhysicalProgramLayout;
   createRenderPipeline(descriptor: RenderPipelineDescriptor): GpuRenderPipeline;
   createRenderPipelineAsync(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline>;
   // Throws on backends without compute stages (capability 'compute').
   createComputePipeline(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): GpuComputePipeline;
   createComputePipelineAsync(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): Promise<GpuComputePipeline>;
   // Cached: equal groups give the same layout object.
   createBindGroupLayout(group: PhysicalBindGroup): GpuBindGroupLayout;
   createBindGroup(
     layout: GpuBindGroupLayout,
-    entries: readonly GpuBindGroupEntry[]
+    entries: readonly GpuBindGroupEntry[],
   ): GpuBindGroup;
 }
 
@@ -99,7 +99,7 @@ export interface RenderBackend {
   // guaranteed limits of WebGPU when absent.
   readonly capabilities?: BackendCapabilities;
   createRenderTarget(
-    descriptor: RenderTargetDescriptor
+    descriptor: RenderTargetDescriptor,
   ): GpuRenderTarget & { destroy(): void };
   createCommandEncoder(): GpuCommandEncoder;
   // An object table, on the backends whose programs read the object data

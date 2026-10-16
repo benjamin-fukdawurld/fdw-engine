@@ -28,7 +28,7 @@ const quad = (uvs: number[][]) =>
           [0.5, -0.5],
           [0.5, 0.5],
           [-0.5, 0.5],
-        ].flatMap(([x, y], i) => [x, y, 0, 0, 0, 1, ...uvs[i]])
+        ].flatMap(([x, y], i) => [x, y, 0, 0, 0, 1, ...uvs[i]]),
       ),
     ],
     indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
@@ -46,7 +46,7 @@ describe('computeTangents', () => {
         [1, 1],
         [1, 0],
         [0, 0],
-      ])
+      ]),
     );
     expect(mesh.description.vertexBuffers[1].attributes).toEqual([
       { semantic: 'tangent', format: 'float32x4', offset: 0 },
@@ -66,7 +66,7 @@ describe('computeTangents', () => {
         [1, 0],
         [1, 1],
         [0, 1],
-      ])
+      ]),
     );
     expect(tangentsOf(mesh).slice(0, 4)).toEqual([1, 0, 0, -1]);
   });

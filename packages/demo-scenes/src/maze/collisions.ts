@@ -14,7 +14,7 @@ export function resolveCircle(
   scene: Scene,
   solid: ComponentStore,
   position: { x: number; y: number; z: number },
-  radius: number
+  radius: number,
 ): boolean {
   let touched = false;
   // A few passes: leaving a wall can push into another one, in a corner.

@@ -17,7 +17,7 @@ function RouteComponent() {
       onSurfaceReady={async (
         engine: Engine,
         surface: Surface,
-        canvas: HTMLCanvasElement
+        canvas: HTMLCanvasElement,
       ) => {
         const wengine = engine as WebGpuEngine;
         const wsurface = surface as WebGpuSurface;
@@ -37,7 +37,7 @@ function RouteComponent() {
         wengine.device!.queue.copyExternalImageToTexture(
           { source: imageBitmap },
           { texture },
-          { width: imageBitmap.width, height: imageBitmap.height }
+          { width: imageBitmap.width, height: imageBitmap.height },
         );
 
         const sampler = wengine.device!.createSampler({
@@ -96,7 +96,7 @@ function RouteComponent() {
         const viewMatrix = mat4.lookAt(
           [0.0, 0.0, 2.0], // Camera position
           [0.0, 0.0, 0.0], // Look at point
-          [0.0, 1.0, 0.0] // Up vector
+          [0.0, 1.0, 0.0], // Up vector
         );
         const viewMatrixBuffer = wengine.device!.createBuffer({
           size: 16 * 4, // 4x4 matrix, 4 bytes per float
@@ -110,7 +110,7 @@ function RouteComponent() {
           (45 * Math.PI) / 180, // Field of view in radians
           wsurface.width / wsurface.height, // Aspect ratio
           0.1, // Near plane
-          100.0 // Far plane
+          100.0, // Far plane
         );
         const projectionMatrixBuffer = wengine.device!.createBuffer({
           size: 16 * 4, // 4x4 matrix, 4 bytes per float
@@ -118,7 +118,7 @@ function RouteComponent() {
           mappedAtCreation: true,
         });
         new Float32Array(projectionMatrixBuffer.getMappedRange()).set(
-          projectionMatrix
+          projectionMatrix,
         );
         projectionMatrixBuffer.unmap();
 

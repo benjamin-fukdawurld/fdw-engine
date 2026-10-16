@@ -94,13 +94,13 @@ describe('Scheduler', () => {
     const { scheduler } = recording();
     scheduler.add('a', () => undefined, { after: ['b'] });
     expect(() => scheduler.add('b', () => undefined, { after: ['a'] })).toThrow(
-      'Systems of phase "update" in a cycle: a, b'
+      'Systems of phase "update" in a cycle: a, b',
     );
     // Not added: the scheduler still runs.
     expect(scheduler.system('b')).toBeUndefined();
     scheduler.update(0.1);
     expect(() => scheduler.add('a', () => undefined)).toThrow(
-      'System "a" already exists'
+      'System "a" already exists',
     );
   });
 
@@ -153,7 +153,7 @@ describe('Scheduler', () => {
           scheduler.paused = true;
         }
       },
-      { phase: 'fixed' }
+      { phase: 'fixed' },
     );
     scheduler.update(0.35);
     expect(steps).toBe(2);

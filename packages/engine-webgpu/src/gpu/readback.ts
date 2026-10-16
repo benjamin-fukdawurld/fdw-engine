@@ -9,7 +9,7 @@ export async function readTextureRegion(
   device: GPUDevice,
   texture: GPUTexture,
   region: GpuTextureRegion,
-  bytesPerPixel: number
+  bytesPerPixel: number,
 ): Promise<ArrayBuffer> {
   const { x, y, width, height } = region;
   const rowBytes = width * bytesPerPixel;
@@ -24,7 +24,7 @@ export async function readTextureRegion(
   encoder.copyTextureToBuffer(
     { texture, origin: { x, y } },
     { buffer, bytesPerRow: paddedRowBytes },
-    [width, height]
+    [width, height],
   );
   device.queue.submit([encoder.finish()]);
 

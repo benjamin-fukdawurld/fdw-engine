@@ -12,7 +12,7 @@ export const dawn = await import('webgpu').catch(() => undefined);
  * suite creates).
  */
 export async function createDawnFixture(
-  inspect?: (backend: RenderBackend) => void
+  inspect?: (backend: RenderBackend) => void,
 ): Promise<RenderingFixture & { engine: WebGpuEngine }> {
   if (!dawn) {
     throw new Error('Dawn is not available');

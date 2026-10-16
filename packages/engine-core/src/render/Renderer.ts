@@ -152,8 +152,10 @@ export interface ScenePasses<K extends string = string> {
   readonly shadows?: TextureHandle;
 }
 
-export interface ScenePassesOptions<K extends string = string>
-  extends Omit<RenderOptions, 'surface'> {
+export interface ScenePassesOptions<K extends string = string> extends Omit<
+  RenderOptions,
+  'surface'
+> {
   // The color target, and its format. Without it, the surfaces only write
   // their outputs: their shading models are left out (a G-buffer).
   readonly target?: TextureHandle;
@@ -229,22 +231,22 @@ function colorTargetBytes(formats: readonly GpuTextureFormat[]): number {
     const [cost, alignment] = /^(rgba8unorm|bgra8unorm|rgb10a2)/.test(format)
       ? [8, format.startsWith('rgb10a2') ? 4 : 1]
       : /^rgba32/.test(format)
-      ? [16, 4]
-      : /^rg32/.test(format)
-      ? [8, 4]
-      : /^r32/.test(format)
-      ? [4, 4]
-      : /^rgba16/.test(format)
-      ? [8, 2]
-      : /^rg16/.test(format)
-      ? [4, 2]
-      : /^r16/.test(format)
-      ? [2, 2]
-      : /^rgba8/.test(format)
-      ? [4, 1]
-      : /^rg8/.test(format)
-      ? [2, 1]
-      : [1, 1];
+        ? [16, 4]
+        : /^rg32/.test(format)
+          ? [8, 4]
+          : /^r32/.test(format)
+            ? [4, 4]
+            : /^rgba16/.test(format)
+              ? [8, 2]
+              : /^rg16/.test(format)
+                ? [4, 2]
+                : /^r16/.test(format)
+                  ? [2, 2]
+                  : /^rgba8/.test(format)
+                    ? [4, 1]
+                    : /^rg8/.test(format)
+                      ? [2, 1]
+                      : [1, 1];
     total = Math.ceil(total / alignment) * alignment + cost;
   }
   return total;
@@ -394,7 +396,7 @@ interface BoundState {
 // pipeline, material and mesh, in the same view): one instanced draw.
 function forEachRun(
   entries: readonly PreparedItem[],
-  run: (start: number, count: number) => void
+  run: (start: number, count: number) => void,
 ): void {
   let start = 0;
   while (start < entries.length) {
@@ -437,7 +439,7 @@ const isSupported = (light: BaseLight) =>
 // lightMembers in engine-shader): one vec4 (or mat4) per light and property.
 function lightValues(
   lights: readonly BaseLight[],
-  shadows: ReadonlyMap<BaseLight, ShadowTile> = new Map()
+  shadows: ReadonlyMap<BaseLight, ShadowTile> = new Map(),
 ): Record<string, UniformValue> {
   const arrays: Record<string, number[]> = {
     lightPositions: [],
@@ -499,7 +501,7 @@ function lightValues(
 }
 
 const frameBlock = (
-  layout: PhysicalProgramLayout
+  layout: PhysicalProgramLayout,
 ): PhysicalUniformBlock | undefined =>
   layout.groups.find((group) => group.slot === 'frame')?.bindings[0]?.block;
 
@@ -527,7 +529,7 @@ function isLit(material: Material): boolean {
     lit = material.graph.nodes.some(
       (node) =>
         node.type === 'output.surface' &&
-        (node.params['shadingModel'] ?? 'unlit') !== 'unlit'
+        (node.params['shadingModel'] ?? 'unlit') !== 'unlit',
     );
     litGraphs.set(material.graph, lit);
   }
@@ -542,7 +544,7 @@ function hasTexture(material: Material, name: string): boolean {
     names = new Set(
       material.graph.nodes
         .filter((node) => node.type === 'input.texture')
-        .map((node) => node.params['name'] as string)
+        .map((node) => node.params['name'] as string),
     );
     textureNames.set(material.graph, names);
   }
@@ -570,7 +572,7 @@ const sphereOf = (box: Aabb) => ({
 // The squared distance from a point to a box.
 function distanceToBox2(
   { x, y, z }: Readonly<IVec3>,
-  { min, max }: Aabb
+  { min, max }: Aabb,
 ): number {
   const d = (value: number, low: number, high: number) =>
     value < low ? low - value : value > high ? value - high : 0;
@@ -656,7 +658,7 @@ export class Renderer {
     this.backend = backend;
     if (!backend.createObjectTable) {
       throw new Error(
-        'The renderer needs a backend with object tables (createObjectTable)'
+        'The renderer needs a backend with object tables (createObjectTable)',
       );
     }
     this._objectRows = new ObjectRows(backend);
@@ -680,8 +682,8 @@ export class Renderer {
   async whenReady(): Promise<void> {
     await Promise.all(
       [...this._pipelines.values()].map((entry) =>
-        'pending' in entry ? entry.pending : undefined
-      )
+        'pending' in entry ? entry.pending : undefined,
+      ),
     );
   }
 
@@ -743,11 +745,11 @@ export class Renderer {
    */
   addScenePasses<K extends string = never>(
     graph: RenderGraph,
-    options: ScenePassesOptions<K> & { readonly target: TextureHandle }
+    options: ScenePassesOptions<K> & { readonly target: TextureHandle },
   ): ScenePasses<K> & { readonly color: TextureHandle };
   addScenePasses<K extends string = never>(
     graph: RenderGraph,
-    options: ScenePassesOptions<K>
+    options: ScenePassesOptions<K>,
   ): ScenePasses<K>;
   addScenePasses(
     graph: RenderGraph,
@@ -775,25 +777,25 @@ export class Renderer {
       cullUnlit = false,
       inputs = {},
       occlusion,
-    }: ScenePassesOptions
+    }: ScenePassesOptions,
   ): ScenePasses {
     const outputs = this.sceneOutputs(
       name,
       target,
       format,
       outputOptions,
-      samples
+      samples,
     );
     if (include === 'transparent' && (!givenDepth || samples > 1)) {
       throw new Error(
-        `"${name}": the transparent items are drawn over the depth of earlier passes (give it), with samples: 1`
+        `"${name}": the transparent items are drawn over the depth of earlier passes (give it), with samples: 1`,
       );
     }
     this._objectRows.beginFrame();
     const from = source ?? this.listSource(items);
     const cameraCache = this.cameraCache(camera);
     const frustum = this.frustum(name).setFromMatrix(
-      cameraCache.viewProjectionMatrix.value
+      cameraCache.viewProjectionMatrix.value,
     );
     // The opaque items draw the depth the occlusion culling tests against:
     // the transparent passes only ask it.
@@ -801,7 +803,7 @@ export class Renderer {
     if (testing) {
       if (samples > 1) {
         throw new Error(
-          `"${name}": the occlusion culling reads the depth of the opaque items: draw them with samples: 1`
+          `"${name}": the occlusion culling reads the depth of the opaque items: draw them with samples: 1`,
         );
       }
       occlusion.begin({
@@ -830,14 +832,14 @@ export class Renderer {
           receivers.union(bounds);
         }
       },
-      'camera'
+      'camera',
     );
     // What the camera sees of them: a large item (a ground) reaches beyond
     // the frustum, its shadows there are not seen.
     clipToFrustum(receivers, frustum);
     const reaching = this.reachingLights(
       lights ?? [...(from.lights?.() ?? [])],
-      frustum
+      frustum,
     );
     const used = this.strongestLights(reaching, receivers);
     if (cullUnlit && used.every(isBounded)) {
@@ -868,7 +870,7 @@ export class Renderer {
             from,
             layers,
             casters,
-            receivers
+            receivers,
           )
         : undefined;
 
@@ -880,7 +882,7 @@ export class Renderer {
     const variants = new Map<string, PassVariant>();
     const variantOf = (
       cullMode: PrimitiveState['cullMode'],
-      transparent: boolean
+      transparent: boolean,
     ) => {
       const key = `${cullMode}|${transparent}`;
       let variant = variants.get(key);
@@ -905,12 +907,12 @@ export class Renderer {
         include === 'all'
           ? // Without color, the transparent items have nothing to write.
             target !== undefined || !blended(item)
-          : (include === 'transparent') === blended(item)
+          : (include === 'transparent') === blended(item),
       )
       .flatMap((item) =>
         this.passes(item).map((cullMode) =>
-          this.prepare(item, variantOf(cullMode, blended(item)), view)
-        )
+          this.prepare(item, variantOf(cullMode, blended(item)), view),
+        ),
       )
       .filter((entry): entry is PreparedItem => entry !== undefined);
     const ordered = this.sort(prepared, cameraCache);
@@ -934,7 +936,7 @@ export class Renderer {
       exposure,
       ...lightValues(
         used,
-        new Map(shadowPass?.tiles.map((tile) => [tile.light, tile]))
+        new Map(shadowPass?.tiles.map((tile) => [tile.light, tile])),
       ),
     };
     if (ordered.length > 0) {
@@ -956,12 +958,12 @@ export class Renderer {
     const bindInputs = (
       entries: readonly PreparedItem[],
       read: readonly { input: string; handle: TextureHandle }[],
-      texture: (handle: TextureHandle) => unknown
+      texture: (handle: TextureHandle) => unknown,
     ) => {
       for (const { input, handle } of read) {
         const real = texture(handle) as MaterialValue;
         for (const material of new Set(
-          entries.map((entry) => entry.item.material)
+          entries.map((entry) => entry.item.material),
         )) {
           if (
             hasTexture(material, input) &&
@@ -1004,7 +1006,7 @@ export class Renderer {
         multisampled || !output.target ? resolved(output) : output.target,
       written: multisampled
         ? attachment(`multisampled ${output.name} output`, output.format)
-        : output.target ?? undefined,
+        : (output.target ?? undefined),
     }));
     const results: Record<string, TextureHandle> = {};
     const transparents = transparentEntries.length > 0 && target !== undefined;
@@ -1106,7 +1108,7 @@ export class Renderer {
     target: TextureHandle | undefined,
     format: GpuTextureFormat | undefined,
     options: Readonly<Record<string, SceneOutput>>,
-    samples: number
+    samples: number,
   ): {
     list: (SceneOutput & { name: string })[];
     variant: Pick<
@@ -1129,11 +1131,11 @@ export class Renderer {
       const scalar = /uint$/.test(output.format)
         ? 'u32'
         : /sint$/.test(output.format)
-        ? 'i32'
-        : 'f32';
+          ? 'i32'
+          : 'f32';
       if (scalar !== 'f32' && samples > 1) {
         throw new Error(
-          `"${name}": the output "${output.name}" (${output.format}) cannot be multisampled: draw it with samples: 1`
+          `"${name}": the output "${output.name}" (${output.format}) cannot be multisampled: draw it with samples: 1`,
         );
       }
       return {
@@ -1185,12 +1187,12 @@ export class Renderer {
     name: string,
     options: FullscreenPassOptions & {
       readonly targets: Readonly<Record<K, FullscreenTarget>>;
-    }
+    },
   ): { color: TextureHandle; targets: Record<K, TextureHandle> };
   addFullscreenPass(
     graph: RenderGraph,
     name: string,
-    options: FullscreenPassOptions
+    options: FullscreenPassOptions,
   ): TextureHandle;
   addFullscreenPass(
     graph: RenderGraph,
@@ -1205,7 +1207,7 @@ export class Renderer {
       blend = false,
       targets,
       shadows,
-    }: FullscreenPassOptions
+    }: FullscreenPassOptions,
   ):
     | TextureHandle
     | { color: TextureHandle; targets: Record<string, TextureHandle> } {
@@ -1217,14 +1219,14 @@ export class Renderer {
       view,
       blend,
       targets ?? {},
-      shadows !== undefined
+      shadows !== undefined,
     );
     // The frame values of the last scene: its camera, its lights, the
     // exposure…
     this.writeView(view, prepared.layout, this._frameValues);
     const written = graph.addRasterPass(name, (pass) => {
       const read = Object.entries(inputs).map(
-        ([input, handle]) => [input, pass.read(handle, 'sampled')] as const
+        ([input, handle]) => [input, pass.read(handle, 'sampled')] as const,
       );
       const atlas = shadows && pass.read(shadows, 'sampled');
       const color = pass.writeColor(target, { load, clearValue: clearColor });
@@ -1239,7 +1241,7 @@ export class Renderer {
               clearValue: extra.clearColor,
             }),
           ];
-        })
+        }),
       );
       return {
         color,
@@ -1359,7 +1361,7 @@ export class Renderer {
   // light, and the point and spot lights whose range reaches it.
   private reachingLights(
     lights: readonly BaseLight[],
-    frustum: Frustum
+    frustum: Frustum,
   ): BaseLight[] {
     return lights.filter((light) => {
       if (!isSupported(light)) {
@@ -1420,14 +1422,14 @@ export class Renderer {
     source: RenderSource,
     layers: number,
     lights: readonly (DirectionalLight | SpotLight)[],
-    receivers: Aabb
+    receivers: Aabb,
   ): { atlas: TextureHandle; tiles: ShadowTile[]; casters: number } {
     const format = this.backend.depthFormat;
     const tiles = this._shadowCameras.tiles(
       lights,
       sphereOf(receivers),
       source.bounds?.(new Aabb()),
-      this._shadowAtlasSize
+      this._shadowAtlasSize,
     );
     let casterCount = 0;
     const shadowVariant = (cullMode: 'back' | 'none'): PassVariant => ({
@@ -1456,7 +1458,7 @@ export class Renderer {
             casters.push(item);
           }
         },
-        'shadow'
+        'shadow',
       );
       const entries = casters
         .map((item) =>
@@ -1465,8 +1467,8 @@ export class Renderer {
             item.material.renderState.doubleSided
               ? shadowVariants.none
               : shadowVariants.back,
-            view
-          )
+            view,
+          ),
         )
         .filter((entry): entry is PreparedItem => entry !== undefined)
         .sort((a, b) => a.pipelineId - b.pipelineId);
@@ -1499,7 +1501,7 @@ export class Renderer {
   // The atlas read by the programs of a view, in this frame.
   private bindShadowMap(
     view: FrameView,
-    atlas: GpuAttachmentTarget | undefined
+    atlas: GpuAttachmentTarget | undefined,
   ): void {
     if (atlas && view.shadowMap !== atlas) {
       view.shadowMap = atlas;
@@ -1527,7 +1529,7 @@ export class Renderer {
   private program(
     material: Material,
     mesh: Mesh,
-    variant?: Partial<PassVariant>
+    variant?: Partial<PassVariant>,
   ): CompiledProgram {
     const semantics = meshSemantics(mesh.description);
     // The alpha mode selects the variant of the surface: masked materials
@@ -1538,12 +1540,12 @@ export class Renderer {
       ...(variant?.depthOnly
         ? { depthOnly: true }
         : variant?.linear
-        ? { toneMapping: 'none', outputEncoding: 'linear' }
-        : this._output),
+          ? { toneMapping: 'none', outputEncoding: 'linear' }
+          : this._output),
       ...(variant?.shadows ? { shadows: true } : {}),
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
-      features
+      features,
     )}|${variant?.outputsKey ?? ''}`;
     let byAttributes = this._programs.get(material.graph);
     if (!byAttributes) {
@@ -1581,7 +1583,7 @@ export class Renderer {
   // while it is being created.
   private ensurePipeline(
     key: string,
-    descriptor: () => RenderPipelineDescriptor
+    descriptor: () => RenderPipelineDescriptor,
   ): boolean {
     if (!this._pipelines.has(key)) {
       if (this._asyncPipelines) {
@@ -1604,11 +1606,11 @@ export class Renderer {
   private prepare(
     item: Renderable,
     variant: PassVariant,
-    view: FrameView
+    view: FrameView,
   ): PreparedItem | undefined {
     const { program, layout, pipelineKey, pipelineId } = this.preparedPipeline(
       item,
-      variant
+      variant,
     );
     const state = item.material.renderState;
     const ready = this.ensurePipeline(pipelineKey, () => ({
@@ -1672,7 +1674,7 @@ export class Renderer {
   // material do not change (its render state never does).
   private preparedPipeline(
     item: Renderable,
-    variant: PassVariant
+    variant: PassVariant,
   ): PreparedPipeline {
     const { material, mesh } = item;
     let byMesh = this._prepared.get(material);
@@ -1728,7 +1730,7 @@ export class Renderer {
     view: FrameView,
     blend: boolean,
     targets: Readonly<Record<string, FullscreenTarget>>,
-    shadows: boolean
+    shadows: boolean,
   ): PreparedItem & { targets: readonly string[] } {
     const mesh = this._fullscreenMesh;
     const program = this.program(material, mesh, { shadows });
@@ -1741,18 +1743,18 @@ export class Renderer {
       .map((output, i) => {
         if (output.location !== i + 1) {
           throw new Error(
-            `Full screen pass of "${program.name}": the targets take the locations 1, 2… in order ("${output.name}" is at ${output.location})`
+            `Full screen pass of "${program.name}": the targets take the locations 1, 2… in order ("${output.name}" is at ${output.location})`,
           );
         }
         if (!targets[output.name]) {
           throw new Error(
-            `Full screen pass of "${program.name}": no texture for its target "${output.name}"`
+            `Full screen pass of "${program.name}": no texture for its target "${output.name}"`,
           );
         }
         return output.name;
       });
     const unknown = Object.keys(targets).filter(
-      (name) => !names.includes(name)
+      (name) => !names.includes(name),
     );
     if (unknown.length > 0) {
       throw new Error(
@@ -1760,7 +1762,7 @@ export class Renderer {
           program.name
         }": the material has no target ${unknown
           .map((name) => `"${name}"`)
-          .join(', ')}`
+          .join(', ')}`,
       );
     }
     this.checkColorTargets(program.name, [
@@ -1809,20 +1811,20 @@ export class Renderer {
   // Throws when the color targets of a pass exceed what the backend allows.
   private checkColorTargets(
     name: string,
-    formats: readonly GpuTextureFormat[]
+    formats: readonly GpuTextureFormat[],
   ): void {
     const capabilities = this.backend.capabilities;
     const max = capabilities?.maxColorAttachments ?? 4;
     if (formats.length > max) {
       throw new Error(
-        `"${name}" writes ${formats.length} color targets, more than the ${max} of the backend (capability maxColorAttachments)`
+        `"${name}" writes ${formats.length} color targets, more than the ${max} of the backend (capability maxColorAttachments)`,
       );
     }
     const maxBytes = capabilities?.maxColorAttachmentBytesPerSample;
     const bytes = colorTargetBytes(formats);
     if (maxBytes !== undefined && bytes > maxBytes) {
       throw new Error(
-        `"${name}" writes ${bytes} bytes per pixel in its color targets, more than the ${maxBytes} of the backend (capability maxColorAttachmentBytesPerSample)`
+        `"${name}" writes ${bytes} bytes per pixel in its color targets, more than the ${maxBytes} of the backend (capability maxColorAttachmentBytesPerSample)`,
       );
     }
   }
@@ -1869,10 +1871,10 @@ export class Renderer {
   // limit state changes; then transparent items, back to front.
   private sort(items: PreparedItem[], camera: CameraCache): PreparedItem[] {
     const opaque = items.filter(
-      (entry) => entry.item.material.renderState.alphaMode !== 'blend'
+      (entry) => entry.item.material.renderState.alphaMode !== 'blend',
     );
     const transparent = items.filter(
-      (entry) => entry.item.material.renderState.alphaMode === 'blend'
+      (entry) => entry.item.material.renderState.alphaMode === 'blend',
     );
     const materialOrder = new Map<Material, number>();
     const materialIndex = (material: Material) => {
@@ -1896,7 +1898,7 @@ export class Renderer {
       (a, b) =>
         a.pipelineId - b.pipelineId ||
         materialIndex(a.item.material) - materialIndex(b.item.material) ||
-        meshIndex(a.item.mesh) - meshIndex(b.item.mesh)
+        meshIndex(a.item.mesh) - meshIndex(b.item.mesh),
     );
 
     const position = camera.camera.position;
@@ -1905,7 +1907,7 @@ export class Renderer {
       return Math.hypot(
         world[12] - position.x,
         world[13] - position.y,
-        world[14] - position.z
+        world[14] - position.z,
       );
     };
     transparent.sort((a, b) => distance(b) - distance(a));
@@ -1932,7 +1934,7 @@ export class Renderer {
       throw new Error(
         `Render item of "${
           item.mesh.label ?? 'mesh'
-        }" without transform nor world matrix`
+        }" without transform nor world matrix`,
       );
     }
     let state = this._objects.get(key);
@@ -1948,7 +1950,7 @@ export class Renderer {
         throw new Error(
           `The identifier ${id} of "${
             item.mesh.label ?? 'mesh'
-          }" is not an integer from 0 to 2^24`
+          }" is not an integer from 0 to 2^24`,
         );
       }
       state.id = id;
@@ -1974,7 +1976,7 @@ export class Renderer {
         pool.update(transform.index);
         return block().subarray(
           TransformLayout.world,
-          TransformLayout.world + 16
+          TransformLayout.world + 16,
         );
       },
       normalMatrix: () => {
@@ -1991,7 +1993,7 @@ export class Renderer {
           n[o + 6],
           n[o + 8],
           n[o + 9],
-          n[o + 10]
+          n[o + 10],
         );
       },
       current: () => pool.worldVersion(transform.index),
@@ -2041,7 +2043,7 @@ export class Renderer {
 
   private writeBlock(
     block: PhysicalUniformBlock,
-    valueOf: (name: string) => UniformValue | undefined
+    valueOf: (name: string) => UniformValue | undefined,
   ): ArrayBuffer {
     const data = new ArrayBuffer(block.size);
     const view = new DataView(data);
@@ -2064,7 +2066,7 @@ export class Renderer {
     data: ArrayBuffer,
     label: string,
     dataOffset = 0,
-    size?: number
+    size?: number,
   ): boolean {
     const created = !group.buffer || group.buffer.size !== block.size;
     if (created) {
@@ -2085,7 +2087,7 @@ export class Renderer {
   private writeView(
     view: FrameView,
     layout: PhysicalProgramLayout,
-    values: Readonly<Record<string, UniformValue>>
+    values: Readonly<Record<string, UniformValue>>,
   ): void {
     const block = frameBlock(layout);
     if (!block) {
@@ -2096,7 +2098,7 @@ export class Renderer {
       view,
       block,
       this.writeBlock(block, (name) => values[name]),
-      `${view.name} frame uniforms`
+      `${view.name} frame uniforms`,
     );
   }
 
@@ -2118,7 +2120,7 @@ export class Renderer {
   // the programs reading the shadows, the shadow atlas and its sampler.
   private sharedBindGroup(
     state: UniformGroup & { shadowMap?: GpuAttachmentTarget },
-    group: PhysicalBindGroup
+    group: PhysicalBindGroup,
   ): GpuBindGroup {
     const layout = this.bindGroupLayout(group);
     let bindGroup = state.bindGroups.get(layout.key);
@@ -2134,14 +2136,14 @@ export class Renderer {
           }
           if (!state.shadowMap) {
             throw new Error(
-              `"${resource.name}" is read without shadows in the frame`
+              `"${resource.name}" is read without shadows in the frame`,
             );
           }
           return {
             binding,
             resource: state.shadowMap as GpuBindGroupEntry['resource'],
           };
-        })
+        }),
       );
       state.bindGroups.set(layout.key, bindGroup);
     }
@@ -2153,7 +2155,7 @@ export class Renderer {
   private materialBindGroup(
     material: Material,
     program: CompiledProgram,
-    group: PhysicalBindGroup
+    group: PhysicalBindGroup,
   ): GpuBindGroup | undefined {
     if (group.bindings.length === 0) {
       return undefined;
@@ -2185,7 +2187,7 @@ export class Renderer {
           const value = material.getValue(member);
           if (isHandle(value)) {
             throw new Error(
-              `Material "${name}": "${member}" is a uniform, not a texture or sampler`
+              `Material "${name}": "${member}" is a uniform, not a texture or sampler`,
             );
           }
           return value as UniformValue | undefined;
@@ -2201,7 +2203,7 @@ export class Renderer {
       const value = material.getValue(resource.name);
       if (!isHandle(value)) {
         throw new Error(
-          `Material "${name}": no ${resource.kind} set for "${resource.name}"`
+          `Material "${name}": no ${resource.kind} set for "${resource.name}"`,
         );
       }
       resources.push(value);
@@ -2217,7 +2219,7 @@ export class Renderer {
     if (!state.bindGroup || resourcesChanged || bufferCreated) {
       state.bindGroup = this.backend.pipelines.createBindGroup(
         this.bindGroupLayout(group),
-        entries
+        entries,
       );
       state.resources = resources;
     }
@@ -2250,7 +2252,7 @@ export class Renderer {
           size: data.byteLength,
           usage: ['vertex', 'copy-dst'],
           initialData: data,
-        })
+        }),
       ),
       ...(mesh.indices
         ? {
@@ -2270,11 +2272,11 @@ export class Renderer {
   // Draws entries in order: with an object table, their instances first.
   private drawAll(
     pass: GpuRenderPassEncoder,
-    entries: readonly PreparedItem[]
+    entries: readonly PreparedItem[],
   ): void {
     const first = this._objectRows.instances(entries, objectOf);
     forEachRun(entries, (start, count) =>
-      this.draw(pass, entries[start], first + start, count)
+      this.draw(pass, entries[start], first + start, count),
     );
   }
 
@@ -2290,7 +2292,7 @@ export class Renderer {
     pass: GpuRenderPassEncoder,
     { item, program, layout, pipelineKey, view }: PreparedItem,
     instance: number,
-    instances: number
+    instances: number,
   ): void {
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }

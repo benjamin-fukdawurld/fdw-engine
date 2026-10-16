@@ -9,14 +9,14 @@ import type { IrEntryPoint, IrOp } from './ir';
 
 const stage = (program: CompiledProgram, name: 'vertex' | 'fragment') =>
   program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === name
+    (entryPoint) => entryPoint.stage === name,
   ) as IrEntryPoint;
 
 const ops = (entryPoint: IrEntryPoint, kind: IrOp['kind']) =>
   entryPoint.body.filter((instruction) => instruction.op.kind === kind);
 
 const texturedUnlit = (
-  options: { tintDefault?: number[]; extra?: boolean } = {}
+  options: { tintDefault?: number[]; extra?: boolean } = {},
 ) => {
   const g = new GraphBuilder('textured-unlit');
   const uv = g.attribute('uv', BuiltinTypes.vec2f);
@@ -39,7 +39,7 @@ const texturedUnlit = (
 
 const compileError = (
   graph: MaterialGraphData,
-  options?: Parameters<typeof compile>[1]
+  options?: Parameters<typeof compile>[1],
 ): string => {
   try {
     compile(graph, options);
@@ -84,7 +84,7 @@ describe('compile', () => {
     it('rejects unknown shading models', () => {
       const g = new GraphBuilder('toon');
       expect(() => g.surface({ shadingModel: 'toon' })).toThrow(
-        /unknown shading model "toon" \(no lighting.toon node type\)/
+        /unknown shading model "toon" \(no lighting.toon node type\)/,
       );
     });
 
@@ -92,7 +92,7 @@ describe('compile', () => {
       const g = new GraphBuilder('offset');
       g.surface({ positionOffset: g.uniform('offset', BuiltinTypes.vec3f) });
       expect(ops(stage(compile(g.build()), 'vertex'), 'binary')).toHaveLength(
-        3
+        3,
       );
     });
   });
@@ -126,7 +126,7 @@ describe('compile', () => {
       });
       g.node('output.fragment', { inputs: { color: [1, 1, 1, 1] } });
       expect(compileError(g.build())).toMatch(
-        /only available in the fragment stage/
+        /only available in the fragment stage/,
       );
     });
   });
@@ -135,7 +135,7 @@ describe('compile', () => {
     it('removes dead code, including its resources', () => {
       const program = compile(texturedUnlit({ extra: true }));
       const material = program.layout.groups.find(
-        (group) => group.slot === 'material'
+        (group) => group.slot === 'material',
       );
       expect(material?.bindings.map((binding) => binding.name)).toEqual([
         'materialUniforms',
@@ -168,7 +168,7 @@ describe('compile', () => {
       const value = op.value as readonly number[];
       const length = Math.sqrt(1.5);
       [1 / length, 0.5 / length, 0.5 / length, 1].forEach((expected, i) =>
-        expect(value[i]).toBeCloseTo(expected, 6)
+        expect(value[i]).toBeCloseTo(expected, 6),
       );
     });
 
@@ -178,7 +178,7 @@ describe('compile', () => {
         alpha: g.call(std.div, { a: g.constant(BuiltinTypes.f32, 1), b: 0 }),
       });
       expect(ops(stage(compile(g.build()), 'fragment'), 'binary')).toHaveLength(
-        1
+        1,
       );
     });
 
@@ -223,7 +223,7 @@ describe('compile', () => {
       // Everything depends on per-vertex values only: the whole color is
       // computed in the vertex stage and interpolated.
       expect(
-        ops(stage(program, 'vertex'), 'intrinsic').map((i) => i.name)
+        ops(stage(program, 'vertex'), 'intrinsic').map((i) => i.name),
       ).toEqual(['n']);
       expect(ops(stage(program, 'fragment'), 'intrinsic')).toEqual([]);
       expect(stage(program, 'fragment').body.map((i) => i.op.kind)).toEqual([
@@ -252,7 +252,7 @@ describe('compile', () => {
         alpha: g.call(
           std.convert,
           { value: chosen },
-          { params: { to: BuiltinTypes.f32 } }
+          { params: { to: BuiltinTypes.f32 } },
         ),
       });
       const vertex = stage(compile(g.build()), 'vertex');
@@ -261,7 +261,7 @@ describe('compile', () => {
           name: 'v_materialId',
           type: BuiltinTypes.u32,
           interpolation: 'flat',
-        })
+        }),
       );
     });
 
@@ -271,7 +271,7 @@ describe('compile', () => {
       const enabled = g.call(
         std.convert,
         { value: level },
-        { params: { to: BuiltinTypes.bool } }
+        { params: { to: BuiltinTypes.bool } },
       );
       const texel = g.call(std.textureSample, {
         texture: g.texture('map'),
@@ -289,10 +289,10 @@ describe('compile', () => {
       });
       const program = compile(g.build());
       expect(
-        stage(program, 'vertex').outputs.map((output) => output.type)
+        stage(program, 'vertex').outputs.map((output) => output.type),
       ).toEqual([BuiltinTypes.vec4f, BuiltinTypes.u32, BuiltinTypes.vec2f]);
       expect(
-        ops(stage(program, 'fragment'), 'convert').map((i) => i.type)
+        ops(stage(program, 'fragment'), 'convert').map((i) => i.type),
       ).toEqual([BuiltinTypes.bool]);
     });
 
@@ -310,7 +310,7 @@ describe('compile', () => {
         }),
       });
       expect(
-        compileError(g.build(), { capabilities: { maxVaryings: 1 } })
+        compileError(g.build(), { capabilities: { maxVaryings: 1 } }),
       ).toMatch(/needs 2 varyings, but the backend supports 1/);
     });
   });
@@ -371,7 +371,7 @@ describe('compile', () => {
             { name: 'aTint', type: BuiltinTypes.vec4f },
             { name: 'zTint', type: BuiltinTypes.vec4f },
           ],
-        })
+        }),
       );
     });
   });
@@ -402,7 +402,7 @@ describe('compile', () => {
       const [index] = ops(vertex, 'load-builtin').filter(
         (instruction) =>
           instruction.op.kind === 'load-builtin' &&
-          instruction.op.builtin === 'object-index'
+          instruction.op.builtin === 'object-index',
       );
       const [world] = ops(vertex, 'load-object');
       expect(world.op).toEqual({ kind: 'load-object', member: 'world' });
@@ -411,12 +411,12 @@ describe('compile', () => {
         ops(vertex, 'load-resource').filter(
           (instruction) =>
             instruction.op.kind === 'load-resource' &&
-            instruction.op.binding === 'objectUniforms'
-        )
+            instruction.op.binding === 'objectUniforms',
+        ),
       ).toEqual([]);
       // The fragment does not read the object: no varying for its row.
       expect(stage(program, 'fragment').inputs).not.toContainEqual(
-        expect.objectContaining({ type: BuiltinTypes.u32 })
+        expect.objectContaining({ type: BuiltinTypes.u32 }),
       );
     });
 
@@ -431,14 +431,14 @@ describe('compile', () => {
       const program = compile(g.build(), tabled);
       const fragment = stage(program, 'fragment');
       const row = fragment.inputs.find(
-        (input) => input.type === BuiltinTypes.u32
+        (input) => input.type === BuiltinTypes.u32,
       );
       expect(row).toEqual(expect.objectContaining({ interpolation: 'flat' }));
       const [world] = ops(fragment, 'load-object');
       const [load] = ops(fragment, 'load-input').filter(
         (instruction) =>
           instruction.op.kind === 'load-input' &&
-          instruction.op.input === row?.name
+          instruction.op.input === row?.name,
       );
       expect(world.args).toEqual([load.id]);
     });
@@ -449,7 +449,7 @@ describe('compile', () => {
         expect.objectContaining({
           kind: 'uniform-block',
           name: 'objectUniforms',
-        })
+        }),
       );
       expect(ops(stage(program, 'vertex'), 'load-object')).toEqual([]);
     });
@@ -489,10 +489,10 @@ describe('compile', () => {
       expect(
         compileError(texturedUnlit(), {
           vertexAttributes: ['position', 'normal'],
-        })
+        }),
       ).toMatch(/does not provide the "uv" attribute/);
       expect(() =>
-        compile(texturedUnlit(), { vertexAttributes: ['position', 'uv'] })
+        compile(texturedUnlit(), { vertexAttributes: ['position', 'uv'] }),
       ).not.toThrow();
     });
   });
@@ -503,7 +503,7 @@ describe('compile', () => {
       expect(key).toMatch(/^[0-9a-f]{16}$/);
       expect(compile(texturedUnlit()).programKey).toBe(key);
       expect(
-        compile(texturedUnlit({ tintDefault: [1, 0, 0, 1] })).programKey
+        compile(texturedUnlit({ tintDefault: [1, 0, 0, 1] })).programKey,
       ).toBe(key);
       expect(compile(texturedUnlit({ extra: true })).programKey).toBe(key);
     });

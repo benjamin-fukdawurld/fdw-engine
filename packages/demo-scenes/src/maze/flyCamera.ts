@@ -22,7 +22,7 @@ export class FlyCamera {
     private readonly _limits: { minHeight: number; maxHeight: number } = {
       minHeight: 4,
       maxHeight: 80,
-    }
+    },
   ) {
     this.apply();
   }
@@ -41,7 +41,7 @@ export class FlyCamera {
     const zoom = actions.axis('zoomStep') * 0.1 + actions.axis('zoom') * dt;
     this.height = Math.min(
       this._limits.maxHeight,
-      Math.max(this._limits.minHeight, this.height * Math.exp(zoom))
+      Math.max(this._limits.minHeight, this.height * Math.exp(zoom)),
     );
     this.apply();
   }
@@ -50,7 +50,7 @@ export class FlyCamera {
     this._node.transform.position = { x: this.x, y: this.height, z: this.z };
     this._node.transform.rotation = multiplyQuat(
       rotationAround('y', this.yaw),
-      rotationAround('x', this.pitch)
+      rotationAround('x', this.pitch),
     );
   }
 }

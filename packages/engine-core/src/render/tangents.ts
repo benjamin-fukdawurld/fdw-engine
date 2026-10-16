@@ -5,18 +5,18 @@ import { Mesh } from './Mesh';
 function attributeReader(
   mesh: Mesh,
   semantic: string,
-  format: 'float32x2' | 'float32x3'
+  format: 'float32x2' | 'float32x3',
 ): ((vertex: number, component: number) => number) | undefined {
   for (const [buffer, layout] of mesh.description.vertexBuffers.entries()) {
     const attribute = layout.attributes.find(
-      (candidate) => candidate.semantic === semantic
+      (candidate) => candidate.semantic === semantic,
     );
     if (!attribute) {
       continue;
     }
     if (attribute.format !== format) {
       throw new Error(
-        `computeTangents: the ${semantic} attribute must be ${format}, not ${attribute.format}`
+        `computeTangents: the ${semantic} attribute must be ${format}, not ${attribute.format}`,
       );
     }
     const data = mesh.vertices[buffer];
@@ -24,7 +24,7 @@ function attributeReader(
     return (vertex, component) =>
       view.getFloat32(
         vertex * layout.stride + attribute.offset + component * 4,
-        true
+        true,
       );
   }
   return undefined;
@@ -52,19 +52,19 @@ export function computeTangents(mesh: Mesh): Mesh {
   const uv = attributeReader(mesh, 'uv', 'float32x2');
   if (!position || !normal || !uv) {
     throw new Error(
-      'computeTangents: the mesh needs position, normal and uv attributes'
+      'computeTangents: the mesh needs position, normal and uv attributes',
     );
   }
   if (
     mesh.description.vertexBuffers.some((layout) =>
-      layout.attributes.some((attribute) => attribute.semantic === 'tangent')
+      layout.attributes.some((attribute) => attribute.semantic === 'tangent'),
     )
   ) {
     throw new Error('computeTangents: the mesh already has tangents');
   }
   const count = mesh.description.vertexCount;
   const indices = mesh.indices;
-  const corners = indices ? mesh.description.indexBuffer?.count ?? 0 : count;
+  const corners = indices ? (mesh.description.indexBuffer?.count ?? 0) : count;
   const corner = (i: number) => (indices ? indices[i] : i);
 
   // The sums of the directions of increasing u and v of the triangles.

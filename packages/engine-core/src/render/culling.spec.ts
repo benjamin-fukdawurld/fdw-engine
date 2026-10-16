@@ -34,7 +34,7 @@ const setup = () => {
 
 const itemAt = (
   x: number,
-  material = new Material({ graph: colorGraph() })
+  material = new Material({ graph: colorGraph() }),
 ) => ({
   mesh: triangle(),
   material,
@@ -53,7 +53,7 @@ describe('Renderer culling', () => {
     });
     expect(log.draws).toHaveLength(2);
     expect(renderer.stats.get('scene')).toEqual(
-      expect.objectContaining({ visible: 2, drawn: 2 })
+      expect.objectContaining({ visible: 2, drawn: 2 }),
     );
   });
 
@@ -110,7 +110,7 @@ describe('Renderer culling', () => {
       surface,
     });
     expect(renderer.stats.get('scene')).toEqual(
-      expect.objectContaining({ visible: 0, shadowMaps: 0 })
+      expect.objectContaining({ visible: 0, shadowMaps: 0 }),
     );
   });
 
@@ -146,7 +146,7 @@ describe('Renderer culling', () => {
       material: new Material({ graph: colorGraph() }),
     } as unknown as RenderItem;
     expect(() => renderer.render({ items: [item], camera, surface })).toThrow(
-      /without transform nor world matrix/
+      /without transform nor world matrix/,
     );
   });
 
@@ -172,13 +172,13 @@ describe('Renderer culling', () => {
         new PointLight({
           position: { x: i * 10, y: 0, z: 0 },
           linearAttenuation: 0.01,
-        })
+        }),
     );
     renderer.render({ items: [itemAt(0)], lights, camera, surface });
     expect(renderer.stats.get('scene')?.lights).toBe(16);
     // The 16 nearest of the receiver: x from 0 to 150.
     const frame = log.buffers.find(
-      (b) => b.label === 'scene frame uniforms'
+      (b) => b.label === 'scene frame uniforms',
     ) as FakeBuffer;
     expect(floatsOf(frame)).toContain(150);
     expect(floatsOf(frame)).not.toContain(190);
@@ -337,7 +337,7 @@ describe('Renderer occlusion culling', () => {
         camera: new Camera({ position: { x: 0, y: 0, z: 10 } }),
         surface,
         occlusion,
-      })
+      }),
     ).toThrow(/samples: 1/);
   });
 

@@ -20,7 +20,7 @@ function usageFlags(): readonly [GpuBufferUsage, GPUBufferUsageFlags][] {
 }
 
 function webGpuBufferUsageToFdEngine(
-  usage: GPUBufferUsageFlags
+  usage: GPUBufferUsageFlags,
 ): GpuBufferUsage[] {
   return usageFlags()
     .filter(([, flag]) => (usage & flag) !== 0)
@@ -28,7 +28,7 @@ function webGpuBufferUsageToFdEngine(
 }
 
 function fdEngineBufferUsageToWebGpu(
-  usage: readonly GpuBufferUsage[]
+  usage: readonly GpuBufferUsage[],
 ): GPUBufferUsageFlags {
   return usageFlags()
     .filter(([name]) => usage.includes(name))
@@ -38,7 +38,7 @@ function fdEngineBufferUsageToWebGpu(
 function padData(
   data: ArrayBuffer,
   dataOffset: number | undefined,
-  byteLength: number
+  byteLength: number,
 ): Uint8Array<ArrayBuffer> {
   const padded = new Uint8Array(Math.ceil(byteLength / 4) * 4);
   padded.set(new Uint8Array(data, dataOffset ?? 0, byteLength));
@@ -84,13 +84,13 @@ export class Buffer implements FdGpuBuffer {
     offset: number,
     value: ArrayBuffer,
     dataOffset?: number,
-    size?: number
+    size?: number,
   ): void {
     if ((this.buffer.usage & GPUBufferUsage.COPY_DST) === 0) {
       throw new Error(
         `Buffer "${
           this.label ?? '(unlabeled)'
-        }" was not created with 'copy-dst' usage and cannot be written to after creation.`
+        }" was not created with 'copy-dst' usage and cannot be written to after creation.`,
       );
     }
 
@@ -103,12 +103,12 @@ export class Buffer implements FdGpuBuffer {
       throw new Error(
         `Write of ${byteLength} bytes from offset ${
           dataOffset ?? 0
-        } exceeds source data size ${value.byteLength}`
+        } exceeds source data size ${value.byteLength}`,
       );
     }
     if (offset + byteLength > this.size) {
       throw new Error(
-        `Write of ${byteLength} bytes at ${offset} exceeds buffer size ${this.size}`
+        `Write of ${byteLength} bytes at ${offset} exceeds buffer size ${this.size}`,
       );
     }
 
@@ -118,7 +118,7 @@ export class Buffer implements FdGpuBuffer {
         offset,
         value,
         dataOffset,
-        byteLength
+        byteLength,
       );
       return;
     }
@@ -132,7 +132,7 @@ export class Buffer implements FdGpuBuffer {
       throw new Error(
         `Buffer "${
           this.label ?? '(unlabeled)'
-        }" was not created with 'copy-src' usage and cannot be read back.`
+        }" was not created with 'copy-src' usage and cannot be read back.`,
       );
     }
     // Copies are made by 4 bytes: the staging buffer covers the aligned range.
@@ -186,7 +186,7 @@ export class BufferFactory implements GpuBufferFactory {
 
     if (initialData && initialData.byteLength !== size) {
       throw new Error(
-        `Initial data size (${initialData.byteLength}) does not match the buffer size (${size}).`
+        `Initial data size (${initialData.byteLength}) does not match the buffer size (${size}).`,
       );
     }
 
@@ -216,8 +216,8 @@ export class BufferFactory implements GpuBufferFactory {
         new Uint8Array(
           initialData.buffer,
           initialData.byteOffset,
-          initialData.byteLength
-        )
+          initialData.byteLength,
+        ),
       );
       buffer.unmap();
     } else {
@@ -227,7 +227,7 @@ export class BufferFactory implements GpuBufferFactory {
         0,
         initialData.buffer,
         initialData.byteOffset,
-        initialData.byteLength
+        initialData.byteLength,
       );
     }
 

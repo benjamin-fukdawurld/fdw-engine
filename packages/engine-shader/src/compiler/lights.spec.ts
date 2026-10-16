@@ -8,7 +8,7 @@ import type { IrEntryPoint, IrInstruction } from './ir';
 
 const fragmentOf = (graph: ReturnType<GraphBuilder['build']>) =>
   compile(graph).module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === 'fragment'
+    (entryPoint) => entryPoint.stage === 'fragment',
   ) as IrEntryPoint;
 
 const loops = (body: readonly IrInstruction[]) =>
@@ -33,7 +33,7 @@ describe('light loops', () => {
     expect(loop.type).toEqual(BuiltinTypes.vec3f);
     // The tint does not depend on the light: read once, before the loop.
     const tintLoad = fragment.body.find(
-      (i) => i.op.kind === 'load-resource' && i.op.member === 'tint'
+      (i) => i.op.kind === 'load-resource' && i.op.member === 'tint',
     );
     expect(tintLoad).toBeDefined();
     // Only the outputs of light.current in use are read.

@@ -220,7 +220,7 @@ export const ModelDataType = defineResourceType<ModelData>('model-data');
 /** A model of a single node and mesh. */
 export const singleMeshModel = (
   name: string,
-  primitives: readonly PrimitiveData[]
+  primitives: readonly PrimitiveData[],
 ): ModelData => ({
   name,
   nodes: [{ name, children: [], mesh: 0 }],

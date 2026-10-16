@@ -38,7 +38,7 @@ const depthPoint = (format: GpuTextureFormat) =>
 export function framebufferFor(
   gl: WebGL2RenderingContext,
   color: FramebufferAttachment | readonly FramebufferAttachment[] | undefined,
-  depth?: FramebufferAttachment
+  depth?: FramebufferAttachment,
 ): WebGLFramebuffer {
   const colors = color === undefined ? [] : 'length' in color ? color : [color];
   if (colors.length === 0 && !depth) {
@@ -64,7 +64,7 @@ export function framebufferFor(
   const framebuffer = gl.createFramebuffer();
   gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
   colors.forEach((attachment, i) =>
-    attachment.attachTo(gl, GL.COLOR_ATTACHMENT0 + i)
+    attachment.attachTo(gl, GL.COLOR_ATTACHMENT0 + i),
   );
   if (colors.length === 0) {
     // Depth only.
@@ -86,7 +86,7 @@ export function framebufferFor(
       ]
         .filter((attachment) => attachment)
         .map((attachment) => attachment?.format)
-        .join(' and ')}`
+        .join(' and ')}`,
     );
   }
   node.framebuffer = framebuffer;
@@ -107,7 +107,7 @@ export function framebufferFor(
 // Deletes the framebuffers an attachment is part of, when it is destroyed.
 export function releaseFramebuffers(
   gl: WebGL2RenderingContext,
-  attachment: FramebufferAttachment
+  attachment: FramebufferAttachment,
 ): void {
   for (const framebuffer of attachedTo.get(attachment) ?? []) {
     gl.deleteFramebuffer(framebuffer);

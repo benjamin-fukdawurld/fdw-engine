@@ -97,7 +97,7 @@ describe('NativeWindow', () => {
           received.push(
             `${window === left ? 'left' : 'right'} ${e.type} ${e.key}${
               e.ctrlKey ? ' ctrl' : ''
-            } ${e.x},${e.y} ${e.button}`
+            } ${e.x},${e.y} ${e.button}`,
           );
         });
       }
@@ -111,7 +111,7 @@ describe('NativeWindow', () => {
         modifiers: Modifiers.ctrl,
       },
       { type: 'pointerdown', window: left.id, x: 10, y: 20, button: 2 },
-      { type: 'close', window: 99 }
+      { type: 'close', window: 99 },
     );
     NativeWindow.pollEvents();
     expect(received).toEqual([
@@ -142,7 +142,7 @@ describe('NativeWindow', () => {
     }
     queue.push(
       { type: 'keydown', window: left.id, key: 'Z', code: 'KeyW' },
-      { type: 'gamepadconnected', window: 0, gamepad: 7 }
+      { type: 'gamepadconnected', window: 0, gamepad: 7 },
     );
     NativeWindow.pollEvents();
     expect(received).toEqual([
@@ -200,7 +200,7 @@ describe('runLoop', () => {
         throttle: async () => {
           events.push('throttle');
         },
-      }
+      },
     );
     // The events of a frame are dispatched before the next one.
     window.addEventListener('close', () => {
@@ -231,7 +231,7 @@ const built = existsSync(new URL('../build/fdw_native.node', import.meta.url));
 const display = !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY']);
 
 describe.skipIf(
-  !canRun('window', built && display, 'needs the addon and a display')
+  !canRun('window', built && display, 'needs the addon and a display'),
 )('NativeWindow (SDL3)', () => {
   it('creates, presents to and destroys a window', () => {
     const window = new NativeWindow({
@@ -246,7 +246,7 @@ describe.skipIf(
     const pixels = new Uint8Array(256 * 32).fill(128);
     window.presentRgba(pixels, 64, 32, 256);
     expect(() => window.presentRgba(new Uint8Array(4), 64, 32)).toThrow(
-      RangeError
+      RangeError,
     );
     NativeWindow.pollEvents();
     window.destroy();

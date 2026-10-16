@@ -41,7 +41,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         value > 0
           ? [Math.round(170 * shade), Math.round(70 * shade), 50, 255]
           : [150, 145, 135, 255],
-        (y * size + x) * 4
+        (y * size + x) * 4,
       );
     }
   }
@@ -61,16 +61,16 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       const length = Math.hypot(dx, dy, 1);
       normalPixels.set(
         [-dx / length, -dy / length, 1 / length].map((n) =>
-          Math.round((n * 0.5 + 0.5) * 255)
+          Math.round((n * 0.5 + 0.5) * 255),
         ),
-        (y * size + x) * 4
+        (y * size + x) * 4,
       );
       normalPixels[(y * size + x) * 4 + 3] = 255;
     }
   }
   const texture = (
     pixels: Uint8Array,
-    format: 'rgba8unorm' | 'rgba8unorm-srgb'
+    format: 'rgba8unorm' | 'rgba8unorm-srgb',
   ) =>
     backend.textures.createTexture({
       type: '2d',
@@ -140,7 +140,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         uv = g.call(
           stdMacros.parallaxOcclusionMapping,
           { ...heightMap, uv, scale: 0.06 },
-          { params: { steps: 16 } }
+          { params: { steps: 16 } },
         );
         normal = g.call(stdMacros.normalMapping, {
           sample: read('normal', uv).swizzle('rgb'),
@@ -221,7 +221,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     info(
       details
         ? 'normal, bump, parallax occlusion, displacement (click: flat)'
-        : 'flat (click: with details)'
+        : 'flat (click: with details)',
     );
   show();
   canvas.addEventListener('click', () => {

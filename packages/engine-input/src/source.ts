@@ -113,6 +113,6 @@ export interface InputSource {
     gamepad: number,
     strong: number,
     weak: number,
-    duration: number
+    duration: number,
   ): void;
 }

@@ -45,7 +45,7 @@ function copyElements(
   stride: number,
   size: number,
   count: number,
-  target: Uint8Array
+  target: Uint8Array,
 ) {
   if (count === 0) return;
   if (offset + (count - 1) * stride + size > source.byteLength)
@@ -57,7 +57,7 @@ function copyElements(
   for (let i = 0; i < count; i++)
     target.set(
       source.subarray(offset + i * stride, offset + i * stride + size),
-      i * size
+      i * size,
     );
 }
 
@@ -68,7 +68,7 @@ function copyElements(
  */
 export function accessorReader(
   json: GltfJson,
-  bufferView: (index: number) => Promise<Uint8Array<ArrayBuffer>>
+  bufferView: (index: number) => Promise<Uint8Array<ArrayBuffer>>,
 ): (index: number) => Promise<GltfAttributeData> {
   const cache = new Map<number, Promise<GltfAttributeData>>();
 
@@ -91,7 +91,7 @@ export function accessorReader(
         stride,
         size,
         accessor.count,
-        bytes
+        bytes,
       );
     }
     const sparse = accessor.sparse;
@@ -104,7 +104,7 @@ export function accessorReader(
         indexType.BYTES_PER_ELEMENT,
         indexType.BYTES_PER_ELEMENT,
         sparse.count,
-        new Uint8Array(indices.buffer)
+        new Uint8Array(indices.buffer),
       );
       const values = new Uint8Array(sparse.count * size);
       copyElements(
@@ -113,12 +113,12 @@ export function accessorReader(
         size,
         size,
         sparse.count,
-        values
+        values,
       );
       for (let i = 0; i < sparse.count; i++) {
         if (indices[i] >= accessor.count)
           throw new Error(
-            `Sparse index ${indices[i]} out of accessor ${index}`
+            `Sparse index ${indices[i]} out of accessor ${index}`,
           );
         bytes.set(values.subarray(i * size, (i + 1) * size), indices[i] * size);
       }

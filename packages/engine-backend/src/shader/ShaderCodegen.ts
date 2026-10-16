@@ -2,12 +2,7 @@ import type { ShaderModuleIR } from '@fdw/engine-shader';
 import type { PhysicalProgramLayout } from './PhysicalLayout';
 
 export type ShaderLanguage =
-  | 'wgsl'
-  | 'glsl-es-300'
-  | 'glsl-450'
-  | 'msl'
-  | 'hlsl'
-  | 'spirv';
+  'wgsl' | 'glsl-es-300' | 'glsl-450' | 'msl' | 'hlsl' | 'spirv';
 
 export type ShaderSources =
   // One module holding the entry points (WGSL, MSL, HLSL): vertex and

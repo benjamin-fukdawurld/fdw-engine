@@ -40,7 +40,7 @@ export class Sphere implements ConvexVolume {
   transform(matrix: Matrix4): Sphere {
     return new Sphere(
       transformPoint(vec3(), matrix, this.center),
-      this.radius * maxScale(matrix)
+      this.radius * maxScale(matrix),
     );
   }
 
@@ -75,8 +75,8 @@ export class Sphere implements ConvexVolume {
         c < box.min[axis]
           ? box.min[axis] - c
           : c > box.max[axis]
-          ? c - box.max[axis]
-          : 0;
+            ? c - box.max[axis]
+            : 0;
       distance += d * d;
     }
     return distance <= this.radius * this.radius;

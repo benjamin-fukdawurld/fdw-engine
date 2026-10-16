@@ -21,7 +21,7 @@ const scaleFunction = () => {
 
 const fragmentOf = (graph: MaterialGraphData) =>
   compile(graph).module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === 'fragment'
+    (entryPoint) => entryPoint.stage === 'fragment',
   ) as IrEntryPoint;
 
 const instructions = (entryPoint: IrEntryPoint) => {
@@ -48,7 +48,7 @@ describe('defineFunction', () => {
     const f = new GraphBuilder('empty');
     f.functionInput('x', BuiltinTypes.f32);
     expect(() => defineFunction(f.build(), { id: 'test.empty' })).toThrow(
-      GraphError
+      GraphError,
     );
 
     const g = new GraphBuilder('mixed');
@@ -122,7 +122,7 @@ describe('inlining', () => {
     const v = f.functionInput('v', BuiltinTypes.vec3f);
     f.functionOutput(
       'result',
-      f.call(scale, { value: f.call(scale, { value: v }) })
+      f.call(scale, { value: f.call(scale, { value: v }) }),
     );
     const twice = defineFunction(f.build(), {
       id: 'test.twice',
@@ -134,7 +134,7 @@ describe('inlining', () => {
       baseColor: g.call(twice, { v: g.uniform('color', BuiltinTypes.vec3f) }),
     });
     const products = instructions(fragmentOf(g.build())).filter(
-      (i) => i.op.kind === 'binary'
+      (i) => i.op.kind === 'binary',
     );
     expect(products).toHaveLength(2);
   });
@@ -179,7 +179,7 @@ describe('inlining', () => {
       baseColor: g.call(std.vec3, { x: g.call(loop, { v: 1 }), y: 0, z: 0 }),
     });
     expect(() => compile(g.build(), { registry })).toThrow(
-      /recursive function: test.loop → test.loop/
+      /recursive function: test.loop → test.loop/,
     );
   });
 
@@ -199,8 +199,8 @@ describe('inlining', () => {
         {
           value: f.call(std.mul, { a: light.diffuse, b: texel.swizzle('rgb') }),
         },
-        { label: 'received' }
-      )
+        { label: 'received' },
+      ),
     );
     const litTexture = defineFunction(f.build(), {
       id: 'test.litTexture',
@@ -215,7 +215,7 @@ describe('inlining', () => {
     });
     const program = compile(g.build());
     const bindings = program.layout.groups.flatMap((group) =>
-      group.bindings.map((binding) => binding.name)
+      group.bindings.map((binding) => binding.name),
     );
     expect(bindings).toEqual(expect.arrayContaining(['map', 'mapSampler']));
     const fragment = fragmentOf(g.build());
@@ -245,7 +245,7 @@ describe('embedded functions', () => {
     g.surface({ baseColor: [1, 0, 0] });
     const graph = { ...g.build(), functions: [{ id: 1 }] };
     expect(() => parseGraph(JSON.stringify(graph))).toThrow(
-      /Malformed function/
+      /Malformed function/,
     );
   });
 });

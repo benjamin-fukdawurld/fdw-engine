@@ -12,7 +12,7 @@ import type {
 } from '../mesh';
 
 const scalarOf = (
-  format: VertexAttributeFormat
+  format: VertexAttributeFormat,
 ): 'f32' | 'i32' | 'u32' | undefined => {
   if (/^(float|unorm|snorm)/.test(format)) {
     return 'f32';
@@ -35,7 +35,7 @@ const componentsOf = (format: VertexAttributeFormat): number => {
 // Shader type read from a vertex attribute format. Normalized formats are
 // read as floats.
 export function vertexFormatShaderType(
-  format: VertexAttributeFormat
+  format: VertexAttributeFormat,
 ): ScalarType | VectorType | undefined {
   const scalar = scalarOf(format);
   if (!scalar) {
@@ -52,7 +52,7 @@ export function vertexFormatShaderType(
 // input), as in every graphics API.
 export function isVertexFormatCompatible(
   format: VertexAttributeFormat,
-  type: ShaderType
+  type: ShaderType,
 ): boolean {
   const provided = vertexFormatShaderType(format);
   if (!provided || (type.kind !== 'scalar' && type.kind !== 'vector')) {
@@ -65,8 +65,10 @@ export function isVertexFormatCompatible(
   return componentsOf(format) >= wanted;
 }
 
-export interface VertexBufferLayout
-  extends Omit<MeshBufferDescription, 'attributes'> {
+export interface VertexBufferLayout extends Omit<
+  MeshBufferDescription,
+  'attributes'
+> {
   // Index of the mesh vertex buffer.
   readonly buffer: number;
   readonly attributes: readonly {
@@ -82,7 +84,7 @@ export interface VertexBufferLayout
 // attribute.
 export function matchVertexLayout(
   inputs: readonly VertexInputRequirement[],
-  mesh: MeshDescription
+  mesh: MeshDescription,
 ): VertexBufferLayout[] {
   const layouts = mesh.vertexBuffers.map((buffer, index) => ({
     buffer: index,
@@ -99,7 +101,7 @@ export function matchVertexLayout(
     let found = false;
     mesh.vertexBuffers.forEach((buffer, index) => {
       const attribute = buffer.attributes.find(
-        (candidate) => candidate.semantic === input.semantic
+        (candidate) => candidate.semantic === input.semantic,
       );
       if (!attribute || found) {
         return;
@@ -108,7 +110,7 @@ export function matchVertexLayout(
         throw new Error(
           `Vertex attribute "${input.semantic}" has format ${
             attribute.format
-          }, which cannot feed a ${typeToString(input.type)} input`
+          }, which cannot feed a ${typeToString(input.type)} input`,
         );
       }
       layouts[index].attributes.push({
@@ -129,5 +131,5 @@ export function matchVertexLayout(
 // Semantics of the attributes of a mesh, for CompileOptions.vertexAttributes.
 export const meshSemantics = (mesh: MeshDescription): string[] =>
   mesh.vertexBuffers.flatMap((buffer) =>
-    buffer.attributes.map((attribute) => attribute.semantic)
+    buffer.attributes.map((attribute) => attribute.semantic),
   );

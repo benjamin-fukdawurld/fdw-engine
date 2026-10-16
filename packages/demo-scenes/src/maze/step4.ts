@@ -25,7 +25,7 @@ const lightPeriod = 0.1;
 export const createMazeStep4: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   const scene = new Scene();
   const { level, cube, sphere } = createMazeWorld(scene, { sun: false });
@@ -73,7 +73,7 @@ export const createMazeStep4: SceneFactory = (
     player,
     flashlight,
     exploration,
-    { cube, sphere }
+    { cube, sphere },
   );
   let lightTime = 0;
   let showCulling = false;
@@ -103,7 +103,7 @@ export const createMazeStep4: SceneFactory = (
         scheduler.paused = false;
       }
     },
-    { phase: 'begin' }
+    { phase: 'begin' },
   );
   scheduler.add(
     'aim',
@@ -114,17 +114,17 @@ export const createMazeStep4: SceneFactory = (
         eye,
         camera,
         player.position,
-        follow.yaw
+        follow.yaw,
       );
     },
-    { phase: 'begin', after: ['input'] }
+    { phase: 'begin', after: ['input'] },
   );
 
   // fixed: the logic.
   scheduler.add(
     'player',
     (step) => player.update(step, actions, follow.yaw, aim),
-    { phase: 'fixed' }
+    { phase: 'fixed' },
   );
   scheduler.add(
     'exploration',
@@ -136,7 +136,7 @@ export const createMazeStep4: SceneFactory = (
         lightTime = 0;
       }
     },
-    { phase: 'fixed', after: ['player'] }
+    { phase: 'fixed', after: ['player'] },
   );
   scheduler.add(
     'game',
@@ -147,7 +147,7 @@ export const createMazeStep4: SceneFactory = (
         scheduler.paused = true;
       }
     },
-    { phase: 'fixed', after: ['exploration'] }
+    { phase: 'fixed', after: ['exploration'] },
   );
 
   // update: the camera, the markers.
@@ -191,15 +191,15 @@ export const createMazeStep4: SceneFactory = (
         game.state === 'won'
           ? 'You escaped! R to play again'
           : game.state === 'lost'
-          ? 'Caught! R to play again'
-          : `${game.collected} of ${game.total} gems · ${explored} % explored`;
+            ? 'Caught! R to play again'
+            : `${game.collected} of ${game.total} gems · ${explored} % explored`;
       context.info?.(
         stats
           ? `${status} · ${stats.drawn} nodes drawn, ${stats.lights} lights`
-          : status
+          : status,
       );
     },
-    { phase: 'render' }
+    { phase: 'render' },
   );
 
   let last = 0;

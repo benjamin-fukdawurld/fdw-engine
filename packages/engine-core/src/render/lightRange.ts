@@ -23,7 +23,7 @@ export function lightRange(light: BaseLight): number {
       x,
       y,
       z,
-    ])
+    ]),
   );
   if (intensity <= 0) {
     return 0;

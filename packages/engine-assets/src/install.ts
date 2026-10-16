@@ -28,7 +28,7 @@ export interface InstallAssetsOptions extends Partial<AssetsConfig> {
  */
 export function installAssets(
   store: ResourceStore,
-  options: InstallAssetsOptions = {}
+  options: InstallAssetsOptions = {},
 ): ImageCodecRegistry {
   const { backend, codecs = [], ...config } = options;
   const registry = new ImageCodecRegistry(codecs);

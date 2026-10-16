@@ -26,7 +26,7 @@ function RouteComponent() {
       rendererRef.current?.destroy();
       scopeRef.current?.dispose();
     },
-    []
+    [],
   );
 
   const onSurfaceReady = async (engine: Engine, surface: Surface) => {
@@ -53,7 +53,7 @@ function RouteComponent() {
         ambient: { x: 0.1, y: 0.1, z: 0.1 },
         diffuse: { x: 1, y: 1, z: 1 },
         specular: { x: 1, y: 1, z: 1 },
-      })
+      }),
     );
 
     const camera = new Camera({

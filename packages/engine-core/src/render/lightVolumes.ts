@@ -13,7 +13,7 @@ const planes = new Float64Array(24);
 export function spotVolume(
   light: SpotLight,
   range: number,
-  out: Frustum
+  out: Frustum,
 ): Frustum {
   const { x: px, y: py, z: pz } = light.position;
   const axes = lookAxes(light.direction);
@@ -42,7 +42,7 @@ export function spotVolume(
   write(
     5,
     d.map((v) => -v),
-    dot(d, p) + range
+    dot(d, p) + range,
   );
   return out.setPlanes(planes);
 }
@@ -75,8 +75,8 @@ export function lightReaches(light: BaseLight, box: Aabb): boolean {
         c < box.min[axis]
           ? box.min[axis] - c
           : c > box.max[axis]
-          ? c - box.max[axis]
-          : 0;
+            ? c - box.max[axis]
+            : 0;
       distance += outside * outside;
     }
     return distance <= range * range;

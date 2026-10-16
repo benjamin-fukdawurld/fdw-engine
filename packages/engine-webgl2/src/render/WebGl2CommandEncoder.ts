@@ -28,7 +28,7 @@ function clearColorBuffer(
   gl: WebGL2RenderingContext,
   index: number,
   format: string,
-  value: number[]
+  value: number[],
 ): void {
   if (format.endsWith('uint')) {
     gl.clearBufferuiv(GL.COLOR, index, value);
@@ -50,7 +50,7 @@ function attachment(target: unknown, what: string): FramebufferAttachment {
 function unwrap<T>(
   value: unknown,
   type: abstract new (...args: never[]) => T,
-  what: string
+  what: string,
 ): T {
   if (!(value instanceof type)) {
     throw new Error(`${what} was not created by the WebGL2 backend`);
@@ -66,7 +66,7 @@ function vertexFormat(format: VertexAttributeFormat): {
   integer: boolean;
 } {
   const match = /^(float|unorm|snorm|uint|sint)(8|16|32)(?:x(\d))?$/.exec(
-    format
+    format,
   );
   if (!match) {
     throw new Error(`Vertex format ${format} is not supported by WebGL2`);
@@ -97,7 +97,7 @@ interface DrawState {
 
 function applyPipeline(
   gl: WebGL2RenderingContext,
-  pipeline: WebGl2RenderPipeline
+  pipeline: WebGl2RenderPipeline,
 ): void {
   gl.useProgram(pipeline.program.program);
   if (pipeline.cullFace === undefined) {
@@ -141,7 +141,7 @@ function bindVertices(gl: WebGL2RenderingContext, state: DrawState): void {
     gl.bindBuffer(GL.ARRAY_BUFFER, buffer.buffer);
     for (const attribute of layout.attributes) {
       const { size, type, normalized, integer } = vertexFormat(
-        attribute.format
+        attribute.format,
       );
       gl.enableVertexAttribArray(attribute.location);
       if (integer) {
@@ -150,7 +150,7 @@ function bindVertices(gl: WebGL2RenderingContext, state: DrawState): void {
           size,
           type,
           layout.stride,
-          attribute.offset
+          attribute.offset,
         );
       } else {
         gl.vertexAttribPointer(
@@ -159,18 +159,18 @@ function bindVertices(gl: WebGL2RenderingContext, state: DrawState): void {
           type,
           normalized,
           layout.stride,
-          attribute.offset
+          attribute.offset,
         );
       }
       gl.vertexAttribDivisor(
         attribute.location,
-        layout.stepMode === 'instance' ? 1 : 0
+        layout.stepMode === 'instance' ? 1 : 0,
       );
     }
   });
   gl.bindBuffer(
     GL.ELEMENT_ARRAY_BUFFER,
-    state.indexBuffer?.buffer.buffer ?? null
+    state.indexBuffer?.buffer.buffer ?? null,
   );
 }
 
@@ -197,7 +197,7 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     const value = state.groups[group]?.resources.get(binding);
     if (!value) {
       throw new Error(
-        `No resource bound at group ${group}, binding ${binding}`
+        `No resource bound at group ${group}, binding ${binding}`,
       );
     }
     return value;
@@ -206,7 +206,7 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     const buffer = unwrap(
       resource(block.group, block.binding),
       WebGl2Buffer,
-      'The uniform buffer'
+      'The uniform buffer',
     );
     gl.bindBufferBase(GL.UNIFORM_BUFFER, block.point, buffer.buffer);
   }
@@ -214,13 +214,13 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     const glTexture = unwrap(
       resource(texture.group, texture.binding),
       WebGl2Texture,
-      'The texture'
+      'The texture',
     );
     const glSampler = sampler
       ? unwrap(
           resource(sampler.group, sampler.binding),
           WebGl2Sampler,
-          'The sampler'
+          'The sampler',
         ).sampler
       : loadSampler(gl);
     gl.activeTexture(GL.TEXTURE0 + unit);
@@ -241,7 +241,7 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     const objects = unwrap(
       resource(group, binding),
       WebGl2ObjectTable,
-      'The object table'
+      'The object table',
     );
     // Read by texelFetch: no sampler object.
     for (const [unit, texture] of [
@@ -260,7 +260,7 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
 function setFirstInstance(
   gl: WebGL2RenderingContext,
   state: DrawState,
-  firstInstance: number
+  firstInstance: number,
 ): void {
   const location = state.pipeline.program.objectTable?.firstInstance;
   if (location) {
@@ -291,7 +291,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
       }[];
     },
     // Recorded after the pass: the end of its timer query.
-    private readonly _onEnd?: Command
+    private readonly _onEnd?: Command,
   ) {}
 
   setPipeline(pipeline: GpuRenderPipeline): void {
@@ -312,7 +312,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     this._vertexBuffers[slot] = unwrap(
       buffer,
       WebGl2Buffer,
-      'The vertex buffer'
+      'The vertex buffer',
     );
   }
 
@@ -332,7 +332,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
         state.pipeline.topology,
         0,
         vertexCount,
-        instanceCount
+        instanceCount,
       );
     });
   }
@@ -351,7 +351,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
         indexCount,
         index.type,
         0,
-        instanceCount
+        instanceCount,
       );
     });
   }
@@ -381,7 +381,7 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
             to.width,
             to.height,
             GL.COLOR_BUFFER_BIT,
-            GL.NEAREST
+            GL.NEAREST,
           );
         }
         gl.bindFramebuffer(GL.READ_FRAMEBUFFER, from);
@@ -459,7 +459,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
     this._commands.push((gl) => {
       gl.bindFramebuffer(
         GL.FRAMEBUFFER,
-        framebufferFor(gl, targets, depthTarget)
+        framebufferFor(gl, targets, depthTarget),
       );
       gl.viewport(0, 0, size.width, size.height);
       gl.disable(GL.SCISSOR_TEST);
@@ -492,7 +492,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
               to: attachment(color.resolveTarget, 'The resolve target'),
             },
           ]
-        : []
+        : [],
     );
     return new WebGl2RenderPassEncoder(
       this._commands,
@@ -500,7 +500,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       resolves.length > 0
         ? { from: targets, depth: depthTarget, to: resolves }
         : undefined,
-      timer && query ? (gl) => gl.endQuery(timer.target) : undefined
+      timer && query ? (gl) => gl.endQuery(timer.target) : undefined,
     );
   }
 
@@ -509,7 +509,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
     sourceOffset: number,
     destination: GpuBuffer,
     destinationOffset: number,
-    size: number
+    size: number,
   ): void {
     const from = unwrap(source, WebGl2Buffer, 'The source buffer');
     const to = unwrap(destination, WebGl2Buffer, 'The destination buffer');
@@ -521,7 +521,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
         GL.COPY_WRITE_BUFFER,
         sourceOffset,
         destinationOffset,
-        size
+        size,
       );
     });
   }
@@ -529,7 +529,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
   copyTextureToTexture(
     source: GpuAttachmentTarget,
     destination: GpuAttachmentTarget,
-    size: { readonly width: number; readonly height: number }
+    size: { readonly width: number; readonly height: number },
   ): void {
     const from = attachment(source, 'The source texture');
     // A texture, or the texture of a color render target.
@@ -558,7 +558,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
         0,
         from.height - size.height,
         size.width,
-        size.height
+        size.height,
       );
       gl.bindFramebuffer(GL.READ_FRAMEBUFFER, null);
     });

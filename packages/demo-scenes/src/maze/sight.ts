@@ -12,7 +12,7 @@ export function clearLine(
   scene: Scene,
   solid: ComponentStore,
   from: { readonly x: number; readonly y: number; readonly z: number },
-  to: { readonly x: number; readonly y: number; readonly z: number }
+  to: { readonly x: number; readonly y: number; readonly z: number },
 ): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -38,7 +38,7 @@ export function clearLine(
       return true;
     },
     {},
-    distance
+    distance,
   );
   return clear;
 }
@@ -54,7 +54,7 @@ export function inCone(
     readonly outerCutoff: number;
   },
   point: { readonly x: number; readonly y: number; readonly z: number },
-  reach: number
+  reach: number,
 ): boolean {
   const { position: p, direction: d } = spot;
   const tx = point.x - p.x;

@@ -34,7 +34,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
       this.state.value !== 'destroyed'
     ) {
       throw new Error(
-        `Cannot initialize an engine in the ${this.state.value} state`
+        `Cannot initialize an engine in the ${this.state.value} state`,
       );
     }
     this.state.value = 'initializing';
@@ -55,7 +55,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
       const features = ['timestamp-query', ...Object.keys(CompressionFeatures)];
       this.device = await adapter.requestDevice({
         requiredFeatures: features.filter((feature) =>
-          adapter.features.has(feature)
+          adapter.features.has(feature),
         ) as GPUFeatureName[],
       });
       this.backend = new WebGpuRenderBackend(this.device);
@@ -69,7 +69,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
 
     this.state.value = 'ready';
     this.dispatchEvent(
-      new CustomEvent<WebGpuEngine>('ready', { detail: this })
+      new CustomEvent<WebGpuEngine>('ready', { detail: this }),
     );
   }
 
@@ -80,7 +80,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
 
     this.state.value = 'paused';
     this.dispatchEvent(
-      new CustomEvent<WebGpuEngine>('paused', { detail: this })
+      new CustomEvent<WebGpuEngine>('paused', { detail: this }),
     );
   }
 
@@ -91,7 +91,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
 
     this.state.value = 'ready';
     this.dispatchEvent(
-      new CustomEvent<WebGpuEngine>('resumed', { detail: this })
+      new CustomEvent<WebGpuEngine>('resumed', { detail: this }),
     );
   }
 
@@ -104,7 +104,7 @@ export class WebGpuEngine extends EventTarget implements Engine {
 
     this.state.value = 'destroyed';
     this.dispatchEvent(
-      new CustomEvent<WebGpuEngine>('destroyed', { detail: this })
+      new CustomEvent<WebGpuEngine>('destroyed', { detail: this }),
     );
   }
 }

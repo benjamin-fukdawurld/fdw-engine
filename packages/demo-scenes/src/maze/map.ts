@@ -49,7 +49,7 @@ export class MazeMap implements Inset {
   constructor(
     private readonly _backend: RenderBackend,
     private readonly _renderer: Renderer,
-    private readonly _exploration: Exploration
+    private readonly _exploration: Exploration,
   ) {
     const { maze } = _exploration.level;
     // A line of pixels for each wall, cells between them.
@@ -149,7 +149,7 @@ export class MazeMap implements Inset {
     const cell = this._exploration.level.cellSize * 0.6;
     const v = this.uvOf(
       position.x - Math.sin(heading) * cell,
-      position.z - Math.cos(heading) * cell
+      position.z - Math.cos(heading) * cell,
     );
     this._material.setValue('player', u);
     this._material.setValue('ahead', v);
@@ -166,7 +166,7 @@ export class MazeMap implements Inset {
   add(
     graph: RenderGraph,
     target: TextureHandle,
-    surface: Surface
+    surface: Surface,
   ): TextureHandle {
     if (
       this._version !== this._exploration.version ||
@@ -211,7 +211,7 @@ export class MazeMap implements Inset {
       z0: number,
       x1: number,
       z1: number,
-      color: number
+      color: number,
     ) => {
       for (let z = z0; z <= z1; z++) {
         pixels.fill(color, z * size + x0, z * size + x1 + 1);

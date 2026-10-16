@@ -245,7 +245,7 @@ interface RenderSource {
     frustum: Frustum,
     layers: number,
     visit: (item: Renderable) => void,
-    view: 'camera' | 'shadow'
+    view: 'camera' | 'shadow',
   ): void;
   lights?(): Iterable<BaseLight>;
   bounds?(out: Aabb): Aabb;

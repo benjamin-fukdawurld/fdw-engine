@@ -229,12 +229,12 @@ export interface GpuRenderPassEncoder {
   draw(
     vertexCount: number,
     instanceCount?: number,
-    firstInstance?: number
+    firstInstance?: number,
   ): void;
   drawIndexed(
     indexCount: number,
     instanceCount?: number,
-    firstInstance?: number
+    firstInstance?: number,
   ): void;
   // The rectangle drawn into, in pixels from the top left corner of the
   // attachments (the whole attachments by default): a tile of an atlas.
@@ -285,13 +285,13 @@ export interface GpuCommandEncoder {
     sourceOffset: number,
     destination: GpuBuffer,
     destinationOffset: number,
-    size: number
+    size: number,
   ): void;
   // Copies the top left width × height texels of the first level.
   copyTextureToTexture(
     source: GpuAttachmentTarget,
     destination: GpuAttachmentTarget,
-    size: { readonly width: number; readonly height: number }
+    size: { readonly width: number; readonly height: number },
   ): void;
   /**
    * Computes the levels of a texture after the first one, each averaging

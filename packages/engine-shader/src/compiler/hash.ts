@@ -18,7 +18,7 @@ export const stableStringify = (value: unknown): string =>
   JSON.stringify(value, (_, inner) =>
     inner && typeof inner === 'object' && !Array.isArray(inner)
       ? Object.fromEntries(
-          Object.entries(inner).sort(([a], [b]) => a.localeCompare(b))
+          Object.entries(inner).sort(([a], [b]) => a.localeCompare(b)),
         )
-      : inner
+      : inner,
   );

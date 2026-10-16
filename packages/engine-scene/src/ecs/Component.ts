@@ -5,15 +5,7 @@
 
 /** The type of a field: a number type, or `ref` for a reference to an object. */
 export type FieldType =
-  | 'f32'
-  | 'f64'
-  | 'i8'
-  | 'i16'
-  | 'i32'
-  | 'u8'
-  | 'u16'
-  | 'u32'
-  | 'ref';
+  'f32' | 'f64' | 'i8' | 'i16' | 'i32' | 'u8' | 'u16' | 'u32' | 'ref';
 
 /** A field: a type, or a type and a number of values per entity (a vector). */
 export type FieldSchema = FieldType | readonly [FieldType, number];
@@ -27,20 +19,20 @@ type TypeOf<F extends FieldSchema> = F extends readonly [infer T, number]
 type ArrayFor<T> = T extends 'f32'
   ? Float32Array
   : T extends 'f64'
-  ? Float64Array
-  : T extends 'i8'
-  ? Int8Array
-  : T extends 'i16'
-  ? Int16Array
-  : T extends 'i32'
-  ? Int32Array
-  : T extends 'u8'
-  ? Uint8Array
-  : T extends 'u16'
-  ? Uint16Array
-  : T extends 'u32'
-  ? Uint32Array
-  : unknown[];
+    ? Float64Array
+    : T extends 'i8'
+      ? Int8Array
+      : T extends 'i16'
+        ? Int16Array
+        : T extends 'i32'
+          ? Int32Array
+          : T extends 'u8'
+            ? Uint8Array
+            : T extends 'u16'
+              ? Uint16Array
+              : T extends 'u32'
+                ? Uint32Array
+                : unknown[];
 
 /** The columns of a schema, by field name. */
 export type Columns<S extends Schema> = {
@@ -52,8 +44,8 @@ export type ComponentValues<S extends Schema> = {
   readonly [K in keyof S]?: S[K] extends readonly [FieldType, number]
     ? ArrayLike<number>
     : TypeOf<S[K]> extends 'ref'
-    ? unknown
-    : number;
+      ? unknown
+      : number;
 };
 
 type NumberArray =
@@ -164,7 +156,7 @@ export class ComponentStore<S extends Schema = Schema> {
    */
   insertMany(
     entities: ArrayLike<number>,
-    values: ComponentValues<S> = {}
+    values: ComponentValues<S> = {},
   ): void {
     const needed = this._count + entities.length;
     if (needed > this._dense.length) {
@@ -233,7 +225,7 @@ export class ComponentStore<S extends Schema = Schema> {
       } else {
         (field.column as NumberArray).set(
           value as ArrayLike<number>,
-          entity * field.size
+          entity * field.size,
         );
       }
     }
@@ -248,7 +240,7 @@ export class ComponentStore<S extends Schema = Schema> {
         (field.column as NumberArray).fill(
           0,
           entity * field.size,
-          (entity + 1) * field.size
+          (entity + 1) * field.size,
         );
       }
     }

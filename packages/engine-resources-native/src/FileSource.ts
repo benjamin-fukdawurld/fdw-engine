@@ -33,7 +33,7 @@ export class FileSource implements ResourceSource {
       throw new ResourceError(
         'not-found',
         path,
-        `${path} is outside of ${this.root}`
+        `${path} is outside of ${this.root}`,
       );
     }
     return file;
@@ -41,7 +41,7 @@ export class FileSource implements ResourceSource {
 
   async read(
     path: string,
-    { signal, onProgress }: ReadOptions
+    { signal, onProgress }: ReadOptions,
   ): Promise<ResourceBytes> {
     if (signal.aborted) throw new ResourceError('aborted', path);
     const file = this.filePath(path);
@@ -56,7 +56,7 @@ export class FileSource implements ResourceSource {
         'io',
         path,
         `Cannot read ${file}: ${(e as Error).message}`,
-        { cause: e }
+        { cause: e },
       );
     }
     onProgress?.(data.byteLength, data.byteLength);

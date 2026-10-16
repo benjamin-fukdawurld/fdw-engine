@@ -32,7 +32,7 @@ const scene = (occlusion?: OcclusionCulling) => {
   // Ten materials: the hidden objects would be ten draw calls more.
   const materials = Array.from(
     { length: 10 },
-    () => new Material({ graph: colorGraph() })
+    () => new Material({ graph: colorGraph() }),
   );
   const items: RenderItem[] = Array.from({ length: 1000 }, (_, i) => ({
     mesh,

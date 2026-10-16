@@ -23,7 +23,7 @@ class PooledVector {
   /** @internal */
   constructor(
     protected readonly _transform: Transform,
-    private readonly _offset: number
+    private readonly _offset: number,
   ) {}
 
   protected read(i: number): number {
@@ -42,7 +42,7 @@ class PooledVector {
     const { pool, index } = this._transform;
     pool.data.set(
       Array.prototype.slice.call(values, 0, length),
-      index * stride + this._offset
+      index * stride + this._offset,
     );
     pool.touch(index);
   }
@@ -147,7 +147,7 @@ export class Transform implements TransformSnapshot {
     },
     pool: TransformPool = TransformPool.default,
     /** @internal The index of a block owned by another: see Transform.of(). */
-    owned?: number
+    owned?: number,
   ) {
     this.pool = pool;
     if (owned !== undefined) {

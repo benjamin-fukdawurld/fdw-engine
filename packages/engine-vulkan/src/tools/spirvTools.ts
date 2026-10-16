@@ -18,7 +18,7 @@ const run = promisify(execFile);
  * PATH; undefined when it is not installed.
  */
 export function findTool(
-  name: 'dxc' | 'spirv-val' | 'spirv-cross'
+  name: 'dxc' | 'spirv-val' | 'spirv-cross',
 ): string | undefined {
   const file = process.platform === 'win32' ? `${name}.exe` : name;
   const dirs = [
@@ -34,7 +34,7 @@ const tool = (name: 'dxc' | 'spirv-val' | 'spirv-cross') => {
   const path = findTool(name);
   if (!path) {
     throw new Error(
-      `${name} not found: install the Vulkan SDK and set VULKAN_SDK, or add it to the PATH`
+      `${name} not found: install the Vulkan SDK and set VULKAN_SDK, or add it to the PATH`,
     );
   }
   return path;
@@ -48,7 +48,7 @@ async function runTool(path: string, args: string[]): Promise<string> {
   } catch (error) {
     const { stdout, stderr } = error as { stdout?: string; stderr?: string };
     throw new Error(
-      `${path} ${args.join(' ')} failed:\n${stderr || stdout || String(error)}`
+      `${path} ${args.join(' ')} failed:\n${stderr || stdout || String(error)}`,
     );
   }
 }
@@ -60,7 +60,7 @@ export type SpirvStage = 'vertex' | 'fragment' | 'compute';
  * module per stage.
  */
 export async function compileHlsl(
-  sources: ShaderSources
+  sources: ShaderSources,
 ): Promise<Map<SpirvStage, Uint8Array>> {
   if (sources.kind !== 'single-module') {
     throw new Error('HLSL is a single module');
@@ -73,7 +73,7 @@ export async function compileHlsl(
     const result = new Map<SpirvStage, Uint8Array>();
     for (const [stage, entryPoint] of Object.entries(sources.entryPoints) as [
       SpirvStage,
-      string | undefined
+      string | undefined,
     ][]) {
       if (!entryPoint) {
         continue;
@@ -96,7 +96,7 @@ export async function compileHlsl(
 // Runs a tool on a SPIR-V module written to a temporary file.
 async function withModule<T>(
   spirv: Uint8Array,
-  use: (path: string) => Promise<T>
+  use: (path: string) => Promise<T>,
 ): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), 'fdw-spirv-'));
   try {
@@ -112,7 +112,7 @@ async function withModule<T>(
 export async function validateSpirv(spirv: Uint8Array): Promise<void> {
   const validator = tool('spirv-val');
   await withModule(spirv, (path) =>
-    runTool(validator, ['--target-env', 'vulkan1.3', path])
+    runTool(validator, ['--target-env', 'vulkan1.3', path]),
   );
 }
 
@@ -129,11 +129,11 @@ export interface ReflectedBlock {
 
 /** The uniform blocks of a SPIR-V module, by name of their variable. */
 export async function reflectUniformBlocks(
-  spirv: Uint8Array
+  spirv: Uint8Array,
 ): Promise<Map<string, ReflectedBlock>> {
   const crossCompiler = tool('spirv-cross');
   const json = await withModule(spirv, (path) =>
-    runTool(crossCompiler, [path, '--reflect'])
+    runTool(crossCompiler, [path, '--reflect']),
   );
   const reflection = JSON.parse(json) as {
     types: Record<

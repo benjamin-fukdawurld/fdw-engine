@@ -30,7 +30,7 @@ export interface CombinedSampler {
 // top row first for the compressed ones, whose blocks cannot be flipped,
 // (0, 1) (see WebGl2Texture.flipped). Set by the pipeline at draw time.
 export const orientationUniform = (
-  sampler: CombinedSampler
+  sampler: CombinedSampler,
 ): string | undefined =>
   sampler.type.dimension === '2d' ? `${sampler.name}_v` : undefined;
 
@@ -38,7 +38,7 @@ export const orientationUniform = (
 // first): the same order for the code generator and the pipeline.
 export function combinedSamplers(
   module: ShaderModuleIR,
-  layout: PhysicalProgramLayout
+  layout: PhysicalProgramLayout,
 ): CombinedSampler[] {
   const textureTypes = new Map<string, TextureType>();
   const comparisonSamplers = new Set<string>();
@@ -56,16 +56,16 @@ export function combinedSamplers(
   for (const entryPoint of module.entryPoints) {
     const instructions: IrInstruction[] = [];
     forEachInstruction(entryPoint.body, (instruction) =>
-      instructions.push(instruction)
+      instructions.push(instruction),
     );
     const byId = new Map<number, IrInstruction>(
-      instructions.map((instruction) => [instruction.id, instruction])
+      instructions.map((instruction) => [instruction.id, instruction]),
     );
     const bindingOf = (id: number): string => {
       const op = byId.get(id)?.op;
       if (op?.kind !== 'load-resource') {
         throw new Error(
-          `Value ${id} is sampled but does not come from a binding`
+          `Value ${id} is sampled but does not come from a binding`,
         );
       }
       return op.binding;
@@ -95,7 +95,7 @@ export function combinedSamplers(
         // The index keeps names distinct whatever the binding names.
         name: `ts${pairs.size}_${texture}_${sampler ?? 'load'}`.replace(
           /_{2,}/g,
-          '_'
+          '_',
         ),
         texture,
         ...(sampler !== undefined ? { sampler } : {}),

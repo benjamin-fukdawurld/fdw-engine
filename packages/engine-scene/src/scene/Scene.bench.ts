@@ -24,7 +24,7 @@ const build = (staticNodes: boolean, n = count) => {
         position: { x: (i - n / 2) * 2, y: 0, z: 0 },
         static: staticNodes,
       })
-      .setMesh(mesh, material)
+      .setMesh(mesh, material),
   );
   scene.flush();
   return { scene, nodes };
@@ -52,8 +52,8 @@ const frustum = Frustum.fromMatrix(
     0,
     0,
     0.495,
-    1
-  )
+    1,
+  ),
 );
 renderer.render({ source: dynamic.scene, camera, surface });
 let time = 0;
@@ -80,13 +80,13 @@ describe(`Scene, ${count} nodes, 1000 visible`, () => {
     () => {
       build(true, 100_000);
     },
-    { iterations: 3 }
+    { iterations: 3 },
   );
 
   // The same in a batch: Scene.createBatch.
   const many = 100_000;
   const positions = Float32Array.from({ length: many * 3 }, (_, i) =>
-    i % 3 === 0 ? (Math.floor(i / 3) - many / 2) * 2 : 0
+    i % 3 === 0 ? (Math.floor(i / 3) - many / 2) * 2 : 0,
   );
   bench(
     '100 000 static nodes, created in a batch and indexed',
@@ -101,6 +101,6 @@ describe(`Scene, ${count} nodes, 1000 visible`, () => {
       });
       scene.flush();
     },
-    { iterations: 3 }
+    { iterations: 3 },
   );
 });

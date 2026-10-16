@@ -292,7 +292,7 @@ describe('ActionMap', () => {
     const menu = new ActionMap(
       input,
       { back: { type: 'button', bindings: ['key:Escape'] } },
-      { enabled: false }
+      { enabled: false },
     );
     source.keyDown('KeyW');
     source.keyDown('Space');

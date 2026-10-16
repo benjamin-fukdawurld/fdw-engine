@@ -44,7 +44,7 @@ describe('Frustum', () => {
           matrix[row] * x +
           matrix[4 + row] * y +
           matrix[8 + row] * z +
-          matrix[12 + row]
+          matrix[12 + row],
       );
       const w = clip[3];
       const inside =
@@ -75,16 +75,16 @@ describe('Frustum', () => {
   it('classifies boxes', () => {
     const frustum = camera();
     expect(frustum.classifyAabb(new Aabb([-1, -1, -1], [1, 1, 1]))).toBe(
-      'inside'
+      'inside',
     );
     expect(frustum.classifyAabb(new Aabb([4, -1, -1], [6, 1, 1]))).toBe(
-      'intersects'
+      'intersects',
     );
     expect(frustum.classifyAabb(new Aabb([20, -1, -1], [22, 1, 1]))).toBe(
-      'outside'
+      'outside',
     );
     expect(frustum.classifyAabb(new Aabb([-1, -1, 6], [1, 1, 8]))).toBe(
-      'outside'
+      'outside',
     );
   });
 
@@ -96,7 +96,7 @@ describe('Frustum', () => {
       const half = randomPoint(next, 2).map(Math.abs);
       const box = new Aabb(
         center.map((c, axis) => c - half[axis]) as [number, number, number],
-        center.map((c, axis) => c + half[axis]) as [number, number, number]
+        center.map((c, axis) => c + half[axis]) as [number, number, number],
       );
       const classification = frustum.classifyAabb(box);
       if (frustum.containsPoint(center)) {
@@ -133,13 +133,13 @@ describe('Frustum', () => {
     const matrix = compose(
       randomPoint(next, 3),
       randomRotation(next),
-      [1.5, 1.5, 1.5]
+      [1.5, 1.5, 1.5],
     );
     const moved = frustum.transform(matrix);
     for (let i = 0; i < 2000; i++) {
       const point = randomPoint(next, 10);
       expect(moved.containsPoint(transformPoint(vec3(), matrix, point))).toBe(
-        frustum.containsPoint(point)
+        frustum.containsPoint(point),
       );
     }
   });

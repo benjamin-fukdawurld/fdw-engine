@@ -13,7 +13,7 @@ export type useSurfaceResult = {
 
 export function useSurface(
   engine: Engine | null,
-  engineError: Error | null
+  engineError: Error | null,
 ): useSurfaceResult {
   const [surface, setSurface] = useState<Surface | null>(null);
   const [canvasReady, setCanvasReady] = useState<boolean>(false);

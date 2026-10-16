@@ -5,7 +5,7 @@ import { WebGpuEngine } from '@fdw/engine-webgpu';
  * and constants (GPUBufferUsage…) become globals, as in a browser.
  */
 export async function createDawnEngine(
-  options: readonly string[] = []
+  options: readonly string[] = [],
 ): Promise<WebGpuEngine> {
   const dawn = await import('webgpu');
   Object.assign(globalThis, dawn.globals);

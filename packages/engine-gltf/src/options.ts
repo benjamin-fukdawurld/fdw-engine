@@ -13,7 +13,7 @@ export interface MeshoptDecoder {
     size: number,
     source: Uint8Array,
     mode: string,
-    filter?: string
+    filter?: string,
   ): void;
 }
 
@@ -42,7 +42,7 @@ export interface DracoDecoder {
    */
   decode(
     bytes: Uint8Array<ArrayBuffer>,
-    attributes: Readonly<Record<string, number>>
+    attributes: Readonly<Record<string, number>>,
   ): Promise<{
     readonly attributes: Readonly<Record<string, GltfAttributeData>>;
     readonly indices?: Uint32Array<ArrayBuffer>;

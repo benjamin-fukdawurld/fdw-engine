@@ -45,7 +45,7 @@ export class PortHandle {
     /** Type of the value, after the swizzle. */
     readonly type: ShaderType,
     /** Components selected from the port value ('xyz', 'a'…), if any. */
-    readonly swizzleMask?: string
+    readonly swizzleMask?: string,
   ) {}
 
   /**
@@ -187,7 +187,7 @@ export class GraphBuilder {
    */
   node(
     definition: NodeDefinition | string,
-    { params = {}, inputs = {}, label }: NodeOptions = {}
+    { params = {}, inputs = {}, label }: NodeOptions = {},
   ): Readonly<Record<string, PortHandle>> {
     const resolvedDefinition = this.resolveDefinition(definition);
     const id = `n${this._nextId++}`;
@@ -280,7 +280,7 @@ export class GraphBuilder {
           (type) =>
             type !== 'output.target' &&
             type !== 'output.value' &&
-            type !== 'output.attribute'
+            type !== 'output.attribute',
         ),
         resolvedDefinition.id,
       ].sort();
@@ -336,14 +336,14 @@ export class GraphBuilder {
   call(
     definition: NodeDefinition | string,
     inputs: NodeInputs = {},
-    options: Omit<NodeOptions, 'inputs'> = {}
+    options: Omit<NodeOptions, 'inputs'> = {},
   ): PortHandle {
     const outputs = Object.values(
-      this.node(definition, { ...options, inputs })
+      this.node(definition, { ...options, inputs }),
     );
     if (outputs.length !== 1) {
       throw new Error(
-        `call() needs a node with exactly one output, use node() instead`
+        `call() needs a node with exactly one output, use node() instead`,
       );
     }
     return outputs[0];
@@ -360,7 +360,7 @@ export class GraphBuilder {
     return this.call(
       'input.attribute',
       {},
-      { params: { semantic, type }, label }
+      { params: { semantic, type }, label },
     );
   }
 
@@ -375,12 +375,12 @@ export class GraphBuilder {
   uniform(
     name: string,
     type: ShaderType,
-    options: { slot?: BindingSlot; default?: ConstantValue } = {}
+    options: { slot?: BindingSlot; default?: ConstantValue } = {},
   ): PortHandle {
     return this.call(
       'input.uniform',
       {},
-      { params: withDefined({ name, type, ...options }), label: name }
+      { params: withDefined({ name, type, ...options }), label: name },
     );
   }
 
@@ -392,12 +392,12 @@ export class GraphBuilder {
   storage(
     name: string,
     type: ShaderType,
-    options: { slot?: BindingSlot; access?: 'read' | 'read-write' } = {}
+    options: { slot?: BindingSlot; access?: 'read' | 'read-write' } = {},
   ): PortHandle {
     return this.call(
       'input.storage',
       {},
-      { params: withDefined({ name, type, ...options }), label: name }
+      { params: withDefined({ name, type, ...options }), label: name },
     );
   }
 
@@ -413,24 +413,24 @@ export class GraphBuilder {
       dimension?: TextureDimension;
       sampleType?: TextureSampleType;
       slot?: BindingSlot;
-    } = {}
+    } = {},
   ): PortHandle {
     return this.call(
       'input.texture',
       {},
-      { params: withDefined({ name, ...options }), label: name }
+      { params: withDefined({ name, ...options }), label: name },
     );
   }
 
   /** Reads a sampler of the material, to sample textures with. */
   sampler(
     name: string,
-    options: { comparison?: boolean; slot?: BindingSlot } = {}
+    options: { comparison?: boolean; slot?: BindingSlot } = {},
   ): PortHandle {
     return this.call(
       'input.sampler',
       {},
-      { params: withDefined({ name, ...options }), label: name }
+      { params: withDefined({ name, ...options }), label: name },
     );
   }
 
@@ -451,7 +451,7 @@ export class GraphBuilder {
       | 'global-invocation-id'
       | 'local-invocation-id'
       | 'workgroup-id'
-      | 'num-workgroups'
+      | 'num-workgroups',
   ): PortHandle {
     return this.call('input.builtin', {}, { params: { builtin } });
   }
@@ -476,7 +476,7 @@ export class GraphBuilder {
       | 'time'
       | 'exposure'
       | 'shadowMap'
-      | 'shadowSampler'
+      | 'shadowSampler',
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }
@@ -491,7 +491,7 @@ export class GraphBuilder {
   functionInput(
     name: string,
     type: ShaderType,
-    options: { default?: ConstantValue; label?: string } = {}
+    options: { default?: ConstantValue; label?: string } = {},
   ): PortHandle {
     return this.call(
       'function.input',
@@ -499,7 +499,7 @@ export class GraphBuilder {
       {
         params: withDefined({ name, type, default: options.default }),
         ...(options.label ? { label: options.label } : {}),
-      }
+      },
     );
   }
 
@@ -563,7 +563,7 @@ export class GraphBuilder {
   target(
     name: string,
     value: PortHandle | ConstantValue,
-    location: number
+    location: number,
   ): void {
     this.node('output.target', {
       params: { name, location },
@@ -616,7 +616,7 @@ export class GraphBuilder {
    * (64 × 1 × 1 by default).
    */
   compute(
-    options: { workgroupSize?: readonly [number, number, number] } = {}
+    options: { workgroupSize?: readonly [number, number, number] } = {},
   ): void {
     this.node('output.compute', {
       params: withDefined({ workgroupSize: options.workgroupSize }),
@@ -637,7 +637,7 @@ export class GraphBuilder {
       index: PortHandle | number;
       value: PortHandle | ConstantValue;
       when?: PortHandle;
-    }
+    },
   ): void {
     this.node('write.storage', {
       inputs: { array, index, value, ...(when ? { when } : {}) },
@@ -656,7 +656,7 @@ export class GraphBuilder {
   parameter(
     name: string,
     defaultValue: StaticValue,
-    description?: string
+    description?: string,
   ): this {
     if (this._parameters.some((parameter) => parameter.name === name)) {
       throw new Error(`Parameter "${name}" is already declared`);
@@ -664,7 +664,7 @@ export class GraphBuilder {
     this._parameters.push(
       description === undefined
         ? { name, default: defaultValue }
-        : { name, default: defaultValue, description }
+        : { name, default: defaultValue, description },
     );
     return this;
   }
@@ -720,7 +720,7 @@ export class GraphBuilder {
   }
 
   private resolveDefinition(
-    definition: NodeDefinition | string
+    definition: NodeDefinition | string,
   ): NodeDefinition {
     if (typeof definition === 'string') {
       return this.registry.require(definition);
@@ -733,7 +733,7 @@ export class GraphBuilder {
     }
     if (registered !== definition) {
       throw new Error(
-        `Another node type is already registered with the id "${definition.id}"`
+        `Another node type is already registered with the id "${definition.id}"`,
       );
     }
     return definition;
@@ -742,9 +742,9 @@ export class GraphBuilder {
 
 // Drops the undefined options, so that the declared parameter defaults apply.
 function withDefined(
-  params: Record<string, StaticValue | undefined>
+  params: Record<string, StaticValue | undefined>,
 ): StaticParams {
   return Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== undefined)
+    Object.entries(params).filter(([, value]) => value !== undefined),
   ) as StaticParams;
 }

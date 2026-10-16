@@ -56,7 +56,7 @@ export class CommandWriter {
       return;
     }
     const grown = new Uint32Array(
-      Math.max(this._words.length * 2, this._length + count)
+      Math.max(this._words.length * 2, this._length + count),
     );
     grown.set(this._words.subarray(0, this._length));
     this._words = grown;
@@ -67,7 +67,7 @@ export class CommandWriter {
 export function unwrap<T>(
   value: unknown,
   type: abstract new (...args: never[]) => T,
-  what: string
+  what: string,
 ): T {
   if (!(value instanceof type)) {
     throw new Error(`${what} was not created by the Vulkan backend`);
@@ -87,7 +87,7 @@ class VulkanRenderPassEncoder implements GpuRenderPassEncoder {
   constructor(
     private readonly _writer: CommandWriter,
     // Written after the pass: the timestamp of its end.
-    private readonly _onEnd?: () => void
+    private readonly _onEnd?: () => void,
   ) {}
 
   setPipeline(pipeline: GpuRenderPipeline): void {
@@ -152,7 +152,7 @@ class VulkanComputePassEncoder implements GpuComputePassEncoder {
   constructor(
     private readonly _writer: CommandWriter,
     // Written after the pass: the timestamp of its end.
-    private readonly _onEnd?: () => void
+    private readonly _onEnd?: () => void,
   ) {}
 
   setPipeline(pipeline: GpuComputePipeline): void {
@@ -217,7 +217,7 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
 
   beginComputePass(
     _label?: string,
-    timing?: PassTiming
+    timing?: PassTiming,
   ): GpuComputePassEncoder {
     const onEnd = this.timestamp(timing);
     this._writer.word(Commands.beginComputePass);
@@ -242,7 +242,7 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
     sourceOffset: number,
     destination: GpuBuffer,
     destinationOffset: number,
-    size: number
+    size: number,
   ): void {
     this._writer
       .word(Commands.copyBuffer)
@@ -256,7 +256,7 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
   copyTextureToTexture(
     source: GpuAttachmentTarget,
     destination: GpuAttachmentTarget,
-    size: { readonly width: number; readonly height: number }
+    size: { readonly width: number; readonly height: number },
   ): void {
     this._writer
       .word(Commands.copyTexture)

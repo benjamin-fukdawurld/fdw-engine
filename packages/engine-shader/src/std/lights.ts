@@ -88,7 +88,7 @@ export const shadow: MacroDefinition = {
             {
               position: context.input('position'),
               normal: context.input('normal'),
-            }
+            },
           )(),
         }
       : { visibility: { value: 1 } },

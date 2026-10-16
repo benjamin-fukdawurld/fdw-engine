@@ -50,13 +50,13 @@ export class VulkanRenderBackend implements RenderBackend {
       objectTable: true,
       maxAnisotropy: loadVulkanAddon().maxAnisotropy(device.context),
       maxColorAttachments: loadVulkanAddon().maxColorAttachments(
-        device.context
+        device.context,
       ),
       independentBlend: loadVulkanAddon().independentBlend(device.context),
     };
     this.pipelines = new VulkanPipelineFactory(
       loadVulkanAddon(),
-      device.context
+      device.context,
     );
   }
 
@@ -96,7 +96,7 @@ export class VulkanRenderBackend implements RenderBackend {
     for (const command of commands) {
       addon.submit(
         this.device.context,
-        unwrap(command, VulkanCommandBuffer, 'The command buffer').words
+        unwrap(command, VulkanCommandBuffer, 'The command buffer').words,
       );
     }
   }

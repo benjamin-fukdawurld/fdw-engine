@@ -33,7 +33,7 @@ describe(`World, ${count} entities`, () => {
     () => {
       filled();
     },
-    { iterations: 5 }
+    { iterations: 5 },
   );
 
   bench('system: position += velocity × dt', () => {

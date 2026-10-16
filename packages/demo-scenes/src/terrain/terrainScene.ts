@@ -65,12 +65,12 @@ export function createTerrain(options: TerrainOptions = {}): SceneFactory {
         const z = Math.sin(angle) * radius;
         const ground = Math.max(
           terrain.heightAt(x, z),
-          terrain.heightAt(x - Math.sin(angle) * 60, z + Math.cos(angle) * 60)
+          terrain.heightAt(x - Math.sin(angle) * 60, z + Math.cos(angle) * 60),
         );
         camera.position = { x, y: ground + 30, z };
         camera.rotation = multiplyQuat(
           rotationAround('y', Math.PI - angle),
-          rotationAround('x', -0.25)
+          rotationAround('x', -0.25),
         );
         followAspect(camera, surface);
 
@@ -87,12 +87,12 @@ export function createTerrain(options: TerrainOptions = {}): SceneFactory {
         const stats = shown.surface.stats;
         context.info?.(
           `${stats.drawn} of ${stats.patches} patches, ${Math.round(
-            stats.triangles / 1000
+            stats.triangles / 1000,
           )}k triangles — levels (L) — ${
             adaptive && (options.minLevel ?? 0) < 6
               ? 'adaptive'
               : 'finest everywhere'
-          } (T) — ${Math.round(1 / Math.max(frameTime, 1e-3))} fps`
+          } (T) — ${Math.round(1 / Math.max(frameTime, 1e-3))} fps`,
         );
       },
       destroy: () => {

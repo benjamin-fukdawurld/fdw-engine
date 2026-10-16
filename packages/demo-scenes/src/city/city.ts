@@ -57,7 +57,7 @@ export function facadeMaterial(color: [number, number, number]): Material {
     value: PortHandle,
     period: number,
     low: number,
-    high: number
+    high: number,
   ) => {
     const t = g.call(std.fract, {
       x: g.call(std.div, { a: value, b: period }),
@@ -72,7 +72,7 @@ export function facadeMaterial(color: [number, number, number]): Material {
     g.call(std.add, { a: world.swizzle('x'), b: world.swizzle('z') }),
     2.6,
     0.2,
-    0.8
+    0.8,
   );
   // No window on the roof.
   const wall = g.call(std.step, {
@@ -126,7 +126,7 @@ const facadeColors: [number, number, number][] = [
 export function buildCity(
   scene: Scene,
   plan: CityPlan = defaultCityPlan,
-  seed = 3
+  seed = 3,
 ): City {
   const { blocks, block, street } = plan;
   const random = seededRandom(seed);
@@ -198,7 +198,7 @@ export function buildCity(
 
   const streets = Array.from(
     { length: blocks + 1 },
-    (_, i) => -half + i * pitch
+    (_, i) => -half + i * pitch,
   );
   return { plan, half, streets, buildings, sun, cube };
 }

@@ -38,7 +38,7 @@ export class TransformAdapter {
     const updateBuffer = (
       buffer: GpuBuffer | undefined,
       type: 'mat3' | 'mat4',
-      matrix: Mat4 | Mat3
+      matrix: Mat4 | Mat3,
     ): GpuBuffer => {
       if (!buffer) {
         buffer = options.bufferFactory.create({

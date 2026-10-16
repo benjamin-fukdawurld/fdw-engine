@@ -185,7 +185,7 @@ export const scalar = (kind: ScalarKind): ScalarType => ({
  */
 export const vec = (
   size: VectorSize,
-  kind: ScalarKind = 'f32'
+  kind: ScalarKind = 'f32',
 ): VectorType => ({
   kind: 'vector',
   size,
@@ -200,7 +200,7 @@ export const vec = (
 export const mat = (
   columns: MatrixSize,
   rows: MatrixSize,
-  kind: 'f32' | 'f16' = 'f32'
+  kind: 'f32' | 'f16' = 'f32',
 ): MatrixType => ({ kind: 'matrix', columns, rows, scalar: kind });
 
 /**
@@ -221,7 +221,7 @@ export const arrayType = (element: ShaderType, length?: number): ArrayType =>
  */
 export const structType = (
   name: string,
-  fields: readonly { name: string; type: ShaderType }[]
+  fields: readonly { name: string; type: ShaderType }[],
 ): StructType => ({ kind: 'struct', name, fields });
 
 /**
@@ -232,7 +232,7 @@ export const structType = (
 export const texture = (
   dimension: TextureDimension,
   sampleType: TextureSampleType = 'float',
-  multisampled?: boolean
+  multisampled?: boolean,
 ): TextureType =>
   multisampled
     ? { kind: 'texture', dimension, sampleType, multisampled }
@@ -341,7 +341,7 @@ export function typeEquals(a: ShaderType, b: ShaderType): boolean {
         a.fields.every(
           (field, i) =>
             field.name === other.fields[i].name &&
-            typeEquals(field.type, other.fields[i].type)
+            typeEquals(field.type, other.fields[i].type),
         )
       );
     }

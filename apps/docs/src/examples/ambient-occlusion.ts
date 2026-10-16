@@ -30,7 +30,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     n.call(std.extend, {
       xyz: n.functionInput('viewNormal', BuiltinTypes.vec3f),
       w: n.functionInput('viewDepth', BuiltinTypes.f32),
-    })
+    }),
   );
   const normalDepth = defineFunction(n.build(), { id: 'example.normalDepth' });
 
@@ -307,7 +307,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const box = (
     position: { x: number; y: number; z: number },
     size: { x: number; y: number; z: number },
-    material = white
+    material = white,
   ) => ({
     mesh: cube,
     material,

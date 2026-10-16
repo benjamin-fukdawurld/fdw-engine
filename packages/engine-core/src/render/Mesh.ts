@@ -29,14 +29,14 @@ export class Mesh {
   }) {
     if (vertices.length !== description.vertexBuffers.length) {
       throw new Error(
-        `The mesh describes ${description.vertexBuffers.length} vertex buffers but ${vertices.length} were given`
+        `The mesh describes ${description.vertexBuffers.length} vertex buffers but ${vertices.length} were given`,
       );
     }
     if (!!indices !== !!description.indexBuffer) {
       throw new Error(
         description.indexBuffer
           ? 'The mesh describes an index buffer but no indices were given'
-          : 'Indices were given but the mesh describes no index buffer'
+          : 'Indices were given but the mesh describes no index buffer',
       );
     }
     if (indices && description.indexBuffer) {
@@ -44,7 +44,7 @@ export class Mesh {
         description.indexBuffer.format === 'uint16' ? Uint16Array : Uint32Array;
       if (!(indices instanceof expected)) {
         throw new Error(
-          `The indices must be a ${expected.name}, as described by the mesh`
+          `The indices must be a ${expected.name}, as described by the mesh`,
         );
       }
     }
@@ -126,7 +126,7 @@ export class Mesh {
       description.format === 'uint16' ? Uint16Array : Uint32Array;
     if (!(data instanceof expected) || data.length !== description.count) {
       throw new Error(
-        `The indices must be ${description.count} values in a ${expected.name}`
+        `The indices must be ${description.count} values in a ${expected.name}`,
       );
     }
     this._indices = data;

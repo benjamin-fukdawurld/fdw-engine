@@ -104,7 +104,7 @@ export class BoxSlots<T> {
 export function rayBox(
   ray: Ray,
   box: ArrayLike<number>,
-  offset: number
+  offset: number,
 ): number {
   let near = 0;
   let far = Infinity;

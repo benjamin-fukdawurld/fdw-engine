@@ -23,7 +23,7 @@ export class NativeInputSource implements InputSource {
     const window = this._window;
     const listen = (
       type: string,
-      listener: (event: NativeWindowEvent) => void
+      listener: (event: NativeWindowEvent) => void,
     ) => {
       const wrapped = (event: Event) => listener(event as NativeWindowEvent);
       window.addEventListener(type, wrapped);
@@ -40,7 +40,7 @@ export class NativeInputSource implements InputSource {
         event.x / width,
         event.y / height,
         event.dx / width,
-        event.dy / height
+        event.dy / height,
       );
     });
     listen('pointerdown', (event) => sink.pointerButton(event.button, true));
@@ -60,7 +60,7 @@ export class NativeInputSource implements InputSource {
     gamepad: number,
     strong: number,
     weak: number,
-    duration: number
+    duration: number,
   ): void {
     NativeWindow.rumbleGamepad(gamepad, strong, weak, duration);
   }

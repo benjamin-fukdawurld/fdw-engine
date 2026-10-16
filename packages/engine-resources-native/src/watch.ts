@@ -18,7 +18,7 @@ export interface FileWatchOptions {
  */
 export function withFileWatch(
   source: FileSource,
-  { persistent = false }: FileWatchOptions = {}
+  { persistent = false }: FileWatchOptions = {},
 ): ResourceSource {
   const directories = new Map<
     string,

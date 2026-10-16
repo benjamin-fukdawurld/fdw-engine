@@ -120,13 +120,13 @@ const at = (x: number, y = 0) => new Transform({ position: { x, y, z: 0 } });
 export const expectColor = (actual: number[], expected: number[]) =>
   expect(
     actual.every((component, i) => Math.abs(component - expected[i]) <= 1),
-    `expected ${JSON.stringify(actual)} to be ${JSON.stringify(expected)} (±1)`
+    `expected ${JSON.stringify(actual)} to be ${JSON.stringify(expected)} (±1)`,
   ).toBe(true);
 
 export function describeRenderer(
   name: string,
   createFixture: () => Promise<RenderingFixture>,
-  options: { skip?: boolean } = {}
+  options: { skip?: boolean } = {},
 ): void {
   describe.skipIf(options.skip ?? false)(name, () => {
     let fixture: RenderingFixture;
@@ -155,7 +155,7 @@ export function describeRenderer(
       time = 0,
       lights: BaseLight[] = [],
       using: Renderer = renderer,
-      exposure = 1
+      exposure = 1,
     ) => {
       using.render({
         items,
@@ -310,7 +310,7 @@ export function describeRenderer(
         map,
         new Uint8Array([
           255, 255, 255, 255, 0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255,
-        ])
+        ]),
       );
       const pixel = await render(items);
       expectColor(pixel(8, 8), [255, 255, 255, 255]);
@@ -397,7 +397,7 @@ export function describeRenderer(
         const texture = (
           descriptor: Partial<
             Parameters<RenderBackend['textures']['createTexture']>[0]
-          >
+          >,
         ) =>
           backend.textures.createTexture({
             type: '2d',
@@ -406,17 +406,17 @@ export function describeRenderer(
             ...descriptor,
           });
         expect(() => texture({ mipLevelCount: 4 })).toThrow(
-          /more than the 3 of its size/
+          /more than the 3 of its size/,
         );
         expect(() => texture({ mipLevelCount: 2, format: 'r32uint' })).toThrow(
-          /cannot be computed/
+          /cannot be computed/,
         );
         expect(() =>
           texture({
             mipLevelCount: 2,
             sampleCount: 4,
             usage: ['render-attachment'],
-          })
+          }),
         ).toThrow(/single level/);
       });
 
@@ -452,7 +452,7 @@ export function describeRenderer(
       // The pixels of a level of one color.
       const filled = (count: number, [r, g, b]: number[]) =>
         Uint8Array.from({ length: count * 4 }, (_, i) =>
-          i % 4 === 3 ? 255 : [r, g, b][i % 4]
+          i % 4 === 3 ? 255 : [r, g, b][i % 4],
         );
 
       it('samples the levels given, and a level written alone', async () => {
@@ -503,7 +503,7 @@ export function describeRenderer(
           0xff,
           0xff,
           0,
-          0
+          0,
         );
       const compressed = [
         { format: 'bc7-rgba-unorm', block: bc7Block, max: 255 },
@@ -512,7 +512,7 @@ export function describeRenderer(
 
       it('samples the levels of the compressed formats the device has', async (context) => {
         const formats = compressed.filter(({ format }) =>
-          backend.capabilities?.compressedFormats?.includes(format)
+          backend.capabilities?.compressedFormats?.includes(format),
         );
         context.skip(formats.length === 0, 'no BC7 or ETC2 textures');
         for (const { format, block, max } of formats) {
@@ -556,20 +556,20 @@ export function describeRenderer(
           // Clamped to the limit; only for linear, non-comparison samplers.
           expect(textures.createSampler().maxAnisotropy).toBe(limit);
           expect(
-            textures.createSampler({ minFilter: 'nearest' }).maxAnisotropy
+            textures.createSampler({ minFilter: 'nearest' }).maxAnisotropy,
           ).toBe(1);
           expect(
-            textures.createSampler({ compare: 'less-equal' }).maxAnisotropy
+            textures.createSampler({ compare: 'less-equal' }).maxAnisotropy,
           ).toBe(1);
           expect(
-            textures.createSampler({ maxAnisotropy: 2 }).maxAnisotropy
+            textures.createSampler({ maxAnisotropy: 2 }).maxAnisotropy,
           ).toBe(Math.min(2, limit));
         } finally {
           textures.defaultMaxAnisotropy = 1;
         }
         expect(textures.createSampler().maxAnisotropy).toBe(1);
         expect(() =>
-          textures.createSampler({ maxAnisotropy: 4, magFilter: 'nearest' })
+          textures.createSampler({ maxAnisotropy: 4, magFilter: 'nearest' }),
         ).toThrow(/needs linear min, mag and mipmap filters/);
 
         // A plane seen at a grazing angle, sampled with mipmaps and
@@ -610,7 +610,7 @@ export function describeRenderer(
       expectColor((await render(items, 0))(32, 32), [128, 128, 128, 255]);
       expectColor(
         (await render(items, Math.PI / 2))(32, 32),
-        [255, 255, 255, 255]
+        [255, 255, 255, 255],
       );
     });
 
@@ -721,13 +721,13 @@ export function describeRenderer(
         // WebGL2: explicit errors, not a broken shader.
         expect(create).toThrow(/no storage buffers/);
         await expect(render(material())).rejects.toThrow(
-          /the backend has no storage buffers/
+          /the backend has no storage buffers/,
         );
         return;
       }
       expectColor(
         (await render(material({ palette: create() })))(32, 32),
-        [0, 128, 255, 255]
+        [0, 128, 255, 255],
       );
     });
 
@@ -747,7 +747,7 @@ export function describeRenderer(
         return;
       }
       expect(() => backend.createCommandEncoder().beginComputePass()).toThrow(
-        /no compute shaders/
+        /no compute shaders/,
       );
     });
 
@@ -784,14 +784,14 @@ export function describeRenderer(
       expect(
         (await render([{ mesh: quad(), material: single, transform: turned }]))(
           32,
-          32
-        )
+          32,
+        ),
       ).toEqual([0, 0, 0, 255]);
       expect(
         (await render([{ mesh: quad(), material: double, transform: turned }]))(
           32,
-          32
-        )
+          32,
+        ),
       ).toEqual([255, 0, 0, 255]);
     });
 
@@ -840,7 +840,7 @@ export function describeRenderer(
           const graph = new RenderGraph();
           const backbuffer = graph.importTexture(
             'backbuffer',
-            surface.getCurrentTarget()
+            surface.getCurrentTarget(),
           );
           // Half of the frame: the copy fills the top left quarter.
           const half = graph.createTexture('half', {
@@ -867,7 +867,7 @@ export function describeRenderer(
                 context.encoder.copyTextureToTexture(
                   context.texture(source),
                   context.texture(destination),
-                  { width: size / 2, height: size / 2 }
+                  { width: size / 2, height: size / 2 },
                 ),
             };
           });
@@ -989,7 +989,7 @@ export function describeRenderer(
               target: graph.createTexture('c', { format: 'r8unorm' }),
               format: 'r8unorm',
               targets,
-            })
+            }),
           ).toThrow();
           return;
         }
@@ -999,7 +999,7 @@ export function describeRenderer(
             target: graph.createTexture('c', { format: 'r8unorm' }),
             format: 'r8unorm',
             targets,
-          })
+          }),
         ).toThrow(/more than the \d+ of the backend/);
       });
     });
@@ -1041,14 +1041,14 @@ export function describeRenderer(
         const f = new GraphBuilder(`${input} as color`);
         const value = f.functionInput(
           input,
-          input === 'objectId' ? BuiltinTypes.u32 : BuiltinTypes.f32
+          input === 'objectId' ? BuiltinTypes.u32 : BuiltinTypes.f32,
         );
         const float =
           input === 'objectId'
             ? f.call(
                 std.convert,
                 { value },
-                { params: { to: BuiltinTypes.f32 } }
+                { params: { to: BuiltinTypes.f32 } },
               )
             : value;
         f.functionOutput(
@@ -1056,7 +1056,7 @@ export function describeRenderer(
           f.call(std.vec4, {
             x: f.call(std.mul, { a: float, b: scale }),
             w: 1,
-          })
+          }),
         );
         return defineFunction(f.build(), { id: `test.${input}Color` });
       };
@@ -1066,7 +1066,7 @@ export function describeRenderer(
         items: RenderItem[],
         outputs: Record<string, SceneOutput>,
         shown: string,
-        options: { samples?: number; color?: boolean } = {}
+        options: { samples?: number; color?: boolean } = {},
       ) => {
         const graph = new RenderGraph();
         const scene = renderer.addScenePasses(graph, {
@@ -1118,7 +1118,7 @@ export function describeRenderer(
         let pixel = await output(
           items(),
           { normal: { format: 'rgba8unorm', value: 'view-normal' } },
-          'normal'
+          'normal',
         );
         // Facing the camera: (0, 0, 1); nothing elsewhere.
         expectColor(pixel(16, 32), [0, 0, 255, 255]);
@@ -1132,14 +1132,14 @@ export function describeRenderer(
               value: asColor('viewDepth', 0.1),
             },
           },
-          'depth'
+          'depth',
         );
         expectColor(pixel(16, 32), [128, 0, 0, 255]);
         // The identifiers 3 and 9, as 3 / 16 and 9 / 16.
         pixel = await output(
           items(),
           { id: { format: 'rgba8unorm', value: asColor('objectId', 1 / 16) } },
-          'id'
+          'id',
         );
         expectColor(pixel(16, 32), [48, 0, 0, 255]);
         expectColor(pixel(48, 32), [143, 0, 0, 255]);
@@ -1165,7 +1165,7 @@ export function describeRenderer(
               default: [0, 0, 1, 1],
             },
           },
-          'mask'
+          'mask',
         );
         expectColor(pixel(16, 32), [255, 255, 0, 255]);
         expectColor(pixel(48, 32), [0, 0, 255, 255]);
@@ -1176,7 +1176,7 @@ export function describeRenderer(
           items(),
           { albedo: { format: 'rgba8unorm', value: 'base-color' } },
           'albedo',
-          { color: false }
+          { color: false },
         );
         expectColor(pixel(16, 32), [255, 0, 0, 255]);
         expectColor(pixel(16, 4), [0, 0, 0, 0]);
@@ -1187,7 +1187,7 @@ export function describeRenderer(
           items(),
           { normal: { format: 'rgba8unorm', value: 'view-normal' } },
           'normal',
-          { samples: 4 }
+          { samples: 4 },
         );
         expectColor(pixel(16, 32), [0, 0, 255, 255]);
       });
@@ -1211,7 +1211,7 @@ export function describeRenderer(
             },
           ],
           { id: { format: 'rgba8unorm', value: asColor('objectId', 1 / 16) } },
-          'id'
+          'id',
         );
         expectColor(pixel(16, 32), [48, 0, 0, 255]);
       });
@@ -1258,7 +1258,7 @@ export function describeRenderer(
           const pixel = bytes.length / 4;
           expect(
             [...new Uint8Array(await backend.textures.readTexture(texture))],
-            format
+            format,
           ).toEqual([...bytes]);
           // The second column, then the bottom row.
           expect(
@@ -1269,10 +1269,10 @@ export function describeRenderer(
                   y: 0,
                   width: 1,
                   height: 2,
-                })
+                }),
               ),
             ],
-            format
+            format,
           ).toEqual([
             ...bytes.subarray(pixel, 2 * pixel),
             ...bytes.subarray(3 * pixel, 4 * pixel),
@@ -1285,10 +1285,10 @@ export function describeRenderer(
                   y: 1,
                   width: 2,
                   height: 1,
-                })
+                }),
               ),
             ],
-            format
+            format,
           ).toEqual([...bytes.subarray(2 * pixel)]);
           texture.destroy();
         }
@@ -1302,7 +1302,7 @@ export function describeRenderer(
             y: 1,
             width: 2,
             height: 1,
-          })
+          }),
         ).toThrow(/not inside its 2×2 pixels/);
         texture.destroy();
         const sampled = backend.textures.createTexture({
@@ -1311,7 +1311,7 @@ export function describeRenderer(
           dimensions: { width: 2, height: 2 },
         });
         expect(() => backend.textures.readTexture(sampled)).toThrow(
-          /copy-src usage/
+          /copy-src usage/,
         );
         sampled.destroy();
       });
@@ -1496,7 +1496,7 @@ export function describeRenderer(
             Array.from({ length: width * width }, (_, i) => {
               const h = Math.round(at(i) * 255);
               return [h, h, h, 255];
-            }).flat()
+            }).flat(),
           ),
         });
       const linear = () =>
@@ -1592,7 +1592,7 @@ export function describeRenderer(
         terrain.update(above, { width: size, height: size });
         // Several levels, some patches out of view.
         expect(
-          terrain.stats.levels.filter((n) => n > 0).length
+          terrain.stats.levels.filter((n) => n > 0).length,
         ).toBeGreaterThan(1);
         expect(terrain.stats.drawn).toBeLessThan(100);
         renderer.render({
@@ -1668,7 +1668,7 @@ export function describeRenderer(
       const drawFullscreen = (
         using: Renderer,
         build: (g: GraphBuilder) => void,
-        values: ConstructorParameters<typeof Material>[0]['values'] = {}
+        values: ConstructorParameters<typeof Material>[0]['values'] = {},
       ) => {
         const g = new GraphBuilder('fullscreen');
         build(g);
@@ -1803,7 +1803,7 @@ export function describeRenderer(
           coords: g.call(
             std.convert,
             { value: g.call(std.mul, { a: uv, b: 2 }) },
-            { params: { to: BuiltinTypes.vec2i } }
+            { params: { to: BuiltinTypes.vec2i } },
           ),
         });
         // The depth of the scene, × 10 (0.049 where the quad is, 1 elsewhere).
@@ -1812,7 +1812,7 @@ export function describeRenderer(
           coords: g.call(
             std.convert,
             { value: g.call(std.mul, { a: uv, b: size }) },
-            { params: { to: BuiltinTypes.vec2i } }
+            { params: { to: BuiltinTypes.vec2i } },
           ),
         });
         g.fullscreen({
@@ -1999,7 +1999,7 @@ export function describeRenderer(
               0,
               [],
               using,
-              0.8
+              0.8,
             );
             using.destroy();
             pixels.push(pixel(32, 32));
@@ -2034,7 +2034,7 @@ export function describeRenderer(
           hdr:
             hdr &&
             (backend.capabilities?.renderableFormats ?? []).includes(
-              'rgba16float'
+              'rgba16float',
             ),
           output: linearOutput,
         });
@@ -2048,7 +2048,7 @@ export function describeRenderer(
           ],
           0,
           [],
-          using
+          using,
         );
         using.destroy();
         return pixel;
@@ -2097,7 +2097,7 @@ export function describeRenderer(
                 [1, -1],
                 [1, 1],
                 [-1, 1],
-              ].flatMap(([x, y]) => [x * half, y * half, z, 0, 0, 1])
+              ].flatMap(([x, y]) => [x * half, y * half, z, 0, 0, 1]),
             ),
           ],
           indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
@@ -2221,7 +2221,7 @@ export function describeRenderer(
         // The ground only is visible; the ground and the blocker above it
         // are drawn into the shadow map, not the one on the side.
         expect(renderer.stats.get('scene')).toEqual(
-          expect.objectContaining({ visible: 1, shadowMaps: 1, casters: 2 })
+          expect.objectContaining({ visible: 1, shadowMaps: 1, casters: 2 }),
         );
       });
 
@@ -2247,7 +2247,7 @@ export function describeRenderer(
       const deferred = async (
         items: RenderItem[],
         lights: BaseLight[],
-        view: Camera = camera
+        view: Camera = camera,
       ) => {
         // Black first: a failed frame does not leave the forward one.
         await render([]);
@@ -2257,7 +2257,7 @@ export function describeRenderer(
           f.call(std.extend, {
             xyz: f.functionInput('worldNormal', BuiltinTypes.vec3f),
             w: f.functionInput('viewDepth', BuiltinTypes.f32),
-          })
+          }),
         );
         const geometry = defineFunction(f.build(), { id: 'test.geometry' });
         const g = new GraphBuilder('deferred lighting');
@@ -2323,14 +2323,14 @@ export function describeRenderer(
       // Same pixels, within two units, where there is something.
       const samePixels = (
         forward: (x: number, y: number) => number[],
-        lighted: (x: number, y: number) => number[]
+        lighted: (x: number, y: number) => number[],
       ) => {
         for (let y = 2; y < size; y += 5) {
           for (let x = 2; x < size; x += 5) {
             const [a, b] = [forward(x, y), lighted(x, y)];
             expect(
               a.slice(0, 3).every((c, i) => Math.abs(c - b[i]) <= 2),
-              `(${x}, ${y}): forward ${a}, deferred ${b}`
+              `(${x}, ${y}): forward ${a}, deferred ${b}`,
             ).toBe(true);
           }
         }
@@ -2411,7 +2411,7 @@ export function describeRenderer(
                 [1, -1, 1, 1],
                 [1, 1, 1, 0],
                 [-1, 1, 0, 0],
-              ].flatMap(([x, y, u, v]) => [x, y, 0, 0, 0, 1, u, v])
+              ].flatMap(([x, y, u, v]) => [x, y, 0, 0, 0, 1, u, v]),
             ),
           ],
           indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
@@ -2430,7 +2430,7 @@ export function describeRenderer(
             }),
             b: 0.5,
           }),
-        })
+        }),
       );
       const encodeNormal = defineFunction(f.build(), {
         id: 'test.encodeNormal',
@@ -2452,7 +2452,7 @@ export function describeRenderer(
               value: encodeNormal,
               target: frame.importTexture(
                 'surface',
-                surface.getCurrentTarget()
+                surface.getCurrentTarget(),
               ),
             },
           },
@@ -2538,7 +2538,7 @@ export function describeRenderer(
           // image (green), which is +y here.
           let pixel = await normalAt(
             mapped([0.8, 0.5, 0.9]),
-            lit(withTangents)
+            lit(withTangents),
           );
           expectColor(pixel(40, 20), [204, 128, 230, 255]);
           pixel = await normalAt(mapped([0.5, 0.8, 0.9]), lit(withTangents));
@@ -2728,7 +2728,7 @@ export function describeRenderer(
           workgroups: [Math.ceil(values.length / 64)],
         });
         expect([...new Float32Array(await output.read())]).toEqual(
-          [...values].map((value) => value * 2.5)
+          [...values].map((value) => value * 2.5),
         );
         runner.destroy();
       });
@@ -2760,7 +2760,7 @@ export function describeRenderer(
           {
             values: { input, output, factor: 2 },
             workgroups: { buffer: counts, offset: 4 },
-          }
+          },
         );
         const result = new Float32Array(await output.read());
         expect(result[0]).toBe(0);
@@ -2784,7 +2784,7 @@ export function describeRenderer(
             a: g.call(
               std.convert,
               { value: id.swizzle('xy') },
-              { params: { to: BuiltinTypes.vec2f } }
+              { params: { to: BuiltinTypes.vec2f } },
             ),
             b: 0.5,
           }),
@@ -2811,7 +2811,7 @@ export function describeRenderer(
         g.compute({ workgroupSize: [4, 4, 1] });
 
         const pixels = Uint8Array.from({ length: 64 }, (_, i) =>
-          i % 4 === 3 ? 255 : (i * 37) % 256
+          i % 4 === 3 ? 255 : (i * 37) % 256,
         );
         const image = backend.textures.createTexture({
           type: '2d',
@@ -2841,7 +2841,7 @@ export function describeRenderer(
           const [r, gr, b] = [0, 1, 2].map((c) => pixels[i * 4 + c] / 255);
           expect(result[i]).toBeCloseTo(
             0.2126 * r + 0.7152 * gr + 0.0722 * b,
-            5
+            5,
           );
         }
         runner.destroy();
@@ -2886,7 +2886,7 @@ export function describeRenderer(
         graph: ReturnType<typeof gray>,
         output: ConstructorParameters<typeof Renderer>[1],
         exposure = 1,
-        values: Record<string, never> = {}
+        values: Record<string, never> = {},
       ) => {
         const using = new Renderer(backend, output);
         const pixel = await render(
@@ -2900,7 +2900,7 @@ export function describeRenderer(
           0,
           [],
           using,
-          exposure
+          exposure,
         );
         using.destroy();
         return pixel(32, 32);
@@ -2975,9 +2975,9 @@ export function describeRenderer(
                   encoding: 'linear',
                 },
               },
-              exposure
+              exposure,
             ),
-            [v, v, v, 255]
+            [v, v, v, 255],
           );
         }
       });
@@ -3114,7 +3114,7 @@ export function describeRenderer(
             },
           ],
           0,
-          [light]
+          [light],
         );
         for (const [x, y] of pixels) {
           expectColor(
@@ -3124,7 +3124,7 @@ export function describeRenderer(
               w: 0,
               ambient: [0.1, 0.1, 0.1],
               attenuation: [1, 0, 0],
-            })
+            }),
           );
         }
       });
@@ -3148,7 +3148,7 @@ export function describeRenderer(
             },
           ],
           0,
-          [light]
+          [light],
         );
         for (const [x, y] of pixels) {
           expectColor(
@@ -3158,7 +3158,7 @@ export function describeRenderer(
               w: 1,
               ambient: [0.05, 0.05, 0.05],
               attenuation: [1, 0.2, 0.5],
-            })
+            }),
           );
         }
       });
@@ -3200,7 +3200,7 @@ export function describeRenderer(
             },
           ],
           0,
-          lights
+          lights,
         );
         // Under the spot, at the edge of its cone, outside of it, elsewhere.
         for (const [x, y] of [
@@ -3241,8 +3241,8 @@ export function describeRenderer(
                   innerDegrees: 10,
                   outerDegrees: 30,
                 },
-              }
-            )
+              },
+            ),
           );
         }
       });
@@ -3273,10 +3273,10 @@ export function describeRenderer(
         const k = (r + 1) ** 2 / 8;
         const geometry = (value: number) => value / (value * (1 - k) + k);
         const f0 = material.baseColor.map(
-          (c) => 0.04 + (c - 0.04) * material.metallic
+          (c) => 0.04 + (c - 0.04) * material.metallic,
         );
         const diffuseColor = material.baseColor.map(
-          (c) => c * (1 - material.metallic)
+          (c) => c * (1 - material.metallic),
         );
         const color = [0, 0, 0];
         for (const light of lights) {
@@ -3336,7 +3336,7 @@ export function describeRenderer(
               },
             ],
             0,
-            lights
+            lights,
           );
           for (const [x, y] of [
             [32, 32],
@@ -3356,8 +3356,13 @@ export function describeRenderer(
                   ambient: 0.05,
                   intensity: 0.6,
                 },
-                { position: [-0.3, 0.4, 1.5], w: 1, ambient: 0, intensity: 0.4 }
-              )
+                {
+                  position: [-0.3, 0.4, 1.5],
+                  w: 1,
+                  ambient: 0,
+                  intensity: 0.4,
+                },
+              ),
             );
           }
         }
@@ -3380,7 +3385,7 @@ export function describeRenderer(
           baseColor: g.call(
             stdMacros.staticSwitch,
             { ifTrue: [1, 0.5, 0], ifFalse: [0, 0.5, 1] },
-            { params: { feature: 'warm' } }
+            { params: { feature: 'warm' } },
           ),
         });
         const material = new Material({ graph: g.build() });
@@ -3404,12 +3409,12 @@ export function describeRenderer(
         ];
         expectColor(
           (await render(items, 0, [], asyncRenderer))(32, 32),
-          [0, 0, 0, 255]
+          [0, 0, 0, 255],
         );
         await asyncRenderer.whenReady();
         expectColor(
           (await render(items, 0, [], asyncRenderer))(32, 32),
-          [255, 0, 0, 255]
+          [255, 0, 0, 255],
         );
         asyncRenderer.destroy();
       });

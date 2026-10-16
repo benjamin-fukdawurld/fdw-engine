@@ -48,7 +48,7 @@ export class LinearIndex<T> implements SpatialIndex<T> {
 
   queryFrustum(
     frustum: Frustum,
-    visit: (item: T, inside: boolean) => void
+    visit: (item: T, inside: boolean) => void,
   ): void {
     const { items, boxes } = this._slots;
     for (let slot = 0; slot < items.length; slot++) {
@@ -82,7 +82,7 @@ export class LinearIndex<T> implements SpatialIndex<T> {
   raycast(
     ray: Ray,
     visit: (item: T, distance: number) => boolean | void,
-    maxDistance = Infinity
+    maxDistance = Infinity,
   ): void {
     const hits: { item: T; distance: number }[] = [];
     const { items } = this._slots;

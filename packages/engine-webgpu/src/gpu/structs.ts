@@ -19,7 +19,7 @@ const isArray = (type: FieldType): type is GpuArray<unknown> =>
   'element' in type;
 
 const isRuntimeSizedArray = (
-  field: Omit<GpuStructField<unknown>, 'offset'>
+  field: Omit<GpuStructField<unknown>, 'offset'>,
 ): boolean => isArray(field.type) && field.type.length === undefined;
 
 // Built structs always define the hasDynamicSize key (possibly undefined),
@@ -66,12 +66,12 @@ const uniformMemberAttributes = (field: GpuStructField<unknown>): string => {
 
 const serializeStruct = (
   blueprint: GpuStructFieldBluePrint,
-  memberAttributes: (field: GpuStructField<unknown>) => string = () => ''
+  memberAttributes: (field: GpuStructField<unknown>) => string = () => '',
 ): string => {
   const fields = blueprint.fields
     .map(
       (field) =>
-        `${memberAttributes(field)}${field.name}: ${field.type.serialize()}`
+        `${memberAttributes(field)}${field.name}: ${field.type.serialize()}`,
     )
     .join(',\n  ');
   return `{
@@ -80,14 +80,14 @@ const serializeStruct = (
 };
 
 const getRuntimeSizedArrayField = (
-  blueprint: GpuStructFieldBluePrint
+  blueprint: GpuStructFieldBluePrint,
 ): GpuStructField<unknown> | undefined => {
   const lastField = blueprint.fields[blueprint.fields.length - 1];
   return lastField && isRuntimeSizedArray(lastField) ? lastField : undefined;
 };
 
 const hasDynamicSize = (
-  blueprint: GpuStructFieldBluePrint
+  blueprint: GpuStructFieldBluePrint,
 ): true | undefined => {
   return getRuntimeSizedArrayField(blueprint) ? true : undefined;
 };
@@ -101,13 +101,13 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
       const isRuntimeArray = isRuntimeSizedArray(field);
       if (isRuntimeArray && i !== fields.length - 1) {
         throw new Error(
-          `Runtime-sized array field "${field.name}" must be the last field of the struct`
+          `Runtime-sized array field "${field.name}" must be the last field of the struct`,
         );
       }
 
       if (isRuntimeSizedStruct(field.type)) {
         throw new Error(
-          `Runtime-sized struct field "${field.name}" cannot be members of other structs`
+          `Runtime-sized struct field "${field.name}" cannot be members of other structs`,
         );
       }
     });
@@ -127,7 +127,7 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
   },
 
   getFieldAlignment: (
-    field: Omit<GpuStructField<unknown>, 'offset'>
+    field: Omit<GpuStructField<unknown>, 'offset'>,
   ): number => {
     switch (true) {
       case 'alignment' in field.type:
@@ -150,7 +150,7 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
   },
 
   getRuntimeSizeCallback: <T = unknown>(
-    blueprint: GpuStructFieldBluePrint
+    blueprint: GpuStructFieldBluePrint,
   ): ((value: T) => number) => {
     const runtimeField = getRuntimeSizedArrayField(blueprint);
 
@@ -160,13 +160,13 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
           const runtimeFieldValue = value[runtimeField.name as keyof T];
           if (runtimeFieldValue === undefined) {
             throw new Error(
-              `Missing value for runtime-sized field ${runtimeField.name}`
+              `Missing value for runtime-sized field ${runtimeField.name}`,
             );
           }
 
           if (!Array.isArray(runtimeFieldValue)) {
             throw new Error(
-              `Runtime-sized field ${runtimeField.name} must be an array`
+              `Runtime-sized field ${runtimeField.name} must be an array`,
             );
           }
 
@@ -175,7 +175,7 @@ export const storageStructBuildStrategy: StructBuildStrategy = {
             runtimeFieldValue.length;
           const totalSize = align(
             runtimeField.offset + runtimeFieldSize,
-            blueprint.alignment
+            blueprint.alignment,
           );
           return totalSize;
         };
@@ -207,13 +207,13 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
       const isRuntimeArray = isRuntimeSizedArray(field);
       if (isRuntimeArray) {
         throw new Error(
-          `Runtime-sized array field "${field.name}" are not allowed in uniform structs`
+          `Runtime-sized array field "${field.name}" are not allowed in uniform structs`,
         );
       }
 
       if (isRuntimeSizedStruct(field.type)) {
         throw new Error(
-          `Runtime-sized struct field "${field.name}" are not allowed in uniform structs`
+          `Runtime-sized struct field "${field.name}" are not allowed in uniform structs`,
         );
       }
 
@@ -221,7 +221,7 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
       // derives it from the element type.
       if (isArray(field.type) && field.type.stride % 16 !== 0) {
         throw new Error(
-          `Array field "${field.name}" has a stride of ${field.type.stride} bytes, but arrays in uniform structs need a stride multiple of 16 (use vec4 elements instead)`
+          `Array field "${field.name}" has a stride of ${field.type.stride} bytes, but arrays in uniform structs need a stride multiple of 16 (use vec4 elements instead)`,
         );
       }
     });
@@ -244,7 +244,7 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
   },
 
   getRuntimeSizeCallback: <T = unknown>(
-    blueprint: GpuStructFieldBluePrint
+    blueprint: GpuStructFieldBluePrint,
   ): ((value: T) => number) => {
     return () => align(blueprint.size, blueprint.alignment);
   },
@@ -267,9 +267,9 @@ export const uniformStructBuildStrategy: StructBuildStrategy = {
 };
 
 export const storageStruct = <T>(
-  fields: Omit<GpuStructField<unknown>, 'offset'>[]
+  fields: Omit<GpuStructField<unknown>, 'offset'>[],
 ) => struct<T>(storageStructBuildStrategy, fields);
 
 export const uniformStructBuilder = <T>(
-  fields: Omit<GpuStructField<unknown>, 'offset'>[]
+  fields: Omit<GpuStructField<unknown>, 'offset'>[],
 ) => struct<T>(uniformStructBuildStrategy, fields);

@@ -106,7 +106,7 @@ describe('Renderer', () => {
     expect(
       log.buffers
         .filter((b) => b.label?.startsWith('mesh '))
-        .every((b) => b.destroyed)
+        .every((b) => b.destroyed),
     ).toBe(true);
     render(items);
     expect(log.buffers.length).toBeGreaterThan(count);
@@ -118,7 +118,7 @@ describe('Renderer', () => {
     const items = [{ mesh: triangle(), material, transform: transformAt(0) }];
     render(items);
     const buffer = log.buffers.find((b) =>
-      b.label?.includes('color uniforms')
+      b.label?.includes('color uniforms'),
     ) as FakeBuffer;
     expect(floatsOf(buffer).slice(0, 3)).toEqual([1, 0, 0]);
 
@@ -165,7 +165,7 @@ describe('Renderer', () => {
     ];
     render(items);
     const buffer = log.buffers.find(
-      (b) => b.label === 'scene frame uniforms'
+      (b) => b.label === 'scene frame uniforms',
     ) as FakeBuffer;
     // viewProjection: the fake projection of a translation by -position,
     // whose depth is 0.5 + 0.0005 z.
@@ -229,7 +229,7 @@ describe('Renderer', () => {
       },
     ]);
     const group = log.bindGroups.find((candidate) =>
-      candidate.entries.some((entry) => entry.resource === buffer)
+      candidate.entries.some((entry) => entry.resource === buffer),
     );
     expect(group?.entries).toEqual([{ binding: 0, resource: buffer }]);
   });
@@ -238,7 +238,7 @@ describe('Renderer', () => {
     const { render } = setup();
     const material = new Material({ graph: texturedGraph(), label: 'wood' });
     expect(() =>
-      render([{ mesh: triangle(), material, transform: transformAt(0) }])
+      render([{ mesh: triangle(), material, transform: transformAt(0) }]),
     ).toThrow('Material "wood": no texture set for "map"');
   });
 
@@ -400,11 +400,11 @@ describe('Renderer, object table', () => {
       log.draws.map(({ instances, firstInstance }) => [
         instances,
         firstInstance,
-      ])
+      ]),
     ).toEqual([[3, 0]]);
     // No buffer per object.
     expect(log.buffers.filter((b) => b.label === 'object uniforms')).toEqual(
-      []
+      [],
     );
     // The three rows in one write, then the instances of the pass.
     expect(log.rowWrites).toEqual([{ first: 0, bytes: 3 * 112 }]);
@@ -552,7 +552,7 @@ describe('Renderer on the render graph', () => {
 
 describe('Renderer, HDR', () => {
   const hdrSetup = (
-    options: ConstructorParameters<typeof Renderer>[1] = {}
+    options: ConstructorParameters<typeof Renderer>[1] = {},
   ) => {
     const { backend, log } = fakeBackend({
       renderableFormats: ['rgba16float'],
@@ -660,10 +660,10 @@ describe('Renderer, HDR', () => {
     expect(log.renderPasses).toEqual(['scene opaque', 'invert', 'capture']);
     // The texture of the scene, sampled by the pass.
     const sceneTexture = log.textures.find(
-      (texture) => texture.label === 'color'
+      (texture) => texture.label === 'color',
     );
     expect(sceneTexture?.usage).toEqual(
-      expect.arrayContaining(['render-attachment', 'sampled'])
+      expect.arrayContaining(['render-attachment', 'sampled']),
     );
     expect(invert.getValue('source')).toMatchObject({ label: 'color' });
   });
@@ -734,7 +734,7 @@ describe('Renderer, shadows', () => {
       dimensions: { width: 1024, height: 1024 },
     });
     expect(atlas?.usage).toEqual(
-      expect.arrayContaining(['render-attachment', 'sampled'])
+      expect.arrayContaining(['render-attachment', 'sampled']),
     );
     // Depth only, with a slope bias; the scene reads the atlas.
     const [depthOnly, scene] = log.pipelines;
@@ -758,7 +758,7 @@ describe('Renderer, shadows', () => {
       lights: [new PointLight(), sun()],
     });
     const frame = log.buffers.find(
-      (b) => b.label === 'scene frame uniforms'
+      (b) => b.label === 'scene frame uniforms',
     ) as FakeBuffer;
     const floats = floatsOf(frame);
     const index = (name: string) => {
@@ -808,7 +808,7 @@ describe('Renderer, shadows', () => {
     expect(log.renderPasses).toEqual(['scene opaque']);
     expect(log.pipelines[0].program.variantKey).not.toHaveProperty(
       'shadows',
-      true
+      true,
     );
     // Shadows can be turned off per scene.
     const graph = new RenderGraph();
@@ -849,7 +849,7 @@ describe('Renderer, views', () => {
       });
     }
     const frames = log.buffers.filter((b) =>
-      b.label?.endsWith('frame uniforms')
+      b.label?.endsWith('frame uniforms'),
     );
     // The fake view matrix is a translation by -position, scaled by the
     // fake projection: both cameras are kept until the graph runs.
@@ -905,7 +905,9 @@ describe('Renderer, phase 4', () => {
 
   const frameFloats = (log: ReturnType<typeof fakeBackend>['log']) =>
     floatsOf(
-      log.buffers.find((b) => b.label?.endsWith('frame uniforms')) as FakeBuffer
+      log.buffers.find((b) =>
+        b.label?.endsWith('frame uniforms'),
+      ) as FakeBuffer,
     );
 
   it('writes the lights in the arrays of the frame uniforms', () => {
@@ -977,7 +979,7 @@ describe('Renderer, phase 4', () => {
       surface,
       lights: Array.from(
         { length: MaxLights + 2 },
-        (_, i) => new PointLight({ position: { x: i, y: 0, z: 0 } })
+        (_, i) => new PointLight({ position: { x: i, y: 0, z: 0 } }),
       ),
     });
     const floats = frameFloats(log);
@@ -1003,7 +1005,7 @@ describe('Renderer, phase 4', () => {
       baseColor: g.call(
         stdMacros.staticSwitch,
         { ifTrue: textured.swizzle('rgb'), ifFalse: [1, 0, 0] },
-        { params: { feature: 'textured' } }
+        { params: { feature: 'textured' } },
       ),
     });
     const material = new Material({
@@ -1078,10 +1080,10 @@ describe('Mesh', () => {
   it('checks the data against the description', () => {
     const description = triangle().description;
     expect(() => new Mesh({ description, vertices: [] })).toThrow(
-      /describes 1 vertex buffers but 0/
+      /describes 1 vertex buffers but 0/,
     );
     expect(
-      () => new Mesh({ description, vertices: [new Float32Array(15)] })
+      () => new Mesh({ description, vertices: [new Float32Array(15)] }),
     ).toThrow(/no indices were given/);
     expect(
       () =>
@@ -1089,7 +1091,7 @@ describe('Mesh', () => {
           description,
           vertices: [new Float32Array(15)],
           indices: new Uint32Array([0, 1, 2]),
-        })
+        }),
     ).toThrow(/must be a Uint16Array/);
   });
 
@@ -1098,7 +1100,7 @@ describe('Mesh', () => {
     mesh.setVertices(0, new Float32Array(15));
     expect(mesh.version).toBe(1);
     expect(() => mesh.setVertices(1, new Float32Array(1))).toThrow(
-      /no vertex buffer 1/
+      /no vertex buffer 1/,
     );
   });
 });
@@ -1121,7 +1123,7 @@ describe('Renderer, multisampling', () => {
         label,
         format,
         sampleCount,
-      ])
+      ]),
     ).toEqual([
       ['scene multisampled color', 'rgba8unorm', 4],
       ['scene depth', 'depth24plus', 4],
@@ -1188,7 +1190,7 @@ describe('Renderer, state bound on the pass', () => {
         mesh: triangle(),
         material,
         transform: transformAt(i),
-      }))
+      })),
     );
 
     const [first] = log.draws;
@@ -1256,7 +1258,7 @@ describe('Renderer, state bound on the pass', () => {
     expect(log.calls.setPipeline).toBe(2);
     expect(log.calls.setVertexBuffer).toBe(2);
     expect(Object.keys(log.draws[1].groups)).toEqual(
-      Object.keys(log.draws[0].groups)
+      Object.keys(log.draws[0].groups),
     );
   });
 });
@@ -1271,7 +1273,7 @@ describe('Renderer, scene outputs', () => {
   const scene = (
     materials: Material[],
     options: Partial<Parameters<Renderer['addScenePasses']>[1]> = {},
-    renderer = new Renderer(fakeBackend().backend)
+    renderer = new Renderer(fakeBackend().backend),
   ) => {
     const graph = new RenderGraph();
     const target = graph.importTexture('surface', surface.getCurrentTarget());
@@ -1308,8 +1310,8 @@ describe('Renderer, scene outputs', () => {
     expect(Object.keys(passes.outputs)).toEqual(['position', 'id']);
     expect(
       log.passes[0].colorAttachments.map(
-        (attachment) => attachment.target.format
-      )
+        (attachment) => attachment.target.format,
+      ),
     ).toEqual(['rgba8unorm', 'rgba16float', 'r32uint']);
     expect(log.pipelines[0].targets.map((target) => target.format)).toEqual([
       'rgba8unorm',
@@ -1337,7 +1339,7 @@ describe('Renderer, scene outputs', () => {
     expect(log.renderPasses).toEqual(['scene opaque', 'scene transparent']);
     expect(log.passes[1].colorAttachments).toHaveLength(1);
     const glassPipeline = log.pipelines.find((pipeline) =>
-      pipeline.targets.some((target) => target.blend)
+      pipeline.targets.some((target) => target.blend),
     );
     expect(glassPipeline?.targets).toHaveLength(1);
   });
@@ -1392,16 +1394,16 @@ describe('Renderer, scene outputs', () => {
         ],
         camera: new Camera(),
         surface,
-      })
+      }),
     ).toThrow(/is not an integer from 0 to 2\^24/);
   });
 
   it('refuses integer outputs with multisampling, and too many bytes', () => {
     expect(() => scene([opaque()], { samples: 4 })).toThrow(
-      /the output "id" \(r32uint\) cannot be multisampled/
+      /the output "id" \(r32uint\) cannot be multisampled/,
     );
     const renderer = new Renderer(
-      fakeBackend({ maxColorAttachmentBytesPerSample: 32 }).backend
+      fakeBackend({ maxColorAttachmentBytesPerSample: 32 }).backend,
     );
     expect(() =>
       scene(
@@ -1412,8 +1414,8 @@ describe('Renderer, scene outputs', () => {
             b: { format: 'rgba32float', value: 'world-position' },
           },
         },
-        renderer
-      )
+        renderer,
+      ),
     ).toThrow(/more than the 32 of the backend/);
   });
 
@@ -1441,7 +1443,7 @@ describe('Renderer, scene outputs', () => {
         target,
         format: surface.format,
         include: 'transparent',
-      })
+      }),
     ).toThrow(/give it/);
     renderer.addScenePasses(graph, {
       name: 'forward',

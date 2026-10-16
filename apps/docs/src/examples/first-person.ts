@@ -115,7 +115,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       pause: { type: 'button', bindings: ['key:Escape', 'gamepad:start'] },
       locked: { type: 'button', bindings: ['pointer:locked'] },
     },
-    { enabled: false }
+    { enabled: false },
   );
   const fly = new FlyOperator(camera, game, {
     mode: 'walk',
@@ -155,7 +155,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
             .join(' · ')}`
         : `playing · hits: ${hits} · ${
             input.pointer.locked ? 'Esc: menu' : 'click to look around'
-          }`
+          }`,
     );
   show();
 
@@ -273,7 +273,7 @@ function hitBox(
   origin: number[],
   direction: number[],
   min: number[],
-  max: number[]
+  max: number[],
 ): number {
   let near = 0;
   let far = Infinity;

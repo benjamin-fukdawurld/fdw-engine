@@ -75,7 +75,7 @@ export class Exploration {
     scene: Scene,
     solid: ComponentStore,
     spot: SpotLight,
-    reach = 12
+    reach = 12,
   ): void {
     const { maze, cellSize } = this.level;
     // The light where its node is now.

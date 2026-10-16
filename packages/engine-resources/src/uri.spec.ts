@@ -32,7 +32,7 @@ describe('uri', () => {
 
   it('formats back', () => {
     expect(formatUri({ scheme: 'a', path: 'b/c', fragment: 'd' })).toBe(
-      'a:b/c#d'
+      'a:b/c#d',
     );
     expect(formatUri({ path: 'b' })).toBe('b');
   });
@@ -43,21 +43,21 @@ describe('uri', () => {
     expect(normalizePath('../a')).toBe('../a');
     expect(normalizePath('/a/../../b')).toBe('/b');
     expect(normalizePath('https://h.com/a/../b/c.png')).toBe(
-      'https://h.com/b/c.png'
+      'https://h.com/b/c.png',
     );
   });
 
   it('resolves relative paths against a resource', () => {
     expect(resolvePath('models/oak.gltf', 'textures/bark.png')).toBe(
-      'models/textures/bark.png'
+      'models/textures/bark.png',
     );
     expect(resolvePath('models/oak.gltf', '../shared/x.png')).toBe(
-      'shared/x.png'
+      'shared/x.png',
     );
     expect(resolvePath('oak.gltf', 'bark.png')).toBe('bark.png');
     expect(resolvePath('models/oak.gltf', '/abs/x.png')).toBe('/abs/x.png');
     expect(resolvePath('https://h.com/m/oak.gltf', '../t/b.png')).toBe(
-      'https://h.com/t/b.png'
+      'https://h.com/t/b.png',
     );
   });
 

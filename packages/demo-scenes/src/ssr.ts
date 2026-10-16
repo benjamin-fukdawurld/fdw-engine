@@ -89,7 +89,7 @@ const modes = ['matte floor', 'planar mirror', 'screen space reflections'];
 export const createSsrScene: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   const input = new Input(context.input ?? new FakeInputSource());
   const parameters = { ...defaultSsrParameters };
@@ -138,7 +138,7 @@ export const createSsrScene: SceneFactory = (
             ...color.map((c) => Math.round(Math.min(c, 1) ** (1 / 2.2) * 255)),
             255,
           ],
-          ((face * faceSize + y) * faceSize + x) * 4
+          ((face * faceSize + y) * faceSize + x) * 4,
         );
       }
     }
@@ -190,7 +190,7 @@ export const createSsrScene: SceneFactory = (
   const sampleEnvironment = (
     g: GraphBuilder,
     direction: PortHandle,
-    level: PortHandle | number = 0
+    level: PortHandle | number = 0,
   ) =>
     g
       .call(std.textureSampleCubeLevel, {
@@ -240,7 +240,7 @@ export const createSsrScene: SceneFactory = (
         c.call(std.mul, {
           a: c.uniform('roughness', BuiltinTypes.f32),
           b: levels - 1,
-        })
+        }),
       ),
       b: [0.95, 0.93, 0.88],
     }),
@@ -315,7 +315,7 @@ export const createSsrScene: SceneFactory = (
     n.call(std.extend, {
       xyz: n.functionInput('worldNormal', BuiltinTypes.vec3f),
       w: n.functionInput('viewDepth', BuiltinTypes.f32),
-    })
+    }),
   );
   const normalDepth = defineFunction(n.build(), { id: 'ssr.normalDepth' });
 
@@ -338,7 +338,7 @@ export const createSsrScene: SceneFactory = (
       xyz: withSky(
         m,
         read(m, 'color', mirrorUv).swizzle('rgb'),
-        read(m, 'normalDepth', mirrorUv).swizzle('w')
+        read(m, 'normalDepth', mirrorUv).swizzle('w'),
       ),
     }),
   });
@@ -385,7 +385,7 @@ export const createSsrScene: SceneFactory = (
     const choose = (
       condition: PortHandle,
       ifTrue: PortHandle | number | number[],
-      ifFalse: PortHandle | number | number[]
+      ifFalse: PortHandle | number | number[],
     ) =>
       r.call(std.select, {
         ifFalse,
@@ -457,7 +457,7 @@ export const createSsrScene: SceneFactory = (
             a: read(
               r,
               'normalDepth',
-              r.call(std.add, { a: at, b: offset })
+              r.call(std.add, { a: at, b: offset }),
             ).swizzle('w'),
             b: center,
           }),
@@ -484,7 +484,7 @@ export const createSsrScene: SceneFactory = (
       uv0: PortHandle,
       behind0: PortHandle,
       test = (point: ReturnType<typeof probe>) =>
-        r.call(std.step, { edge: 0.000001, x: point.behind })
+        r.call(std.step, { edge: 0.000001, x: point.behind }),
     ) => {
       let near: PortHandle = r.call(std.sub, { a: t, b: stepLength });
       let far = t;
@@ -564,7 +564,7 @@ export const createSsrScene: SceneFactory = (
           r.call(std.mul, {
             a: marched[i].valid,
             b: r.call(std.step, { edge: 0.005, x: marched[i].behind }),
-          })
+          }),
         ).found as PortHandle,
       });
     } else if (method === 'thickness') {
@@ -594,7 +594,7 @@ export const createSsrScene: SceneFactory = (
         r.call(std.mul, {
           a: behindAt(i),
           b: r.call(std.step, { edge: marched[i].behind, x: thickness }),
-        })
+        }),
       );
       const refined = refine(hit.t, hit.uv, hit.behind);
       hitUv = refinements > 0 ? refined.uv : hit.uv;
@@ -634,7 +634,7 @@ export const createSsrScene: SceneFactory = (
           r.call(std.mul, {
             a: crossing(i),
             b: r.call(std.step, { edge: start, x: marched[i].t }),
-          })
+          }),
         );
         const refined = refine(crossed.t, crossed.uv, crossed.behind);
         candidates.push({
@@ -687,7 +687,7 @@ export const createSsrScene: SceneFactory = (
         a: color,
         b: r.call(std.mul, { a: reflection, b: strength }),
       }),
-      depth
+      depth,
     );
 
     // The views of the lab, on the reflective pixels; the others dimmed.
@@ -704,8 +704,8 @@ export const createSsrScene: SceneFactory = (
       choose(
         found,
         [0.1, 0.8, 0.9],
-        choose(rejected, [0.1, 0.3, 0.9], [0.8, 0.1, 0.1])
-      )
+        choose(rejected, [0.1, 0.3, 0.9], [0.8, 0.1, 0.1]),
+      ),
     );
     const gray = (value: PortHandle) =>
       r.call(std.mul, { a: [1, 1, 1], b: value });
@@ -716,7 +716,7 @@ export const createSsrScene: SceneFactory = (
           a: hitT,
           b: r.call(std.mul, { a: stepLength, b: steps }),
         }),
-      })
+      }),
     );
     // How far behind the image the first crossing ends after the halvings:
     // black on a surface, red at 0.1 and more (the edge of an object).
@@ -832,11 +832,11 @@ export const createSsrScene: SceneFactory = (
           ? `thickness ${parameters.thicknessScale.toFixed(2)} × step + ` +
             `${parameters.thicknessBias.toFixed(3)} · `
           : parameters.method === 'crossings'
-          ? `crossings, jump < ${parameters.gap.toFixed(3)}, ` +
-            `+ ${parameters.slopeScale.toFixed(1)} px of slope, ` +
-            `behind < ${parameters.behindThickness.toFixed(2)} · `
-          : `back faces + ${parameters.gap.toFixed(3)} · `) +
-        `${parameters.refinements} halvings`
+            ? `crossings, jump < ${parameters.gap.toFixed(3)}, ` +
+              `+ ${parameters.slopeScale.toFixed(1)} px of slope, ` +
+              `behind < ${parameters.behindThickness.toFixed(2)} · `
+            : `back faces + ${parameters.gap.toFixed(3)} · `) +
+        `${parameters.refinements} halvings`,
     );
 
   const handleKeys = () => {
@@ -862,7 +862,7 @@ export const createSsrScene: SceneFactory = (
     if (k.pressed('KeyK')) {
       parameters.behindThickness = Math.max(
         0,
-        parameters.behindThickness - 0.1
+        parameters.behindThickness - 0.1,
       );
     }
     if (k.pressed('KeyL')) {
@@ -909,13 +909,13 @@ export const createSsrScene: SceneFactory = (
       orbit.yaw -= (pointer.x - last.x) * 4;
       orbit.pitch = Math.min(
         -0.05,
-        Math.max(-1.4, orbit.pitch - (pointer.y - last.y) * 3)
+        Math.max(-1.4, orbit.pitch - (pointer.y - last.y) * 3),
       );
     }
     last = { x: pointer.x, y: pointer.y };
     orbit.distance = Math.min(
       20,
-      Math.max(1.5, orbit.distance * 1.1 ** pointer.wheel)
+      Math.max(1.5, orbit.distance * 1.1 ** pointer.wheel),
     );
     const { yaw, pitch, distance } = orbit;
     camera.position = {

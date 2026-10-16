@@ -33,7 +33,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
   })();
   const glass = (
     color: [number, number, number, number],
-    doubleSided = false
+    doubleSided = false,
   ) =>
     new Material({
       graph: glassGraph,

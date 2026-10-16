@@ -102,7 +102,7 @@ export class ResourceEntry<T> {
     readonly uri: string,
     readonly key: string,
     readonly options: unknown,
-    readonly kind: EntryKind
+    readonly kind: EntryKind,
   ) {
     this.totalBytes = computed(() => {
       const own = this.selfProgress.value.total;
@@ -149,7 +149,7 @@ export class HandleImpl<T> implements ResourceHandle<T> {
 
   constructor(
     readonly entry: ResourceEntry<T>,
-    private readonly host: HandleHost
+    private readonly host: HandleHost,
   ) {}
 
   get type() {

@@ -42,7 +42,7 @@ export function viewOf(target: CameraTarget): { fov: number; aspect: number } {
  */
 export function rotationOf(
   yaw: number,
-  pitch: number
+  pitch: number,
 ): { x: number; y: number; z: number; w: number } {
   const sy = Math.sin(yaw / 2);
   const cy = Math.cos(yaw / 2);

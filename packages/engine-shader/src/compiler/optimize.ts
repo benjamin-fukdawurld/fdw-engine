@@ -108,7 +108,7 @@ const evaluators: Partial<
 // Components of a literal for a type, expanding scalar splats.
 function literalComponents(
   value: ConstantValue,
-  count: number
+  count: number,
 ): number[] | undefined {
   if (typeof value === 'boolean') {
     return undefined;
@@ -126,7 +126,7 @@ function constantInput(
   node: GraphNode,
   port: string,
   portDefault: ConstantValue | undefined,
-  count: number
+  count: number,
 ): number[] | undefined {
   const source = graph.inputSource(node, port);
   if (!source) {
@@ -148,7 +148,7 @@ function constantInput(
         ? undefined
         : literalComponents(
             sourceNode.params['value'] as ConstantValue,
-            sourceCount
+            sourceCount,
           );
   } else if (sourceNode?.type === 'const.pi') {
     components = [Math.PI];
@@ -160,7 +160,7 @@ function constantInput(
   if (source.swizzle) {
     const unswizzled = components;
     components = (parseSwizzle(source.swizzle) as number[]).map(
-      (i) => unswizzled[i]
+      (i) => unswizzled[i],
     );
   }
   // Scalar splat to the type of the input.
@@ -174,7 +174,7 @@ function foldNode(
   graph: WorkingGraph,
   node: GraphNode,
   registry: NodeRegistry,
-  types: NodeTypes | undefined
+  types: NodeTypes | undefined,
 ): void {
   const definition = registry.get(node.type);
   if (
@@ -204,7 +204,7 @@ function foldNode(
       node,
       port.name,
       port.default,
-      count
+      count,
     );
     if (!components) {
       return;
@@ -223,7 +223,7 @@ function foldNode(
     .map((edge) =>
       edge.from.node === node.id
         ? { ...edge, from: { node: node.id, port: 'value' } }
-        : edge
+        : edge,
     );
   graph.nodes.set(node.id, {
     id: node.id,
@@ -260,7 +260,7 @@ function nodeKey(graph: WorkingGraph, node: GraphNode): string {
       (edge) =>
         `${edge.to.port}=${edge.from.node}.${edge.from.port}.${
           edge.swizzle ?? ''
-        }`
+        }`,
     )
     .sort();
   return stableStringify([
@@ -275,7 +275,7 @@ export function optimize(
   graph: WorkingGraph,
   registry: NodeRegistry,
   order: readonly NodeId[],
-  types: ReadonlyMap<NodeId, NodeTypes>
+  types: ReadonlyMap<NodeId, NodeTypes>,
 ): void {
   eliminateDeadCode(graph);
 

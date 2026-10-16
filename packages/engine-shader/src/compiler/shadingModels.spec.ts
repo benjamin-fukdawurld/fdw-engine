@@ -44,7 +44,7 @@ const toonGraph = (registry: NodeRegistry) => {
         b: f.call(std.mix, { a: 0.4, b: 1, t: shade }),
       }),
       w: 1,
-    })
+    }),
   );
   return f.build();
 };
@@ -54,17 +54,17 @@ describe('shading models', () => {
     const noPosition = new GraphBuilder('bad');
     noPosition.functionOutput(
       'color',
-      noPosition.uniform('color', BuiltinTypes.vec4f)
+      noPosition.uniform('color', BuiltinTypes.vec4f),
     );
     expect(() => defineShadingModel('bad', noPosition.build())).toThrow(
-      /needs a worldPosition input/
+      /needs a worldPosition input/,
     );
 
     const wrongOutput = new GraphBuilder('bad');
     wrongOutput.functionInput('worldPosition', BuiltinTypes.vec4f);
     wrongOutput.functionOutput('rgb', [1, 0, 0]);
     expect(() => defineShadingModel('bad', wrongOutput.build())).toThrow(
-      GraphError
+      GraphError,
     );
   });
 
@@ -74,7 +74,7 @@ describe('shading models', () => {
     const g = new GraphBuilder('cartoon', registry);
     g.surface({ shadingModel: 'toon', baseColor: [1, 0.5, 0], threshold: 0.3 });
     expect(() => g.surface({ shadingModel: 'toon', shininess: 4 })).toThrow(
-      /has no input "shininess"/
+      /has no input "shininess"/,
     );
 
     const program = compile(g.build(), { registry });
@@ -95,7 +95,7 @@ describe('shading models', () => {
     ]);
     // Compiles with the standard registry alone.
     expect(compile(parseGraph(serializeGraph(graph))).programKey).toBe(
-      compile(graph, { registry }).programKey
+      compile(graph, { registry }).programKey,
     );
 
     const standard = new GraphBuilder('phong');
@@ -106,8 +106,8 @@ describe('shading models', () => {
   it('can replace a standard shading model', () => {
     const registry = new NodeRegistry(
       standardNodeDefinitions().filter(
-        (definition) => definition.id !== 'lighting.phong'
-      )
+        (definition) => definition.id !== 'lighting.phong',
+      ),
     );
     registry.register(defineShadingModel('phong', toonGraph(registry)));
     const g = new GraphBuilder('replaced', registry);
@@ -119,7 +119,7 @@ describe('shading models', () => {
     const unlit = new GraphBuilder('unlit');
     unlit.surface({ baseColor: [1, 0, 0] });
     expect(
-      compile(unlit.build()).vertexInputs.map((input) => input.semantic)
+      compile(unlit.build()).vertexInputs.map((input) => input.semantic),
     ).toEqual(['position']);
 
     const custom = new GraphBuilder('custom-normal');
@@ -128,7 +128,7 @@ describe('shading models', () => {
       normal: custom.uniform('up', BuiltinTypes.vec3f),
     });
     expect(
-      compile(custom.build()).vertexInputs.map((input) => input.semantic)
+      compile(custom.build()).vertexInputs.map((input) => input.semantic),
     ).toEqual(['position']);
   });
 });

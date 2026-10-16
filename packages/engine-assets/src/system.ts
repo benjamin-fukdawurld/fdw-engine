@@ -14,7 +14,7 @@ export interface ResourceSystemOptions {
 export function addResourceSystem(
   scheduler: Scheduler,
   store: ResourceStore,
-  { budgetMs = 2 }: ResourceSystemOptions = {}
+  { budgetMs = 2 }: ResourceSystemOptions = {},
 ): System {
   return scheduler.add('resources', () => store.update(budgetMs), {
     phase: 'begin',

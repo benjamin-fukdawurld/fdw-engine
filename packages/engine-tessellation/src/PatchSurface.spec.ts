@@ -18,7 +18,7 @@ const terrainGraph = (displaced = true) => {
             scale: 2,
           },
         }
-      : {}
+      : {},
   );
   g.surface({
     shadingModel: 'phong',
@@ -76,7 +76,7 @@ describe('PatchSurface', () => {
     terrain.update(camera, { width: 1000, height: 1000 });
     // Fine under the camera, coarser away from it.
     expect(
-      terrain.stats.levels.filter((count) => count > 0).length
+      terrain.stats.levels.filter((count) => count > 0).length,
     ).toBeGreaterThan(1);
     const stats = terrain.stats;
     expect(stats.drawn).toBe(16);
@@ -120,7 +120,7 @@ describe('PatchSurface', () => {
     expect(stats.triangles).toBe(vertices / 3);
     // Every patch once.
     const drawn = Array.from({ length: 16 }, (_, i) => draws[i * 4]).sort(
-      (a, b) => a - b
+      (a, b) => a - b,
     );
     expect(drawn).toEqual(Array.from({ length: 16 }, (_, i) => i));
   });
@@ -174,10 +174,10 @@ describe('PatchSurface', () => {
       material: new Material({ graph: terrainGraph() }),
     };
     expect(
-      () => new PatchSurface(backend, { ...options, maxLevel: 7 })
+      () => new PatchSurface(backend, { ...options, maxLevel: 7 }),
     ).toThrow(/from 0 to 6/);
     expect(
-      () => new PatchSurface(backend, { ...options, minLevel: 3, maxLevel: 2 })
+      () => new PatchSurface(backend, { ...options, minLevel: 3, maxLevel: 2 }),
     ).toThrow();
   });
 });

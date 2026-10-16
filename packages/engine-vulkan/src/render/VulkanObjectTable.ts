@@ -18,7 +18,7 @@ export class VulkanObjectTable implements GpuObjectTable {
 
   constructor(
     buffers: GpuBufferFactory,
-    { rows, instances, rowStride, label }: ObjectTableDescriptor
+    { rows, instances, rowStride, label }: ObjectTableDescriptor,
   ) {
     this.rows = Math.max(rows, 1);
     this.instances = Math.max(instances, 1);
@@ -38,7 +38,7 @@ export class VulkanObjectTable implements GpuObjectTable {
       firstRow * this._rowStride,
       data.buffer,
       data.byteOffset,
-      data.byteLength
+      data.byteLength,
     );
   }
 
@@ -47,7 +47,7 @@ export class VulkanObjectTable implements GpuObjectTable {
       firstInstance * 4,
       rows.buffer,
       rows.byteOffset,
-      rows.byteLength
+      rows.byteLength,
     );
   }
 

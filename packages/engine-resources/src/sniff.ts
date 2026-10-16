@@ -1,12 +1,5 @@
 export type ImageFormat =
-  | 'png'
-  | 'jpeg'
-  | 'gif'
-  | 'webp'
-  | 'avif'
-  | 'bmp'
-  | 'ktx2'
-  | 'hdr';
+  'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'ktx2' | 'hdr';
 
 const ascii = (head: Uint8Array, start: number, text: string): boolean =>
   head.length >= start + text.length &&

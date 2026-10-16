@@ -29,7 +29,7 @@ export class VulkanEngine extends EventTarget implements Engine {
       this.state.value !== 'destroyed'
     ) {
       throw new Error(
-        `Cannot initialize an engine in the ${this.state.value} state`
+        `Cannot initialize an engine in the ${this.state.value} state`,
       );
     }
     this.state.value = 'initializing';

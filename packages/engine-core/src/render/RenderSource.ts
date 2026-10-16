@@ -59,7 +59,7 @@ export interface RenderSource {
     frustum: Frustum,
     layers: number,
     visit: (item: Renderable) => void,
-    view: 'camera' | 'shadow'
+    view: 'camera' | 'shadow',
   ): void;
   /** The lights of the source, when the frame does not give its own. */
   lights?(): Iterable<BaseLight>;

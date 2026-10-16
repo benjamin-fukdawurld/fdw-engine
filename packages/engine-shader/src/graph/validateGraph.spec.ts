@@ -12,7 +12,7 @@ const registry = createStandardRegistry();
 
 const graph = (
   nodes: GraphNode[],
-  edges: GraphEdge[] = []
+  edges: GraphEdge[] = [],
 ): MaterialGraphData => ({
   format: 'fdw-material-graph',
   version: 1,
@@ -26,7 +26,7 @@ const edge = (
   fromPort: string,
   to: string,
   toPort: string,
-  swizzle?: string
+  swizzle?: string,
 ): GraphEdge => ({
   from: { node: from, port: fromPort },
   to: { node: to, port: toPort },
@@ -52,14 +52,14 @@ describe('validateGraph', () => {
           },
           surface,
         ],
-        [edge('color', 'value', 'out', 'baseColor', 'rgb')]
+        [edge('color', 'value', 'out', 'baseColor', 'rgb')],
       ),
-      registry
+      registry,
     );
     expect(result.valid).toBe(true);
     expect(result.order).toEqual(['color', 'out']);
     expect(result.types.get('out')?.inputs['baseColor']).toEqual(
-      BuiltinTypes.vec3f
+      BuiltinTypes.vec3f,
     );
   });
 
@@ -70,13 +70,13 @@ describe('validateGraph', () => {
           surface,
           { ...surface },
           { id: 'x', type: 'std.unknown', params: {} },
-        ])
-      )
+        ]),
+      ),
     ).toEqual(
       expect.arrayContaining([
         'duplicate node id "out"',
         'unknown node type "std.unknown"',
-      ])
+      ]),
     );
   });
 
@@ -86,8 +86,8 @@ describe('validateGraph', () => {
         graph([
           surface,
           { id: 'u', type: 'input.uniform', params: { name: 'tint' } },
-        ])
-      )
+        ]),
+      ),
     ).toContain('missing required parameter "type"');
     expect(
       errorsOf(
@@ -98,8 +98,8 @@ describe('validateGraph', () => {
             type: 'input.texture',
             params: { name: 't', dimension: '4d' },
           },
-        ])
-      )
+        ]),
+      ),
     ).toEqual([expect.stringMatching(/parameter "dimension" must be one of/)]);
   });
 
@@ -108,7 +108,7 @@ describe('validateGraph', () => {
       graph([
         { ...surface, params: { color: 1 }, defaults: { colour: [1, 0, 0] } },
       ]),
-      registry
+      registry,
     );
     expect(result.valid).toBe(true);
     expect(result.diagnostics.map((d) => d.severity)).toEqual([
@@ -132,8 +132,8 @@ describe('validateGraph', () => {
           edge('a', 'nope', 'out', 'baseColor'),
           edge('a', 'value', 'out', 'nope'),
           edge('ghost', 'value', 'out', 'baseColor'),
-        ]
-      )
+        ],
+      ),
     );
     expect(errors).toEqual([
       expect.stringMatching(/has no output "nope"/),
@@ -156,8 +156,8 @@ describe('validateGraph', () => {
         [
           edge('a', 'value', 'out', 'baseColor'),
           edge('a', 'value', 'out', 'baseColor'),
-        ]
-      )
+        ],
+      ),
     );
     expect(errors).toEqual(['an input can only receive one edge']);
   });
@@ -170,8 +170,8 @@ describe('validateGraph', () => {
           { id: 'b', type: 'std.add', params: {}, defaults: { b: 1 } },
           surface,
         ],
-        [edge('a', 'result', 'b', 'a'), edge('b', 'result', 'a', 'a')]
-      )
+        [edge('a', 'result', 'b', 'a'), edge('b', 'result', 'a', 'a')],
+      ),
     );
     expect(errors).toEqual(['the graph has a cycle involving nodes #a, #b']);
   });
@@ -193,13 +193,13 @@ describe('validateGraph', () => {
       surface,
     ];
     expect(
-      errorsOf(graph(nodes, [edge('n', 'value', 'out', 'alpha')]))
+      errorsOf(graph(nodes, [edge('n', 'value', 'out', 'alpha')])),
     ).toEqual(['expects f32, got vec3<f32>']);
     expect(
-      errorsOf(graph(nodes, [edge('n', 'value', 'out', 'alpha', 'w')]))
+      errorsOf(graph(nodes, [edge('n', 'value', 'out', 'alpha', 'w')])),
     ).toEqual(['swizzle ".w" is out of range for a vec3']);
     expect(
-      errorsOf(graph(nodes, [edge('n', 'value', 'out', 'alpha', 'xg')]))
+      errorsOf(graph(nodes, [edge('n', 'value', 'out', 'alpha', 'xg')])),
     ).toEqual([expect.stringMatching(/invalid swizzle/)]);
   });
 
@@ -211,8 +211,8 @@ describe('validateGraph', () => {
           { id: 'next', type: 'std.normalize', params: {} },
           surface,
         ],
-        [edge('bad', 'result', 'next', 'x')]
-      )
+        [edge('bad', 'result', 'next', 'x')],
+      ),
     );
     expect(errors).toHaveLength(1);
   });
@@ -233,8 +233,8 @@ describe('validateGraph', () => {
             params: { ...base.params, default: [0, 0, 0, 1] },
           },
           surface,
-        ])
-      )
+        ]),
+      ),
     ).toEqual([]);
     expect(
       errorsOf(
@@ -246,8 +246,8 @@ describe('validateGraph', () => {
             params: { name: 'tint', type: BuiltinTypes.vec3f },
           },
           surface,
-        ])
-      )
+        ]),
+      ),
     ).toEqual(['resource "tint" is declared differently by #u1']);
     expect(
       errorsOf(
@@ -263,8 +263,8 @@ describe('validateGraph', () => {
             params: { semantic: 'uv', type: BuiltinTypes.vec3f },
           },
           surface,
-        ])
-      )
+        ]),
+      ),
     ).toEqual(['attribute "uv" is declared with different types (see #a1)']);
   });
 });

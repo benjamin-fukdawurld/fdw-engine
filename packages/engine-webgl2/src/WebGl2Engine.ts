@@ -38,7 +38,7 @@ export class WebGl2Engine extends EventTarget implements Engine {
       this.state.value !== 'destroyed'
     ) {
       throw new Error(
-        `Cannot initialize an engine in the ${this.state.value} state`
+        `Cannot initialize an engine in the ${this.state.value} state`,
       );
     }
     this.state.value = 'initializing';
@@ -78,7 +78,7 @@ export class WebGl2Engine extends EventTarget implements Engine {
 
     this.state.value = 'ready';
     this.dispatchEvent(
-      new CustomEvent<WebGl2Engine>('ready', { detail: this })
+      new CustomEvent<WebGl2Engine>('ready', { detail: this }),
     );
   }
 
@@ -88,7 +88,7 @@ export class WebGl2Engine extends EventTarget implements Engine {
     }
     this.state.value = 'paused';
     this.dispatchEvent(
-      new CustomEvent<WebGl2Engine>('paused', { detail: this })
+      new CustomEvent<WebGl2Engine>('paused', { detail: this }),
     );
   }
 
@@ -98,7 +98,7 @@ export class WebGl2Engine extends EventTarget implements Engine {
     }
     this.state.value = 'ready';
     this.dispatchEvent(
-      new CustomEvent<WebGl2Engine>('resumed', { detail: this })
+      new CustomEvent<WebGl2Engine>('resumed', { detail: this }),
     );
   }
 
@@ -111,7 +111,7 @@ export class WebGl2Engine extends EventTarget implements Engine {
 
     this.state.value = 'destroyed';
     this.dispatchEvent(
-      new CustomEvent<WebGl2Engine>('destroyed', { detail: this })
+      new CustomEvent<WebGl2Engine>('destroyed', { detail: this }),
     );
   }
 }

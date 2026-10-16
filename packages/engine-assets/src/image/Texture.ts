@@ -76,7 +76,7 @@ const samplers = new WeakMap<RenderBackend, Map<string, GpuSampler>>();
 /** The sampler of a configuration, shared by everything that asks for it. */
 export function sharedSampler(
   backend: RenderBackend,
-  configuration: GpuSamplerConfiguration = defaultSampler
+  configuration: GpuSamplerConfiguration = defaultSampler,
 ): GpuSampler {
   let cache = samplers.get(backend);
   if (!cache) samplers.set(backend, (cache = new Map()));
@@ -93,7 +93,7 @@ export async function createTextureFromImage(
   image: ImageAsset,
   options: TextureOptions = {},
   label?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Texture> {
   const colorSpace = options.colorSpace ?? 'srgb';
   let format: GpuTextureFormat;
@@ -103,12 +103,12 @@ export async function createTextureFromImage(
       throw new ResourceError(
         'unsupported',
         label ?? 'texture',
-        'Universal image data without a transcoder'
+        'Universal image data without a transcoder',
       );
     }
     const transcoded = await image.transcode(
       backend.capabilities?.compressedFormats ?? [],
-      signal
+      signal,
     );
     format = transcoded.format;
     levels = transcoded.levels;
@@ -123,7 +123,7 @@ export async function createTextureFromImage(
     throw new ResourceError(
       'unsupported',
       label ?? 'texture',
-      `The backend cannot sample ${format} textures`
+      `The backend cannot sample ${format} textures`,
     );
   }
   if (colorSpace === 'srgb') format = srgbFormat(format);
@@ -199,7 +199,7 @@ export const textureLoader: ResourceLoader<
         image,
         ctx.options,
         ctx.uri,
-        ctx.signal
+        ctx.signal,
       );
     }
     const image = await ctx
@@ -212,7 +212,7 @@ export const textureLoader: ResourceLoader<
         image,
         ctx.options,
         ctx.uri,
-        ctx.signal
+        ctx.signal,
       );
     } finally {
       closeImageAsset(image);

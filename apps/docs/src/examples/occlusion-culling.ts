@@ -76,7 +76,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
           stats.visible
         } drawn, ${stats.occluded} hidden, of ${
           stats.visible + stats.occluded
-        } in view`
+        } in view`,
       );
     }
   });

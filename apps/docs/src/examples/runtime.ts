@@ -52,7 +52,7 @@ function pageEngine(): Promise<{ engine: Engine; name: string }> {
 export async function startExample(
   canvas: HTMLCanvasElement,
   status: HTMLElement,
-  example: Example
+  example: Example,
 ): Promise<void> {
   try {
     const { engine, name } = await pageEngine();

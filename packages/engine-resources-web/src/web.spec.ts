@@ -33,7 +33,7 @@ const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 const signal = () => new AbortController().signal;
 const bytesOf = (...n: number[]) => new Uint8Array(n) as ResourceBytes;
 const fakeBitmap = (w = 2, h = 3) =>
-  ({ width: w, height: h, close: vi.fn() } as unknown as ImageBitmap);
+  ({ width: w, height: h, close: vi.fn() }) as unknown as ImageBitmap;
 
 // Type-level: a real Worker can be pooled.
 const _pooled: PoolWorker = null as unknown as Worker;
@@ -42,21 +42,21 @@ void _pooled;
 describe('sniffImageFormat', () => {
   it('recognizes formats by their magic bytes', () => {
     expect(sniffImageFormat(bytesOf(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a))).toBe(
-      'png'
+      'png',
     );
     expect(sniffImageFormat(bytesOf(0xff, 0xd8, 0xff, 0xe0))).toBe('jpeg');
     expect(sniffImageFormat(new TextEncoder().encode('GIF89a'))).toBe('gif');
     expect(
-      sniffImageFormat(new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 '))
+      sniffImageFormat(new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 ')),
     ).toBe('webp');
     expect(
-      sniffImageFormat(new TextEncoder().encode('\0\0\0\x1cftypavif'))
+      sniffImageFormat(new TextEncoder().encode('\0\0\0\x1cftypavif')),
     ).toBe('avif');
     expect(
-      sniffImageFormat(bytesOf(0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb))
+      sniffImageFormat(bytesOf(0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb)),
     ).toBe('ktx2');
     expect(
-      sniffImageFormat(new TextEncoder().encode('hello world'))
+      sniffImageFormat(new TextEncoder().encode('hello world')),
     ).toBeUndefined();
     expect(sniffImageFormat(new Uint8Array())).toBeUndefined();
   });
@@ -74,7 +74,7 @@ describe('createImageBitmapDecoder', () => {
     expect(image).toEqual({ width: 4, height: 5, bitmap });
     const [blob, options] = create.mock.calls[0] as unknown as [
       Blob,
-      ImageBitmapOptions
+      ImageBitmapOptions,
     ];
     expect(blob.size).toBe(3);
     expect(blob.type).toBe('image/png');
@@ -102,7 +102,7 @@ describe('createImageBitmapDecoder', () => {
       createImageBitmap: async () => (ctl.abort(), bitmap),
     });
     await expect(
-      decoder.decode(bytesOf(0), { signal: ctl.signal })
+      decoder.decode(bytesOf(0), { signal: ctl.signal }),
     ).rejects.toMatchObject({ code: 'aborted' });
     expect(bitmap.close).toHaveBeenCalled();
   });
@@ -113,7 +113,7 @@ describe('createImageBitmapDecoder', () => {
     globalThis.createImageBitmap = undefined;
     try {
       await expect(
-        createImageBitmapDecoder().decode(bytesOf(0))
+        createImageBitmapDecoder().decode(bytesOf(0)),
       ).rejects.toMatchObject({ code: 'unsupported' });
     } finally {
       globalThis.createImageBitmap = original;
@@ -132,7 +132,7 @@ type FakeWorkerHandle = PoolWorker & {
 /** An in-process worker: runs `serveWorker` against a fake scope, asynchronously. */
 function fakeWorkerFactory(
   setup: (scope: WorkerScope) => void,
-  log: { workers: FakeWorkerHandle[] } = { workers: [] }
+  log: { workers: FakeWorkerHandle[] } = { workers: [] },
 ) {
   class FakeWorker implements PoolWorker {
     terminated = false;
@@ -152,9 +152,9 @@ function fakeWorkerFactory(
       setTimeout(
         () =>
           this.scopeListeners.forEach((l) =>
-            l({ data: message } as MessageEvent)
+            l({ data: message } as MessageEvent),
           ),
-        0
+        0,
       );
     }
     terminate() {
@@ -185,7 +185,7 @@ describe('WorkerPool', () => {
         if (fail) throw new RangeError('boom');
         return { result: n * 2 };
       },
-      scope
+      scope,
     );
 
   it('runs jobs and starts workers only when needed', async () => {
@@ -222,7 +222,7 @@ describe('WorkerPool', () => {
     await sleep(20);
     expect(discard).toHaveBeenCalledWith(14);
     await expect(
-      pool.run({ n: 1 }, { signal: ctl.signal })
+      pool.run({ n: 1 }, { signal: ctl.signal }),
     ).rejects.toMatchObject({ code: 'aborted' });
   });
 
@@ -250,13 +250,11 @@ describe('WorkerPool', () => {
 
 describe('createWorkerImageDecoder', () => {
   const inWorker: ImageDecoder = {
-    decode: vi.fn(
-      async (bytes: ResourceBytes): Promise<DecodedImage> => ({
-        width: bytes.byteLength,
-        height: 1,
-        bitmap: fakeBitmap(),
-      })
-    ),
+    decode: vi.fn(async (bytes: ResourceBytes): Promise<DecodedImage> => ({
+      width: bytes.byteLength,
+      height: 1,
+      bitmap: fakeBitmap(),
+    })),
   };
   const factory = () =>
     fakeWorkerFactory((scope) => serveImageDecoder(scope, inWorker));
@@ -274,7 +272,7 @@ describe('createWorkerImageDecoder', () => {
     const f = factory();
     const decoder = createWorkerImageDecoder(
       new WorkerPool({ ...f, size: 1 }),
-      { transferBytes: false }
+      { transferBytes: false },
     );
     await decoder.decode(bytesOf(1, 2));
     expect(f.log.workers[0].transfers[0]).toEqual([]);
@@ -284,7 +282,8 @@ describe('createWorkerImageDecoder', () => {
     const bitmap = fakeBitmap();
     const slow: ImageDecoder = {
       decode: async (bytes) => (
-        await sleep(5), { width: bytes.byteLength, height: 1, bitmap }
+        await sleep(5),
+        { width: bytes.byteLength, height: 1, bitmap }
       ),
     };
     const f = fakeWorkerFactory((scope) => serveImageDecoder(scope, slow));
@@ -428,7 +427,7 @@ describe('watching', () => {
 
   it('refuses to poll a source that cannot stat', () => {
     expect(() =>
-      withPolling({ read: async () => new Uint8Array() as ResourceBytes })
+      withPolling({ read: async () => new Uint8Array() as ResourceBytes }),
     ).toThrow(/stat/);
   });
 });

@@ -38,7 +38,7 @@ export class FpsPlayer {
     private readonly _solid: ComponentStore,
     camera: Camera,
     private readonly _actions: ActionMap,
-    private readonly _half: number
+    private readonly _half: number,
   ) {
     this.eye = _scene.root.add({ name: 'eye' }).setCamera(camera);
     // The operator moves the node of the camera, and reads the aspect of

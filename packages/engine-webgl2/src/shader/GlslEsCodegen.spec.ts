@@ -20,7 +20,7 @@ const codegen = new GlslEsCodegen();
 
 const emit = (
   module: ShaderModuleIR,
-  layout: PhysicalProgramLayout = { groups: [] }
+  layout: PhysicalProgramLayout = { groups: [] },
 ) => {
   const sources = codegen.emit(module, layout);
   if (sources.kind !== 'per-stage') {
@@ -38,7 +38,7 @@ const clipPosition = {
 // A module whose fragment stage is the given body.
 const fragmentModule = (
   body: IrInstruction[],
-  result = body[body.length - 1].id
+  result = body[body.length - 1].id,
 ): ShaderModuleIR => {
   const vertex: IrEntryPoint = {
     stage: 'vertex',
@@ -130,7 +130,7 @@ describe('glslType', () => {
     expect(glslSamplerType(BuiltinTypes.texture2d)).toBe('sampler2D');
     expect(glslSamplerType(BuiltinTypes.textureCube)).toBe('samplerCube');
     expect(
-      glslSamplerType({ kind: 'texture', dimension: '3d', sampleType: 'uint' })
+      glslSamplerType({ kind: 'texture', dimension: '3d', sampleType: 'uint' }),
     ).toBe('usampler3D');
   });
 
@@ -142,7 +142,7 @@ describe('glslType', () => {
         dimension: '2d',
         sampleType: 'float',
         multisampled: true,
-      })
+      }),
     ).toThrow(/cannot be sampled/);
   });
 });
@@ -171,15 +171,15 @@ describe('GlslEsCodegen', () => {
     const { fragment } = emit(program.module, layout);
     expect(fragment).toContain('precision highp sampler2DShadow;');
     expect(fragment).toContain(
-      'uniform sampler2DShadow ts0_shadowMap_shadowSampler;'
+      'uniform sampler2DShadow ts0_shadowMap_shadowSampler;',
     );
     // The reference depth after the uv, whose v is flipped as for every 2d
     // texture.
     expect(fragment).toMatch(
-      /textureLod\(ts0_shadowMap_shadowSampler, vec3\(vec2\((v\d+)\.x, ts0_shadowMap_shadowSampler_v\.x \+ ts0_shadowMap_shadowSampler_v\.y \* \1\.y\), v\d+\), 0\.0\)/
+      /textureLod\(ts0_shadowMap_shadowSampler, vec3\(vec2\((v\d+)\.x, ts0_shadowMap_shadowSampler_v\.x \+ ts0_shadowMap_shadowSampler_v\.y \* \1\.y\), v\d+\), 0\.0\)/,
     );
     expect(glslSamplerType(BuiltinTypes.depthTexture2d, true)).toBe(
-      'sampler2DShadow'
+      'sampler2DShadow',
     );
   });
 
@@ -198,7 +198,7 @@ describe('GlslEsCodegen', () => {
     });
     const { fragment } = emit(
       program.module,
-      std140LayoutStrategy.resolve(program.layout)
+      std140LayoutStrategy.resolve(program.layout),
     );
     expect(fragment).not.toContain(' out ');
     expect(fragment).toMatch(/void main\(\) \{\n\}/);
@@ -231,7 +231,7 @@ describe('GlslEsCodegen', () => {
           op: { kind: 'constant', value: [1, 0.5, 0, 1] },
           args: [],
         },
-      ])
+      ]),
     );
     expect(fragment).toContain('float v1 = 1.0;');
     expect(fragment).toContain('int v2 = -2;');
@@ -254,7 +254,7 @@ describe('GlslEsCodegen', () => {
     expect(fragment).toContain('precision highp sampler2D;');
     expect(fragment).toContain('uniform sampler2D ts0_map_mapSampler;');
     expect(fragment).toContain(
-      'vec4 v4_texel = texture(ts0_map_mapSampler, vec2(v3.x, ts0_map_mapSampler_v.x + ts0_map_mapSampler_v.y * v3.y)); // #n4'
+      'vec4 v4_texel = texture(ts0_map_mapSampler, vec2(v3.x, ts0_map_mapSampler_v.x + ts0_map_mapSampler_v.y * v3.y)); // #n4',
     );
     // The orientation of the texture: v read as a + b × v.
     expect(fragment).toContain('uniform vec2 ts0_map_mapSampler_v;');
@@ -325,13 +325,13 @@ describe('GlslEsCodegen', () => {
           op: { kind: 'construct' },
           args: [7, 7],
         },
-      ])
+      ]),
     );
     expect(fragment).toContain('vec4 v2 = gl_FragCoord;');
     expect(fragment).toContain('vec4 v4 = (v1 ? v2 : v3);');
     expect(fragment).toContain('vec2 v7 = mix(v6, v6, v5);');
     expect(fragment).toContain(
-      'ivec2 v9 = ivec2(v5.x ? v8.x : v8.x, v5.y ? v8.y : v8.y);'
+      'ivec2 v9 = ivec2(v5.x ? v8.x : v8.x, v5.y ? v8.y : v8.y);',
     );
   });
 
@@ -374,7 +374,7 @@ describe('GlslEsCodegen', () => {
     expect(sources.vertex).toContain('flat out uint v_id;');
     expect(sources.vertex).toContain('v_id = v2;');
     expect(sources.vertex).toContain(
-      'gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;'
+      'gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;',
     );
     expect(sources.fragment).toContain('flat in uint v_id;');
   });
@@ -389,7 +389,7 @@ describe('GlslEsCodegen', () => {
           args: [],
           name: '__my__color',
         },
-      ])
+      ]),
     );
     expect(fragment).toContain('vec4 v1_my_color = ');
     expect(fragment).not.toMatch(/__/);
@@ -409,15 +409,15 @@ describe('GlslEsCodegen', () => {
     const program = compile(g.build());
     const { fragment } = emit(
       program.module,
-      std140LayoutStrategy.resolve(program.layout)
+      std140LayoutStrategy.resolve(program.layout),
     );
     expect(fragment).toContain('uint u_lightCount;');
     expect(fragment).toContain('vec4 u_lightDiffuses[16];');
     expect(fragment).toMatch(
-      /vec3 (v\d+) = vec3\(0\.0\);\n {2}for \(uint (v\d+) = 0u; \2 < v\d+; \2\+\+\) \{/
+      /vec3 (v\d+) = vec3\(0\.0\);\n {2}for \(uint (v\d+) = 0u; \2 < v\d+; \2\+\+\) \{/,
     );
     expect(fragment).toMatch(
-      / {4}vec4 v\d+ = frameUniforms\.u_lightDiffuses\[v\d+\];/
+      / {4}vec4 v\d+ = frameUniforms\.u_lightDiffuses\[v\d+\];/,
     );
     expect(fragment).toMatch(/ {4}v\d+ \+= v\d+;\n {2}\}/);
   });
@@ -433,13 +433,13 @@ describe('GlslEsCodegen', () => {
     const program = compile(g.build(), { features: { alphaMode: 'mask' } });
     const { fragment } = emit(
       program.module,
-      std140LayoutStrategy.resolve(program.layout)
+      std140LayoutStrategy.resolve(program.layout),
     );
     expect(fragment).toMatch(
-      /bool (v\d+) = v\d+ < v\d+;[\s\S]*\n {2}if \(\1\) \{\n {4}discard;\n {2}\}\n {2}o_color = v\d+;\n\}/
+      /bool (v\d+) = v\d+ < v\d+;[\s\S]*\n {2}if \(\1\) \{\n {4}discard;\n {2}\}\n {2}o_color = v\d+;\n\}/,
     );
     expect(fragment.indexOf('texture(')).toBeLessThan(
-      fragment.indexOf('discard')
+      fragment.indexOf('discard'),
     );
   });
 
@@ -476,7 +476,7 @@ describe('GlslEsCodegen', () => {
           op: { kind: 'constant', value: [1, 1, 1, 1] },
           args: [],
         },
-      ])
+      ]),
     );
     expect(fragment).toContain('bvec3 v2 = lessThanEqual(v1, v1);');
     expect(fragment).toContain('bool v4 = v3 != v3;');
@@ -490,14 +490,14 @@ describe('GlslEsCodegen', () => {
     const program = compile(g.build());
     const { fragment } = emit(
       program.module,
-      std140LayoutStrategy.resolve(program.layout)
+      std140LayoutStrategy.resolve(program.layout),
     );
     expect(fragment).toContain(
       [
         'layout(location = 0) out vec4 o_color;',
         'layout(location = 1) out vec2 o_uv;',
         'layout(location = 2) out uint o_id;',
-      ].join('\n')
+      ].join('\n'),
     );
     expect(fragment).toMatch(/ {2}o_id = v\d+;\n\}/);
   });
@@ -507,7 +507,7 @@ describe('GlslEsCodegen', () => {
     const coords = g.call(
       std.convert,
       { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
-      { params: { to: BuiltinTypes.vec2i } }
+      { params: { to: BuiltinTypes.vec2i } },
     );
     const texel = g.call(std.textureLoad, {
       texture: g.texture('values', { sampleType: 'unfilterable-float' }),
@@ -529,8 +529,8 @@ describe('GlslEsCodegen', () => {
           texture,
           sampler,
           comparison,
-        })
-      )
+        }),
+      ),
     ).toEqual([
       {
         name: 'ts0_values_load',
@@ -548,10 +548,10 @@ describe('GlslEsCodegen', () => {
     const { fragment } = emit(program.module, layout);
     expect(fragment).toContain('uniform sampler2D ts1_depth_load;');
     expect(fragment).toMatch(
-      /vec4 v\d+ = texelFetch\(ts0_values_load, ivec2\((v\d+)\.x, int\(ts0_values_load_v\.x\) \* \(textureSize\(ts0_values_load, (v\d+)\)\.y - 1\) \+ int\(ts0_values_load_v\.y\) \* \1\.y\), \2\);/
+      /vec4 v\d+ = texelFetch\(ts0_values_load, ivec2\((v\d+)\.x, int\(ts0_values_load_v\.x\) \* \(textureSize\(ts0_values_load, (v\d+)\)\.y - 1\) \+ int\(ts0_values_load_v\.y\) \* \1\.y\), \2\);/,
     );
     expect(fragment).toMatch(
-      /float v\d+ = texelFetch\(ts1_depth_load, ivec2\(v\d+\.x, int\(ts1_depth_load_v\.x\) \* \(textureSize\(ts1_depth_load, v\d+\)\.y - 1\) \+ int\(ts1_depth_load_v\.y\) \* v\d+\.y\), v\d+\)\.r;/
+      /float v\d+ = texelFetch\(ts1_depth_load, ivec2\(v\d+\.x, int\(ts1_depth_load_v\.x\) \* \(textureSize\(ts1_depth_load, v\d+\)\.y - 1\) \+ int\(ts1_depth_load_v\.y\) \* v\d+\.y\), v\d+\)\.r;/,
     );
   });
 
@@ -566,13 +566,13 @@ describe('GlslEsCodegen', () => {
     const color = g.call(
       std.mul,
       { a: texel, b: g.uniform('tint', BuiltinTypes.vec4f) },
-      { label: 'color' }
+      { label: 'color' },
     );
     g.surface({ baseColor: color.swizzle('rgb'), alpha: color.swizzle('a') });
     const program = compile(g.build());
     const sources = emit(
       program.module,
-      std140LayoutStrategy.resolve(program.layout)
+      std140LayoutStrategy.resolve(program.layout),
     );
     expect(sources.vertex).toMatchSnapshot('vertex');
     expect(sources.fragment).toMatchSnapshot('fragment');

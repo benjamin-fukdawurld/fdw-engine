@@ -32,7 +32,7 @@ export function parseGlb(bytes: ResourceBytes): GlbContent {
   const length = Math.min(view.getUint32(8, true), bytes.byteLength);
   let json: GltfJson | undefined;
   let bin: Uint8Array<ArrayBuffer> | undefined;
-  for (let offset = 12; offset + 8 <= length; ) {
+  for (let offset = 12; offset + 8 <= length;) {
     const size = view.getUint32(offset, true);
     const type = view.getUint32(offset + 4, true);
     const start = offset + 8;
@@ -60,7 +60,7 @@ export function decodeDataUri(uri: string): ResourceBytes | undefined {
   const payload = uri.slice(comma + 1);
   if (/;base64$/i.test(uri.slice(0, comma))) {
     const bin = atob(
-      payload.includes('%') ? decodeURIComponent(payload) : payload
+      payload.includes('%') ? decodeURIComponent(payload) : payload,
     );
     return Uint8Array.from(bin, (c) => c.charCodeAt(0)) as ResourceBytes;
   }

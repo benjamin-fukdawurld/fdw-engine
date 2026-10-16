@@ -23,7 +23,7 @@ export interface RunningLoop {
  */
 export function runLoop(
   frame: (time: number) => void | Promise<void>,
-  { throttle }: RunLoopOptions = {}
+  { throttle }: RunLoopOptions = {},
 ): RunningLoop {
   let running = true;
   const yieldToNode = () =>

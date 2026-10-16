@@ -9,7 +9,7 @@ export const Mat3Api: IMat3Api = {
   premultiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat3.multiply(b, a, out);
   },
@@ -17,7 +17,7 @@ export const Mat3Api: IMat3Api = {
   multiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat3.multiply(a, b, out);
   },
@@ -36,14 +36,14 @@ export const Mat3Api: IMat3Api = {
   multiplyScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat3.multiplyScalar(a, scalar, out);
   },
   add: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat3.add(a, b, out);
   },
@@ -73,7 +73,7 @@ export const Mat3Api: IMat3Api = {
   equals: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    epsilon?: number
+    epsilon?: number,
   ): boolean => {
     epsilon = epsilon ?? 1e-6;
     return (
@@ -134,7 +134,7 @@ export const Mat3Api: IMat3Api = {
       mat[6],
       mat[8],
       mat[9],
-      mat[10]
+      mat[10],
     );
     return out;
   },

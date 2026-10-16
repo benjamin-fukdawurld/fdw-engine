@@ -8,7 +8,7 @@ import type { IrEntryPoint } from './ir';
 
 const fragmentOf = (program: ReturnType<typeof compile>) =>
   program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === 'fragment'
+    (entryPoint) => entryPoint.stage === 'fragment',
   ) as IrEntryPoint;
 
 // A full screen pass writing a color, a vector and an integer.
@@ -25,7 +25,11 @@ describe('output.target', () => {
   it('adds color targets to the fragment stage, by location', () => {
     const fragment = fragmentOf(compile(threeTargets()));
     expect(
-      fragment.outputs.map(({ name, type, location }) => [name, type, location])
+      fragment.outputs.map(({ name, type, location }) => [
+        name,
+        type,
+        location,
+      ]),
     ).toEqual([
       ['color', BuiltinTypes.vec4f, 0],
       ['uv', BuiltinTypes.vec2f, 1],
@@ -47,7 +51,7 @@ describe('output.target', () => {
     const g = new GraphBuilder('three targets');
     g.fullscreen({ color: [1, 0, 0, 1] });
     expect(compile(g.build()).programKey).not.toBe(
-      compile(threeTargets()).programKey
+      compile(threeTargets()).programKey,
     );
   });
 
@@ -70,7 +74,7 @@ describe('output.target', () => {
       errors((g) => {
         g.target('a', 1, 1);
         g.target('b', 2, 1);
-      })
+      }),
     ).toEqual(['location 1 is already written by "a"']);
     expect(errors((g) => g.target('color', 1, 1))).toEqual([
       'the fragment already has an output named "color"',
@@ -81,7 +85,7 @@ describe('output.target', () => {
     // Booleans have no target format: refused as the graph is built.
     const g = new GraphBuilder('boolean');
     expect(() =>
-      g.target('flag', g.call(std.greater, { a: 1, b: 0 }), 1)
+      g.target('flag', g.call(std.greater, { a: 1, b: 0 }), 1),
     ).toThrow(/does not satisfy the constraint "numeric"/);
   });
 

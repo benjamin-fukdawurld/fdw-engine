@@ -18,7 +18,7 @@ import { createMazeWorld, surfaceMaterial } from './world';
 export const createMazeStep3: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   const scene = new Scene();
   // No sun: the only lights are those of the character.
@@ -80,7 +80,7 @@ export const createMazeStep3: SceneFactory = (
         eye,
         camera,
         player.position,
-        follow.yaw
+        follow.yaw,
       );
       player.update(dt, actions, follow.yaw, aim);
       follow.update(dt, player.position);
@@ -97,7 +97,7 @@ export const createMazeStep3: SceneFactory = (
       });
       if (stats) {
         context.info?.(
-          `${stats.drawn} of ${nodes} nodes drawn, ${stats.lights} lights, ${stats.casters} shadow casters`
+          `${stats.drawn} of ${nodes} nodes drawn, ${stats.lights} lights, ${stats.casters} shadow casters`,
         );
       }
     },

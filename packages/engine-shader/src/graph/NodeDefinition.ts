@@ -197,11 +197,7 @@ export type IntrinsicOp =
  * @group Node definitions
  */
 export type NativeShaderLanguage =
-  | 'wgsl'
-  | 'glsl-es-300'
-  | 'glsl-450'
-  | 'msl'
-  | 'hlsl';
+  'wgsl' | 'glsl-es-300' | 'glsl-450' | 'msl' | 'hlsl';
 
 /**
  * How a function node is implemented: an intrinsic operation, a subgraph or
@@ -254,7 +250,7 @@ export interface MacroContext {
   add(
     type: string,
     params?: StaticParams,
-    inputs?: Readonly<Record<string, ValueSource | ConstantValue | undefined>>
+    inputs?: Readonly<Record<string, ValueSource | ConstantValue | undefined>>,
   ): (port?: string) => ValueSource;
   /** Whether a node type has an input port. */
   hasInput(type: string, port: string): boolean;
@@ -297,7 +293,7 @@ export interface MacroDefinition extends NodeDefinition {
  * @group Node definitions
  */
 export function isMacroDefinition(
-  definition: NodeDefinition
+  definition: NodeDefinition,
 ): definition is MacroDefinition {
   return definition.category === 'macro';
 }
@@ -308,7 +304,7 @@ export function isMacroDefinition(
  * @group Node definitions
  */
 export function isFunctionDefinition(
-  definition: NodeDefinition
+  definition: NodeDefinition,
 ): definition is FunctionDefinition {
   return definition.category === 'function';
 }
@@ -320,7 +316,7 @@ export function isFunctionDefinition(
  */
 export function resolveParams(
   definition: NodeDefinition,
-  params: StaticParams
+  params: StaticParams,
 ): StaticParams {
   const resolved: Record<string, StaticValue> = {};
   for (const [name, schema] of Object.entries(definition.params ?? {})) {

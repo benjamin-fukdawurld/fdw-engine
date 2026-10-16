@@ -22,7 +22,7 @@ export class WebGl2RenderTarget
     readonly width: number,
     readonly height: number,
     readonly format: GpuTextureFormat,
-    readonly label?: string
+    readonly label?: string,
   ) {
     const { internalFormat, depth } = glTextureFormat(format);
     if (depth) {
@@ -52,7 +52,7 @@ export class WebGl2RenderTarget
         GL.FRAMEBUFFER,
         point,
         GL.RENDERBUFFER,
-        this._renderbuffer
+        this._renderbuffer,
       );
     } else {
       gl.framebufferTexture2D(
@@ -60,7 +60,7 @@ export class WebGl2RenderTarget
         point,
         GL.TEXTURE_2D,
         this._texture ?? null,
-        0
+        0,
       );
     }
   }

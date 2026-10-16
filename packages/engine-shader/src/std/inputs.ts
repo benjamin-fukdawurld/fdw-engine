@@ -76,7 +76,7 @@ export const textureInput: NodeDefinition = {
       name: 'value',
       type: texture(
         params['dimension'] as TextureDimension,
-        params['sampleType'] as TextureSampleType
+        params['sampleType'] as TextureSampleType,
       ),
     },
   ],

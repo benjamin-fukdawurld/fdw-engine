@@ -20,7 +20,7 @@ export interface Inset {
   add(
     graph: RenderGraph,
     target: TextureHandle,
-    surface: Surface
+    surface: Surface,
   ): TextureHandle;
 }
 
@@ -35,7 +35,7 @@ const border = 0.004;
  */
 export function insetGraph(
   name: string,
-  content: (g: GraphBuilder, local: PortHandle) => PortHandle
+  content: (g: GraphBuilder, local: PortHandle) => PortHandle,
 ): MaterialGraphData {
   const g = new GraphBuilder(name);
   const uv = g.builtin('screen-uv');

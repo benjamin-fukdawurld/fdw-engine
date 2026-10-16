@@ -80,7 +80,7 @@ export class MemorySource implements ResourceSource {
   list(prefix: string): Promise<string[]> {
     const p = MemorySource.key(prefix);
     return Promise.resolve(
-      [...this.files.keys()].filter((k) => k.startsWith(p)).sort()
+      [...this.files.keys()].filter((k) => k.startsWith(p)).sort(),
     );
   }
 

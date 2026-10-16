@@ -86,7 +86,7 @@ export class RenderGraphRunner {
 
   constructor(
     readonly backend: RenderBackend,
-    options: RenderGraphRunnerOptions = {}
+    options: RenderGraphRunnerOptions = {},
   ) {
     this._keepFrames = options.keepFrames ?? 3;
     this._cacheSize = options.cacheSize ?? 16;
@@ -123,7 +123,7 @@ export class RenderGraphRunner {
    */
   execute(
     graph: RenderGraph,
-    options: { size?: { width: number; height: number } } = {}
+    options: { size?: { width: number; height: number } } = {},
   ): CompiledRenderGraph {
     const compiled = this.compile(graph);
     const size = options.size ?? graph.size ?? this.frameSize(graph);
@@ -135,7 +135,7 @@ export class RenderGraphRunner {
       }
     }
     const byName = new Map(
-      graph.resources.map((resource) => [resource.name, resource.id])
+      graph.resources.map((resource) => [resource.name, resource.id]),
     );
 
     const encoder = this.backend.createCommandEncoder();
@@ -164,15 +164,13 @@ export class RenderGraphRunner {
       const transitions = compiled.transitions[position];
       if (transitions.length > 0 && encoder.transition) {
         encoder.transition(
-          transitions.map(
-            (transition): ResourceTransition => ({
-              resource: real.get(
-                byName.get(transition.resource) as number
-              ) as GraphResource,
-              from: transition.from,
-              to: transition.to,
-            })
-          )
+          transitions.map((transition): ResourceTransition => ({
+            resource: real.get(
+              byName.get(transition.resource) as number,
+            ) as GraphResource,
+            from: transition.from,
+            to: transition.to,
+          })),
         );
       }
 
@@ -180,7 +178,7 @@ export class RenderGraphRunner {
       const lookup = (handle: TextureHandle | BufferHandle) => {
         if (!declared.has(handle.resource)) {
           throw new Error(
-            `Pass "${pass.name}" uses "${handle.name}" without declaring it`
+            `Pass "${pass.name}" uses "${handle.name}" without declaring it`,
           );
         }
         return real.get(handle.resource) as GraphResource;
@@ -213,14 +211,14 @@ export class RenderGraphRunner {
               ...(color.resolve !== undefined
                 ? {
                     resolveTarget: real.get(
-                      color.resolve
+                      color.resolve,
                     ) as GpuAttachmentTarget,
                   }
                 : {}),
               ...(color.clearValue !== undefined
                 ? { clearValue: color.clearValue as never }
                 : {}),
-            })
+            }),
           ),
           ...(pass.depth
             ? {
@@ -238,7 +236,7 @@ export class RenderGraphRunner {
       } else if (pass.kind === 'compute') {
         const computePass = encoder.beginComputePass(
           pass.name,
-          timing(pass.name)
+          timing(pass.name),
         );
         execute({ ...base, pass: computePass });
         computePass.end();
@@ -283,7 +281,7 @@ export class RenderGraphRunner {
       return undefined;
     }
     const passes = graph.passes.filter(
-      (pass) => pass.kind === 'raster' || pass.kind === 'compute'
+      (pass) => pass.kind === 'raster' || pass.kind === 'compute',
     ).length;
     if (!this._timer || this._timer.capacity < passes) {
       // Larger: the measures in flight are lost.
@@ -333,7 +331,7 @@ export class RenderGraphRunner {
   private textureSize(
     graph: RenderGraph,
     id: number,
-    frame: { width: number; height: number }
+    frame: { width: number; height: number },
   ): { width: number; height: number } {
     const size = graph.resources[id].texture?.size ?? { relative: 1 };
     return 'relative' in size
@@ -347,7 +345,7 @@ export class RenderGraphRunner {
   private mipLevelCount(
     graph: RenderGraph,
     id: number,
-    frame: { width: number; height: number }
+    frame: { width: number; height: number },
   ): number {
     const count = graph.resources[id].texture?.mipLevelCount ?? 1;
     return count === 'full'
@@ -359,7 +357,7 @@ export class RenderGraphRunner {
     graph: RenderGraph,
     id: number,
     usages: ReadonlySet<ResourceUsage>,
-    frame: { width: number; height: number }
+    frame: { width: number; height: number },
   ): string {
     const resource = graph.resources[id];
     const sorted = [...usages].sort();
@@ -380,7 +378,7 @@ export class RenderGraphRunner {
     id: number,
     key: string,
     usages: ReadonlySet<ResourceUsage>,
-    frame: { width: number; height: number }
+    frame: { width: number; height: number },
   ): PooledResource {
     const free = this._free.get(key);
     const entry = free?.pop();
@@ -404,7 +402,7 @@ export class RenderGraphRunner {
           ...new Set(
             [...usages]
               .map((usage) => textureUsages[usage])
-              .filter((usage): usage is GpuTextureUsage => usage !== undefined)
+              .filter((usage): usage is GpuTextureUsage => usage !== undefined),
           ),
         ],
       });
@@ -416,7 +414,7 @@ export class RenderGraphRunner {
         ...new Set(
           [...usages]
             .map((usage) => bufferUsages[usage])
-            .filter((usage): usage is GpuBufferUsage => usage !== undefined)
+            .filter((usage): usage is GpuBufferUsage => usage !== undefined),
         ),
       ],
     });

@@ -136,7 +136,7 @@ export function createCity(options: CityOptions = {}): SceneFactory {
       yaw += turn * 1.5 * dt;
       position.y = Math.min(
         300,
-        Math.max(1.7, position.y * Math.exp(-rise * 0.1))
+        Math.max(1.7, position.y * Math.exp(-rise * 0.1)),
       );
     };
 
@@ -157,7 +157,7 @@ export function createCity(options: CityOptions = {}): SceneFactory {
         // Looking slightly up along the street.
         cameraNode.transform.rotation = multiplyQuat(
           rotationAround('y', yaw),
-          rotationAround('x', 0.08)
+          rotationAround('x', 0.08),
         );
         marker.transform.position = { x: position.x, y: 1, z: position.z };
         followAspect(camera, surface);
@@ -183,7 +183,7 @@ export function createCity(options: CityOptions = {}): SceneFactory {
             main.color,
             surface,
             position,
-            scene.cameraQueries
+            scene.cameraQueries,
           );
         }
         runner.execute(graph);
@@ -197,7 +197,7 @@ export function createCity(options: CityOptions = {}): SceneFactory {
               `${stats.occluded} hidden — occlusion ${
                 occlusionOn ? 'on' : 'off'
               } (O) — ` +
-              `${Math.round(1 / Math.max(frameTime, 1e-3))} fps`
+              `${Math.round(1 / Math.max(frameTime, 1e-3))} fps`,
           );
         }
       },

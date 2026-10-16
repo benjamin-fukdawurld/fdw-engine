@@ -24,22 +24,28 @@ export class WebGpuRenderPipeline implements GpuRenderPipeline {
   constructor(
     readonly pipeline: GPURenderPipeline,
     readonly vertexBuffers: readonly number[],
-    readonly label?: string
+    readonly label?: string,
   ) {}
 }
 
 export class WebGpuComputePipeline implements GpuComputePipeline {
-  constructor(readonly pipeline: GPUComputePipeline, readonly label?: string) {}
+  constructor(
+    readonly pipeline: GPUComputePipeline,
+    readonly label?: string,
+  ) {}
 }
 
 export class WebGpuBindGroupLayout implements GpuBindGroupLayout {
-  constructor(readonly key: string, readonly layout: GPUBindGroupLayout) {}
+  constructor(
+    readonly key: string,
+    readonly layout: GPUBindGroupLayout,
+  ) {}
 }
 
 export class WebGpuBindGroup implements GpuBindGroup {
   constructor(
     readonly layout: WebGpuBindGroupLayout,
-    readonly group: GPUBindGroup
+    readonly group: GPUBindGroup,
   ) {}
 }
 
@@ -117,7 +123,7 @@ function bindingResource(entry: GpuBindGroupEntry): GPUBindingResource {
     return resource.sampler;
   }
   throw new Error(
-    `Binding ${entry.binding}: the resource was not created by the WebGPU backend, or was destroyed`
+    `Binding ${entry.binding}: the resource was not created by the WebGPU backend, or was destroyed`,
   );
 }
 
@@ -151,7 +157,7 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
         this.device.createBindGroupLayout({
           label: `${group.slot} group`,
           entries,
-        })
+        }),
       );
       this._bindGroupLayouts.set(key, layout);
     }
@@ -160,11 +166,11 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
 
   createBindGroup(
     layout: GpuBindGroupLayout,
-    entries: readonly GpuBindGroupEntry[]
+    entries: readonly GpuBindGroupEntry[],
   ): GpuBindGroup {
     if (!(layout instanceof WebGpuBindGroupLayout)) {
       throw new Error(
-        'The bind group layout was not created by the WebGPU backend'
+        'The bind group layout was not created by the WebGPU backend',
       );
     }
     return new WebGpuBindGroup(
@@ -183,51 +189,51 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
                   resource: { buffer: entry.resource.instanceBuffer },
                 },
               ]
-            : [{ binding: entry.binding, resource: bindingResource(entry) }]
+            : [{ binding: entry.binding, resource: bindingResource(entry) }],
         ),
-      })
+      }),
     );
   }
 
   createRenderPipeline(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): GpuRenderPipeline {
     const { gpuDescriptor, vertexBuffers } = this.describe(descriptor);
     return new WebGpuRenderPipeline(
       this.device.createRenderPipeline(gpuDescriptor),
       vertexBuffers,
-      descriptor.label
+      descriptor.label,
     );
   }
 
   async createRenderPipelineAsync(
-    descriptor: RenderPipelineDescriptor
+    descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline> {
     const { gpuDescriptor, vertexBuffers } = this.describe(descriptor);
     return new WebGpuRenderPipeline(
       await this.device.createRenderPipelineAsync(gpuDescriptor),
       vertexBuffers,
-      descriptor.label
+      descriptor.label,
     );
   }
 
   createComputePipeline(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): WebGpuComputePipeline {
     return new WebGpuComputePipeline(
       this.device.createComputePipeline(this.describeCompute(descriptor)),
-      descriptor.label
+      descriptor.label,
     );
   }
 
   async createComputePipelineAsync(
-    descriptor: ComputePipelineDescriptor
+    descriptor: ComputePipelineDescriptor,
   ): Promise<WebGpuComputePipeline> {
     return new WebGpuComputePipeline(
       await this.device.createComputePipelineAsync(
-        this.describeCompute(descriptor)
+        this.describeCompute(descriptor),
       ),
-      descriptor.label
+      descriptor.label,
     );
   }
 
@@ -250,7 +256,7 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
   private pipelineLayout(program: CompiledProgram): GPUPipelineLayout {
     return this.device.createPipelineLayout({
       bindGroupLayouts: this.resolveLayout(program).groups.map(
-        (group) => this.createBindGroupLayout(group).layout
+        (group) => this.createBindGroupLayout(group).layout,
       ),
     });
   }
@@ -260,7 +266,7 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
     if (!module) {
       const sources = this.codegen.emit(
         program.module,
-        this.resolveLayout(program)
+        this.resolveLayout(program),
       );
       if (sources.kind !== 'single-module') {
         throw new Error('The WGSL generator must produce a single module');

@@ -12,7 +12,7 @@ type Props = {
   onSurfaceReady?: (
     engine: Engine,
     surface: Surface,
-    canvas: HTMLCanvasElement
+    canvas: HTMLCanvasElement,
   ) => void | Promise<void>;
   // The route only uses the engine API, and runs on every backend. Other
   // routes use WebGPU directly.

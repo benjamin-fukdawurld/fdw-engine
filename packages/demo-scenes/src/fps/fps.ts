@@ -23,7 +23,7 @@ const sensitivities = [
 export const createFpsScene: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   const scene = new Scene();
   const arena = buildArena(scene);
@@ -133,7 +133,7 @@ export const createFpsScene: SceneFactory = (
         }
       }
     },
-    { phase: 'begin' }
+    { phase: 'begin' },
   );
 
   // fixed: the drones, their blows, the waves; paused under the menu.
@@ -149,7 +149,7 @@ export const createFpsScene: SceneFactory = (
         pause();
       }
     },
-    { phase: 'fixed', after: ['drones'] }
+    { phase: 'fixed', after: ['drones'] },
   );
   scheduler.add('fade', (step) => game.drones.fade(step), {
     phase: 'fixed',
@@ -169,7 +169,7 @@ export const createFpsScene: SceneFactory = (
     }
   });
   scheduler.add('draw', () =>
-    game.drones.draw(scheduler.alpha, player.position)
+    game.drones.draw(scheduler.alpha, player.position),
   );
   scheduler.add('shoot', () => game.shoot(), { after: ['player', 'draw'] });
   scheduler.add(
@@ -179,7 +179,7 @@ export const createFpsScene: SceneFactory = (
       game.sparks.update(dt);
       game.hurt = Math.max(0, game.hurt - dt);
     },
-    { after: ['shoot'] }
+    { after: ['shoot'] },
   );
 
   // render: the view, dimmed under the menu, darker at a blow; the state.
@@ -194,7 +194,7 @@ export const createFpsScene: SceneFactory = (
         clearColor: { r: 0.55, g: 0.45, b: 0.42, a: 1 },
       });
     },
-    { phase: 'render' }
+    { phase: 'render' },
   );
   scheduler.add(
     'status',
@@ -204,15 +204,15 @@ export const createFpsScene: SceneFactory = (
         menu.enabled
           ? `${state} · ${entries
               .map(({ label }, i) =>
-                i === selected ? `[${label()}]` : label()
+                i === selected ? `[${label()}]` : label(),
               )
               .join(' · ')}`
           : `${state} · ${
               input.pointer.locked ? 'Esc or P: menu' : 'click to look around'
-            }`
+            }`,
       );
     },
-    { phase: 'render', after: ['render'] }
+    { phase: 'render', after: ['render'] },
   );
 
   let last = 0;

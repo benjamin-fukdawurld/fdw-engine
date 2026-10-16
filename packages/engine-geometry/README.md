@@ -24,7 +24,7 @@ import { Capsule, intersects, Obb } from '@fdw/engine-geometry';
 
 intersects(
   new Capsule([0, 0, 0], [0, 2, 0], 0.5),
-  new Obb([1, 1, 0], [0.6, 0.6, 0.6])
+  new Obb([1, 1, 0], [0.6, 0.6, 0.6]),
 );
 ```
 

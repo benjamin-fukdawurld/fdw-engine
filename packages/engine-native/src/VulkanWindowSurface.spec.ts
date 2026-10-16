@@ -13,7 +13,7 @@ const ready = canRun(
   existsSync(new URL('../build/fdw_native.node', import.meta.url)) &&
     existsSync(addonPath()) &&
     !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY']),
-  'needs the two addons and a display'
+  'needs the two addons and a display',
 );
 
 describe.skipIf(!ready)('VulkanWindowSurface', () => {

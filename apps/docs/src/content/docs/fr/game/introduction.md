@@ -17,6 +17,10 @@ ajoute une partie du moteur :
 | [3. La lampe torche](/fdw-engine/fr/game/flashlight/) | Un spot porté par le personnage, orienté à la souris, dans le noir                                                  | Lumières et ombres limitées à la vue                           |
 | [4. Le jeu](/fdw-engine/fr/game/the-game/)            | Des gemmes à ramasser, des ennemis qui errent, des lignes de vue, une carte révélée par l'exploration               | Le noyau ECS et ses systèmes, rayons, mises à jour de textures |
 
+Un second jeu, [un jeu de tir à la première personne](/fdw-engine/fr/game/fps/),
+reprend ces briques en une page : une arène, une arme en main, des vagues de
+drones abattus avec des rayons, un menu de pause.
+
 ## Où se trouve le code
 
 Le code du jeu se trouve dans `packages/demo-scenes/src/maze/`, partagé par :
@@ -37,7 +41,7 @@ seule la source diffère, `WebInputSource` ou `NativeInputSource`.
 export const createMazeStep1: SceneFactory = (
   backend,
   surface,
-  context = {}
+  context = {},
 ) => {
   // … build the game …
   return {

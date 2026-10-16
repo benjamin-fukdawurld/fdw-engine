@@ -62,7 +62,7 @@ export class MipmapGenerator {
           this._device.createBindGroup({
             layout,
             entries: [{ binding: 0, resource: view(level - 1, layer) }],
-          })
+          }),
         );
         pass.draw(3);
         pass.end();

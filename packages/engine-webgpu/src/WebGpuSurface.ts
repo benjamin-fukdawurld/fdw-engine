@@ -68,7 +68,7 @@ export class WebGpuSurface implements Surface {
       texture.createView(),
       texture.width,
       texture.height,
-      this.format
+      this.format,
     );
   }
 

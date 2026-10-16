@@ -59,7 +59,7 @@ describe('GraphBuilder', () => {
       'output.surface',
     ]);
     expect(
-      graph.edges.filter((edge) => edge.swizzle).map((edge) => edge.swizzle)
+      graph.edges.filter((edge) => edge.swizzle).map((edge) => edge.swizzle),
     ).toEqual(['rgb', 'a']);
   });
 
@@ -67,19 +67,19 @@ describe('GraphBuilder', () => {
     const g = new GraphBuilder('inference');
     const normal = g.attribute('normal', BuiltinTypes.vec3f);
     expect(g.call(std.mul, { a: normal, b: 2 }).type).toEqual(
-      BuiltinTypes.vec3f
+      BuiltinTypes.vec3f,
     );
     expect(
-      g.call(std.mul, { a: g.constant(BuiltinTypes.f32, 0.5), b: normal }).type
+      g.call(std.mul, { a: g.constant(BuiltinTypes.f32, 0.5), b: normal }).type,
     ).toEqual(BuiltinTypes.vec3f);
     expect(g.call(std.dot, { a: normal, b: normal }).type).toEqual(
-      BuiltinTypes.f32
+      BuiltinTypes.f32,
     );
     expect(g.call(std.mix, { a: 1, b: 2, t: 0.5 }).type).toEqual(
-      BuiltinTypes.f32
+      BuiltinTypes.f32,
     );
     expect(g.call(std.extend, { xyz: normal }).type).toEqual(
-      BuiltinTypes.vec4f
+      BuiltinTypes.vec4f,
     );
   });
 
@@ -96,19 +96,19 @@ describe('GraphBuilder', () => {
     const v3 = g.attribute('normal', BuiltinTypes.vec3f);
     const v4 = g.attribute('color', BuiltinTypes.vec4f);
     expect(errorOf(() => g.call(std.mul, { a: v3, b: v4 }))).toBe(
-      'error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "a"'
+      'error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "a"',
     );
     expect(
       errorOf(() =>
-        g.call(std.normalize, { x: g.constant(BuiltinTypes.f32, 1) })
-      )
+        g.call(std.normalize, { x: g.constant(BuiltinTypes.f32, 1) }),
+      ),
     ).toMatch(/does not satisfy the constraint "float-vector"/);
     expect(errorOf(() => g.call(std.add, { a: v3, b: v3, c: 1 }))).toMatch(
-      /has no input "c"/
+      /has no input "c"/,
     );
     expect(errorOf(() => v3.swizzle('w'))).toMatch(/out of range/);
     expect(errorOf(() => g.constant(BuiltinTypes.vec3f, [1, 2]))).toMatch(
-      /is not a valid vec3<f32>/
+      /is not a valid vec3<f32>/,
     );
   });
 
@@ -116,7 +116,7 @@ describe('GraphBuilder', () => {
     const g = new GraphBuilder('rollback');
     const v3 = g.attribute('normal', BuiltinTypes.vec3f);
     expect(() =>
-      g.call(std.dot, { a: v3, b: g.attribute('color', BuiltinTypes.vec4f) })
+      g.call(std.dot, { a: v3, b: g.attribute('color', BuiltinTypes.vec4f) }),
     ).toThrow(GraphError);
     g.surface({ baseColor: v3 });
     expect(g.build().nodes.map((node) => node.type)).toEqual([
@@ -139,7 +139,7 @@ describe('GraphBuilder', () => {
 
   it('validates the whole graph on build', () => {
     expect(errorOf(() => new GraphBuilder('empty').build())).toMatch(
-      /no output node/
+      /no output node/,
     );
   });
 

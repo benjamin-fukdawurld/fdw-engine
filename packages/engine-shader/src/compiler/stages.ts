@@ -44,7 +44,7 @@ const fragmentBuiltins = new Set(['frag-coord', 'front-facing']);
 
 function nodeFrequency(
   resolved: ResolvedNode,
-  inputFrequencies: readonly Frequency[]
+  inputFrequencies: readonly Frequency[],
 ): Frequency {
   const { node, definition, params } = resolved;
   switch (definition.category) {
@@ -227,7 +227,7 @@ export function planStages({
     .sort(
       (a, b) =>
         (position.get(a.node) ?? 0) - (position.get(b.node) ?? 0) ||
-        a.port.localeCompare(b.port)
+        a.port.localeCompare(b.port),
     )
     .map((source, location) => {
       const node = graph.nodes.get(source.node);

@@ -39,8 +39,8 @@ function colorFunction(
   description: string,
   body: (
     f: GraphBuilder,
-    color: ReturnType<GraphBuilder['functionInput']>
-  ) => ReturnType<GraphBuilder['call']>
+    color: ReturnType<GraphBuilder['functionInput']>,
+  ) => ReturnType<GraphBuilder['call']>,
 ): FunctionDefinition {
   const f = new GraphBuilder(id, registry);
   const color = f.functionInput('color', vec3);
@@ -53,7 +53,7 @@ function colorFunction(
  * registry: linear to sRGB encoding and the tone mapping operators.
  */
 export function createColorFunctions(
-  registry: NodeRegistry
+  registry: NodeRegistry,
 ): FunctionDefinition[] {
   return [
     // c ≤ 0.0031308 ? 12.92 c : 1.055 c^(1/2.4) - 0.055, per component.
@@ -76,14 +76,14 @@ export function createColorFunctions(
           b: high,
           t: f.call(step, { edge: 0.0031308, x: c }),
         });
-      }
+      },
     ),
     colorFunction(
       registry,
       'color.toneMapReinhard',
       'Reinhard tone mapping: c / (1 + c).',
       (f, color) =>
-        f.call(div, { a: color, b: f.call(add, { a: color, b: 1 }) })
+        f.call(div, { a: color, b: f.call(add, { a: color, b: 1 }) }),
     ),
     colorFunction(
       registry,
@@ -110,7 +110,7 @@ export function createColorFunctions(
               b: 0.14,
             }),
           }),
-        })
+        }),
     ),
     // Khronos PBR Neutral: colors below the start of the compression are
     // kept (up to a small offset of the darkest component); above it, the
@@ -177,7 +177,7 @@ export function createColorFunctions(
           ifTrue: shifted,
           condition: f.call(functions.less, { a: peak, b: startCompression }),
         });
-      }
+      },
     ),
   ];
 }

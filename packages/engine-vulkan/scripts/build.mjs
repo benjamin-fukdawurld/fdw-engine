@@ -9,7 +9,7 @@ import { buildAddon } from '../../../tools/native/build-addon.mjs';
 if (!process.env.VULKAN_SDK) {
   // Not an error: the tests needing the addon are skipped without it.
   console.warn(
-    'VULKAN_SDK is not set: the Vulkan addon is not built (install the Vulkan SDK and source its setup-env.sh)'
+    'VULKAN_SDK is not set: the Vulkan addon is not built (install the Vulkan SDK and source its setup-env.sh)',
   );
   process.exit(0);
 }

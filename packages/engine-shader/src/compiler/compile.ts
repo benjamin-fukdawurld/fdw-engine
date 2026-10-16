@@ -205,7 +205,7 @@ function isSupportedType(type: ShaderType): boolean {
 
 const isCompute = (validation: GraphValidation): boolean =>
   [...validation.nodes.values()].some(
-    ({ node }) => node.type === 'output.compute'
+    ({ node }) => node.type === 'output.compute',
   );
 
 // What compute graphs cannot do: stage-specific nodes, reading the buffers
@@ -213,7 +213,7 @@ const isCompute = (validation: GraphValidation): boolean =>
 function checkCompute(
   graph: WorkingGraph,
   validation: GraphValidation,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   const error = (node: NodeId, message: string) =>
     diagnostics.push({ severity: 'error', node, message });
@@ -226,7 +226,7 @@ function checkCompute(
           node.type === 'std.textureSample'
             ? ': use std.textureSampleLevel'
             : ''
-        }`
+        }`,
       );
     }
     if (node.type === 'output.compute') {
@@ -250,7 +250,7 @@ function checkCompute(
       } else if (storage.params['access'] !== 'read-write') {
         error(
           node.id,
-          `storage buffer "${storage.params['name']}" is read-only: declare it with read-write access to write it`
+          `storage buffer "${storage.params['name']}" is read-only: declare it with read-write access to write it`,
         );
       }
     }
@@ -266,7 +266,7 @@ function checkCompute(
         if (!allowed) {
           error(
             node.id,
-            `storage buffer "${params['name']}" is written by the graph: it cannot be read (threads run in any order)`
+            `storage buffer "${params['name']}" is written by the graph: it cannot be read (threads run in any order)`,
           );
           break;
         }
@@ -279,7 +279,7 @@ function checkCompute(
 function checkSupport(
   validation: GraphValidation,
   diagnostics: Diagnostic[],
-  capabilities: CompilerCapabilities
+  capabilities: CompilerCapabilities,
 ): void {
   for (const { node, definition, params } of validation.nodes.values()) {
     const error = (message: string) =>
@@ -289,7 +289,7 @@ function checkSupport(
       const type = params['type'] as ShaderType;
       if (!capabilities.storageBuffers) {
         error(
-          `storage buffer "${params['name']}": the backend has no storage buffers (WebGL2)`
+          `storage buffer "${params['name']}": the backend has no storage buffers (WebGL2)`,
         );
         continue;
       }
@@ -302,14 +302,14 @@ function checkSupport(
           `storage buffer "${
             params['name']
           }" must be a runtime-sized array of numeric scalars, vectors or matrices, got ${typeToString(
-            type
-          )}`
+            type,
+          )}`,
         );
         continue;
       }
       if (params['access'] !== 'read' && !isCompute(validation)) {
         error(
-          `storage buffer "${params['name']}": only compute graphs write storage buffers, use read access`
+          `storage buffer "${params['name']}": only compute graphs write storage buffers, use read access`,
         );
         continue;
       }
@@ -323,7 +323,7 @@ function checkSupport(
       error(
         definition.implementation
           ? `${definition.implementation.kind} functions are not supported yet`
-          : `node type "${definition.id}" has no implementation`
+          : `node type "${definition.id}" has no implementation`,
       );
       continue;
     }
@@ -335,7 +335,7 @@ function checkSupport(
     })) {
       if (!isSupportedType(type)) {
         error(
-          `port "${port}": ${typeToString(type)} values are not supported yet`
+          `port "${port}": ${typeToString(type)} values are not supported yet`,
         );
       }
     }
@@ -349,7 +349,7 @@ function checkSupport(
         error(
           `attribute "${
             params['semantic']
-          }" must be a numeric scalar or vector, got ${typeToString(type)}`
+          }" must be a numeric scalar or vector, got ${typeToString(type)}`,
         );
       }
     }
@@ -361,7 +361,7 @@ function checkSupport(
     const slot = params['slot'] as string;
     if (!identifierPattern.test(name)) {
       error(
-        `resource name "${name}" must start with a letter and contain only letters, digits and _`
+        `resource name "${name}" must start with a letter and contain only letters, digits and _`,
       );
     }
     if (/Uniforms$/.test(name)) {
@@ -369,19 +369,19 @@ function checkSupport(
     }
     if ((EngineSlots as readonly string[]).includes(slot)) {
       error(
-        `slot "${slot}" is reserved for engine values, use input.engine or another slot`
+        `slot "${slot}" is reserved for engine values, use input.engine or another slot`,
       );
     }
     if (!identifierPattern.test(slot)) {
       error(
-        `slot name "${slot}" must start with a letter and contain only letters, digits and _`
+        `slot name "${slot}" must start with a letter and contain only letters, digits and _`,
       );
     }
     if (node.type === 'input.uniform') {
       const type = params['type'] as ShaderType;
       if (type.kind === 'scalar' && type.scalar === 'bool') {
         error(
-          `uniform "${name}": bool is not allowed in uniform buffers, use u32`
+          `uniform "${name}": bool is not allowed in uniform buffers, use u32`,
         );
       } else if (
         type.kind !== 'scalar' &&
@@ -390,8 +390,8 @@ function checkSupport(
       ) {
         error(
           `uniform "${name}": ${typeToString(
-            type
-          )} uniforms are not supported yet`
+            type,
+          )} uniforms are not supported yet`,
         );
       }
     }
@@ -406,7 +406,8 @@ function useObjectTable(graph: WorkingGraph): boolean {
     (node) =>
       node.type === 'input.engine' &&
       (node.params['value'] === 'object.id' ||
-        engineValueLocations[node.params['value'] as string]?.slot === 'object')
+        engineValueLocations[node.params['value'] as string]?.slot ===
+          'object'),
   );
   if (reads.length === 0) {
     return false;
@@ -415,14 +416,14 @@ function useObjectTable(graph: WorkingGraph): boolean {
     'input.builtin',
     { builtin: 'object-index' },
     {},
-    'objectIndex'
+    'objectIndex',
   );
   const member = (name: string, label?: string) =>
     graph.addNode(
       'input.object',
       { member: name },
       { index: { ref: { node: index, port: 'value' } } },
-      label
+      label,
     );
   for (const read of reads) {
     const value = read.params['value'] as string;
@@ -442,7 +443,7 @@ function useObjectTable(graph: WorkingGraph): boolean {
               swizzle: 'w',
             },
           },
-          read.label
+          read.label,
         ),
         port: 'result',
       };
@@ -457,7 +458,7 @@ function useObjectTable(graph: WorkingGraph): boolean {
           'std.mat3',
           {},
           { c0: column(0), c1: column(1), c2: column(2) },
-          read.label
+          read.label,
         ),
         port: 'result',
       };
@@ -475,7 +476,7 @@ function buildLayout(
   {
     usedSlotsOnly = false,
     objectTable = false,
-  }: { usedSlotsOnly?: boolean; objectTable?: boolean } = {}
+  }: { usedSlotsOnly?: boolean; objectTable?: boolean } = {},
 ): ProgramLayout {
   const all = [...nodes];
   const resources = all
@@ -491,18 +492,18 @@ function buildLayout(
   const engineValues = new Set(
     all
       .filter(({ node }) => node.type === 'input.engine')
-      .map(({ params }) => params['value'] as string)
+      .map(({ params }) => params['value'] as string),
   );
   const engineSlots = new Set(
     [...engineValues].map(
-      (value) => engineValueLocations[value]?.slot ?? 'frame'
-    )
+      (value) => engineValueLocations[value]?.slot ?? 'frame',
+    ),
   );
   const slots = slotOrder(resources.map((resource) => resource.slot)).filter(
     (slot) =>
       !usedSlotsOnly ||
       engineSlots.has(slot as never) ||
-      resources.some((resource) => resource.slot === slot)
+      resources.some((resource) => resource.slot === slot),
   );
 
   return {
@@ -543,9 +544,9 @@ function buildLayout(
           ...new Map(
             resources
               .filter(
-                (resource) => resource.slot === slot && resource.type === type
+                (resource) => resource.slot === slot && resource.type === type,
               )
-              .map((resource) => [resource.name, resource])
+              .map((resource) => [resource.name, resource]),
           ).values(),
         ].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -617,8 +618,8 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
           structuralParams(node),
           node.defaults ?? {},
           inputs,
-        ])
-      )
+        ]),
+      ),
     );
   }
 
@@ -629,7 +630,7 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
         node.type === 'output.fragment' ||
         node.type === 'output.target' ||
         node.type === 'output.compute' ||
-        node.type === 'write.storage'
+        node.type === 'write.storage',
     )
     .map((node) => hashes.get(node.id) as string)
     .sort();
@@ -642,7 +643,7 @@ function programKey(graph: WorkingGraph, order: readonly NodeId[]): string {
 function checkTargets(
   graph: WorkingGraph,
   types: GraphValidation['types'],
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   const nodes = [...graph.nodes.values()];
   const fragment = nodes.find((node) => node.type === 'output.fragment');
@@ -664,7 +665,7 @@ function checkTargets(
       error(`invalid target location ${location}: from 0 to 7`);
     } else if (taken.has(location)) {
       error(
-        `location ${location} is already written by "${taken.get(location)}"`
+        `location ${location} is already written by "${taken.get(location)}"`,
       );
     } else {
       taken.set(location, name);
@@ -686,12 +687,12 @@ function checkOutputTypes(
   graph: WorkingGraph,
   types: GraphValidation['types'],
   outputs: readonly SurfaceOutput[],
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
 ): void {
   for (const node of graph.nodes.values()) {
     const output = outputs.find(
       (candidate) =>
-        node.type === 'output.target' && candidate.name === node.params['name']
+        node.type === 'output.target' && candidate.name === node.params['name'],
     );
     if (!output) {
       continue;
@@ -703,7 +704,7 @@ function checkOutputTypes(
         severity: 'error',
         node: node.id,
         message: `the output "${output.name}" is a ${typeToString(
-          type
+          type,
         )}, its format takes a ${typeToString(expected)}`,
       });
     }
@@ -734,13 +735,13 @@ function checkOutputTypes(
  */
 export function compile(
   graph: MaterialGraphData,
-  options: CompileOptions = {}
+  options: CompileOptions = {},
 ): CompiledProgram {
   // With the function graphs embedded in the graph, and those of the
   // outputs.
   let registry = registryWithFunctions(
     options.registry ?? createStandardRegistry(),
-    graph
+    graph,
   );
   const outputs = options.outputs ?? [];
   const outputFunctions = outputs
@@ -761,13 +762,13 @@ export function compile(
   };
   const fail = (diagnostics: readonly Diagnostic[]): never => {
     throw new GraphError(
-      diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+      diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
     );
   };
 
   const validation = validateGraph(graph, registry);
   const warnings = validation.diagnostics.filter(
-    (diagnostic) => diagnostic.severity === 'warning'
+    (diagnostic) => diagnostic.severity === 'warning',
   );
   if (!validation.valid) {
     fail(validation.diagnostics);
@@ -795,14 +796,14 @@ export function compile(
     (graph.parameters ?? []).map((parameter) => [
       parameter.name,
       parameter.default,
-    ])
+    ]),
   );
   // The attributes computed by the graph (output.attribute) are there,
   // whatever the mesh.
   const computedAttributes = new Set(
     graph.nodes
       .filter((node) => node.type === 'output.attribute')
-      .map((node) => node.params['semantic'] as string)
+      .map((node) => node.params['semantic'] as string),
   );
   const feature = (name: string): StaticValue | undefined => {
     let value = options.features?.[name] ?? parameters.get(name);
@@ -843,7 +844,7 @@ export function compile(
     diagnostics,
     feature,
     hasSurface ? outputs : [],
-    options.color ?? true
+    options.color ?? true,
   );
   lowerFullscreen(working, diagnostics);
   if (diagnostics.length > 0) {

@@ -26,7 +26,7 @@ export function canRun(name: string, ready: boolean, reason = ''): boolean {
     throw new Error(
       `The suite "${name}" is required (FDW_REQUIRE_SUITES) but cannot run${
         reason ? `: ${reason}` : ''
-      }`
+      }`,
     );
   }
   return false;

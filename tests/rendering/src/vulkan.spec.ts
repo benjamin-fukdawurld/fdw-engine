@@ -50,6 +50,6 @@ describeRenderer('Renderer on Vulkan', createFixture, {
   skip: !canRun(
     'vulkan',
     existsSync(addonPath()),
-    'the Vulkan addon is not built (VULKAN_SDK)'
+    'the Vulkan addon is not built (VULKAN_SDK)',
   ),
 });

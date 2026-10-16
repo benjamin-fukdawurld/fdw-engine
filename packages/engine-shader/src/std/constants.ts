@@ -19,7 +19,7 @@ export const value: NodeDefinition = {
     const constant = params['value'] as ConstantValue;
     if (!isConstantCompatible(constant, type)) {
       throw new Error(
-        `${JSON.stringify(constant)} is not a valid ${typeToString(type)}`
+        `${JSON.stringify(constant)} is not a valid ${typeToString(type)}`,
       );
     }
     return [{ name: 'value', type }];

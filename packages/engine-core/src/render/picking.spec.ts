@@ -18,7 +18,7 @@ const texture = (format = 'r32uint') =>
     dimensions: { width: 4, height: 2 },
     usage: ['render-attachment', 'copy-src'],
     destroy: () => undefined,
-  } as GpuTexture);
+  }) as GpuTexture;
 const backend = () => {
   const reads: GpuTextureRegion[] = [];
   return {
@@ -50,18 +50,18 @@ describe('pickIds', () => {
   it('gives the distinct identifiers of a rectangle, in order', async () => {
     const { backend: b } = backend();
     expect(
-      await pickIds(b, texture(), { x: 0, y: 0, width: 3, height: 2 })
+      await pickIds(b, texture(), { x: 0, y: 0, width: 3, height: 2 }),
     ).toEqual([3, 5]);
     // Dragged up and left, from the bottom right corner.
     expect(
-      await pickIds(b, texture(), { x: 4, y: 2, width: -2, height: -2 })
+      await pickIds(b, texture(), { x: 4, y: 2, width: -2, height: -2 }),
     ).toEqual([3, 7]);
   });
 
   it('ignores the part of the region out of the texture', async () => {
     const { backend: b, reads } = backend();
     expect(
-      await pickIds(b, texture(), { x: -2, y: 1, width: 4, height: 5 })
+      await pickIds(b, texture(), { x: -2, y: 1, width: 4, height: 5 }),
     ).toEqual([5]);
     expect(reads).toEqual([{ x: 0, y: 1, width: 2, height: 1 }]);
     expect(await pickIds(b, texture(), { x: 10, y: 0 })).toEqual([]);
@@ -72,7 +72,7 @@ describe('pickIds', () => {
   it('only reads textures of identifiers', async () => {
     const { backend: b } = backend();
     await expect(
-      pickIds(b, texture('rgba8unorm'), { x: 0, y: 0 })
+      pickIds(b, texture('rgba8unorm'), { x: 0, y: 0 }),
     ).rejects.toThrow(/textures of identifiers \(r32uint\), not rgba8unorm/);
   });
 });

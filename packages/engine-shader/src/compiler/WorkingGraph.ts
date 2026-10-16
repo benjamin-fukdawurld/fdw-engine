@@ -47,7 +47,8 @@ export class WorkingGraph {
    */
   inputSource(node: GraphNode, port: string): InputSource | undefined {
     const edge = this.edges.find(
-      (candidate) => candidate.to.node === node.id && candidate.to.port === port
+      (candidate) =>
+        candidate.to.node === node.id && candidate.to.port === port,
     );
     if (edge) {
       return edge.swizzle === undefined
@@ -62,7 +63,7 @@ export class WorkingGraph {
     type: string,
     params: Readonly<Record<string, StaticValue>> = {},
     inputs: Readonly<Record<string, InputSource | undefined>> = {},
-    label?: string
+    label?: string,
   ): NodeId {
     let id: NodeId;
     do {
@@ -98,7 +99,7 @@ export class WorkingGraph {
   removeNode(id: NodeId): void {
     this.nodes.delete(id);
     this.edges = this.edges.filter(
-      (edge) => edge.from.node !== id && edge.to.node !== id
+      (edge) => edge.from.node !== id && edge.to.node !== id,
     );
   }
 
@@ -108,7 +109,7 @@ export class WorkingGraph {
    */
   redirectPort(
     from: PortRef,
-    to: { readonly ref: PortRef; readonly swizzle?: string }
+    to: { readonly ref: PortRef; readonly swizzle?: string },
   ): void {
     this.edges = this.edges.map((edge) => {
       if (edge.from.node !== from.node || edge.from.port !== from.port) {
@@ -132,7 +133,7 @@ export class WorkingGraph {
     this.edges = this.edges.map((edge) =>
       edge.from.node === from
         ? { ...edge, from: { node: to, port: edge.from.port } }
-        : edge
+        : edge,
     );
   }
 }

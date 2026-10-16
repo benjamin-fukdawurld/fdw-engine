@@ -3,11 +3,7 @@ import type { ResourceError } from './errors';
 import type { ResourceType, ResourceUri } from './types';
 
 export type ResourceStatus =
-  | 'pending'
-  | 'loading'
-  | 'ready'
-  | 'failed'
-  | 'cancelled';
+  'pending' | 'loading' | 'ready' | 'failed' | 'cancelled';
 
 export interface ResourceHandle<T> {
   readonly type: ResourceType<T>;

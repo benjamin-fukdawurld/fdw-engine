@@ -24,7 +24,7 @@ export class VulkanWindowSurface implements Surface {
 
   constructor(
     readonly window: NativeWindow,
-    private readonly _options: VulkanWindowSurfaceOptions = {}
+    private readonly _options: VulkanWindowSurfaceOptions = {},
   ) {}
 
   async init(engine: Engine): Promise<void> {
@@ -36,7 +36,7 @@ export class VulkanWindowSurface implements Surface {
       this.window.nativeHandle,
       this.window.width,
       this.window.height,
-      this._options
+      this._options,
     );
   }
 
@@ -58,7 +58,7 @@ export class VulkanWindowSurface implements Surface {
   getCurrentTarget(): VulkanTexture {
     this._current ??= this.swapchain.acquire(
       this.window.width,
-      this.window.height
+      this.window.height,
     );
     return this._current;
   }

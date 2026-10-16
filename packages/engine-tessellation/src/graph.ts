@@ -67,7 +67,7 @@ export interface PatchVertex {
  */
 export function patchVertex(
   g: GraphBuilder,
-  options: { displacement?: PatchDisplacement } = {}
+  options: { displacement?: PatchDisplacement } = {},
 ): PatchVertex {
   const call = (fn: Parameters<GraphBuilder['call']>[0], inputs: object) =>
     g.call(fn, inputs as Record<string, Value>);
@@ -99,7 +99,7 @@ export function patchVertex(
   for (const half of [0, 1] as const) {
     const starts = g.uniform(
       PatchValues.vertexStarts[half],
-      BuiltinTypes.vec4f
+      BuiltinTypes.vec4f,
     );
     // 1 for the levels starting at or before the vertex.
     const reached = call(std.step, { edge: starts, x: splat });
@@ -107,7 +107,7 @@ export function patchVertex(
     const vertex = mul(starts, reached);
     const draw = mul(
       g.uniform(PatchValues.drawStarts[half], BuiltinTypes.vec4f),
-      reached
+      reached,
     );
     const quads = mul(g.constant(BuiltinTypes.vec4f, sizes), reached);
     const count = call(std.dot, { a: reached, b: [1, 1, 1, 1] });
@@ -119,7 +119,7 @@ export function patchVertex(
   const largest = (v: PortHandle) =>
     max(
       max(v.swizzle('x'), v.swizzle('y')),
-      max(v.swizzle('z'), v.swizzle('w'))
+      max(v.swizzle('z'), v.swizzle('w')),
     );
   // The quads along an edge of the template: 2^level.
   const n = u32(largest(size as PortHandle));
@@ -151,12 +151,12 @@ export function patchVertex(
         x: f32(
           sub(
             slot,
-            mul(div(slot, uint(PatchTextureWidth)), uint(PatchTextureWidth))
-          )
+            mul(div(slot, uint(PatchTextureWidth)), uint(PatchTextureWidth)),
+          ),
         ),
         y: f32(div(slot, uint(PatchTextureWidth))),
       }),
-      BuiltinTypes.vec2i
+      BuiltinTypes.vec2i,
     ),
   });
   const steps = (packed: PortHandle) => {
@@ -171,12 +171,12 @@ export function patchVertex(
   const sx = select(
     select(x, snap(x, top), equal(y, n)),
     snap(x, bottom),
-    equal(y, uint(0))
+    equal(y, uint(0)),
   );
   const sy = select(
     select(y, snap(y, right), equal(x, n)),
     snap(y, left),
-    equal(x, uint(0))
+    equal(x, uint(0)),
   );
   const nf = f32(n);
   const s = div(f32(sx), nf);
@@ -187,7 +187,7 @@ export function patchVertex(
   const row = div(patch, uint(PatchesPerRow));
   const first = mul(
     sub(patch, mul(row, uint(PatchesPerRow))),
-    uint(TexelsPerPatch)
+    uint(TexelsPerPatch),
   );
   const patches = g.texture(PatchValues.patches, {
     sampleType: 'unfilterable-float',
@@ -197,14 +197,17 @@ export function patchVertex(
       texture: patches,
       coords: convert(
         call(std.vec2, { x: f32(add(first, uint(k))), y: f32(row) }),
-        BuiltinTypes.vec2i
+        BuiltinTypes.vec2i,
       ),
     });
   const texels = [0, 1, 2, 3, 4, 5, 6, 7].map(texel);
   const positions = texels.slice(0, 4).map((c) => c.swizzle('xyz'));
   const normals = texels.slice(4).map((c) => c.swizzle('xyz'));
   const uvs = [0, 1, 2, 3].map((c) =>
-    call(std.vec2, { x: texels[c].swizzle('w'), y: texels[c + 4].swizzle('w') })
+    call(std.vec2, {
+      x: texels[c].swizzle('w'),
+      y: texels[c + 4].swizzle('w'),
+    }),
   );
 
   // a (1 − w) + b w: exactly a at 0 and b at 1, so that two patches agree
@@ -246,7 +249,7 @@ export function patchVertex(
         x: sub(heightAt(offset(1, 0)), heightAt(offset(-1, 0))),
         y: sub(heightAt(offset(0, 1)), heightAt(offset(0, -1))),
       }),
-      typeof step === 'number' ? step * 2 : mul(step, 2)
+      typeof step === 'number' ? step * 2 : mul(step, 2),
     );
     const [p00, p10, p01, p11] = positions;
     const [uv00, uv10, uv01, uv11] = uvs;
@@ -257,7 +260,7 @@ export function patchVertex(
     const tangent = (along: Value, uvAlong: Value) =>
       add(
         along,
-        mul(baseNormal, mul(call(std.dot, { a: slope, b: uvAlong }), scale))
+        mul(baseNormal, mul(call(std.dot, { a: slope, b: uvAlong }), scale)),
       );
     normal = call(std.normalize, {
       x: call(std.cross, { a: tangent(alongT, uvT), b: tangent(alongS, uvS) }),

@@ -79,7 +79,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
         b: f.call(std.mix, { a: 0.25, b: 1, t: level }),
       }),
       w: 1,
-    })
+    }),
   );
   registry.register(defineShadingModel('toon', f.build()));
 

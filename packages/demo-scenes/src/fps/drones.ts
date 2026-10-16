@@ -52,7 +52,7 @@ export class Drones {
   constructor(
     private readonly _scene: Scene,
     private readonly _solid: ComponentStore,
-    private readonly _meshes: { cube: Mesh; sphere: Mesh }
+    private readonly _meshes: { cube: Mesh; sphere: Mesh },
   ) {
     this.Drone = _scene.world.defineComponent('drone', droneSchema);
   }
@@ -196,7 +196,7 @@ export class Drones {
       const distance = Math.hypot(
         player.x - x[e],
         player.y - 0.4 - y[e],
-        player.z - z[e]
+        player.z - z[e],
       );
       if (distance < reach) {
         cooldown[e] = strikePeriod;
@@ -247,7 +247,7 @@ export class Drones {
       const yaw = Math.atan2(-(player.x - cx), -(player.z - cz));
       node.transform.rotation = multiplyQuat(
         rotationAround('y', yaw),
-        rotationAround('z', down[e] * 12)
+        rotationAround('z', down[e] * 12),
       );
       const size = 1 - down[e] / fallTime;
       node.transform.scale = { x: size, y: size, z: size };

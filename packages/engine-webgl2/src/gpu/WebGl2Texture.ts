@@ -32,14 +32,12 @@ import { glTextureFormat } from './formats';
 import { FramebufferAttachment, releaseFramebuffers } from './framebuffers';
 import { readAttachment } from './readback';
 
-const textureTargets = lazy(
-  (): Record<string, GLenum> => ({
-    '2d': GL.TEXTURE_2D,
-    '2d-array': GL.TEXTURE_2D_ARRAY,
-    '3d': GL.TEXTURE_3D,
-    cube: GL.TEXTURE_CUBE_MAP,
-  })
-);
+const textureTargets = lazy((): Record<string, GLenum> => ({
+  '2d': GL.TEXTURE_2D,
+  '2d-array': GL.TEXTURE_2D_ARRAY,
+  '3d': GL.TEXTURE_3D,
+  cube: GL.TEXTURE_CUBE_MAP,
+}));
 
 // Image sources accepted by texSubImage2D.
 export type WebGl2TextureSource = TexImageSource;
@@ -67,11 +65,11 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     readonly usage: readonly GpuTextureUsage[] = defaultTextureUsage,
     // Whether its levels are written rather than computed (see
     // checkMipLevelCount).
-    levelsProvided = false
+    levelsProvided = false,
   ) {
     checkMipLevelCount(
       { type, format, dimensions, label, sampleCount, mipLevelCount },
-      { provided: levelsProvided }
+      { provided: levelsProvided },
     );
     const target = textureTargets()[type];
     if (target === undefined) {
@@ -83,7 +81,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     // The compressed formats need their extension (see glCompressedFormats).
     if (extension && !_gl.getExtension(extension)) {
       throw new Error(
-        `Texture format ${format} is not supported (${extension})`
+        `Texture format ${format} is not supported (${extension})`,
       );
     }
 
@@ -98,18 +96,18 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       const supported: Int32Array | null = _gl.getInternalformatParameter(
         GL.RENDERBUFFER,
         internalFormat,
-        GL.SAMPLES
+        GL.SAMPLES,
       );
       const samples = Math.max(
         ...[...(supported ?? [])].filter((count) => count <= sampleCount),
-        0
+        0,
       );
       _gl.renderbufferStorageMultisample(
         GL.RENDERBUFFER,
         samples,
         internalFormat,
         width,
-        height
+        height,
       );
       return;
     }
@@ -123,7 +121,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
         internalFormat,
         width,
         height,
-        layers
+        layers,
       );
     } else {
       _gl.texStorage2D(target, mipLevelCount, internalFormat, width, height);
@@ -160,7 +158,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
         GL.FRAMEBUFFER,
         point,
         GL.RENDERBUFFER,
-        this._renderbuffer
+        this._renderbuffer,
       );
       return;
     }
@@ -172,7 +170,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       point,
       GL.TEXTURE_2D,
       this.texture,
-      0
+      0,
     );
   }
 
@@ -185,7 +183,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       throw new Error(
         `The levels of texture "${this.label ?? '(unlabeled)'}" (${
           this.format
-        }) cannot be computed`
+        }) cannot be computed`,
       );
     }
     gl.bindTexture(this.target, this.texture);
@@ -197,7 +195,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       throw new Error(
         `Texture "${
           this.label ?? '(unlabeled)'
-        }" is multisampled: resolve it into a texture to read it`
+        }" is multisampled: resolve it into a texture to read it`,
       );
     }
     if (!this._texture) {
@@ -229,7 +227,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(
       GL.UNPACK_FLIP_Y_WEBGL,
-      flip && this.target === GL.TEXTURE_2D
+      flip && this.target === GL.TEXTURE_2D,
     );
     gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
@@ -251,7 +249,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
       this.height,
       format,
       type,
-      source
+      source,
     );
   }
 
@@ -264,11 +262,11 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     source: ArrayBufferView<ArrayBuffer>,
     level: number,
     layer: number,
-    layers: number
+    layers: number,
   ): void {
     const gl = this._gl;
     const { internalFormat, format, type, extension } = glTextureFormat(
-      this.format
+      this.format,
     );
     const { width, height } = levelDimensions(this.dimensions, level);
     gl.bindTexture(this.target, this.texture);
@@ -278,7 +276,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
     const bytes = new Uint8Array(
       source.buffer,
       source.byteOffset,
-      source.byteLength
+      source.byteLength,
     );
 
     if (this.target === GL.TEXTURE_2D) {
@@ -291,7 +289,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
           width,
           height,
           internalFormat,
-          bytes
+          bytes,
         );
       } else {
         gl.texSubImage2D(
@@ -303,7 +301,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
           height,
           format,
           type,
-          source
+          source,
         );
       }
     } else if (this.target === GL.TEXTURE_CUBE_MAP) {
@@ -321,7 +319,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
             width,
             height,
             internalFormat,
-            face
+            face,
           );
         } else {
           gl.texSubImage2D(
@@ -333,7 +331,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
             height,
             format,
             type,
-            face
+            face,
           );
         }
       }
@@ -348,7 +346,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
         height,
         layers,
         internalFormat,
-        bytes
+        bytes,
       );
     } else {
       gl.texSubImage3D(
@@ -362,7 +360,7 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
         layers,
         format,
         type,
-        source
+        source,
       );
     }
   }
@@ -380,13 +378,11 @@ export class WebGl2Texture implements GpuTexture, FramebufferAttachment {
   }
 }
 
-const wrapModes = lazy(
-  (): Record<string, GLenum> => ({
-    'clamp-to-edge': GL.CLAMP_TO_EDGE,
-    repeat: GL.REPEAT,
-    'mirror-repeat': GL.MIRRORED_REPEAT,
-  })
-);
+const wrapModes = lazy((): Record<string, GLenum> => ({
+  'clamp-to-edge': GL.CLAMP_TO_EDGE,
+  repeat: GL.REPEAT,
+  'mirror-repeat': GL.MIRRORED_REPEAT,
+}));
 
 function wrapMode(mode: GpuTextureWrapMode): GLenum {
   const result = wrapModes()[mode];
@@ -401,7 +397,7 @@ const filter = (mode: GpuTextureFilterMode) =>
 
 function minFilter(
   min: GpuTextureFilterMode,
-  mipmap: GpuTextureFilterMode
+  mipmap: GpuTextureFilterMode,
 ): GLenum {
   if (min === 'nearest') {
     return mipmap === 'nearest'
@@ -414,18 +410,16 @@ function minFilter(
 }
 
 // GL comparison functions; GL is read on first use.
-const compareFunctions = lazy(
-  (): Record<CompareFunction, GLenum> => ({
-    never: GL.NEVER,
-    less: GL.LESS,
-    equal: GL.EQUAL,
-    'less-equal': GL.LEQUAL,
-    greater: GL.GREATER,
-    'not-equal': GL.NOTEQUAL,
-    'greater-equal': GL.GEQUAL,
-    always: GL.ALWAYS,
-  })
-);
+const compareFunctions = lazy((): Record<CompareFunction, GLenum> => ({
+  never: GL.NEVER,
+  less: GL.LESS,
+  equal: GL.EQUAL,
+  'less-equal': GL.LEQUAL,
+  greater: GL.GREATER,
+  'not-equal': GL.NOTEQUAL,
+  'greater-equal': GL.GEQUAL,
+  always: GL.ALWAYS,
+}));
 
 // The constants of EXT_texture_filter_anisotropic.
 const GL_TEXTURE_MAX_ANISOTROPY_EXT = 0x84fe;
@@ -460,7 +454,7 @@ export class WebGl2Sampler implements GpuSampler {
   constructor(
     private readonly _gl: WebGL2RenderingContext,
     config: GpuSamplerConfiguration = {},
-    defaultMaxAnisotropy = 1
+    defaultMaxAnisotropy = 1,
   ) {
     this.wrapModeS = config.wrapModeS ?? 'repeat';
     this.wrapModeT = config.wrapModeT ?? 'repeat';
@@ -471,7 +465,7 @@ export class WebGl2Sampler implements GpuSampler {
     this.maxAnisotropy = samplerAnisotropy(
       config,
       defaultMaxAnisotropy,
-      maxAnisotropy(_gl)
+      maxAnisotropy(_gl),
     );
     this.label = config.label;
 
@@ -482,24 +476,24 @@ export class WebGl2Sampler implements GpuSampler {
     _gl.samplerParameteri(
       sampler,
       GL.TEXTURE_MAG_FILTER,
-      filter(this.magFilter)
+      filter(this.magFilter),
     );
     _gl.samplerParameteri(
       sampler,
       GL.TEXTURE_MIN_FILTER,
-      minFilter(this.minFilter, this.mipmapFilter)
+      minFilter(this.minFilter, this.mipmapFilter),
     );
     this.compare = config.compare;
     if (config.compare) {
       _gl.samplerParameteri(
         sampler,
         GL.TEXTURE_COMPARE_MODE,
-        GL.COMPARE_REF_TO_TEXTURE
+        GL.COMPARE_REF_TO_TEXTURE,
       );
       _gl.samplerParameteri(
         sampler,
         GL.TEXTURE_COMPARE_FUNC,
-        compareFunctions()[config.compare]
+        compareFunctions()[config.compare],
       );
     }
     if (this.maxAnisotropy > 1) {
@@ -507,7 +501,7 @@ export class WebGl2Sampler implements GpuSampler {
         sampler,
         // EXT_texture_filter_anisotropic, enabled by maxAnisotropy.
         GL_TEXTURE_MAX_ANISOTROPY_EXT,
-        this.maxAnisotropy
+        this.maxAnisotropy,
       );
     }
     this._sampler = sampler;
@@ -540,7 +534,7 @@ export class WebGl2TextureFactory
       source?: WebGl2TextureSource | ArrayBufferView<ArrayBuffer>;
       levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
-    }
+    },
   ): WebGl2Texture {
     const { type, format, dimensions, source, levels, label, sampleCount } =
       descriptor;
@@ -553,14 +547,14 @@ export class WebGl2TextureFactory
       sampleCount,
       checkTextureContent(descriptor),
       descriptor.usage,
-      levels !== undefined
+      levels !== undefined,
     );
     if (source) {
       texture.upload(source);
     }
     // Written as they are, every layer of each.
     levels?.forEach((data, level) =>
-      texture.writeLevel(data, level, 0, textureLayerCount(texture))
+      texture.writeLevel(data, level, 0, textureLayerCount(texture)),
     );
     return texture;
   }
@@ -568,7 +562,7 @@ export class WebGl2TextureFactory
   writeTexture(
     texture: GpuTexture,
     data: ArrayBufferView<ArrayBuffer>,
-    options?: GpuTextureWriteOptions
+    options?: GpuTextureWriteOptions,
   ): void {
     if (options?.level === undefined && options?.layer === undefined) {
       (texture as WebGl2Texture).upload(data);
@@ -580,7 +574,7 @@ export class WebGl2TextureFactory
 
   readTexture(
     texture: GpuTexture,
-    region?: GpuTextureRegion
+    region?: GpuTextureRegion,
   ): Promise<ArrayBuffer> {
     const checked = checkReadRegion(texture, region);
     if (texture.type !== '2d') {

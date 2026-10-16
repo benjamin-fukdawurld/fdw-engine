@@ -18,7 +18,7 @@ export class Player {
     private readonly _scene: Scene,
     private readonly _solid: ComponentStore,
     start: { x: number; z: number },
-    { sphere, cube, body }: { sphere: Mesh; cube: Mesh; body: Material }
+    { sphere, cube, body }: { sphere: Mesh; cube: Mesh; body: Material },
   ) {
     this.position = { x: start.x, y: 0, z: start.z };
     this.node = _scene.root.add({ name: 'player', position: this.position });
@@ -48,7 +48,7 @@ export class Player {
     dt: number,
     actions: ActionMap,
     cameraYaw: number,
-    aim?: { readonly x: number; readonly z: number }
+    aim?: { readonly x: number; readonly z: number },
   ): void {
     // Of length 0 to 1: a stick half pushed walks half as fast.
     const { x: right, y: forward } = actions.vector('move', this._move);

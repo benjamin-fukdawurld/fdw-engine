@@ -51,14 +51,14 @@ describe('serialization', () => {
   it('rejects malformed nodes and edges', () => {
     const base = { format: 'fdw-material-graph', version: 1, name: 'x' };
     expect(() =>
-      parseGraph({ ...base, nodes: [{ id: 'a' }], edges: [] })
+      parseGraph({ ...base, nodes: [{ id: 'a' }], edges: [] }),
     ).toThrow('Malformed node at index 0');
     expect(() =>
       parseGraph({
         ...base,
         nodes: [],
         edges: [{ from: { node: 'a' }, to: { node: 'b', port: 'x' } }],
-      })
+      }),
     ).toThrow('Malformed edge at index 0');
   });
 });

@@ -61,7 +61,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       castShadow: true,
       diffuse: { x: 1.2, y: 1.15, z: 1.1 },
       ambient: { x: 0.15, y: 0.16, z: 0.2 },
-    })
+    }),
   );
 
   // A ball: its position at the last step and at the one before, its
@@ -160,7 +160,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         interpolate = !interpolate;
       }
     },
-    { phase: 'begin' }
+    { phase: 'begin' },
   );
 
   // fixed: the physics, at each step. Added out of order: the constraints
@@ -177,7 +177,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         Ball.z[e] += Ball.vz[e] * step;
       }
     },
-    { phase: 'fixed' }
+    { phase: 'fixed' },
   );
   scheduler.add(
     'bounce',
@@ -198,7 +198,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         }
       }
     },
-    { phase: 'fixed', after: ['move'] }
+    { phase: 'fixed', after: ['move'] },
   );
   scheduler.add(
     'gravity',
@@ -207,7 +207,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         Ball.vy[e] -= 9.81 * step;
       }
     },
-    { phase: 'fixed', before: ['move'] }
+    { phase: 'fixed', before: ['move'] },
   );
   // A ball resting on the floor jumps again.
   scheduler.add(
@@ -219,7 +219,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         }
       }
     },
-    { phase: 'fixed', after: ['bounce'] }
+    { phase: 'fixed', after: ['bounce'] },
   );
 
   // update: the nodes between the last two steps, once per frame.
@@ -247,7 +247,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         clearColor: { r: 0.08, g: 0.09, b: 0.11, a: 1 },
       });
     },
-    { phase: 'render' }
+    { phase: 'render' },
   );
   scheduler.add(
     'status',
@@ -260,10 +260,10 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
           `interpolation ${interpolate ? 'on' : 'off'}`,
           `${scheduler.time.toFixed(2)} s simulated`,
           'click, then P, N, S, L, I',
-        ].join(' · ')
+        ].join(' · '),
       );
     },
-    { phase: 'render', after: ['render'] }
+    { phase: 'render', after: ['render'] },
   );
 
   let last = 0;

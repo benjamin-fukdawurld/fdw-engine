@@ -24,12 +24,12 @@ export interface WorkerImageDecoderOptions {
 /** Decodes in a worker of the pool: the main thread only receives the bitmap. */
 export function createWorkerImageDecoder(
   pool: WorkerPool,
-  { transferBytes = true }: WorkerImageDecoderOptions = {}
+  { transferBytes = true }: WorkerImageDecoderOptions = {},
 ): ImageDecoder {
   return {
     decode(
       bytes: ResourceBytes,
-      { signal, mimeType }: ImageDecodeOptions = {}
+      { signal, mimeType }: ImageDecodeOptions = {},
     ): Promise<DecodedImage> {
       const request: DecodeRequest = { bytes, mimeType };
       return pool.run<DecodedImage>(request, {
@@ -44,7 +44,7 @@ export function createWorkerImageDecoder(
 /** The worker script of `createWorkerImageDecoder`: `serveImageDecoder()`. */
 export function serveImageDecoder(
   scope?: WorkerScope,
-  decoder: ImageDecoder = createImageBitmapDecoder()
+  decoder: ImageDecoder = createImageBitmapDecoder(),
 ): void {
   serveWorker<DecodeRequest, DecodedImage>(async ({ bytes, mimeType }) => {
     const image = await decoder.decode(bytes, { mimeType });

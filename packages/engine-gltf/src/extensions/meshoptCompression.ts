@@ -8,11 +8,7 @@ interface MeshoptBufferView {
   readonly count: number;
   readonly mode: 'ATTRIBUTES' | 'TRIANGLES' | 'INDICES';
   readonly filter?:
-    | 'NONE'
-    | 'OCTAHEDRAL'
-    | 'QUATERNION'
-    | 'EXPONENTIAL'
-    | 'COLOR';
+    'NONE' | 'OCTAHEDRAL' | 'QUATERNION' | 'EXPONENTIAL' | 'COLOR';
 }
 
 /**
@@ -40,7 +36,7 @@ export const EXT_meshopt_compression: GltfExtension = {
     } = ext as MeshoptBufferView;
     const source = (await context.buffer(buffer)).subarray(
       byteOffset,
-      byteOffset + byteLength
+      byteOffset + byteLength,
     );
     const target = new Uint8Array(count * byteStride);
     context.options.meshopt!.decodeGltfBuffer(
@@ -49,7 +45,7 @@ export const EXT_meshopt_compression: GltfExtension = {
       byteStride,
       source,
       mode,
-      filter
+      filter,
     );
     return target;
   },

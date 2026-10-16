@@ -16,7 +16,7 @@ export function closestOnSegment(
   out: Vec3,
   p: ReadonlyVec3,
   a: ReadonlyVec3,
-  b: ReadonlyVec3
+  b: ReadonlyVec3,
 ): Vec3 {
   sub(ab, b, a);
   sub(ap, p, a);
@@ -33,7 +33,7 @@ export function segmentDistanceSquared(
   a0: ReadonlyVec3,
   a1: ReadonlyVec3,
   b0: ReadonlyVec3,
-  b1: ReadonlyVec3
+  b1: ReadonlyVec3,
 ): number {
   sub(d1, a1, a0);
   sub(d2, b1, b0);

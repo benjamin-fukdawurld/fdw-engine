@@ -127,7 +127,7 @@ const scaleKernel = () => {
       b: g.call(
         std.convert,
         { value: groups },
-        { params: { to: BuiltinTypes.f32 } }
+        { params: { to: BuiltinTypes.f32 } },
       ),
     }),
     when: g.call(std.less, { a: index, b: count }),
@@ -140,7 +140,7 @@ const rawStages = () => {
   const g = new GraphBuilder('raw');
   const matrix = g.constant(
     BuiltinTypes.mat4f,
-    [2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 1, 2, 3, 1]
+    [2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 1, 2, 3, 1],
   );
   const position = g.call(std.extend, {
     xyz: g.attribute('position', BuiltinTypes.vec3f),
@@ -170,7 +170,7 @@ const texelLoads = () => {
   const coords = g.call(
     std.convert,
     { value: g.call(std.mul, { a: g.builtin('screen-uv'), b: [64, 32] }) },
-    { params: { to: BuiltinTypes.vec2i } }
+    { params: { to: BuiltinTypes.vec2i } },
   );
   const texel = g.call(std.textureLoad, {
     texture: g.texture('values', { sampleType: 'unfilterable-float' }),
@@ -208,11 +208,11 @@ describe('hlslType', () => {
     expect(hlslType(BuiltinTypes.vec2u)).toBe('uint2');
     // Rows × columns in HLSL.
     expect(
-      hlslType({ kind: 'matrix', columns: 4, rows: 3, scalar: 'f32' })
+      hlslType({ kind: 'matrix', columns: 4, rows: 3, scalar: 'f32' }),
     ).toBe('float3x4');
     expect(hlslType(BuiltinTypes.depthTexture2d)).toBe('Texture2D<float>');
     expect(hlslType(BuiltinTypes.comparisonSampler)).toBe(
-      'SamplerComparisonState'
+      'SamplerComparisonState',
     );
     expect(() => hlslType(BuiltinTypes.f16)).toThrow(/not supported/);
   });
@@ -224,16 +224,16 @@ describe('HlslCodegen', () => {
     expect(code).toContain('#pragma pack_matrix(column_major)');
     expect(code).toContain('  [[vk::offset(0)]] float4x4 u_viewProjection;');
     expect(code).toContain(
-      '  [[vk::offset(288)]] float4 u_lightPositions[16];'
+      '  [[vk::offset(288)]] float4 u_lightPositions[16];',
     );
     expect(code).toContain(
-      '[[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms> frameUniforms;'
+      '[[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms> frameUniforms;',
     );
     expect(code).toMatch(
-      /\[\[vk::binding\(\d, 1\)\]\] Texture2D<float4> t_map;/
+      /\[\[vk::binding\(\d, 1\)\]\] Texture2D<float4> t_map;/,
     );
     expect(code).toMatch(
-      /\[\[vk::binding\(\d, 1\)\]\] SamplerState s_mapSampler;/
+      /\[\[vk::binding\(\d, 1\)\]\] SamplerState s_mapSampler;/,
     );
   });
 
@@ -241,7 +241,7 @@ describe('HlslCodegen', () => {
     const { code } = emit(rawStages());
     // Column-major constant: the translation is the last column.
     expect(code).toContain(
-      'float4x4(2.0, 0.0, 0.0, 1.0, 0.0, 3.0, 0.0, 2.0, 0.0, 0.0, 4.0, 3.0, 0.0, 0.0, 0.0, 1.0)'
+      'float4x4(2.0, 0.0, 0.0, 1.0, 0.0, 3.0, 0.0, 2.0, 0.0, 0.0, 4.0, 3.0, 0.0, 0.0, 0.0, 1.0)',
     );
     expect(code).toMatch(/= mul\(v\d+, v\d+\);/);
     expect(code).toMatch(/const float4 v\d+ = mul\(v1, v\d+\);/);
@@ -250,32 +250,32 @@ describe('HlslCodegen', () => {
   it('declares the builtins and the integer varyings of each stage', () => {
     const { code } = emit(rawStages());
     expect(code).toMatch(
-      /ps_main\(Varyings input, bool frontFacing : SV_IsFrontFace\)/
+      /ps_main\(Varyings input, bool frontFacing : SV_IsFrontFace\)/,
     );
     expect(code).toContain('StructuredBuffer<float4> b_palette;');
     // select(condition, ifTrue, ifFalse).
     expect(code).toMatch(
-      /const bool (v\d+) = frontFacing;[\s\S]*select\(\1, v\d+, v\d+\)/
+      /const bool (v\d+) = frontFacing;[\s\S]*select\(\1, v\d+, v\d+\)/,
     );
     expect(code).toMatch(
-      /\[\[vk::location\(0\)\]\] nointerpolation uint v_\w+ : VARYING0;/
+      /\[\[vk::location\(0\)\]\] nointerpolation uint v_\w+ : VARYING0;/,
     );
     expect(code).toMatch(/const float4 v\d+ = b_palette\[v\d+\];/);
     const fullscreen = emit(toneMapping()).code;
     expect(fullscreen).toContain(
-      'Varyings vs_main(uint vertexIndex : SV_VertexID)'
+      'Varyings vs_main(uint vertexIndex : SV_VertexID)',
     );
   });
 
   it('sums over the lights with a loop, and compares depths in it', () => {
     const { code } = emit(shadowedPbr());
     expect(code).toMatch(
-      /float3 (v\d+) = \(float3\)0;\n {2}for \(uint (v\d+) = 0u; \2 < v\d+; \2 = \2 \+ 1u\) \{/
+      /float3 (v\d+) = \(float3\)0;\n {2}for \(uint (v\d+) = 0u; \2 < v\d+; \2 = \2 \+ 1u\) \{/,
     );
     expect(code).toContain('ConstantBuffer<FrameUniforms> frameUniforms;');
     expect(code).toContain('Texture2D<float> t_shadowMap;');
     expect(
-      code.match(/t_shadowMap\.SampleCmpLevelZero\(s_shadowSampler, /g)
+      code.match(/t_shadowMap\.SampleCmpLevelZero\(s_shadowSampler, /g),
     ).toHaveLength(9);
     expect(code).toContain('float4x4 u_lightShadowMatrices[16];');
   });
@@ -283,7 +283,7 @@ describe('HlslCodegen', () => {
   it('writes no color in depth-only programs, and discards after the body', () => {
     const { code } = emit(shadowedPbr({ depthOnly: true, alphaMode: 'mask' }));
     expect(code).toMatch(
-      /void ps_main\(Varyings input\) \{\n[\s\S]*discard;\n {2}\}\n\}/
+      /void ps_main\(Varyings input\) \{\n[\s\S]*discard;\n {2}\}\n\}/,
     );
     expect(code).not.toContain('SV_Target');
   });
@@ -293,14 +293,14 @@ describe('HlslCodegen', () => {
     expect(sources.entryPoints).toEqual({ compute: 'cs_main' });
     expect(code).toContain('[numthreads(64, 1, 1)]');
     expect(code).toContain(
-      'void cs_main(uint3 globalInvocationId : SV_DispatchThreadID) {'
+      'void cs_main(uint3 globalInvocationId : SV_DispatchThreadID) {',
     );
     expect(code).toContain(
-      '[[vk::ext_builtin_input(24)]] static const uint3 gl_NumWorkGroups;'
+      '[[vk::ext_builtin_input(24)]] static const uint3 gl_NumWorkGroups;',
     );
     expect(code).toMatch(/b_input\.GetDimensions\(v\d+, v\d+_stride\);/);
     expect(code).toMatch(
-      / {2}if \(v\d+\) \{\n {4}b_output\[v\d+\] = v\d+;\n {2}\}/
+      / {2}if \(v\d+\) \{\n {4}b_output\[v\d+\] = v\d+;\n {2}\}/,
     );
   });
 
@@ -320,14 +320,14 @@ const sdk = !!(
 // The offsets of the uniform blocks of a module are those of the layout.
 async function expectLayout(
   spirv: Uint8Array,
-  layout: PhysicalProgramLayout
+  layout: PhysicalProgramLayout,
 ): Promise<void> {
   const reflected = await reflectUniformBlocks(spirv);
   for (const group of layout.groups) {
     for (const { binding, block, resource } of group.bindings) {
       const found = [...reflected.values()].find(
         (candidate) =>
-          candidate.set === group.index && candidate.binding === binding
+          candidate.set === group.index && candidate.binding === binding,
       );
       // Only the blocks the stage uses are in its module.
       if (!block || !found) {
@@ -335,7 +335,7 @@ async function expectLayout(
       }
       expect(
         found.members.map((member) => member.offset),
-        resource.name
+        resource.name,
       ).toEqual(block.members.map((member) => member.offset));
       expect(found.size, resource.name).toBeLessThanOrEqual(block.size);
     }
@@ -352,7 +352,7 @@ describe('HlslCodegen color targets', () => {
         '  float2 o_uv : SV_Target1;',
         '  uint o_id : SV_Target2;',
         '};',
-      ].join('\n')
+      ].join('\n'),
     );
     expect(code).toMatch(/FragmentOutputs ps_main\(/);
     expect(code).toMatch(/targets\.o_id = v\d+;\n {2}return targets;\n\}/);

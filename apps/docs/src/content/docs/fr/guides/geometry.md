@@ -48,7 +48,7 @@ class Cylinder implements ConvexVolume {
   constructor(
     readonly center: Vec3,
     readonly radius: number,
-    readonly halfHeight: number
+    readonly halfHeight: number,
   ) {}
 
   support([dx, dy, dz]: ReadonlyVec3, out: Vec3): Vec3 {
@@ -57,7 +57,7 @@ class Cylinder implements ConvexVolume {
       out,
       this.center[0] + (dx / horizontal) * this.radius,
       this.center[1] + (dy >= 0 ? this.halfHeight : -this.halfHeight),
-      this.center[2] + (dz / horizontal) * this.radius
+      this.center[2] + (dz / horizontal) * this.radius,
     );
   }
   // bounds(), transform(), containsPoint(), raycast()…
@@ -75,7 +75,7 @@ contact).
 ```ts
 intersects(
   new Capsule([0, 0, 0], [0, 2, 0], 0.5),
-  new Obb([1, 1, 0], [0.6, 0.6, 0.6])
+  new Obb([1, 1, 0], [0.6, 0.6, 0.6]),
 );
 ```
 

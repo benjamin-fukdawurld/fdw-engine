@@ -109,7 +109,7 @@ const sx = (pointer.x * 2 - 1) * tan * projection.aspect;
 const sy = (1 - pointer.y * 2) * tan;
 // In the world: along the x, y and −z axes of the camera's node.
 const direction = [0, 1, 2].map(
-  (i) => world[i] * sx + world[4 + i] * sy - world[8 + i]
+  (i) => world[i] * sx + world[4 + i] * sy - world[8 + i],
 );
 const origin = [world[12], world[13], world[14]];
 const t = (height - origin[1]) / direction[1];
@@ -130,7 +130,7 @@ const aim = aimer.update(
   eye,
   camera,
   player.position,
-  follow.yaw
+  follow.yaw,
 );
 player.update(dt, actions, follow.yaw, aim);
 ```

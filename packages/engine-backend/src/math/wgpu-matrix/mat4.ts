@@ -9,7 +9,7 @@ export const Mat4Api: IMat4Api = {
   premultiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.multiply(b, a, out);
   },
@@ -17,7 +17,7 @@ export const Mat4Api: IMat4Api = {
   multiply: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.multiply(a, b, out);
   },
@@ -37,7 +37,7 @@ export const Mat4Api: IMat4Api = {
   add: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.add(a, b, out);
   },
@@ -45,7 +45,7 @@ export const Mat4Api: IMat4Api = {
   multiplyScalar: (
     a: ArrayLike<number>,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.multiplyScalar(a, scalar, out);
   },
@@ -54,7 +54,7 @@ export const Mat4Api: IMat4Api = {
     position: ArrayLike<number>,
     target: ArrayLike<number>,
     up: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.aim(position, target, up, out);
   },
@@ -63,7 +63,7 @@ export const Mat4Api: IMat4Api = {
     eye: ArrayLike<number>,
     target: ArrayLike<number>,
     up: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.cameraAim(eye, target, up, out);
   },
@@ -72,7 +72,7 @@ export const Mat4Api: IMat4Api = {
     eye: ArrayLike<number>,
     center: ArrayLike<number>,
     up: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.lookAt(eye, center, up, out);
   },
@@ -82,7 +82,7 @@ export const Mat4Api: IMat4Api = {
     aspect: number,
     near: number,
     far: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.perspective(fovy, aspect, near, far, out);
   },
@@ -94,14 +94,14 @@ export const Mat4Api: IMat4Api = {
     top: number,
     near: number,
     far: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.ortho(left, right, bottom, top, near, far, out);
   },
 
   fromTranslation: (
     translation: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.translation(translation, out);
   },
@@ -109,7 +109,7 @@ export const Mat4Api: IMat4Api = {
   fromAxisAngle: (
     rad: number,
     axis: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.axisRotation(axis, rad, out);
   },
@@ -128,7 +128,7 @@ export const Mat4Api: IMat4Api = {
 
   getTranslation: (
     mat: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.getTranslation(mat, out);
   },
@@ -144,7 +144,7 @@ export const Mat4Api: IMat4Api = {
   setTranslation: (
     mat: ArrayLike<number>,
     translation: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.setTranslation(mat, translation, out);
   },
@@ -152,7 +152,7 @@ export const Mat4Api: IMat4Api = {
   setScaling: (
     mat: ArrayLike<number>,
     scale: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.scale(mat, vec3.div(scale, mat4.getScaling(mat)), out);
   },
@@ -160,7 +160,7 @@ export const Mat4Api: IMat4Api = {
   setRotation: (
     mat: ArrayLike<number>,
     q: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     const currentRotation = Mat4Api.getRotation(mat) as ArrayLike<number>;
     const quaternion = quat.mul(q, quat.inverse(currentRotation));
@@ -175,7 +175,7 @@ export const Mat4Api: IMat4Api = {
   translate: (
     mat: ArrayLike<number>,
     translation: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.translate(mat, translation, out);
   },
@@ -184,7 +184,7 @@ export const Mat4Api: IMat4Api = {
     mat: ArrayLike<number>,
     rad: number,
     axis: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.rotate(mat, axis, rad, out);
   },
@@ -192,7 +192,7 @@ export const Mat4Api: IMat4Api = {
   scale: (
     mat: ArrayLike<number>,
     scale: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.scale(mat, scale, out);
   },
@@ -200,7 +200,7 @@ export const Mat4Api: IMat4Api = {
   rotateQuat: (
     mat: ArrayLike<number>,
     q: ArrayLike<number>,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return mat4.multiply(mat, mat4.fromQuat(q), out);
   },
@@ -224,7 +224,7 @@ export const Mat4Api: IMat4Api = {
   equals: (
     a: ArrayLike<number>,
     b: ArrayLike<number>,
-    epsilon?: number
+    epsilon?: number,
   ): boolean => {
     epsilon = epsilon ?? 1e-6;
     for (let i = 0; i < 16; i++) {

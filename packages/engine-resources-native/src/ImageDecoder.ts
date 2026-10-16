@@ -30,7 +30,7 @@ export interface ImageDecodeOptions {
 export interface ImageDecoder {
   decode(
     bytes: ResourceBytes,
-    options?: ImageDecodeOptions
+    options?: ImageDecodeOptions,
   ): Promise<DecodedImage>;
 }
 
@@ -70,7 +70,7 @@ export function createStbImageDecoder({
           `Cannot decode the image: ${(e as Error).message}`,
           {
             cause: e,
-          }
+          },
         );
       }
       // The pool cannot be interrupted: the result is dropped.

@@ -18,7 +18,7 @@ export class FollowCamera {
 
   constructor(
     private readonly _node: Node,
-    private readonly _actions: ActionMap
+    private readonly _actions: ActionMap,
   ) {}
 
   update(dt: number, target: { x: number; y: number; z: number }): void {
@@ -44,7 +44,7 @@ export class FollowCamera {
     this._node.transform.position = this._position;
     this._node.transform.rotation = multiplyQuat(
       rotationAround('y', this.yaw),
-      rotationAround('x', this.pitch)
+      rotationAround('x', this.pitch),
     );
   }
 }

@@ -18,7 +18,7 @@ export function createSphere(segments = 32, rings = 16): Mesh {
         ...normal.map((n) => n * 0.5),
         ...normal,
         segment / segments,
-        ring / rings
+        ring / rings,
       );
     }
   }

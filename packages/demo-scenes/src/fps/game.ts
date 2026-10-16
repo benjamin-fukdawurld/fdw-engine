@@ -42,7 +42,7 @@ export class FpsGame {
     private readonly _scene: Scene,
     private readonly _arena: Arena,
     camera: Camera,
-    private readonly _actions: ActionMap
+    private readonly _actions: ActionMap,
   ) {
     const { cube, sphere, Solid, half } = _arena;
     this.player = new FpsPlayer(_scene, Solid, camera, _actions, half);
@@ -123,7 +123,7 @@ export class FpsGame {
         return false;
       },
       { layers: ~ViewLayer },
-      range
+      range,
     );
     this.player.kick(0.012);
     let strength = 0.15;
@@ -172,7 +172,7 @@ export class FpsGame {
       this.drones.spawn(
         gate.x + (across ? offset : 0),
         gate.z + (across ? 0 : offset),
-        k * 1.7
+        k * 1.7,
       );
     }
   }

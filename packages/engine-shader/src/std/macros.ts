@@ -25,7 +25,7 @@ export type MacroInputs = Readonly<
 export const call = (
   context: MacroContext,
   type: string,
-  inputs: MacroInputs
+  inputs: MacroInputs,
 ): ValueSource => context.add(type, {}, inputs)();
 
 /**
@@ -35,7 +35,7 @@ export const call = (
  */
 export const engineValue = (
   context: MacroContext,
-  value: string
+  value: string,
 ): ValueSource => context.add('input.engine', { value })();
 
 /**
@@ -136,7 +136,7 @@ export const repeat: MacroDefinition = {
 // interpolated directions are not unit vectors.
 function worldDirection(
   context: MacroContext,
-  vector: ValueSource
+  vector: ValueSource,
 ): ValueSource {
   const transformed = call(context, 'std.transform3', {
     matrix: engineValue(context, 'object.normalMatrix'),
@@ -154,7 +154,7 @@ export const vertexNormal = (context: MacroContext): ValueSource =>
     context.add('input.attribute', {
       semantic: 'normal',
       type: BuiltinTypes.vec3f,
-    })()
+    })(),
   );
 
 // The world position of the fragment, from the position attribute (before
@@ -202,7 +202,7 @@ function fragmentUv(context: MacroContext): ValueSource | undefined {
  */
 function tangentFrame(
   context: MacroContext,
-  n: ValueSource
+  n: ValueSource,
 ): { t: ValueSource; b: ValueSource } | undefined {
   if (context.feature('hasAttribute.tangent')) {
     const tangent = context.add('input.attribute', {
@@ -381,7 +381,7 @@ export const bumpMapping: MacroDefinition = {
 // The direction from the fragment to the camera in the tangent frame: x
 // along u, y up in the image, z along the normal.
 function tangentView(
-  context: MacroContext
+  context: MacroContext,
 ): { view: ValueSource; uv: ValueSource } | undefined {
   const uv = fragmentUv(context);
   if (!uv) {
@@ -416,7 +416,7 @@ const sampleHeight = (context: MacroContext, uv: ValueSource) =>
       sampler: context.input('sampler'),
       uv,
     }),
-    'x'
+    'x',
   );
 
 // The uv offset of a height seen from a tangent-space view: towards the
@@ -425,7 +425,7 @@ const sampleHeight = (context: MacroContext, uv: ValueSource) =>
 const viewShift = (
   context: MacroContext,
   view: ValueSource,
-  amount: ValueSource
+  amount: ValueSource,
 ): ValueSource =>
   call(context, 'std.mul', {
     a: call(context, 'std.mul', {
@@ -510,7 +510,7 @@ export const parallaxOcclusionMapping: MacroDefinition = {
     const total = viewShift(
       context,
       tangent.view,
-      call(context, 'std.mul', { a: context.input('scale'), b: -1 })
+      call(context, 'std.mul', { a: context.input('scale'), b: -1 }),
     );
     // Each step: its uv, and how far below the relief the ray is (> 0:
     // under the surface, the ray has met it).
@@ -602,7 +602,7 @@ export const displacement: MacroDefinition = {
         uv,
         level: 0,
       }),
-      'x'
+      'x',
     );
     return {
       offset: call(context, 'std.mul', {

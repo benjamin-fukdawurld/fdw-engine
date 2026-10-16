@@ -13,13 +13,7 @@ import {
 
 /** What an OrbitOperator reads: the names of its actions. */
 export type OrbitIntent =
-  | 'move'
-  | 'orbit'
-  | 'zoom'
-  | 'zoomStep'
-  | 'orbitDrag'
-  | 'panDrag'
-  | 'pointer';
+  'move' | 'orbit' | 'zoom' | 'zoomStep' | 'orbitDrag' | 'panDrag' | 'pointer';
 
 /**
  * The default actions of an OrbitOperator: WASD (ZQSD on AZERTY) and the
@@ -133,7 +127,7 @@ export class OrbitOperator {
   constructor(
     private readonly _target: CameraTarget,
     private readonly _actions: ActionMap,
-    options: OrbitOperatorOptions = {}
+    options: OrbitOperatorOptions = {},
   ) {
     this.pivot = { x: 0, y: 0, z: 0, ...options.pivot };
     this.distance = options.distance ?? 10;
@@ -211,7 +205,7 @@ export class OrbitOperator {
     this.distance = clamp(
       this.distance * Math.exp(zoom),
       this.minDistance,
-      this.maxDistance
+      this.maxDistance,
     );
     this.apply();
   }

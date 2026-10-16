@@ -6,7 +6,7 @@ export interface PoolWorker {
   terminate(): void;
   addEventListener(
     type: 'message' | 'error' | 'messageerror',
-    listener: (event: any) => void
+    listener: (event: any) => void,
   ): void;
 }
 
@@ -59,7 +59,7 @@ export class WorkerPool {
   run<R = unknown>(payload: unknown, options: RunOptions<R> = {}): Promise<R> {
     if (this.terminated)
       return Promise.reject(
-        new ResourceError('aborted', 'worker pool', 'The pool is terminated')
+        new ResourceError('aborted', 'worker pool', 'The pool is terminated'),
       );
     const { signal, transfer, discard } = options;
     if (signal?.aborted)
@@ -67,7 +67,7 @@ export class WorkerPool {
 
     // The least busy worker; ties go to the first, so idle ones are not started.
     const slot = this.slots.reduce((best, s) =>
-      s.jobs.size < best.jobs.size ? s : best
+      s.jobs.size < best.jobs.size ? s : best,
     );
     const worker = (slot.worker ??= this.spawn(slot));
     const id = this.nextId++;
@@ -94,7 +94,7 @@ export class WorkerPool {
         reject(
           new ResourceError('io', 'worker pool', 'Cannot post to the worker', {
             cause: e,
-          })
+          }),
         );
       }
     });
@@ -105,7 +105,7 @@ export class WorkerPool {
     for (const slot of this.slots)
       this.drop(
         slot,
-        new ResourceError('aborted', 'worker pool', 'The pool is terminated')
+        new ResourceError('aborted', 'worker pool', 'The pool is terminated'),
       );
   }
 
@@ -129,7 +129,7 @@ export class WorkerPool {
         job.reject(
           new ResourceError('decode', 'worker pool', error.message, {
             cause: e,
-          })
+          }),
         );
       } else job.resolve(result);
     });
@@ -140,8 +140,8 @@ export class WorkerPool {
         new ResourceError(
           'io',
           'worker pool',
-          `Worker failed: ${event.message ?? 'unknown error'}`
-        )
+          `Worker failed: ${event.message ?? 'unknown error'}`,
+        ),
       );
     });
     return worker;
@@ -168,7 +168,7 @@ export class WorkerPool {
 export interface WorkerScope {
   addEventListener(
     type: 'message',
-    listener: (event: MessageEvent) => void
+    listener: (event: MessageEvent) => void,
   ): void;
   postMessage(message: unknown, transfer: Transferable[]): void;
 }
@@ -181,7 +181,7 @@ export interface WorkerResult<O> {
 /** Answers the messages of a `WorkerPool`. Call it from the worker script. */
 export function serveWorker<I, O>(
   handler: (payload: I) => WorkerResult<O> | Promise<WorkerResult<O>>,
-  scope: WorkerScope = globalThis as unknown as WorkerScope
+  scope: WorkerScope = globalThis as unknown as WorkerScope,
 ): void {
   scope.addEventListener('message', async (event: MessageEvent) => {
     const { id, payload } = event.data as { id: number; payload: I };

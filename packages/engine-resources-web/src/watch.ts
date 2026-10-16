@@ -11,7 +11,7 @@ const sameFile = (a: string, b: string): boolean =>
 /** Adds `watch` to a source from a channel of changed paths (HMR). */
 export function withChangeChannel(
   source: ResourceSource,
-  channel: ChangeChannel
+  channel: ChangeChannel,
 ): ResourceSource {
   return {
     read: (path, options) => source.read(path, options),
@@ -38,7 +38,7 @@ export interface HotContext {
 /** The payload is the changed path, or `{ path }`. */
 export function hotChannel(
   hot: HotContext,
-  event = 'fdw:resource-changed'
+  event = 'fdw:resource-changed',
 ): ChangeChannel {
   return {
     subscribe(listener) {
@@ -67,7 +67,7 @@ export interface PollingOptions {
  */
 export function withPolling(
   source: ResourceSource,
-  { intervalMs = 1000 }: PollingOptions = {}
+  { intervalMs = 1000 }: PollingOptions = {},
 ): ResourceSource {
   const stat = source.stat?.bind(source);
   if (!stat)

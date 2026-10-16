@@ -20,7 +20,7 @@ const setup = () => {
 // Rotates v by the quaternion q.
 function rotate(
   q: { x: number; y: number; z: number; w: number },
-  v: Vec3Like
+  v: Vec3Like,
 ): Vec3Like {
   const { x, y, z, w } = q;
   const tx = 2 * (y * v.z - z * v.y);
@@ -49,7 +49,7 @@ describe('rotationOf', () => {
     ]) {
       expectClose(
         rotate(rotationOf(yaw, pitch), { x: 0, y: 0, z: -1 }),
-        forwardOf(yaw, pitch, { x: 0, y: 0, z: 0 })
+        forwardOf(yaw, pitch, { x: 0, y: 0, z: 0 }),
       );
     }
     // Yaw positive: to the left.
@@ -208,7 +208,7 @@ describe('OrbitOperator', () => {
     const orbit = new OrbitOperator(
       target,
       new ActionMap(input, OrbitActions),
-      { distance: 2, pitch: 0 }
+      { distance: 2, pitch: 0 },
     );
     source.setAxis(pad, 'rightX', 1);
     input.update();
@@ -235,7 +235,7 @@ describe('OrbitOperator', () => {
     const orbit = new OrbitOperator(
       camera(),
       new ActionMap(input, OrbitActions),
-      { distance: 10, maxDistance: 12 }
+      { distance: 10, maxDistance: 12 },
     );
     source.sink?.wheel(-2);
     input.update();
@@ -252,7 +252,7 @@ describe('OrbitOperator', () => {
     const orbit = new OrbitOperator(
       camera(),
       new ActionMap(input, OrbitActions),
-      { distance: 1, yaw: 0, pitch: 0 }
+      { distance: 1, yaw: 0, pitch: 0 },
     );
     source.sink?.pointerMove(0.5, 0.5);
     source.sink?.pointerButton(2, true);

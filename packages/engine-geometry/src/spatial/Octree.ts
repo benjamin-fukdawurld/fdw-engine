@@ -26,7 +26,7 @@ class Cell {
     readonly z: number,
     readonly half: number,
     public parent: Cell | undefined,
-    public octant: number
+    public octant: number,
   ) {
     const loose = 2 * half;
     const l = this.loose;
@@ -156,7 +156,7 @@ export class Octree<T> implements SpatialIndex<T> {
       center[0],
       center[1],
       center[2],
-      Math.max(half[0], half[1], half[2], 1e-6)
+      Math.max(half[0], half[1], half[2], 1e-6),
     );
     this.build(root, slots);
   }
@@ -236,7 +236,7 @@ export class Octree<T> implements SpatialIndex<T> {
 
   queryFrustum(
     frustum: Frustum,
-    visit: (item: T, inside: boolean) => void
+    visit: (item: T, inside: boolean) => void,
   ): void {
     if (!this._root) {
       return;
@@ -305,7 +305,7 @@ export class Octree<T> implements SpatialIndex<T> {
   raycast(
     ray: Ray,
     visit: (item: T, distance: number) => boolean | void,
-    maxDistance = Infinity
+    maxDistance = Infinity,
   ): void {
     if (!this._root) {
       return;
@@ -371,13 +371,13 @@ export class Octree<T> implements SpatialIndex<T> {
         (boxes[o + 3] - boxes[o]) / 2,
         (boxes[o + 4] - boxes[o + 1]) / 2,
         (boxes[o + 5] - boxes[o + 2]) / 2,
-        1e-6
+        1e-6,
       );
       return this.createRoot(
         (boxes[o] + boxes[o + 3]) / 2,
         (boxes[o + 1] + boxes[o + 4]) / 2,
         (boxes[o + 2] + boxes[o + 5]) / 2,
-        half
+        half,
       );
     }
     let root = this._root;
@@ -394,7 +394,7 @@ export class Octree<T> implements SpatialIndex<T> {
         root.z + dz * root.half,
         root.half * 2,
         undefined,
-        0
+        0,
       );
       grown.children = new Array(8).fill(undefined);
       const octant = (dx < 0 ? 1 : 0) | (dy < 0 ? 2 : 0) | (dz < 0 ? 4 : 0);
@@ -436,7 +436,7 @@ export class Octree<T> implements SpatialIndex<T> {
   private childFor(
     cell: Cell,
     boxes: Float64Array,
-    o: number
+    o: number,
   ): Cell | undefined {
     const octant =
       ((boxes[o] + boxes[o + 3]) / 2 >= cell.x ? 1 : 0) |
@@ -451,7 +451,7 @@ export class Octree<T> implements SpatialIndex<T> {
         cell.z + (octant & 4 ? half : -half),
         half,
         cell,
-        octant
+        octant,
       );
       if (!child.contains(boxes, o)) {
         return undefined;

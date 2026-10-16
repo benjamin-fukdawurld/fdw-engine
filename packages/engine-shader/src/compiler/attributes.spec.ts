@@ -23,7 +23,7 @@ const generated = () => {
     { value: g.builtin('vertex-index') },
     {
       params: { to: BuiltinTypes.f32 },
-    }
+    },
   );
   g.vertexAttribute('position', g.call(std.vec3, { x: index, y: 0, z: 0 }));
   g.vertexAttribute('normal', [0, 1, 0]);
@@ -54,7 +54,7 @@ describe('attributes computed by the graph', () => {
         {
           fallback: [1, 0, 0],
         },
-        { params: { semantic: 'normal', type: BuiltinTypes.vec3f } }
+        { params: { semantic: 'normal', type: BuiltinTypes.vec3f } },
       ),
     });
     const program = compile(g.build(), { vertexAttributes: [] });
@@ -98,7 +98,7 @@ describe('attributes computed by the graph', () => {
       itself.call(std.mul, {
         a: itself.attribute('position', BuiltinTypes.vec3f),
         b: 2,
-      })
+      }),
     );
     itself.surface({ baseColor: [1, 1, 1] });
     expect(errors(() => compile(itself.build()))).toEqual([

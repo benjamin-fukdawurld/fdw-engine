@@ -100,7 +100,7 @@ export class MazeGame {
     private readonly _flashlight: Flashlight,
     private readonly _exploration: Exploration,
     private readonly _meshes: { cube: Mesh; sphere: Mesh },
-    private readonly _options: GameOptions = {}
+    private readonly _options: GameOptions = {},
   ) {
     const { world } = _scene;
     this.Gem = world.defineComponent('gem', gemSchema);
@@ -139,11 +139,11 @@ export class MazeGame {
     const { maze } = this._level;
     const far = (min: number) =>
       [...this._fromStart.keys()].filter(
-        (cell) => this._fromStart[cell] >= min && cell !== this.exitCell
+        (cell) => this._fromStart[cell] >= min && cell !== this.exitCell,
       );
     // Gems in dead ends, away from the start.
     const deadEnds = far(12).filter(
-      (cell) => openNeighbors(maze, cell).length === 1
+      (cell) => openNeighbors(maze, cell).length === 1,
     );
     this.total = Math.min(this._options.gems ?? 8, deadEnds.length);
     for (const cell of this.pick(deadEnds, this.total)) {
@@ -362,7 +362,7 @@ export class MazeGame {
           position: { x, y: 0.75, z: -0.33 },
           scale: { x: 0.1, y: 0.1, z: 0.1 },
         })
-        .setMesh(this._meshes.sphere, this._eyes, { castShadow: false })
+        .setMesh(this._meshes.sphere, this._eyes, { castShadow: false }),
     );
     node.attach(this.Enemy, {
       state: EnemyState.Wander,

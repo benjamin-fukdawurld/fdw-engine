@@ -136,7 +136,7 @@ export interface CopyPassContext extends PassContext {
 export class PassBuilder {
   constructor(
     protected readonly _graph: RenderGraph,
-    protected readonly _pass: PassNode
+    protected readonly _pass: PassNode,
   ) {}
 
   /** Reads a version of a resource. */
@@ -163,14 +163,14 @@ export class PassBuilder {
 export class RasterPassBuilder extends PassBuilder {
   writeColor(
     handle: TextureHandle,
-    { load, clearValue }: { load: 'clear' | 'load'; clearValue?: IColor }
+    { load, clearValue }: { load: 'clear' | 'load'; clearValue?: IColor },
   ): TextureHandle {
     const written = this._graph.access(
       this._pass,
       handle,
       'color-attachment',
       true,
-      load === 'clear'
+      load === 'clear',
     ) as TextureHandle;
     this._pass.colors.push({ resource: handle.resource, load, clearValue });
     return written;
@@ -185,7 +185,7 @@ export class RasterPassBuilder extends PassBuilder {
     const color = this._pass.colors.at(-1);
     if (!color || color.resolve !== undefined) {
       throw new Error(
-        `Pass "${this._pass.name}" resolves "${handle.name}" without a color attachment to resolve`
+        `Pass "${this._pass.name}" resolves "${handle.name}" without a color attachment to resolve`,
       );
     }
     const written = this._graph.access(
@@ -193,7 +193,7 @@ export class RasterPassBuilder extends PassBuilder {
       handle,
       'color-attachment',
       true,
-      true
+      true,
     ) as TextureHandle;
     color.resolve = handle.resource;
     return written;
@@ -201,7 +201,7 @@ export class RasterPassBuilder extends PassBuilder {
 
   writeDepth(
     handle: TextureHandle,
-    { load, clearValue = 1 }: { load: 'clear' | 'load'; clearValue?: number }
+    { load, clearValue = 1 }: { load: 'clear' | 'load'; clearValue?: number },
   ): TextureHandle {
     this.setDepth(handle, load, clearValue);
     return this._graph.access(
@@ -209,7 +209,7 @@ export class RasterPassBuilder extends PassBuilder {
       handle,
       'depth-attachment',
       true,
-      load === 'clear'
+      load === 'clear',
     ) as TextureHandle;
   }
 
@@ -223,11 +223,11 @@ export class RasterPassBuilder extends PassBuilder {
   private setDepth(
     handle: TextureHandle,
     load: 'clear' | 'load',
-    clearValue?: number
+    clearValue?: number,
   ): void {
     if (this._pass.depth) {
       throw new Error(
-        `Pass "${this._pass.name}" already has a depth attachment`
+        `Pass "${this._pass.name}" already has a depth attachment`,
       );
     }
     this._pass.depth = { resource: handle.resource, load, clearValue };
@@ -288,7 +288,7 @@ export class RenderGraph {
 
   createTexture(
     name: string,
-    descriptor: GraphTextureDescriptor
+    descriptor: GraphTextureDescriptor,
   ): TextureHandle {
     return this.addResource(name, 'texture', { texture: descriptor });
   }
@@ -311,7 +311,7 @@ export class RenderGraph {
 
   addRasterPass<O extends object>(
     name: string,
-    setup: (pass: RasterPassBuilder) => PassSetup<RasterPassContext, O>
+    setup: (pass: RasterPassBuilder) => PassSetup<RasterPassContext, O>,
   ): O {
     const pass = this.addPass(name, 'raster');
     return this.setupPass(pass, setup(new RasterPassBuilder(this, pass)));
@@ -319,7 +319,7 @@ export class RenderGraph {
 
   addComputePass<O extends object>(
     name: string,
-    setup: (pass: PassBuilder) => PassSetup<ComputePassContext, O>
+    setup: (pass: PassBuilder) => PassSetup<ComputePassContext, O>,
   ): O {
     const pass = this.addPass(name, 'compute');
     return this.setupPass(pass, setup(new PassBuilder(this, pass)));
@@ -327,7 +327,7 @@ export class RenderGraph {
 
   addCopyPass<O extends object>(
     name: string,
-    setup: (pass: PassBuilder) => PassSetup<CopyPassContext, O>
+    setup: (pass: PassBuilder) => PassSetup<CopyPassContext, O>,
   ): O {
     const pass = this.addPass(name, 'copy');
     return this.setupPass(pass, setup(new PassBuilder(this, pass)));
@@ -355,19 +355,19 @@ export class RenderGraph {
     handle: AnyHandle,
     usage: ResourceUsage,
     write: boolean,
-    discards: boolean
+    discards: boolean,
   ): AnyHandle {
     const resource = this._resources[handle.resource];
     if (!resource || resource.name !== handle.name) {
       throw new Error(`Pass "${pass.name}": unknown resource "${handle.name}"`);
     }
     const previous = pass.accesses.find(
-      (access) => access.resource === handle.resource
+      (access) => access.resource === handle.resource,
     );
     // depth-read comes with the depth attachment, declared once.
     if (previous) {
       throw new Error(
-        `Pass "${pass.name}" uses "${handle.name}" twice (${previous.usage} and ${usage})`
+        `Pass "${pass.name}" uses "${handle.name}" twice (${previous.usage} and ${usage})`,
       );
     }
     if (!write) {
@@ -382,7 +382,7 @@ export class RenderGraph {
     }
     if (handle.version !== resource.latest) {
       throw new Error(
-        `Pass "${pass.name}" writes "${handle.name}" #${handle.version}, already written since: write its latest version (#${resource.latest})`
+        `Pass "${pass.name}" writes "${handle.name}" #${handle.version}, already written since: write its latest version (#${resource.latest})`,
       );
     }
     resource.latest++;
@@ -412,7 +412,7 @@ export class RenderGraph {
       this._resources.map((resource) => [
         resource.kind,
         resource.name,
-        resource.imported ? 'imported' : resource.texture ?? resource.buffer,
+        resource.imported ? 'imported' : (resource.texture ?? resource.buffer),
       ]),
       this._passes.map((pass) => [
         pass.kind,
@@ -447,7 +447,7 @@ export class RenderGraph {
         const resource = this._resources[access.resource];
         if (!access.write && !resource.imported && access.version === 0) {
           throw new Error(
-            `Pass "${pass.name}" reads "${resource.name}" before any pass writes it`
+            `Pass "${pass.name}" reads "${resource.name}" before any pass writes it`,
           );
         }
       }
@@ -462,8 +462,8 @@ export class RenderGraph {
           pass.sideEffects ||
           pass.accesses.some(
             (access) =>
-              access.write && this._resources[access.resource].imported
-          )
+              access.write && this._resources[access.resource].imported,
+          ),
       )
       .map((pass) => pass.index);
     while (pending.length > 0) {
@@ -491,7 +491,7 @@ export class RenderGraph {
     // Dependencies between the live passes: read after write, write after
     // write, write after read.
     const dependencies = new Map<number, Set<number>>(
-      [...live].map((index) => [index, new Set()])
+      [...live].map((index) => [index, new Set()]),
     );
     const readers = new Map<string, number[]>();
     for (const index of live) {
@@ -529,14 +529,14 @@ export class RenderGraph {
     while (remaining.length > 0) {
       const next = remaining.findIndex((index) =>
         [...(dependencies.get(index) as Set<number>)].every((d) =>
-          placed.has(d)
-        )
+          placed.has(d),
+        ),
       );
       if (next < 0) {
         throw new Error(
           `The passes ${remaining
             .map((index) => `"${passes[index].name}"`)
-            .join(', ')} depend on each other`
+            .join(', ')} depend on each other`,
         );
       }
       const [index] = remaining.splice(next, 1);
@@ -601,7 +601,7 @@ export class RenderGraph {
    * the size of the frame given to the graph.
    */
   pixelSize(
-    handle: TextureHandle
+    handle: TextureHandle,
   ): { width: number; height: number } | undefined {
     const size = this.textureSize(handle) ?? { relative: 1 };
     if (!('relative' in size)) {
@@ -661,7 +661,7 @@ export class RenderGraph {
         const node = this._resources[resource];
         const shape = node.imported ? 'doubleoctagon' : 'ellipse';
         lines.push(
-          `  ${id} [shape=${shape}, label=${quote(`${node.name} #${number}`)}];`
+          `  ${id} [shape=${shape}, label=${quote(`${node.name} #${number}`)}];`,
         );
       }
       return id;
@@ -670,8 +670,8 @@ export class RenderGraph {
       const position = compiled.order.indexOf(pass.index);
       lines.push(
         `  p${pass.index} [shape=box, label=${quote(
-          position >= 0 ? `${position + 1}. ${pass.name}` : pass.name
-        )}${kept.has(pass.index) ? '' : ', style=dashed, color=gray'}];`
+          position >= 0 ? `${position + 1}. ${pass.name}` : pass.name,
+        )}${kept.has(pass.index) ? '' : ', style=dashed, color=gray'}];`,
       );
       for (const access of pass.accesses) {
         if (access.write) {
@@ -679,20 +679,20 @@ export class RenderGraph {
             lines.push(
               `  ${version(access.resource, access.version - 1)} -> p${
                 pass.index
-              } [style=dotted];`
+              } [style=dotted];`,
             );
           }
           lines.push(
             `  p${pass.index} -> ${version(
               access.resource,
-              access.version
-            )} [label=${quote(access.usage)}];`
+              access.version,
+            )} [label=${quote(access.usage)}];`,
           );
         } else {
           lines.push(
             `  ${version(access.resource, access.version)} -> p${
               pass.index
-            } [label=${quote(access.usage)}];`
+            } [label=${quote(access.usage)}];`,
           );
         }
       }
@@ -704,7 +704,7 @@ export class RenderGraph {
   private addResource<K extends 'texture' | 'buffer'>(
     name: string,
     kind: K,
-    fields: Pick<ResourceNode, 'texture' | 'buffer' | 'imported'>
+    fields: Pick<ResourceNode, 'texture' | 'buffer' | 'imported'>,
   ): ResourceHandle<K> {
     if (this._resources.some((resource) => resource.name === name)) {
       throw new Error(`The graph already has a resource "${name}"`);
@@ -732,7 +732,7 @@ export class RenderGraph {
 
   private setupPass<C, O extends object>(
     pass: PassNode,
-    { execute, ...outputs }: PassSetup<C, O>
+    { execute, ...outputs }: PassSetup<C, O>,
   ): O {
     pass.execute = execute as (context: never) => void;
     return outputs as unknown as O;

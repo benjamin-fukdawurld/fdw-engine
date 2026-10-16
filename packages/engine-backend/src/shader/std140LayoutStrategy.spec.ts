@@ -65,7 +65,7 @@ describe('std140LayoutStrategy', () => {
     std140LayoutStrategy.writeUniform(
       data,
       members[1],
-      [1, 2, 3, 4, 5, 6, 7, 8, 9]
+      [1, 2, 3, 4, 5, 6, 7, 8, 9],
     );
     const floats = new Float32Array(data.buffer);
     expect([...floats.subarray(0, 8)]).toEqual([1, 2, 0, 0, 3, 4, 0, 0]);
@@ -83,7 +83,7 @@ describe('std140LayoutStrategy', () => {
     std140LayoutStrategy.writeUniform(
       data,
       members[0],
-      [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99]
+      [1, 2, 3, 99, 4, 5, 6, 99, 7, 8, 9, 99],
     );
     expect([...new Float32Array(data.buffer)]).toEqual([
       1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0,
@@ -111,7 +111,7 @@ describe('objectRowLayout', () => {
     ]);
     expect(row.size).toBe(112);
     expect(
-      row.members.map(({ name, offset, size }) => [name, offset, size])
+      row.members.map(({ name, offset, size }) => [name, offset, size]),
     ).toEqual([
       ['world', 0, 64],
       ['normalMatrix', 64, 48],

@@ -20,7 +20,7 @@ export interface ImageDecodeOptions {
 export interface ImageDecoder {
   decode(
     bytes: ResourceBytes,
-    options?: ImageDecodeOptions
+    options?: ImageDecodeOptions,
   ): Promise<DecodedImage>;
 }
 

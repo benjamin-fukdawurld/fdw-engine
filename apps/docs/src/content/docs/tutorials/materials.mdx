@@ -144,7 +144,7 @@ const baseColor = g.call(
     ifTrue: texel.swizzle('rgb'),
     ifFalse: g.uniform('color', BuiltinTypes.vec3f),
   },
-  { params: { feature: 'useMap' } }
+  { params: { feature: 'useMap' } },
 );
 g.surface({ shadingModel: 'phong', baseColor });
 const graph = g.build();

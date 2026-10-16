@@ -38,8 +38,8 @@ describe('mipmaps', () => {
     expect(
       checkMipLevelCount(
         { type: '2d', format: 'rgba8uint', dimensions, mipLevelCount: 3 },
-        { provided: true }
-      )
+        { provided: true },
+      ),
     ).toBe(3);
     // Those of the compressed formats are always written.
     expect(
@@ -48,7 +48,7 @@ describe('mipmaps', () => {
         format: 'bc7-rgba-unorm',
         dimensions,
         mipLevelCount: 3,
-      })
+      }),
     ).toBe(3);
   });
 
@@ -57,13 +57,13 @@ describe('mipmaps', () => {
     const dimensions = { width: 4, height: 4 };
     expect(checkMipLevelCount({ ...texture, dimensions })).toBe(1);
     expect(
-      checkMipLevelCount({ ...texture, dimensions, mipLevelCount: 3 })
+      checkMipLevelCount({ ...texture, dimensions, mipLevelCount: 3 }),
     ).toBe(3);
     expect(() =>
-      checkMipLevelCount({ ...texture, dimensions, mipLevelCount: 0 })
+      checkMipLevelCount({ ...texture, dimensions, mipLevelCount: 0 }),
     ).toThrow(/invalid mipLevelCount/);
     expect(() =>
-      checkMipLevelCount({ ...texture, dimensions, mipLevelCount: 4 })
+      checkMipLevelCount({ ...texture, dimensions, mipLevelCount: 4 }),
     ).toThrow(/more than the 3 of its size/);
     expect(() =>
       checkMipLevelCount({
@@ -71,7 +71,7 @@ describe('mipmaps', () => {
         dimensions,
         mipLevelCount: 2,
         sampleCount: 4,
-      })
+      }),
     ).toThrow(/multisampled/);
     expect(() =>
       checkMipLevelCount({
@@ -79,7 +79,7 @@ describe('mipmaps', () => {
         format: 'rgba8unorm',
         dimensions,
         mipLevelCount: 2,
-      })
+      }),
     ).toThrow(/3d textures/);
     expect(() =>
       checkMipLevelCount({
@@ -87,7 +87,7 @@ describe('mipmaps', () => {
         format: 'rgba8uint',
         dimensions,
         mipLevelCount: 2,
-      })
+      }),
     ).toThrow(/cannot be computed/);
   });
 });
@@ -119,10 +119,10 @@ describe('compressed formats', () => {
     expect(textureLevelSize('bc7-rgba-unorm', dimensions, 0)).toBe(32);
     expect(textureLevelSize('bc7-rgba-unorm', dimensions, 3)).toBe(16);
     expect(
-      textureLevelSize('bc1-rgba-unorm', { width: 10, height: 6 }, 0)
+      textureLevelSize('bc1-rgba-unorm', { width: 10, height: 6 }, 0),
     ).toBe(3 * 2 * 8);
     expect(() => textureLevelSize('depth24plus', dimensions, 0)).toThrow(
-      /cannot be written/
+      /cannot be written/,
     );
   });
 
@@ -149,10 +149,10 @@ describe('texture writes', () => {
 
   it('writes a level of every layer, or of one', () => {
     expect(
-      checkTextureWrite(cube, new Uint8Array(6 * 16), { level: 1 })
+      checkTextureWrite(cube, new Uint8Array(6 * 16), { level: 1 }),
     ).toEqual({ level: 1, layer: 0, layers: 6 });
     expect(
-      checkTextureWrite(cube, new Uint8Array(4), { level: 2, layer: 5 })
+      checkTextureWrite(cube, new Uint8Array(4), { level: 2, layer: 5 }),
     ).toEqual({ level: 2, layer: 5, layers: 1 });
     expect(checkTextureWrite(cube, new Uint8Array(64), { layer: 3 })).toEqual({
       level: 0,
@@ -163,20 +163,20 @@ describe('texture writes', () => {
 
   it('refuses the levels, layers and sizes the texture does not have', () => {
     expect(() =>
-      checkTextureWrite(cube, new Uint8Array(4), { level: 3 })
+      checkTextureWrite(cube, new Uint8Array(4), { level: 3 }),
     ).toThrow(/no level 3 \(it has 3\)/);
     expect(() =>
-      checkTextureWrite(cube, new Uint8Array(4), { level: 2, layer: 6 })
+      checkTextureWrite(cube, new Uint8Array(4), { level: 2, layer: 6 }),
     ).toThrow(/no layer 6 \(it has 6\)/);
     expect(() =>
-      checkTextureWrite(cube, new Uint8Array(16), { level: 1 })
+      checkTextureWrite(cube, new Uint8Array(16), { level: 1 }),
     ).toThrow(/level 1 takes 96 bytes, not 16/);
     expect(() =>
       checkTextureWrite(
         { ...cube, type: '3d', mipLevelCount: 1 },
         new Uint8Array(64),
-        { layer: 1 }
-      )
+        { layer: 1 },
+      ),
     ).toThrow(/3d textures are written whole/);
   });
 
@@ -190,33 +190,33 @@ describe('texture writes', () => {
     // As many levels as given by default.
     expect(checkTextureContent({ ...texture, levels })).toBe(2);
     expect(checkTextureContent({ ...texture, levels, mipLevelCount: 4 })).toBe(
-      4
+      4,
     );
     expect(checkTextureContent({ ...texture })).toBe(1);
     expect(
-      checkTextureContent({ ...texture, source: new Uint8Array(64) })
+      checkTextureContent({ ...texture, source: new Uint8Array(64) }),
     ).toBe(1);
     expect(() =>
-      checkTextureContent({ ...texture, levels, mipLevelCount: 1 })
+      checkTextureContent({ ...texture, levels, mipLevelCount: 1 }),
     ).toThrow(/2 levels given, for 1/);
     expect(() => checkTextureContent({ ...texture, levels: [] })).toThrow(
-      /no levels given/
+      /no levels given/,
     );
     expect(() =>
       checkTextureContent({
         ...texture,
         levels: [new Uint8Array(64), new Uint8Array(64)],
-      })
+      }),
     ).toThrow(/level 1 takes 16 bytes, not 64/);
     expect(() =>
       checkTextureContent({
         ...texture,
         levels,
         source: new Uint8Array(64),
-      })
+      }),
     ).toThrow(/a source or levels, not both/);
     expect(() => checkTextureContent({ ...texture, source: {} })).toThrow(
-      /written from bytes only/
+      /written from bytes only/,
     );
     // The levels of the other formats are computed without them.
     expect(() =>
@@ -225,7 +225,7 @@ describe('texture writes', () => {
         format: 'r32uint',
         dimensions: { width: 2, height: 2 },
         mipLevelCount: 2,
-      })
+      }),
     ).toThrow(/cannot be computed/);
     expect(
       checkTextureContent({
@@ -233,7 +233,7 @@ describe('texture writes', () => {
         format: 'r32uint',
         dimensions: { width: 2, height: 2 },
         levels: [new Uint8Array(16), new Uint8Array(4)],
-      })
+      }),
     ).toBe(2);
   });
 });
@@ -244,7 +244,7 @@ describe('samplerAnisotropy', () => {
     expect(samplerAnisotropy({ maxAnisotropy: 64 }, 1, 16)).toBe(16);
     expect(samplerAnisotropy({ maxAnisotropy: 8 }, 1, 1)).toBe(1);
     expect(() => samplerAnisotropy({ maxAnisotropy: 0 }, 1, 16)).toThrow(
-      /invalid maxAnisotropy/
+      /invalid maxAnisotropy/,
     );
   });
 
@@ -259,10 +259,10 @@ describe('samplerAnisotropy', () => {
 
   it('refuses anisotropy with a nearest filter, as WebGPU', () => {
     expect(() =>
-      samplerAnisotropy({ maxAnisotropy: 4, minFilter: 'nearest' }, 1, 16)
+      samplerAnisotropy({ maxAnisotropy: 4, minFilter: 'nearest' }, 1, 16),
     ).toThrow(/needs linear min, mag and mipmap filters/);
     expect(
-      samplerAnisotropy({ maxAnisotropy: 1, minFilter: 'nearest' }, 1, 16)
+      samplerAnisotropy({ maxAnisotropy: 1, minFilter: 'nearest' }, 1, 16),
     ).toBe(1);
   });
 });

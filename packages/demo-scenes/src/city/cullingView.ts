@@ -57,7 +57,7 @@ export class CullingView {
     private readonly _occlusion: OcclusionCulling,
     backend: RenderBackend,
     // Meters from the camera to the edges of the view.
-    extent = 260
+    extent = 260,
   ) {
     this.camera = new Camera({
       // Straight down.
@@ -76,7 +76,7 @@ export class CullingView {
     const standIn = (
       cache: WeakMap<Renderable, Renderable>,
       item: Renderable,
-      material: Material
+      material: Material,
     ) => {
       let stand = cache.get(item);
       if (!stand) {
@@ -99,13 +99,13 @@ export class CullingView {
                 this._occlusion.isHidden(item)
                   ? standIn(this._red, item, this._hidden)
                   : flags[entity] & NodeFlags.Occluder
-                  ? standIn(this._white, item, this._drawn)
-                  : standIn(this._gray, item, this._ground)
+                    ? standIn(this._white, item, this._drawn)
+                    : standIn(this._gray, item, this._ground),
               );
             }
           },
           // Not a camera query: it must not change what was kept.
-          'shadow'
+          'shadow',
         ),
       lights: () => [this._light],
     };
@@ -117,7 +117,7 @@ export class CullingView {
             sampler: g.sampler('viewSampler'),
             uv: local,
           })
-          .swizzle('rgb')
+          .swizzle('rgb'),
       ),
       values: {
         viewSampler: backend.textures.createSampler({
@@ -134,7 +134,7 @@ export class CullingView {
     target: TextureHandle,
     surface: Surface,
     center: { x: number; z: number },
-    stamp: number
+    stamp: number,
   ): TextureHandle {
     this._stamp = stamp;
     this.camera.position = { x: center.x, y: 400, z: center.z };

@@ -58,7 +58,7 @@ export class FakeInputSource implements InputSource {
     gamepad: number,
     strong: number,
     weak: number,
-    duration: number
+    duration: number,
   ): void {
     this.rumbles.push({ gamepad, strong, weak, duration });
   }

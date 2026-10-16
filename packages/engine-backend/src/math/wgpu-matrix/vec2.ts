@@ -9,7 +9,7 @@ export const Vec2Api: IVec2Api = {
   subtract: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec2.subtract(a, b, out);
   },
@@ -17,7 +17,7 @@ export const Vec2Api: IVec2Api = {
   multiply: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec2.multiply(a, b, out);
   },
@@ -25,7 +25,7 @@ export const Vec2Api: IVec2Api = {
   divide: (
     a: Float32Array,
     b: Float32Array,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec2.divide(a, b, out);
   },
@@ -45,7 +45,7 @@ export const Vec2Api: IVec2Api = {
   multiplyScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec2.mulScalar(a, scalar, out);
   },
@@ -53,7 +53,7 @@ export const Vec2Api: IVec2Api = {
   divideScalar: (
     a: Float32Array,
     scalar: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec2.divScalar(a, scalar, out);
   },
@@ -86,7 +86,7 @@ export const Vec2Api: IVec2Api = {
     a: Float32Array,
     b: Float32Array,
     t: number,
-    out?: Float32Array
+    out?: Float32Array,
   ): Float32Array => {
     return vec2.lerp(a, b, t, out);
   },

@@ -42,7 +42,7 @@ function fakeDevice() {
         offset: number,
         data: ArrayBuffer | ArrayBufferView,
         dataOffset = 0,
-        size?: number
+        size?: number,
       ) => {
         const source =
           data instanceof ArrayBuffer
@@ -51,7 +51,7 @@ function fakeDevice() {
         const length = size ?? source.byteLength - dataOffset;
         if (length % 4 !== 0 || offset % 4 !== 0) {
           state.errors.push(
-            'writeBuffer size and offset must be multiples of 4'
+            'writeBuffer size and offset must be multiples of 4',
           );
           return;
         }
@@ -61,7 +61,7 @@ function fakeDevice() {
         }
         state.bytes.set(
           source.subarray(dataOffset, dataOffset + length),
-          offset
+          offset,
         );
       },
     },
@@ -105,7 +105,7 @@ describe('BufferFactory', () => {
         size: 4,
         usage: ['uniform', 'copy-dst'],
         initialData: new Float32Array(2),
-      })
+      }),
     ).toThrow(/does not match the buffer size/);
   });
 
@@ -131,13 +131,13 @@ describe('BufferFactory', () => {
     it('rejects unaligned offsets and out-of-range writes', () => {
       const { buffer } = create();
       expect(() => buffer.write(2, new ArrayBuffer(4))).toThrow(
-        /multiple of 4/
+        /multiple of 4/,
       );
       expect(() => buffer.write(12, new ArrayBuffer(8))).toThrow(
-        /exceeds buffer size/
+        /exceeds buffer size/,
       );
       expect(() => buffer.write(0, new ArrayBuffer(4), 2, 4)).toThrow(
-        /exceeds source data size/
+        /exceeds source data size/,
       );
     });
 

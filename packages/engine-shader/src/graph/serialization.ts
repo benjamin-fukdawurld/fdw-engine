@@ -41,15 +41,15 @@ export function parseGraph(source: string | unknown): MaterialGraphData {
   if (data['format'] !== MaterialGraphFormat) {
     throw new Error(
       `Unsupported document format "${String(
-        data['format']
-      )}", expected "${MaterialGraphFormat}"`
+        data['format'],
+      )}", expected "${MaterialGraphFormat}"`,
     );
   }
   if (data['version'] !== MaterialGraphVersion) {
     throw new Error(
       `Unsupported material graph version ${String(
-        data['version']
-      )}, expected ${MaterialGraphVersion}`
+        data['version'],
+      )}, expected ${MaterialGraphVersion}`,
     );
   }
   if (typeof data['name'] !== 'string') {
@@ -96,7 +96,7 @@ export function parseGraph(source: string | unknown): MaterialGraphData {
         (parameter) =>
           isRecord(parameter) &&
           typeof parameter['name'] === 'string' &&
-          parameter['default'] !== undefined
+          parameter['default'] !== undefined,
       ))
   ) {
     throw new Error('Malformed "parameters"');

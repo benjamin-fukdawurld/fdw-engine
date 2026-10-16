@@ -14,7 +14,7 @@ const graph = () => {
 
 const fragmentOf = (program: ReturnType<typeof compile>) =>
   program.module.entryPoints.find(
-    (entryPoint) => entryPoint.stage === 'fragment'
+    (entryPoint) => entryPoint.stage === 'fragment',
   ) as IrEntryPoint;
 
 describe('alphaMode: mask', () => {
@@ -22,13 +22,13 @@ describe('alphaMode: mask', () => {
     const program = compile(graph(), { features: { alphaMode: 'mask' } });
     const fragment = fragmentOf(program);
     const discard = fragment.body.find(
-      (i) => i.id === fragment.results['discard']
+      (i) => i.id === fragment.results['discard'],
     );
     expect(discard?.op).toEqual({ kind: 'compare', operator: '<' });
     expect(discard?.type).toEqual(BuiltinTypes.bool);
     // alpha < alphaCutoff, the cutoff being a material uniform.
     const [, cutoff] = (discard?.args ?? []).map((id) =>
-      fragment.body.find((i) => i.id === id)
+      fragment.body.find((i) => i.id === id),
     );
     expect(cutoff?.op).toEqual({
       kind: 'load-resource',
@@ -83,8 +83,8 @@ describe('comparisons', () => {
     const fragment = fragmentOf(compile(g.build()));
     expect(
       fragment.body.some(
-        (i) => i.op.kind === 'compare' && i.type.kind === 'scalar'
-      )
+        (i) => i.op.kind === 'compare' && i.type.kind === 'scalar',
+      ),
     ).toBe(true);
   });
 });

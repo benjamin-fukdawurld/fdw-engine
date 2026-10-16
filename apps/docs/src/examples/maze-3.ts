@@ -27,7 +27,7 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     input: new WebInputSource(canvas),
     info: (text) =>
       info(
-        `${text} · click, then WASD, the mouse to aim, F, Q/E, wheel, or a gamepad`
+        `${text} · click, then WASD, the mouse to aim, F, Q/E, wheel, or a gamepad`,
       ),
   });
   onFrame((time) => game.frame(time));

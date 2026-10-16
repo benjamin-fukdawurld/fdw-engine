@@ -54,7 +54,7 @@ export default function SceneLayout({ scene }: { scene: SceneFactory }) {
       };
       frameRef.current = requestAnimationFrame(frame);
     },
-    [scene]
+    [scene],
   );
 
   return (

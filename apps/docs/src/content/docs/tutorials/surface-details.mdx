@@ -155,7 +155,7 @@ uv = g.call(
     // The depth of the relief, in uv units.
     scale: 0.06,
   },
-  { params: { steps: 16 } }
+  { params: { steps: 16 } },
 );
 // The other textures are read at the uv it gives.
 const baseColor = read('color', uv).swizzle('rgb');

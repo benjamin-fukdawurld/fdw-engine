@@ -54,6 +54,6 @@ export interface PhysicalLayoutStrategy {
   writeUniform(
     target: DataView,
     member: PhysicalUniformMember,
-    value: UniformValue
+    value: UniformValue,
   ): void;
 }
