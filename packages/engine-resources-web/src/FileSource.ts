@@ -6,6 +6,17 @@ import {
   type ResourceSource,
 } from '@fdw/engine-resources';
 
+// `Blob.arrayBuffer` is recent (Safari 14) and missing from jsdom.
+const readBlob = (blob: Blob): Promise<ArrayBuffer> =>
+  typeof blob.arrayBuffer === 'function'
+    ? blob.arrayBuffer()
+    : new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(blob);
+      });
+
 /**
  * Browser `File` objects as a source: an `<input type="file">`, a dropped
  * folder. For importers and editors. Adding a file under an existing path
@@ -34,7 +45,7 @@ export class FileSource implements ResourceSource {
    * Returns the paths added.
    */
   async addFromDataTransfer(data: DataTransfer): Promise<string[]> {
-    const entries = [...data.items]
+    const entries = Array.from(data.items)
       .filter((item) => item.kind === 'file')
       .map((item) => item.webkitGetAsEntry?.() ?? null)
       .filter((entry): entry is FileSystemEntry => entry !== null);
@@ -82,10 +93,13 @@ export class FileSource implements ResourceSource {
     return file;
   }
 
-  async read(path: string, { signal, onProgress }: ReadOptions): Promise<ResourceBytes> {
+  async read(
+    path: string,
+    { signal, onProgress }: ReadOptions
+  ): Promise<ResourceBytes> {
     const file = this.file(path);
     if (signal.aborted) throw new ResourceError('aborted', path);
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const bytes = new Uint8Array(await readBlob(file));
     if (signal.aborted) throw new ResourceError('aborted', path);
     onProgress?.(bytes.byteLength, bytes.byteLength);
     return bytes;

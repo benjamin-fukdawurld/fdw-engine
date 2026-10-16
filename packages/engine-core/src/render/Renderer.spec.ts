@@ -73,6 +73,45 @@ describe('Renderer', () => {
     expect(log.draws).toHaveLength(6);
   });
 
+  it('frees the buffers of a destroyed mesh in every renderer', () => {
+    const { render, log } = setup();
+    const other = new Renderer(fakeBackend().backend);
+    const mesh = triangle();
+    const material = new Material({ graph: colorGraph() });
+    const items = [{ mesh, material, transform: transformAt(0) }];
+    render(items);
+    other.render({ items, camera: new Camera(), surface });
+    const meshBuffers = log.buffers.filter((b) => b.label?.startsWith('mesh '));
+    expect(meshBuffers.length).toBeGreaterThan(0);
+    expect(meshBuffers.some((b) => b.destroyed)).toBe(false);
+
+    mesh.destroy();
+    expect(meshBuffers.every((b) => b.destroyed)).toBe(true);
+    expect(() => render(items)).toThrow(/destroyed/);
+  });
+
+  it('releases the buffers of a mesh, made again when drawn', () => {
+    const { renderer, render, log } = setup();
+    const mesh = triangle();
+    const items = [
+      {
+        mesh,
+        material: new Material({ graph: colorGraph() }),
+        transform: transformAt(0),
+      },
+    ];
+    render(items);
+    const count = log.buffers.length;
+    renderer.releaseMesh(mesh);
+    expect(
+      log.buffers
+        .filter((b) => b.label?.startsWith('mesh '))
+        .every((b) => b.destroyed)
+    ).toBe(true);
+    render(items);
+    expect(log.buffers.length).toBeGreaterThan(count);
+  });
+
   it('uploads material uniforms only when the values change', () => {
     const { render, log } = setup();
     const material = new Material({ graph: colorGraph() });

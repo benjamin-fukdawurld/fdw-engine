@@ -1,0 +1,19 @@
+{
+  "name": "@fdw/engine-resources-native",
+  "version": "0.0.1",
+  "dependencies": {
+    "@fdw/engine-native": "0.0.1",
+    "@fdw/engine-resources": "0.0.1",
+    "tslib": "^2.3.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw/engine-resources-native": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}

@@ -25,21 +25,22 @@ engine-webgpu    ← concrete backend (this package)
 
 ### Rendering (`render/`)
 
-| Export                                       | Description                                                                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `WebGpuRenderBackend`                        | Implements `RenderBackend`: buffer, texture and pipeline factories, math, render targets, command encoding                |
-| `WebGpuPipelineFactory`                      | Implements `GpuPipelineFactory`: WGSL generation, shader modules and bind group layouts cached, explicit pipeline layouts |
-| `WebGpuCommandEncoder`, `WebGpuRenderTarget` | Command recording and render targets                                                                                      |
+| Export                                       | Description                                                                                                                                                                                                                                     |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WebGpuRenderBackend`                        | Implements `RenderBackend`: buffer, texture and pipeline factories, math, render targets, command encoding; `compressedFormats` from the `texture-compression-bc`, `-etc2` and `-astc` features (`WebGpuEngine` asks for those the adapter has) |
+| `WebGpuPipelineFactory`                      | Implements `GpuPipelineFactory`: WGSL generation, shader modules and bind group layouts cached, explicit pipeline layouts                                                                                                                       |
+| `WebGpuCommandEncoder`, `WebGpuRenderTarget` | Command recording and render targets                                                                                                                                                                                                            |
 
 ### GPU resources (`gpu/`)
 
-| Export           | Kind  | Description                                                                 |
-| ---------------- | ----- | --------------------------------------------------------------------------- |
-| `BufferFactory`  | class | Implements `GpuBufferFactory`; supports initial data via `mappedAtCreation` |
-| `Buffer`         | class | Implements `GpuBuffer`, wraps a `GPUBuffer`                                 |
-| `TextureFactory` | class | Implements `GpuTextureFactory` and `GpuSamplerFactory`                      |
-| `Texture`        | class | Implements `GpuTexture`, wraps a `GPUTexture`                               |
-| `Sampler`        | class | Implements `GpuSampler`, wraps a `GPUSampler`                               |
+| Export                                       | Kind               | Description                                                                                                            |
+| -------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `BufferFactory`                              | class              | Implements `GpuBufferFactory`; supports initial data via `mappedAtCreation`                                            |
+| `Buffer`                                     | class              | Implements `GpuBuffer`, wraps a `GPUBuffer`                                                                            |
+| `TextureFactory`                             | class              | Implements `GpuTextureFactory` and `GpuSamplerFactory`; levels and compressed blocks written with `queue.writeTexture` |
+| `compressedFormats()`, `CompressionFeatures` | function, constant | The compressed formats of the features of a device                                                                     |
+| `Texture`                                    | class              | Implements `GpuTexture`, wraps a `GPUTexture`                                                                          |
+| `Sampler`                                    | class              | Implements `GpuSampler`, wraps a `GPUSampler`                                                                          |
 
 ### WGSL data layout (`gpu/`)
 

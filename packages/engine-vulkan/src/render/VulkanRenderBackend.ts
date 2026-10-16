@@ -44,6 +44,8 @@ export class VulkanRenderBackend implements RenderBackend {
     this.textures = new VulkanTextureFactory(loadVulkanAddon(), device.context);
     this.capabilities = {
       renderableFormats: ['rgba16float'],
+      // Those the device can sample (see VulkanTextureFactory).
+      compressedFormats: this.textures.compressedFormats,
       // The object data in a table of storage buffers.
       objectTable: true,
       maxAnisotropy: loadVulkanAddon().maxAnisotropy(device.context),

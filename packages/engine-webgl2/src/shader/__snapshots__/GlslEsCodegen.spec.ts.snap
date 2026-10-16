@@ -39,6 +39,7 @@ layout(std140) uniform ObjectUniforms {
 } objectUniforms;
 
 uniform sampler2D ts0_diffuseMap_diffuseSampler;
+uniform vec2 ts0_diffuseMap_diffuseSampler_v;
 
 in vec2 v_uv;
 layout(location = 0) out vec4 o_color;
@@ -46,7 +47,7 @@ layout(location = 0) out vec4 o_color;
 void main() {
   vec4 v3_tint = materialUniforms.u_tint; // #n5
   vec2 v4 = v_uv;
-  vec4 v5 = texture(ts0_diffuseMap_diffuseSampler, vec2(v4.x, 1.0 - v4.y)); // #n4
+  vec4 v5 = texture(ts0_diffuseMap_diffuseSampler, vec2(v4.x, ts0_diffuseMap_diffuseSampler_v.x + ts0_diffuseMap_diffuseSampler_v.y * v4.y)); // #n4
   vec4 v6_color = v5 * v3_tint; // #n6
   vec3 v7 = v6_color.rgb;
   float v8 = v6_color.a;
@@ -95,6 +96,7 @@ layout(std140) uniform ObjectUniforms {
 } objectUniforms;
 
 uniform sampler2D ts0_diffuseMap_diffuseSampler;
+uniform vec2 ts0_diffuseMap_diffuseSampler_v;
 
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec2 a_uv;

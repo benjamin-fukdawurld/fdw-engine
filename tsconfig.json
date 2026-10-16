@@ -65,6 +65,24 @@
     },
     {
       "path": "./packages/engine-resources"
+    },
+    {
+      "path": "./packages/engine-resources-web"
+    },
+    {
+      "path": "./packages/engine-resources-native"
+    },
+    {
+      "path": "./packages/engine-assets"
+    },
+    {
+      "path": "./packages/engine-obj"
+    },
+    {
+      "path": "./packages/engine-gltf"
+    },
+    {
+      "path": "./packages/engine-ktx2"
     }
   ]
 }

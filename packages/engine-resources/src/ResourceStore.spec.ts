@@ -4,7 +4,7 @@ import type { ResourceHandle } from './ResourceHandle';
 import type { ResourceLoader } from './ResourceLoader';
 import { ResourceStore } from './ResourceStore';
 import { MemorySource } from './sources/MemorySource';
-import { defineResourceType, defineServiceKey } from './types';
+import { defineResourceType, defineServiceKey, ResourceBytesType } from './types';
 
 const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 const TextType = defineResourceType<string>('text');
@@ -138,6 +138,21 @@ describe('sharing and lifetime', () => {
     expect(await b.ready).toBe('abc');
     await c.ready;
     expect(loads).toHaveLength(2);
+  });
+});
+
+describe('clone', () => {
+  it('counts a clone as another handle', async () => {
+    const { store, disposed } = harness({ a: 'a' }, { budget: 0 });
+    const h = store.load(TextType, 'a');
+    await h.ready;
+    const copy = h.clone();
+    h.release();
+    expect(disposed).toEqual([]);
+    expect(copy.require()).toBe('a');
+    copy.release();
+    expect(disposed).toEqual(['a']);
+    expect(() => copy.clone()).toThrow(/released/);
   });
 });
 
@@ -586,6 +601,35 @@ describe('sub-resources', () => {
     expect(store.peek(MeshType, 'm.glb#mesh/0')?.value?.name).toBe('TRUNK');
     expect(model.value!.meshes[0].value?.name).toBe('TRUNK');
     expect(model.version.value).toBe(2);
+  });
+
+  it('reads the bytes of a sub-resource provided by its parent', async () => {
+    const store = new ResourceStore({ debounceMs: 0, warn: () => undefined });
+    const mem = new MemorySource({ 'pack.bin': 'red|green' });
+    store.mount('mem', mem, { default: true });
+    const PackType = defineResourceType<string[]>('pack');
+    const encoder = new TextEncoder();
+    store.registerLoader({
+      type: PackType,
+      async load(ctx) {
+        const parts = (await ctx.text()).split('|');
+        parts.forEach((p, i) => ctx.provide(ResourceBytesType, `part/${i}`, encoder.encode(p)));
+        return parts;
+      },
+    });
+    store.registerLoader({ type: TextType, load: (ctx) => ctx.text() });
+    store.watch(true);
+    const pack = store.load(PackType, 'pack.bin');
+    await pack.ready;
+    const green = store.load(TextType, 'pack.bin#part/1');
+    expect(await green.ready).toBe('green');
+    // The parent changes: the dependent follows its new bytes.
+    mem.set('pack.bin', 'red|blue');
+    await sleep(10);
+    store.update();
+    await sleep(10);
+    store.update();
+    expect(green.value).toBe('blue');
   });
 });
 

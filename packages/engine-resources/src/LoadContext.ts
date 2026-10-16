@@ -1,5 +1,10 @@
 import type { ResourceHandle } from './ResourceHandle';
-import type { ResourceBytes, ResourceType, ResourceUri, ServiceKey } from './types';
+import type {
+  ResourceBytes,
+  ResourceType,
+  ResourceUri,
+  ServiceKey,
+} from './types';
 
 export interface LoadContext<O> {
   readonly uri: ResourceUri;

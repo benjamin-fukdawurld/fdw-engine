@@ -1,0 +1,127 @@
+---
+title: Loading models
+description: Load glTF and OBJ files with their materials and textures, show the progress, plant many instances of a model in a scene, and release it all with the level.
+sidebar:
+  order: 19
+---
+
+import Example from '../../../components/Example.astro';
+
+A clearing of 40 trees and a sphere, read from two files: `tree.glb`, a
+glTF model of a trunk and two crowns, and `sphere.obj`, with its MTL file
+and three maps. The trees are instances of one model: they share its
+meshes and materials, and are drawn in a few calls.
+
+<Example name="loading-models" />
+
+## The store and the formats
+
+```ts
+const resources = new ResourceStore();
+resources.mount('http', new HttpSource({ base: '/models/' }), {
+  default: true,
+});
+installAssets(resources, {
+  backend,
+  codecs: [bitmapCodec(createImageBitmapDecoder())],
+});
+installGltf(resources);
+installObj(resources);
+```
+
+- The **store** loads, shares and frees the resources. Its files come from
+  a **source**: an `HttpSource` here, files on disk in Node.
+- `installAssets` registers the graphical resources — textures, meshes,
+  materials, models — for a backend, with the **codec** that decodes the
+  images: `createImageBitmap` in a page, colors and alpha left as they are.
+- `installGltf` and `installObj` register the formats. A format only reads
+  bytes into data on the CPU; the meshes, materials and textures of the
+  engine are made from that data, for the backend given.
+
+## Loading, with a progress
+
+```ts
+const level = resources.scope('forest');
+const tree = level.load<Model>(ModelType, 'tree.glb');
+const sphere = level.load<Model>(ModelType, 'sphere.obj');
+
+const loading = resources.group([tree, sphere]);
+loading.progress.value; // from 0 to 1: a loading bar
+await loading.ready;
+```
+
+`load()` returns a **handle** at once, and the loading goes on: in
+parallel, cancellable, without loading a file twice. The progress of a
+model counts what it depends on — the MTL file, its maps — so a group gives
+a progress for a whole loading screen. `ready` rejects with the first
+failure, a `ResourceError` with the chain of files: `sphere.obj →
+sphere.mtl → sphere-diffuse.png`.
+
+What a model needs is loaded with it: the textures of glTF, the MTL file of
+OBJ and its maps, found next to the model. A texture that cannot be read
+shows a magenta checker, and a warning names it.
+
+## Instances in a scene
+
+```ts
+for (const position of spots) {
+  instantiate(tree, scene, { position, rotation, scale });
+}
+instantiate(sphere, scene, { position: { y: 0.8 } });
+```
+
+`instantiate` makes the nodes of the model — here a trunk and two crowns —
+under a new node, placed as asked. It returns a `ModelInstance`: its
+`root` to move it, its `nodes`, `dispose()` to remove it.
+
+The instances **share** the meshes and materials of the model: the 40
+trees are 120 items, but only a few draw calls, shown under the canvas.
+The engine draws together the items that share a mesh and a material (see
+[the scene](/fdw-engine/tutorials/scene/)).
+
+## Leaving the level
+
+```ts
+for (const instance of instances) instance.dispose();
+level.dispose();
+```
+
+The scope releases its handles; the model releases its meshes, materials
+and textures, unless someone else still uses them. An instance made from a
+handle keeps its own: the model stays as long as one of its instances.
+
+Nothing is destroyed at once: an unused model stays cached, up to the
+budget of the store, so coming back to the level is immediate.
+`resources.trim(0)` frees everything unused, and destroys the GPU
+resources.
+
+## The data and its realization
+
+Formats and engine objects are two levels:
+
+| Data (CPU, any backend)                | Realization                                    |
+| -------------------------------------- | ---------------------------------------------- |
+| `ModelData`                            | `Model`: the meshes and materials of its parts |
+| `MeshData`                             | `Mesh`                                         |
+| `PbrMaterialData`, `PhongMaterialData` | `Material`, its graph made for its textures    |
+| `ImageAsset`                           | `Texture`, in sRGB for colors, linear for data |
+
+The meshes and materials of a model are **sub-resources** of its URI:
+`tree.glb#mesh/Crown/0`, `tree.glb#material/Leaves`. Once the model is
+loaded, they are resources like the others:
+
+```ts
+const leaves = await resources.load(MaterialType, 'tree.glb#material/Leaves')
+  .ready;
+```
+
+This split is why another backend — the WebGPU / WebGL2 switch of the demo
+— realizes everything again without reading a file:
+`resources.provideService(RenderBackendService, other)`.
+
+## Next
+
+[Resources and hot reload](/fdw-engine/tutorials/resources/): your own
+resource types and image formats, and resources reloaded while they are
+drawn. The [Resources guide](/fdw-engine/guides/resources/) lists the
+sources, the formats and their extensions.

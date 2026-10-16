@@ -38,12 +38,16 @@ export class HttpSource implements ResourceSource {
   }
 
   private fail(path: string, e: unknown): never {
-    if (isAbortError(e)) throw new ResourceError('aborted', path, undefined, { cause: e });
+    if (isAbortError(e))
+      throw new ResourceError('aborted', path, undefined, { cause: e });
     if (e instanceof ResourceError) throw e;
     throw new ResourceError('io', path, `Network error: ${path}`, { cause: e });
   }
 
-  async read(path: string, { signal, onProgress }: ReadOptions): Promise<ResourceBytes> {
+  async read(
+    path: string,
+    { signal, onProgress }: ReadOptions
+  ): Promise<ResourceBytes> {
     let response: Response;
     try {
       response = await this.fetchFn(this.url(path), this.init(signal));
@@ -52,7 +56,11 @@ export class HttpSource implements ResourceSource {
     }
     if (response.status === 404) throw new ResourceError('not-found', path);
     if (!response.ok) {
-      throw new ResourceError('io', path, `HTTP ${response.status} ${response.statusText}: ${path}`);
+      throw new ResourceError(
+        'io',
+        path,
+        `HTTP ${response.status} ${response.statusText}: ${path}`
+      );
     }
     try {
       const length = Number(response.headers.get('content-length'));
@@ -90,17 +98,23 @@ export class HttpSource implements ResourceSource {
   async stat(path: string): Promise<{ size?: number; revision?: string }> {
     let response: Response;
     try {
-      response = await this.fetchFn(this.url(path), this.init(undefined, 'HEAD'));
+      response = await this.fetchFn(
+        this.url(path),
+        this.init(undefined, 'HEAD')
+      );
     } catch (e) {
       this.fail(path, e);
     }
     if (response.status === 404) throw new ResourceError('not-found', path);
-    if (!response.ok) throw new ResourceError('io', path, `HTTP ${response.status}: ${path}`);
+    if (!response.ok)
+      throw new ResourceError('io', path, `HTTP ${response.status}: ${path}`);
     const length = Number(response.headers.get('content-length'));
     return {
       size: length > 0 ? length : undefined,
       revision:
-        response.headers.get('etag') ?? response.headers.get('last-modified') ?? undefined,
+        response.headers.get('etag') ??
+        response.headers.get('last-modified') ??
+        undefined,
     };
   }
 }

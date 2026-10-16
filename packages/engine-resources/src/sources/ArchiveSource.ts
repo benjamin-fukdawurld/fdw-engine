@@ -27,7 +27,9 @@ export const inflateRaw: Inflate = async (data) => {
       "DecompressionStream('deflate-raw') is unavailable: pass an `inflate` function (fflate)"
     );
   }
-  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const stream = new Blob([data])
+    .stream()
+    .pipeThrough(new DecompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 };
 
@@ -44,7 +46,8 @@ export class ZipReader implements ArchiveReader {
 
   open(bytes: ResourceBytes): ArchiveEntry[] {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const bad = (why: string) => new ResourceError('decode', 'zip', `Invalid zip: ${why}`);
+    const bad = (why: string) =>
+      new ResourceError('decode', 'zip', `Invalid zip: ${why}`);
 
     let eocd = -1;
     const min = Math.max(0, bytes.byteLength - 22 - 0xffff);
@@ -60,13 +63,20 @@ export class ZipReader implements ArchiveReader {
     const cdSize = view.getUint32(eocd + 12, true);
     let offset = view.getUint32(eocd + 16, true);
     if (count === 0xffff || cdSize === 0xffffffff || offset === 0xffffffff) {
-      throw new ResourceError('unsupported', 'zip', 'ZIP64 archives are not supported');
+      throw new ResourceError(
+        'unsupported',
+        'zip',
+        'ZIP64 archives are not supported'
+      );
     }
 
     const decoder = new TextDecoder('utf-8');
     const entries: ArchiveEntry[] = [];
     for (let n = 0; n < count; n++) {
-      if (offset + 46 > bytes.byteLength || view.getUint32(offset, true) !== SIG_CENTRAL) {
+      if (
+        offset + 46 > bytes.byteLength ||
+        view.getUint32(offset, true) !== SIG_CENTRAL
+      ) {
         throw bad('corrupt central directory');
       }
       const flags = view.getUint16(offset + 8, true);
@@ -78,7 +88,9 @@ export class ZipReader implements ArchiveReader {
       const extraLen = view.getUint16(offset + 30, true);
       const commentLen = view.getUint16(offset + 32, true);
       const local = view.getUint32(offset + 42, true);
-      const name = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLen));
+      const name = decoder.decode(
+        bytes.subarray(offset + 46, offset + 46 + nameLen)
+      );
       offset += 46 + nameLen + extraLen + commentLen;
       if (name.endsWith('/')) continue; // directory
 
@@ -88,11 +100,19 @@ export class ZipReader implements ArchiveReader {
         size,
         revision: crc.toString(16),
         read: async () => {
-          if (flags & 1) throw new ResourceError('unsupported', path, 'Encrypted zip entry');
-          if (local + 30 > bytes.byteLength || view.getUint32(local, true) !== SIG_LOCAL) {
+          if (flags & 1)
+            throw new ResourceError('unsupported', path, 'Encrypted zip entry');
+          if (
+            local + 30 > bytes.byteLength ||
+            view.getUint32(local, true) !== SIG_LOCAL
+          ) {
             throw bad(`corrupt local header for ${path}`);
           }
-          const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+          const start =
+            local +
+            30 +
+            view.getUint16(local + 26, true) +
+            view.getUint16(local + 28, true);
           const raw = bytes.subarray(start, start + csize);
           if (method === 0) return new Uint8Array(raw);
           if (method === 8) {
@@ -100,7 +120,11 @@ export class ZipReader implements ArchiveReader {
             if (out.byteLength !== size) throw bad(`size mismatch for ${path}`);
             return out;
           }
-          throw new ResourceError('unsupported', path, `Zip compression method ${method}`);
+          throw new ResourceError(
+            'unsupported',
+            path,
+            `Zip compression method ${method}`
+          );
         },
       });
     }
@@ -156,7 +180,10 @@ export class ArchiveSource implements ResourceSource {
     return entry;
   }
 
-  async read(path: string, { signal, onProgress }: ReadOptions): Promise<ResourceBytes> {
+  async read(
+    path: string,
+    { signal, onProgress }: ReadOptions
+  ): Promise<ResourceBytes> {
     const entry = await this.entry(path);
     if (signal.aborted) throw new ResourceError('aborted', path);
     const data = await entry.read();
@@ -171,7 +198,9 @@ export class ArchiveSource implements ResourceSource {
 
   async list(prefix: string): Promise<string[]> {
     const p = normalizePath(prefix);
-    return [...(await this.load()).keys()].filter((k) => k.startsWith(p)).sort();
+    return [...(await this.load()).keys()]
+      .filter((k) => k.startsWith(p))
+      .sort();
   }
 
   watch(_path: string, onChange: () => void): () => void {

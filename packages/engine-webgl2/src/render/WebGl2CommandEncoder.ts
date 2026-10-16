@@ -210,7 +210,7 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     );
     gl.bindBufferBase(GL.UNIFORM_BUFFER, block.point, buffer.buffer);
   }
-  for (const { unit, texture, sampler } of program.samplers) {
+  for (const { unit, texture, sampler, orientation } of program.samplers) {
     const glTexture = unwrap(
       resource(texture.group, texture.binding),
       WebGl2Texture,
@@ -226,6 +226,14 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
     gl.activeTexture(GL.TEXTURE0 + unit);
     gl.bindTexture(glTexture.target, glTexture.texture);
     gl.bindSampler(unit, glSampler);
+    // v read as a + b × v: flipped for the textures stored bottom row first.
+    if (orientation) {
+      if (glTexture.flipped) {
+        gl.uniform2f(orientation, 1, -1);
+      } else {
+        gl.uniform2f(orientation, 0, 1);
+      }
+    }
   }
   const table = program.objectTable;
   if (table) {

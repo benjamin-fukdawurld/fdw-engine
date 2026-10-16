@@ -1,0 +1,189 @@
+---
+title: Ressources et rechargement à chaud
+description: Un store de ressources, un format d'image et un type de ressource à soi, un matériau réalisé depuis ses données, et sa texture rechargée pendant qu'elle est dessinée.
+sidebar:
+  order: 20
+---
+
+import Example from '../../../../components/Example.astro';
+
+Tout ce que montre ce cube vient d'un store de ressources : une texture
+dans un format d'image écrit pour l'occasion, les couleurs du damier lues
+dans des fichiers JSON, un matériau fabriqué depuis ses données. Toutes les
+deux secondes, le fichier de l'image est réécrit : le store le recharge, et
+le matériau prend la nouvelle texture **en place**, sur le même objet,
+entre deux images.
+
+<Example name="resources" />
+
+## Un store et ses fichiers
+
+```ts
+const files = new MemorySource({
+  'palettes/warm.json': JSON.stringify({
+    light: [250, 220, 160],
+    dark: [180, 60, 40],
+  }),
+});
+const resources = new ResourceStore();
+resources.mount('mem', files, { default: true });
+```
+
+Un store lit ses fichiers dans des **sources** montées sous un schéma :
+`mem:palettes/warm.json`, ou `palettes/warm.json` avec le schéma par
+défaut. Ici les fichiers sont en mémoire ; une application monte une
+`HttpSource`, une `FileSource` dans Node — le reste du code ne change pas.
+Voir le [guide des ressources](/fdw-engine/fr/guides/resources/) pour les
+sources.
+
+## Un type de ressource à soi
+
+Un type est un jeton typé, un chargeur transforme des octets en valeur de
+ce type :
+
+```ts
+interface Palette {
+  readonly light: number[];
+  readonly dark: number[];
+}
+const PaletteType = defineResourceType<Palette>('palette');
+
+resources.registerLoader({
+  type: PaletteType,
+  async load(context) {
+    return JSON.parse(await context.text()) as Palette;
+  },
+});
+
+const warm = await resources.load(PaletteType, 'palettes/warm.json').ready;
+```
+
+`load()` rend une **poignée** tout de suite : son `status`, sa `progress`
+et sa `version` sont des signaux, `ready` une promesse de la valeur.
+Charger deux fois la même URI partage une entrée, lue une fois.
+
+## Un format d'image à soi
+
+Les images passent par des **codecs**, choisis par les premiers octets du
+fichier, puis par son extension. Un codec transforme des octets en
+`ImageAsset` : des pixels côté CPU, sans le GPU :
+
+```ts
+const ppmCodec: ImageCodec = {
+  name: 'ppm',
+  extensions: ['ppm'],
+  sniff: (head) => head[0] === 0x50 && head[1] === 0x33, // "P3"
+  async decode(bytes) {
+    // … largeur, hauteur, puis des triplets RGB
+    return {
+      type: '2d',
+      width,
+      height,
+      format: 'rgba8unorm',
+      levels: [pixels],
+    };
+  },
+};
+
+installAssets(resources, { backend, codecs: [ppmCodec] });
+```
+
+`installAssets` enregistre les ressources graphiques — images, textures,
+meshes, matériaux, modèles — et leur donne le backend. Dans une page, le
+codec du navigateur est `bitmapCodec(createImageBitmapDecoder())` ; dans
+Node, `pixelCodec(createStbImageDecoder())`.
+
+Le format ne dit rien de l'**espace colorimétrique** : c'est la texture qui
+le choisit. `resources.load(TextureType, 'checker.ppm')` est sRGB, pour des
+couleurs ; `{ options: { colorSpace: 'linear' } }` lit le même fichier
+comme des données (une carte de normales).
+
+## Un matériau depuis ses données
+
+Les ressources graphiques ont deux niveaux : des **données** côté CPU, que
+produisent les chargeurs de formats (glTF, OBJ), et leur **réalisation**
+pour un backend. Des données peuvent aussi être définies à la main :
+
+```ts
+const data: PbrMaterialData = {
+  ...defaultPbrMaterial,
+  roughness: 0.6,
+  baseColorTexture: {
+    image: 'checker.ppm',
+    texCoord: 0,
+    sampler: {
+      /* nearest */
+    },
+  },
+};
+resources.define(MaterialDataType, 'box#material', data);
+const material = await resources.load(MaterialType, 'box#material').ready;
+```
+
+La réalisation construit le graphe du matériau — un par jeu de
+caractéristiques, partagé par tous les matériaux qui ont les mêmes
+textures —, fixe ses facteurs comme valeurs, et charge ses textures comme
+**dépendances** : le matériau les garde en vie, et les suit quand elles
+changent.
+
+## Le rechargement à chaud
+
+```ts
+resources.watch(true);
+
+onFrame(() => {
+  resources.update(); // les rechargements sont échangés ici
+  renderer.render({
+    items: [{ mesh: cube, material, transform }],
+    camera,
+    surface,
+    lights,
+  });
+});
+
+// Plus tard, le fichier change :
+files.set('checker.ppm', checker(cold));
+```
+
+`watch(true)` demande aux sources de signaler les changements des fichiers
+chargés. Le store les recharge en arrière-plan ; **l'ancienne valeur reste
+utilisée** jusqu'à ce que la nouvelle soit prête — un rechargement raté la
+garde, avec l'erreur sur `handle.error`. `update()` échange les nouvelles
+valeurs entre deux images, jamais pendant un rendu.
+
+La texture est remplacée (sa `version` augmente, affichée sous le canevas),
+et ses dépendants suivent : le matériau, de même graphe, **se met à jour
+en place** — un `setValue` de la nouvelle texture. Le cube, qui tient le
+matériau, n'a rien à faire. Un mesh rechargé avec la même disposition fait
+de même avec ses sommets.
+
+Dans une vraie application, les sources qui surveillent sont
+`withFileWatch` dans Node, et sur le web une source enveloppée par
+`withChangeChannel(source, hotChannel(import.meta.hot))`, alimentée par le
+serveur de développement de Vite. Le
+[guide des ressources](/fdw-engine/fr/guides/resources/#le-rechargement-à-chaud)
+montre le plugin.
+
+## Durées de vie
+
+Une poignée compte. `handle.release()` la rend ; la dernière rendue pendant
+un chargement l'annule. Un **scope** regroupe des poignées, pour un niveau
+ou un écran :
+
+```ts
+const scope = resources.scope('level-1');
+const ground = scope.load(TextureType, 'ground.png');
+// …
+scope.dispose(); // toutes les poignées du scope rendues
+```
+
+Une entrée que personne ne tient reste en cache, jusqu'au `budget` du
+store : un niveau qu'on vient de quitter revient tout de suite.
+`resources.trim(0)` libère tout ce qui ne sert pas, et détruit les textures
+GPU.
+
+## Ensuite
+
+[Charger des modèles](/fdw-engine/fr/tutorials/loading-models/) : des
+fichiers glTF et OBJ, leurs instances dans une scène, et un écran de
+chargement.

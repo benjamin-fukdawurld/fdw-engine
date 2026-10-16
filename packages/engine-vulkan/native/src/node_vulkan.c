@@ -585,6 +585,28 @@ static napi_value js_write_texture(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
+// writeTextureLevel(texture, data, level, layer, layerCount): the layers
+// [layer, layer + layerCount) of a level, rows from the top (of blocks for
+// the compressed formats).
+static napi_value js_write_texture_level(napi_env env,
+                                         napi_callback_info info) {
+  ARGS(5);
+  object_handle *handle = object_arg(env, argv[0], TEXTURE);
+  void *data = NULL;
+  size_t length = 0;
+  if (!handle || bytes_arg(env, argv[1], &data, &length) != 0) {
+    return NULL;
+  }
+  if (fdw_vk_texture_write_level(handle->owner->context, handle->object,
+                                 (uint32_t)number_arg(env, argv[2]),
+                                 (uint32_t)number_arg(env, argv[3]),
+                                 (uint32_t)number_arg(env, argv[4]), data,
+                                 length) != 0) {
+    return throw_last_error(env);
+  }
+  return undefined(env);
+}
+
 // generateMipmaps(texture): its levels after the first one, in the order
 // of the queue.
 static napi_value js_generate_mipmaps(napi_env env, napi_callback_info info) {
@@ -680,6 +702,22 @@ static napi_value js_max_anisotropy(napi_env env, napi_callback_info info) {
     return NULL;
   }
   return number(env, fdw_vk_max_anisotropy(context));
+}
+
+// formatSupported(context, format): whether the device can write and
+// sample textures of a format.
+static napi_value js_format_supported(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  char *format = string_arg(env, argv[1]);
+  const int32_t supported = fdw_vk_format_supported(context, format);
+  free(format);
+  napi_value result;
+  CHECK(napi_get_boolean(env, supported != 0, &result));
+  return result;
 }
 
 static napi_value js_destroy_sampler(napi_env env, napi_callback_info info) {
@@ -1202,12 +1240,14 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("destroyTexture", js_destroy_texture),
       EXPORT("textureId", js_texture_id),
       EXPORT("writeTexture", js_write_texture),
+      EXPORT("writeTextureLevel", js_write_texture_level),
       EXPORT("generateMipmaps", js_generate_mipmaps),
       EXPORT("readTexture", js_read_texture),
       EXPORT("createSampler", js_create_sampler),
       EXPORT("maxAnisotropy", js_max_anisotropy),
       EXPORT("maxColorAttachments", js_max_color_attachments),
       EXPORT("independentBlend", js_independent_blend),
+      EXPORT("formatSupported", js_format_supported),
       EXPORT("destroySampler", js_destroy_sampler),
       EXPORT("samplerId", js_sampler_id),
       EXPORT("submit", js_submit),

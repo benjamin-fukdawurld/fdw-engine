@@ -1,18 +1,25 @@
 import {
   canGenerateMipmaps,
-  checkMipLevelCount,
   checkReadRegion,
+  checkTextureContent,
+  checkTextureWrite,
+  compressedBlock,
+  isCompressedFormat,
+  levelDimensions,
   samplerAnisotropy,
   GpuSampler,
   GpuSamplerFactory,
   GpuSamplerConfiguration,
   GpuTexture,
   GpuTextureConfiguration,
+  GpuTextureDimensions,
   GpuTextureFactory,
+  GpuTextureFormat,
   GpuTextureFormatName,
   GpuTextureFormatNames,
   GpuTextureRegion,
   GpuTextureUsage,
+  GpuTextureWriteOptions,
 } from '@fdw/engine-backend';
 import { Texture } from './Texture';
 import { Sampler } from './Sampler';
@@ -34,6 +41,41 @@ function textureUsageFlags(usage: readonly GpuTextureUsage[]): number {
 const isImageBitmap = (source: unknown): source is ImageBitmap =>
   typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap;
 
+// The compressed formats of each optional feature of WebGPU (WebGpuEngine
+// asks for those the adapter has).
+export const CompressionFeatures: Readonly<
+  Record<string, readonly GpuTextureFormatName[]>
+> = {
+  'texture-compression-bc': [
+    'bc1-rgba-unorm',
+    'bc1-rgba-unorm-srgb',
+    'bc3-rgba-unorm',
+    'bc3-rgba-unorm-srgb',
+    'bc4-r-unorm',
+    'bc5-rg-unorm',
+    'bc6h-rgb-ufloat',
+    'bc7-rgba-unorm',
+    'bc7-rgba-unorm-srgb',
+  ],
+  'texture-compression-etc2': [
+    'etc2-rgb8unorm',
+    'etc2-rgb8unorm-srgb',
+    'etc2-rgba8unorm',
+    'etc2-rgba8unorm-srgb',
+    'eac-r11unorm',
+    'eac-rg11unorm',
+  ],
+  'texture-compression-astc': ['astc-4x4-unorm', 'astc-4x4-unorm-srgb'],
+};
+
+/** The compressed formats of the features of a device. */
+export const compressedFormats = (
+  features: GPUSupportedFeatures
+): GpuTextureFormatName[] =>
+  Object.entries(CompressionFeatures).flatMap(([feature, formats]) =>
+    features.has(feature) ? formats : []
+  );
+
 // WebGPU accepts any anisotropy and clamps it to what the device can do:
 // 16 at most on the current GPUs.
 export const MaxAnisotropy = 16;
@@ -43,16 +85,20 @@ export class TextureFactory
 {
   public readonly device: GPUDevice;
   readonly mipmaps: MipmapGenerator;
+  // The compressed formats of the device (see compressedFormats).
+  readonly compressedFormats: readonly GpuTextureFormat[];
   defaultMaxAnisotropy = 1;
 
   constructor(device: GPUDevice) {
     this.device = device;
     this.mipmaps = new MipmapGenerator(device);
+    this.compressedFormats = compressedFormats(device.features);
   }
 
   createTexture(
     descriptor: GpuTextureConfiguration & {
       source?: ImageBitmap | ArrayBufferView<ArrayBuffer>;
+      levels?: readonly ArrayBufferView<ArrayBuffer>[];
       readwrite?: boolean;
     }
   ): GpuTexture {
@@ -61,13 +107,23 @@ export class TextureFactory
       format,
       dimensions,
       source,
+      levels,
       readwrite,
       label,
       usage,
       sampleCount = 1,
     } = descriptor;
     const { width, height = 1, layers = 1 } = dimensions;
-    const mipLevelCount = checkMipLevelCount(descriptor);
+    const mipLevelCount = checkTextureContent(descriptor);
+    // A clear error rather than a validation one.
+    if (
+      isCompressedFormat(format) &&
+      !this.compressedFormats.includes(format)
+    ) {
+      throw new Error(
+        `Texture format ${format} is not supported by the device`
+      );
+    }
 
     const textureDescriptor: GPUTextureDescriptor = {
       size: {
@@ -83,12 +139,13 @@ export class TextureFactory
           ? textureUsageFlags(usage)
           : GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST) |
         // Uploads need these.
-        (source ? GPUTextureUsage.COPY_DST : 0) |
+        (source || levels ? GPUTextureUsage.COPY_DST : 0) |
         (readwrite || isImageBitmap(source)
           ? GPUTextureUsage.RENDER_ATTACHMENT
           : 0) |
-        // The levels are rendered from the previous ones.
-        (mipLevelCount > 1
+        // The levels are rendered from the previous ones, where they can be
+        // computed (the compressed formats cannot be rendered to).
+        (mipLevelCount > 1 && canGenerateMipmaps(format)
           ? GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
           : 0),
       label,
@@ -104,21 +161,16 @@ export class TextureFactory
         ]);
       } else if (ArrayBuffer.isView(source)) {
         // Every layer: the six faces of a cube, the layers of an array.
-        this.device.queue.writeTexture(
-          { texture },
-          source,
-          {
-            bytesPerRow:
-              width * TextureFactory.textureFormatToBytesPerPixel(format),
-            rowsPerImage: height,
-          },
-          [width, height, layers]
-        );
+        this.writeLevel(texture, format, dimensions, source, 0, 0, layers);
       } else {
         throw new Error(`Unsupported source type: ${source}`);
       }
       this.generateMipmaps(texture);
     }
+    // Written as they are, every layer of each.
+    levels?.forEach((data, level) =>
+      this.writeLevel(texture, format, dimensions, data, level, 0, layers)
+    );
 
     return new Texture({
       type,
@@ -147,9 +199,10 @@ export class TextureFactory
     this.mipmaps.encode(encoder, texture);
   }
 
-  // Computes the levels of an uploaded texture, in the order of the queue.
+  // Computes the levels of an uploaded texture, in the order of the queue,
+  // where they can be (the others are written).
   private generateMipmaps(texture: GPUTexture): void {
-    if (texture.mipLevelCount === 1) {
+    if (texture.mipLevelCount === 1 || !canGenerateMipmaps(texture.format)) {
       return;
     }
     const encoder = this.device.createCommandEncoder();
@@ -157,23 +210,53 @@ export class TextureFactory
     this.device.queue.submit([encoder.finish()]);
   }
 
-  writeTexture(texture: GpuTexture, data: ArrayBufferView<ArrayBuffer>): void {
+  writeTexture(
+    texture: GpuTexture,
+    data: ArrayBufferView<ArrayBuffer>,
+    options?: GpuTextureWriteOptions
+  ): void {
     const target = (texture as Texture).texture;
     if (!target) {
       throw new Error('Cannot write a destroyed texture');
     }
-    const { width, height = 1, layers = 1 } = texture.dimensions;
+    const { format, dimensions } = texture;
+    if (options?.level === undefined && options?.layer === undefined) {
+      const { layers = 1 } = dimensions;
+      this.writeLevel(target, format, dimensions, data, 0, 0, layers);
+      this.generateMipmaps(target);
+      return;
+    }
+    const { level, layer, layers } = checkTextureWrite(texture, data, options);
+    this.writeLevel(target, format, dimensions, data, level, layer, layers);
+  }
+
+  // Writes the layers [layer, layer + layers) of a level (the depth of a 3d
+  // texture): rows of texels, or of blocks, tightly packed.
+  private writeLevel(
+    texture: GPUTexture,
+    format: GpuTextureFormat,
+    dimensions: GpuTextureDimensions,
+    data: ArrayBufferView<ArrayBuffer>,
+    level: number,
+    layer: number,
+    layers: number
+  ): void {
+    const { width, height } = levelDimensions(dimensions, level);
+    const block = compressedBlock(format) ?? {
+      width: 1,
+      height: 1,
+      bytes: TextureFactory.textureFormatToBytesPerPixel(format),
+    };
+    const columns = Math.ceil(width / block.width);
+    const rows = Math.ceil(height / block.height);
     this.device.queue.writeTexture(
-      { texture: target },
+      { texture, mipLevel: level, origin: { x: 0, y: 0, z: layer } },
       data,
-      {
-        bytesPerRow:
-          width * TextureFactory.textureFormatToBytesPerPixel(texture.format),
-        rowsPerImage: height,
-      },
-      [width, height, layers]
+      // Rows of blocks for the compressed formats.
+      { bytesPerRow: columns * block.bytes, rowsPerImage: rows },
+      // Whole blocks: a level of 2×2 pixels is written as a block of 4×4.
+      [columns * block.width, rows * block.height, layers]
     );
-    this.generateMipmaps(target);
   }
 
   readTexture(

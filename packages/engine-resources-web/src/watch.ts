@@ -9,7 +9,10 @@ const sameFile = (a: string, b: string): boolean =>
   normalizePath(a).replace(/^\/+/, '') === normalizePath(b).replace(/^\/+/, '');
 
 /** Adds `watch` to a source from a channel of changed paths (HMR). */
-export function withChangeChannel(source: ResourceSource, channel: ChangeChannel): ResourceSource {
+export function withChangeChannel(
+  source: ResourceSource,
+  channel: ChangeChannel
+): ResourceSource {
   return {
     read: (path, options) => source.read(path, options),
     stat: source.stat?.bind(source),
@@ -33,11 +36,17 @@ export interface HotContext {
 }
 
 /** The payload is the changed path, or `{ path }`. */
-export function hotChannel(hot: HotContext, event = 'fdw:resource-changed'): ChangeChannel {
+export function hotChannel(
+  hot: HotContext,
+  event = 'fdw:resource-changed'
+): ChangeChannel {
   return {
     subscribe(listener) {
       const callback = (data: unknown) => {
-        const path = typeof data === 'string' ? data : (data as { path?: string } | null)?.path;
+        const path =
+          typeof data === 'string'
+            ? data
+            : (data as { path?: string } | null)?.path;
         if (typeof path === 'string') listener(path);
       };
       hot.on(event, callback);
@@ -56,9 +65,13 @@ export interface PollingOptions {
  * Last-Modified). Needs no cooperation from the server, at the price of one
  * request per watched path and interval.
  */
-export function withPolling(source: ResourceSource, { intervalMs = 1000 }: PollingOptions = {}): ResourceSource {
+export function withPolling(
+  source: ResourceSource,
+  { intervalMs = 1000 }: PollingOptions = {}
+): ResourceSource {
   const stat = source.stat?.bind(source);
-  if (!stat) throw new Error('withPolling needs a source that implements stat()');
+  if (!stat)
+    throw new Error('withPolling needs a source that implements stat()');
   return {
     read: (path, options) => source.read(path, options),
     stat,

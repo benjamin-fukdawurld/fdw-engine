@@ -13,7 +13,11 @@ import {
   TextureType,
   typeToString,
 } from '@fdw/engine-shader';
-import { CombinedSampler, combinedSamplers } from './combinedSamplers';
+import {
+  CombinedSampler,
+  combinedSamplers,
+  orientationUniform,
+} from './combinedSamplers';
 
 const scalarNames = { f32: 'float', i32: 'int', u32: 'uint', bool: 'bool' };
 const vectorPrefixes = { f32: 'vec', i32: 'ivec', u32: 'uvec', bool: 'bvec' };
@@ -336,13 +340,13 @@ function emitInstructions(
         if (!combined) {
           throw new Error(`No combined sampler for ${texture} and ${sampler}`);
         }
-        // 2d textures are stored bottom row first (see WebGl2Texture): v is
-        // flipped, to point down as in WebGPU.
+        // 2d textures are mostly stored bottom row first (see WebGl2Texture):
+        // v is flipped by their orientation, to point down as in WebGPU.
         const uv = arg(instruction, 2);
-        const coordinates =
-          combined.type.dimension === '2d'
-            ? `vec2(${uv}.x, 1.0 - ${uv}.y)`
-            : uv;
+        const orientation = orientationUniform(combined);
+        const coordinates = orientation
+          ? `vec2(${uv}.x, ${orientation}.x + ${orientation}.y * ${uv}.y)`
+          : uv;
         if (op.kind === 'sample-compare') {
           // The reference depth is the last coordinate of shadow samplers.
           expression = `textureLod(${combined.name}, vec3(${coordinates}, ${arg(
@@ -371,15 +375,17 @@ function emitInstructions(
         if (!combined) {
           throw new Error(`No combined sampler to load ${texture}`);
         }
-        // Rows are stored bottom first (see WebGl2Texture): counted from the
-        // top, as in WebGPU.
+        // Rows are mostly stored bottom first (see WebGl2Texture): counted
+        // from the top by the orientation, as in WebGPU.
         const coords = arg(instruction, 1);
         const level = arg(instruction, 2);
+        const orientation = orientationUniform(combined);
+        const row = orientation
+          ? `int(${orientation}.x) * (textureSize(${combined.name}, ${level}).y - 1) + int(${orientation}.y) * ${coords}.y`
+          : `${coords}.y`;
         expression = `texelFetch(${
           combined.name
-        }, ivec2(${coords}.x, textureSize(${
-          combined.name
-        }, ${level}).y - 1 - ${coords}.y), ${level})${
+        }, ivec2(${coords}.x, ${row}), ${level})${
           type.kind === 'scalar' ? '.r' : ''
         }`;
         break;
@@ -570,12 +576,15 @@ export class GlslEsCodegen implements ShaderCodegen {
     if (samplers.length > 0) {
       resources.push(
         samplers
-          .map(
-            (sampler) =>
+          .flatMap((sampler) => {
+            const orientation = orientationUniform(sampler);
+            return [
               `uniform ${glslSamplerType(sampler.type, sampler.comparison)} ${
                 sampler.name
-              };`
-          )
+              };`,
+              ...(orientation ? [`uniform vec2 ${orientation};`] : []),
+            ];
+          })
           .join('\n')
       );
     }

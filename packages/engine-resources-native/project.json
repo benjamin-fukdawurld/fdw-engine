@@ -1,0 +1,7 @@
+{
+  "name": "engine-resources-native",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-resources-native/src",
+  "projectType": "library",
+  "tags": []
+}

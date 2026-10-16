@@ -21,6 +21,8 @@ const examples: Record<string, string> = {
   'camera-operators': 'tutorials/camera-operators/',
   'first-person': 'tutorials/first-person/',
   systems: 'tutorials/systems/',
+  'loading-models': 'tutorials/loading-models/',
+  resources: 'tutorials/resources/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',

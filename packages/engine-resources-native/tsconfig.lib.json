@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-resources-native",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"],
+  "references": [
+    {
+      "path": "../engine-resources/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-native/tsconfig.lib.json"
+    }
+  ]
+}

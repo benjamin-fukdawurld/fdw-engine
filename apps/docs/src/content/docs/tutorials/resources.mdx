@@ -1,0 +1,182 @@
+---
+title: Resources and hot reload
+description: A store of resources, an image format and a resource type of your own, a material realized from its data, and its texture reloaded while it is drawn.
+sidebar:
+  order: 20
+---
+
+import Example from '../../../components/Example.astro';
+
+Everything this cube shows comes from a store of resources: a texture in an
+image format written for the occasion, the colors of the checker read from
+JSON files, a material made from its data. Every two seconds the image
+file is rewritten: the store reloads it, and the material takes the new
+texture **in place**, on the same object, between two frames.
+
+<Example name="resources" />
+
+## A store and its files
+
+```ts
+const files = new MemorySource({
+  'palettes/warm.json': JSON.stringify({
+    light: [250, 220, 160],
+    dark: [180, 60, 40],
+  }),
+});
+const resources = new ResourceStore();
+resources.mount('mem', files, { default: true });
+```
+
+A store reads its files from **sources** mounted under a scheme:
+`mem:palettes/warm.json`, or `palettes/warm.json` with the default scheme.
+Here the files are in memory; an application mounts an `HttpSource`, a
+`FileSource` in Node — the rest of the code does not change. See the
+[Resources guide](/fdw-engine/guides/resources/) for the sources.
+
+## A resource type of your own
+
+A type is a typed token, a loader turns bytes into a value of that type:
+
+```ts
+interface Palette {
+  readonly light: number[];
+  readonly dark: number[];
+}
+const PaletteType = defineResourceType<Palette>('palette');
+
+resources.registerLoader({
+  type: PaletteType,
+  async load(context) {
+    return JSON.parse(await context.text()) as Palette;
+  },
+});
+
+const warm = await resources.load(PaletteType, 'palettes/warm.json').ready;
+```
+
+`load()` returns a **handle** at once: its `status`, `progress` and
+`version` are signals, `ready` a promise of the value. Loading the same
+URI twice shares one entry, read once.
+
+## An image format of your own
+
+The images go through **codecs**, chosen by the first bytes of the file,
+then by its extension. A codec turns bytes into an `ImageAsset`: pixels on
+the CPU, without the GPU:
+
+```ts
+const ppmCodec: ImageCodec = {
+  name: 'ppm',
+  extensions: ['ppm'],
+  sniff: (head) => head[0] === 0x50 && head[1] === 0x33, // "P3"
+  async decode(bytes) {
+    // … width, height, then RGB triplets
+    return {
+      type: '2d',
+      width,
+      height,
+      format: 'rgba8unorm',
+      levels: [pixels],
+    };
+  },
+};
+
+installAssets(resources, { backend, codecs: [ppmCodec] });
+```
+
+`installAssets` registers the graphical resources — images, textures,
+meshes, materials, models — and gives them the backend. In a page, the
+codec of the browser is `bitmapCodec(createImageBitmapDecoder())`; in Node,
+`pixelCodec(createStbImageDecoder())`.
+
+The format says nothing of the **color space**: it is chosen by the
+texture. `resources.load(TextureType, 'checker.ppm')` is sRGB, for colors;
+`{ options: { colorSpace: 'linear' } }` reads the same file as data (a
+normal map).
+
+## A material from its data
+
+The graphical resources have two levels: **data** on the CPU, which the
+format loaders make (glTF, OBJ), and their **realization** for a backend.
+Data can also be defined by hand:
+
+```ts
+const data: PbrMaterialData = {
+  ...defaultPbrMaterial,
+  roughness: 0.6,
+  baseColorTexture: {
+    image: 'checker.ppm',
+    texCoord: 0,
+    sampler: {
+      /* nearest */
+    },
+  },
+};
+resources.define(MaterialDataType, 'box#material', data);
+const material = await resources.load(MaterialType, 'box#material').ready;
+```
+
+The realization builds the graph of the material — one per set of
+features, shared by every material with the same textures — sets its
+factors as values, and loads its textures as **dependencies**: the
+material keeps them alive, and follows them when they change.
+
+## The hot reload
+
+```ts
+resources.watch(true);
+
+onFrame(() => {
+  resources.update(); // the reloads are swapped here
+  renderer.render({
+    items: [{ mesh: cube, material, transform }],
+    camera,
+    surface,
+    lights,
+  });
+});
+
+// Later, the file changes:
+files.set('checker.ppm', checker(cold));
+```
+
+`watch(true)` asks the sources to report the changes of the files loaded.
+The store reloads them in the background; **the previous value stays in
+use** until the new one is ready — a failed reload keeps it, with the
+error on `handle.error`. `update()` swaps the new values between two
+frames, never during a rendering.
+
+The texture is replaced (its `version` increases, shown under the canvas),
+and its dependents follow: the material, with the same graph, **updates
+itself in place** — `setValue` of the new texture. The cube, which holds
+the material, has nothing to do. A mesh reloaded with the same layout does
+the same with its vertices.
+
+In a real application, the sources that watch are `withFileWatch` in Node,
+and on the web a source wrapped by `withChangeChannel(source,
+hotChannel(import.meta.hot))`, fed by the Vite dev server. The
+[Resources guide](/fdw-engine/guides/resources/#hot-reload) shows the
+plugin.
+
+## Lifetimes
+
+A handle counts. `handle.release()` gives it back; the last one released
+during a loading cancels it. A **scope** groups handles, for a level or a
+screen:
+
+```ts
+const scope = resources.scope('level-1');
+const ground = scope.load(TextureType, 'ground.png');
+// …
+scope.dispose(); // every handle of the scope released
+```
+
+An entry nobody holds stays cached, up to the `budget` of the store: a
+level just left comes back at once. `resources.trim(0)` frees everything
+unused, and destroys the GPU textures.
+
+## Next
+
+[Loading models](/fdw-engine/tutorials/loading-models/): glTF and OBJ
+files, their instances in a scene, and a loading screen.

@@ -13,8 +13,21 @@ import {
   type Run,
   type Staged,
 } from './ResourceEntry';
-import type { LoadGroup, ResourceBytes, ResourceType, ResourceUri, ServiceKey } from './types';
-import { extname, formatUri, normalizePath, parseUri, resolvePath } from './uri';
+import {
+  ResourceBytesType,
+  type LoadGroup,
+  type ResourceBytes,
+  type ResourceType,
+  type ResourceUri,
+  type ServiceKey,
+} from './types';
+import {
+  extname,
+  formatUri,
+  normalizePath,
+  parseUri,
+  resolvePath,
+} from './uri';
 
 export interface ResourceScope {
   readonly name?: string;
@@ -57,15 +70,25 @@ export class ResourceStore implements HandleHost {
   private readonly debounceMs: number;
   private readonly warn: (message: string, cause?: unknown) => void;
 
-  private readonly loaders = new Map<ResourceType<any>, ResourceLoader<any, any>[]>();
+  private readonly loaders = new Map<
+    ResourceType<any>,
+    ResourceLoader<any, any>[]
+  >();
   private readonly sources = new Map<string, MountedSource[]>();
   private defaultScheme?: string;
   private readonly services = new Map<symbol, unknown>();
 
-  private readonly index = new Map<ResourceType<any>, Map<string, ResourceEntry<any>>>();
+  private readonly index = new Map<
+    ResourceType<any>,
+    Map<string, ResourceEntry<any>>
+  >();
   /** Entries without handles, least recently used first. */
   private readonly idle = new Set<ResourceEntry<any>>();
-  private readonly queue: Record<Priority, Run[]> = { high: [], normal: [], low: [] };
+  private readonly queue: Record<Priority, Run[]> = {
+    high: [],
+    normal: [],
+    low: [],
+  };
   private running = 0;
   private pumpScheduled = false;
   private readonly staged: Staged[] = [];
@@ -82,7 +105,9 @@ export class ResourceStore implements HandleHost {
   }>((held) => {
     if (held.state.released) return;
     held.state.released = true;
-    this.warn(`Resource handle for ${held.uri} was garbage-collected without release()`);
+    this.warn(
+      `Resource handle for ${held.uri} was garbage-collected without release()`
+    );
     this.unref(held.entry);
   });
 
@@ -90,7 +115,9 @@ export class ResourceStore implements HandleHost {
     this.concurrency = Math.max(1, options?.concurrency ?? 8);
     this.budget = options?.budget ?? 256 * 1024 * 1024;
     this.debounceMs = options?.debounceMs ?? 50;
-    this.warn = options?.warn ?? ((m, cause) => console.warn(`[resources] ${m}`, cause ?? ''));
+    this.warn =
+      options?.warn ??
+      ((m, cause) => console.warn(`[resources] ${m}`, cause ?? ''));
   }
 
   // ------------------------------------------------------------------
@@ -153,27 +180,45 @@ export class ResourceStore implements HandleHost {
     options?: LoadOptions<O>
   ): ResourceHandle<T> {
     this.assertAlive();
-    const handle = this.acquire<T>(type, uri, options?.options, options?.priority ?? 'normal', false);
+    const handle = this.acquire<T>(
+      type,
+      uri,
+      options?.options,
+      options?.priority ?? 'normal',
+      false
+    );
     const signal = options?.signal;
     if (signal) {
       if (signal.aborted) handle.release();
-      else signal.addEventListener('abort', () => handle.release(), { once: true });
+      else
+        signal.addEventListener('abort', () => handle.release(), {
+          once: true,
+        });
     }
     return handle;
   }
 
   // A handle to an entry already known, without starting a load. Like any
   // handle it must be released.
-  peek<T>(type: ResourceType<T>, uri: ResourceUri): ResourceHandle<T> | undefined {
+  peek<T>(
+    type: ResourceType<T>,
+    uri: ResourceUri
+  ): ResourceHandle<T> | undefined {
     const canon = this.canonical(uri);
-    const entry = this.index.get(type)?.get(this.keyOf(type, canon.text, undefined));
+    const entry = this.index
+      .get(type)
+      ?.get(this.keyOf(type, canon.text, undefined));
     if (!entry || !this.isUsable(entry)) return undefined;
     return this.newHandle(entry);
   }
 
   // A resource made in memory (a generated mesh) with the same handle
   // semantics. It cannot be rebuilt, so it is disposed with its last handle.
-  define<T>(type: ResourceType<T>, uri: ResourceUri, value: T): ResourceHandle<T> {
+  define<T>(
+    type: ResourceType<T>,
+    uri: ResourceUri,
+    value: T
+  ): ResourceHandle<T> {
     this.assertAlive();
     const canon = this.canonical(uri);
     const key = this.keyOf(type, canon.text, undefined);
@@ -182,7 +227,13 @@ export class ResourceStore implements HandleHost {
     if (existing && !existing.disposed) {
       throw new Error(`Resource already defined: ${canon.text}`);
     }
-    const entry = new ResourceEntry<T>(type, canon.text, key, undefined, 'defined');
+    const entry = new ResourceEntry<T>(
+      type,
+      canon.text,
+      key,
+      undefined,
+      'defined'
+    );
     entry.value = value;
     entry.version.value = 1;
     entry.status.value = 'ready';
@@ -195,7 +246,8 @@ export class ResourceStore implements HandleHost {
     const handles = new Set<ResourceHandle<unknown>>();
     let disposed = false;
     const assertOpen = () => {
-      if (disposed) throw new Error(`Scope${name ? ` "${name}"` : ''} is disposed`);
+      if (disposed)
+        throw new Error(`Scope${name ? ` "${name}"` : ''} is disposed`);
     };
     return {
       name,
@@ -223,7 +275,9 @@ export class ResourceStore implements HandleHost {
     let ready: Promise<void> | undefined;
     return {
       progress: computed(() =>
-        list.length === 0 ? 1 : list.reduce((s, h) => s + h.progress.value, 0) / list.length
+        list.length === 0
+          ? 1
+          : list.reduce((s, h) => s + h.progress.value, 0) / list.length
       ),
       pending: computed(
         () =>
@@ -251,7 +305,9 @@ export class ResourceStore implements HandleHost {
    */
   async reload(uri: ResourceUri): Promise<void> {
     const text = this.canonical(uri).text;
-    const targets = this.allEntries().filter((e) => e.uri === text && !e.disposed);
+    const targets = this.allEntries().filter(
+      (e) => e.uri === text && !e.disposed
+    );
     await Promise.all(targets.map((e) => this.reloadEntry(e)));
   }
 
@@ -316,11 +372,19 @@ export class ResourceStore implements HandleHost {
     this.unref(handle.entry);
   }
 
+  cloneHandle<T>(handle: HandleImpl<T>): HandleImpl<T> {
+    return this.newHandle(handle.entry);
+  }
+
   private newHandle<T>(entry: ResourceEntry<T>): HandleImpl<T> {
     this.idle.delete(entry);
     entry.refCount++;
     const handle = new HandleImpl(entry, this);
-    this.leaks.register(handle, { entry, state: handle.state, uri: entry.uri }, handle.state);
+    this.leaks.register(
+      handle,
+      { entry, state: handle.state, uri: entry.uri },
+      handle.state
+    );
     return handle;
   }
 
@@ -385,15 +449,29 @@ export class ResourceStore implements HandleHost {
   // Identity
   // ------------------------------------------------------------------
 
-  private canonical(uri: string): { scheme?: string; path: string; fragment?: string; text: string } {
+  private canonical(uri: string): {
+    scheme?: string;
+    path: string;
+    fragment?: string;
+    text: string;
+  } {
     const p = parseUri(uri, (s) => this.sources.has(s));
     const scheme = p.scheme ?? this.defaultScheme;
     // A data URI is its payload: collapsing its slashes would corrupt it.
     const path = scheme === 'data' ? p.path : normalizePath(p.path);
-    return { scheme, path, fragment: p.fragment, text: formatUri({ scheme, path, fragment: p.fragment }) };
+    return {
+      scheme,
+      path,
+      fragment: p.fragment,
+      text: formatUri({ scheme, path, fragment: p.fragment }),
+    };
   }
 
-  private keyOf(type: ResourceType<any>, canonicalUri: string, options: unknown): string {
+  private keyOf(
+    type: ResourceType<any>,
+    canonicalUri: string,
+    options: unknown
+  ): string {
     const custom = this.loaders.get(type)?.find((l) => l.cacheKey);
     let suffix = '';
     if (custom?.cacheKey) suffix = custom.cacheKey(options);
@@ -430,7 +508,9 @@ export class ResourceStore implements HandleHost {
     const rel = parseUri(relative, isScheme);
     if (rel.scheme !== undefined) return this.canonical(relative).text;
     const base = parseUri(baseUri, isScheme);
-    const path = relative.startsWith('#') ? base.path : resolvePath(base.path, rel.path);
+    const path = relative.startsWith('#')
+      ? base.path
+      : resolvePath(base.path, rel.path);
     return formatUri({ scheme: base.scheme, path, fragment: rel.fragment });
   }
 
@@ -457,7 +537,11 @@ export class ResourceStore implements HandleHost {
       entry = new ResourceEntry<T>(type, canon.text, key, options, 'loaded');
       map.set(key, entry);
       this.enqueue(entry, 'load', priority, forced, false);
-    } else if (entry.status.peek() === 'pending' && entry.run && !entry.run.started) {
+    } else if (
+      entry.status.peek() === 'pending' &&
+      entry.run &&
+      !entry.run.started
+    ) {
       this.promote(entry.run, priority, forced);
     }
     return this.newHandle(entry);
@@ -551,7 +635,8 @@ export class ResourceStore implements HandleHost {
       if (i >= 0) q.splice(i, 1);
     }
     this.releaseRunResources(run);
-    for (const w of run.waiters.splice(0)) w.reject(new ResourceError('aborted', run.entry.uri));
+    for (const w of run.waiters.splice(0))
+      w.reject(new ResourceError('aborted', run.entry.uri));
     if (run.entry.run === run) run.entry.run = undefined;
   }
 
@@ -595,7 +680,11 @@ export class ResourceStore implements HandleHost {
     }
   }
 
-  private finishRun(run: Run, loader: ResourceLoader<any, any>, value: unknown): void {
+  private finishRun(
+    run: Run,
+    loader: ResourceLoader<any, any>,
+    value: unknown
+  ): void {
     const entry = run.entry;
     if (run.kind === 'load') {
       this.indexProvided(run.provided);
@@ -665,14 +754,21 @@ export class ResourceStore implements HandleHost {
       return new ResourceError(
         'dependency',
         entry.uri,
-        `Dependency failed: ${[entry.uri, ...e.path].join(' → ')}: ${e.message}`,
+        `Dependency failed: ${[entry.uri, ...e.path].join(' → ')}: ${
+          e.message
+        }`,
         { cause: e, path: [entry.uri, ...e.path] }
       );
     }
     const message = e instanceof Error ? e.message : String(e);
-    return new ResourceError('decode', entry.uri, `Failed to load ${entry.uri}: ${message}`, {
-      cause: e,
-    });
+    return new ResourceError(
+      'decode',
+      entry.uri,
+      `Failed to load ${entry.uri}: ${message}`,
+      {
+        cause: e,
+      }
+    );
   }
 
   private async selectLoader(
@@ -681,12 +777,18 @@ export class ResourceStore implements HandleHost {
   ): Promise<ResourceLoader<any, any>> {
     const list = this.loaders.get(entry.type) ?? [];
     if (list.length === 0) {
-      throw new ResourceError('unsupported', entry.uri, `No loader registered for type "${entry.type.name}"`);
+      throw new ResourceError(
+        'unsupported',
+        entry.uri,
+        `No loader registered for type "${entry.type.name}"`
+      );
     }
     if (list.length === 1) return list[0];
 
     const ext = extname(parseUri(entry.uri, (s) => this.sources.has(s)).path);
-    const byExtension = [...list].reverse().find((l) => l.extensions?.some((x) => x.toLowerCase() === ext));
+    const byExtension = [...list]
+      .reverse()
+      .find((l) => l.extensions?.some((x) => x.toLowerCase() === ext));
     if (byExtension) return byExtension;
 
     if (list.some((l) => l.sniff)) {
@@ -694,23 +796,43 @@ export class ResourceStore implements HandleHost {
       const bySniff = [...list].reverse().find((l) => l.sniff?.(head));
       if (bySniff) return bySniff;
     }
-    const generic = [...list].reverse().find((l) => !l.extensions?.length && !l.sniff);
+    const generic = [...list]
+      .reverse()
+      .find((l) => !l.extensions?.length && !l.sniff);
     if (generic) return generic;
-    throw new ResourceError('unsupported', entry.uri, `No loader of type "${entry.type.name}" recognizes ${entry.uri}`);
+    throw new ResourceError(
+      'unsupported',
+      entry.uri,
+      `No loader of type "${entry.type.name}" recognizes ${entry.uri}`
+    );
   }
 
-  private async readBytes(entry: ResourceEntry<any>, run: Run): Promise<ResourceBytes> {
-    const { scheme, path } = parseUri(entry.uri, (s) => this.sources.has(s));
+  private async readBytes(
+    entry: ResourceEntry<any>,
+    run: Run
+  ): Promise<ResourceBytes> {
+    const { scheme, path, fragment } = parseUri(entry.uri, (s) =>
+      this.sources.has(s)
+    );
+    if (fragment !== undefined) {
+      const bytes = this.providedBytes(entry, run);
+      if (bytes) return bytes;
+    }
     const layers = scheme !== undefined ? this.sources.get(scheme) : undefined;
     if (!layers) {
-      throw new ResourceError('not-found', entry.uri, `No source mounted for ${entry.uri}`);
+      throw new ResourceError(
+        'not-found',
+        entry.uri,
+        `No source mounted for ${entry.uri}`
+      );
     }
     for (const layer of layers) {
       try {
         const bytes = await layer.source.read(path, {
           signal: run.controller.signal,
           onProgress: (loaded, total) => {
-            if (run.kind === 'load') entry.selfProgress.value = { loaded, total };
+            if (run.kind === 'load')
+              entry.selfProgress.value = { loaded, total };
           },
         });
         run.controller.signal.throwIfAborted();
@@ -724,6 +846,31 @@ export class ResourceStore implements HandleHost {
       }
     }
     throw new ResourceError('not-found', entry.uri);
+  }
+
+  /**
+   * The bytes of a sub-resource, provided by its parent (loaded, or being
+   * loaded). The entry depends on them: a reload of the parent that
+   * provides new bytes reloads it.
+   */
+  private providedBytes(
+    entry: ResourceEntry<any>,
+    run: Run
+  ): ResourceBytes | undefined {
+    let source = this.index.get(ResourceBytesType)?.get(entry.uri);
+    if (!source || source.disposed) {
+      source = undefined;
+      for (const e of this.allEntries()) {
+        source = e.run?.provided.find(
+          (h) => h.entry.uri === entry.uri && h.entry.type === ResourceBytesType
+        )?.entry;
+        if (source) break;
+      }
+    }
+    if (!source || source.value === undefined) return undefined;
+    entry.virtual = true;
+    run.deps.push(this.newHandle(source));
+    return source.value as ResourceBytes;
   }
 
   private createContext(run: Run): LoadContext<any> {
@@ -743,15 +890,22 @@ export class ResourceStore implements HandleHost {
 
       use: <U, P>(type: ResourceType<U>, uri: ResourceUri, options?: P) => {
         assertOpen();
-        const target = this.index.get(type)?.get(this.keyOf(type, this.canonical(uri).text, options));
+        const target = this.index
+          .get(type)
+          ?.get(this.keyOf(type, this.canonical(uri).text, options));
         if (target) {
           const cycle = this.findPath(target, entry);
           if (cycle) {
             const path = [entry.uri, ...cycle];
-            throw new ResourceError('dependency', entry.uri, `Dependency cycle: ${path.join(' → ')}`, {
-              path,
-              cycle: true,
-            });
+            throw new ResourceError(
+              'dependency',
+              entry.uri,
+              `Dependency cycle: ${path.join(' → ')}`,
+              {
+                path,
+                cycle: true,
+              }
+            );
           }
         }
         const handle = this.acquire<U>(type, uri, options, run.priority, true);
@@ -763,7 +917,13 @@ export class ResourceStore implements HandleHost {
       provide: <U>(type: ResourceType<U>, id: string, value: U) => {
         assertOpen();
         const uri = `${entry.uri.split('#', 1)[0]}#${id}`;
-        const child = new ResourceEntry<U>(type, uri, uri, undefined, 'provided');
+        const child = new ResourceEntry<U>(
+          type,
+          uri,
+          uri,
+          undefined,
+          'provided'
+        );
         child.owner = entry;
         child.value = value;
         child.size = this.sizeOf(this.loaders.get(type)?.[0], value);
@@ -779,7 +939,11 @@ export class ResourceStore implements HandleHost {
       service: <S>(key: ServiceKey<S>) => {
         assertOpen();
         if (!this.services.has(key.id)) {
-          throw new ResourceError('unsupported', entry.uri, `Service "${key.name}" is not provided`);
+          throw new ResourceError(
+            'unsupported',
+            entry.uri,
+            `Service "${key.name}" is not provided`
+          );
         }
         run.services.add(key.id);
         return this.services.get(key.id) as S;
@@ -810,17 +974,23 @@ export class ResourceStore implements HandleHost {
 
   /** Provided sub-resources become addressable as `uri#id`. */
   private indexProvided(handles: HandleImpl<any>[]): void {
-    for (const h of handles) this.entriesOf(h.entry.type).set(h.entry.key, h.entry);
+    for (const h of handles)
+      this.entriesOf(h.entry.type).set(h.entry.key, h.entry);
   }
 
   // ------------------------------------------------------------------
   // Reload
   // ------------------------------------------------------------------
 
-  private reloadEntry(entry: ResourceEntry<any>, replace = false): Promise<void> {
+  private reloadEntry(
+    entry: ResourceEntry<any>,
+    replace = false
+  ): Promise<void> {
     if (entry.disposed) return Promise.resolve();
     if (entry.kind === 'provided') {
-      return entry.owner ? this.reloadEntry(entry.owner, replace) : Promise.resolve();
+      return entry.owner
+        ? this.reloadEntry(entry.owner, replace)
+        : Promise.resolve();
     }
     if (entry.kind !== 'loaded') return Promise.resolve(); // defined: nothing to read again
 
@@ -837,18 +1007,37 @@ export class ResourceStore implements HandleHost {
     const waiters = previous ? previous.waiters.splice(0) : [];
     if (previous) this.abortRun(previous);
 
-    const run = this.enqueue(entry, 'reload', 'normal', false, replace || previous?.replace === true);
+    const run = this.enqueue(
+      entry,
+      'reload',
+      'normal',
+      false,
+      replace || previous?.replace === true
+    );
     const d = deferred<void>();
-    run.waiters.push(...waiters, { resolve: () => d.resolve(), reject: (e) => d.reject(e) });
+    run.waiters.push(...waiters, {
+      resolve: () => d.resolve(),
+      reject: (e) => d.reject(e),
+    });
     return d.promise;
   }
 
   private watchEntry(entry: ResourceEntry<any>): void {
-    if (entry.watched || entry.kind !== 'loaded' || entry.disposed) return;
+    if (
+      entry.watched ||
+      entry.kind !== 'loaded' ||
+      entry.disposed ||
+      entry.virtual
+    )
+      return;
     entry.watched = true;
     const { scheme, path } = parseUri(entry.uri, (s) => this.sources.has(s));
-    for (const layer of (scheme !== undefined ? this.sources.get(scheme) : undefined) ?? []) {
-      const stop = layer.source.watch?.(path, () => this.onSourceChanged(entry));
+    for (const layer of (scheme !== undefined
+      ? this.sources.get(scheme)
+      : undefined) ?? []) {
+      const stop = layer.source.watch?.(path, () =>
+        this.onSourceChanged(entry)
+      );
       if (stop) entry.unwatch.push(stop);
     }
   }
@@ -893,7 +1082,12 @@ export class ResourceStore implements HandleHost {
 
     this.indexProvided(s.provided);
     batch(() => {
-      if (inPlace) this.disposeValue(entry.type, loader, s.value); // `next` was only a source
+      if (inPlace)
+        this.disposeValue(
+          entry.type,
+          loader,
+          s.value
+        ); // `next` was only a source
       else entry.value = s.value;
       entry.loader = loader;
       entry.size = this.sizeOf(loader, entry.value);
@@ -908,7 +1102,8 @@ export class ResourceStore implements HandleHost {
     // Whoever uses a sub-resource that was rebuilt must follow its new
     // identity; the old one lives until they let go.
     const stale = new Set<ResourceEntry<any>>();
-    for (const h of oldOwned) for (const p of this.parentsOf(h.entry)) stale.add(p);
+    for (const h of oldOwned)
+      for (const p of this.parentsOf(h.entry)) stale.add(p);
     stale.delete(entry);
 
     for (const h of oldDeps) h.release();
@@ -942,7 +1137,12 @@ export class ResourceStore implements HandleHost {
     waiting: Set<ResourceEntry<any>>
   ): void {
     if (waiting.size === 0) this.disposeValue(type, loader, value);
-    else this.retired.push({ loader: loader ?? this.disposerFor(type), value, waiting });
+    else
+      this.retired.push({
+        loader: loader ?? this.disposerFor(type),
+        value,
+        waiting,
+      });
   }
 
   /** `entry` no longer holds anything made from the values it was waited on for. */
@@ -960,7 +1160,10 @@ export class ResourceStore implements HandleHost {
   // Helpers
   // ------------------------------------------------------------------
 
-  private sizeOf(loader: ResourceLoader<any, any> | undefined, value: unknown): number {
+  private sizeOf(
+    loader: ResourceLoader<any, any> | undefined,
+    value: unknown
+  ): number {
     try {
       return loader?.sizeOf?.(value) ?? 0;
     } catch {
@@ -968,7 +1171,9 @@ export class ResourceStore implements HandleHost {
     }
   }
 
-  private disposerFor(type: ResourceType<any>): ResourceLoader<any, any> | undefined {
+  private disposerFor(
+    type: ResourceType<any>
+  ): ResourceLoader<any, any> | undefined {
     return this.loaders.get(type)?.find((l) => l.dispose);
   }
 
@@ -980,7 +1185,10 @@ export class ResourceStore implements HandleHost {
     this.disposeWith(loader?.dispose ? loader : this.disposerFor(type), value);
   }
 
-  private disposeWith(loader: ResourceLoader<any, any> | undefined, value: unknown): void {
+  private disposeWith(
+    loader: ResourceLoader<any, any> | undefined,
+    value: unknown
+  ): void {
     try {
       loader?.dispose?.(value);
     } catch (e) {
@@ -993,4 +1201,5 @@ export class ResourceStore implements HandleHost {
   }
 }
 
-const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const now = (): number =>
+  typeof performance !== 'undefined' ? performance.now() : Date.now();
