@@ -21,6 +21,9 @@ export const attribute: NodeDefinition = {
   params: {
     semantic: { kind: 'string', required: true },
     type: { kind: 'type', required: true },
+    // Reads the attribute of the mesh even when the graph computes it
+    // (output.attribute): what a deformer (the skinning) starts from.
+    mesh: { kind: 'boolean', default: false },
   },
   inputs: () => [],
   outputs: (params) => [{ name: 'value', type: params['type'] as ShaderType }],

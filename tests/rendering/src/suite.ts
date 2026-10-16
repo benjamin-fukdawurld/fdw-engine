@@ -34,7 +34,15 @@ import {
   TextureHandle,
   Transform,
 } from '@fdw/engine-core';
+import { instantiate, Model } from '@fdw/engine-assets';
 import { OcclusionCulling } from '@fdw/engine-occlusion';
+import { Scene } from '@fdw/engine-scene';
+import {
+  defaultSkinningMode,
+  MeshSkin,
+  skinPositions,
+  Skinning,
+} from '@fdw/engine-skinning';
 import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
 
 // Rendering tests shared by every backend: the same graphs, meshes and
@@ -2873,6 +2881,144 @@ export function describeRenderer(
           },
         ]);
         expectColor(pixel(32, 32), [0, 255, 128, 255]);
+      });
+    });
+
+    describe('skinning', () => {
+      // A strip of 2 quads along y, from -0.9 to 0.9: its bottom row on the
+      // root joint, its top row on the tip, the middle one on both. The
+      // joints at the origin, without inverse bind matrices.
+      const strip = () => {
+        const stride = 32;
+        const data = new ArrayBuffer(stride * 6);
+        const view = new DataView(data);
+        [-0.9, 0, 0.9].forEach((y, row) => {
+          [-0.2, 0.2].forEach((x, column) => {
+            const o = (row * 2 + column) * stride;
+            view.setFloat32(o, x, true);
+            view.setFloat32(o + 4, y, true);
+            view.setUint8(o + 12, row === 2 ? 1 : 0);
+            view.setUint8(o + 13, 1);
+            view.setFloat32(o + 16, row === 1 ? 0.5 : 1, true);
+            view.setFloat32(o + 20, row === 1 ? 0.5 : 0, true);
+          });
+        });
+        return new Mesh({
+          description: {
+            vertexCount: 6,
+            vertexBuffers: [
+              {
+                stride,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                  { semantic: 'joints', format: 'uint8x4', offset: 12 },
+                  { semantic: 'weights', format: 'float32x4', offset: 16 },
+                ],
+              },
+            ],
+            indexBuffer: { format: 'uint16', count: 12 },
+          },
+          vertices: [new Uint8Array(data)],
+          indices: new Uint16Array([0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4]),
+        });
+      };
+      // The tip 0.5 to the right: the top row moves by 0.5, the middle one
+      // by 0.25.
+      const bent = (mode: 'vertex' | 'compute') => {
+        const mesh = strip();
+        const material = new Material({ graph: colorGraph() });
+        const model = new Model(
+          {
+            nodes: [
+              { name: 'Body', children: [], mesh: 0, skin: 0 },
+              { name: 'root', children: [2] },
+              { name: 'tip', children: [] },
+            ],
+            roots: [0, 1],
+            meshes: [{ primitives: [{ mesh: 'strip', material: 'red' }] }],
+            skins: [{ joints: [1, 2] }],
+            animations: [],
+            cameras: [],
+            lights: [],
+          },
+          [[{ mesh, material }]],
+        );
+        const scene = new Scene();
+        const skinning = new Skinning(
+          backend,
+          instantiate(model, scene),
+          model,
+          {
+            mode,
+          },
+        );
+        const pose = skinning.skeleton.rest.clone();
+        pose.translations.set(
+          [0.5, 0, 0],
+          skinning.skeleton.require('tip') * 3,
+        );
+        skinning.applyPose(pose).update();
+        return { scene, skinning, mesh };
+      };
+      const modes = (): ('vertex' | 'compute')[] =>
+        defaultSkinningMode(backend) === 'compute'
+          ? ['vertex', 'compute']
+          : ['vertex'];
+
+      it('skins in a compute pass the vertices the CPU skins', async () => {
+        if (defaultSkinningMode(backend) !== 'compute') {
+          return;
+        }
+        const { skinning, mesh } = bent('compute');
+        const vertices = skinning.primitives[0].vertices as GpuBuffer;
+        const skinned = new Float32Array(await vertices.read());
+        const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        const expected = skinPositions(MeshSkin.of(mesh), [
+          ...identity,
+          ...identity.slice(0, 12),
+          0.5,
+          0,
+          0,
+          1,
+        ]);
+        for (let v = 0; v < 6; v++) {
+          for (let k = 0; k < 3; k++) {
+            expect(skinned[v * 4 + k]).toBeCloseTo(expected[v * 3 + k], 5);
+          }
+          expect(skinned[v * 4 + 3]).toBe(1);
+        }
+        skinning.destroy();
+      });
+
+      it('draws the skinned vertices, in each mode of the backend', async () => {
+        for (const mode of modes()) {
+          const { scene, skinning } = bent(mode);
+          renderer.render({
+            source: scene,
+            camera,
+            surface,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          const pixels = await fixture.readPixels();
+          const pixel = (x: number, y: number) => {
+            // From the view [-1, 1]² to the pixels, y down.
+            const px = Math.floor(((x + 1) / 2) * size);
+            const py = Math.floor(((1 - y) / 2) * size);
+            return [
+              ...pixels.subarray(
+                (py * size + px) * 4,
+                (py * size + px) * 4 + 4,
+              ),
+            ];
+          };
+          // The top moved right, the bottom stayed.
+          expectColor(pixel(0.45, 0.8), [255, 0, 0, 255]);
+          expectColor(pixel(-0.15, 0.8), [0, 0, 0, 255]);
+          expectColor(pixel(-0.15, -0.8), [255, 0, 0, 255]);
+          expectColor(pixel(0.1, 0), [255, 0, 0, 255]);
+          skinning.destroy();
+        }
       });
     });
 

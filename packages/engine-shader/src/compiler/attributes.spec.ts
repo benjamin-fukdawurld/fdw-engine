@@ -106,6 +106,54 @@ describe('attributes computed by the graph', () => {
     ]);
   });
 
+  it('deforms the attribute of the mesh, read with meshAttribute', () => {
+    const g = new GraphBuilder('deformed');
+    g.vertexAttribute(
+      'position',
+      g.call(std.mul, {
+        a: g.meshAttribute('position', BuiltinTypes.vec3f),
+        b: 2,
+      }),
+    );
+    g.surface({
+      baseColor: g.attribute('position', BuiltinTypes.vec3f),
+    });
+    const program = compile(g.build(), { vertexAttributes: ['position'] });
+    // One input: the position of the mesh, doubled for the surface.
+    expect(program.vertexInputs.map((input) => input.semantic)).toEqual([
+      'position',
+    ]);
+    // Not the position of the mesh as is.
+    const plain = new GraphBuilder('deformed');
+    plain.surface({
+      baseColor: plain.attribute('position', BuiltinTypes.vec3f),
+    });
+    expect(program.programKey).not.toBe(
+      compile(plain.build(), { vertexAttributes: ['position'] }).programKey,
+    );
+  });
+
+  it('goes on from a graph, its outputs and ids kept', () => {
+    const g = new GraphBuilder('base');
+    g.surface({ baseColor: g.uniform('tint', BuiltinTypes.vec3f) });
+    g.parameter('wet', false);
+    const base = g.build();
+    const extended = GraphBuilder.extend(base, { name: 'extended' });
+    extended.vertexAttribute('normal', [0, 0, 1]);
+    // The surface is still there: a second one is refused.
+    expect(() => extended.surface({ baseColor: [1, 1, 1] })).toThrow(
+      /already has an output/,
+    );
+    const graph = extended.build();
+    expect(graph.name).toBe('extended');
+    expect(graph.parameters).toEqual(base.parameters);
+    expect(new Set(graph.nodes.map((node) => node.id)).size).toBe(
+      graph.nodes.length,
+    );
+    expect(base.nodes.length).toBe(graph.nodes.length - 1);
+    expect(compile(graph, { vertexAttributes: ['position'] })).toBeDefined();
+  });
+
   it('belongs to graphs with stages', () => {
     const g = new GraphBuilder('fullscreen');
     g.vertexAttribute('uv', [0, 0]);

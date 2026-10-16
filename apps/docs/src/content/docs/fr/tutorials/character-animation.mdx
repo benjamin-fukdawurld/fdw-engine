@@ -1,0 +1,156 @@
+---
+title: Un personnage animé
+description: Charger un personnage glTF skinné, piloter ses clips avec un animation graph — un blend space, une machine à états, une couche — et le skinner sur le GPU.
+sidebar:
+  order: 22
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un personnage lu dans un fichier glTF, `character.glb` : un mesh skinné sur
+18 articulations, et cinq clips, Idle, Walk, Run, Jump et Wave. Un
+animation graph mélange l'attente, la marche et la course selon sa vitesse,
+saute dans une machine à états, et agite la main droite sur une couche du
+haut du corps. Il marche autour d'un cercle, ses pas comptés.
+
+L'exemple joue une boucle de 16 s. Cliquez dans le canvas pour prendre la
+main : W et S (Z et S en AZERTY) changent la vitesse, Espace fait sauter, E
+fait saluer.
+
+<Example name="character-animation" />
+
+## Skinner le modèle
+
+```ts
+const handle = resources.load<Model>(ModelType, 'character.glb');
+const model = await handle.ready;
+const character = instantiate(handle, scene);
+const skinning = new Skinning(backend, character, model);
+```
+
+Le modèle est chargé et instancié comme les autres (voir
+[charger des modèles](/fdw-engine/fr/tutorials/loading-models/)) : ses
+articulations sont des nœuds de la scène. `Skinning` trouve les nœuds qui
+ont un skin glTF et donne à chacune de leurs primitives un matériau à
+elle : le graphe du matériau du modèle, le skinning ajouté.
+
+- En **WebGPU** et en Vulkan, une passe de calcul skinne les sommets une
+  fois par image, dans un buffer que lit le vertex stage de chaque passe :
+  la caméra, la shadow map, plus tard le ray tracing.
+- En **WebGL2**, sans calcul, le vertex stage de chaque passe skinne son
+  sommet, les matrices des articulations lues dans une texture.
+
+La ligne sous le canvas dit lequel tourne ; `{ mode: 'vertex' }` impose le
+second partout.
+
+## Le squelette et les clips
+
+```ts
+const skeleton = skinning.skeleton;
+const clips = clipsOf(model, skeleton);
+clips['Walk'] = clips['Walk'].withEvents([
+  { time: 0.22, name: 'step' },
+  { time: 0.77, name: 'step' },
+]);
+```
+
+Le squelette reprend les nœuds du modèle, chacun après son parent ;
+`clipsOf` lit ses animations glTF comme des clips du squelette, par nom.
+glTF n'a pas d'événements : les moments où les pieds touchent le sol sont
+ajoutés ici.
+
+## L'animation graph
+
+```ts
+const g = new AnimationGraphBuilder('character');
+g.parameter('speed', 'number');
+g.parameter('jump', 'trigger');
+g.parameter('wave', 'number');
+
+const locomotion = g.blend1d(
+  [g.clip('Idle'), g.clip('Walk'), g.clip('Run')],
+  [0, 1.3, 3.6],
+  g.param('speed'),
+);
+```
+
+**Un blend space** place une pose à chaque point d'un paramètre : l'attente
+à 0, la marche à 1,3 m/s, la course à 3,6 m/s. À 2 m/s, marche et course
+sont mélangées. Le mélange est synchronisé : les deux clips partagent une
+phase, qui avance selon leur durée mélangée, et les pieds restent en rythme
+quelle que soit la vitesse.
+
+```ts
+const body = g.stateMachine({
+  label: 'body',
+  states: { locomotion, jump: g.clip('Jump', { loop: false }) },
+  transitions: [
+    { from: 'locomotion', to: 'jump', trigger: 'jump', duration: 0.1 },
+    { from: 'jump', to: 'locomotion', exitTime: 0.95, duration: 0.25 },
+  ],
+});
+```
+
+**Une machine à états** a une pose par état. Le saut part quand son trigger
+est mis, avec un fondu de 0,1 s, et le consomme ; il revient à la
+locomotion à 95 % de son clip (`exitTime`, en cycles de l'état). Les
+transitions peuvent aussi porter des `conditions` sur les paramètres, comme
+`{ parameter: 'speed', op: '>', value: 0.1 }`.
+
+```ts
+g.output(
+  g.layer(body, g.clip('Wave'), {
+    mask: 'rightArm',
+    weight: g.param('wave'),
+  }),
+);
+const animator = new Animator(g.build(), {
+  skeleton,
+  clips,
+  masks: {
+    rightArm: BoneMask.branches(skeleton, { 'upperArm.R': 1, head: 0.5 }),
+  },
+});
+```
+
+**Une couche** pose une pose sur une autre, sur les articulations d'un
+masque : le bras droit et, à moitié, la tête. Les jambes continuent de
+marcher dessous.
+
+Le graphe est une donnée : `serializeAnimationGraph(graph)` l'écrit en
+JSON, `parseAnimationGraph` le relit, pour un fichier ou un éditeur.
+
+## À chaque image
+
+```ts
+animator.set('speed', speed).set('wave', waving ? 1 : 0);
+if (jumpPressed) animator.trigger('jump');
+animator.update(dt);
+skinning.applyPose(animator.pose).update();
+renderer.render({ source: scene, camera, surface });
+```
+
+L'animateur fait avancer les clips, choisit les transitions et donne une
+pose : la transformation locale de chaque articulation. `applyPose` la
+donne aux nœuds ; `update` calcule les matrices des articulations depuis
+leurs matrices monde, les envoie au GPU, lance la passe de calcul, et
+déplace les bornes du mesh avec les articulations, pour que le culling et
+les ombres suivent le personnage.
+
+## Événements et états
+
+```ts
+animator.onEvent((event) => {
+  if (event.name === 'step') steps++;
+});
+animator.state('body'); // { state: 'jump', next: 'locomotion', progress: 0.4, … }
+```
+
+Une mise à jour atteint les événements des clips qu'elle joue. Un mélange
+garde les événements de sa pose la plus lourde : un pas par pied, pas un
+par clip mélangé ; une couche garde les événements des deux.
+
+## La suite
+
+Le guide [Animation](/fdw-engine/fr/guides/animation/) pour chaque nœud,
+les masques, les couches additives et le détail du skinning.

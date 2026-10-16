@@ -140,7 +140,8 @@ export class Scene implements SceneGraph {
   /**
    * A mesh drawn with a material; its world bounds (derived), the bounds
    * table of the GPU culling to come. `noShadow`: 1 to cast no shadow. An
-   * optional Volume, for the queries.
+   * optional Volume, for the queries. `localBounds`: an Aabb replacing the
+   * bounds of the mesh, in the space of the entity (setLocalBounds).
    */
   readonly MeshRenderer;
   /** A light following the entity: position, and direction along its -z. */
@@ -191,6 +192,7 @@ export class Scene implements SceneGraph {
       material: 'ref',
       noShadow: 'u8',
       volume: 'ref',
+      localBounds: 'ref',
       bounds: ['f32', 6],
       // The versions of the world matrix and of the mesh of the bounds.
       boundsVersion: 'u32',
@@ -423,6 +425,20 @@ export class Scene implements SceneGraph {
   }
 
   /**
+   * Replaces the bounds of the mesh of a renderer by `box`, in the space of
+   * the entity, or goes back to those of the mesh (undefined): for the
+   * meshes whose vertices move on the GPU (a skinned character), which
+   * the positions of the mesh do not bound. The world bounds and the index
+   * follow at the next flush. The box is read then, not copied: changing
+   * it calls setLocalBounds again.
+   */
+  setLocalBounds(entity: number, box: Aabb | undefined): void {
+    this.MeshRenderer.localBounds[entity] = box;
+    this.MeshRenderer.boundsVersion[entity] = 0xffffffff;
+    this.queue(entity);
+  }
+
+  /**
    * Computes the world matrix of an entity if it is stale (and those of its
    * stale ancestors first), in its block of the pool. The normal matrix is
    * computed when read (TransformPool.updateNormal()).
@@ -526,7 +542,8 @@ export class Scene implements SceneGraph {
     MeshRenderer.boundsVersion[entity] = version;
     MeshRenderer.meshVersion[entity] = mesh.version;
     const box = this._box;
-    const local = meshBox(mesh);
+    const local =
+      (MeshRenderer.localBounds[entity] as Aabb | undefined) ?? meshBox(mesh);
     if (local) {
       transformAabb(local, this.worldMatrixView(entity), box);
     } else {

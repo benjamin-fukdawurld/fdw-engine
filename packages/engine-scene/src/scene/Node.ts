@@ -1,7 +1,7 @@
 import type { IVec3 } from '@fdw/engine-backend';
 import { Transform } from '@fdw/engine-core';
 import type { BaseLight, Camera, Material, Mesh } from '@fdw/engine-core';
-import type { Volume } from '@fdw/engine-geometry';
+import type { Aabb, Volume } from '@fdw/engine-geometry';
 import type { Component, ComponentValues, Schema } from '../ecs/Component';
 import type { SceneNode } from './contracts';
 import { NodeFlags, NodeOptions, Scene } from './Scene';
@@ -150,6 +150,17 @@ export class Node implements SceneNode {
       noShadow: castShadow ? 0 : 1,
       volume,
     });
+  }
+
+  /**
+   * Bounds of the mesh in the space of the node, replacing those of its
+   * positions (undefined: back to them): for the meshes deformed on the
+   * GPU. See Scene.setLocalBounds.
+   */
+  setBounds(box: Aabb | undefined): this {
+    this.check();
+    this.scene.setLocalBounds(this.entity, box);
+    return this;
   }
 
   /** A light at the node, shining along its -z axis. */

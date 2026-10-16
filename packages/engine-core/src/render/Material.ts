@@ -115,4 +115,21 @@ export class Material {
   getValue(name: string): MaterialValue | undefined {
     return this._values.get(name) ?? this._defaults.get(name);
   }
+
+  // A new material drawing another graph with the values, features and
+  // render state of this one, and `values` on top: a variant made by a tool
+  // (the skinning of a mesh adds its nodes to the graph). Later changes of
+  // either do not reach the other.
+  withGraph(
+    graph: MaterialGraphData,
+    values: Readonly<Record<string, MaterialValue>> = {},
+  ): Material {
+    return new Material({
+      graph,
+      values: { ...Object.fromEntries(this._values), ...values },
+      features: this._features,
+      renderState: this.renderState,
+      ...(this.label !== undefined ? { label: this.label } : {}),
+    });
+  }
 }

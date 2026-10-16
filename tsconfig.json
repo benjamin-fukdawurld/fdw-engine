@@ -83,6 +83,15 @@
     },
     {
       "path": "./packages/engine-ktx2"
+    },
+    {
+      "path": "./packages/engine-graph"
+    },
+    {
+      "path": "./packages/engine-animation"
+    },
+    {
+      "path": "./packages/engine-skinning"
     }
   ]
 }
