@@ -123,14 +123,21 @@ animator.set('speed', speed).set('wave', waving ? 1 : 0);
 if (jumpPressed) animator.trigger('jump');
 animator.update(dt);
 skinning.applyPose(animator.pose).update();
-renderer.render({ source: scene, camera, surface });
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  prepare: (graph) => skinning.addPass(graph),
+});
 ```
 
 The animator advances the clips, chooses the transitions and gives a pose:
 the local transform of each joint. `applyPose` gives it to the nodes;
 `update` computes the joint matrices from their world matrices, sends them
-to the GPU, runs the compute pass, and moves the bounds of the mesh with
-the joints, so that the culling and the shadows follow the character.
+to the GPU, and moves the bounds of the mesh with the joints, so that the
+culling and the shadows follow the character. `prepare` adds the compute
+pass of the skinning to the render graph of the frame, before the scene:
+one pass for all the skinned meshes, in the same submission.
 
 ## Events and states
 

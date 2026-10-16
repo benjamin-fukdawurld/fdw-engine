@@ -53,12 +53,23 @@ export class VulkanBindGroupLayout implements GpuBindGroupLayout {
 }
 
 export class VulkanBindGroup implements GpuBindGroup {
+  private _destroyed = false;
+
   constructor(
     readonly layout: VulkanBindGroupLayout,
     readonly handle: GroupHandle,
     // Identifies the group in the commands.
     readonly id: number,
+    private readonly _addon: VulkanAddon,
   ) {}
+
+  // Frees the descriptor set once the GPU no longer uses it.
+  destroy(): void {
+    if (!this._destroyed) {
+      this._destroyed = true;
+      this._addon.destroyGroup(this.handle);
+    }
+  }
 }
 
 export class VulkanRenderPipeline implements GpuRenderPipeline {
@@ -261,7 +272,12 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
           : [{ binding: entry.binding, object: resourceId(entry) }],
       ),
     );
-    return new VulkanBindGroup(layout, handle, this._addon.groupId(handle));
+    return new VulkanBindGroup(
+      layout,
+      handle,
+      this._addon.groupId(handle),
+      this._addon,
+    );
   }
 
   // The layouts of the groups of a program (null for the empty ones).

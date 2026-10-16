@@ -88,6 +88,10 @@ export interface RenderOptions {
   // Leaves out what the opaque items hide: an OcclusionCulling of
   // @fdw/engine-occlusion, one per view (camera). Not with multisampling.
   readonly occlusion?: OcclusionCuller;
+  // Adds passes to the graph of the frame before those of the scene: the
+  // compute passes preparing what it draws (Skinning.addPass of
+  // @fdw/engine-skinning). For render() only.
+  readonly prepare?: (graph: RenderGraph) => void;
 }
 
 /** What a view of the last frame drew: see Renderer.stats. */
@@ -154,7 +158,7 @@ export interface ScenePasses<K extends string = string> {
 
 export interface ScenePassesOptions<K extends string = string> extends Omit<
   RenderOptions,
-  'surface'
+  'surface' | 'prepare'
 > {
   // The color target, and its format. Without it, the surfaces only write
   // their outputs: their shading models are left out (a G-buffer).
@@ -382,6 +386,9 @@ interface PreparedItem {
   readonly pipelineId: number;
   readonly object: ObjectState;
   readonly view: FrameView;
+  // Set by the sort: the order of the material and the mesh of an opaque
+  // entry, the distance to the camera of a transparent one.
+  sortKey: number;
 }
 
 interface BoundState {
@@ -419,15 +426,29 @@ function forEachRun(
 // The object state of an entry: the source of its row in the object table.
 const objectOf = (entry: PreparedItem): ObjectState => entry.object;
 
-const normalized = ({ x, y, z }: Readonly<IVec3>): number[] => {
-  const length = Math.hypot(x, y, z) || 1;
-  return [x / length, y / length, z / length];
-};
+// The orders of the sort (see Renderer.sort): opaque entries by pipeline,
+// material then mesh; transparent ones back to front.
+const byPipeline = (a: PreparedItem, b: PreparedItem): number =>
+  a.pipelineId - b.pipelineId;
+const byState = (a: PreparedItem, b: PreparedItem): number =>
+  a.pipelineId - b.pipelineId || a.sortKey - b.sortKey;
+const backToFront = (a: PreparedItem, b: PreparedItem): number =>
+  b.sortKey - a.sortKey;
+
+// The sort key of an opaque entry: its material, then its mesh, by order of
+// first appearance (below 2^26 meshes: exact in a double).
+const MeshOrders = 2 ** 26;
+
+// The cull modes of the passes of an item (see Renderer.passes).
+const backFaces: readonly PrimitiveState['cullMode'][] = ['back'];
+const bothFaces: readonly PrimitiveState['cullMode'][] = ['front', 'back'];
+const allFaces: readonly PrimitiveState['cullMode'][] = ['none'];
 
 // A cone lighting every direction: the spot factor is always 1.
 const noCone = [-1, -2, 0, 0];
 
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+const zero4 = [0, 0, 0, 0];
 
 // Directional, point and spot lights: the lights of the shading models.
 const isSupported = (light: BaseLight) =>
@@ -435,69 +456,105 @@ const isSupported = (light: BaseLight) =>
   light instanceof PointLight ||
   light instanceof SpotLight;
 
-// The lights of the frame, in the light arrays of the frame uniforms (see
-// lightMembers in engine-shader): one vec4 (or mat4) per light and property.
-function lightValues(
+// Appends the values to an array, without spreading them.
+function pushAll(out: number[], values: ArrayLike<number>): void {
+  for (let i = 0; i < values.length; i++) {
+    out.push(values[i]);
+  }
+}
+
+// Appends a direction, normalized, scaled (-1: the opposite), and w.
+function pushDirection(
+  out: number[],
+  { x, y, z }: Readonly<IVec3>,
+  scale: number,
+  w: number,
+): void {
+  const length = (Math.hypot(x, y, z) || 1) / scale;
+  out.push(x / length, y / length, z / length, w);
+}
+
+// A color as a vec4.
+const pushColor = (out: number[], value: Readonly<IVec3>) =>
+  out.push(value.x, value.y, value.z, 0);
+
+// Writes the lights of the frame into the frame values, in the light
+// arrays of the frame uniforms (see lightMembers in engine-shader): one vec4
+// (or mat4) per light and property. `shadows` are the tiles of the lights
+// casting shadows.
+function writeLightValues(
+  values: Record<string, UniformValue>,
   lights: readonly BaseLight[],
-  shadows: ReadonlyMap<BaseLight, ShadowTile> = new Map(),
+  shadows: readonly ShadowTile[] = [],
 ): Record<string, UniformValue> {
-  const arrays: Record<string, number[]> = {
-    lightPositions: [],
-    lightAmbients: [],
-    lightDiffuses: [],
-    lightSpeculars: [],
-    lightAttenuations: [],
-    lightSpotDirections: [],
-    lightSpotCones: [],
-    lightShadows: [],
-    lightShadowRects: [],
-    lightShadowMatrices: [],
-  };
-  const color = (value: Readonly<IVec3>) => [value.x, value.y, value.z, 0];
+  const positions: number[] = [];
+  const ambients: number[] = [];
+  const diffuses: number[] = [];
+  const speculars: number[] = [];
+  const attenuations: number[] = [];
+  const spotDirections: number[] = [];
+  const spotCones: number[] = [];
+  const lightShadows: number[] = [];
+  const shadowRects: number[] = [];
+  const shadowMatrices: number[] = [];
   let count = 0;
   for (const light of lights) {
-    let position: number[];
-    let attenuation = [1, 0, 0, 0];
-    let spotDirection = [0, 0, 0, 0];
-    let cone = noCone;
     if (light instanceof DirectionalLight) {
       // Towards the light: the opposite of the direction it shines in.
-      position = [...normalized(light.direction).map((v) => -v), 0];
+      pushDirection(positions, light.direction, -1, 0);
+      attenuations.push(1, 0, 0, 0);
+      pushAll(spotDirections, zero4);
+      pushAll(spotCones, noCone);
     } else if (light instanceof PointLight || light instanceof SpotLight) {
       const { x, y, z } = light.position;
-      position = [x, y, z, 1];
-      attenuation = [
+      positions.push(x, y, z, 1);
+      attenuations.push(
         light.constantAttenuation,
         light.linearAttenuation,
         light.quadraticAttenuation,
         0,
-      ];
+      );
       if (light instanceof SpotLight) {
         // Cutoffs are half-angles of the cone, in degrees. The inner cosine
         // stays above the outer one: the shader divides by their difference.
         const cosine = (degrees: number) => Math.cos((degrees * Math.PI) / 180);
         const outer = cosine(light.outerCutoff);
         const inner = Math.max(cosine(light.innerCutoff), outer + 1e-4);
-        spotDirection = [...normalized(light.direction), 0];
-        cone = [inner, outer, 0, 0];
+        pushDirection(spotDirections, light.direction, 1, 0);
+        spotCones.push(inner, outer, 0, 0);
+      } else {
+        pushAll(spotDirections, zero4);
+        pushAll(spotCones, noCone);
       }
     } else {
       continue;
     }
-    const shadow = shadows.get(light);
-    arrays['lightPositions'].push(...position);
-    arrays['lightAmbients'].push(...color(light.ambient));
-    arrays['lightDiffuses'].push(...color(light.diffuse));
-    arrays['lightSpeculars'].push(...color(light.specular));
-    arrays['lightAttenuations'].push(...attenuation);
-    arrays['lightSpotDirections'].push(...spotDirection);
-    arrays['lightSpotCones'].push(...cone);
-    arrays['lightShadows'].push(...(shadow?.shadow ?? [0, 0, 0, 0]));
-    arrays['lightShadowRects'].push(...(shadow?.rect ?? [0, 0, 0, 0]));
-    arrays['lightShadowMatrices'].push(...(shadow?.matrix ?? identity));
+    let shadow: ShadowTile | undefined;
+    for (const tile of shadows) {
+      if (tile.light === light) {
+        shadow = tile;
+      }
+    }
+    pushColor(ambients, light.ambient);
+    pushColor(diffuses, light.diffuse);
+    pushColor(speculars, light.specular);
+    pushAll(lightShadows, shadow?.shadow ?? zero4);
+    pushAll(shadowRects, shadow?.rect ?? zero4);
+    pushAll(shadowMatrices, shadow?.matrix ?? identity);
     count++;
   }
-  return { lightCount: count, ...arrays };
+  values['lightCount'] = count;
+  values['lightPositions'] = positions;
+  values['lightAmbients'] = ambients;
+  values['lightDiffuses'] = diffuses;
+  values['lightSpeculars'] = speculars;
+  values['lightAttenuations'] = attenuations;
+  values['lightSpotDirections'] = spotDirections;
+  values['lightSpotCones'] = spotCones;
+  values['lightShadows'] = lightShadows;
+  values['lightShadowRects'] = shadowRects;
+  values['lightShadowMatrices'] = shadowMatrices;
+  return values;
 }
 
 const frameBlock = (
@@ -519,6 +576,16 @@ const isHandle = (value: MaterialValue | undefined): boolean =>
 // black.
 const isBounded = (light: BaseLight) =>
   !(light instanceof DirectionalLight) && lightRange(light) !== Infinity;
+
+// Whether one of the lights reaches a box.
+function reachesAny(lights: readonly BaseLight[], bounds: Aabb): boolean {
+  for (const light of lights) {
+    if (lightReaches(light, bounds)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 // Whether a material is lit: its graph ends with a surface whose shading
 // model is not unlit. Raw vertex and fragment outputs are not.
@@ -603,6 +670,11 @@ export class Renderer {
   private readonly _meshes = new WeakMap<Mesh, GpuMesh>();
   // By Transform, or by the world transform of the items that give one.
   private readonly _objects = new WeakMap<object, ObjectState>();
+  private _lastObjectKey?: object;
+  private _lastObject?: ObjectState;
+  // The item a list source is visiting, and its world bounds.
+  private _visiting?: Renderable;
+  private _visitingBounds?: Aabb;
   private readonly _materials = new WeakMap<
     Material,
     Map<string, MaterialGroupState>
@@ -620,12 +692,23 @@ export class Renderer {
   private readonly _frustums = new Map<string, Frustum>();
   private readonly _stats = new Map<string, ViewStats>();
   private _shadowSampler?: GpuSampler;
+  private _shadowVariants?: { back: PassVariant; none: PassVariant };
+  // The last pipeline prepared, found again without lookups for the next
+  // item of the same material, mesh and pass.
+  private _lastPrepared?: {
+    material: Material;
+    mesh: Mesh;
+    variant: PassVariant;
+    prepared: PreparedPipeline;
+  };
+  // The keys of the material bind groups, by program and group index.
+  private readonly _groupKeys = new WeakMap<CompiledProgram, string[]>();
   private _toneMapping?: Material;
   // The frame values of the last scene: what the full screen passes read.
-  private _frameValues: Record<string, UniformValue> = {
-    exposure: 1,
-    ...lightValues([]),
-  };
+  private _frameValues: Record<string, UniformValue> = writeLightValues(
+    { exposure: 1 },
+    [],
+  );
   private readonly _fullscreenMesh = new Mesh({
     label: 'fullscreen',
     description: { vertexBuffers: [], vertexCount: 3 },
@@ -697,12 +780,13 @@ export class Renderer {
 
   // Renders a frame to a surface: a render graph with the passes of the
   // scene (see addScenePasses), executed and presented.
-  render({ surface, ...options }: RenderOptions): void {
+  render({ surface, prepare, ...options }: RenderOptions): void {
     const current = surface.getCurrentTarget();
     // The size of the frame: that of the textures it creates.
     const graph = new RenderGraph({
       size: { width: current.width, height: current.height },
     });
+    prepare?.(graph);
     const target = graph.importTexture('surface', current);
     if (this._hdr) {
       // Linear colors in an HDR target, where transparent materials blend
@@ -815,7 +899,7 @@ export class Renderer {
       });
     }
     // What the camera sees, and the bounds of these receivers.
-    let list: Renderable[] = [];
+    const list: Renderable[] = [];
     let occluded = 0;
     const receivers = Aabb.empty();
     from.query(
@@ -838,27 +922,25 @@ export class Renderer {
     // the frustum, its shadows there are not seen.
     clipToFrustum(receivers, frustum);
     const reaching = this.reachingLights(
-      lights ?? [...(from.lights?.() ?? [])],
+      lights ?? from.lights?.() ?? [],
       frustum,
     );
     const used = this.strongestLights(reaching, receivers);
     if (cullUnlit && used.every(isBounded)) {
-      // Only what a light reaches, and what needs no light.
-      list = list.filter((item) => {
-        const bounds = this.worldBounds(item);
-        return (
-          !bounds ||
-          !isLit(item.material) ||
-          used.some((light) => lightReaches(light, bounds))
-        );
-      });
+      // Only what a light reaches, and what needs no light: the list is
+      // compacted in place, the receivers are those kept.
       receivers.makeEmpty();
+      let kept = 0;
       for (const item of list) {
         const bounds = this.worldBounds(item);
-        if (bounds) {
-          receivers.union(bounds);
+        if (!bounds || !isLit(item.material) || reachesAny(used, bounds)) {
+          list[kept++] = item;
+          if (bounds) {
+            receivers.union(bounds);
+          }
         }
       }
+      list.length = kept;
     }
     const casters =
       shadows && !receivers.isEmpty() ? used.filter(castsShadow) : [];
@@ -877,15 +959,18 @@ export class Renderer {
     const view = this.view(name);
     const blended = (item: Renderable) =>
       item.material.renderState.alphaMode === 'blend';
-    // The variants of the passes, by cull mode and blending: the same
-    // objects for all the items (their keys are computed once).
-    const variants = new Map<string, PassVariant>();
+    // The variants of the passes, by cull mode (back, front, none) and
+    // blending: the same objects for all the items (their keys are computed
+    // once).
+    const variants: (PassVariant | undefined)[] = [];
     const variantOf = (
       cullMode: PrimitiveState['cullMode'],
       transparent: boolean,
     ) => {
-      const key = `${cullMode}|${transparent}`;
-      let variant = variants.get(key);
+      const key =
+        (cullMode === 'back' ? 0 : cullMode === 'front' ? 2 : 4) +
+        (transparent ? 1 : 0);
+      let variant = variants[key];
       if (!variant) {
         variant = {
           format: format ?? '',
@@ -898,54 +983,65 @@ export class Renderer {
           // The transparent items only blend their color.
           ...(transparent ? {} : outputs.variant),
         };
-        variants.set(key, variant);
+        variants[key] = variant;
       }
       return variant;
     };
-    const prepared = list
-      .filter((item) =>
+    // The entries of the items drawn, opaque and transparent, then sorted:
+    // what the passes draw.
+    const opaqueEntries: PreparedItem[] = [];
+    const transparentEntries: PreparedItem[] = [];
+    for (const item of list) {
+      const transparent = blended(item);
+      if (
         include === 'all'
           ? // Without color, the transparent items have nothing to write.
-            target !== undefined || !blended(item)
-          : (include === 'transparent') === blended(item),
-      )
-      .flatMap((item) =>
-        this.passes(item).map((cullMode) =>
-          this.prepare(item, variantOf(cullMode, blended(item)), view),
-        ),
-      )
-      .filter((entry): entry is PreparedItem => entry !== undefined);
-    const ordered = this.sort(prepared, cameraCache);
+            target === undefined && transparent
+          : (include === 'transparent') !== transparent
+      ) {
+        continue;
+      }
+      for (const cullMode of this.passes(item)) {
+        const entry = this.prepare(
+          item,
+          variantOf(cullMode, transparent),
+          view,
+        );
+        if (entry) {
+          (transparent ? transparentEntries : opaqueEntries).push(entry);
+        }
+      }
+    }
+    this.sort(opaqueEntries, transparentEntries, cameraCache);
     this._stats.set(name, {
       visible: list.length,
       occluded,
-      drawn: ordered.length,
-      drawCalls: this.drawCalls(ordered),
+      drawn: opaqueEntries.length + transparentEntries.length,
+      // No run spans both: a material is opaque or transparent.
+      drawCalls:
+        this.drawCalls(opaqueEntries) + this.drawCalls(transparentEntries),
       lights: used.length,
       shadowMaps: shadowPass?.tiles.length ?? 0,
       casters: shadowPass?.casters ?? 0,
     });
     const position = camera.position;
-    this._frameValues = {
-      viewProjection: cameraCache.viewProjectionMatrix.value,
-      inverseViewProjection: cameraCache.inverseViewProjectionMatrix.value,
-      view: cameraCache.viewMatrix.value,
-      projection: cameraCache.projectionMatrix.value,
-      cameraPosition: [position.x, position.y, position.z],
-      time,
-      exposure,
-      ...lightValues(
-        used,
-        new Map(shadowPass?.tiles.map((tile) => [tile.light, tile])),
-      ),
-    };
-    if (ordered.length > 0) {
-      this.writeView(view, ordered[0].layout, this._frameValues);
+    this._frameValues = writeLightValues(
+      {
+        viewProjection: cameraCache.viewProjectionMatrix.value,
+        inverseViewProjection: cameraCache.inverseViewProjectionMatrix.value,
+        view: cameraCache.viewMatrix.value,
+        projection: cameraCache.projectionMatrix.value,
+        cameraPosition: [position.x, position.y, position.z],
+        time,
+        exposure,
+      },
+      used,
+      shadowPass?.tiles,
+    );
+    const first = opaqueEntries[0] ?? transparentEntries[0];
+    if (first) {
+      this.writeView(view, first.layout, this._frameValues);
     }
-    const isTransparent = (entry: PreparedItem) =>
-      entry.item.material.renderState.alphaMode === 'blend';
-    const opaqueEntries = ordered.filter((entry) => !isTransparent(entry));
-    const transparentEntries = ordered.filter(isTransparent);
     // The textures of the graph read by the materials, and the materials
     // that have them.
     const readInputs = (pass: {
@@ -960,11 +1056,16 @@ export class Renderer {
       read: readonly { input: string; handle: TextureHandle }[],
       texture: (handle: TextureHandle) => unknown,
     ) => {
+      if (read.length === 0) {
+        return;
+      }
+      const materials = new Set<Material>();
+      for (const entry of entries) {
+        materials.add(entry.item.material);
+      }
       for (const { input, handle } of read) {
         const real = texture(handle) as MaterialValue;
-        for (const material of new Set(
-          entries.map((entry) => entry.item.material),
-        )) {
+        for (const material of materials) {
           if (
             hasTexture(material, input) &&
             material.getValue(input) !== real
@@ -1126,6 +1227,11 @@ export class Renderer {
     if (!target && list.length === 0) {
       throw new Error(`"${name}": nothing to write: give a target or outputs`);
     }
+    if (list.length === 0) {
+      // Only the color (the frames of render()).
+      this.checkColorTargets(name, [format as GpuTextureFormat]);
+      return { list, variant: {} };
+    }
     const first = target ? 1 : 0;
     const surfaceOutputs: SurfaceOutput[] = list.map((output, i) => {
       const scalar = /uint$/.test(output.format)
@@ -1284,8 +1390,12 @@ export class Renderer {
   destroy(): void {
     for (const view of this._views.values()) {
       view.buffer?.destroy();
+      this.retireGroups(view.bindGroups);
     }
     this._views.clear();
+    for (const { bindGroup } of this._objectGroups.values()) {
+      this._objectRows.retire(bindGroup);
+    }
     this._shadowSampler?.destroy();
     this._shadowSampler = undefined;
     this._runner.destroy();
@@ -1299,14 +1409,25 @@ export class Renderer {
   // A list of items as a source: each item tested against the frustum with
   // its world bounds. Items without positions are always drawn.
   private listSource(items: Iterable<Renderable>): RenderSource {
-    const list = [...items];
+    // Arrays as they are: they are only read while the passes are added.
+    const list = Array.isArray(items)
+      ? (items as readonly Renderable[])
+      : [...items];
     return {
       query: (frustum, _layers, visit) => {
-        for (const item of list) {
-          const bounds = this.worldBounds(item);
-          if (!bounds || frustum.classifyAabb(bounds) !== 'outside') {
-            visit(item);
+        try {
+          for (const item of list) {
+            const bounds = this.worldBounds(item);
+            if (!bounds || frustum.classifyAabb(bounds) !== 'outside') {
+              // Its bounds, found again while it is visited.
+              this._visiting = item;
+              this._visitingBounds = bounds;
+              visit(item);
+            }
           }
+        } finally {
+          this._visiting = undefined;
+          this._visitingBounds = undefined;
         }
       },
       bounds: (out) => {
@@ -1337,6 +1458,9 @@ export class Renderer {
     if (item.bounds) {
       return item.bounds;
     }
+    if (item === this._visiting) {
+      return this._visitingBounds;
+    }
     const state = this.objectState(item);
     const version = state.current();
     if (
@@ -1360,23 +1484,27 @@ export class Renderer {
   // The lights that can light something in the frustum: every directional
   // light, and the point and spot lights whose range reaches it.
   private reachingLights(
-    lights: readonly BaseLight[],
+    lights: Iterable<BaseLight>,
     frustum: Frustum,
   ): BaseLight[] {
-    return lights.filter((light) => {
+    const reaching: BaseLight[] = [];
+    for (const light of lights) {
       if (!isSupported(light)) {
-        return false;
+        continue;
       }
-      if (light instanceof DirectionalLight) {
-        return true;
+      let reaches = light instanceof DirectionalLight;
+      if (!reaches) {
+        const range = lightRange(light);
+        const { x, y, z } = (light as PointLight | SpotLight).position;
+        reaches =
+          range === Infinity ||
+          (range > 0 && frustum.intersectsSphere([x, y, z], range));
       }
-      const range = lightRange(light);
-      if (range === Infinity) {
-        return true;
+      if (reaches) {
+        reaching.push(light);
       }
-      const { x, y, z } = (light as PointLight | SpotLight).position;
-      return range > 0 && frustum.intersectsSphere([x, y, z], range);
-    });
+    }
+    return reaching;
   }
 
   // Up to MaxLights lights: the directional ones, then the others by the
@@ -1432,18 +1560,7 @@ export class Renderer {
       this._shadowAtlasSize,
     );
     let casterCount = 0;
-    const shadowVariant = (cullMode: 'back' | 'none'): PassVariant => ({
-      format,
-      cullMode,
-      linear: false,
-      shadows: false,
-      depthOnly: true,
-      samples: 1,
-    });
-    const shadowVariants = {
-      back: shadowVariant('back'),
-      none: shadowVariant('none'),
-    };
+    const shadowVariants = this.shadowVariants();
     const draws = tiles.map((tile, index) => {
       const view = this.view(`${name} ${index}`);
       const casters: Renderable[] = [];
@@ -1460,18 +1577,20 @@ export class Renderer {
         },
         'shadow',
       );
-      const entries = casters
-        .map((item) =>
-          this.prepare(
-            item,
-            item.material.renderState.doubleSided
-              ? shadowVariants.none
-              : shadowVariants.back,
-            view,
-          ),
-        )
-        .filter((entry): entry is PreparedItem => entry !== undefined)
-        .sort((a, b) => a.pipelineId - b.pipelineId);
+      const entries: PreparedItem[] = [];
+      for (const item of casters) {
+        const entry = this.prepare(
+          item,
+          item.material.renderState.doubleSided
+            ? shadowVariants.none
+            : shadowVariants.back,
+          view,
+        );
+        if (entry) {
+          entries.push(entry);
+        }
+      }
+      entries.sort(byPipeline);
       if (entries.length > 0) {
         this.writeView(view, entries[0].layout, {
           viewProjection: tile.matrix,
@@ -1498,6 +1617,24 @@ export class Renderer {
     return { atlas: written.depth, tiles, casters: casterCount };
   }
 
+  // The variants of the shadow passes: the same objects every frame (their
+  // keys are computed once).
+  private shadowVariants(): { back: PassVariant; none: PassVariant } {
+    if (!this._shadowVariants) {
+      const format = this.backend.depthFormat;
+      const variant = (cullMode: 'back' | 'none'): PassVariant => ({
+        format,
+        cullMode,
+        linear: false,
+        shadows: false,
+        depthOnly: true,
+        samples: 1,
+      });
+      this._shadowVariants = { back: variant('back'), none: variant('none') };
+    }
+    return this._shadowVariants;
+  }
+
   // The atlas read by the programs of a view, in this frame.
   private bindShadowMap(
     view: FrameView,
@@ -1505,8 +1642,17 @@ export class Renderer {
   ): void {
     if (atlas && view.shadowMap !== atlas) {
       view.shadowMap = atlas;
-      view.bindGroups.clear();
+      this.retireGroups(view.bindGroups);
     }
+  }
+
+  // Destroys bind groups at the next frame (their descriptor sets on
+  // Vulkan): those of this frame may be recorded already.
+  private retireGroups(groups: Map<string, GpuBindGroup>): void {
+    for (const group of groups.values()) {
+      this._objectRows.retire(group);
+    }
+    groups.clear();
   }
 
   // Filtered depth comparisons: the visibility is interpolated between
@@ -1571,12 +1717,12 @@ export class Renderer {
   // A double-sided transparent item is drawn twice: its back faces, then its
   // front faces, so that they blend in the right order (exact for convex
   // shapes). The sort keeps the two passes in this order.
-  private passes(item: Renderable): PrimitiveState['cullMode'][] {
+  private passes(item: Renderable): readonly PrimitiveState['cullMode'][] {
     const { alphaMode, doubleSided } = item.material.renderState;
     if (!doubleSided) {
-      return ['back'];
+      return backFaces;
     }
-    return alphaMode === 'blend' ? ['front', 'back'] : ['none'];
+    return alphaMode === 'blend' ? bothFaces : allFaces;
   }
 
   // Creates a pipeline on first use, asynchronously if asked. Returns false
@@ -1613,48 +1759,52 @@ export class Renderer {
       variant,
     );
     const state = item.material.renderState;
-    const ready = this.ensurePipeline(pipelineKey, () => ({
-      label: item.material.label ?? program.name,
-      program,
-      vertex: item.mesh.description,
-      primitive: {
-        topology: 'triangle-list',
-        cullMode: variant.cullMode,
-        frontFace: 'ccw',
-      },
-      depthStencil: variant.depthOnly
-        ? {
-            format: variant.format,
-            depthWrite: true,
-            depthCompare: 'less',
-            // Against shadow acne on slopes, with the normal offset of the
-            // lookups.
-            depthBias: 2,
-            depthBiasSlopeScale: 2,
-          }
-        : {
-            format: this.backend.depthFormat,
-            depthWrite: state.depthTest && state.depthWrite,
-            depthCompare: state.depthTest ? 'less' : 'always',
+    // The descriptor only for a pipeline not created yet.
+    const known = this._pipelines.get(pipelineKey);
+    const ready = known
+      ? 'pipeline' in known
+      : this.ensurePipeline(pipelineKey, () => ({
+          label: item.material.label ?? program.name,
+          program,
+          vertex: item.mesh.description,
+          primitive: {
+            topology: 'triangle-list',
+            cullMode: variant.cullMode,
+            frontFace: 'ccw',
           },
-      targets: variant.depthOnly
-        ? []
-        : [
-            ...(variant.color === false
-              ? []
-              : [
-                  {
-                    format: variant.format,
-                    ...(state.alphaMode === 'blend'
-                      ? { blend: alphaBlending }
-                      : {}),
-                  },
-                ]),
-            // The outputs of the opaque items: never blended.
-            ...(variant.outputFormats ?? []).map((format) => ({ format })),
-          ],
-      ...(variant.samples > 1 ? { sampleCount: variant.samples } : {}),
-    }));
+          depthStencil: variant.depthOnly
+            ? {
+                format: variant.format,
+                depthWrite: true,
+                depthCompare: 'less',
+                // Against shadow acne on slopes, with the normal offset of the
+                // lookups.
+                depthBias: 2,
+                depthBiasSlopeScale: 2,
+              }
+            : {
+                format: this.backend.depthFormat,
+                depthWrite: state.depthTest && state.depthWrite,
+                depthCompare: state.depthTest ? 'less' : 'always',
+              },
+          targets: variant.depthOnly
+            ? []
+            : [
+                ...(variant.color === false
+                  ? []
+                  : [
+                      {
+                        format: variant.format,
+                        ...(state.alphaMode === 'blend'
+                          ? { blend: alphaBlending }
+                          : {}),
+                      },
+                    ]),
+                // The outputs of the opaque items: never blended.
+                ...(variant.outputFormats ?? []).map((format) => ({ format })),
+              ],
+          ...(variant.samples > 1 ? { sampleCount: variant.samples } : {}),
+        }));
     if (!ready) {
       return undefined;
     }
@@ -1666,6 +1816,7 @@ export class Renderer {
       pipelineId,
       object: this.objectState(item),
       view,
+      sortKey: 0,
     };
   }
 
@@ -1677,6 +1828,33 @@ export class Renderer {
     variant: PassVariant,
   ): PreparedPipeline {
     const { material, mesh } = item;
+    const last = this._lastPrepared;
+    if (
+      last &&
+      last.material === material &&
+      last.mesh === mesh &&
+      last.variant === variant &&
+      last.prepared.features === material.features
+    ) {
+      return last.prepared;
+    }
+    const prepared = this.findPipeline(material, mesh, variant);
+    if (last) {
+      last.material = material;
+      last.mesh = mesh;
+      last.variant = variant;
+      last.prepared = prepared;
+    } else {
+      this._lastPrepared = { material, mesh, variant, prepared };
+    }
+    return prepared;
+  }
+
+  private findPipeline(
+    material: Material,
+    mesh: Mesh,
+    variant: PassVariant,
+  ): PreparedPipeline {
     let byMesh = this._prepared.get(material);
     if (!byMesh) {
       byMesh = new WeakMap();
@@ -1804,6 +1982,7 @@ export class Renderer {
       pipelineId: -1,
       object: this.objectState(item),
       view,
+      sortKey: 0,
       targets: names,
     };
   }
@@ -1867,52 +2046,60 @@ export class Renderer {
     return this._toneMapping;
   }
 
-  // Opaque and masked items first, grouped by pipeline then material to
-  // limit state changes; then transparent items, back to front.
-  private sort(items: PreparedItem[], camera: CameraCache): PreparedItem[] {
-    const opaque = items.filter(
-      (entry) => entry.item.material.renderState.alphaMode !== 'blend',
-    );
-    const transparent = items.filter(
-      (entry) => entry.item.material.renderState.alphaMode === 'blend',
-    );
-    const materialOrder = new Map<Material, number>();
-    const materialIndex = (material: Material) => {
-      if (!materialOrder.has(material)) {
-        materialOrder.set(material, materialOrder.size);
+  // Sorts the entries in place: the opaque and masked ones grouped by
+  // pipeline then material to limit state changes; the transparent ones
+  // back to front. The keys are computed once per entry.
+  private sort(
+    opaque: PreparedItem[],
+    transparent: PreparedItem[],
+    camera: CameraCache,
+  ): void {
+    if (opaque.length > 1) {
+      // By pipeline, material, then mesh, each in order of appearance: the
+      // items sharing them follow each other, and become one instanced draw.
+      const materialOrder = new Map<Material, number>();
+      const meshOrder = new Map<Mesh, number>();
+      // The previous entry's, without lookups: they often follow each other.
+      let material: Material | undefined;
+      let mesh: Mesh | undefined;
+      let materialIndex = 0;
+      let meshIndex = 0;
+      for (const entry of opaque) {
+        if (entry.item.material !== material) {
+          material = entry.item.material;
+          let index = materialOrder.get(material);
+          if (index === undefined) {
+            index = materialOrder.size;
+            materialOrder.set(material, index);
+          }
+          materialIndex = index;
+        }
+        if (entry.item.mesh !== mesh) {
+          mesh = entry.item.mesh;
+          let index = meshOrder.get(mesh);
+          if (index === undefined) {
+            index = meshOrder.size;
+            meshOrder.set(mesh, index);
+          }
+          meshIndex = index;
+        }
+        entry.sortKey = materialIndex * MeshOrders + meshIndex;
       }
-      return materialOrder.get(material) as number;
-    };
+      opaque.sort(byState);
+    }
 
-    const meshOrder = new Map<Mesh, number>();
-    const meshIndex = (mesh: Mesh) => {
-      if (!meshOrder.has(mesh)) {
-        meshOrder.set(mesh, meshOrder.size);
+    if (transparent.length > 1) {
+      const position = camera.camera.position;
+      for (const entry of transparent) {
+        const world = entry.object.matrix();
+        entry.sortKey = Math.hypot(
+          world[12] - position.x,
+          world[13] - position.y,
+          world[14] - position.z,
+        );
       }
-      return meshOrder.get(mesh) as number;
-    };
-
-    // By pipeline, material, then mesh: the items sharing them follow each
-    // other, and become one instanced draw.
-    opaque.sort(
-      (a, b) =>
-        a.pipelineId - b.pipelineId ||
-        materialIndex(a.item.material) - materialIndex(b.item.material) ||
-        meshIndex(a.item.mesh) - meshIndex(b.item.mesh),
-    );
-
-    const position = camera.camera.position;
-    const distance = (entry: PreparedItem) => {
-      const world = entry.object.matrix();
-      return Math.hypot(
-        world[12] - position.x,
-        world[13] - position.y,
-        world[14] - position.z,
-      );
-    };
-    transparent.sort((a, b) => distance(b) - distance(a));
-
-    return [...opaque, ...transparent];
+      transparent.sort(backToFront);
+    }
   }
 
   // --- Uniforms ------------------------------------------------------------------
@@ -1937,13 +2124,18 @@ export class Renderer {
         }" without transform nor world matrix`,
       );
     }
-    let state = this._objects.get(key);
+    // The same item is often asked twice in a row (its bounds when the
+    // source visits it, then when the renderer keeps it).
+    let state =
+      key === this._lastObjectKey ? this._lastObject : this._objects.get(key);
     if (!state) {
       state = world
         ? this.worldState(world)
         : this.transformState(transform as Transform);
       this._objects.set(key, state);
     }
+    this._lastObjectKey = key;
+    this._lastObject = state;
     const id = item.id ?? 0;
     if (id !== (state.id ?? 0)) {
       if (!Number.isInteger(id) || id < 0 || id > MaxObjectId) {
@@ -2165,7 +2357,12 @@ export class Renderer {
       groups = new Map();
       this._materials.set(material, groups);
     }
-    const key = `${program.programKey}:${group.index}`;
+    let keys = this._groupKeys.get(program);
+    if (!keys) {
+      keys = [];
+      this._groupKeys.set(program, keys);
+    }
+    const key = (keys[group.index] ??= `${program.programKey}:${group.index}`);
     let state = groups.get(key);
     if (!state) {
       state = { version: -1, resources: [] };
@@ -2217,6 +2414,9 @@ export class Renderer {
       resources.length !== state.resources.length ||
       resources.some((resource, i) => resource !== state?.resources[i]);
     if (!state.bindGroup || resourcesChanged || bufferCreated) {
+      if (state.bindGroup) {
+        this._objectRows.retire(state.bindGroup);
+      }
       state.bindGroup = this.backend.pipelines.createBindGroup(
         this.bindGroupLayout(group),
         entries,
@@ -2321,13 +2521,14 @@ export class Renderer {
     }
 
     const mesh = this.gpuMesh(item.mesh);
-    pipeline.vertexBuffers.forEach((meshBuffer, slot) => {
-      const buffer = mesh.vertexBuffers[meshBuffer];
+    const slots = pipeline.vertexBuffers;
+    for (let slot = 0; slot < slots.length; slot++) {
+      const buffer = mesh.vertexBuffers[slots[slot]];
       if (state.vertexBuffers[slot] !== buffer) {
         pass.setVertexBuffer(slot, buffer);
         state.vertexBuffers[slot] = buffer;
       }
-    });
+    }
     if (mesh.indexBuffer && item.mesh.indices) {
       const format = item.mesh.description.indexBuffer?.format ?? 'uint32';
       if (
@@ -2352,6 +2553,9 @@ export class Renderer {
     const table = rows.table;
     let cached = this._objectGroups.get(layout.key);
     if (!cached || cached.version !== rows.version) {
+      if (cached) {
+        this._objectRows.retire(cached.bindGroup);
+      }
       cached = {
         version: rows.version,
         bindGroup: this.backend.pipelines.createBindGroup(layout, [

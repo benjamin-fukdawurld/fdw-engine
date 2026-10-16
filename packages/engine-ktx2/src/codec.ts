@@ -11,7 +11,13 @@ import {
   type BackendCapabilities,
   type GpuTextureFormat,
 } from '@fdw/engine-backend';
-import { ResourceError, type ResourceBytes } from '@fdw/engine-resources';
+import {
+  isAbortError,
+  ResourceError,
+  runTask,
+  type DecodePool,
+  type ResourceBytes,
+} from '@fdw/engine-resources';
 import {
   isKtx2,
   Ktx2ColorModel,
@@ -20,6 +26,12 @@ import {
   type Ktx2Container,
 } from './container';
 import { engineFormat } from './formats';
+import {
+  inflate,
+  ktx2Tasks,
+  type InflateJob,
+  type TranscodeJob,
+} from './workers';
 
 /** The formats a Basis Universal transcoder can write, by their `basis_transcoder` names. */
 export type BasisTarget = 'bc7' | 'astc-4x4' | 'etc2' | 'etc1' | 'rgba8';
@@ -70,6 +82,14 @@ export interface Ktx2Options {
   readonly transcoder?: BasisTranscoder;
   /** For the zstd supercompressed files that are not Basis Universal: `unsupported` without it. */
   readonly zstd?: ZstdDecoder;
+  /**
+   * Inflates (zlib, zstd) and transcodes in the workers of this pool (the
+   * `WorkerPool` of `-web` or `-native`) rather than on the main thread.
+   * Its worker script serves `ktx2WorkerTasks` (`@fdw/engine-ktx2/worker`),
+   * given the decoders the files need: `transcoder` and `zstd` are then
+   * unused here. Reading the container stays here (a few headers).
+   */
+  readonly workers?: DecodePool;
 }
 
 /** The formats a Basis Universal transcoding goes to, the preferred first. */
@@ -202,15 +222,6 @@ const owned = (bytes: Uint8Array): Uint8Array<ArrayBuffer> =>
     ? (bytes as Uint8Array<ArrayBuffer>)
     : new Uint8Array(bytes);
 
-async function inflate(
-  data: Uint8Array<ArrayBuffer>,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const stream = new Blob([data])
-    .stream()
-    .pipeThrough(new DecompressionStream('deflate'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
 /** The data of the levels of a file in a GPU format, inflated. */
 async function readLevels(
   bytes: ResourceBytes,
@@ -220,8 +231,8 @@ async function readLevels(
   signal?: AbortSignal,
 ): Promise<ImageLevel[]> {
   const scheme = ktx.supercompressionScheme;
-  const { zstd } = options;
-  if (scheme === Ktx2Supercompression.zstd && !zstd) {
+  const { zstd, workers } = options;
+  if (scheme === Ktx2Supercompression.zstd && !zstd && !workers) {
     throw new ResourceError(
       'unsupported',
       uri,
@@ -239,13 +250,36 @@ async function readLevels(
       `${uri}: supercompression scheme ${scheme} for a GPU format`,
     );
   }
+  const levelData = (level: Ktx2Container['levels'][number]) =>
+    bytes.subarray(level.byteOffset, level.byteOffset + level.byteLength);
+  if (scheme !== Ktx2Supercompression.none && workers) {
+    // Copies: the file stays here.
+    const job: InflateJob = {
+      scheme,
+      levels: ktx.levels.map((level) => ({
+        bytes: levelData(level).slice(),
+        uncompressedSize: level.uncompressedByteLength,
+      })),
+    };
+    try {
+      return await runTask<ImageLevel[]>(workers, ktx2Tasks.inflate, job, {
+        transfer: job.levels.map((level) => level.bytes.buffer),
+        signal,
+      });
+    } catch (cause) {
+      if (isAbortError(cause)) throw cause;
+      throw new ResourceError(
+        'decode',
+        uri,
+        `${uri}: ${(cause as Error).message}`,
+        { cause },
+      );
+    }
+  }
   const levels: ImageLevel[] = [];
   for (const level of ktx.levels) {
     signal?.throwIfAborted();
-    const data = bytes.subarray(
-      level.byteOffset,
-      level.byteOffset + level.byteLength,
-    );
+    const data = levelData(level);
     if (scheme === Ktx2Supercompression.none) {
       levels.push(data);
       continue;
@@ -307,7 +341,7 @@ function universalImage(
     kind === 'etc1s'
       ? samples.length > 1
       : samples[0]?.channelId === 3 || samples[0]?.channelId === 5;
-  const { transcoder } = options;
+  const { transcoder, workers } = options;
   return {
     type: shape.type,
     width: shape.width,
@@ -317,7 +351,7 @@ function universalImage(
     // The file itself: what the transcoder reads, and the bytes the image holds.
     levels: [bytes],
     async transcode(formats, signal): Promise<TranscodedImage> {
-      if (!transcoder) {
+      if (!transcoder && !workers) {
         throw new ResourceError(
           'unsupported',
           uri,
@@ -328,11 +362,28 @@ function universalImage(
       const { target, format } = basisTarget(formats, kind, hasAlpha);
       let result: BasisTranscodeResult;
       try {
-        result = await transcoder.transcode(bytes, target, {
-          signal,
-          kind,
-          hasAlpha,
-        });
+        if (workers) {
+          // A copy: the image keeps the file, for another backend.
+          const job: TranscodeJob = {
+            ktx2: bytes.slice(),
+            target,
+            kind,
+            hasAlpha,
+          };
+          result = {
+            levels: await runTask<Uint8Array[]>(
+              workers,
+              ktx2Tasks.transcode,
+              job,
+              { transfer: [job.ktx2.buffer], signal },
+            ),
+          };
+        } else
+          result = await transcoder!.transcode(bytes, target, {
+            signal,
+            kind,
+            hasAlpha,
+          });
       } catch (cause) {
         if (signal?.aborted) throw cause;
         throw new ResourceError(

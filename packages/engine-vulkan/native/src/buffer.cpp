@@ -30,15 +30,6 @@ VkBufferUsageFlags bufferUsage(uint32_t usage) {
   return flags;
 }
 
-// The copies of the transfer command buffer run in order: each one after
-// the previous ones (they may touch the same bytes).
-void afterPreviousTransfers(VkCommandBuffer commands) {
-  memoryBarrier(commands, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
-}
-
 int checkRange(const fdw_vk_buffer *buffer, uint64_t offset, uint64_t size) {
   if (offset + size > buffer->size || offset + size < offset) {
     return fail("The range " + std::to_string(offset) + " + " +
@@ -75,10 +66,12 @@ fdw_vk_buffer *fdw_vk_buffer_create(fdw_vk_context *context, uint64_t size,
   setName(context, VK_OBJECT_TYPE_BUFFER,
           reinterpret_cast<uint64_t>(buffer->buffer), label);
   // Zeroed, as in WebGPU: the memory may hold what a destroyed buffer left.
-  // Recorded with the transfers, which run before the next submission.
+  // Recorded with the transfers, which run before the next submission; the
+  // first use waits for it (a fill is a clear command).
   VkCommandBuffer commands = transfers(context);
-  afterPreviousTransfers(commands);
   vkCmdFillBuffer(commands, buffer->buffer, 0, VK_WHOLE_SIZE, 0);
+  buffer->last = {VK_PIPELINE_STAGE_2_CLEAR_BIT,
+                  VK_ACCESS_2_TRANSFER_WRITE_BIT};
   buffer->id = context->nextId++;
   context->buffers[buffer->id] = buffer;
   return buffer;
@@ -110,13 +103,13 @@ int fdw_vk_buffer_write(fdw_vk_context *context, fdw_vk_buffer *buffer,
   std::memcpy(staging.mapped, data, size);
   vmaFlushAllocation(context->allocator, staging.allocation, 0, size);
 
+  // After the last use of the buffer (the staging buffer is new, written
+  // by the host before the submission); its next use waits for the copy.
   VkCommandBuffer commands = transfers(context);
-  afterPreviousTransfers(commands);
+  useBuffer(commands, buffer, VK_PIPELINE_STAGE_2_COPY_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT);
   VkBufferCopy region{0, offset, size};
   vkCmdCopyBuffer(commands, staging.buffer, buffer->buffer, 1, &region);
-  // The barriers at the ends of the transfers order this write with the
-  // commands before and after.
-  buffer->last = {};
   VmaAllocator allocator = context->allocator;
   defer(context, [allocator, staging] {
     vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
@@ -133,14 +126,16 @@ int fdw_vk_buffer_read(fdw_vk_context *context, fdw_vk_buffer *buffer,
   if (createHostBuffer(context, size > 0 ? size : 4, true, &readback) != 0) {
     return -1;
   }
+  // After the last write of the buffer.
   VkCommandBuffer commands = transfers(context);
-  afterPreviousTransfers(commands);
   if (size > 0) {
+    useBuffer(commands, buffer, VK_PIPELINE_STAGE_2_COPY_BIT,
+              VK_ACCESS_2_TRANSFER_READ_BIT);
     VkBufferCopy region{offset, 0, size};
     vkCmdCopyBuffer(commands, buffer->buffer, readback.buffer, 1, &region);
   }
   // The CPU reads the copy once the submission is done.
-  memoryBarrier(commands, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+  memoryBarrier(commands, VK_PIPELINE_STAGE_2_COPY_BIT,
                 VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_HOST_BIT,
                 VK_ACCESS_2_HOST_READ_BIT);
   const uint64_t submission = submit(context, {});

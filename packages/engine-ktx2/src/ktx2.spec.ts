@@ -8,9 +8,12 @@ import {
 import type { GpuTextureFormat } from '@fdw/engine-backend';
 import { fakeBackend } from '@fdw/engine-core/testing';
 import {
+  createLocalPool,
   MemorySource,
   ResourceError,
   ResourceStore,
+  type DecodePool,
+  type TaskMessage,
 } from '@fdw/engine-resources';
 import { describe, expect, it } from 'vitest';
 import {
@@ -24,6 +27,7 @@ import {
   type Ktx2Options,
 } from './codec';
 import { isKtx2, KTX2_IDENTIFIER, parseKtx2 } from './container';
+import { ktx2WorkerTasks, type Ktx2WorkerOptions } from './workers';
 
 interface Ktx2File {
   readonly vkFormat: number;
@@ -158,6 +162,19 @@ const rejection = async (promise: Promise<unknown>): Promise<ResourceError> => {
   expect(error).toBeInstanceOf(ResourceError);
   return error as ResourceError;
 };
+
+/** Workers of the tests: the tasks run here, cloned as `postMessage` does. Logs the tasks. */
+function workerPool(options: Ktx2WorkerOptions = {}) {
+  const local = createLocalPool(ktx2WorkerTasks(options));
+  const tasks: string[] = [];
+  const workers: DecodePool = {
+    run(payload, runOptions) {
+      tasks.push((payload as TaskMessage).task);
+      return local.run(payload, runOptions);
+    },
+  };
+  return { workers, tasks };
+}
 
 async function deflate(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
   const stream = new Blob([data])
@@ -398,6 +415,72 @@ describe('ktx2Codec', () => {
   });
 });
 
+describe('KTX2 in workers', () => {
+  it('inflates zstd and zlib levels in the workers, the file left whole', async () => {
+    const zstdFile = writeKtx2({
+      vkFormat: R8G8B8A8_UNORM,
+      width: 4,
+      height: 4,
+      scheme: 2,
+      levels: mipLevels.map((l) =>
+        Uint8Array.from([...l].reverse().concat(0xff)),
+      ),
+      uncompressed: mipLevels.map((l) => l.byteLength),
+    });
+    const sizes: number[] = [];
+    const { workers, tasks } = workerPool({
+      zstd: {
+        decode: (bytes, size) => (
+          sizes.push(size),
+          bytes.slice(0, -1).reverse()
+        ),
+      },
+    });
+    // No decoder here: the workers have it.
+    const bytes = new Uint8Array(zstdFile);
+    const image = await ktx2Codec({ workers }).decode(bytes, { uri: 'z.ktx2' });
+    expect(image.levels.map((l) => [...(l as Uint8Array)])).toEqual(
+      mipLevels.map((l) => [...l]),
+    );
+    expect(sizes).toEqual([64, 16, 4]);
+    expect(bytes.byteLength).toBe(zstdFile.byteLength); // copied, not moved
+
+    const zlibFile = writeKtx2({
+      vkFormat: R8G8B8A8_UNORM,
+      width: 4,
+      height: 4,
+      scheme: 3,
+      levels: await Promise.all(mipLevels.map((l) => deflate(l))),
+      uncompressed: mipLevels.map((l) => l.byteLength),
+    });
+    const zlib = await decode(zlibFile, { workers });
+    expect(zlib.levels.map((l) => [...(l as Uint8Array)])).toEqual(
+      mipLevels.map((l) => [...l]),
+    );
+    expect(tasks).toEqual(['ktx2/inflate', 'ktx2/inflate']);
+    // Uncompressed levels are not posted.
+    await decode(mipmapped(), { workers });
+    expect(tasks).toHaveLength(2);
+  });
+
+  it('fails with decode when the workers lack the decoder', async () => {
+    const file = writeKtx2({
+      vkFormat: R8G8B8A8_UNORM,
+      width: 1,
+      height: 1,
+      scheme: 2,
+      levels: [filled(5)],
+      uncompressed: [4],
+    });
+    const error = await rejection(
+      decode(file, { workers: workerPool().workers }, 'z.ktx2'),
+    );
+    expect(error.code).toBe('decode');
+    expect(error.message).toContain('z.ktx2');
+    expect(error.message).toContain('ktx2WorkerTasks({ zstd })');
+  });
+});
+
 describe('Basis Universal', () => {
   const ETC1S = 163;
   const UASTC = 166;
@@ -521,6 +604,38 @@ describe('Basis Universal', () => {
       kind: 'etc1s',
       hasAlpha: false,
     });
+  });
+
+  it('transcodes in the workers, the file kept for another backend', async () => {
+    const { transcoder, calls } = fakeTranscoder();
+    const { workers, tasks } = workerPool({ transcoder });
+    const file = etc1s(true);
+    const image = await decode(file, { workers });
+    const bc7 = await image.transcode!(['bc7-rgba-unorm']);
+    expect(bc7.format).toBe('bc7-rgba-unorm');
+    expect(bc7.levels.map((l) => l.byteLength)).toEqual([64, 16]);
+    const rgba = await image.transcode!([]);
+    expect(rgba.levels.map((l) => l.byteLength)).toEqual([256, 64]);
+    expect(image.levels[0].byteLength).toBe(file.byteLength);
+    expect(calls).toEqual([
+      { target: 'bc7', kind: 'etc1s', hasAlpha: true },
+      { target: 'rgba8', kind: 'etc1s', hasAlpha: true },
+    ]);
+    expect(tasks).toEqual(['ktx2/transcode', 'ktx2/transcode']);
+
+    // Aborted while in the worker: its result is dropped.
+    const controller = new AbortController();
+    const late = image.transcode!([], controller.signal);
+    controller.abort();
+    expect((await rejection(late)).code).toBe('aborted');
+
+    const missing = await decode(file, { workers: workerPool().workers });
+    const error = await rejection(missing.transcode!([]));
+    expect(error.code).toBe('decode');
+    expect(error.message).toContain('cannot transcode');
+    expect((error.cause as Error).message).toContain(
+      'ktx2WorkerTasks({ transcoder })',
+    );
   });
 
   it('reads the alpha of UASTC data from its channel', async () => {

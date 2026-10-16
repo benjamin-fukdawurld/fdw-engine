@@ -217,6 +217,11 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       options?: GpuTextureWriteOptions;
     }[],
     renderPasses: [] as string[],
+    // The compute passes, by label, and their dispatches.
+    computePasses: [] as string[],
+    dispatches: [] as { pipeline: string; workgroups: readonly number[] }[],
+    // The bind groups destroyed.
+    destroyedGroups: 0,
     // The descriptors of the render passes, with their attachments.
     passes: [] as RenderPassDescriptor[],
     viewports: [] as number[][],
@@ -290,18 +295,18 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           ).map((b) => b.buffer),
         };
       },
-      createComputePipeline: () => {
-        throw new Error('no compute in the fake backend');
-      },
-      createComputePipelineAsync: async () => {
-        throw new Error('no compute in the fake backend');
-      },
+      createComputePipeline: ({ program, label }) => ({
+        label: label ?? program.name,
+      }),
+      createComputePipelineAsync: async ({ program, label }) => ({
+        label: label ?? program.name,
+      }),
       createBindGroupLayout: (group) => ({
         key: JSON.stringify(group.bindings.map((b) => b.resource)),
       }),
       createBindGroup: (layout, entries) => {
         log.bindGroups.push({ key: layout.key, entries });
-        return { layout };
+        return { layout, destroy: () => log.destroyedGroups++ };
       },
     },
     cameraMath,
@@ -345,8 +350,20 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       destroy: () => undefined,
     }),
     createCommandEncoder: () => ({
-      beginComputePass: () => {
-        throw new Error('no compute in the fake backend');
+      beginComputePass: (label) => {
+        log.computePasses.push(label ?? '');
+        let pipeline = '';
+        return {
+          setPipeline: (computePipeline) => {
+            pipeline = computePipeline.label ?? '';
+          },
+          setBindGroup: () => undefined,
+          dispatchWorkgroups: (x, y = 1, z = 1) =>
+            log.dispatches.push({ pipeline, workgroups: [x, y, z] }),
+          dispatchWorkgroupsIndirect: () =>
+            log.dispatches.push({ pipeline, workgroups: [] }),
+          end: () => undefined,
+        };
       },
       copyBufferToBuffer: () => undefined,
       copyTextureToTexture: () => undefined,

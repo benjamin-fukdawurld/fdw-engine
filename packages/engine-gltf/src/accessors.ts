@@ -1,7 +1,9 @@
 import type { GltfAttributeData, GltfTypedArray } from './extension';
 import {
   GltfComponentType,
+  type GltfAccessor,
   type GltfAccessorType,
+  type GltfBufferView,
   type GltfJson,
 } from './types';
 
@@ -131,6 +133,107 @@ export function accessorReader(
     if (!promise) cache.set(index, (promise = read(index)));
     return promise;
   };
+}
+
+/**
+ * Accessors with the bytes they read, for a worker: their ranges of the
+ * buffer views, copied (the file stays on this side). They keep their
+ * indices; their buffer views are renumbered, one per range, into `views`.
+ */
+export interface PackedAccessors {
+  readonly json: Pick<GltfJson, 'accessors' | 'bufferViews'>;
+  readonly views: Uint8Array<ArrayBuffer>[];
+}
+
+/** Packs accessors of a file for `accessorReader` in a worker (see `PackedAccessors`). */
+export async function packAccessors(
+  json: GltfJson,
+  indices: Iterable<number>,
+  bufferView: (index: number) => Promise<Uint8Array<ArrayBuffer>>,
+): Promise<PackedAccessors> {
+  const accessors: GltfAccessor[] = [];
+  const bufferViews: GltfBufferView[] = [];
+  const views: Uint8Array<ArrayBuffer>[] = [];
+  // `count` elements of `size` bytes, `stride` apart: a range past the end
+  // is cut, and fails in the worker as it would here.
+  const range = async (
+    index: number,
+    offset: number,
+    stride: number,
+    size: number,
+    count: number,
+  ): Promise<number> => {
+    const bytes = await bufferView(index);
+    const end = count === 0 ? offset : offset + (count - 1) * stride + size;
+    views.push(bytes.slice(offset, end));
+    return (
+      bufferViews.push({
+        buffer: 0,
+        byteLength: end - offset,
+        byteStride: stride,
+      }) - 1
+    );
+  };
+
+  for (const index of new Set(indices)) {
+    const accessor = json.accessors?.[index];
+    if (!accessor) throw new Error(`Missing accessor ${index}`);
+    const components = componentCounts[accessor.type];
+    if (!components) throw new Error(`Unknown accessor type ${accessor.type}`);
+    const size =
+      components * arrayType(accessor.componentType).BYTES_PER_ELEMENT;
+    let packed: GltfAccessor = { ...accessor, byteOffset: 0 };
+    if (accessor.bufferView !== undefined) {
+      const stride =
+        json.bufferViews?.[accessor.bufferView]?.byteStride || size;
+      packed = {
+        ...packed,
+        bufferView: await range(
+          accessor.bufferView,
+          accessor.byteOffset ?? 0,
+          stride,
+          size,
+          accessor.count,
+        ),
+      };
+    }
+    const sparse = accessor.sparse;
+    if (sparse && sparse.count > 0) {
+      const indexSize = arrayType(
+        sparse.indices.componentType,
+      ).BYTES_PER_ELEMENT;
+      packed = {
+        ...packed,
+        sparse: {
+          ...sparse,
+          indices: {
+            ...sparse.indices,
+            byteOffset: 0,
+            bufferView: await range(
+              sparse.indices.bufferView,
+              sparse.indices.byteOffset ?? 0,
+              indexSize,
+              indexSize,
+              sparse.count,
+            ),
+          },
+          values: {
+            ...sparse.values,
+            byteOffset: 0,
+            bufferView: await range(
+              sparse.values.bufferView,
+              sparse.values.byteOffset ?? 0,
+              size,
+              size,
+              sparse.count,
+            ),
+          },
+        },
+      };
+    }
+    accessors[index] = packed;
+  }
+  return { json: { accessors, bufferViews }, views };
 }
 
 /** The largest value of an integer array type, the divisor of its normalized values. */

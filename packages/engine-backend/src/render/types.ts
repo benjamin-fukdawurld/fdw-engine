@@ -120,6 +120,11 @@ export interface GpuBindGroupLayout {
 
 export interface GpuBindGroup {
   readonly layout: GpuBindGroupLayout;
+  // Frees the group once the submitted commands no longer use it, on the
+  // backends where it holds native memory (a Vulkan descriptor set). Absent
+  // where the garbage collector frees it. Not before the submission of the
+  // commands that bind it.
+  destroy?(): void;
 }
 
 export interface GpuBindGroupEntry {

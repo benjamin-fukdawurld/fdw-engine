@@ -356,6 +356,72 @@ describe('RenderGraphRunner', () => {
     expect(log.destroyed).toEqual(['color']);
   });
 
+  it('shares the compilation of graphs of the same structure, and only them', () => {
+    // A texture written by a pass, read by another writing the surface.
+    const build = ({
+      texture = 'color',
+      pass = 'first',
+      format = 'rgba16float',
+      size = { relative: 1 } as { relative: number },
+      usage = 'sampled' as 'sampled' | 'storage-read',
+      sideEffects = false,
+      label = undefined as string | undefined,
+    } = {}) => {
+      const graph = new RenderGraph();
+      const backbuffer = graph.importTexture('backbuffer', surface as never);
+      const color = graph.addRasterPass(pass, (builder) => {
+        if (sideEffects) {
+          builder.hasSideEffects();
+          builder.hasSideEffects();
+        }
+        return {
+          color: builder.writeColor(
+            graph.createTexture(texture, { format, size, label } as never),
+            { load: 'clear' },
+          ),
+          execute: () => undefined,
+        };
+      }).color;
+      graph.addRasterPass('second', (builder) => {
+        builder.read(color, usage);
+        builder.writeColor(backbuffer, { load: 'clear' });
+        return { execute: () => undefined };
+      });
+      return graph;
+    };
+    const { backend } = fakeBackend();
+    const runner = new RenderGraphRunner(backend, { cacheSize: 64 });
+    // Compiled once, and the key is the same.
+    runner.execute(build());
+    runner.execute(build());
+    expect(runner.compilations).toBe(1);
+    expect(build().structuralKey()).toBe(build().structuralKey());
+    const others = [
+      build({ texture: 'other' }),
+      build({ pass: 'other' }),
+      build({ format: 'rgba8unorm' }),
+      build({ size: { relative: 0.5 } }),
+      build({ usage: 'storage-read' }),
+      build({ sideEffects: true }),
+      build({ label: 'label' }),
+      // Names holding what separates the fields.
+      build({ texture: 'color;Pr', pass: 'first' }),
+      build({ texture: 'color', pass: ';first' }),
+    ];
+    for (const graph of others) {
+      runner.execute(graph);
+    }
+    expect(runner.compilations).toBe(others.length + 1);
+    // Each found again in the cache.
+    for (const graph of [build(), build({ sideEffects: true })]) {
+      runner.execute(graph);
+    }
+    expect(runner.compilations).toBe(others.length + 1);
+    expect(
+      new Set([build(), ...others].map((graph) => graph.structuralKey())).size,
+    ).toBe(others.length + 1);
+  });
+
   it('emits the transitions on backends with explicit synchronization', () => {
     const { backend, log } = fakeBackend({ explicitTransitions: true });
     const compiled = new RenderGraphRunner(backend).execute(twoPasses(log));

@@ -171,24 +171,48 @@ int generateMipmaps(fdw_vk_context *context, VkCommandBuffer commands,
           ? VK_FILTER_LINEAR
           : VK_FILTER_NEAREST;
 
-  // Every level in the transfer destination layout, the first one kept.
-  useTexture(commands, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-             VK_PIPELINE_STAGE_2_BLIT_BIT,
-             VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
-  // A level written becomes the source of the next one.
-  auto toSource = [&](uint32_t level) {
+  // A barrier on some levels of every layer, after `src`.
+  auto levelBarrier = [&](uint32_t level, uint32_t count, Access src,
+                          VkImageLayout oldLayout, Access dst,
+                          VkImageLayout newLayout) {
     VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcStageMask = src.stages;
+    barrier.srcAccessMask = src.access;
+    barrier.dstStageMask = dst.stages;
+    barrier.dstAccessMask = dst.access;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = texture->image;
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, 1, 0,
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, count, 0,
                                 texture->layers};
+    return barrier;
+  };
+  const Access read{VK_PIPELINE_STAGE_2_BLIT_BIT,
+                    VK_ACCESS_2_TRANSFER_READ_BIT};
+  const Access written{VK_PIPELINE_STAGE_2_BLIT_BIT,
+                       VK_ACCESS_2_TRANSFER_WRITE_BIT};
+  // After the last use, in one barrier: the first level becomes the source
+  // of the second one, the others destinations, their content discarded
+  // (the blits overwrite them all).
+  {
+    const VkImageMemoryBarrier2 barriers[] = {
+        levelBarrier(0, 1, texture->last, texture->layout, read,
+                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+        levelBarrier(1, texture->levels - 1, texture->last,
+                     VK_IMAGE_LAYOUT_UNDEFINED, written,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)};
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.imageMemoryBarrierCount = 2;
+    dependency.pImageMemoryBarriers = barriers;
+    vkCmdPipelineBarrier2(commands, &dependency);
+  }
+  // A level written becomes the source of the next one.
+  auto toSource = [&](uint32_t level) {
+    const VkImageMemoryBarrier2 barrier =
+        levelBarrier(level, 1, written, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     read, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
     dependency.imageMemoryBarrierCount = 1;
     dependency.pImageMemoryBarriers = &barrier;
@@ -197,7 +221,9 @@ int generateMipmaps(fdw_vk_context *context, VkCommandBuffer commands,
   int32_t width = static_cast<int32_t>(texture->width);
   int32_t height = static_cast<int32_t>(texture->height);
   for (uint32_t level = 1; level < texture->levels; level++) {
-    toSource(level - 1);
+    if (level > 1) {
+      toSource(level - 1);
+    }
     VkImageBlit blit{};
     blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0,
                            texture->layers};
@@ -211,12 +237,13 @@ int generateMipmaps(fdw_vk_context *context, VkCommandBuffer commands,
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture->image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, filter);
   }
-  // Every level in the same layout, as the tracking needs. The last level
-  // was written: the next use waits for the blits and their writes.
+  // Every level in the same layout, as the tracking needs. The next use
+  // waits for the blits: their reads, and their writes.
   toSource(texture->levels - 1);
   texture->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
   texture->last = {VK_PIPELINE_STAGE_2_BLIT_BIT,
-                   VK_ACCESS_2_TRANSFER_WRITE_BIT};
+                   VK_ACCESS_2_TRANSFER_READ_BIT |
+                       VK_ACCESS_2_TRANSFER_WRITE_BIT};
   return 0;
 }
 
@@ -441,7 +468,8 @@ int fdw_vk_texture_read(fdw_vk_context *context, fdw_vk_texture *texture,
   vkCmdCopyImageToBuffer(commands, texture->image,
                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer,
                          1, &region);
-  memoryBarrier(commands, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+  // The CPU reads the copy once the submission is done.
+  memoryBarrier(commands, VK_PIPELINE_STAGE_2_COPY_BIT,
                 VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_HOST_BIT,
                 VK_ACCESS_2_HOST_READ_BIT);
   const uint64_t submission = submit(context, {});

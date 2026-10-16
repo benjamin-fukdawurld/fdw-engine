@@ -4,7 +4,11 @@ import type {
   VertexAttributeFormat,
 } from '@fdw/engine-backend';
 import { normalizationDivisor, toFloat32 } from './accessors';
-import type { GltfAttributeData, GltfTypedArray } from './extension';
+import type {
+  GltfAttributeData,
+  GltfDecodedPrimitive,
+  GltfTypedArray,
+} from './extension';
 
 // From the attributes of a glTF primitive to the layout of a `Mesh`: one
 // vertex buffer per attribute, in a format WebGPU accepts, and triangle
@@ -300,4 +304,59 @@ export function primitiveMeshData({
     vertices: buffers.map((b) => b.array),
     ...(index ? { indices: index } : {}),
   };
+}
+
+/** A primitive to read: its accessors, and what an extension decoded instead of them (Draco). */
+export interface PrimitiveSource {
+  readonly name?: string;
+  /** The accessors of the attributes, by glTF name. */
+  readonly attributes: Readonly<Record<string, number>>;
+  /** The accessor of the indices. */
+  readonly indices?: number;
+  /** Triangles, strip or fan. */
+  readonly mode: number;
+  /** Computes flat normals when there are none. */
+  readonly normals: boolean;
+  /** Attributes and indices read from here rather than from their accessors. */
+  readonly decoded?: GltfDecodedPrimitive;
+}
+
+/**
+ * The `MeshData` of a primitive, its accessors read by `accessor`: the
+ * same on the main thread and in a worker (`gltf/primitive`).
+ */
+export async function readPrimitive(
+  {
+    name,
+    attributes,
+    indices: indexAccessor,
+    mode,
+    normals,
+    decoded,
+  }: PrimitiveSource,
+  accessor: (index: number) => Promise<GltfAttributeData>,
+): Promise<MeshData> {
+  const entries = await Promise.all(
+    Object.entries(attributes).map(
+      async ([attribute, index]) =>
+        [
+          attribute,
+          decoded?.attributes[attribute] ?? (await accessor(index)),
+        ] as const,
+    ),
+  );
+  let indices: ArrayLike<number> | undefined = decoded?.indices;
+  if (!indices && indexAccessor !== undefined) {
+    const data = await accessor(indexAccessor);
+    if (data.components !== 1 || data.array instanceof Float32Array)
+      throw new Error('Indices must be unsigned scalars');
+    indices = data.array;
+  }
+  return primitiveMeshData({
+    name,
+    attributes: new Map(entries),
+    indices,
+    mode,
+    normals,
+  });
 }

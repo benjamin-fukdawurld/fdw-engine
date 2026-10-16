@@ -85,8 +85,8 @@ Scene objects store their values in a single `ArrayBuffer` and increment a
 **version** on every change; the renderer compares versions to update only
 what changed. Programs are keyed by a hash of the optimized graph and its
 variant parameters; pipelines by program and state; render graph
-compilations by structure. A steady frame compiles nothing and allocates
-nothing.
+compilations by structure (compared value by value, without building a
+key). A steady frame compiles nothing and allocates nothing.
 
 ## The design documents
 

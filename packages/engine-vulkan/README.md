@@ -52,8 +52,8 @@ console.log(engine.device!.takeMessages());
 ## How it works
 
 - **Commands**: the encoders write the commands of a frame as 32-bit words; `submit` replays them into a command buffer in a single native call.
-- **Synchronization**: as in WebGPU, the library tracks how each texture and buffer was last used, and inserts the barriers: before a render pass for its attachments, groups and vertex and index buffers (its commands are walked ahead); before each dispatch for its groups.
-- **Writes and reads**: `buffer.write` and texture uploads follow `queue.writeBuffer`: copied at once, applied in the order of the queue before the next commands; a level (or a layer of it) is written alone with a buffer to image copy, the other levels kept. Reads wait for everything submitted before.
+- **Synchronization**: as in WebGPU, the library tracks how each texture and buffer was last used, and inserts the barriers: before a render pass for its attachments, groups and vertex and index buffers (its commands are walked ahead); before each dispatch for its groups and indirect buffer; before each copy for its source and destination. The barriers of a pass are placed in a single `vkCmdPipelineBarrier2`. Each one waits for the stages and accesses of the last use only (a copy before a vertex read: `COPY`/`TRANSFER_WRITE` to `VERTEX_ATTRIBUTE_INPUT`), uploads and reads back included: no `ALL_COMMANDS` barrier around the transfers.
+- **Writes and reads**: `buffer.write` and texture uploads follow `queue.writeBuffer`: copied at once, applied in the order of the queue before the next commands; a level (or a layer of it) is written alone with a buffer to image copy, the other levels kept. Reads wait for the last write of the resource, submitted before.
 - **Conventions**: the viewport has a negative height, so that y points up in clip space as in WebGPU; matrices are column-major; images are stored from the top row.
 
 ## HLSL conventions

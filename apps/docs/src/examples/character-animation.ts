@@ -231,6 +231,8 @@ const example: Example = async ({
       camera,
       surface,
       clearColor: { r: 0.6, g: 0.72, b: 0.86, a: 1 },
+      // The compute skinning, in the graph of the frame.
+      prepare: (graph) => skinning.addPass(graph),
     });
     const state = animator.state('body');
     info(

@@ -17,10 +17,13 @@ import {
 import { Camera, Mesh, Renderer } from '@fdw/engine-core';
 import { fakeBackend, surface } from '@fdw/engine-core/testing';
 import {
+  createLocalPool,
   MemorySource,
   ResourceBytesType,
   ResourceError,
   ResourceStore,
+  type DecodePool,
+  type TaskMessage,
 } from '@fdw/engine-resources';
 import { Scene } from '@fdw/engine-scene';
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
@@ -30,6 +33,7 @@ import { installGltf } from './install';
 import { decomposeMatrix } from './nodes';
 import type { GltfOptions } from './options';
 import { GltfBuilder, writeGlb } from './testing/GltfBuilder';
+import { gltfWorkerTasks, type GltfWorkerOptions } from './workers';
 
 // A codec of the tests: "img W H R G B A" files, a single color.
 const testCodec: ImageCodec = {
@@ -78,6 +82,19 @@ function setup(
 
 const image = (r: number, g: number, b: number) =>
   new TextEncoder().encode(`img 1 1 ${r} ${g} ${b} 255`);
+
+/** Workers of the tests: the tasks run here, cloned as `postMessage` does. Logs the tasks. */
+function workerPool(options: GltfWorkerOptions = {}) {
+  const local = createLocalPool(gltfWorkerTasks(options));
+  const tasks: string[] = [];
+  const workers: DecodePool = {
+    run(payload, runOptions) {
+      tasks.push((payload as TaskMessage).task);
+      return local.run(payload, runOptions);
+    },
+  };
+  return { workers, tasks };
+}
 
 const formats = (data: MeshData | undefined) =>
   Object.fromEntries(
@@ -887,6 +904,32 @@ describe('glTF compression', () => {
     ]);
   });
 
+  it('decodes EXT_meshopt_compression in the workers', async () => {
+    const { workers, tasks } = workerPool({ meshopt: MeshoptDecoder });
+    // No decoder here: the workers have it.
+    const { data, mesh } = setup({ 'c.glb': await meshoptFile() }, { workers });
+    await data('c.glb');
+    const c = mesh('c.glb#mesh/0/0')!;
+    expect([...c.indices!]).toEqual([0, 1, 2, 2, 1, 3]);
+    expect([...(vertices(c, 'position') as Float32Array)]).toEqual([
+      0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0,
+    ]);
+    expect(tasks.sort()).toEqual([
+      'gltf/meshopt',
+      'gltf/meshopt',
+      'gltf/primitive',
+    ]);
+
+    // Workers without the decoder fail the load, naming what they lack.
+    const missing = setup(
+      { 'c.glb': await meshoptFile() },
+      { workers: workerPool().workers },
+    );
+    await expect(missing.data('c.glb')).rejects.toMatchObject({
+      message: expect.stringMatching(/gltfWorkerTasks\(\{ meshopt \}\)/),
+    });
+  });
+
   it('fails when a required decoder is missing', async () => {
     const { data } = setup({ 'c.glb': await meshoptFile() });
     await expect(data('c.glb')).rejects.toMatchObject({
@@ -962,6 +1005,167 @@ describe('glTF compression', () => {
     });
     expect(d.description.vertexCount).toBe(3);
     expect(d.indices).toBeUndefined();
+  });
+});
+
+describe('glTF in workers', () => {
+  /** Primitives covering what the geometry does: strips, quantization, sparse values, interleaving, flat normals. */
+  function geometryFile() {
+    const b = new GltfBuilder();
+    b.json.extensionsUsed = ['KHR_mesh_quantization'];
+    positions(b, 4, {
+      mode: 5,
+      indices: b.accessor(new Uint8Array([3, 2, 1, 0]), 'SCALAR'),
+    });
+    b.add('materials', { name: 'lit' });
+    b.meshNode({
+      attributes: {
+        POSITION: b.accessor(
+          new Int16Array([0, 0, 0, 32767, 0, 0, 0, 32767, 0]),
+          'VEC3',
+          { normalized: true },
+        ),
+        COLOR_0: b.accessor(
+          new Uint8Array([255, 0, 0, 0, 255, 0, 0, 0, 255]),
+          'VEC3',
+          { normalized: true },
+        ),
+      },
+      material: 1,
+    });
+    const base = b.accessor(
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      'VEC3',
+    );
+    const sparse = b.add('accessors', {
+      ...b.json.accessors[base],
+      sparse: {
+        count: 1,
+        indices: {
+          bufferView: b.bufferView(new Uint8Array([2])),
+          componentType: 5121,
+        },
+        values: { bufferView: b.bufferView(new Float32Array([5, 6, 7])) },
+      },
+    });
+    // Position and uv interleaved, 20 bytes per vertex.
+    const view = b.bufferView(
+      new Float32Array([0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+    );
+    b.json.bufferViews[view].byteStride = 20;
+    const interleaved = (byteOffset: number, type: string) =>
+      b.add('accessors', {
+        bufferView: view,
+        byteOffset,
+        componentType: 5126,
+        count: 3,
+        type,
+      });
+    const position = interleaved(0, 'VEC3');
+    const uv = interleaved(12, 'VEC2');
+    b.meshNode({ attributes: { POSITION: sparse }, material: 1 });
+    b.meshNode({ attributes: { POSITION: position, TEXCOORD_0: uv } });
+    // Shares its position with the previous one.
+    b.meshNode({ attributes: { POSITION: position }, material: unlit(b) });
+    return b.glb();
+  }
+
+  it('reads the geometry in the workers as on the main thread', async () => {
+    const box = new Uint8Array(
+      await readFile(new URL('./testing/BoxTextured.glb', import.meta.url)),
+    );
+    for (const [name, file] of [
+      ['g.glb', geometryFile()],
+      ['BoxTextured.glb', box],
+    ] as const) {
+      const main = setup({ [name]: file });
+      const { workers, tasks } = workerPool();
+      const inWorkers = setup({ [name]: file }, { workers });
+      const model = await main.data(name);
+      expect(await inWorkers.data(name)).toEqual(model);
+      const ids = model.meshes.flatMap((m) => m.primitives.map((p) => p.mesh));
+      for (const id of ids)
+        expect(inWorkers.mesh(`${name}#${id}`)).toStrictEqual(
+          main.mesh(`${name}#${id}`),
+        );
+      // One job per primitive, and nothing else.
+      expect(tasks).toEqual(ids.map(() => 'gltf/primitive'));
+    }
+  });
+
+  it('keeps the file whole: the bytes posted are copies', async () => {
+    const { workers } = workerPool();
+    const { data, store } = setup(
+      { 't.glb': texturedTriangle().glb() },
+      { workers },
+    );
+    await data('t.glb');
+    const image = store.peek(ResourceBytesType, 'mem:t.glb#image/0')?.value;
+    expect(new TextDecoder().decode(image)).toBe('img 1 1 255 0 0 255');
+  });
+
+  it('decodes KHR_draco_mesh_compression in the workers', async () => {
+    const b = new GltfBuilder();
+    b.json.extensionsUsed = b.json.extensionsRequired = [
+      'KHR_draco_mesh_compression',
+    ];
+    const compressed = b.bufferView(new TextEncoder().encode('draco!'));
+    const position = b.add('accessors', {
+      componentType: 5126,
+      count: 3,
+      type: 'VEC3',
+    });
+    b.meshNode({
+      attributes: { POSITION: position },
+      material: unlit(b),
+      extensions: {
+        KHR_draco_mesh_compression: {
+          bufferView: compressed,
+          attributes: { POSITION: 0 },
+        },
+      },
+    });
+    const calls: string[] = [];
+    const { workers, tasks } = workerPool({
+      draco: {
+        async decode(bytes) {
+          calls.push(new TextDecoder().decode(bytes));
+          // Both arrays over one buffer, as out of a WASM heap: copied.
+          const heap = new ArrayBuffer(48);
+          new Float32Array(heap, 0, 9).set([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+          new Uint32Array(heap, 36, 3).set([2, 1, 0]);
+          return {
+            attributes: {
+              POSITION: {
+                array: new Float32Array(heap, 0, 9),
+                components: 3,
+              },
+            },
+            indices: new Uint32Array(heap, 36, 3),
+          };
+        },
+      },
+    });
+    const { data, mesh } = setup({ 'd.glb': b.glb() }, { workers });
+    await data('d.glb');
+    expect(calls).toEqual(['draco!']);
+    expect(tasks).toEqual(['gltf/draco', 'gltf/primitive']);
+    const d = mesh('d.glb#mesh/0/0')!;
+    expect([...d.indices!]).toEqual([2, 1, 0]);
+    expect([...(vertices(d, 'position') as Float32Array)]).toEqual([
+      0, 0, 0, 1, 0, 0, 0, 1, 0,
+    ]);
+  });
+
+  it('cancels the jobs of a cancelled load', async () => {
+    const { workers } = workerPool();
+    const { store } = setup({ 'g.glb': geometryFile() }, { workers });
+    const controller = new AbortController();
+    const handle = store.load<ModelData>(ModelDataType, 'g.glb', {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(handle.ready).rejects.toMatchObject({ code: 'aborted' });
   });
 });
 

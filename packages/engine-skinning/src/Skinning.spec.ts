@@ -1,6 +1,6 @@
 import { Pose } from '@fdw/engine-animation';
 import { instantiate, Model, type ModelData } from '@fdw/engine-assets';
-import { Material, Mesh } from '@fdw/engine-core';
+import { Material, Mesh, RenderGraph, RenderGraphRunner } from '@fdw/engine-core';
 import { colorGraph, fakeBackend } from '@fdw/engine-core/testing';
 import { Aabb } from '@fdw/engine-geometry';
 import { Scene } from '@fdw/engine-scene';
@@ -193,7 +193,8 @@ describe('Skinning', () => {
     };
     const dispatches: { values: object; workgroups: unknown }[] = [];
     const compute = {
-      dispatch: (
+      record: (
+        _pass: unknown,
         _program: unknown,
         dispatch: { values?: object; workgroups: unknown },
       ) => {
@@ -271,14 +272,22 @@ describe('Skinning', () => {
     expect(Array.from(bounds.max)).toEqual([13, 2, 1]);
   });
 
-  it('runs the compute skinning of each primitive', () => {
-    const { skinning, dispatches, mesh } = setup('compute');
+  it('runs the compute skinning of the primitives in a pass of the frame', () => {
+    const { skinning, dispatches, mesh, backend, log } = setup('compute');
     const [primitive] = skinning.primitives;
     expect(primitive.vertices?.size).toBe(3 * 16);
     expect(primitive.material.getValue(SkinValues.vertices)).toBe(
       primitive.vertices,
     );
     skinning.update();
+    expect(dispatches).toHaveLength(0);
+    const graph = new RenderGraph();
+    const [vertices] = skinning.addPass(graph);
+    expect(vertices.version).toBe(1);
+    const submits = log.submits;
+    new RenderGraphRunner(backend).execute(graph);
+    // In the submission of the frame.
+    expect(log.submits).toBe(submits + 1);
     expect(dispatches).toHaveLength(1);
     expect(dispatches[0].workgroups).toEqual([1]);
     expect(Object.keys(dispatches[0].values).sort()).toEqual(
@@ -291,6 +300,21 @@ describe('Skinning', () => {
       ].sort(),
     );
     expect(MeshSkin.of(mesh).stride).toBe(1);
+  });
+
+  it('skins outside of a render graph in one submission', () => {
+    const { skinning, dispatches, log } = setup('compute');
+    const submits = log.submits;
+    skinning.update().dispatch();
+    expect(log.submits).toBe(submits + 1);
+    expect(dispatches).toHaveLength(1);
+  });
+
+  it('adds no pass in the vertex mode', () => {
+    const { skinning } = setup('vertex');
+    const graph = new RenderGraph();
+    expect(skinning.addPass(graph)).toEqual([]);
+    expect(graph.passes).toHaveLength(0);
   });
 
   it('plays the clips of the model on its skeleton', () => {
