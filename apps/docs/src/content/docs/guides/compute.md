@@ -109,7 +109,10 @@ Several dispatches can share the pass:
 
 ```ts
 graph.addComputePass('simulation', (pass) => {
-  const written = pass.write(graph.importBuffer('state', state), 'storage-write');
+  const written = pass.write(
+    graph.importBuffer('state', state),
+    'storage-write',
+  );
   return {
     written,
     execute: (context) =>

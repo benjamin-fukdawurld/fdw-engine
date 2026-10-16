@@ -1,6 +1,11 @@
 import { Pose } from '@fdw/engine-animation';
 import { instantiate, Model, type ModelData } from '@fdw/engine-assets';
-import { Material, Mesh, RenderGraph, RenderGraphRunner } from '@fdw/engine-core';
+import {
+  Material,
+  Mesh,
+  RenderGraph,
+  RenderGraphRunner,
+} from '@fdw/engine-core';
 import { colorGraph, fakeBackend } from '@fdw/engine-core/testing';
 import { Aabb } from '@fdw/engine-geometry';
 import { Scene } from '@fdw/engine-scene';
