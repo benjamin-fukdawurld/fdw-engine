@@ -3,6 +3,8 @@
 
 #include "context.hpp"
 
+#include <algorithm>
+
 namespace fdw {
 
 bool writes(VkAccessFlags2 access) {
@@ -15,9 +17,58 @@ bool writes(VkAccessFlags2 access) {
   return (access & writeBits) != 0;
 }
 
-void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
+namespace {
+
+// The index of the barrier of a resource in the gathered ones, or -1.
+template <typename T>
+ptrdiff_t pending(const std::vector<T *> &resources, const T *resource) {
+  const auto found = std::find(resources.begin(), resources.end(), resource);
+  return found == resources.end() ? -1 : found - resources.begin();
+}
+
+} // namespace
+
+void Barriers::place() {
+  if (images.empty() && bufferBarriers.empty()) {
+    return;
+  }
+  for (size_t i = 0; i < images.size(); i++) {
+    if (discards[i]) {
+      images[i].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+  }
+  VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dependency.imageMemoryBarrierCount = static_cast<uint32_t>(images.size());
+  dependency.pImageMemoryBarriers = images.data();
+  dependency.bufferMemoryBarrierCount =
+      static_cast<uint32_t>(bufferBarriers.size());
+  dependency.pBufferMemoryBarriers = bufferBarriers.data();
+  vkCmdPipelineBarrier2(commands, &dependency);
+  images.clear();
+  textures.clear();
+  discards.clear();
+  bufferBarriers.clear();
+  buffers.clear();
+}
+
+void useTexture(Barriers &barriers, fdw_vk_texture *texture,
                 VkImageLayout layout, VkPipelineStageFlags2 stages,
                 VkAccessFlags2 access, bool discard) {
+  // Already a barrier for the texture, to the same layout: this use waits
+  // with the others of the pass. The content is kept if a use needs it.
+  const ptrdiff_t index = pending(barriers.textures, texture);
+  if (index >= 0 && barriers.images[index].newLayout == layout) {
+    barriers.images[index].dstStageMask |= stages;
+    barriers.images[index].dstAccessMask |= access;
+    barriers.discards[index] = barriers.discards[index] && discard;
+    texture->last.stages |= stages;
+    texture->last.access |= access;
+    return;
+  }
+  // To another layout: after the transition gathered.
+  if (index >= 0) {
+    barriers.place();
+  }
   // Reads after reads, in the same layout, need no barrier: the next write
   // will wait for all of them.
   if (texture->layout == layout && !writes(texture->last.access) &&
@@ -31,28 +82,36 @@ void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
   barrier.srcAccessMask = texture->last.access;
   barrier.dstStageMask = stages;
   barrier.dstAccessMask = access;
-  barrier.oldLayout = discard ? VK_IMAGE_LAYOUT_UNDEFINED : texture->layout;
+  barrier.oldLayout = texture->layout;
   barrier.newLayout = layout;
   barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   barrier.image = texture->image;
   barrier.subresourceRange = {texture->aspect, 0, VK_REMAINING_MIP_LEVELS, 0,
                               VK_REMAINING_ARRAY_LAYERS};
-  VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-  dependency.imageMemoryBarrierCount = 1;
-  dependency.pImageMemoryBarriers = &barrier;
-  vkCmdPipelineBarrier2(commands, &dependency);
+  barriers.images.push_back(barrier);
+  barriers.textures.push_back(texture);
+  barriers.discards.push_back(discard);
   texture->layout = layout;
   texture->last = {stages, access};
 }
 
-void useBuffer(VkCommandBuffer commands, fdw_vk_buffer *buffer,
+void useBuffer(Barriers &barriers, fdw_vk_buffer *buffer,
                VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
+  const ptrdiff_t index = pending(barriers.buffers, buffer);
+  if (index >= 0) {
+    barriers.bufferBarriers[index].dstStageMask |= stages;
+    barriers.bufferBarriers[index].dstAccessMask |= access;
+    buffer->last.stages |= stages;
+    buffer->last.access |= access;
+    return;
+  }
   if (!writes(buffer->last.access) && !writes(access)) {
     buffer->last.stages |= stages;
     buffer->last.access |= access;
     return;
   }
+  // Never used: nothing to wait for.
   if (buffer->last.stages != VK_PIPELINE_STAGE_2_NONE) {
     VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
     barrier.srcStageMask = buffer->last.stages;
@@ -64,12 +123,23 @@ void useBuffer(VkCommandBuffer commands, fdw_vk_buffer *buffer,
     barrier.buffer = buffer->buffer;
     barrier.offset = 0;
     barrier.size = VK_WHOLE_SIZE;
-    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    dependency.bufferMemoryBarrierCount = 1;
-    dependency.pBufferMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(commands, &dependency);
+    barriers.bufferBarriers.push_back(barrier);
+    barriers.buffers.push_back(buffer);
   }
   buffer->last = {stages, access};
+}
+
+void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
+                VkImageLayout layout, VkPipelineStageFlags2 stages,
+                VkAccessFlags2 access, bool discard) {
+  Barriers barriers{commands};
+  useTexture(barriers, texture, layout, stages, access, discard);
+}
+
+void useBuffer(VkCommandBuffer commands, fdw_vk_buffer *buffer,
+               VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
+  Barriers barriers{commands};
+  useBuffer(barriers, buffer, stages, access);
 }
 
 uint64_t addRead(fdw_vk_context *context, uint64_t submission,

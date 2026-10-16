@@ -2971,6 +2971,8 @@ export function describeRenderer(
           return;
         }
         const { skinning, mesh } = bent('compute');
+        // Outside of a render graph: one submission.
+        skinning.dispatch();
         const vertices = skinning.primitives[0].vertices as GpuBuffer;
         const skinned = new Float32Array(await vertices.read());
         const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -2999,6 +3001,8 @@ export function describeRenderer(
             camera,
             surface,
             clearColor: { r: 0, g: 0, b: 0, a: 1 },
+            // The compute pass of the skinning, in the graph of the frame.
+            prepare: (graph) => skinning.addPass(graph),
           });
           const pixels = await fixture.readPixels();
           const pixel = (x: number, y: number) => {

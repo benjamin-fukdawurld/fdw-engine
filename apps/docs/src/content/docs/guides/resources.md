@@ -282,12 +282,74 @@ model alive until its `dispose()`.
   `KHR_mesh_quantization`, `KHR_lights_punctual`, `KHR_texture_basisu`.
   `EXT_meshopt_compression` and `KHR_draco_mesh_compression` take the
   decoders the application gives: `installGltf(resources, { meshopt:
-MeshoptDecoder })`. The engine does not ship them.
+MeshoptDecoder })`, or decode in workers (below). The engine does not ship
+  them.
 - **OBJ** and its **MTL** files: a node per object or group, Phong
   materials with their maps.
 - **KTX2**: mip levels, cubes, arrays, BC / ETC2 / ASTC formats when the
   backend samples them (`capabilities.compressedFormats`), Basis Universal
   through a transcoder given by the application.
+
+## Decoding in workers
+
+The heavy decoding can run in the workers of a pool rather than on the main
+thread. One worker script serves every decoder, and the same pool is given
+to each of them:
+
+```ts
+// decode.worker.ts
+import { taskHandler } from '@fdw/engine-resources';
+import { imageWorkerTasks, serveWorker } from '@fdw/engine-resources-web';
+import { gltfWorkerTasks } from '@fdw/engine-gltf/worker';
+import { ktx2WorkerTasks } from '@fdw/engine-ktx2/worker';
+import { MeshoptDecoder } from 'meshoptimizer';
+
+serveWorker(
+  taskHandler({
+    ...imageWorkerTasks(),
+    ...gltfWorkerTasks({ meshopt: MeshoptDecoder, draco }),
+    ...ktx2WorkerTasks({ transcoder, zstd }),
+  }),
+);
+```
+
+```ts
+// The application
+const workers = new WorkerPool({
+  create: () =>
+    new Worker(new URL('./decode.worker.ts', import.meta.url), {
+      type: 'module',
+    }),
+});
+const codecs = installAssets(resources, {
+  backend: engine.backend,
+  codecs: [bitmapCodec(createWorkerImageDecoder(workers, { shared: true }))],
+});
+installGltf(resources, { workers });
+installKtx2(codecs, { workers });
+```
+
+| Format       | In the workers                                                                                                                 | On the main thread                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Images (web) | `createImageBitmap`                                                                                                            | The `ImageBitmap` received                                              |
+| glTF         | The geometry of each primitive (accessors, sparse values, quantized attributes, strips and fans, flat normals), meshopt, Draco | The JSON and the GLB container, materials, hierarchy, skins, animations |
+| KTX2         | The inflating of the levels (zlib, zstd), the Basis Universal transcoding                                                      | The headers of the container                                            |
+
+- Without `workers`, everything is decoded on the main thread by the
+  decoders of the options (`meshopt`, `draco`, `transcoder`, `zstd`), as
+  before.
+- With `workers`, the decoders live in the worker script: `draco3d` and
+  `basis_transcoder` are WASM modules the application loads there, and
+  those of the options are unused. A file that needs a decoder the script
+  lacks fails with `decode`, naming it.
+- What is posted is a copy of its range of the file, moved to the worker
+  (the file stays usable: a texture transcodes it again for another
+  backend); the results are moved back, not copied. A cancelled load drops
+  the results of its jobs.
+- `@fdw/engine-gltf/worker` and `@fdw/engine-ktx2/worker` import the tasks
+  only, not the engine: the worker script stays small.
+- `createLocalPool(tasks)` runs the tasks on the calling thread, cloned as
+  between threads: for the tests, or a platform without workers.
 
 ## Native
 
@@ -309,3 +371,23 @@ installAssets(resources, {
 
 The images are decoded by `stb_image` in the addon of `@fdw/engine-native`,
 on the thread pool of Node: the frame loop never waits for them.
+
+glTF and KTX2 go to `worker_threads` with the `WorkerPool` of
+`-native`, given as `workers` as on the web. Its module is JavaScript (bundle
+the worker script) calling the `serveWorker` of `-native`:
+
+```ts
+// decode.worker.ts, bundled to decode.worker.js
+import { taskHandler } from '@fdw/engine-resources';
+import { serveWorker } from '@fdw/engine-resources-native';
+import { gltfWorkerTasks } from '@fdw/engine-gltf/worker';
+import { MeshoptDecoder } from 'meshoptimizer';
+
+serveWorker(taskHandler(gltfWorkerTasks({ meshopt: MeshoptDecoder })));
+
+// The application
+const workers = new WorkerPool({
+  url: new URL('./decode.worker.js', import.meta.url),
+});
+installGltf(resources, { workers });
+```

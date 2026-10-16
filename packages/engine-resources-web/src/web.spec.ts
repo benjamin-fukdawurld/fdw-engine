@@ -2,6 +2,9 @@ import {
   defineResourceType,
   MemorySource,
   ResourceStore,
+  runTask,
+  taskHandler,
+  type DecodePool,
   type ResourceBytes,
 } from '@fdw/engine-resources';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +23,7 @@ import {
 } from './watch';
 import {
   createWorkerImageDecoder,
+  imageWorkerTasks,
   serveImageDecoder,
 } from './WorkerImageDecoder';
 import {
@@ -38,6 +42,9 @@ const fakeBitmap = (w = 2, h = 3) =>
 // Type-level: a real Worker can be pooled.
 const _pooled: PoolWorker = null as unknown as Worker;
 void _pooled;
+// And the pool serves the decoders (glTF, KTX2) as a `DecodePool`.
+const _decodePool: DecodePool = null as unknown as WorkerPool;
+void _decodePool;
 
 describe('sniffImageFormat', () => {
   it('recognizes formats by their magic bytes', () => {
@@ -276,6 +283,26 @@ describe('createWorkerImageDecoder', () => {
     );
     await decoder.decode(bytesOf(1, 2));
     expect(f.log.workers[0].transfers[0]).toEqual([]);
+  });
+
+  it('shares a pool with other tasks: one worker script for every decoder', async () => {
+    const f = fakeWorkerFactory((scope) =>
+      serveWorker(
+        taskHandler({
+          ...imageWorkerTasks(inWorker),
+          'test/length': (bytes: Uint8Array) => ({ result: bytes.length }),
+        }),
+        scope,
+      ),
+    );
+    const pool = new WorkerPool({ ...f, size: 1 });
+    const decoder = createWorkerImageDecoder(pool, { shared: true });
+    const bytes = bytesOf(1, 2, 3);
+    const image = await decoder.decode(bytes);
+    expect(image.width).toBe(3);
+    expect(f.log.workers[0].transfers[0]).toEqual([bytes.buffer]);
+    expect(await runTask(pool, 'test/length', bytesOf(1, 2))).toBe(2);
+    expect(f.log.workers).toHaveLength(1);
   });
 
   it('closes a bitmap that arrives after the abort', async () => {

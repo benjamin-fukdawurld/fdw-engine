@@ -78,7 +78,10 @@ const result = new Float32Array(await output.read());
 - `workgroups`: `[x, y?, z?]`, or `{ buffer, offset }`, a buffer holding the
   three counts as `u32` — an **indirect** dispatch, its size computed by the
   GPU. The buffer needs the `indirect` usage.
-- The pipelines and uniform buffers are cached by program.
+- The pipelines are cached by program; the bind groups and their uniform
+  buffers by program and resources: dispatching again with the same
+  buffers reuses them. The least recently used beyond
+  `new ComputeRunner(backend, { bindGroups })` (256) are destroyed.
 
 Storage buffers are created by the backend, with the usages they need:
 
@@ -100,9 +103,27 @@ without the write access — see the [Compute tutorial](/fdw-engine/tutorials/co
 `graph.addComputePass(name, setup)` declares a compute pass and its
 resources (`storage-read`, `storage-write`, `indirect`…): it is ordered,
 culled and synchronized with the other passes. Its `execute` receives a
-`GpuComputePassEncoder`; the pipeline and its bind groups come from
-`backend.pipelines` (`createComputePipeline`, `resolveLayout`,
-`createBindGroup`), as `ComputeRunner` does.
+`GpuComputePassEncoder`: `runner.record(pass, program, dispatch)` records a
+dispatch there, with the caches of `dispatch`, submitted with the frame.
+Several dispatches can share the pass:
+
+```ts
+graph.addComputePass('simulation', (pass) => {
+  const written = pass.write(graph.importBuffer('state', state), 'storage-write');
+  return {
+    written,
+    execute: (context) =>
+      runner.record(context.pass, program, {
+        values: { state },
+        workgroups: [Math.ceil(count / 64)],
+      }),
+  };
+});
+```
+
+The dispatches of a submission that bind the same resources share their
+uniform values: the last ones written. `renderer.render({ prepare })`
+adds passes to the graph of the frame, before those of the scene.
 
 ## On the backends
 

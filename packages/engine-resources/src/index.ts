@@ -8,3 +8,4 @@ export * from './ResourceSource';
 export * from './ResourceHandle';
 export * from './ResourceStore';
 export * from './sources';
+export * from './workers';

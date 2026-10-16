@@ -77,7 +77,10 @@ un jeu. Compiler Dawn avec sa propre swapchain le supprimerait.
   utilisation de chaque texture et de chaque buffer, et insère les
   barrières : avant une passe de rendu pour ses attachments et ses
   ressources (ses commandes sont lues à l'avance), avant chaque dispatch pour
-  ses groupes.
+  ses groupes, avant chaque copie. Les barrières d'une passe sont placées
+  ensemble, en un seul appel, et chacune n'attend que les étapes de la
+  dernière utilisation (la lecture d'un buffer de sommets attend la copie
+  qui l'a écrit, pas toutes les commandes), envois et relectures compris.
 - **Écritures** : `buffer.write` et les envois de textures suivent le
   `queue.writeBuffer` de WebGPU : copiés immédiatement, appliqués dans
   l'ordre de la file avant les commandes suivantes.

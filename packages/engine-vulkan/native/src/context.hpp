@@ -165,7 +165,8 @@ struct fdw_vk_context {
   uint64_t submitted = 0;
 
   // The transfer commands recorded since the last submission: buffer
-  // writes and read back copies, in order. Begun on first use.
+  // writes and read back copies, in order. Begun on first use. Their
+  // barriers are those of the tracking, as for the replayed commands.
   VkCommandBuffer transfers = VK_NULL_HANDLE;
   bool transfersPending = false;
 
@@ -247,13 +248,41 @@ struct HostBuffer {
 int createHostBuffer(fdw_vk_context *context, uint64_t size, bool readback,
                      HostBuffer *result);
 
+// The barriers needed before a pass (render, compute, copy) or a transfer,
+// gathered by useTexture and useBuffer, then placed together: one
+// vkCmdPipelineBarrier2, at place() or at the end of the scope (an error
+// return included: the tracked state already counts them).
+struct Barriers {
+  explicit Barriers(VkCommandBuffer commands) : commands(commands) {}
+  Barriers(const Barriers &) = delete;
+  Barriers &operator=(const Barriers &) = delete;
+  ~Barriers() { place(); }
+  void place();
+
+  VkCommandBuffer commands;
+  // At most one barrier per resource: the uses of a pass wait together for
+  // the previous ones. `discards`: the old content of the image can be lost.
+  std::vector<VkImageMemoryBarrier2> images;
+  std::vector<fdw_vk_texture *> textures;
+  std::vector<bool> discards;
+  std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+  std::vector<fdw_vk_buffer *> buffers;
+};
+
 // Makes the next use of a texture wait for the previous one, changing its
-// layout: an image barrier when needed. `discard`: the content can be lost
-// (the use overwrites it all).
-void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
+// layout: an image barrier when needed, from the stages and accesses of the
+// last use to those of this one. `discard`: the content can be lost (the
+// use overwrites it all).
+void useTexture(Barriers &barriers, fdw_vk_texture *texture,
                 VkImageLayout layout, VkPipelineStageFlags2 stages,
                 VkAccessFlags2 access, bool discard = false);
 // The same for a buffer: a buffer barrier when needed.
+void useBuffer(Barriers &barriers, fdw_vk_buffer *buffer,
+               VkPipelineStageFlags2 stages, VkAccessFlags2 access);
+// A single use, its barrier placed at once.
+void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
+                VkImageLayout layout, VkPipelineStageFlags2 stages,
+                VkAccessFlags2 access, bool discard = false);
 void useBuffer(VkCommandBuffer commands, fdw_vk_buffer *buffer,
                VkPipelineStageFlags2 stages, VkAccessFlags2 access);
 

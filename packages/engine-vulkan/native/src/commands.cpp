@@ -155,8 +155,9 @@ uint32_t operandCount(uint32_t opcode) {
   }
 }
 
-// The barriers of the resources of a group, for shaders of `stages`.
-int useGroup(Replay &replay, const fdw_vk_group *group,
+// The barriers of the resources of a group, for shaders of `stages`,
+// gathered into those of the pass.
+int useGroup(Replay &replay, Barriers &barriers, const fdw_vk_group *group,
              VkPipelineStageFlags2 stages) {
   fdw_vk_context *context = replay.context;
   for (const auto &[kind, id] : group->resources) {
@@ -165,16 +166,15 @@ int useGroup(Replay &replay, const fdw_vk_group *group,
       if (texture == context->textures.end()) {
         return fail("A group uses the destroyed texture " + std::to_string(id));
       }
-      useTexture(replay.commands, texture->second,
-                 VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, stages,
-                 VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+      useTexture(barriers, texture->second, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                 stages, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
       continue;
     }
     const auto buffer = context->buffers.find(id);
     if (buffer == context->buffers.end()) {
       return fail("A group uses the destroyed buffer " + std::to_string(id));
     }
-    useBuffer(replay.commands, buffer->second, stages,
+    useBuffer(barriers, buffer->second, stages,
               kind == FDW_VK_BINDING_UNIFORM ? VK_ACCESS_2_UNIFORM_READ_BIT
               : kind == FDW_VK_BINDING_STORAGE_READ
                   ? VK_ACCESS_2_SHADER_STORAGE_READ_BIT
@@ -185,9 +185,9 @@ int useGroup(Replay &replay, const fdw_vk_group *group,
 }
 
 // Before a render pass: the barriers of the resources its commands use,
-// which cannot be placed inside it. The commands are walked ahead, up to
-// the end of the pass.
-int prepareRenderPass(Replay &replay) {
+// which cannot be placed inside it, gathered with those of its attachments.
+// The commands are walked ahead, up to the end of the pass.
+int prepareRenderPass(Replay &replay, Barriers &barriers) {
   constexpr VkPipelineStageFlags2 shaders =
       VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
@@ -202,7 +202,7 @@ int prepareRenderPass(Replay &replay) {
       ahead.word();
       const fdw_vk_group *group =
           find(replay.context->groups, ahead.word(), "group", &status);
-      if (!group || useGroup(replay, group, shaders) != 0) {
+      if (!group || useGroup(replay, barriers, group, shaders) != 0) {
         return -1;
       }
     } else if (opcode == FDW_VK_CMD_SET_VERTEX_BUFFER ||
@@ -215,7 +215,7 @@ int prepareRenderPass(Replay &replay) {
       if (!buffer) {
         return status;
       }
-      useBuffer(replay.commands, buffer,
+      useBuffer(barriers, buffer,
                 vertex ? VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT
                        : VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT,
                 vertex ? VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
@@ -248,8 +248,9 @@ int flushGroups(Replay &replay) {
   return 0;
 }
 
-// A dispatch: the barriers of the groups bound (a dispatch can read what
-// the previous one wrote), then the groups and the dispatch.
+// A dispatch: the barriers of the groups bound and of the indirect buffer,
+// in one call (a dispatch can read what the previous one wrote), then the
+// groups and the dispatch.
 int dispatch(Replay &replay, bool indirect) {
   int status = 0;
   Reader &reader = replay.reader;
@@ -271,16 +272,18 @@ int dispatch(Replay &replay, bool indirect) {
       replay.pipeline->bindPoint != VK_PIPELINE_BIND_POINT_COMPUTE) {
     return fail("No compute pipeline set before dispatching");
   }
+  Barriers barriers{replay.commands};
   for (fdw_vk_group *group : replay.groups) {
-    if (group &&
-        useGroup(replay, group, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0) {
+    if (group && useGroup(replay, barriers, group,
+                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0) {
       return -1;
     }
   }
   if (buffer) {
-    useBuffer(replay.commands, buffer, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+    useBuffer(barriers, buffer, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
               VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
   }
+  barriers.place();
   if (flushGroups(replay) != 0) {
     return -1;
   }
@@ -397,6 +400,8 @@ int beginRenderPass(Replay &replay) {
   if (colorCount > context->maxColorAttachments) {
     return fail("Too many color attachments");
   }
+  // The barriers of the pass, placed together before it.
+  Barriers barriers{replay.commands};
   std::vector<VkRenderingAttachmentInfo> colors(colorCount);
   uint32_t width = 0;
   uint32_t height = 0;
@@ -424,7 +429,7 @@ int beginRenderPass(Replay &replay) {
         }
       }
     }
-    useTexture(replay.commands, target, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+    useTexture(barriers, target, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -443,7 +448,7 @@ int beginRenderPass(Replay &replay) {
         return status;
       }
       // Entirely written by the resolve.
-      useTexture(replay.commands, resolve, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+      useTexture(barriers, resolve, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, true);
       color.resolveMode = isIntegerFormat(target->format)
@@ -468,7 +473,7 @@ int beginRenderPass(Replay &replay) {
     if (!target) {
       return status;
     }
-    useTexture(replay.commands, target, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+    useTexture(barriers, target, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
@@ -490,9 +495,10 @@ int beginRenderPass(Replay &replay) {
   if (reader.failed()) {
     return fail("Truncated render pass command");
   }
-  if (prepareRenderPass(replay) != 0) {
+  if (prepareRenderPass(replay, barriers) != 0) {
     return -1;
   }
+  barriers.place();
 
   VkRenderingInfo info{VK_STRUCTURE_TYPE_RENDERING_INFO};
   info.renderArea = {{0, 0}, {width, height}};
@@ -522,10 +528,13 @@ int copyBuffer(Replay &replay) {
   if (!source || !destination) {
     return status;
   }
-  useBuffer(replay.commands, source, VK_PIPELINE_STAGE_2_COPY_BIT,
+  // Both barriers in one call.
+  Barriers barriers{replay.commands};
+  useBuffer(barriers, source, VK_PIPELINE_STAGE_2_COPY_BIT,
             VK_ACCESS_2_TRANSFER_READ_BIT);
-  useBuffer(replay.commands, destination, VK_PIPELINE_STAGE_2_COPY_BIT,
+  useBuffer(barriers, destination, VK_PIPELINE_STAGE_2_COPY_BIT,
             VK_ACCESS_2_TRANSFER_WRITE_BIT);
+  barriers.place();
   const VkBufferCopy region{sourceOffset, destinationOffset, size};
   vkCmdCopyBuffer(replay.commands, source->buffer, destination->buffer, 1,
                   &region);
@@ -544,11 +553,13 @@ int copyTexture(Replay &replay) {
   if (!source || !destination) {
     return status;
   }
-  useTexture(replay.commands, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+  // Both barriers in one call.
+  Barriers barriers{replay.commands};
+  useTexture(barriers, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
              VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-  useTexture(replay.commands, destination,
-             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT,
-             VK_ACCESS_2_TRANSFER_WRITE_BIT);
+  useTexture(barriers, destination, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+             VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+  barriers.place();
   VkImageCopy region{};
   region.srcSubresource = {source->aspect, 0, 0, 1};
   region.dstSubresource = {destination->aspect, 0, 0, 1};

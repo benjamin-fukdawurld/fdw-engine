@@ -127,15 +127,22 @@ animator.set('speed', speed).set('wave', waving ? 1 : 0);
 if (jumpPressed) animator.trigger('jump');
 animator.update(dt);
 skinning.applyPose(animator.pose).update();
-renderer.render({ source: scene, camera, surface });
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  prepare: (graph) => skinning.addPass(graph),
+});
 ```
 
 L'animateur fait avancer les clips, choisit les transitions et donne une
 pose : la transformation locale de chaque articulation. `applyPose` la
 donne aux nœuds ; `update` calcule les matrices des articulations depuis
-leurs matrices monde, les envoie au GPU, lance la passe de calcul, et
-déplace les bornes du mesh avec les articulations, pour que le culling et
-les ombres suivent le personnage.
+leurs matrices monde, les envoie au GPU, et déplace les bornes du mesh
+avec les articulations, pour que le culling et les ombres suivent le
+personnage. `prepare` ajoute la passe de calcul du skinning au render graph
+de l'image, avant la scène : une passe pour tous les meshes skinnés, dans
+la même soumission.
 
 ## Événements et états
 

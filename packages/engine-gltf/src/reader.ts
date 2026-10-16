@@ -24,7 +24,7 @@ import type {
   GltfDecodedPrimitive,
   GltfExtension,
 } from './extension';
-import { GltfMode, primitiveMeshData } from './geometry';
+import { GltfMode, readPrimitive, type PrimitiveSource } from './geometry';
 import { decodeDataUri } from './glb';
 import { pbrMaterialData, samplerConfiguration } from './materials';
 import {
@@ -41,6 +41,7 @@ import type {
   GltfProperty,
   GltfTextureInfo,
 } from './types';
+import { readPrimitiveInWorker } from './workers';
 
 type Hook = Exclude<keyof GltfExtension, 'name' | 'prepare'>;
 
@@ -315,29 +316,24 @@ export class GltfReader {
     const [decoder] = this.hooks(primitive, 'primitive');
     if (decoder)
       decoded = await decoder[1].primitive(decoder[0], primitive, this.context);
-    const entries = await Promise.all(
-      Object.entries(primitive.attributes).map(
-        async ([attribute, index]) =>
-          [
-            attribute,
-            decoded?.attributes[attribute] ?? (await this.accessor(index)),
-          ] as const,
-      ),
-    );
-    let indices: ArrayLike<number> | undefined = decoded?.indices;
-    if (!indices && primitive.indices !== undefined) {
-      const data = await this.accessor(primitive.indices);
-      if (data.components !== 1 || data.array instanceof Float32Array)
-        throw new Error('Indices must be unsigned scalars');
-      indices = data.array;
-    }
-    return primitiveMeshData({
+    const source: PrimitiveSource = {
       name,
-      attributes: new Map(entries),
-      indices,
+      attributes: primitive.attributes,
+      indices: primitive.indices,
       mode: primitive.mode ?? GltfMode.TRIANGLES,
       normals,
-    });
+      decoded,
+    };
+    const { workers } = this.config.options;
+    return workers
+      ? readPrimitiveInWorker(
+          workers,
+          source,
+          this.json,
+          this.context.bufferView,
+          this.ctx.signal,
+        )
+      : readPrimitive(source, this.accessor);
   }
 
   /** Provides a `MeshData` per drawn primitive, `mesh/<name or index>/<primitive>`. */

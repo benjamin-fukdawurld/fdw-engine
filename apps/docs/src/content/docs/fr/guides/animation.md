@@ -127,6 +127,12 @@ const instance = instantiate(model, scene);
 const skinning = new Skinning(backend, instance, model);
 // À chaque image, après l'animation, avant le rendu :
 skinning.applyPose(animator.pose).update();
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  prepare: (graph) => skinning.addPass(graph),
+});
 ```
 
 `Skinning` donne à chaque primitive skinnée d'une instance un matériau à
@@ -144,6 +150,14 @@ Le mode est `compute` quand le backend a les compute shaders et les
 storage buffers, `vertex` ailleurs ; `{ mode }` choisit. En mode
 `compute`, la caméra, les shadow maps et plus tard le ray tracing lisent
 les mêmes sommets, skinnés une fois par image.
+
+En mode `compute`, `skinning.addPass(graph)` ajoute une passe de calcul à
+un render graph, qui enregistre les kernels de toutes les primitives :
+donnez-la à `render` avec `prepare`, ou appelez-la avant `addScenePasses`
+dans votre propre graphe. Elle renvoie les versions des buffers de sommets
+skinnés qu'elle écrit, pour les passes qui les lisent. Hors d'un graphe,
+`skinning.dispatch()` les enregistre en une seule soumission. En mode
+`vertex`, les deux ne font rien.
 
 Les meshes ont besoin de `joints` (`uint8x4` ou `uint16x4`) et de
 `weights` ; leur position, leur normale et leur tangente sont skinnées.

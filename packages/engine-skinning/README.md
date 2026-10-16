@@ -14,8 +14,16 @@ const animator = new Animator(graph, {
 
 // Each frame:
 skinning.applyPose(animator.update(dt)).update();
-renderer.render({ source: scene, camera, surface });
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  // compute mode: one compute pass for all the meshes, in the frame's graph
+  prepare: (graph) => skinning.addPass(graph),
+});
 ```
+
+- **`addPass(graph)`**: the compute pass of the skinning in a render graph (all the primitives, one pass); **`dispatch()`**: the same outside of a graph, in one submission. Both do nothing in `vertex` mode.
 
 - **`skinGraph(graph, mode, attributes)`**: the graph of a material, its position, normal and tangent skinned; **`skinningKernel`**: the compute graph.
 - **`MeshSkin`**: the joints, weights and rest vertices of a mesh, read once; **`skinPositions`**: the same skinning on the CPU.

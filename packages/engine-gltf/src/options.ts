@@ -1,4 +1,4 @@
-import { defineServiceKey } from '@fdw/engine-resources';
+import { defineServiceKey, type DecodePool } from '@fdw/engine-resources';
 import type { GltfAttributeData, GltfExtension } from './extension';
 
 /**
@@ -54,6 +54,16 @@ export interface GltfOptions {
   readonly extensions?: readonly GltfExtension[];
   readonly meshopt?: MeshoptDecoder;
   readonly draco?: DracoDecoder;
+  /**
+   * Decodes in the workers of this pool (the `WorkerPool` of `-web` or
+   * `-native`) rather than on the main thread: the geometry of the
+   * primitives (accessors, sparse values, quantized attributes, strips and
+   * fans, flat normals), the meshopt buffer views and the Draco meshes. Its
+   * worker script serves `gltfWorkerTasks` (`@fdw/engine-gltf/worker`),
+   * given the decoders the files need: `meshopt` and `draco` are then
+   * unused here. The JSON, the skins and the animations stay here.
+   */
+  readonly workers?: DecodePool;
   /** Receives the warnings (an optional extension ignored, a primitive of lines skipped). */
   readonly warn?: (message: string) => void;
 }

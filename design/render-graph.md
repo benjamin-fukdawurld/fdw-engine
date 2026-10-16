@@ -257,6 +257,8 @@ Le compilateur connaît la suite des usages de chaque ressource : il calcule les
 
 La compilation (culling, ordre, durées de vie, transitions) est mise en cache par une **clé structurelle** : passes, types, ressources, descripteurs, usages. Tant que la structure de la frame ne change pas, seule la déclaration est refaite, pas la compilation.
 
+Le runner ne construit pas de chaîne pour retrouver une compilation : `graph.writeShape(out)` écrit la structure sous forme de valeurs plates (nombres, noms, booléens, chaque liste précédée de sa longueur) dans un tableau réutilisé d'une frame à l'autre, comparé valeur par valeur aux formes des graphes en cache (le plus récent d'abord). Deux graphes de même structure partagent leur compilation ; deux structures différentes ne peuvent pas se confondre, puisque les valeurs sont comparées et non hachées. `structuralKey()` reste disponible (sérialisation JSON, pour le débogage), hors du chemin de chaque frame. Avec la compilation, le runner garde ce qu'il en dérive une fois : les ressources des transitions, et les clés de pool des ressources temporaires, recalculées seulement quand la taille de la frame change. Mesures (faux backend, `RenderGraph.bench.ts`) : déclarer et exécuter un graphe passe ainsi d'environ 12 à 5 µs pour 3 passes, de 32 à 16 µs pour 10 et de 186 à 73 µs pour 50 ; la déclaration seule ne coûte rien de plus.
+
 ### 7.6 Exécution
 
 Pour chaque passe conservée, dans l'ordre : allouer les ressources qui commencent, émettre les transitions, ouvrir l'encodeur du type de la passe, appeler sa fonction d'exécution, fermer l'encodeur, rendre au pool les ressources qui finissent. Toute la frame est enregistrée dans un encodeur de commandes et soumise une fois.

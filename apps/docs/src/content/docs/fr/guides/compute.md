@@ -81,7 +81,10 @@ const result = new Float32Array(await output.read());
 - `workgroups` : `[x, y?, z?]`, ou `{ buffer, offset }`, un buffer contenant
   les trois nombres en `u32` — un dispatch **indirect**, dont la taille est
   calculée par le GPU. Le buffer doit avoir l'usage `indirect`.
-- Les pipelines et les uniform buffers sont mis en cache par programme.
+- Les pipelines sont mis en cache par programme ; les bind groups et leurs
+  uniform buffers par programme et par ressources : relancer avec les
+  mêmes buffers les réutilise. Les moins récemment utilisés au-delà de
+  `new ComputeRunner(backend, { bindGroups })` (256) sont détruits.
 
 Les storage buffers sont créés par le backend, avec les usages dont ils ont
 besoin :
@@ -106,9 +109,29 @@ dispatch voit ses résultats. Un matériau lit aussi un storage buffer avec
 `graph.addComputePass(name, setup)` déclare une passe de calcul et ses
 ressources (`storage-read`, `storage-write`, `indirect`…) : elle est
 ordonnée, éliminée par le culling et synchronisée avec les autres passes.
-Son `execute` reçoit un `GpuComputePassEncoder` ; le pipeline et ses bind
-groups proviennent de `backend.pipelines` (`createComputePipeline`,
-`resolveLayout`, `createBindGroup`), comme le fait `ComputeRunner`.
+Son `execute` reçoit un `GpuComputePassEncoder` :
+`runner.record(pass, program, dispatch)` y enregistre un dispatch, avec les
+caches de `dispatch`, soumis avec l'image. Plusieurs dispatches peuvent
+partager la passe :
+
+```ts
+graph.addComputePass('simulation', (pass) => {
+  const written = pass.write(graph.importBuffer('state', state), 'storage-write');
+  return {
+    written,
+    execute: (context) =>
+      runner.record(context.pass, program, {
+        values: { state },
+        workgroups: [Math.ceil(count / 64)],
+      }),
+  };
+});
+```
+
+Les dispatches d'une même soumission qui lient les mêmes ressources
+partagent leurs valeurs uniformes : les dernières écrites.
+`renderer.render({ prepare })` ajoute des passes au graphe de l'image,
+avant celles de la scène.
 
 ## Selon les backends
 

@@ -6,6 +6,7 @@ import {
   defineResourceType,
   ResourceError,
   ResourceStore,
+  type DecodePool,
 } from '@fdw/engine-resources';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FileSource } from './FileSource';
@@ -16,6 +17,10 @@ import { WorkerPool } from './WorkerPool';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const signal = new AbortController().signal;
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+// Type-level: the pool serves the decoders (glTF, KTX2) as a `DecodePool`.
+const _decodePool: DecodePool = null as unknown as WorkerPool;
+void _decodePool;
 
 let root: string;
 beforeEach(async () => {

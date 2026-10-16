@@ -69,7 +69,10 @@ swapchain would remove it.
 - **Synchronization**: as in WebGPU, the library tracks how each texture
   and buffer was last used, and inserts the barriers: before a render pass
   for its attachments and resources (its commands are read ahead), before
-  each dispatch for its groups.
+  each dispatch for its groups, before each copy. The barriers of a pass
+  are placed together, in one call, and each waits only for the stages of
+  the last use (a vertex buffer read waits for the copy that wrote it, not
+  for every command), uploads and reads back included.
 - **Writes**: `buffer.write` and texture uploads follow WebGPU's
   `queue.writeBuffer`: copied at once, applied in queue order before the
   next commands.

@@ -39,7 +39,7 @@ Détails dans [render-graph.md §13](render-graph.md#13-plan-dimplémentation).
 
 Détails dans [compute-graph.md](compute-graph.md).
 
-- Un dispatch de compute graph dans une passe du render graph : `addComputePass` ne donne que l'encodeur, il faut aujourd'hui créer le pipeline et les bind groups à la main (ce que fait `ComputeRunner` hors du graphe). Une méthode `ComputeRunner.record(pass, program, dispatch)`, ou une `addComputeGraphPass`, comme `addFullscreenPass` pour les matériaux.
+- ~~Un dispatch de compute graph dans une passe du render graph~~ : fait, `ComputeRunner.record(pass, program, dispatch)` (utilisé par le skinning). Reste éventuellement une `addComputeGraphPass`, comme `addFullscreenPass` pour les matériaux.
 - Storage textures (écriture d'images par les kernels).
 - Repli WebGL2 des storage buffers (texture de données lue par `texelFetch`).
 

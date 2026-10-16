@@ -37,12 +37,9 @@ VkCommandBuffer transfers(fdw_vk_context *context) {
   VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   vkBeginCommandBuffer(context->transfers, &begin);
-  // After everything submitted before: the transfers can overwrite what
-  // earlier commands read or wrote.
-  memoryBarrier(context->transfers, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
+  // No barrier with the commands submitted before, nor with the next ones:
+  // each transfer waits for the last use of its resource (the tracking, in
+  // the order of the queue), and the next use waits for the transfer.
   context->transfersPending = true;
   return context->transfers;
 }
@@ -66,11 +63,6 @@ uint64_t submit(fdw_vk_context *context,
                 VkSemaphore signalBinary) {
   std::vector<VkCommandBufferSubmitInfo> buffers;
   if (context->transfersPending) {
-    // The commands after the transfers see what they wrote.
-    memoryBarrier(context->transfers, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                  VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                  VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                  VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
     vkEndCommandBuffer(context->transfers);
     buffers.push_back(
         {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr,

@@ -15,8 +15,8 @@ import type {
 import type {
   BufferHandle,
   CompiledRenderGraph,
-  PassContext,
   RenderGraph,
+  ShapeValue,
   TextureHandle,
 } from './RenderGraph';
 
@@ -51,6 +51,30 @@ interface PoolEntry {
   lastUsed: number;
 }
 
+// A compiled graph in the cache, with what the runner derives from it once:
+// the graphs of its shape have the same resources, descriptors and usages.
+interface CachedGraph {
+  readonly shape: readonly ShapeValue[];
+  readonly compiled: CompiledRenderGraph;
+  // The resource of each transition, by position.
+  readonly transitionIds: readonly (readonly number[])[];
+  // The pool key of each transient resource, by id, for the frame size
+  // they were computed with.
+  readonly poolKeys: string[];
+  width: number;
+  height: number;
+}
+
+type TextureTarget = {
+  width?: number;
+  height?: number;
+  dimensions?: { width: number; height?: number };
+};
+
+type Mutable<T> = { -readonly [P in keyof T]: T[P] };
+
+const noUsages: ReadonlySet<ResourceUsage> = new Set();
+
 export interface RenderGraphRunnerOptions {
   // Frames a free transient resource is kept before being destroyed.
   readonly keepFrames?: number;
@@ -64,13 +88,45 @@ export interface RenderGraphRunnerOptions {
 // The frames whose pass names are kept, waiting for their measures.
 const TimedFrames = 8;
 
+// Whether two shapes are equal: the graphs have the same structure.
+function sameShape(
+  a: readonly ShapeValue[],
+  b: readonly ShapeValue[],
+): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Whether a pass declares a resource.
+function declares(
+  accesses: readonly { readonly resource: number }[],
+  resource: number,
+): boolean {
+  for (const access of accesses) {
+    if (access.resource === resource) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Executes render graphs, frame after frame: compiles them (with a cache by
  * structure), allocates their transient resources from a pool reused between
  * frames, records their passes and submits them.
  */
 export class RenderGraphRunner {
-  private readonly _compiled = new Map<string, CompiledRenderGraph>();
+  // The compiled graphs, most recently used last.
+  private readonly _compiled: CachedGraph[] = [];
+  // The shape of the graph being executed: reused from frame to frame.
+  private readonly _shape: ShapeValue[] = [];
   private readonly _free = new Map<string, PoolEntry[]>();
   private readonly _keepFrames: number;
   private readonly _cacheSize: number;
@@ -125,133 +181,133 @@ export class RenderGraphRunner {
     graph: RenderGraph,
     options: { size?: { width: number; height: number } } = {},
   ): CompiledRenderGraph {
-    const compiled = this.compile(graph);
+    const cached = this.compile(graph);
+    const compiled = cached.compiled;
     const size = options.size ?? graph.size ?? this.frameSize(graph);
-    const real = new Map<number, GraphResource>();
-    const keys = new Map<number, string>();
+    const poolKeys = this.poolKeys(graph, cached, size);
+    // The resources of the frame, by id.
+    const real: (GraphResource | undefined)[] = [];
     for (const resource of graph.resources) {
-      if (resource.imported) {
-        real.set(resource.id, resource.imported);
-      }
+      real[resource.id] = resource.imported;
     }
-    const byName = new Map(
-      graph.resources.map((resource) => [resource.name, resource.id]),
-    );
 
     const encoder = this.backend.createCommandEncoder();
     const timer = this.timer(graph);
-    const timed: string[] = [];
-    // The measure of a pass, when the frame is timed.
-    const timing = (name: string): PassTiming | undefined => {
-      if (!timer) {
-        return undefined;
-      }
-      timed.push(name);
-      return { timer, index: timed.length - 1 };
-    };
-    compiled.order.forEach((index, position) => {
-      const pass = graph.passes[index];
+    const timed: string[] | undefined = timer ? [] : undefined;
+    for (let position = 0; position < compiled.order.length; position++) {
+      const pass = graph.passes[compiled.order[position]];
 
       // Resources whose lifetime starts here: from the pool, possibly
       // released by an earlier pass of this frame.
       for (const id of compiled.acquires[position]) {
-        const usages = compiled.lifetimes.get(id)?.usages ?? new Set();
-        const key = this.poolKey(graph, id, usages, size);
-        real.set(id, this.acquire(graph, id, key, usages, size));
-        keys.set(id, key);
+        const usages = compiled.lifetimes.get(id)?.usages ?? noUsages;
+        real[id] = this.acquire(graph, id, poolKeys[id], usages, size);
       }
 
       const transitions = compiled.transitions[position];
       if (transitions.length > 0 && encoder.transition) {
+        const ids = cached.transitionIds[position];
         encoder.transition(
-          transitions.map((transition): ResourceTransition => ({
-            resource: real.get(
-              byName.get(transition.resource) as number,
-            ) as GraphResource,
+          transitions.map((transition, i): ResourceTransition => ({
+            resource: real[ids[i]] as GraphResource,
             from: transition.from,
             to: transition.to,
           })),
         );
       }
 
-      const declared = new Set(pass.accesses.map((access) => access.resource));
       const lookup = (handle: TextureHandle | BufferHandle) => {
-        if (!declared.has(handle.resource)) {
+        if (!declares(pass.accesses, handle.resource)) {
           throw new Error(
             `Pass "${pass.name}" uses "${handle.name}" without declaring it`,
           );
         }
-        return real.get(handle.resource) as GraphResource;
+        return real[handle.resource] as GraphResource;
       };
-      const base: PassContext = {
-        backend: this.backend,
-        texture: (handle) => lookup(handle) as GpuAttachmentTarget,
-        buffer: (handle) => lookup(handle) as GpuBuffer,
-        size: (handle) => {
-          const target = lookup(handle) as {
-            width?: number;
-            height?: number;
-            dimensions?: { width: number; height?: number };
-          };
-          return {
-            width: target.width ?? target.dimensions?.width ?? 1,
-            height: target.height ?? target.dimensions?.height ?? 1,
-          };
-        },
+      const texture = (handle: TextureHandle) =>
+        lookup(handle) as GpuAttachmentTarget;
+      const buffer = (handle: BufferHandle) => lookup(handle) as GpuBuffer;
+      const sizeOf = (handle: TextureHandle) => {
+        const target = lookup(handle) as TextureTarget;
+        return {
+          width: target.width ?? target.dimensions?.width ?? 1,
+          height: target.height ?? target.dimensions?.height ?? 1,
+        };
       };
       const execute = pass.execute as unknown as (context: object) => void;
+      // The measure of the pass, when the frame is timed.
+      const timing: PassTiming | undefined =
+        timer && timed && pass.kind !== 'copy'
+          ? { timer, index: timed.push(pass.name) - 1 }
+          : undefined;
 
       if (pass.kind === 'raster') {
-        const renderPass = encoder.beginRenderPass({
-          label: pass.name,
-          colorAttachments: pass.colors.map(
-            (color): RenderPassColorAttachment => ({
-              target: real.get(color.resource) as GpuAttachmentTarget,
-              load: color.load,
-              ...(color.resolve !== undefined
-                ? {
-                    resolveTarget: real.get(
-                      color.resolve,
-                    ) as GpuAttachmentTarget,
-                  }
-                : {}),
-              ...(color.clearValue !== undefined
-                ? { clearValue: color.clearValue as never }
-                : {}),
-            }),
-          ),
-          ...(pass.depth
+        const colorAttachments: RenderPassColorAttachment[] = [];
+        for (const color of pass.colors) {
+          const attachment: Mutable<RenderPassColorAttachment> = {
+            target: real[color.resource] as GpuAttachmentTarget,
+            load: color.load,
+          };
+          if (color.resolve !== undefined) {
+            attachment.resolveTarget = real[
+              color.resolve
+            ] as GpuAttachmentTarget;
+          }
+          if (color.clearValue !== undefined) {
+            attachment.clearValue = color.clearValue as never;
+          }
+          colorAttachments.push(attachment);
+        }
+        const renderPass = encoder.beginRenderPass(
+          pass.depth
             ? {
+                label: pass.name,
+                colorAttachments,
                 depthAttachment: {
-                  target: real.get(pass.depth.resource) as GpuAttachmentTarget,
+                  target: real[pass.depth.resource] as GpuAttachmentTarget,
                   load: pass.depth.load,
                   clearValue: pass.depth.clearValue as number | undefined,
                 },
+                timing,
               }
-            : {}),
-          timing: timing(pass.name),
+            : { label: pass.name, colorAttachments, timing },
+        );
+        execute({
+          backend: this.backend,
+          texture,
+          buffer,
+          size: sizeOf,
+          pass: renderPass,
         });
-        execute({ ...base, pass: renderPass });
         renderPass.end();
       } else if (pass.kind === 'compute') {
-        const computePass = encoder.beginComputePass(
-          pass.name,
-          timing(pass.name),
-        );
-        execute({ ...base, pass: computePass });
+        const computePass = encoder.beginComputePass(pass.name, timing);
+        execute({
+          backend: this.backend,
+          texture,
+          buffer,
+          size: sizeOf,
+          pass: computePass,
+        });
         computePass.end();
       } else {
-        execute({ ...base, encoder });
+        execute({
+          backend: this.backend,
+          texture,
+          buffer,
+          size: sizeOf,
+          encoder,
+        });
       }
 
       // Resources whose lifetime ends here: back to the pool, where a later
       // pass of the frame can take them (the commands run in order), as
       // well as the next frames.
       for (const id of compiled.releases[position]) {
-        this.release(keys.get(id) as string, real.get(id) as PooledResource);
+        this.release(poolKeys[id], real[id] as PooledResource);
       }
-    });
-    if (timer) {
+    }
+    if (timer && timed) {
       timer.resolve(encoder, this._frame);
       this._timedPasses.set(this._frame, timed);
       this._timedPasses.delete(this._frame - TimedFrames);
@@ -271,7 +327,7 @@ export class RenderGraphRunner {
       }
     }
     this._free.clear();
-    this._compiled.clear();
+    this._compiled.length = 0;
   }
 
   // The timer of a frame, large enough for the passes of the graph; none
@@ -280,9 +336,12 @@ export class RenderGraphRunner {
     if (!this._timing || !this.backend.createPassTimer) {
       return undefined;
     }
-    const passes = graph.passes.filter(
-      (pass) => pass.kind === 'raster' || pass.kind === 'compute',
-    ).length;
+    let passes = 0;
+    for (const pass of graph.passes) {
+      if (pass.kind === 'raster' || pass.kind === 'compute') {
+        passes++;
+      }
+    }
     if (!this._timer || this._timer.capacity < passes) {
       // Larger: the measures in flight are lost.
       this._timer?.destroy();
@@ -292,32 +351,70 @@ export class RenderGraphRunner {
     return this._timer;
   }
 
-  private compile(graph: RenderGraph): CompiledRenderGraph {
-    const key = graph.structuralKey();
-    let compiled = this._compiled.get(key);
-    if (compiled) {
-      // Most recently used last.
-      this._compiled.delete(key);
-    } else {
-      compiled = graph.compile();
-      this.compilations++;
-      if (this._compiled.size >= this._cacheSize) {
-        this._compiled.delete(this._compiled.keys().next().value as string);
+  // The compilation of a graph: found in the cache by its shape (graphs of
+  // the same structure), the most recent first, or compiled.
+  private compile(graph: RenderGraph): CachedGraph {
+    const shape = this._shape;
+    shape.length = 0;
+    graph.writeShape(shape);
+    const cache = this._compiled;
+    for (let i = cache.length - 1; i >= 0; i--) {
+      const cached = cache[i];
+      if (sameShape(cached.shape, shape)) {
+        if (i !== cache.length - 1) {
+          cache.splice(i, 1);
+          cache.push(cached);
+        }
+        return cached;
       }
     }
-    this._compiled.set(key, compiled);
-    return compiled;
+    const compiled = graph.compile();
+    this.compilations++;
+    const ids = new Map(
+      graph.resources.map((resource) => [resource.name, resource.id]),
+    );
+    const cached: CachedGraph = {
+      shape: shape.slice(),
+      compiled,
+      transitionIds: compiled.transitions.map((transitions) =>
+        transitions.map((transition) => ids.get(transition.resource) as number),
+      ),
+      poolKeys: [],
+      width: 0,
+      height: 0,
+    };
+    if (cache.length >= this._cacheSize) {
+      cache.shift();
+    }
+    cache.push(cached);
+    return cached;
+  }
+
+  // The pool keys of the transient resources of a graph: computed again
+  // when the size of the frame changes (relative sizes, full mip chains).
+  private poolKeys(
+    graph: RenderGraph,
+    cached: CachedGraph,
+    frame: { width: number; height: number },
+  ): readonly string[] {
+    if (
+      cached.poolKeys.length === 0 ||
+      cached.width !== frame.width ||
+      cached.height !== frame.height
+    ) {
+      cached.poolKeys.length = 0;
+      for (const [id, { usages }] of cached.compiled.lifetimes) {
+        cached.poolKeys[id] = this.poolKey(graph, id, usages, frame);
+      }
+      cached.width = frame.width;
+      cached.height = frame.height;
+    }
+    return cached.poolKeys;
   }
 
   private frameSize(graph: RenderGraph): { width: number; height: number } {
     for (const resource of graph.resources) {
-      const target = resource.imported as
-        | {
-            width?: number;
-            height?: number;
-            dimensions?: { width: number; height?: number };
-          }
-        | undefined;
+      const target = resource.imported as TextureTarget | undefined;
       if (resource.kind === 'texture' && target) {
         return {
           width: target.width ?? target.dimensions?.width ?? 1,
@@ -421,25 +518,29 @@ export class RenderGraphRunner {
   }
 
   private release(key: string, resource: PooledResource): void {
-    const free = this._free.get(key) ?? [];
+    let free = this._free.get(key);
+    if (!free) {
+      free = [];
+      this._free.set(key, free);
+    }
     free.push({ resource, lastUsed: this._frame });
-    this._free.set(key, free);
   }
 
   // Destroys the free resources not reused for a few frames.
   private endFrame(): void {
     this._frame++;
     for (const [key, entries] of this._free) {
-      const kept = entries.filter((entry) => {
+      // Compacted in place: the entries kept, in order.
+      let kept = 0;
+      for (const entry of entries) {
         if (this._frame - entry.lastUsed > this._keepFrames) {
           entry.resource.destroy();
-          return false;
+        } else {
+          entries[kept++] = entry;
         }
-        return true;
-      });
-      if (kept.length > 0) {
-        this._free.set(key, kept);
-      } else {
+      }
+      entries.length = kept;
+      if (kept === 0) {
         this._free.delete(key);
       }
     }

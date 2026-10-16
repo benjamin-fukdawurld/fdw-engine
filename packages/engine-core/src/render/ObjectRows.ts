@@ -63,7 +63,9 @@ export class ObjectRows {
   private _instances = new Uint32Array(256);
   private _cursor = 0;
   private _executed = false;
-  private readonly _retired: GpuObjectTable[] = [];
+  // Destroyed at the next frame: the tables replaced, and what the renderer
+  // retires (see retire).
+  private readonly _retired: { destroy?(): void }[] = [];
 
   constructor(private readonly _backend: RenderBackend) {}
 
@@ -87,10 +89,18 @@ export class ObjectRows {
     }
     this._executed = false;
     this._cursor = 0;
-    for (const table of this._retired) {
-      table.destroy();
+    for (const resource of this._retired) {
+      resource.destroy?.();
     }
     this._retired.length = 0;
+  }
+
+  /**
+   * Destroys a resource at the next frame, once the commands recorded with
+   * it are submitted (a bind group replaced during a frame).
+   */
+  retire(resource: { destroy?(): void }): void {
+    this._retired.push(resource);
   }
 
   /**
@@ -121,8 +131,8 @@ export class ObjectRows {
   destroy(): void {
     this._table?.destroy();
     this._table = undefined;
-    for (const table of this._retired) {
-      table.destroy();
+    for (const resource of this._retired) {
+      resource.destroy?.();
     }
     this._retired.length = 0;
   }

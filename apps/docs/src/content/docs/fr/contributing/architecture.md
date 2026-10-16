@@ -90,7 +90,8 @@ incrémentent une **version** à chaque modification ; le renderer compare
 les versions pour ne mettre à jour que ce qui a changé. Les programmes sont
 indexés par un hash du graphe optimisé et de ses paramètres de variante ;
 les pipelines par programme et par état ; les compilations de render graph
-par structure. Une image stable ne compile rien et n’alloue rien.
+par structure (comparée valeur par valeur, sans construire de clé). Une
+image stable ne compile rien et n’alloue rien.
 
 ## Les documents de conception
 

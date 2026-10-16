@@ -274,6 +274,9 @@ export interface RenderGraphOptions {
   readonly size?: { readonly width: number; readonly height: number };
 }
 
+// A value of the shape of a graph (see RenderGraph.writeShape).
+export type ShapeValue = string | number | boolean | undefined;
+
 export class RenderGraph {
   private readonly _resources: ResourceNode[] = [];
   private readonly _passes: PassNode[] = [];
@@ -361,14 +364,13 @@ export class RenderGraph {
     if (!resource || resource.name !== handle.name) {
       throw new Error(`Pass "${pass.name}": unknown resource "${handle.name}"`);
     }
-    const previous = pass.accesses.find(
-      (access) => access.resource === handle.resource,
-    );
-    // depth-read comes with the depth attachment, declared once.
-    if (previous) {
-      throw new Error(
-        `Pass "${pass.name}" uses "${handle.name}" twice (${previous.usage} and ${usage})`,
-      );
+    for (const previous of pass.accesses) {
+      // depth-read comes with the depth attachment, declared once.
+      if (previous.resource === handle.resource) {
+        throw new Error(
+          `Pass "${pass.name}" uses "${handle.name}" twice (${previous.usage} and ${usage})`,
+        );
+      }
     }
     if (!write) {
       pass.accesses.push({
@@ -393,7 +395,12 @@ export class RenderGraph {
       write,
       discards,
     });
-    return { ...handle, version: resource.latest };
+    return {
+      kind: handle.kind,
+      resource: handle.resource,
+      version: resource.latest,
+      name: handle.name,
+    };
   }
 
   /** @internal The declarations, for the runner. */
@@ -406,7 +413,61 @@ export class RenderGraph {
     return this._passes;
   }
 
-  /** A key equal for graphs of the same structure: their compilation too. */
+  /**
+   * @internal Writes the structure of the graph into `out`, as flat values:
+   * the resources (kind, name, imported, descriptor), then the passes (kind,
+   * name, side effects, resolves, accesses), each list after its length.
+   * Graphs of equal shapes have the same structure: the runner compares
+   * them to share their compilation, without building a key.
+   */
+  writeShape(out: ShapeValue[]): void {
+    out.push(this._resources.length);
+    for (const resource of this._resources) {
+      out.push(resource.kind, resource.name, resource.imported !== undefined);
+      const texture = resource.texture;
+      if (texture) {
+        const size = texture.size;
+        out.push(
+          texture.format,
+          // Absent, relative or absolute.
+          size === undefined ? 0 : 'relative' in size ? 1 : 2,
+          size === undefined
+            ? undefined
+            : 'relative' in size
+              ? size.relative
+              : size.width,
+          size && !('relative' in size) ? size.height : undefined,
+          texture.sampleCount,
+          texture.mipLevelCount,
+          texture.label,
+        );
+      } else if (resource.buffer) {
+        out.push(resource.buffer.size, resource.buffer.label);
+      }
+    }
+    out.push(this._passes.length);
+    for (const pass of this._passes) {
+      out.push(pass.kind, pass.name, pass.sideEffects, pass.colors.length);
+      for (const color of pass.colors) {
+        out.push(color.resolve ?? -1);
+      }
+      out.push(pass.accesses.length);
+      for (const access of pass.accesses) {
+        out.push(
+          access.resource,
+          access.version,
+          access.usage,
+          access.write,
+          access.discards,
+        );
+      }
+    }
+  }
+
+  /**
+   * A key equal for graphs of the same structure: their compilation too.
+   * (The runner compares their shapes instead: see writeShape.)
+   */
   structuralKey(): string {
     return JSON.stringify([
       this._resources.map((resource) => [
@@ -706,8 +767,10 @@ export class RenderGraph {
     kind: K,
     fields: Pick<ResourceNode, 'texture' | 'buffer' | 'imported'>,
   ): ResourceHandle<K> {
-    if (this._resources.some((resource) => resource.name === name)) {
-      throw new Error(`The graph already has a resource "${name}"`);
+    for (const resource of this._resources) {
+      if (resource.name === name) {
+        throw new Error(`The graph already has a resource "${name}"`);
+      }
     }
     const id = this._resources.length;
     this._resources.push({ id, name, kind, latest: 0, ...fields });
@@ -715,8 +778,10 @@ export class RenderGraph {
   }
 
   private addPass(name: string, kind: PassKind): PassNode {
-    if (this._passes.some((pass) => pass.name === name)) {
-      throw new Error(`The graph already has a pass "${name}"`);
+    for (const pass of this._passes) {
+      if (pass.name === name) {
+        throw new Error(`The graph already has a pass "${name}"`);
+      }
     }
     const pass: PassNode = {
       index: this._passes.length,

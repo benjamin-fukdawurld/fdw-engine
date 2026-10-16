@@ -1,11 +1,18 @@
 import { AnimationClip, multiplyMatrix, Skeleton } from '@fdw/engine-animation';
 import type { Pose } from '@fdw/engine-animation';
 import type { Model, ModelInstance, SkinData } from '@fdw/engine-assets';
-import type { GpuBuffer, GpuTexture, RenderBackend } from '@fdw/engine-backend';
+import type {
+  GpuBuffer,
+  GpuComputePassEncoder,
+  GpuTexture,
+  RenderBackend,
+} from '@fdw/engine-backend';
 import {
+  type BufferHandle,
   ComputeRunner,
   type Material,
   type Mesh,
+  type RenderGraph,
   TransformLayout,
 } from '@fdw/engine-core';
 import { Aabb, invert, maxScale } from '@fdw/engine-geometry';
@@ -27,9 +34,16 @@ export interface SkinningOptions {
    * `vertex` elsewhere (WebGL2), by default.
    */
   readonly mode?: SkinningMode;
-  /** Runs the kernels in `compute` mode: one per backend by default. */
-  readonly compute?: Pick<ComputeRunner, 'dispatch'>;
+  /** Records the kernels in `compute` mode: one per backend by default. */
+  readonly compute?: Pick<ComputeRunner, 'record'>;
+  /**
+   * The name of its compute pass in the render graphs
+   * ({@link Skinning.addPass}): `skinning 1`, `skinning 2`… by default.
+   */
+  readonly name?: string;
 }
+
+let skinnings = 0;
 
 /** The mode a backend skins in by default. */
 export function defaultSkinningMode(backend: RenderBackend): SkinningMode {
@@ -143,8 +157,10 @@ const identityBinds = (count: number) => {
  * are nodes of the instance. Give a pose to the joints
  * ({@link Skinning.applyPose}, or move them yourself), then
  * {@link Skinning.update} before rendering: the joint matrices go to the
- * GPU, the compute pass skins the vertices (or the vertex stages will),
- * the bounds of the primitives follow the joints.
+ * GPU, the bounds of the primitives follow the joints. In `compute` mode,
+ * {@link Skinning.addPass} then skins the vertices of all the primitives in
+ * one compute pass of the render graph of the frame (the vertex stages skin
+ * them in `vertex` mode).
  *
  * @example
  * ```ts
@@ -153,7 +169,12 @@ const identityBinds = (count: number) => {
  * const animator = new Animator(graph, { skeleton: skinning.skeleton, clips: clipsOf(model) });
  * // Each frame:
  * skinning.applyPose(animator.update(dt)).update();
- * renderer.render({ source: scene, camera, surface });
+ * renderer.render({
+ *   source: scene,
+ *   camera,
+ *   surface,
+ *   prepare: (graph) => skinning.addPass(graph),
+ * });
  * ```
  */
 export class Skinning {
@@ -164,7 +185,8 @@ export class Skinning {
   readonly nodes: readonly Node[];
   private readonly _backend: RenderBackend;
   private readonly _skinned: SkinnedNode[] = [];
-  private readonly _compute?: Pick<ComputeRunner, 'dispatch'>;
+  private readonly _compute?: Pick<ComputeRunner, 'record'>;
+  private readonly _name: string;
   private readonly _matrix = new Float32Array(16);
   private readonly _box = new Aabb();
 
@@ -177,6 +199,7 @@ export class Skinning {
   ) {
     this._backend = backend;
     this.mode = options.mode ?? defaultSkinningMode(backend);
+    this._name = options.name ?? `skinning ${++skinnings}`;
     this.skeleton = skeletonOf(model);
     const nodes = instance.nodes;
     this.nodes = Array.from(this.skeleton.sources, (source) => nodes[source]);
@@ -326,8 +349,9 @@ export class Skinning {
 
   /**
    * After the joints moved, before rendering: computes the joint matrices
-   * from the world matrices of the nodes, sends them to the GPU, runs the
-   * compute skinning, and updates the bounds of the primitives.
+   * from the world matrices of the nodes, sends them to the GPU, and
+   * updates the bounds of the primitives. In `compute` mode, the vertices
+   * are skinned by {@link Skinning.addPass} (or {@link Skinning.dispatch}).
    */
   update(): this {
     const matrix = this._matrix;
@@ -355,24 +379,87 @@ export class Skinning {
         skinned.buffer.write(0, matrices.buffer);
       }
       for (const primitive of skinned.primitives) {
-        if (this._compute && skinned.buffer && primitive.vertices) {
-          const meshSkin = primitive.meshSkin;
-          const buffers = meshSkin.buffers(this._backend);
-          this._compute.dispatch(kernelOf(this._backend, meshSkin), {
-            values: {
-              [SkinValues.rest]: buffers.rest,
-              [SkinValues.joints]: buffers.joints,
-              [SkinValues.weights]: buffers.weights,
-              [SkinValues.jointMatrices]: skinned.buffer,
-              [SkinValues.vertices]: primitive.vertices,
-            },
-            workgroups: [Math.ceil(meshSkin.vertexCount / 64)],
-          });
-        }
         this.updateBounds(skinned, primitive);
       }
     }
     return this;
+  }
+
+  /**
+   * In `compute` mode, adds to a render graph the compute pass skinning the
+   * vertices of all the primitives, before the passes that draw them (add
+   * it first: see `prepare` in RenderOptions). Returns the versions of the
+   * skinned vertex buffers it writes, for the later passes that read them.
+   * Adds nothing in `vertex` mode.
+   */
+  addPass(graph: RenderGraph): readonly BufferHandle[] {
+    if (!this._compute) {
+      return [];
+    }
+    return graph.addComputePass(this._name, (pass) => {
+      const written: BufferHandle[] = [];
+      this._skinned.forEach((skinned, node) => {
+        skinned.primitives.forEach((primitive, index) => {
+          if (primitive.vertices) {
+            const vertices = graph.importBuffer(
+              `${this._name} vertices ${node}.${index}`,
+              primitive.vertices,
+            );
+            written.push(pass.write(vertices, 'storage-write'));
+          }
+        });
+      });
+      pass.hasSideEffects();
+      return {
+        written,
+        execute: ({ pass: encoder }) => this.record(encoder),
+      };
+    }).written;
+  }
+
+  /**
+   * In `compute` mode, skins the vertices of all the primitives outside of
+   * a render graph: one submission. Prefer {@link Skinning.addPass}.
+   */
+  dispatch(): void {
+    if (!this._compute) {
+      return;
+    }
+    const encoder = this._backend.createCommandEncoder();
+    const pass = encoder.beginComputePass(this._name);
+    this.record(pass);
+    pass.end();
+    this._backend.submit([encoder.finish()]);
+  }
+
+  // Records the kernels of all the primitives in a compute pass.
+  private record(pass: GpuComputePassEncoder): void {
+    const compute = this._compute;
+    if (!compute) {
+      return;
+    }
+    for (const skinned of this._skinned) {
+      if (!skinned.buffer) {
+        continue;
+      }
+      for (const primitive of skinned.primitives) {
+        if (!primitive.vertices) {
+          continue;
+        }
+        const meshSkin = primitive.meshSkin;
+        const buffers = meshSkin.buffers(this._backend);
+        compute.record(pass, kernelOf(this._backend, meshSkin), {
+          values: {
+            [SkinValues.rest]: buffers.rest,
+            [SkinValues.joints]: buffers.joints,
+            [SkinValues.weights]: buffers.weights,
+            [SkinValues.jointMatrices]: skinned.buffer,
+            [SkinValues.vertices]: primitive.vertices,
+          },
+          workgroups: [Math.ceil(meshSkin.vertexCount / 64)],
+        });
+      }
+    }
   }
 
   // The bounds of a primitive: a sphere per joint moving its vertices,
