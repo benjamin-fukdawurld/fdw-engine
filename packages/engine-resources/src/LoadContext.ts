@@ -1,5 +1,5 @@
-import { ResourceHandle } from './ResourceHandle';
-import { ResourceUri, ResourceType, ServiceKey } from './types';
+import type { ResourceHandle } from './ResourceHandle';
+import type { ResourceBytes, ResourceType, ResourceUri, ServiceKey } from './types';
 
 export interface LoadContext<O> {
   readonly uri: ResourceUri;
@@ -8,7 +8,8 @@ export interface LoadContext<O> {
   // decoders, and check it between the steps.
   readonly signal: AbortSignal;
 
-  bytes(): Promise<Uint8Array<ArrayBuffer>>;
+  /** The bytes of the resource. Read once: every call returns the same array. */
+  bytes(): Promise<ResourceBytes>;
   text(): Promise<string>;
   // Resolves a path relative to this resource (a glTF and its textures).
   resolve(relative: string): ResourceUri;
@@ -16,7 +17,7 @@ export interface LoadContext<O> {
   // Loads another resource this one depends on. The handle is owned by this
   // entry: it is released with it, and a change of the dependency reloads or
   // updates this one (§6.7). Progress is aggregated into this one's.
-  use<U, P>(
+  use<U, P = void>(
     type: ResourceType<U>,
     uri: ResourceUri,
     options?: P

@@ -1,5 +1,6 @@
-import { ReadonlySignal } from '@preact/signals-core';
-import { ResourceType, ResourceUri } from './types';
+import type { ReadonlySignal } from '@preact/signals-core';
+import type { ResourceError } from './errors';
+import type { ResourceType, ResourceUri } from './types';
 
 export type ResourceStatus =
   | 'pending'
@@ -10,10 +11,12 @@ export type ResourceStatus =
 
 export interface ResourceHandle<T> {
   readonly type: ResourceType<T>;
+  /** The canonical URI: `scheme:path#fragment`, with the default scheme made explicit. */
   readonly uri: ResourceUri;
   readonly status: ReadonlySignal<ResourceStatus>;
   readonly progress: ReadonlySignal<number>; // 0 to 1
-  readonly error: ReadonlySignal<Error | undefined>;
+  /** The last failure. A failed reload keeps the previous value and sets this. */
+  readonly error: ReadonlySignal<ResourceError | undefined>;
   // Incremented each time the value changes (loaded, reloaded).
   readonly version: ReadonlySignal<number>;
   // The current value: the previous one stays while a reload is under way.

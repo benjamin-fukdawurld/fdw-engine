@@ -1,7 +1,7 @@
 {
-  "name": "engine-input-web",
+  "name": "engine-resources-web",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "packages/engine-input-web/src",
+  "sourceRoot": "packages/engine-resources-web/src",
   "projectType": "library",
   "tags": []
 }

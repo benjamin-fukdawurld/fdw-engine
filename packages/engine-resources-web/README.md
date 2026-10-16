@@ -12,6 +12,39 @@ The package provides the browser-specific implementations while `@fdw/engine-res
 - **No graphics backend dependency**: decoded image data is produced independently of WebGPU or WebGL2. The `@fdw/engine-assets` package is responsible for turning that data into graphics resources.
 - **Platform-specific by design**: browser APIs stay in this package rather than leaking into the resource core, keeping the core usable by native applications and tests.
 
+## Usage
+
+```ts
+import { WorkerPool, createImageBitmapDecoder, createWorkerImageDecoder,
+         createImageDecoderWorker, FileSource, hotChannel, withChangeChannel } from '@fdw/engine-resources-web';
+
+// Decode on the main thread…
+const decoder = createImageBitmapDecoder();
+// …or in a pool of workers (the buffer is transferred, not copied).
+const pool = new WorkerPool({ create: createImageDecoderWorker });
+const workerDecoder = createWorkerImageDecoder(pool);
+
+// Files picked or dropped by the user, as a source.
+const files = new FileSource();
+resources.mount('files', files);
+dropZone.ondrop = (e) => files.addFromDataTransfer(e.dataTransfer!);
+
+// Hot reload from the Vite dev server.
+resources.mount('http', withChangeChannel(new HttpSource({ base: '/' }), hotChannel(import.meta.hot!)), { default: true });
+resources.watch(true);
+```
+
+The dev server must send the event (static files do not trigger HMR by themselves):
+
+```ts
+// vite.config.ts
+{ name: 'fdw-resources', configureServer(server) {
+    server.watcher.on('change', (file) => server.ws.send('fdw:resource-changed', { path: file }));
+} }
+```
+
+Without a dev server, `withPolling(source)` compares `stat()` revisions (ETag, Last-Modified) instead.
+
 ## Architecture
 
 `@fdw/engine-resources-web` complements the platform-independent resource system:
