@@ -1,0 +1,108 @@
+---
+title: Shadow cascades and fog
+description: Sharp shadows near the camera and shadows as far as it sees, with the cascades of a directional light; a fog over the distance.
+sidebar:
+  order: 26
+---
+
+import Example from '../../../components/Example.astro';
+
+An avenue of trees, 300 m long, under a low sun. A single shadow map
+covers what the camera sees: from the trees at its feet to the end of the
+avenue. Its texels are spread over 300 m, and the shadows near the camera
+are blurred. **Cascades** cut the view into slices by depth, each with its
+own shadow map: the first covers a few meters, the last the whole
+distance. A **fog** hides the end of the avenue.
+
+Click the canvas: **C** switches between one shadow map and four cascades,
+**F** turns the fog on and off.
+
+<Example name="shadow-cascades" />
+
+## Cascades on a directional light
+
+```ts
+const sun = new DirectionalLight({
+  castShadow: true,
+  shadow: { cascades: { count: 4, distance: 120 } },
+});
+```
+
+`shadow.cascades` replaces the single shadow map of a directional light:
+
+- `count`: from 1 to 4 slices (4 by default);
+- `distance`: how far from the camera the shadows reach (the far plane of
+  the camera by default). They fade out over the last 15 %;
+- `lambda`: how the depths of the slices grow, from 0 (even steps) to 1
+  (each slice a constant ratio further, as many texels on screen for
+  each). 0.75 by default.
+
+With 4 slices up to 120 m, from a camera whose near plane is 0.1 m, the
+cascades end at about 8 m, 18 m, 38 m and 120 m: the texels of the first
+are about 15 times smaller than those of a map covering the whole
+distance.
+
+Each cascade is a tile of the shadow atlas of the renderer: four cascades
+in an atlas of 2048 px get 1024 px each.
+
+```ts
+const renderer = new Renderer(backend, { shadowAtlasSize: 2048 });
+```
+
+One light per frame has cascades: the sun. The other lights casting
+shadows keep a tile each. An orthographic camera has no slices: the light
+falls back to its single map.
+
+## Stable shadows
+
+A shadow map that follows the camera shimmers: its texels slide over the
+ground as the camera moves, and the edges of the shadows crawl. Two
+things keep the cascades still:
+
+- the sphere of each slice depends only on the field of view of the
+  camera and on the depths of the slice, not on where the camera looks:
+  turning the camera does not change the size of the texels;
+- the center of each map moves by whole texels in the space of the light.
+
+`cascadeSplits` and `sliceSphere` of `@fdw/engine-core` compute them, for
+a tool that wants to show them.
+
+In the shaders, the cascade of a point is chosen by its depth in the view.
+Near the end of a cascade, a growing share of the pixels reads the next
+one: a dither rather than a seam.
+
+## The fog
+
+```ts
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  fog: { color: { r: 0.5, g: 0.57, b: 0.64 }, density: 0.012 },
+});
+```
+
+The color of each surface moves towards the color of the fog by
+1 − e<sup>−density × distance</sup>: at 0.012, 11 % at 10 m, 70 % at
+100 m, 95 % at 250 m (about 3 / density). Two options shape it:
+
+- `heightFalloff`: the density falls with the height, by
+  e<sup>−falloff × height</sup> above `height`: a fog lying in the valleys,
+  thinner over the hills and towards the sky;
+- `height`: the base of the fog, where the density is `density` (0 by
+  default).
+
+The fog is computed per pixel, before the tone mapping: its color is a
+linear color, as the colors of the lights. The materials do not change:
+the renderer compiles the fog into the programs of the views that have one.
+The background (`clearColor`) is not fogged: give it a color close to that
+of the fog, or draw a sky as a mesh, which fades into it.
+
+## Next
+
+- [Lights and shadows](/fdw-engine/guides/lights-and-shadows/), the
+  guide: the shadow atlas, the cascades, the fog.
+- [Levels of detail](/fdw-engine/tutorials/levels-of-detail/): the fog hides
+  the end of a forest, the levels of detail what it would cost.
+- [A third-person game](/fdw-engine/game/tps/) puts them together in a
+  forest.

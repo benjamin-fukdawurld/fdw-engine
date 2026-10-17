@@ -24,6 +24,55 @@ export interface ShadowTile {
   // and shadowRect (uv offset and size of the tile).
   readonly shadow: readonly number[];
   readonly rect: readonly number[];
+  // The tiles of the cascaded light: which cascade, and the view depth
+  // where it ends.
+  readonly cascade?: number;
+  readonly split?: number;
+}
+
+/**
+ * The view depths where the shadow cascades of a camera end: `count`
+ * slices from its near plane to `distance`, between even (`lambda` 0) and
+ * geometric (1) steps (Zhang et al. 2006, "Parallel-split shadow maps").
+ */
+export function cascadeSplits(
+  near: number,
+  distance: number,
+  count: number,
+  lambda: number,
+): number[] {
+  const splits: number[] = [];
+  for (let i = 1; i <= count; i++) {
+    const even = near + ((distance - near) * i) / count;
+    const geometric = near * (distance / near) ** (i / count);
+    splits.push(lambda * geometric + (1 - lambda) * even);
+  }
+  return splits;
+}
+
+/**
+ * The smallest sphere around the slice of a perspective view between the
+ * view depths `from` and `to`, its center on the axis of the view: the
+ * distance of its center from the camera, and its radius. Neither depends
+ * on where the camera looks: the cascades keep their size as it turns.
+ */
+export function sliceSphere(
+  fov: number,
+  aspect: number,
+  from: number,
+  to: number,
+): { depth: number; radius: number } {
+  // The corners of the slice at depth z are z × k from the axis.
+  const tan = Math.tan((fov * Math.PI) / 360);
+  const k2 = tan * tan * (1 + aspect * aspect);
+  // The center as far from the near corners as from the far ones, at most
+  // at the far end.
+  const depth = Math.min(((from + to) * (1 + k2)) / 2, to);
+  const radius = Math.max(
+    Math.sqrt((depth - from) ** 2 + from * from * k2),
+    Math.sqrt((to - depth) ** 2 + to * to * k2),
+  );
+  return { depth, radius };
 }
 
 export const castsShadow = (
@@ -120,77 +169,161 @@ export function lookRotation(direction: Readonly<IVec3>): {
  * matrices are only recomputed when the light or the scene bounds move.
  */
 export class ShadowCameras {
+  // A camera per light, and per cascade of the cascaded light.
   private readonly _cameras = new WeakMap<
     BaseLight,
-    { camera: Camera; cache: CameraCache }
+    { camera: Camera; cache: CameraCache }[]
   >();
 
   constructor(private readonly _math: CameraMath) {}
 
   /**
    * The tiles of the lights in a square atlas of `atlasSize` pixels: a grid
-   * of equal tiles, filled row by row.
-   */
-  /**
-   * `receivers` is what the camera sees: the shadow maps cover it. `scene`,
-   * the bounds of everything, says how far towards the light casters can
-   * be.
+   * of equal tiles, filled row by row, one per light and one per cascade
+   * of the cascaded light. `receivers` is what the camera sees: the shadow
+   * maps cover it. `scene`, the bounds of everything, says how far towards
+   * the light casters can be. `camera` is cut into the cascades of the
+   * first directional light with `shadow.cascades` (a perspective camera).
    */
   tiles(
     lights: readonly (DirectionalLight | SpotLight)[],
     receivers: Sphere,
     scene: Aabb | undefined,
     atlasSize: number,
+    camera?: Camera,
   ): ShadowTile[] {
-    const columns = Math.ceil(Math.sqrt(lights.length));
+    const projection = camera?.projection;
+    const cascaded =
+      projection?.type === 'perspective'
+        ? lights.find(
+            (light): light is DirectionalLight =>
+              light instanceof DirectionalLight && !!light.shadow.cascades,
+          )
+        : undefined;
+    // The cascades of the cascaded light: their bounds and splits.
+    const cascades: { bounds: Sphere; split: number }[] = [];
+    const options = cascaded?.shadow.cascades;
+    if (options && camera && projection?.type === 'perspective') {
+      const count = Math.min(Math.max(Math.round(options.count ?? 4), 1), 4);
+      const distance = Math.min(
+        options.distance ?? projection.far,
+        projection.far,
+      );
+      const splits = cascadeSplits(
+        projection.near,
+        distance,
+        count,
+        options.lambda ?? 0.75,
+      );
+      const forward = rotate(camera.rotation, [0, 0, -1]);
+      const { x, y, z } = camera.position;
+      let from = projection.near;
+      for (const split of splits) {
+        const { depth, radius } = sliceSphere(
+          projection.fov,
+          projection.aspect,
+          from,
+          split,
+        );
+        cascades.push({
+          bounds: {
+            center: [
+              x + forward[0] * depth,
+              y + forward[1] * depth,
+              z + forward[2] * depth,
+            ],
+            radius,
+          },
+          split,
+        });
+        from = split;
+      }
+    }
+    const slots = lights.length + Math.max(cascades.length - 1, 0);
+    const columns = Math.ceil(Math.sqrt(slots));
     const size = Math.floor(atlasSize / columns);
     const texel = 1 / atlasSize;
-    return lights.map((light, index) => {
+    const tiles: ShadowTile[] = [];
+    const tile = (
+      light: DirectionalLight | SpotLight,
+      bounds: Sphere | undefined,
+      cascade?: { index: number; split: number },
+    ) => {
+      const index = tiles.length;
       const x = (index % columns) * size;
       const y = Math.floor(index / columns) * size;
-      const { matrix, normalOffset } = this.view(light, receivers, scene, size);
-      return {
+      const { matrix, normalOffset } = this.view(
+        light,
+        bounds ?? receivers,
+        bounds !== undefined,
+        scene,
+        size,
+        cascade?.index ?? 0,
+      );
+      tiles.push({
         light,
         viewport: { x, y, width: size, height: size },
         matrix,
         shadow: [
-          1,
+          cascade ? 2 : 1,
           light.shadow.bias ?? 0,
           (light.shadow.normalBias ?? 1) * normalOffset,
           texel,
         ],
         rect: [x * texel, y * texel, size * texel, size * texel],
-      };
-    });
+        ...(cascade ? { cascade: cascade.index, split: cascade.split } : {}),
+      });
+    };
+    for (const light of lights) {
+      if (light === cascaded) {
+        cascades.forEach(({ bounds, split }, index) =>
+          tile(light, bounds, { index, split }),
+        );
+      } else {
+        tile(light, undefined);
+      }
+    }
+    return tiles;
   }
 
   // World to clip space of a light, and the size of a texel of its shadow
   // map (at unit distance for a spot, whose texels grow with the distance).
+  // `cascade` says which of the cameras of the light (its cascades);
+  // `given` that `receivers` are the bounds of a cascade, not to be
+  // replaced by those of the light.
   private view(
     light: DirectionalLight | SpotLight,
     receivers: Sphere,
+    given: boolean,
     scene: Aabb | undefined,
     size: number,
+    cascade: number,
   ): { matrix: Float32Array; normalOffset: number } {
-    let entry = this._cameras.get(light);
+    let entries = this._cameras.get(light);
+    if (!entries) {
+      entries = [];
+      this._cameras.set(light, entries);
+    }
+    let entry = entries[cascade];
     if (!entry) {
       const camera = new Camera();
       entry = { camera, cache: new CameraCache(camera, this._math) };
-      this._cameras.set(light, entry);
+      entries[cascade] = entry;
     }
     const { camera, cache } = entry;
     let normalOffset: number;
     if (light instanceof DirectionalLight) {
-      const bounds = light.shadow.bounds
-        ? {
-            center: [
-              light.shadow.bounds.center.x,
-              light.shadow.bounds.center.y,
-              light.shadow.bounds.center.z,
-            ],
-            radius: light.shadow.bounds.radius,
-          }
-        : receivers;
+      const bounds =
+        light.shadow.bounds && !given
+          ? {
+              center: [
+                light.shadow.bounds.center.x,
+                light.shadow.bounds.center.y,
+                light.shadow.bounds.center.z,
+              ],
+              radius: light.shadow.bounds.radius,
+            }
+          : receivers;
       // The radius by steps of about 19 % (2^¼): the texels keep their size
       // while the visible region changes a little, and the shadows do not
       // shimmer as the camera moves.
@@ -281,6 +414,22 @@ function setIfChanged(
   if (JSON.stringify(camera.projection) !== JSON.stringify(projection)) {
     camera.projection = projection;
   }
+}
+
+// A vector turned by a quaternion.
+function rotate(
+  q: { x: number; y: number; z: number; w: number },
+  v: readonly number[],
+): [number, number, number] {
+  // v + 2w (q × v) + 2 q × (q × v)
+  const u = [q.x, q.y, q.z];
+  const t = cross(u, v).map((c) => 2 * c);
+  const c = cross(u, t);
+  return [
+    v[0] + q.w * t[0] + c[0],
+    v[1] + q.w * t[1] + c[1],
+    v[2] + q.w * t[2] + c[2],
+  ];
 }
 
 // The largest value of dot(p, axis) over the points p of a box.

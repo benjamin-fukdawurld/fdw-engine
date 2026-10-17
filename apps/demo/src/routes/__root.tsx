@@ -87,6 +87,9 @@ function RouteComponent() {
                 <a className="text-sm text-center" href="/fps">
                   FPS
                 </a>
+                <a className="text-sm text-center" href="/tps">
+                  TPS
+                </a>
                 <a className="text-sm text-center" href="/ssr">
                   SSR Lab
                 </a>

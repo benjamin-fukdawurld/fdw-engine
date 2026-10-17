@@ -111,6 +111,36 @@ Ce qui projette des ombres :
   vue ;
 - les lumières ponctuelles ne projettent pas encore d'ombres.
 
+### Cascades
+
+Une seule carte couvrant tout ce que voit la caméra étale ses texels sur
+toute la distance : les ombres près de la caméra sont floues. Avec
+`shadow.cascades`, une **lumière directionnelle** coupe la vue d'une
+caméra perspective en tranches selon la profondeur, chacune avec sa tuile
+de l'atlas :
+
+```ts
+sun.shadow = { cascades: { count: 4, distance: 120, lambda: 0.75 } };
+```
+
+- `count` : 1 à 4 tranches ; `distance` : jusqu'où vont les ombres (le
+  plan lointain par défaut), qui s'estompent sur les derniers 15 % ;
+  `lambda` : de tranches égales (0) à des tranches espacées d'un rapport
+  constant (1).
+- La sphère de chaque tranche ne dépend que du champ de vision et de ses
+  profondeurs : elle garde sa taille quand la caméra tourne, et son centre
+  avance par texels entiers. Les cascades ne scintillent pas.
+- Les shaders choisissent la cascade d'un point selon sa profondeur dans
+  la vue, en tramant entre deux près de leur limite.
+- Une lumière par image a des cascades (la première qui en a) ; `bounds`
+  est alors ignoré. Les objets de chaque cascade sont cherchés dans son
+  frustum, aux niveaux de détail choisis pour la caméra.
+
+Les valeurs des cascades sont des membres du bloc `frame`
+(`cascadeMatrix0..3`, `cascadeRect0..3`, `cascadeSplits`,
+`cascadeOffsets`) : `cascadeSplits` et `sliceSphere` d'`engine-core` les
+calculent.
+
 ### Shadow acne
 
 Une surface comparée à sa propre profondeur s'ombre elle-même en bandes :
@@ -138,10 +168,39 @@ renderer), et vaut 1 sinon :
 const visibility = f.call(stdLights.shadow, { position, normal });
 ```
 
+## Brouillard
+
+`fog` dans les options du rendu montre les surfaces à travers un
+brouillard :
+
+```ts
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  fog: {
+    color: { r: 0.5, g: 0.57, b: 0.64 },
+    density: 0.012,
+    heightFalloff: 0.02,
+  },
+});
+```
+
+La couleur va vers celle du brouillard de 1 − e<sup>−densité ×
+distance</sup>, la densité prise à mi-hauteur du rayon et baissant de
+e<sup>−heightFalloff × hauteur</sup> au-dessus de `height`. Il est calculé
+par pixel, sur la couleur linéaire, avant l'exposition et le tone
+mapping : la couleur du brouillard est une couleur linéaire. Le renderer le
+compile dans les programmes des vues qui en ont un (la feature `fog`) :
+les vues sans brouillard ne coûtent rien de plus. Le fond n'est pas
+embrumé.
+
 ## Coûts
 
 Chaque lumière avec ombres dessine les objets projetant des ombres une fois
-de plus. L'atlas est partagé, donc davantage de lumières donnent des tuiles
+de plus ; une lumière à cascades, une fois par cascade. Les objets qui
+partagent un mesh et un matériau sont instanciés dans les passes d'ombre
+aussi. L'atlas est partagé, donc davantage de lumières donnent des tuiles
 plus petites : 4 lumières dans un atlas de 2048 obtiennent chacune
 1024 × 1024. Augmentez `shadowAtlasSize` pour des ombres plus nettes, au prix
 de la mémoire.

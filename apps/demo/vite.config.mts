@@ -1,8 +1,50 @@
 /// <reference types='vitest' />
-import { defineConfig } from 'vite';
+import { cpSync, createReadStream, existsSync, statSync } from 'node:fs';
+import { extname, join, resolve } from 'node:path';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
+
+// The models of the TPS demo live with those of the documentation: served
+// under /forest/ while developing, copied into the build.
+const forest = resolve(import.meta.dirname, '../docs/public/models/forest');
+const types: Record<string, string> = {
+  '.glb': 'model/gltf-binary',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+};
+function forestModels(): Plugin {
+  return {
+    name: 'forest-models',
+    configureServer(server) {
+      server.middlewares.use('/forest', (request, response, next) => {
+        const file = join(
+          forest,
+          decodeURIComponent((request.url ?? '').split('?')[0]),
+        );
+        if (
+          !file.startsWith(forest) ||
+          !existsSync(file) ||
+          !statSync(file).isFile()
+        ) {
+          next();
+          return;
+        }
+        response.setHeader(
+          'Content-Type',
+          types[extname(file)] ?? 'application/octet-stream',
+        );
+        createReadStream(file).pipe(response);
+      });
+    },
+    closeBundle() {
+      cpSync(forest, resolve(import.meta.dirname, 'dist/forest'), {
+        recursive: true,
+      });
+    },
+  };
+}
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
@@ -22,6 +64,7 @@ export default defineConfig(() => ({
     }),
     react(),
     tailwindcss(),
+    forestModels(),
   ],
   // Uncomment this if you are using workers.
   // worker: {

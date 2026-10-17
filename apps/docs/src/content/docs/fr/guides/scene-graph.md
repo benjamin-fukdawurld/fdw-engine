@@ -104,6 +104,34 @@ objets dessinés.
   `scene.occluders()` les liste. L'[occlusion culling](#occlusion-culling)
   n'en a pas besoin : tout objet opaque dessiné cache ce qui est derrière.
 
+## Niveaux de détail
+
+`SceneLods` dessine des groupes de nœuds un niveau à la fois, choisi selon
+leur distance à une caméra (voir
+[Les niveaux de détail](/fdw-engine/fr/tutorials/levels-of-detail/)) :
+
+```ts
+const lods = new SceneLods(scene, { hysteresis: 0.1, referenceFov: 60 });
+lods.add(tree, [
+  { nodes: [lod0], maxDistance: 30 },
+  { nodes: [lod1], maxDistance: 80 },
+  { nodes: [lod2], maxDistance: 300 },
+]);
+lods.install(scheduler, camera); // ou lods.update(camera) à chaque image
+```
+
+- Un groupe est un composant (`lod`) de l'entité qui le place ; un niveau
+  liste des nœuds ou des entités (celles d'un lot), avec leurs
+  descendants. `findLodGroups(root)` trouve les niveaux nommés
+  `<nom>_LOD0`, `<nom>_LOD1`…
+- Les niveaux écartés reçoivent `NodeFlags.Culled` sur leurs renderers :
+  les requêtes les ignorent (le renderer, les rayons), sans invalider leurs
+  transformations ni leur place dans les octrees. Changer de niveau coûte
+  quelques écritures, et les nœuds statiques restent statiques.
+- Choisis pour une caméra, les niveaux sont les mêmes dans les shadow maps
+  et l'occlusion culling. `bias` multiplie les distances ; un champ de
+  vision plus étroit que `referenceFov` garde les niveaux fins plus loin.
+
 ## La scène comme source
 
 ```ts

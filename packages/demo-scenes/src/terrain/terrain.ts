@@ -1,7 +1,7 @@
 import type { GpuTexture, RenderBackend } from '@fdw/engine-backend';
-import { Material } from '@fdw/engine-core';
+import { Material, type MaterialValue } from '@fdw/engine-core';
 import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
-import type { PortHandle } from '@fdw/engine-shader';
+import type { MaterialGraphData, PortHandle } from '@fdw/engine-shader';
 import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
 import { seededRandom } from '../maze/maze';
 
@@ -22,12 +22,25 @@ export interface TerrainOptions {
   // The coarsest level of the patches: 6 draws every patch at the finest.
   readonly minLevel?: number;
   readonly seed?: number;
+  // Heights from 0 to 1, `resolution` × `resolution`, row by row (rows
+  // along z): instead of the hills of terrainHeights.
+  readonly heights?: Float32Array;
+  // Another material: its graph built on terrainBase, its values (the
+  // height map and its sampler are added).
+  readonly material?: {
+    readonly graph: MaterialGraphData;
+    readonly values?: Readonly<Record<string, MaterialValue>>;
+  };
 }
 
 /** A terrain, ready to draw. */
 export interface Terrain {
   readonly surface: PatchSurface;
   readonly size: number;
+  readonly height: number;
+  /** The heights, from 0 to 1 (see TerrainOptions.heights). */
+  readonly heights: Float32Array;
+  readonly resolution: number;
   /** The height of the ground at a point, in meters. */
   heightAt(x: number, z: number): number;
   /** Colors the patches by level, from blue (0) to red (6). */
@@ -111,20 +124,24 @@ export function heightTexture(
 }
 
 /**
- * The material of a terrain: the patches moved by the height map; grass,
- * rock on the slopes, snow up high; the normal read per pixel from the
- * height map, the same at every level of tessellation.
+ * What every terrain material starts from: the patches moved by the height
+ * map (the `heightMap` texture and its `heightSampler`), and the normal
+ * read per pixel from it, the same at every level of tessellation. Returns
+ * the vertex of the patch (its uv on the terrain, its height from 0 to 1,
+ * its level) and the normal.
  */
-export function terrainGraph({
-  size,
-  height,
-  resolution,
-}: {
-  size: number;
-  height: number;
-  resolution: number;
-}) {
-  const g = new GraphBuilder('terrain');
+export function terrainBase(
+  g: GraphBuilder,
+  {
+    size,
+    height,
+    resolution,
+  }: { size: number; height: number; resolution: number },
+): {
+  vertex: ReturnType<typeof patchVertex>;
+  uv: PortHandle;
+  normal: PortHandle;
+} {
   const heightMap = {
     texture: g.texture('heightMap'),
     sampler: g.sampler('heightSampler'),
@@ -157,6 +174,20 @@ export function terrainGraph({
       }),
     }),
   });
+  return { vertex, uv, normal };
+}
+
+/**
+ * The material of a terrain: grass, rock on the slopes, snow up high, on
+ * the patches of terrainBase.
+ */
+export function terrainGraph(options: {
+  size: number;
+  height: number;
+  resolution: number;
+}) {
+  const g = new GraphBuilder('terrain');
+  const { vertex, normal } = terrainBase(g, options);
 
   const splat = (value: PortHandle) =>
     g.call(std.vec3, { x: value, y: value, z: value });
@@ -214,7 +245,7 @@ export function buildTerrain(
   const size = options.size ?? 1024;
   const height = options.height ?? 120;
   const resolution = options.resolution ?? 256;
-  const heights = terrainHeights(resolution, options.seed);
+  const heights = options.heights ?? terrainHeights(resolution, options.seed);
   const heightMap = heightTexture(backend, heights, resolution);
   const sampler = backend.textures.createSampler({
     minFilter: 'linear',
@@ -224,8 +255,9 @@ export function buildTerrain(
     wrapModeT: 'clamp-to-edge',
   });
   const material = new Material({
-    graph: terrainGraph({ size, height, resolution }),
-    values: { heightMap, heightSampler: sampler },
+    graph:
+      options.material?.graph ?? terrainGraph({ size, height, resolution }),
+    values: { ...options.material?.values, heightMap, heightSampler: sampler },
   });
   const patches = options.patches ?? 32;
   const surface = new PatchSurface(backend, {
@@ -263,6 +295,9 @@ export function buildTerrain(
   return {
     surface,
     size,
+    height,
+    heights,
+    resolution,
     heightAt,
     showLevels: (on) => material.setValue('showLevels', on ? 1 : 0),
     destroy: () => {

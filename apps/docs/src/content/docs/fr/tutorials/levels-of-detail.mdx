@@ -1,0 +1,149 @@
+---
+title: Les niveaux de détail
+description: Dessiner un modèle finement près de la caméra et grossièrement loin d'elle, avec des groupes de niveaux choisis à chaque image selon leur distance.
+sidebar:
+  order: 27
+---
+
+import Example from '../../../../components/Example.astro';
+
+400 sapins, que la caméra traverse. Chacun a trois **niveaux de détail** :
+environ 30 000 triangles près de la caméra, 5 000 un peu plus loin, 800
+au loin, aucun au-delà de 300 m, où le brouillard l'a caché. Dessinée au
+niveau le plus fin partout, la forêt serait 30 fois plus lourde pour la
+même image.
+
+Cliquez sur le canvas : **L** passe des niveaux de détail au niveau le plus
+fin partout. La ligne en dessous compte les sapins à chaque niveau.
+
+<Example name="levels-of-detail" />
+
+## Les niveaux d'un modèle
+
+Le modèle, `forest/fir.glb`, contient trois sapins. Chacun est un nœud qui
+a ses niveaux pour enfants, nommés comme le font les logiciels de
+modélisation et les moteurs :
+
+```
+fir_a
+├── fir_a_LOD0   (le plus fin)
+├── fir_a_LOD1
+└── fir_a_LOD2   (le plus grossier)
+```
+
+`findLodGroups` les trouve dans une branche de la scène, par leurs noms :
+
+```ts
+import { findLodGroups, SceneLods } from '@fdw/engine-scene';
+
+const lods = new SceneLods(scene);
+const fir = instantiate(handle, scene, { position, rotation, scale });
+for (const { group, levels } of findLodGroups(fir.root)) {
+  lods.add(group, [
+    { nodes: [levels[0]], maxDistance: 30 },
+    { nodes: [levels[1]], maxDistance: 80 },
+    { nodes: [levels[2]], maxDistance: 300 },
+  ]);
+}
+```
+
+`lods.add(at, levels)` crée un groupe : le nœud `at` le place (sa distance
+est celle de ce nœud), chaque niveau liste ce qu'il dessine (des nœuds et
+leurs descendants) et jusqu'à quelle distance. Au-delà du dernier niveau,
+le groupe ne dessine rien.
+
+Les niveaux de tous les sapins partagent leurs meshes et leurs matériaux :
+le renderer dessine chaque niveau de chaque sorte en quelques appels
+instanciés, quel que soit le nombre de sapins.
+
+## Choisir à chaque image
+
+```ts
+onFrame(() => {
+  lods.update(camera);
+  renderer.render({ source: scene, camera, surface });
+});
+```
+
+`update(camera)` mesure la distance de chaque groupe à la caméra et montre
+son niveau. Avec un ordonnanceur, `lods.install(scheduler, camera)`
+l'ajoute comme système de la phase `render`.
+
+- Les niveaux sont choisis **pour la caméra** : les shadow maps et
+  l'occlusion culling voient les mêmes niveaux que la vue. Un arbre ne
+  projette pas l'ombre d'un autre niveau que celui qui est dessiné.
+- Changer de niveau coûte quelques écritures : les renderers des autres
+  niveaux reçoivent un drapeau, `NodeFlags.Culled`, que les requêtes de la
+  scène ignorent. Leurs transformations et leur place dans l'index spatial
+  ne changent pas. Une forêt statique reste statique.
+- **Les limites ne clignotent pas** : un groupe ne change de niveau
+  qu'une fois sa distance 10 % au-delà d'une limite (`hysteresis`, 0,1
+  par défaut).
+- **Le champ de vision compte** : les distances sont données pour un champ
+  vertical de 60° (`referenceFov`). Un champ plus étroit, un zoom, garde
+  les niveaux fins plus loin.
+- `bias` multiplie les distances : en dessous de 1, des niveaux grossiers
+  plus tôt, pour une machine plus faible. Ici, **L** lui donne une valeur
+  énorme : le niveau le plus fin partout.
+
+## Beaucoup de copies : des lots
+
+`instantiate` crée un nœud par nœud du modèle : bien pour quelques
+centaines de sapins. Pour des milliers, `scene.createBatch` crée d'un coup
+les entités d'une primitive pour toutes les copies, sans nœuds. Un groupe
+liste alors des entités :
+
+```ts
+const near = scene.createBatch({
+  count,
+  positions,
+  mesh,
+  material,
+  static: true,
+});
+const far = scene.createBatch({
+  count,
+  positions,
+  mesh: coarse,
+  material,
+  static: true,
+});
+for (let i = 0; i < count; i++) {
+  lods.add(near[i], [
+    { nodes: [near[i]], maxDistance: 40 },
+    { nodes: [far[i]], maxDistance: 300 },
+  ]);
+}
+```
+
+La forêt du [jeu à la troisième personne](/fdw-engine/fr/game/tps/) plante
+ainsi ses 2 500 sapins et son herbe.
+
+## D'où viennent les niveaux
+
+Le sapin de [Poly Haven](https://polyhaven.com/a/fir_tree_01) a 4 millions
+de triangles : 800 000 aiguilles, chacune une bande de cinq triangles. Une
+simplification par fusion d'arêtes n'y trouve rien à fusionner.
+`tools/assets/make-forest.mjs` fait les niveaux comme le font les
+feuillages temps réel :
+
+- les aiguilles sont regroupées dans les cellules d'une grille (30 cm pour
+  le premier niveau, 60 cm, puis 1,2 m), et chaque cellule devient une
+  **carte**, un quad dans le plan de ses aiguilles (leurs axes
+  principaux) ;
+- les aiguilles d'une cellule typique sont dessinées dans une texture avec
+  alpha, que montrent toutes les cartes (`alphaMode: 'mask'`) : la forme
+  de l'arbre reste, le détail passe dans la texture ;
+- les normales des cartes s'écartent du tronc : la couronne est éclairée
+  comme un volume ;
+- le tronc et les branches sont simplifiés par `meshoptimizer`.
+
+Les niveaux sont écrits comme des nœuds `_LOD0`, `_LOD1`, `_LOD2` d'un
+seul `.glb`.
+
+## Ensuite
+
+- [Le graphe de scène](/fdw-engine/fr/guides/scene-graph/), le guide : les
+  niveaux de détail parmi les composants d'une scène.
+- [Les ombres en cascades et le brouillard](/fdw-engine/fr/tutorials/shadow-cascades/) :
+  les ombres aussi loin que vont les niveaux.

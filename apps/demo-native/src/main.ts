@@ -10,7 +10,8 @@
 // fps (the first person shooter; P pauses),
 // city (the occlusion culling; city-no-occlusion to compare), terrain (the
 // tessellation; terrain-uniform: every patch at the finest level), physics
-// (the physics playground, on Rapier).
+// (the physics playground, on Rapier), tps (the third-person game in the
+// forest; its models from apps/docs/public/models/forest).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent).
 // Escape or closing the window quits.
@@ -40,8 +41,17 @@ import {
   createPbrScene,
   createPhysicsScene,
   createShadowsScene,
+  createTpsScene,
   SceneFactory,
 } from '@fdw/demo-scenes';
+import { installAssets, pixelCodec } from '@fdw/engine-assets';
+import { installGltf } from '@fdw/engine-gltf';
+import { ResourceStore } from '@fdw/engine-resources';
+import {
+  createStbImageDecoder,
+  FileSource,
+} from '@fdw/engine-resources-native';
+import { fileURLToPath } from 'node:url';
 
 const scenes: Record<string, SceneFactory> = {
   shadows: createShadowsScene,
@@ -61,6 +71,20 @@ const scenes: Record<string, SceneFactory> = {
 // as in the browser.
 const loadedScenes: Record<string, () => Promise<SceneFactory>> = {
   physics: async () => createPhysicsScene(await createRapierPhysics()),
+  tps: async () => {
+    // The files of the documentation: the models of the forest.
+    const store = new ResourceStore();
+    const models = fileURLToPath(
+      new URL('../../docs/public/models', import.meta.url),
+    );
+    store.mount('file', new FileSource(models), { default: true });
+    installAssets(store, { codecs: [pixelCodec(createStbImageDecoder())] });
+    installGltf(store);
+    return createTpsScene({
+      physics: await createRapierPhysics(),
+      resources: () => store,
+    });
+  },
 };
 
 const args = process.argv.slice(2);

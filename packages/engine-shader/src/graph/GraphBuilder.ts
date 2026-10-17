@@ -532,7 +532,13 @@ export class GraphBuilder {
       | 'time'
       | 'exposure'
       | 'shadowMap'
-      | 'shadowSampler',
+      | 'shadowSampler'
+      | `shadow.cascadeMatrix${0 | 1 | 2 | 3}`
+      | `shadow.cascadeRect${0 | 1 | 2 | 3}`
+      | 'shadow.cascadeSplits'
+      | 'shadow.cascadeOffsets'
+      | 'fog.color'
+      | 'fog.height',
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }

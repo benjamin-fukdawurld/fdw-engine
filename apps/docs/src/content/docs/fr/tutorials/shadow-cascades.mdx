@@ -1,0 +1,113 @@
+---
+title: Les ombres en cascades et le brouillard
+description: Des ombres nettes près de la caméra et des ombres aussi loin qu'elle voit, avec les cascades d'une lumière directionnelle ; un brouillard sur le lointain.
+sidebar:
+  order: 26
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une allée d'arbres de 300 m, sous un soleil bas. Une seule shadow map
+couvre ce que voit la caméra : des arbres à ses pieds jusqu'au bout de
+l'allée. Ses texels sont étalés sur 300 m, et les ombres près de la caméra
+sont floues. Les **cascades** coupent la vue en tranches selon la
+profondeur, chacune avec sa shadow map : la première couvre quelques
+mètres, la dernière toute la distance. Un **brouillard** cache le bout de
+l'allée.
+
+Cliquez sur le canvas : **C** passe d'une shadow map à quatre cascades,
+**F** active ou coupe le brouillard.
+
+<Example name="shadow-cascades" />
+
+## Des cascades sur une lumière directionnelle
+
+```ts
+const sun = new DirectionalLight({
+  castShadow: true,
+  shadow: { cascades: { count: 4, distance: 120 } },
+});
+```
+
+`shadow.cascades` remplace la shadow map unique d'une lumière
+directionnelle :
+
+- `count` : de 1 à 4 tranches (4 par défaut) ;
+- `distance` : jusqu'où vont les ombres depuis la caméra (le plan lointain
+  de la caméra par défaut). Elles s'estompent sur les derniers 15 % ;
+- `lambda` : comment croissent les profondeurs des tranches, de 0 (des pas
+  égaux) à 1 (chaque tranche un rapport constant plus loin, autant de
+  texels à l'écran pour chacune). 0,75 par défaut.
+
+Avec 4 tranches jusqu'à 120 m, depuis une caméra dont le plan proche est à
+0,1 m, les cascades finissent vers 8 m, 18 m, 38 m et 120 m : les texels de
+la première sont environ 15 fois plus petits que ceux d'une carte couvrant
+toute la distance.
+
+Chaque cascade est une tuile de l'atlas d'ombres du renderer : quatre
+cascades dans un atlas de 2048 px ont 1024 px chacune.
+
+```ts
+const renderer = new Renderer(backend, { shadowAtlasSize: 2048 });
+```
+
+Une lumière par image a des cascades : le soleil. Les autres lumières qui
+projettent des ombres gardent une tuile chacune. Une caméra orthographique
+n'a pas de tranches : la lumière revient à sa carte unique.
+
+## Des ombres stables
+
+Une shadow map qui suit la caméra scintille : ses texels glissent sur le
+sol quand la caméra bouge, et les bords des ombres fourmillent. Deux
+choses gardent les cascades immobiles :
+
+- la sphère de chaque tranche ne dépend que du champ de vision de la
+  caméra et des profondeurs de la tranche, pas de là où la caméra regarde :
+  tourner la caméra ne change pas la taille des texels ;
+- le centre de chaque carte avance par texels entiers dans l'espace de la
+  lumière.
+
+`cascadeSplits` et `sliceSphere` de `@fdw/engine-core` les calculent, pour
+un outil qui voudrait les montrer.
+
+Dans les shaders, la cascade d'un point est choisie par sa profondeur dans
+la vue. Près de la fin d'une cascade, une part croissante des pixels lit la
+suivante : un tramage plutôt qu'une couture.
+
+## Le brouillard
+
+```ts
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  fog: { color: { r: 0.5, g: 0.57, b: 0.64 }, density: 0.012 },
+});
+```
+
+La couleur de chaque surface va vers celle du brouillard de
+1 − e<sup>−densité × distance</sup> : à 0,012, 11 % à 10 m, 70 % à 100 m,
+95 % à 250 m (environ 3 / densité). Deux options le façonnent :
+
+- `heightFalloff` : la densité baisse avec la hauteur, de
+  e<sup>−falloff × hauteur</sup> au-dessus de `height` : un brouillard
+  couché dans les vallées, plus léger sur les collines et vers le ciel ;
+- `height` : la base du brouillard, où la densité vaut `density` (0 par
+  défaut).
+
+Le brouillard est calculé par pixel, avant le tone mapping : sa couleur
+est une couleur linéaire, comme celles des lumières. Les matériaux ne
+changent pas : le renderer compile le brouillard dans les programmes des
+vues qui en ont un. Le fond (`clearColor`) n'est pas embrumé : donnez-lui
+une couleur proche de celle du brouillard, ou dessinez un ciel en mesh,
+qui s'y fond.
+
+## Ensuite
+
+- [Lumières et ombres](/fdw-engine/fr/guides/lights-and-shadows/), le
+  guide : l'atlas d'ombres, les cascades, le brouillard.
+- [Les niveaux de détail](/fdw-engine/fr/tutorials/levels-of-detail/) : le
+  brouillard cache le bout d'une forêt, les niveaux de détail ce qu'elle
+  coûterait.
+- [Un jeu à la troisième personne](/fdw-engine/fr/game/tps/) les réunit dans
+  une forêt.

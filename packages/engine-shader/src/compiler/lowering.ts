@@ -196,7 +196,8 @@ export function lowerFullscreen(
  * render state), fragments whose alpha is below the 'alphaCutoff' uniform are
  * discarded.
  *
- * The color of the shading model is linear. With the 'toneMapping' feature
+ * The color of the shading model is linear. With the 'fog' feature, it is
+ * seen through the fog of the frame (see fogMembers). With the 'toneMapping' feature
  * (other than 'none'), it is multiplied by the exposure of the frame and tone
  * mapped; with the 'outputEncoding' feature set to 'srgb', it is encoded for
  * display. Without these features, the color is written as is.
@@ -322,11 +323,28 @@ export function lowerSurface(
     }
     return meshNormal;
   };
-  if (
-    ports.some((port) => port.name === 'normal') &&
-    !surfaceInputs['normal']
-  ) {
-    surfaceInputs['normal'] = interpolatedNormal();
+  if (ports.some((port) => port.name === 'normal')) {
+    // Seen from behind (the back faces of a double-sided material), the
+    // normal is turned towards the viewer: leaves and cards lit on both
+    // sides. One-sided materials never draw their back faces.
+    const normal = surfaceInputs['normal'] ?? interpolatedNormal();
+    const facing = graph.addNode('input.builtin', { builtin: 'front-facing' });
+    const reversed = graph.addNode(
+      'std.mul',
+      {},
+      { a: normal, b: { value: -1 } },
+    );
+    surfaceInputs['normal'] = out(
+      graph.addNode(
+        'std.select',
+        {},
+        {
+          ifFalse: out(reversed),
+          ifTrue: normal,
+          condition: out(facing, 'value'),
+        },
+      ),
+    );
   }
 
   const discard = maskDiscard(graph, source, feature);
@@ -360,6 +378,9 @@ export function lowerSurface(
     },
   );
   let output = out(color, 'color');
+  if (feature('fog')) {
+    output = foggy(graph, output, out(worldPosition));
+  }
   const toneMapping = feature('toneMapping') ?? 'none';
   const encoding = feature('outputEncoding') ?? 'linear';
   if (toneMapping !== 'none' || encoding === 'srgb') {
@@ -406,6 +427,81 @@ export function lowerSurface(
   );
 
   graph.removeNode(surface.id);
+}
+
+/**
+ * The color of a surface seen through the fog of the frame (the 'fog'
+ * feature, see fogMembers): mixed with the color of the fog by
+ * 1 - e^(-density × distance), the density taken at the mean height of the
+ * ray, falling exponentially above the base height.
+ */
+function foggy(
+  graph: WorkingGraph,
+  color: InputSource,
+  worldPosition: InputSource,
+): InputSource {
+  const out = (node: string, port = 'result'): InputSource => ({
+    ref: { node, port },
+  });
+  const add = (type: string, inputs: Record<string, InputSource>) =>
+    out(graph.addNode(type, {}, inputs));
+  const engine = (value: string) =>
+    out(graph.addNode('input.engine', { value }), 'value');
+  // Per fragment: the distance is not linear across a triangle, a large
+  // one (a ground) would be fogged as its far corners.
+  const position = {
+    ...add('std.perFragment', { value: worldPosition }),
+    swizzle: 'xyz',
+  };
+  const camera = engine('camera.position');
+  const fog = engine('fog.color');
+  const height = engine('fog.height');
+  const distance = add('std.length', {
+    x: add('std.sub', { a: position, b: camera }),
+  });
+  // Height of the middle of the ray above the base of the fog.
+  const above = add('std.max', {
+    a: add('std.sub', {
+      a: add('std.mul', {
+        a: add('std.add', {
+          a: { ...position, swizzle: 'y' },
+          b: { ...camera, swizzle: 'y' },
+        }),
+        b: { value: 0.5 },
+      }),
+      b: { ...height, swizzle: 'y' },
+    }),
+    b: { value: 0 },
+  });
+  const e = { value: Math.E };
+  const density = add('std.mul', {
+    a: { ...fog, swizzle: 'w' },
+    b: add('std.pow', {
+      base: e,
+      exponent: add('std.mul', {
+        a: { ...height, swizzle: 'x' },
+        b: add('std.mul', { a: above, b: { value: -1 } }),
+      }),
+    }),
+  });
+  const amount = add('std.sub', {
+    a: { value: 1 },
+    b: add('std.pow', {
+      base: e,
+      exponent: add('std.mul', {
+        a: add('std.mul', { a: density, b: distance }),
+        b: { value: -1 },
+      }),
+    }),
+  });
+  return add('std.extend', {
+    xyz: add('std.mix', {
+      a: { ...color, swizzle: 'xyz' },
+      b: { ...fog, swizzle: 'xyz' },
+      t: amount,
+    }),
+    w: { ...color, swizzle: 'w' },
+  });
 }
 
 /**

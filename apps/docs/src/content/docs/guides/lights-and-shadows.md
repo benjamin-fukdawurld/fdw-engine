@@ -101,6 +101,34 @@ What casts shadows:
 - `addScenePasses(graph, { shadows: false })` turns the shadows of a view off;
 - point lights do not cast shadows yet.
 
+### Cascades
+
+A single map covering everything the camera sees spreads its texels over
+the whole distance: the shadows near the camera blur. With
+`shadow.cascades`, a **directional light** cuts the view of a perspective
+camera into slices by depth, each with its own tile of the atlas:
+
+```ts
+sun.shadow = { cascades: { count: 4, distance: 120, lambda: 0.75 } };
+```
+
+- `count`: 1 to 4 slices; `distance`: how far the shadows reach (the far
+  plane by default), fading out over the last 15 %; `lambda`: from even
+  slices (0) to slices a constant ratio apart (1).
+- The sphere of each slice depends only on the field of view and its
+  depths: it keeps its size as the camera turns, and its center moves by
+  whole texels. The cascades do not shimmer.
+- The shaders choose the cascade of a point by its depth in the view,
+  dithering between two near their boundary.
+- One light per frame has cascades (the first with them); `bounds` is then
+  ignored. The casters of each cascade are queried in its frustum, at the
+  levels of detail chosen for the camera.
+
+The values of the cascades are members of the `frame` block
+(`cascadeMatrix0..3`, `cascadeRect0..3`, `cascadeSplits`,
+`cascadeOffsets`): `cascadeSplits` and `sliceSphere` of `engine-core`
+compute them.
+
 ### Shadow acne
 
 A surface compared with its own depth shadows itself in stripes, the
@@ -125,8 +153,35 @@ otherwise:
 const visibility = f.call(stdLights.shadow, { position, normal });
 ```
 
+## Fog
+
+`fog` in the options of the rendering shows the surfaces through a fog:
+
+```ts
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  fog: {
+    color: { r: 0.5, g: 0.57, b: 0.64 },
+    density: 0.012,
+    heightFalloff: 0.02,
+  },
+});
+```
+
+The color moves towards that of the fog by 1 − e<sup>−density ×
+distance</sup>, the density taken at the middle height of the ray and
+falling by e<sup>−heightFalloff × height</sup> above `height`. It is
+computed per pixel, on the linear color, before the exposure and the tone
+mapping: the color of the fog is a linear color. The renderer compiles it
+into the programs of the views with a fog (the `fog` feature): the views
+without it cost nothing more. The background is not fogged.
+
 ## Costs
 
-Each light with shadows draws the casters once more. The atlas is shared,
+Each light with shadows draws the casters once more; a light with
+cascades, once per cascade. The casters sharing a mesh and a material are
+instanced in the shadow passes too. The atlas is shared,
 so more lights make smaller tiles: 4 lights in a 2048 atlas get 1024 × 1024
 each. Raise `shadowAtlasSize` for sharper shadows, at the cost of memory.

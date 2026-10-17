@@ -162,30 +162,113 @@ function lightGeometry(
 // texels by the comparison sampler, soften the edges (percentage-closer
 // filtering). Outside the shadow map, and for lights without shadows, the
 // point is lit.
+//
+// The cascaded light of the frame (shadow.x = 2) reads the tile of the
+// cascade the view depth of the point falls in (see cascadeMembers): the
+// four are computed, one is chosen, without branches. Near the end of a
+// cascade, the next one takes over for a growing share of the pixels (a
+// dither instead of a seam); past the last one, the shadows fade out.
 function shadowMap(registry: NodeRegistry): FunctionDefinition {
   const f = new GraphBuilder('shadowMap', registry);
   const position = f.functionInput('position', vec3);
   const normal = f.functionInput('normal', vec3);
-  const { add, sub, mul, div, clamp, step, mix } = functions;
+  const { add, sub, mul, div, clamp, step, mix, select, greater } = functions;
   const light = f.node(lights.current);
   const params = light['shadow'];
-  const rect = light['shadowRect'];
-  const toClip = (point: PortHandle) =>
+  const toClip = (matrix: PortHandle, point: PortHandle) =>
     f.call(functions.transform, {
-      matrix: light['shadowMatrix'],
+      matrix,
       vector: f.call(functions.extend, { xyz: point, w: 1 }),
     });
+  const offsetBy = (amount: PortHandle) =>
+    f.call(add, { a: position, b: f.call(mul, { a: normal, b: amount }) });
 
   // Normal offset against shadow acne, in proportion to the size of a texel
   // at the point: constant for a directional light, growing with the
   // distance (clip w) for a spot.
-  const offset = f.call(mul, {
-    a: params.swizzle('z'),
-    b: toClip(position).swizzle('w'),
-  });
-  const clip = toClip(
-    f.call(add, { a: position, b: f.call(mul, { a: normal, b: offset }) }),
+  const own = toClip(
+    light['shadowMatrix'],
+    offsetBy(
+      f.call(mul, {
+        a: params.swizzle('z'),
+        b: toClip(light['shadowMatrix'], position).swizzle('w'),
+      }),
+    ),
   );
+
+  // The cascade of the point: how many splits its view depth is past, each
+  // counted from the start of a band before the split (10 % of its depth)
+  // by the share of the band it is into, against a noise per pixel.
+  const view = toClip(f.engine('camera.view'), position);
+  const viewDepth = f.call(mul, { a: view.swizzle('z'), b: -1 });
+  const splits = f.engine('shadow.cascadeSplits');
+  const offsets = f.engine('shadow.cascadeOffsets');
+  const pixel = f.builtin('frag-coord');
+  // Interleaved gradient noise (Jimenez 2014), in [0, 1).
+  const noise = f.call(functions.fract, {
+    x: f.call(mul, {
+      a: 52.9829189,
+      b: f.call(functions.fract, {
+        x: f.call(add, {
+          a: f.call(mul, { a: pixel.swizzle('x'), b: 0.06711056 }),
+          b: f.call(mul, { a: pixel.swizzle('y'), b: 0.00583715 }),
+        }),
+      }),
+    }),
+  });
+  const past = (split: PortHandle) => {
+    const band = f.call(functions.max, {
+      a: f.call(mul, { a: split, b: 0.1 }),
+      b: 1e-4,
+    });
+    const into = f.call(clamp, {
+      x: f.call(div, {
+        a: f.call(sub, { a: viewDepth, b: f.call(sub, { a: split, b: band }) }),
+        b: band,
+      }),
+      low: 0,
+      high: 1,
+    });
+    return f.call(step, { edge: noise, x: into });
+  };
+  const cascade = (['x', 'y', 'z'] as const)
+    .map((c) => past(splits.swizzle(c)))
+    .reduce((a, b) => f.call(add, { a, b }));
+  // The value of the cascade among four, by selects.
+  const choose = (values: PortHandle[]) =>
+    values.reduce((chosen, value, i) =>
+      i === 0
+        ? chosen
+        : f.call(select, {
+            ifFalse: chosen,
+            ifTrue: value,
+            condition: f.call(greater, { a: cascade, b: i - 0.5 }),
+          }),
+    );
+  const cascades = [0, 1, 2, 3] as const;
+  const cascadeClip = choose(
+    cascades.map((i) =>
+      toClip(
+        f.engine(`shadow.cascadeMatrix${i}`),
+        offsetBy(offsets.swizzle((['x', 'y', 'z', 'w'] as const)[i])),
+      ),
+    ),
+  );
+  const cascadeRect = choose(
+    cascades.map((i) => f.engine(`shadow.cascadeRect${i}`)),
+  );
+
+  const cascaded = f.call(greater, { a: params.swizzle('x'), b: 1.5 });
+  const clip = f.call(select, {
+    ifFalse: own,
+    ifTrue: cascadeClip,
+    condition: cascaded,
+  });
+  const rect = f.call(select, {
+    ifFalse: light['shadowRect'],
+    ifTrue: cascadeRect,
+    condition: cascaded,
+  });
   const ndc = f.call(div, {
     a: clip.swizzle('xyz'),
     b: clip.swizzle('w'),
@@ -234,7 +317,21 @@ function shadowMap(registry: NodeRegistry): FunctionDefinition {
   const filtered = f.call(div, { a: sum as PortHandle, b: 9 });
 
   // 1 inside the shadow map (in front of the light, within its frustum), 0
-  // outside; times 1 for a light with a tile.
+  // outside; times 1 for a light with a tile (or cascades). The shadows of
+  // the cascades fade out over the last 15 % of their reach.
+  const reach = f.call(functions.max, { a: splits.swizzle('w'), b: 1e-3 });
+  const fade = f.call(mix, {
+    a: 1,
+    b: f.call(sub, {
+      a: 1,
+      b: f.call(functions.smoothstep, {
+        low: f.call(mul, { a: reach, b: 0.85 }),
+        high: reach,
+        x: viewDepth,
+      }),
+    }),
+    t: f.call(step, { edge: 1.5, x: params.swizzle('x') }),
+  });
   const inside = [
     f.call(step, { edge: 0, x: uv.swizzle('x') }),
     f.call(step, { edge: uv.swizzle('x'), x: 1 }),
@@ -242,7 +339,8 @@ function shadowMap(registry: NodeRegistry): FunctionDefinition {
     f.call(step, { edge: uv.swizzle('y'), x: 1 }),
     f.call(step, { edge: depth, x: 1 }),
     f.call(step, { edge: 0, x: clip.swizzle('w') }),
-    params.swizzle('x'),
+    f.call(functions.min, { a: params.swizzle('x'), b: 1 }),
+    fade,
   ].reduce((a, b) => f.call(mul, { a, b }));
   f.functionOutput('visibility', f.call(mix, { a: 1, b: filtered, t: inside }));
   return defineFunction(f.build(), {

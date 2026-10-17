@@ -8,6 +8,7 @@ import {
   TextureSampleTypeNames,
 } from '../types/ShaderType';
 import type { NodeDefinition, ShaderStage } from '../graph/NodeDefinition';
+import { cascadeMembers } from '../compiler/layout';
 
 // Uniforms, textures and samplers belong to a binding slot, matching the
 // MaterialBindingSlot of engine-backend: 'frame', 'material', 'object', or a
@@ -150,6 +151,13 @@ const engineValues: Record<string, ShaderType> = {
   'object.id': BuiltinTypes.u32,
   time: BuiltinTypes.f32,
   exposure: BuiltinTypes.f32,
+  // The shadow cascades of the frame (see cascadeMembers).
+  ...Object.fromEntries(
+    cascadeMembers.map(({ name, type }) => [`shadow.${name}`, type]),
+  ),
+  // The fog of the frame (see fogMembers).
+  'fog.color': BuiltinTypes.vec4f,
+  'fog.height': BuiltinTypes.vec4f,
   // The shadow atlas of the lights, read by the light.shadow macro.
   shadowMap: BuiltinTypes.depthTexture2d,
   shadowSampler: BuiltinTypes.comparisonSampler,

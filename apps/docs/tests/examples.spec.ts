@@ -33,6 +33,10 @@ const examples: Record<string, string> = {
   'maze-3': 'game/flashlight/',
   'maze-4': 'game/the-game/',
   fps: 'game/fps/',
+  'shadow-cascades': 'tutorials/shadow-cascades/',
+  'levels-of-detail': 'tutorials/levels-of-detail/',
+  'third-person-camera': 'tutorials/third-person-camera/',
+  tps: 'game/tps/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -42,9 +46,17 @@ const time = 1.5;
 const frames = 10;
 // More for the examples waiting for results read back from the GPU.
 const framesOf: Record<string, number> = { 'occlusion-culling': 40 };
+// Longer for the examples loading many files.
+const timeouts: Record<string, number> = {
+  tps: 120_000,
+  'levels-of-detail': 60_000,
+};
 
 for (const [name, page] of Object.entries(examples)) {
   test(name, async ({ page: browser }, info) => {
+    if (timeouts[name]) {
+      test.setTimeout(timeouts[name] + 60_000);
+    }
     const backend = info.project.name;
     const count = framesOf[name] ?? frames;
     const query = `time=${time}&frames=${count}${
@@ -60,12 +72,12 @@ for (const [name, page] of Object.entries(examples)) {
       .poll(
         async () => Number((await canvas.getAttribute('data-frames')) ?? 0),
         {
-          timeout: 30_000,
+          timeout: timeouts[name] ?? 30_000,
         },
       )
       .toBe(count);
     await expect(canvas).toHaveScreenshot(`${name}-${backend}.png`, {
-      timeout: 30_000,
+      timeout: timeouts[name] ?? 30_000,
     });
   });
 }
@@ -194,6 +206,60 @@ for (const mode of modes) {
     });
   });
 }
+
+// Shadow cascades: C switches to a single shadow map, F turns the fog
+// off. The clock is stopped: the camera stays where it is.
+test('shadow-cascades-one-map', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/shadow-cascades/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="shadow-cascades"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('four cascades');
+  await expect(status).toContainText('4 shadow maps');
+  await canvas.click();
+  await browser.keyboard.press('KeyC');
+  await browser.keyboard.press('KeyF');
+  await expect(status).toContainText('one shadow map (C) · fog off');
+  await expect(status).toContainText('1 shadow maps');
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(
+    `shadow-cascades-one-map-${backend}.png`,
+    { timeout: 20_000 },
+  );
+});
+
+// The third-person game: Play leaves the menu; the first wave is on its
+// way. The pointer lock may be refused to a headless browser.
+test('tps-play', async ({ page: browser }, info) => {
+  test.setTimeout(180_000);
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/game/tps/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="tps"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('[Play]', { timeout: 120_000 });
+  // A frame takes seconds on SwiftShader: the click is read at the next.
+  await canvas.click();
+  await expect(status).not.toContainText('[Play]', { timeout: 60_000 });
+  await expect(status).toContainText('Get ready');
+  await expect(status).not.toHaveAttribute('data-error');
+});
 
 // Camera navigation: C switches from the orbit to the walk. The clock is
 // stopped: the camera stays where the operator puts it.

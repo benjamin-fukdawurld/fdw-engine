@@ -1,0 +1,132 @@
+---
+title: The third-person camera
+description: Follow a character from behind, over its shoulder — a damped pivot, an arm shortened by the walls, the character moved relative to the view.
+sidebar:
+  order: 28
+---
+
+import Example from '../../../components/Example.astro';
+
+A ranger among pillars, seen from behind, over its right shoulder. The
+mouse turns the camera around it; walking, the ranger goes where the
+camera looks. When a pillar comes between them, the camera moves in at
+once, then back out smoothly once the way is clear.
+
+Click the canvas: the **mouse** turns the camera, **W A S D** (Z Q S D
+on AZERTY) walks, the **wheel** brings the camera closer. With a gamepad:
+the left stick walks, the right stick turns. The line under the canvas
+shows the length of the arm.
+
+<Example name="third-person-camera" />
+
+## The operator
+
+```ts
+import { ThirdPersonActions, ThirdPersonOperator } from '@fdw/engine-camera';
+
+const actions = new ActionMap(input, ThirdPersonActions);
+const operator = new ThirdPersonOperator(camera, actions, {
+  distance: 4,
+  height: 1.6,
+  shoulder: 0.5,
+});
+
+// Each frame, once the character has moved:
+operator.focus = characterFeet;
+operator.update(dt);
+```
+
+`ThirdPersonOperator` is an operator of `@fdw/engine-camera`, like the
+orbit and the flight of [Camera operators](/fdw-engine/tutorials/camera-operators/):
+it reads its actions, and moves a camera (or anything with a position and
+a rotation). Its actions:
+
+- `look`: the arrows and the right stick turn the camera;
+- `drag` and `pointer`: the pointer turns it while locked, or while the
+  secondary button is down;
+- `zoomStep`: the wheel brings it closer, between `minDistance` and
+  `maxDistance`.
+
+What it places:
+
+- the **pivot**, `height` above the `focus` (the head above the feet). The
+  pivot **follows** the focus with a damped spring: it covers half of its
+  way in `followHalfLife` seconds (0.06 by default). The camera does not
+  jolt at each step of the character;
+- the **arm**, from the pivot backwards along the view, `distance` long;
+- the **shoulder**: the camera `shoulder` meters to the right of the arm
+  (negative: the left). The character stands to the left of the center of
+  the view, out of the way of what it looks at.
+
+The pitch is bounded (`minPitch`, `maxPitch`: from −70° to 45° by
+default): the camera does not go under the ground, nor over the head.
+
+## The walls: a probe
+
+```ts
+const operator = new ThirdPersonOperator(camera, actions, {
+  probe: (from, to, radius) =>
+    world.shapeCast(
+      Shapes.sphere(radius),
+      from,
+      { x: 0, y: 0, z: 0, w: 1 },
+      directionFrom(from, to),
+      distanceBetween(from, to),
+      { exclude: character.body },
+    )?.distance,
+});
+```
+
+The camera must not go through a pillar: the operator asks a **probe**
+how far a sphere of `radius` (0.25 m) moves from the pivot towards the
+camera before it hits something. The probe is a function of the
+application: `engine-camera` knows nothing of the physics. Here, it casts a
+sphere in the world of [the physics](/fdw-engine/tutorials/physics/), the
+body of the character excluded; a game without physics would cast a ray
+in its scene.
+
+- **Shorter at once**: when the probe hits closer than the arm, the arm
+  shortens at once — never a frame with a pillar between the camera and
+  the character.
+- **Longer smoothly**: when the way clears, the arm grows back by half of
+  what is left in `returnHalfLife` seconds (0.25).
+- The shoulder shortens with the arm: close to a wall, the camera stays
+  behind the head.
+
+`operator.arm` gives the length of the arm now; `operator.snap()` puts the
+pivot on the focus at once, after a teleport.
+
+## Walking where the camera looks
+
+```ts
+const move = actions.vector('move', { x: 0, y: 0 });
+const { forward, right } = operator; // on the ground
+const direction = {
+  x: forward.x * move.y + right.x * move.x,
+  z: forward.z * move.y + right.z * move.x,
+};
+character.move({
+  x: direction.x * speed * dt,
+  y: fall * dt,
+  z: direction.z * speed * dt,
+});
+```
+
+`forward` and `right` are the directions of the view on the ground: up on
+the stick goes away from the camera, whatever its pitch. The character is
+a `PhysicsCharacter` (see [the physics](/fdw-engine/tutorials/physics/)): it
+slides along the pillars and climbs small steps. Its model is a child of
+its node, turned towards where it walks; its animation blends the idle,
+the walk and the jog by its speed (see
+[An animated character](/fdw-engine/tutorials/character-animation/)).
+
+The order in a frame matters: the character moves, then the camera follows
+it **as drawn** — after the bodies are placed — so that the character
+never trembles in the view.
+
+## Next
+
+- [A third-person game](/fdw-engine/game/tps/): the same camera over a
+  ranger fighting in a forest.
+- [Camera operators](/fdw-engine/tutorials/camera-operators/): the orbit and
+  the flight, and how operators read their actions.

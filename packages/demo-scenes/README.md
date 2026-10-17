@@ -9,3 +9,8 @@ scene.destroy();
 ```
 
 It also holds the geometry the scenes share: `createSphere`, `createCube`, `axisAngle`.
+
+The games: the maze, the first person shooter (`createFpsScene`), the
+third-person game in the forest (`createTpsScene`, with a physics engine
+and a resource store holding the models of `apps/docs/public/models/forest`,
+made by `tools/assets`).

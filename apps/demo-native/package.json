@@ -5,13 +5,17 @@
   "type": "module",
   "dependencies": {
     "@fdw/demo-scenes": "0.0.1",
+    "@fdw/engine-assets": "0.0.1",
     "@fdw/engine-audio-native": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-core": "0.0.1",
+    "@fdw/engine-gltf": "0.0.1",
     "@fdw/engine-input": "0.0.1",
     "@fdw/engine-input-native": "0.0.1",
     "@fdw/engine-native": "0.0.1",
     "@fdw/engine-physics-rapier": "0.0.1",
+    "@fdw/engine-resources": "0.0.1",
+    "@fdw/engine-resources-native": "0.0.1",
     "@fdw/engine-shader": "0.0.1",
     "@fdw/engine-vulkan": "0.0.1",
     "@fdw/engine-webgpu": "0.0.1"

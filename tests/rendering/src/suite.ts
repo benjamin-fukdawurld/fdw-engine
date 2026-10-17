@@ -851,6 +851,57 @@ export function describeRenderer(
       ).toEqual([255, 0, 0, 255]);
     });
 
+    it('lights the back faces of a double-sided material with their own normal', async () => {
+      // A quad turned away from the camera, its normal pointing away from
+      // it (given by the surface: the quad has none), lit from behind the
+      // camera: its back face is lit.
+      const turned = new Transform({ rotation: { x: 0, y: 1, z: 0, w: 0 } });
+      const g = new GraphBuilder('lit both sides');
+      g.surface({
+        shadingModel: 'phong',
+        baseColor: [1, 1, 1],
+        specular: [0, 0, 0],
+        normal: [0, 0, -1],
+      });
+      const double = new Material({
+        graph: g.build(),
+        renderState: { doubleSided: true },
+      });
+      const light = new DirectionalLight({
+        direction: { x: 0, y: 0, z: -1 },
+        ambient: { x: 0, y: 0, z: 0 },
+        diffuse: { x: 1, y: 1, z: 1 },
+        specular: { x: 0, y: 0, z: 0 },
+      });
+      const pixel = await render(
+        [{ mesh: quad(), material: double, transform: turned }],
+        0,
+        [light],
+      );
+      expectColor(pixel(32, 32), [255, 255, 255, 255]);
+    });
+
+    it('fogs what is far and leaves what is near', async () => {
+      // The red quad, 5 away from the camera: a thick fog makes it blue, a
+      // thin one leaves it almost red.
+      const material = new Material({ graph: colorGraph() });
+      const shot = async (density: number) => {
+        renderer.render({
+          items: [{ mesh: quad(), material, transform: at(0) }],
+          camera,
+          surface,
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          fog: { color: { r: 0, g: 0, b: 1 }, density },
+        });
+        const pixels = await fixture.readPixels();
+        const o = (32 * size + 32) * 4;
+        return [...pixels.subarray(o, o + 4)];
+      };
+      expectColor(await shot(10), [0, 0, 255, 255]);
+      // 1 - e^(-0.01 × 5) of blue: 5 %.
+      expectColor(await shot(0.01), [242, 0, 12, 255]);
+    });
+
     it('shows both layers of a double-sided transparent shape', async () => {
       // A slab: a quad facing +z at z = 0.5, listed first, and one facing -z at
       // z = -0.5. Drawn in index order with depth writes, the front face would
@@ -2219,6 +2270,42 @@ export function describeRenderer(
         ]) {
           expectColor(pixel(x, y), lit);
         }
+      });
+
+      it('casts the shadows of a directional light in cascades, as far as they reach', async () => {
+        // A perspective camera seeing the ground as the orthographic one
+        // does: from 5 away, 1 to each side.
+        const perspective = new Camera({
+          position: { x: 0, y: 0, z: 5 },
+          projection: {
+            type: 'perspective',
+            fov: (2 * Math.atan(0.2) * 180) / Math.PI,
+            aspect: 1,
+            near: 0.5,
+            far: 20,
+          },
+        });
+        const shot = async (distance: number) => {
+          const light = sun({ x: 1, y: 0, z: -1 });
+          light.shadow = { cascades: { count: 2, distance } };
+          renderer.render({
+            items: scene(-0.5, 0),
+            camera: perspective,
+            surface,
+            lights: [light],
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          const pixels = await fixture.readPixels();
+          return (x: number, y: number) => [
+            ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+          ];
+        };
+        const near = await shot(10);
+        expectColor(near(32, 32), shadowed);
+        expectColor(near(48, 32), lit);
+        expectColor(near(4, 4), lit);
+        // The ground is 5 away: past shadows reaching 2, it is lit.
+        expectColor((await shot(2))(32, 32), lit);
       });
 
       it('keeps the orientation of the shadow maps on every backend', async () => {

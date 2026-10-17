@@ -3,6 +3,7 @@ import { ActionMap, FakeInputSource, Input } from '@fdw/engine-input';
 import { FlyActions, FlyOperator } from './FlyOperator';
 import { OrbitActions, OrbitOperator } from './OrbitOperator';
 import { forwardOf, rotationOf, Vec3Like } from './target';
+import { ThirdPersonActions, ThirdPersonOperator } from './ThirdPersonOperator';
 
 // A camera as the operators see it: a position, a rotation, a projection.
 const camera = () => ({
@@ -263,5 +264,108 @@ describe('OrbitOperator', () => {
     // fov 90°: the view is 2 high at a distance of 1, 4 wide; the pointer
     // went a quarter of each to the right and up: the scene follows it.
     expectClose(orbit.pivot, { x: -1, y: -0.5, z: 0 });
+  });
+});
+
+describe('ThirdPersonOperator', () => {
+  const create = (
+    options: ConstructorParameters<typeof ThirdPersonOperator>[2] = {},
+  ) => {
+    const { source, input, pad } = setup();
+    const target = camera();
+    const operator = new ThirdPersonOperator(
+      target,
+      new ActionMap(input, ThirdPersonActions),
+      { pitch: 0, shoulder: 0, followHalfLife: 0, ...options },
+    );
+    return { source, input, pad, target, operator };
+  };
+
+  it('stays behind the pivot, above the focus, looking along the arm', () => {
+    const { target, operator } = create({ distance: 4, height: 1.5 });
+    expectClose(target.position, { x: 0, y: 1.5, z: 4 });
+    expectClose(rotate(target.rotation, { x: 0, y: 0, z: -1 }), {
+      x: 0,
+      y: 0,
+      z: -1,
+    });
+    expectClose(operator.forward, { x: 0, y: 0, z: -1 });
+    expectClose(operator.right, { x: 1, y: 0, z: 0 });
+  });
+
+  it('turns around the pivot with the right stick, within its pitch', () => {
+    const { source, input, pad, target, operator } = create({ distance: 2 });
+    source.setAxis(pad, 'rightX', 1);
+    input.update();
+    operator.update(0.2);
+    // Turned right: the camera went left, looking right of -z.
+    expect(operator.yaw).toBeCloseTo(-0.5);
+    expect(target.position.x).toBeLessThan(0);
+    source.setAxis(pad, 'rightX', 0);
+    source.setAxis(pad, 'rightY', 1);
+    input.update();
+    operator.update(10);
+    expect(operator.pitch).toBeCloseTo(operator.minPitch);
+  });
+
+  it('follows the focus with a damped pivot', () => {
+    const { operator } = create({ followHalfLife: 0.1, height: 0 });
+    operator.focus = { x: 10, y: 0, z: 0 };
+    operator.update(0.1);
+    expect(operator.pivot.x).toBeCloseTo(5);
+    operator.update(0.1);
+    expect(operator.pivot.x).toBeCloseTo(7.5);
+    operator.snap();
+    expect(operator.pivot.x).toBe(10);
+  });
+
+  it('shortens the arm at once on an obstacle, lengthens it back smoothly', () => {
+    let wall: number | undefined = 1;
+    const { operator, target } = create({
+      distance: 4,
+      height: 0,
+      returnHalfLife: 0.5,
+      probe: () => wall,
+    });
+    // Snapped against the wall from the start.
+    expect(operator.arm).toBeCloseTo(1);
+    expect(target.position.z).toBeCloseTo(1);
+    wall = undefined;
+    operator.update(0.5);
+    // Half of the way back: 1 + (4 - 1) / 2.
+    expect(operator.arm).toBeCloseTo(2.5);
+    wall = 0.5;
+    operator.update(0.016);
+    expect(operator.arm).toBeCloseTo(0.5);
+  });
+
+  it('gives the probe the arm with the shoulder, and keeps the shoulder in proportion', () => {
+    const probes: [Vec3Like, Vec3Like, number][] = [];
+    const { target } = create({
+      distance: 4,
+      height: 0,
+      shoulder: 1,
+      radius: 0.3,
+      probe: (from, to, radius) => {
+        probes.push([{ ...from }, { ...to }, radius]);
+        // Half of the arm.
+        return Math.hypot(1, 4) / 2;
+      },
+    });
+    expectClose(probes[0][1], { x: 1, y: 0, z: 4 });
+    expect(probes[0][2]).toBe(0.3);
+    expectClose(target.position, { x: 0.5, y: 0, z: 2 });
+  });
+
+  it('zooms with the wheel within its limits', () => {
+    const { source, input, operator } = create({ distance: 4, maxDistance: 5 });
+    source.sink!.wheel(-10);
+    input.update();
+    operator.update(0.016);
+    expect(operator.distance).toBeLessThan(4);
+    source.sink!.wheel(100);
+    input.update();
+    operator.update(0.016);
+    expect(operator.distance).toBe(5);
   });
 });
