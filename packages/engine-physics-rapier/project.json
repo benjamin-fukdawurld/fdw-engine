@@ -1,0 +1,7 @@
+{
+  "name": "engine-physics-rapier",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-physics-rapier/src",
+  "projectType": "library",
+  "tags": []
+}

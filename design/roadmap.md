@@ -25,6 +25,7 @@ Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne le
 | P5    | Ressources : images, glTF                           | Des modèles chargés dans les démos                                  | Grande      |
 | P6    | Cœur de graph commun, animation et animation graph  | Un personnage animé, ses états                                      | Grande      |
 | P7    | Audio                                               | Des sons dans les démos, spatialisés                                | Moyenne     |
+| P7b   | Physique : une API abstraite, un moteur intégré     | Des corps qui tombent et s'empilent, web et natif                   | Grande      |
 | P8    | Le jeu à la troisième personne                      | **Démo TPS : l'épée dans la forêt**                                 | Moyenne     |
 | P9    | Graphs de comportement                              | L'IA des ennemis du TPS en graphs                                   | Grande      |
 | P10   | Ray tracing : hybride, puis path tracer             | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU          | Grande      |
@@ -133,7 +134,7 @@ Démos et exemples : le displacement mapping de P2b rendu adaptatif, un terrain 
 - **Contrôleurs de caméra** ([backlog §9](backlog.md#9-vers-un-middleware-de-création-3d)) — _premiers opérateurs faits_ (14 octobre 2026), avec leur tutoriel : `@fdw/engine-camera`, orbite et vol libre ou marche, au clavier, à la souris et à la manette, liaisons réaffectables ([p4-camera-operators.md](p4-camera-operators.md)). Le reste : TPS (bras à ressort, collisions), stratégie et isométrique (plan XZ), le zoom vers le curseur ; des contraintes composables, des ressorts amortis, des transitions entre caméras.
 - **Entrées** — _fait_ (14 octobre 2026), avec son tutoriel « Contrôles à la première personne » : le verrouillage du pointeur (déplacements relatifs), les contextes d'actions (menu, jeu), les vibrations ([p4-input.md](p4-input.md)).
 - **L'ordonnanceur de systèmes ECS** — _fait_ (14 octobre 2026), avec son tutoriel « Les systèmes et le pas fixe » : `Scheduler` dans `engine-scene`, quatre phases, des systèmes ordonnés par contraintes, la boucle à pas fixe et l'interpolation intégrées ([p4-scheduler.md](p4-scheduler.md)).
-- **Un contrôleur de personnage** : une capsule qui marche, saute, glisse le long des murs et monte les marches, contre les volumes de la scène. Une API abstraite pour brancher un moteur physique plus tard.
+- **Un contrôleur de personnage** : une capsule qui marche, saute, glisse le long des murs et monte les marches, contre les volumes de la scène. Une API abstraite pour brancher un moteur physique plus tard (P7b). — _L'API faite avec P7b_ (16 octobre 2026) : `PhysicsCharacter`, implémenté sur Rapier ([p7b-physics.md](p7b-physics.md)) ; la version contre les volumes de la scène reste à écrire.
 - **Restes du labyrinthe** : les murs transparents entre la caméra et le personnage (avec la caméra TPS), et la démo native (choix de la scène et du backend à chaud).
 
 **Démo FPS minimaliste** : un niveau, des cibles ou des ennemis simples, le tir par rayons, la caméra FPS, souris et manette.
@@ -162,9 +163,25 @@ _Faite_ (16 octobre 2026), avec son tutoriel « Un personnage animé » et le gu
 - Sons ponctuels et continus, mixage par bus, spatialisation (la position de l'écouteur suit la caméra), streaming des musiques.
 - Les sons chargés par le système de ressources (P5).
 
+### P7b. Physique
+
+_Faite_ (16 octobre 2026), avec son tutoriel « La physique » et le guide « La physique » : le design, les mesures et ce qui a été fait sont dans [p7b-physics.md](p7b-physics.md). `engine-physics` (l'API abstraite, `ScenePhysics` : les corps comme composants, la simulation dans la phase `fixed`, les nœuds interpolés ; la vue de débogage en lignes), `engine-physics-rapier` (Rapier en WebAssembly, le même module dans le navigateur et dans Node : 3,2 ms par pas pour 1000 boîtes en chute, toutes éveillées) ; `MeshDescription.topology` (les lignes, sur les trois backends). La démo : la scène `physics`, sur le web et en natif (Dawn, Vulkan). Reportés : le contrôleur de personnage contre les volumes de la scène, les ragdolls, les véhicules, les corps mous, le déterminisme multi-plateforme.
+
+Le plan d'origine :
+
+Insérée après P7 sans renuméroter. Le moteur n'écrit pas sa propre physique : il définit **une API abstraite** que l'utilisateur implémente pour brancher le moteur physique de son choix, comme le noyau géométrique de P13, et en intègre un pour ses démos, sans en faire une dépendance du cœur.
+
+- **L'API abstraite** : un monde physique, des corps (statiques, dynamiques, cinématiques), des formes de collision (sphère, boîte, capsule, convexe, mesh, heightmap), des matériaux physiques (friction, restitution), des contraintes (articulations), des requêtes (rayons, balayages de formes, chevauchements) et des événements de contact et de volumes déclencheurs. Les corps sont des composants ECS ; la simulation est un système du pas fixe de l'ordonnanceur (P4), les transforms des corps dynamiques recopiés dans la scène et interpolés entre deux pas.
+- **Le contrôleur de personnage** de P4 passe sur cette API : sa version contre les volumes de la scène devient une implémentation parmi d'autres.
+- **Un moteur intégré pour les démos**, dans un package à part : dans le navigateur (WebAssembly) et en natif. **Le même moteur pour les deux** si l'un convient, sinon deux moteurs derrière la même API. Un design comparera d'abord les candidats : Rapier (Rust, compilé en WebAssembly, utilisable aussi en natif), Jolt Physics (C++, JoltPhysics.js en WebAssembly, un addon en natif), PhysX (C++, physx-js-webidl), Bullet / ammo.js ; sur leur taille, leurs performances en WebAssembly et en natif, leur déterminisme, leur licence et le coût de leurs liaisons. Le natif peut se contenter de la version WebAssembly si l'écart de performance avec un addon ne le justifie pas.
+- **Le débogage** : l'affichage des formes de collision, des contacts et des requêtes.
+- **Plus tard** : les ragdolls sur les squelettes de P6, les véhicules, les corps mous.
+
+Démo : des objets qui tombent, s'empilent et se renversent, des tirs par rayons, la même scène dans le navigateur et en natif ; le tutoriel (EN et FR) avec un exemple vivant.
+
 ### P8. Démo TPS : l'épée dans la forêt
 
-Elle réunit les phases précédentes : la forêt instanciée (P1), les ombres en cascades (P2), l'occlusion par les arbres et le relief (P3), la caméra TPS et le contrôleur de personnage (P4), les modèles (P5), l'animation graph (P6), les sons (P7). En plus : des volumes d'attaque et de dégâts, une IA d'ennemis écrite en systèmes ECS. Un terrain (heightmap) sera sans doute à ajouter.
+Elle réunit les phases précédentes : la forêt instanciée (P1), les ombres en cascades (P2), l'occlusion par les arbres et le relief (P3), la caméra TPS et le contrôleur de personnage (P4), les modèles (P5), l'animation graph (P6), les sons (P7), la physique (P7b). En plus : des volumes d'attaque et de dégâts, une IA d'ennemis écrite en systèmes ECS. Un terrain (heightmap) sera sans doute à ajouter.
 
 ### P9. Graphs de comportement
 
@@ -232,6 +249,7 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 - **P2b** : le rendu différé et les exemples de reflets après **P2** (pool de lumières, clusters, IBL) ; les MRT, les normales et les identifiants peuvent commencer avant. Les tangentes de glTF viendront avec **P5**.
 - **P4** avant **P8** (caméra TPS, contrôleur de personnage) et avant **P13** (orbite CAO).
 - **P5** avant **P6** (squelettes et clips de glTF), **P7** (sons chargés) et **P8**.
+- **P4** (ordonnanceur à pas fixe, contrôleur de personnage) avant **P7b** ; **P7b** avant **P8** (le contrôleur de personnage et les volumes d'attaque sur l'API physique). Elle est indépendante de P5, P6 et P7, sauf pour les ragdolls (P6).
 - **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P13**.
 - **P10** après **P8** (des scènes à tracer) ; ses prérequis sont posés dès P1 (§6).
 - **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; faite sans draws indirects : ils restent à ajouter pour les deux phases sans retard de **P3** (sa suite) et le choix des niveaux en calcul. Avant **P8** si la forêt a un terrain : le terrain existe (`buildTerrain` des demo-scenes).

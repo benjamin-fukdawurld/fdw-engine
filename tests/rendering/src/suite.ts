@@ -262,6 +262,53 @@ export function describeRenderer(
       expectColor(pixel(48, 32), [0, 0, 255, 255]);
     });
 
+    it('draws lines, with a material without uniforms after one with', async () => {
+      // A horizontal line through the centers of row 16, from x = 0 to 1,
+      // green by its vertex colors; unlit, without any uniform: nothing
+      // bound for its material (a group left from the quad must not be).
+      const g = new GraphBuilder('vertex colors');
+      g.surface({
+        shadingModel: 'unlit',
+        baseColor: g.attribute('color', BuiltinTypes.vec4f).swizzle('rgb'),
+      });
+      const y = 1 - 16.5 / 32;
+      const lines = new Mesh({
+        description: {
+          vertexBuffers: [
+            {
+              stride: 28,
+              stepMode: 'vertex',
+              attributes: [
+                { semantic: 'position', format: 'float32x3', offset: 0 },
+                { semantic: 'color', format: 'float32x4', offset: 12 },
+              ],
+            },
+          ],
+          vertexCount: 2,
+          topology: 'line-list',
+        },
+        vertices: [
+          new Float32Array([0, y, 0, 0, 1, 0, 1, 1, y, 0, 0, 1, 0, 1]),
+        ],
+      });
+      const pixel = await render([
+        {
+          mesh: quad(),
+          material: new Material({ graph: colorGraph() }),
+          transform: at(-0.5),
+        },
+        {
+          mesh: lines,
+          material: new Material({ graph: g.build() }),
+          transform: new Transform(),
+          castShadow: false,
+        },
+      ]);
+      expectColor(pixel(16, 32), [255, 0, 0, 255]);
+      expectColor(pixel(48, 16), [0, 255, 0, 255]);
+      expectColor(pixel(48, 18), [0, 0, 0, 255]);
+    });
+
     it('samples textures', async () => {
       // 2×2: red, green / blue, white.
       const map = backend.textures.createTexture({

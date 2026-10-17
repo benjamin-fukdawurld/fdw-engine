@@ -217,11 +217,13 @@ VkPrimitiveTopology topology(const char *name) {
 // The layout of a pipeline: the layouts of its groups, empty ones included.
 int pipelineLayout(fdw_vk_context *context,
                    fdw_vk_group_layout *const *groups, uint32_t count,
-                   VkPipelineLayout *layout) {
+                   fdw_vk_pipeline *pipeline) {
   std::vector<VkDescriptorSetLayout> sets;
   for (uint32_t i = 0; i < count; i++) {
     sets.push_back(groups[i] ? groups[i]->layout : emptyLayout(context));
+    pipeline->usedSets.push_back(groups[i] != nullptr);
   }
+  VkPipelineLayout *layout = &pipeline->layout;
   VkPipelineLayoutCreateInfo info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
   info.setLayoutCount = static_cast<uint32_t>(sets.size());
   info.pSetLayouts = sets.data();
@@ -543,7 +545,7 @@ fdw_vk_render_pipeline_create(fdw_vk_context *context,
 
   auto *pipeline = new fdw_vk_pipeline();
   if (pipelineLayout(context, options->groups, options->group_count,
-                     &pipeline->layout) != 0) {
+                     pipeline) != 0) {
     delete pipeline;
     return nullptr;
   }
@@ -585,7 +587,7 @@ fdw_vk_pipeline *fdw_vk_compute_pipeline_create(
   }
   auto *pipeline = new fdw_vk_pipeline();
   pipeline->bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
-  if (pipelineLayout(context, groups, group_count, &pipeline->layout) != 0) {
+  if (pipelineLayout(context, groups, group_count, pipeline) != 0) {
     delete pipeline;
     return nullptr;
   }

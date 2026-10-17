@@ -1768,7 +1768,7 @@ export class Renderer {
           program,
           vertex: item.mesh.description,
           primitive: {
-            topology: 'triangle-list',
+            topology: item.mesh.description.topology ?? 'triangle-list',
             cullMode: variant.cullMode,
             frontFace: 'ccw',
           },
@@ -1880,9 +1880,10 @@ export class Renderer {
     const program = this.program(material, mesh, variant);
     const vertexKey = JSON.stringify(mesh.description.vertexBuffers);
     const stateKey = JSON.stringify(material.renderState);
+    const topology = mesh.description.topology ?? 'triangle-list';
     const pipelineKey = `${program.programKey}|${vertexKey}|${stateKey}|${
       variant.cullMode
-    }|${variant.format}|${variant.depthOnly ? 'depth-only' : ''}|${
+    }|${topology}|${variant.format}|${variant.depthOnly ? 'depth-only' : ''}|${
       variant.samples
     }|${this.backend.depthFormat}|${variant.outputsKey ?? ''}`;
     let pipelineId = this._pipelineIds.get(pipelineKey);

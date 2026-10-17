@@ -92,6 +92,12 @@
     },
     {
       "path": "./packages/engine-skinning"
+    },
+    {
+      "path": "./packages/engine-physics"
+    },
+    {
+      "path": "./packages/engine-physics-rapier"
     }
   ]
 }

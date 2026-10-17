@@ -96,6 +96,9 @@ function RouteComponent() {
                 <a className="text-sm text-center" href="/terrain">
                   Terrain
                 </a>
+                <a className="text-sm text-center" href="/physics">
+                  Physics
+                </a>
               </div>
             )}
           </li>

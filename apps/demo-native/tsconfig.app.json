@@ -9,16 +9,25 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/engine-vulkan/tsconfig.lib.json"
+      "path": "../../packages/engine-webgpu/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-webgpu/tsconfig.lib.json"
+      "path": "../../packages/engine-vulkan/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-shader/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-physics-rapier/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-native/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input-native/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-core/tsconfig.lib.json"
@@ -28,12 +37,6 @@
     },
     {
       "path": "../../packages/demo-scenes/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-input/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-input-native/tsconfig.lib.json"
     }
   ]
 }

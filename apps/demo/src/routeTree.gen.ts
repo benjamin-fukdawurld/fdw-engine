@@ -18,6 +18,7 @@ import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-tri
 import { Route as TerrainRouteRouteImport } from './routes/terrain/route'
 import { Route as SsrRouteRouteImport } from './routes/ssr/route'
 import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
+import { Route as PhysicsRouteRouteImport } from './routes/physics/route'
 import { Route as PbrRouteRouteImport } from './routes/pbr/route'
 import { Route as MazeRouteRouteImport } from './routes/maze/route'
 import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
@@ -77,6 +78,11 @@ const SsrRouteRoute = SsrRouteRouteImport.update({
 const ShadowsRouteRoute = ShadowsRouteRouteImport.update({
   id: '/shadows',
   path: '/shadows',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhysicsRouteRoute = PhysicsRouteRouteImport.update({
+  id: '/physics',
+  path: '/physics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PbrRouteRoute = PbrRouteRouteImport.update({
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/matrix': typeof MatrixRouteRoute
   '/maze': typeof MazeRouteRoute
   '/pbr': typeof PbrRouteRoute
+  '/physics': typeof PhysicsRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
@@ -198,6 +205,7 @@ export interface FileRoutesByTo {
   '/matrix': typeof MatrixRouteRoute
   '/maze': typeof MazeRouteRoute
   '/pbr': typeof PbrRouteRoute
+  '/physics': typeof PhysicsRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
@@ -225,6 +233,7 @@ export interface FileRoutesById {
   '/matrix': typeof MatrixRouteRoute
   '/maze': typeof MazeRouteRoute
   '/pbr': typeof PbrRouteRoute
+  '/physics': typeof PhysicsRouteRoute
   '/shadows': typeof ShadowsRouteRoute
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
@@ -253,6 +262,7 @@ export interface FileRouteTypes {
     | '/matrix'
     | '/maze'
     | '/pbr'
+    | '/physics'
     | '/shadows'
     | '/ssr'
     | '/terrain'
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/matrix'
     | '/maze'
     | '/pbr'
+    | '/physics'
     | '/shadows'
     | '/ssr'
     | '/terrain'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/matrix'
     | '/maze'
     | '/pbr'
+    | '/physics'
     | '/shadows'
     | '/ssr'
     | '/terrain'
@@ -332,6 +344,7 @@ export interface RootRouteChildren {
   MatrixRouteRoute: typeof MatrixRouteRoute
   MazeRouteRoute: typeof MazeRouteRoute
   PbrRouteRoute: typeof PbrRouteRoute
+  PhysicsRouteRoute: typeof PhysicsRouteRoute
   ShadowsRouteRoute: typeof ShadowsRouteRoute
   SsrRouteRoute: typeof SsrRouteRoute
   TerrainRouteRoute: typeof TerrainRouteRoute
@@ -406,6 +419,13 @@ declare module '@tanstack/react-router' {
       path: '/shadows'
       fullPath: '/shadows'
       preLoaderRoute: typeof ShadowsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/physics': {
+      id: '/physics'
+      path: '/physics'
+      fullPath: '/physics'
+      preLoaderRoute: typeof PhysicsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pbr': {
@@ -532,6 +552,7 @@ const rootRouteChildren: RootRouteChildren = {
   MatrixRouteRoute: MatrixRouteRoute,
   MazeRouteRoute: MazeRouteRoute,
   PbrRouteRoute: PbrRouteRoute,
+  PhysicsRouteRoute: PhysicsRouteRoute,
   ShadowsRouteRoute: ShadowsRouteRoute,
   SsrRouteRoute: SsrRouteRoute,
   TerrainRouteRoute: TerrainRouteRoute,

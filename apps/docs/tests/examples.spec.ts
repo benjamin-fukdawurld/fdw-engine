@@ -25,6 +25,7 @@ const examples: Record<string, string> = {
   resources: 'tutorials/resources/',
   'city-walk': 'tutorials/city-walk/',
   'character-animation': 'tutorials/character-animation/',
+  physics: 'tutorials/physics/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',
@@ -291,6 +292,35 @@ test('systems-steps', async ({ page: browser }, info) => {
     })
     .toBeGreaterThan(after + frames);
   await expect(canvas).toHaveScreenshot(`systems-steps-${backend}.png`, {
+    timeout: 20_000,
+  });
+});
+
+// Physics: a click pushes what is at the center (the clock is stopped: it
+// does not move), D shows the debug view, the ray of the click with it.
+test('physics-debug', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/physics/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="physics"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('debug off');
+  await canvas.click();
+  await browser.keyboard.press('KeyD');
+  await expect(status).toContainText('debug on');
+  await expect(status).not.toHaveAttribute('data-error');
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(`physics-debug-${backend}.png`, {
     timeout: 20_000,
   });
 });

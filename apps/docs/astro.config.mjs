@@ -21,6 +21,8 @@ const packages = [
   'engine-camera',
   'engine-animation',
   'engine-skinning',
+  'engine-physics',
+  'engine-physics-rapier',
   'engine-resources',
   'engine-resources-web',
   'engine-resources-native',

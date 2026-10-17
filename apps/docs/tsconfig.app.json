@@ -16,10 +16,46 @@
       "path": "../../packages/engine-webgl2/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-tessellation/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-skinning/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-shader/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-scene/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-resources/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-physics-rapier/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-physics/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-occlusion/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-obj/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-graph/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-gltf/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-geometry/tsconfig.lib.json"
@@ -28,49 +64,19 @@
       "path": "../../packages/engine-core/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-backend/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/demo-scenes/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-input/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-input-web/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/engine-camera/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-occlusion/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-tessellation/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-resources/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
+      "path": "../../packages/engine-backend/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-assets/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-obj/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-gltf/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-graph/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/engine-animation/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-skinning/tsconfig.lib.json"
+      "path": "../../packages/demo-scenes/tsconfig.lib.json"
     }
   ]
 }
