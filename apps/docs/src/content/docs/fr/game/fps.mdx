@@ -46,6 +46,7 @@ Le code du jeu se trouve dans `packages/demo-scenes/src/fps/`, partagé par :
 | `player.ts`   | La caméra à hauteur des yeux, la marche, le saut, le recul            |
 | `weapon.ts`   | L'arme en main, le réticule, les étincelles                           |
 | `drones.ts`   | Les ennemis : un composant, et les systèmes qui le parcourent         |
+| `sounds.ts`   | Les sons, faits par le code : effets, bourdonnements, musique         |
 | `game.ts`     | Les règles : les tirs, les coups, les vagues, le score                |
 | `fps.ts`      | La `SceneFactory` : le menu, et la frame exécutée par un ordonnanceur |
 
@@ -530,6 +531,50 @@ Les drones entrent par les portes à tour de rôle — le nord d'abord, devant
 le joueur au départ — trois de front au plus dans chacune. Leurs phases
 diffèrent, pour qu'ils ne tanguent pas ensemble.
 
+## 10. Les sons
+
+Le jeu dit ce qui arrive — un tir, un coup au but, un drone abattu, un
+coup reçu, une vague — à un `FpsSoundEvents`, donné quand il y a un moteur
+audio (`context.audio` : un `WebAudioEngine` dans la page, un
+`NativeAudioEngine` dans la démo native). `FpsSounds` les joue sur
+l'[audio](/fdw-engine/fr/tutorials/audio/) du moteur :
+
+```ts title="fps/sounds.ts"
+this.audio = new SceneAudio(scene, engine);
+this.audio.listener = eye; // les oreilles du joueur
+
+this._shot = new SoundEffect(engine, shot, {
+  bus: sfx,
+  pitchVariation: 0.06, // jamais deux fois le même
+  maxVoices: 6,
+});
+
+spawned(drone: Node): void {
+  // Un bourdonnement qui suit le drone, chacun sa hauteur.
+  this.audio.play(drone, this._hum, {
+    loop: true,
+    pitch: 0.9 + 0.2 * Math.random(),
+    spatial: { refDistance: 2 },
+  });
+}
+```
+
+- **Les effets** (le tir, le tintement d'un coup au but, le coup reçu) sont
+  des `SoundEffect` : une hauteur tirée à chaque lecture, un nombre de voix
+  borné.
+- **Les drones bourdonnent là où ils volent** : une voix par drone,
+  attachée à son nœud, entendue depuis l'œil ; le bourdonnement s'éteint
+  quand le drone tombe, et une explosion retentit là où il est.
+- **La musique** est un `MusicPlayer` : une boucle calme sous le menu,
+  enchaînée en fondu vers une plus rapide en jeu, sur un bus `music` à
+  moitié du volume.
+- Le menu a une entrée **Sound** : le bus maître coupé.
+
+Tous les sons sont **faits par le code** (`demo-scenes/src/audio/synth.ts` :
+du bruit, des sinus, des enveloppes, un petit séquenceur pour la
+musique) : rien à charger, les mêmes dans le navigateur et dans la démo
+native. Dans la page, le son démarre au premier clic.
+
 ## Le tester
 
 Le jeu tourne sans page et sans GPU : `FpsGame` prend une scène, une arène,
@@ -537,7 +582,10 @@ une caméra et une `ActionMap`, et une `FakeInputSource` pilote les actions.
 `fps/fps.spec.ts` fait marcher le joueur jusqu'à un mur, le fait sauter,
 abat un drone en trois coups, tire vers le sol sans toucher ce que porte le
 joueur, laisse les drones frapper jusqu'à la fin de la partie, et vérifie
-qu'une vague abattue en amène une plus grande.
+qu'une vague abattue en amène une plus grande. Sur un `FakeAudioEngine`,
+il vérifie que chaque drone bourdonne là où il vole, que les tirs et les
+coups au but sonnent, qu'un drone abattu explose dans le monde, et que la
+musique change en fondu quand la partie commence.
 
 ## Ce que nous avons
 
@@ -553,6 +601,9 @@ qu'une vague abattue en amène une plus grande.
   drone.
 - Un menu de pause : deux contextes d'actions, le pointeur verrouillé et
   libéré, l'ordonnanceur en pause.
+- Des sons faits par le code : des effets variés à chaque lecture, des
+  drones qui bourdonnent dans l'espace, une musique enchaînée en fondu entre
+  le menu et le jeu.
 
 Quelques idées pour plus tard : des drones qui ripostent, avec leurs propres
 rayons ; une arme dessinée dans sa propre passe, pour qu'elle ne s'enfonce

@@ -5,13 +5,16 @@
 //   when the Vulkan SDK is set up (--validation).
 //
 // nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
-//   [--no-vsync] [--frames <count>] [--hidden]
+//   [--no-vsync] [--frames <count>] [--hidden] [--no-audio]
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
 // fps (the first person shooter; P pauses),
 // city (the occlusion culling; city-no-occlusion to compare), terrain (the
 // tessellation; terrain-uniform: every patch at the finest level), physics
 // (the physics playground, on Rapier).
+// The sounds play on the default device, through miniaudio (--no-audio:
+// silent).
 // Escape or closing the window quits.
+import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import type { Engine, Surface } from '@fdw/engine-backend';
 import {
   createDawnEngine,
@@ -119,8 +122,10 @@ if (!backend) {
 // The information of the scene, shown in the title with the frame rate.
 let info = '';
 const factory = scenes[name] ?? (await loadedScenes[name]());
+const audio = args.includes('--no-audio') ? undefined : new NativeAudioEngine();
 const scene = factory(backend, surface, {
   input: new NativeInputSource(window),
+  audio,
   info: (text) => {
     info = text;
   },
@@ -169,6 +174,7 @@ if (engine instanceof VulkanEngine) {
   }
 }
 scene.destroy();
+audio?.destroy();
 await throttle?.();
 surface.destroy();
 window.destroy();

@@ -1,12 +1,13 @@
 # @fdw/engine-native
 
-The engine outside of the browser, in Node: native windows, a render loop, and surfaces presenting into them. Linux first; the native code is kept portable (CMake, C++20, SDL3, Node-API). See [design/native-backends.md](../../design/native-backends.md) (in French).
+The engine outside of the browser, in Node: native windows, a render loop, surfaces presenting into them, and the audio library under `@fdw/engine-audio-native`. Linux first; the native code is kept portable (CMake, C++20, SDL3, Node-API). See [design/native-backends.md](../../design/native-backends.md) (in French).
 
 ## Position in the stack
 
 ```
 engine-core ──► engine-backend ◄── engine-webgpu ◄── engine-native ──► fdw_native.node (C, Node-API)
-                                                                          └─► fdw_window (C++, C API) ──► SDL3
+                                                                          ├─► fdw_window (C++, C API) ──► SDL3
+                                                                          └─► fdw_audio (C, C API) ──► miniaudio
 ```
 
 ## Building the addon
@@ -15,9 +16,9 @@ engine-core ──► engine-backend ◄── engine-webgpu ◄── engine-na
 npx nx run engine-native:build-native   # or: node packages/engine-native/scripts/build.mjs [--debug]
 ```
 
-CMake fetches SDL3 (3.2.0) on the first build and links it statically into `build/fdw_native.node`. The Node-API headers come from a Node installation: Node-API has a stable ABI, so any one works. The script looks next to the running Node, then in the `PATH`; set `NODE_API_INCLUDE_DIR` to choose. `FDW_NATIVE_ADDON` loads an addon from another path.
+CMake fetches SDL3 (3.2.0) and miniaudio (0.11.25, with `stb_vorbis` from its extras) on the first build and links them statically into `build/fdw_native.node`. The Node-API headers come from a Node installation: Node-API has a stable ABI, so any one works. The script looks next to the running Node, then in the `PATH`; set `NODE_API_INCLUDE_DIR` to choose. `FDW_NATIVE_ADDON` loads an addon from another path.
 
-The native library has a C API (`native/include/fdw/window.h`), and the addon is a thin binding to it. The same library can be used by another host (a FFI, a native application).
+The native libraries have C APIs (`native/include/fdw/window.h`, `native/include/fdw/audio.h`), and the addon is a thin binding to them. The same library can be used by another host (a FFI, a native application).
 
 ## Public API
 
@@ -30,6 +31,7 @@ The native library has a C API (`native/include/fdw/window.h`), and the addon is
 | `VulkanWindowSurface`                               | class    | A `Surface` presenting Vulkan frames into a `NativeWindow` created with `vulkan: true`, without copy: a swapchain (`@fdw/engine-vulkan`) recreated when the window is resized; `vsync` option. Needs no throttle: the swapchain sets the pace                                                                                                                           |
 | `createDawnEngine`                                  | function | A `WebGpuEngine` on Dawn (the `webgpu` package), whose WebGPU globals become globals                                                                                                                                                                                                                                                                                    |
 | `NativeAddon.decodeImage`                           | function | Decodes a PNG, JPEG, TGA, BMP, GIF or HDR image with `stb_image` (vendored in `native/third_party/stb`), on the thread pool of libuv: RGBA pixels, `Float32Array` for HDR. Used by `@fdw/engine-resources-native`                                                                                                                                                       |
+| `NativeAddon.audio*`                                | function | The audio over miniaudio: an engine on the default device or offline, its buses and listener, clips decoded on the thread pool of libuv (WAV, FLAC, MP3, Ogg Vorbis), streams decoded while playing, voices by id. Used by `@fdw/engine-audio-native`                                                                                                                   |
 | `loadAddon`, `setAddon`                             | function | The addon, and its replacement in tests                                                                                                                                                                                                                                                                                                                                 |
 
 ## Usage

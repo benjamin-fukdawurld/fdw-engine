@@ -5,6 +5,7 @@ import { followAspect, SceneFactory } from '../scene';
 import { buildArena } from './arena';
 import { fpsControls } from './controls';
 import { FpsGame } from './game';
+import { FpsSounds } from './sounds';
 
 // The speeds of the pointer the menu offers, in radians per height of the
 // surface.
@@ -39,7 +40,16 @@ export const createFpsScene: SceneFactory = (
       far: 120,
     },
   });
-  const game = new FpsGame(scene, arena, camera, actions);
+  const { audio } = context;
+  // Made with the game, which tells them what happens.
+  let sounds = undefined as FpsSounds | undefined;
+  const game = new FpsGame(
+    scene,
+    arena,
+    camera,
+    actions,
+    audio && ((eye) => (sounds = new FpsSounds(scene, audio, eye))),
+  );
   const { player } = game;
   const renderer = new Renderer(backend, {
     output: { toneMapping: 'neutral', encoding: 'srgb' },
@@ -55,6 +65,7 @@ export const createFpsScene: SceneFactory = (
       game.reset();
     }
     started = true;
+    sounds?.menu(false);
     menu.enabled = false;
     actions.enabled = true;
     scheduler.paused = false;
@@ -63,8 +74,10 @@ export const createFpsScene: SceneFactory = (
   };
   const pause = () => {
     actions.enabled = false;
+    sounds?.menu(true);
     menu.enabled = true;
     scheduler.paused = true;
+    sounds?.menu(true);
     selected = 0;
     input.lockPointer(false);
   };
@@ -83,6 +96,16 @@ export const createFpsScene: SceneFactory = (
         }
       },
     },
+    ...(audio
+      ? [
+          {
+            label: () => `Sound: ${audio.master.muted ? 'off' : 'on'}`,
+            choose: () => {
+              audio.master.muted = !audio.master.muted;
+            },
+          },
+        ]
+      : []),
     {
       label: () => `Invert Y: ${player.fly.invertY ? 'on' : 'off'}`,
       choose: () => {
@@ -98,6 +121,7 @@ export const createFpsScene: SceneFactory = (
     },
   ];
   scheduler.paused = true;
+  sounds?.menu(true);
 
   // begin: the events since the previous frame; the menu, the pause.
   scheduler.add(
@@ -182,7 +206,11 @@ export const createFpsScene: SceneFactory = (
     { after: ['shoot'] },
   );
 
-  // render: the view, dimmed under the menu, darker at a blow; the state.
+  // render: the sounds where the nodes are drawn; the view, dimmed under
+  // the menu, darker at a blow; the state.
+  if (sounds) {
+    scheduler.add('audio', () => sounds?.update(), { phase: 'render' });
+  }
   scheduler.add(
     'render',
     () => {
@@ -222,6 +250,7 @@ export const createFpsScene: SceneFactory = (
       last = time;
     },
     destroy: () => {
+      sounds?.destroy();
       input.dispose();
       renderer.destroy();
     },

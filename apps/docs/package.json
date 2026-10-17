@@ -8,6 +8,8 @@
     "@fdw/demo-scenes": "0.0.1",
     "@fdw/engine-animation": "0.0.1",
     "@fdw/engine-assets": "0.0.1",
+    "@fdw/engine-audio": "0.0.1",
+    "@fdw/engine-audio-web": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-camera": "0.0.1",
     "@fdw/engine-core": "0.0.1",

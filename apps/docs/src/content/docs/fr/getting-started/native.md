@@ -65,6 +65,7 @@ Ses options :
 | `--no-vsync`   | Effectue le rendu aussi vite que possible, pour mesurer         |
 | `--frames <n>` | S'arrête après `n` images                                       |
 | `--hidden`     | Masque la fenêtre (tests)                                       |
+| `--no-audio`   | Sans son (le FPS joue ses sons sur le périphérique par défaut)  |
 
 Échap ou la fermeture de la fenêtre quitte l'application. Le titre affiche la
 fréquence d'images.

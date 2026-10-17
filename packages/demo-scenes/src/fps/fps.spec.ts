@@ -1,3 +1,4 @@
+import { FakeAudioEngine } from '@fdw/engine-audio';
 import { Camera } from '@fdw/engine-core';
 import { fakeBackend, surface } from '@fdw/engine-core/testing';
 import { FakeInputSource, Input } from '@fdw/engine-input';
@@ -7,11 +8,13 @@ import { buildArena } from './arena';
 import { fpsControls } from './controls';
 import { createFpsScene } from './fps';
 import { FpsGame } from './game';
+import { FpsSounds } from './sounds';
 
 const step = 1 / 60;
 
-// A game in a scene, driven by a fake source: the game map enabled.
-const setup = () => {
+// A game in a scene, driven by a fake source: the game map enabled; with
+// sounds on a fake engine when given one.
+const setup = (audio?: FakeAudioEngine) => {
   const scene = new Scene();
   const arena = buildArena(scene);
   const source = new FakeInputSource();
@@ -19,7 +22,14 @@ const setup = () => {
   const { game: actions } = fpsControls(input);
   actions.enabled = true;
   input.update();
-  const game = new FpsGame(scene, arena, new Camera(), actions);
+  let sounds: FpsSounds | undefined;
+  const game = new FpsGame(
+    scene,
+    arena,
+    new Camera(),
+    actions,
+    audio && ((eye) => (sounds = new FpsSounds(scene, audio, eye))),
+  );
   // A frame: the input, then the systems in the order of the scheduler.
   const frame = (dt = step) => {
     input.update();
@@ -31,8 +41,10 @@ const setup = () => {
     game.drones.draw(1, game.player.position);
     game.shoot();
     game.weapon.update(dt, game.player.walked);
+    audio?.advance(dt);
+    sounds?.update();
   };
-  return { scene, arena, source, input, actions, game, frame };
+  return { scene, arena, source, input, actions, game, frame, sounds };
 };
 
 describe('fpsControls', () => {
@@ -171,5 +183,67 @@ describe('createFpsScene', () => {
     expect(info).toContain('[Resume]');
     expect(source.pointerLocked).toBe(false);
     scene.destroy();
+  });
+});
+
+describe('FpsSounds', () => {
+  it('hums at each drone, shoots, hits, explodes where a drone falls', () => {
+    const audio = new FakeAudioEngine();
+    const { source, game, frame } = setup(audio);
+    // The first wave: its chime, a hum following each drone.
+    const hums = () =>
+      audio.voices.filter((voice) => voice.loop && voice.spatial);
+    expect(hums()).toHaveLength(3);
+    frame();
+    const drone = game.drones.Drone.entities[0];
+    const hum = hums()[0];
+    const { x, y, z } = game.drones.Drone;
+    expect(hum.position.x).toBeCloseTo(x[drone], 3);
+    expect(hum.position.y).toBeCloseTo(y[drone], 1);
+    expect(hum.position.z).toBeCloseTo(z[drone], 3);
+    // The listener at the eyes of the player.
+    const { position } = game.player;
+    expect(audio.listener.position.x).toBeCloseTo(position.x, 5);
+    expect(audio.listener.position.y).toBeCloseTo(position.y, 5);
+    expect(audio.listener.position.z).toBeCloseTo(position.z, 5);
+    const played = audio.played.length;
+    source.keyDown('KeyF');
+    let frames = 0;
+    while (game.hits < 3 && frames++ < 100) {
+      frame(0.13);
+    }
+    // Three shots, three hits, an explosion in the world.
+    const sounds = audio.played.slice(played);
+    expect(sounds.filter((voice) => !voice.spatial)).toHaveLength(6);
+    const explosion = sounds.find((voice) => voice.spatial && !voice.loop);
+    expect(explosion).toBeDefined();
+    // The hum of the drone shot down fades out.
+    expect(hums().filter((voice) => voice.stopping)).toHaveLength(1);
+  });
+
+  it('plays a calm music under the menu, a tense one in the game', () => {
+    const { backend } = fakeBackend();
+    const input = new FakeInputSource();
+    const audio = new FakeAudioEngine();
+    const scene = createFpsScene(backend, surface, { input, audio });
+    let time = 0;
+    const frame = () => {
+      scene.frame((time += step));
+      audio.advance(step);
+    };
+    frame();
+    const music = audio.bus('music');
+    const tracks = () => audio.voices.filter((voice) => voice.bus === music);
+    expect(tracks()).toHaveLength(1);
+    const calm = tracks()[0];
+    input.keyDown('Enter');
+    frame();
+    input.keyUp('Enter');
+    frame();
+    // Crossfading: the calm one fades out under the tense one.
+    expect(tracks()).toHaveLength(2);
+    expect(calm.stopping).toBe(true);
+    scene.destroy();
+    expect(audio.voices).toHaveLength(0);
   });
 });

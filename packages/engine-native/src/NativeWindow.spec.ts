@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   Modifiers,
   NativeAddon,
+  NativeAudioAddon,
   RawWindowEvent,
   setAddon,
   WindowFlags,
@@ -17,7 +18,8 @@ function fakeAddon() {
   const calls: string[] = [];
   const queue: RawWindowEvent[] = [];
   let next = 1;
-  const addon: NativeAddon = {
+  // Without the audio, which windows do not use.
+  const addon: Omit<NativeAddon, keyof NativeAudioAddon> = {
     init: () => calls.push('init'),
     quit: () => calls.push('quit'),
     createWindow: (title, width, height, flags) => {
@@ -57,7 +59,7 @@ function fakeAddon() {
     },
     decodeImage: () => Promise.reject(new Error('no images here')),
   };
-  return { addon, calls, queue };
+  return { addon: addon as NativeAddon, calls, queue };
 }
 
 afterEach(() => setAddon(undefined));

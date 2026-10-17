@@ -54,7 +54,10 @@
       "@fdw/engine-physics": ["packages/engine-physics/src/index.ts"],
       "@fdw/engine-physics-rapier": [
         "packages/engine-physics-rapier/src/index.ts"
-      ]
+      ],
+      "@fdw/engine-audio": ["packages/engine-audio/src/index.ts"],
+      "@fdw/engine-audio-web": ["packages/engine-audio-web/src/index.ts"],
+      "@fdw/engine-audio-native": ["packages/engine-audio-native/src/index.ts"]
     }
   }
 }

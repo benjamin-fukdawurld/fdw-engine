@@ -159,6 +159,10 @@ _Faite_ (16 octobre 2026), avec son tutoriel « Un personnage animé » et le gu
 
 ### P7. Audio
 
+_Faite_ (17 octobre 2026), avec son tutoriel « L'audio » et le guide « L'audio » : le design, les mesures et ce qui a été fait sont dans [p7-audio.md](p7-audio.md). `engine-audio` (l'API abstraite, les effets courts `SoundEffect`, la musique `MusicPlayer` en fondu enchaîné, `SceneAudio` : l'auditeur qui suit la caméra, les voix qui suivent leurs nœuds ; les chargeurs du système de ressources), `engine-audio-web` (WebAudio ; les musiques en flux par des éléments média), `engine-audio-native` (miniaudio dans l'addon de `engine-native` : WAV, FLAC, MP3, Ogg Vorbis décodés sur le pool de libuv, les flux décodés à la lecture). La démo : les sons du FPS, faits par le code, sur le web et en natif. Reportés : la réverbération et les filtres, l'occlusion du son, un nombre de voix global à priorités.
+
+Le plan d'origine :
+
 - **Un moteur audio abstrait** et deux implémentations : WebAudio dans le navigateur, SDL3 audio (ou miniaudio) en natif, comme pour les entrées.
 - Sons ponctuels et continus, mixage par bus, spatialisation (la position de l'écouteur suit la caméra), streaming des musiques.
 - Les sons chargés par le système de ressources (P5).

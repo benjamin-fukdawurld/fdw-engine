@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-audio-web",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"],
+  "references": [
+    { "path": "../engine-audio/tsconfig.lib.json" },
+    { "path": "../engine-backend/tsconfig.lib.json" }
+  ]
+}

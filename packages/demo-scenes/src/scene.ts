@@ -1,5 +1,6 @@
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import type { Camera } from '@fdw/engine-core';
+import type { AudioEngine } from '@fdw/engine-audio';
 import type { InputSource } from '@fdw/engine-input';
 
 // A demo scene, independent of where it runs: a browser canvas (the routes)
@@ -15,6 +16,9 @@ export interface SceneContext {
   // Where the keyboard, mouse and gamepad come from: a WebInputSource over a
   // canvas or a browser window, a NativeInputSource over a native window.
   readonly input?: InputSource;
+  // Where the sounds play: a WebAudioEngine in a page, a NativeAudioEngine
+  // in a native window. None: the scene is silent.
+  readonly audio?: AudioEngine;
   // Shows a line of information (statistics): an overlay, a window title.
   readonly info?: (text: string) => void;
 }
