@@ -1,0 +1,295 @@
+---
+title: A third-person game
+description: A ranger with an estoc in a forest, waves of orcs and a demon — the forest of the engine, a third-person camera, animated characters, blows and enemies as systems.
+sidebar:
+  order: 7
+---
+
+import Example from '../../../components/Example.astro';
+
+A third game, seen over the shoulder. A ranger stands in a clearing of a
+fir forest, under a low sun; orcs come out of the trees, in waves, then a
+demon leads the last one. The ranger strikes with an estoc — three blows
+in a row, or a heavy one — parries, rolls out of the way, jumps. The game
+is won when the demon falls, lost when the ranger does.
+
+The game puts together most of the engine: the forest is instanced, with
+its levels of detail (P1), under shadows in cascades (P2), on a terrain of
+patches (P3b), its trunks hiding what is behind them (P3); the camera
+follows the ranger over its shoulder, the ranger is a character controller
+(P4, P7b); the models and their animations come from glTF files (P5, P6),
+the sounds are made by code (P7). It adds what a fight needs: blows as
+volumes tested while the animations strike, and enemies as systems.
+
+<Example name="tps" code={false} />
+
+Click the forest, then **Play**: the **mouse** turns the camera, **W A S D**
+(Z Q S D on AZERTY) moves, **Shift** sprints, a **click** strikes (click
+again for the next blow), the **right button** or **E** strikes hard,
+**F** held parries, **C** rolls, **Space** jumps. **Escape** or **P** opens
+the menu. With a gamepad: the sticks to move and turn, the west button to
+strike, the north one for a heavy blow, the left shoulder to parry, the
+east button to roll, the south one to jump, Start for the menu.
+
+## Where the code is
+
+The code of the game is in `packages/demo-scenes/src/tps/`, shared by:
+
+- the browser demo: `npx nx serve demo`, then the **TPS** route;
+- the native demo: `npx nx run demo-native:start -- tps` (**P** pauses
+  there, Escape quits);
+- this page.
+
+| File          | Contents                                                              |
+| ------------- | --------------------------------------------------------------------- |
+| `assets.ts`   | Loading the models and the textures, with the progress                |
+| `forest.ts`   | The terrain, the firs and the ground cover, their levels and bodies   |
+| `actor.ts`    | A character: a controller, a model turned where it faces, animated    |
+| `hero.ts`     | The ranger: its actions, its animation graph, its blade               |
+| `combat.ts`   | The blows: volumes struck once per blow                               |
+| `enemies.ts`  | The orcs and the demon: a component, and the systems going through it |
+| `controls.ts` | The actions of the game and of the menu                               |
+| `sounds.ts`   | The sounds, made by code                                              |
+| `tps.ts`      | The `SceneFactory`: the menu, the waves, the frame run by a scheduler |
+
+## 1. The models
+
+Every model is **CC0**: free to use, change and share, without credit.
+
+| Model                                                   | Author                               | Used for                     |
+| ------------------------------------------------------- | ------------------------------------ | ---------------------------- |
+| Fir Tree 01, Fern 02, Grass Medium 01, Forest Ground 04 | [Poly Haven](https://polyhaven.com)  | The forest, the ground       |
+| Antique Estoc                                           | [Poly Haven](https://polyhaven.com)  | The sword                    |
+| Modular Character Outfits – Fantasy (Male Ranger)       | [Quaternius](https://quaternius.com) | The ranger                   |
+| Universal Animation Library 1 and 2                     | [Quaternius](https://quaternius.com) | The animations of the ranger |
+| Ultimate Monsters (Orc, Demon)                          | [Quaternius](https://quaternius.com) | The enemies                  |
+
+They are not used as downloaded: the fir has 4 million triangles, the
+ranger textures of 4096 px, its animations are in other files. Two tools
+prepare them into compact `.glb` files, in `apps/docs/public/models/forest/`
+(26 MB in all):
+
+- `tools/assets/make-forest.mjs`: the firs in three levels of detail
+  (see [Levels of detail](/fdw-engine/tutorials/levels-of-detail/)), the
+  ferns and the grass simplified, made opaque (their leaves are geometry,
+  not textures with alpha);
+- `tools/assets/make-characters.mjs`: the ranger with its textures
+  reduced, the clips it plays copied from the animation libraries **by the
+  names of the joints** (the same skeleton), and the estoc in its right
+  hand. Where the estoc sits is computed from the pose of the hand in the
+  guard of `Sword_Idle`: the grip through the middle phalanges, the blade
+  out of the thumb side, the guard along the fingers.
+
+## 2. The forest
+
+`buildForest` makes the level, from a seed:
+
+- **A terrain** of 512 m, drawn by patches as in
+  [Tessellation](/fdw-engine/tutorials/tessellation/), with heights of its
+  own: a flat clearing, gentle bumps, and around the play area a rim too
+  steep for the character to climb (`maxSlope` of 42°). The ground is the
+  forest floor of Poly Haven, repeated every 4 m, its normal map over the
+  normal of the height map.
+- **2 500 firs**, at least 6 m apart, of three kinds, turned and scaled at
+  random. Each kind, each level, each primitive is a single
+  `scene.createBatch` for all its firs; `SceneLods` chooses their levels
+  for the camera (30 m, 80 m, 320 m). The trunks are occluders.
+- **Grass and ferns**, about 5 000 clumps, drawn within 30 to 40 m of the
+  camera (a single level each).
+- **Their bodies**: the terrain as a heightfield, from the same heights;
+  the trunks near the play area as capsules.
+
+The renderer draws the scene and the terrain together, in about 40 calls
+for the view and 200 with the four cascades:
+
+```ts title="tps/tps.ts"
+forest.terrain.surface.update(camera, surface);
+renderer.render({
+  source: scene,
+  items: [forest.terrain.surface],
+  camera,
+  surface,
+  fog,
+  occlusion,
+  prepare: (graph) => {
+    hero.actor.addPass(graph);
+    enemies.addPasses(graph);
+  },
+});
+```
+
+The sun has four cascades up to 110 m
+([Shadow cascades and fog](/fdw-engine/tutorials/shadow-cascades/)); a fog
+falling with the height hides the end of the forest, and what the levels
+of detail leave out.
+
+## 3. A character: `Actor`
+
+The ranger and the enemies are `Actor`s: a body moved by a character
+controller, its node under the root (drawn between two steps by
+`ScenePhysics`), the model under it, turned where the character faces,
+skinned and animated.
+
+```ts title="tps/actor.ts"
+this.body = scene.root.add({ position: center });
+this.visual = this.body.add({ position: { y: -center.y }, scale });
+this.instance = instantiate(model, scene, { parent: this.visual });
+this.skinning = new Skinning(backend, this.instance, model);
+this.animator = new Animator(graph, { skeleton, clips });
+this.character = physics.addCharacter(this.body, {
+  shape: Shapes.capsule(halfHeight, radius),
+});
+```
+
+`move(step, velocity)` adds the gravity and moves the controller at the
+fixed step; `face(direction, step)` turns the model; `animate(dt)`, at each
+frame, plays the animator and poses the skin.
+
+## 4. The ranger: one action at a time
+
+The ranger does one thing at a time: `move`, `air`, `roll`, `attackA`,
+`attackB`, `attackC`, a recovery after the first two blows, `heavy`,
+`block`, `hit`, `dead`. The game code decides the action; the animation
+graph follows it, by a parameter:
+
+```ts title="tps/hero.ts"
+const move = g.blend1d(
+  [g.clip('SwordIdle'), g.clip('Walk'), g.clip('Jog'), g.clip('Sprint')],
+  [0, 1.6, 4.5, 7],
+  g.param('speed'),
+);
+g.stateMachine({
+  states: { move, air, roll, attackA /* … */ },
+  transitions: HeroActions.map((action, index) => ({
+    from: '*',
+    to: action,
+    conditions: [{ parameter: 'action', value: index }],
+    duration: fadeOf(action),
+  })),
+});
+```
+
+The rules stay in code, where they are easy to read and to test:
+
+- **The chain of blows.** A click during a blow queues the next one, which
+  starts once the blade has struck (60 % of the clip); without it, the
+  blow ends in its recovery, which moving or striking cuts short.
+- **Facing the enemy.** As a blow starts, the ranger turns towards the
+  enemy nearest in front within 4.5 m, else where the camera looks.
+- **The roll** carries the ranger 4 m; for most of it, nothing hurts it.
+- **The parry** takes 85 % of a blow off, from the front only.
+
+## 5. The blows
+
+The clips tell when the blade strikes: events added to them, at the
+moments the hand moves fastest (measured on the clips):
+
+```ts title="tps/hero.ts"
+AttackA: { windows: [[0.15, 0.32]], damage: 20 },
+AttackC: { windows: [[0.12, 0.3], [0.55, 0.72]], damage: 30 },
+```
+
+Between `strike` and `strikeEnd`, at each fixed step, the blade is a
+**capsule** from the guard to the tip, tested against the bodies of the
+enemies with `world.overlap`; the sweep of the tip since the previous step
+is tested too: a fast blade crosses a body between two steps.
+
+```ts title="tps/combat.ts"
+export class Blow {
+  readonly hit = new Set<PhysicsCollider>();
+  constructor(
+    readonly damage: number,
+    readonly against: (collider: PhysicsCollider) => boolean,
+  ) {}
+}
+```
+
+A `Blow` remembers what it struck: a target is hit **once per blow**,
+however many steps the blade stays in it. The enemies strike the same way,
+with a sphere in front of them.
+
+## 6. The enemies: a component, and its systems
+
+Each enemy is an `Actor` and an entity with an `enemy` component — its
+state, the time in it, its health, its cooldown — gone through by three
+systems of the fixed step:
+
+- `decide`: `spawn` (a roar), `chase`, `attack`, `recover`, `hurt`,
+  `dead`. At most two strike at once: the others wait.
+- `steer`: towards the hero, or for those waiting, towards their own
+  place on a ring around it; apart from each other; around the trunks
+  ahead of them, by a push sideways (a grid of the trunks answers which
+  are near). No path finding: the forest is open ground.
+- `strike`: the blows of those striking.
+
+The orcs stagger at every blow; the demon only at the heavy ones (its
+`poise`). The fallen sink into the ground, then are removed.
+
+## 7. The camera
+
+A `ThirdPersonOperator` (see
+[The third-person camera](/fdw-engine/tutorials/third-person-camera/)),
+4.2 m behind the ranger, over its shoulder. Its probe casts a sphere in
+the physics: the trunks, the ground and the enemies stop it, never the
+ranger itself.
+
+## 8. The frame
+
+```ts title="tps/tps.ts"
+// fixed: the ranger and its blows, the enemies, the physics, the waves.
+scheduler.add('hero', heroStep, { phase: 'fixed' });
+scheduler.add('enemies:decide', decide, { phase: 'fixed', after: ['hero'] });
+scheduler.add('enemies:steer', steer, {
+  phase: 'fixed',
+  after: ['enemies:decide'],
+});
+scheduler.add('enemies:strike', strike, {
+  phase: 'fixed',
+  after: ['enemies:steer'],
+});
+physics.install(scheduler, { after: ['enemies:strike'] });
+scheduler.add('waves', waves, { phase: 'fixed', after: ['physics'] });
+
+// update: the bodies drawn between two steps, animated; the camera.
+scheduler.add('animate', animate, { after: ['physics:sync'] });
+scheduler.add('camera', followHero, { after: ['animate'] });
+
+// render: the levels of detail for the camera, the sounds, the view.
+forest.lods.install(scheduler, camera, { before: ['render'] });
+```
+
+The buttons pressed are kept until the next fixed step: a frame may run
+none, or several. The menu pauses the fixed phase, as in
+[the FPS](/fdw-engine/game/fps/).
+
+## 9. The sounds
+
+Made by code, as those of the FPS: the steps on the forest floor, the
+blade cutting the air, the blows, the parries (steel on steel), the
+grunts of the orcs and the cry of the demon (a buzzing voice through two
+formants), where they happen; the wind and the birds of the forest when
+calm, crossfaded to a music when enemies are around.
+
+## Testing it
+
+`tps/tps.spec.ts` tests the parts without a GPU: the heights of the forest
+(a flat clearing, a rim), the grid of the trunks, the blows (struck once,
+the capsule along the blade), the graph and the clips of the ranger, the
+actions, the sounds on a `FakeAudioEngine`, and the progress shown while
+loading.
+
+## What we have
+
+- A forest of 2 500 instanced firs and 5 000 clumps of grass, with their
+  levels of detail, shadows in cascades and fog, at 60 frames per second
+  and more.
+- Models prepared from CC0 assets by tools: levels made of cards, clips
+  copied by the names of the joints, a sword placed by the pose of a hand.
+- A third-person camera that stops at the trunks.
+- A ranger whose actions are decided by code and followed by its
+  animation graph; blows as volumes, struck once per blow.
+- Enemies as systems: surrounding the hero, striking two at a time, going
+  around the trees.
+
+Some ideas left for later: root motion for blows that carry the ranger;
+path finding for a level with walls; enemies in behavior graphs (P9).

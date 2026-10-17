@@ -23,6 +23,27 @@ export interface ShadowOptions {
    * for sharper shadows in a large scene.
    */
   readonly bounds?: { readonly center: IVec3; readonly radius: number };
+  /**
+   * Directional lights: shadow cascades instead of one shadow map. The
+   * view of a perspective camera is cut in slices by depth, each covered
+   * by its own shadow map: sharp shadows near the camera, coarser ones far
+   * away, over a large scene. One light per frame has cascades (the first
+   * with them); `bounds` is then ignored.
+   */
+  readonly cascades?: ShadowCascades;
+}
+
+/** How the shadow cascades of a directional light cut the view. */
+export interface ShadowCascades {
+  // Number of cascades, 1 to 4. Default 4.
+  readonly count?: number;
+  // How far from the camera the shadows reach (they fade out before).
+  // Default: the far plane of the camera.
+  readonly distance?: number;
+  // How the depths of the slices grow: 0 evenly, 1 geometrically (each
+  // slice a constant ratio further: the same texels on screen). Default
+  // 0.75.
+  readonly lambda?: number;
 }
 
 /** The shadow properties of the lights that can cast shadows. */

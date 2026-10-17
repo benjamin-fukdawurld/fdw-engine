@@ -16,6 +16,7 @@ import { Mesh } from './Mesh';
 import { RenderGraph } from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { Renderer } from './Renderer';
+import { cascadeSplits, sliceSphere } from './shadows';
 import {
   colorGraph,
   fakeBackend,
@@ -50,6 +51,49 @@ describe('Renderer', () => {
       expect.objectContaining({ count: 3, indexed: true }),
     ]);
     expect(log.submits).toBe(1);
+  });
+
+  it('draws the items of a source and a list together', () => {
+    const { renderer, log, camera } = setup();
+    const material = new Material({ graph: colorGraph() });
+    const inSource = { mesh: triangle(), material, transform: transformAt(0) };
+    const views: string[] = [];
+    renderer.render({
+      source: {
+        query: (_frustum, _layers, visit, view) => {
+          views.push(view);
+          visit(inSource);
+        },
+      },
+      // Another mesh: not instanced with the item of the source.
+      items: [{ mesh: triangle(), material, transform: transformAt(1) }],
+      camera,
+      surface,
+    });
+    expect(views).toEqual(['camera']);
+    expect(log.draws).toHaveLength(2);
+  });
+
+  it('compiles the fog into the programs of a view with fog', () => {
+    const { renderer, log, camera } = setup();
+    const g = new GraphBuilder('lit');
+    g.surface({
+      shadingModel: 'phong',
+      baseColor: [1, 1, 1],
+      normal: [0, 0, 1],
+    });
+    const material = new Material({ graph: g.build() });
+    const items = [{ mesh: triangle(), material, transform: transformAt(0) }];
+    renderer.render({ items, camera, surface });
+    renderer.render({
+      items,
+      camera,
+      surface,
+      fog: { color: { r: 0.5, g: 0.6, b: 0.7 }, density: 0.02 },
+    });
+    const [plain, fogged] = log.pipelines;
+    expect(plain.program.variantKey).not.toHaveProperty('fog');
+    expect(fogged.program.variantKey).toMatchObject({ fog: true });
   });
 
   it('creates programs, pipelines and mesh buffers once', () => {
@@ -780,6 +824,66 @@ describe('Renderer, shadows', () => {
     expect(vec4('lightShadowRects', 1)).toEqual([0, 0, 1, 1]);
   });
 
+  it('cuts the view of a perspective camera into shadow cascades', () => {
+    const { renderer, log, camera } = shadowSetup();
+    const light = sun();
+    light.shadow = { cascades: { count: 3, distance: 30 } };
+    renderer.render({ items: [lit()], camera, surface, lights: [light] });
+    // Three cascades: three tiles of a 2 × 2 grid, a draw of the caster in
+    // each.
+    expect(log.viewports).toEqual([
+      [0, 0, 512, 512],
+      [512, 0, 512, 512],
+      [0, 512, 512, 512],
+    ]);
+    expect(log.draws).toHaveLength(4);
+    const frame = log.buffers.find(
+      (b) => b.label === 'scene frame uniforms',
+    ) as FakeBuffer;
+    const floats = floatsOf(frame);
+    let offset = 0;
+    const at: Record<string, number> = {};
+    for (const member of engineUniformBlocks.frame) {
+      at[member.name] = offset / 4;
+      offset += sizeOf(member.type);
+    }
+    const read = (name: string, count: number) =>
+      floats.slice(at[name], at[name] + count);
+    // The light reads the cascades; they end further and further, the
+    // unused fourth repeating the third.
+    expect(read('lightShadows', 1)[0]).toBe(2);
+    const splits = read('cascadeSplits', 4);
+    expect(splits[0]).toBeGreaterThan(0.1);
+    expect(splits[1]).toBeGreaterThan(splits[0]);
+    expect(splits[2]).toBeCloseTo(30);
+    expect(splits[3]).toBe(splits[2]);
+    expect(read('cascadeMatrix3', 16)).toEqual(read('cascadeMatrix2', 16));
+    expect(read('cascadeRect1', 4)).toEqual([0.5, 0, 0.5, 0.5]);
+    // Coarser texels further: larger normal offsets.
+    const offsets = read('cascadeOffsets', 4);
+    expect(offsets[2]).toBeGreaterThan(offsets[0]);
+  });
+
+  it('keeps one shadow map for an orthographic camera', () => {
+    const { renderer, log } = shadowSetup();
+    const light = sun();
+    light.shadow = { cascades: { count: 4 } };
+    const camera = new Camera({
+      position: { x: 0, y: 0, z: 10 },
+      projection: {
+        type: 'orthographic',
+        left: -1,
+        right: 1,
+        bottom: -1,
+        top: 1,
+        near: 0.1,
+        far: 100,
+      },
+    });
+    renderer.render({ items: [lit()], camera, surface, lights: [light] });
+    expect(log.viewports).toEqual([[0, 0, 1024, 1024]]);
+  });
+
   it('leaves out the items that do not cast shadows', () => {
     const { renderer, log, camera } = shadowSetup();
     renderer.render({
@@ -1457,5 +1561,34 @@ describe('Renderer, scene outputs', () => {
     new RenderGraphRunner(backend).execute(graph);
     expect(log.renderPasses).toEqual(['scene opaque', 'forward transparent']);
     expect(log.passes[1].depthAttachment?.load).toBe('load');
+  });
+});
+
+describe('cascadeSplits', () => {
+  it('goes from even to geometric steps', () => {
+    expect(cascadeSplits(1, 100, 4, 0)).toEqual([25.75, 50.5, 75.25, 100]);
+    const geometric = cascadeSplits(1, 100, 4, 1);
+    expect(geometric[0]).toBeCloseTo(Math.sqrt(10));
+    expect(geometric[1]).toBeCloseTo(10);
+    expect(geometric[3]).toBeCloseTo(100);
+  });
+});
+
+describe('sliceSphere', () => {
+  it('holds the corners of the slice', () => {
+    const fov = 60;
+    const aspect = 16 / 9;
+    const { depth, radius } = sliceSphere(fov, aspect, 2, 10);
+    const tan = Math.tan(Math.PI / 6);
+    for (const z of [2, 10]) {
+      const half = Math.hypot(z * tan, z * tan * aspect);
+      expect(Math.hypot(z - depth, half)).toBeLessThanOrEqual(radius + 1e-9);
+    }
+  });
+
+  it('stops its center at the far end of a wide slice', () => {
+    const { depth, radius } = sliceSphere(120, 2, 1, 2);
+    expect(depth).toBe(2);
+    expect(radius).toBeCloseTo(2 * Math.tan(Math.PI / 3) * Math.sqrt(5));
   });
 });

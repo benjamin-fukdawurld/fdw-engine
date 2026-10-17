@@ -57,3 +57,9 @@ vitest.config.*.timestamp*
 # Benchmark results
 bench.json
 bench_results.json
+
+# Sources of tools/assets (third-party packs, downloaded at the root)
+/Modular Character Outfits - Fantasy*/
+/Ultimate Monsters*/
+/Universal Animation Library*/
+/*_1k.gltf/

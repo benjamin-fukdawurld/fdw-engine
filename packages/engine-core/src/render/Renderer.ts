@@ -34,6 +34,7 @@ import {
   ConstantValue,
   FunctionDefinition,
   MaterialGraphData,
+  MaxCascades,
   MaxLights,
   NodeRegistry,
   SurfaceOutput,
@@ -61,8 +62,9 @@ import {
 import { castsShadow, ShadowCameras, ShadowTile } from './shadows';
 
 export interface RenderOptions {
-  // What to draw: a source queried for each view (a scene graph), or a list
-  // of items, culled one by one.
+  // What to draw: a source queried for each view (a scene graph), a list
+  // of items, culled one by one, or both (a scene and a terrain drawn
+  // outside of it).
   readonly source?: RenderSource;
   readonly items?: Iterable<Renderable>;
   // The layers seen by the camera: the items of a source whose layers do
@@ -92,6 +94,28 @@ export interface RenderOptions {
   // compute passes preparing what it draws (Skinning.addPass of
   // @fdw/engine-skinning). For render() only.
   readonly prepare?: (graph: RenderGraph) => void;
+  // A fog over what the camera sees: the farther, the closer to the color
+  // of the fog. The background (clearColor) is not fogged: a sky drawn as
+  // a mesh fades into it.
+  readonly fog?: FogOptions;
+}
+
+/** The fog of a view: see RenderOptions.fog. */
+export interface FogOptions {
+  // Linear color, as the lights: tone mapped with the scene.
+  readonly color: {
+    readonly r: number;
+    readonly g: number;
+    readonly b: number;
+  };
+  // Per unit of distance: 1 - e^(-density × distance) of the fog color.
+  // Visibility (95 % fog) is about 3 / density.
+  readonly density: number;
+  // How fast the density falls with the height, per unit: e^(-falloff ×
+  // height) above `height`. Default 0: the same everywhere.
+  readonly heightFalloff?: number;
+  // The base of the fog, where the density is `density`. Default 0.
+  readonly height?: number;
 }
 
 /** What a view of the last frame drew: see Renderer.stats. */
@@ -356,6 +380,8 @@ interface PassVariant {
   readonly linear: boolean;
   // The lit materials read the shadow atlas.
   readonly shadows: boolean;
+  // The colors are seen through the fog of the frame.
+  readonly fog?: boolean;
   // No color: the shadow maps.
   readonly depthOnly: boolean;
   // Samples per pixel of the attachments.
@@ -428,8 +454,6 @@ const objectOf = (entry: PreparedItem): ObjectState => entry.object;
 
 // The orders of the sort (see Renderer.sort): opaque entries by pipeline,
 // material then mesh; transparent ones back to front.
-const byPipeline = (a: PreparedItem, b: PreparedItem): number =>
-  a.pipelineId - b.pipelineId;
 const byState = (a: PreparedItem, b: PreparedItem): number =>
   a.pipelineId - b.pipelineId || a.sortKey - b.sortKey;
 const backToFront = (a: PreparedItem, b: PreparedItem): number =>
@@ -438,6 +462,44 @@ const backToFront = (a: PreparedItem, b: PreparedItem): number =>
 // The sort key of an opaque entry: its material, then its mesh, by order of
 // first appearance (below 2^26 meshes: exact in a double).
 const MeshOrders = 2 ** 26;
+
+// Sorts opaque entries by pipeline, material, then mesh, each in order of
+// appearance: the items sharing them follow each other, and become one
+// instanced draw.
+function sortByState(entries: PreparedItem[]): void {
+  if (entries.length < 2) {
+    return;
+  }
+  const materialOrder = new Map<Material, number>();
+  const meshOrder = new Map<Mesh, number>();
+  // The previous entry's, without lookups: they often follow each other.
+  let material: Material | undefined;
+  let mesh: Mesh | undefined;
+  let materialIndex = 0;
+  let meshIndex = 0;
+  for (const entry of entries) {
+    if (entry.item.material !== material) {
+      material = entry.item.material;
+      let index = materialOrder.get(material);
+      if (index === undefined) {
+        index = materialOrder.size;
+        materialOrder.set(material, index);
+      }
+      materialIndex = index;
+    }
+    if (entry.item.mesh !== mesh) {
+      mesh = entry.item.mesh;
+      let index = meshOrder.get(mesh);
+      if (index === undefined) {
+        index = meshOrder.size;
+        meshOrder.set(mesh, index);
+      }
+      meshIndex = index;
+    }
+    entry.sortKey = materialIndex * MeshOrders + meshIndex;
+  }
+  entries.sort(byState);
+}
 
 // The cull modes of the passes of an item (see Renderer.passes).
 const backFaces: readonly PrimitiveState['cullMode'][] = ['back'];
@@ -529,9 +591,11 @@ function writeLightValues(
     } else {
       continue;
     }
+    // The first tile of the light: its own, or its first cascade (whose
+    // shadow.x of 2 sends the shaders to the cascades).
     let shadow: ShadowTile | undefined;
     for (const tile of shadows) {
-      if (tile.light === light) {
+      if (tile.light === light && !shadow) {
         shadow = tile;
       }
     }
@@ -554,6 +618,19 @@ function writeLightValues(
   values['lightShadows'] = lightShadows;
   values['lightShadowRects'] = shadowRects;
   values['lightShadowMatrices'] = shadowMatrices;
+  // The cascades, the unused ones repeating the last.
+  const cascades = shadows.filter((tile) => tile.cascade !== undefined);
+  const splits: number[] = [];
+  const offsets: number[] = [];
+  for (let i = 0; i < MaxCascades; i++) {
+    const tile = cascades[Math.min(i, cascades.length - 1)];
+    values[`cascadeMatrix${i}`] = tile?.matrix ?? identity;
+    values[`cascadeRect${i}`] = tile?.rect ?? zero4;
+    splits.push(tile?.split ?? 0);
+    offsets.push(tile?.shadow[2] ?? 0);
+  }
+  values['cascadeSplits'] = splits;
+  values['cascadeOffsets'] = offsets;
   return values;
 }
 
@@ -861,6 +938,7 @@ export class Renderer {
       cullUnlit = false,
       inputs = {},
       occlusion,
+      fog,
     }: ScenePassesOptions,
   ): ScenePasses {
     const outputs = this.sceneOutputs(
@@ -876,7 +954,7 @@ export class Renderer {
       );
     }
     this._objectRows.beginFrame();
-    const from = source ?? this.listSource(items);
+    const from = this.sourceOf(source, items);
     const cameraCache = this.cameraCache(camera);
     const frustum = this.frustum(name).setFromMatrix(
       cameraCache.viewProjectionMatrix.value,
@@ -953,10 +1031,12 @@ export class Renderer {
             layers,
             casters,
             receivers,
+            camera,
           )
         : undefined;
 
     const view = this.view(name);
+    const fogged = fog !== undefined && fog.density > 0;
     const blended = (item: Renderable) =>
       item.material.renderState.alphaMode === 'blend';
     // The variants of the passes, by cull mode (back, front, none) and
@@ -978,6 +1058,7 @@ export class Renderer {
             faces === 'back' && cullMode === 'back' ? 'front' : cullMode,
           linear,
           shadows: shadowPass !== undefined,
+          ...(fogged ? { fog: true } : {}),
           depthOnly: false,
           samples,
           // The transparent items only blend their color.
@@ -1034,6 +1115,10 @@ export class Renderer {
         cameraPosition: [position.x, position.y, position.z],
         time,
         exposure,
+        fogColor: fog
+          ? [fog.color.r, fog.color.g, fog.color.b, fog.density]
+          : zero4,
+        fogHeight: [fog?.heightFalloff ?? 0, fog?.height ?? 0, 0, 0],
       },
       used,
       shadowPass?.tiles,
@@ -1406,6 +1491,34 @@ export class Renderer {
 
   // --- Views and culling -----------------------------------------------------------
 
+  private readonly _itemBounds = new Aabb();
+
+  // What a view draws: the source, the items, or both.
+  private sourceOf(
+    source: RenderSource | undefined,
+    items: Iterable<Renderable>,
+  ): RenderSource {
+    const empty = Array.isArray(items) && items.length === 0;
+    if (!source || empty) {
+      return source ?? this.listSource(items);
+    }
+    const list = this.listSource(items);
+    return {
+      query: (frustum, layers, visit, view) => {
+        source.query(frustum, layers, visit, view);
+        list.query(frustum, layers, visit, view);
+      },
+      ...(source.lights ? { lights: () => source.lights!() } : {}),
+      // Without bounds of its own, the source counts by its items alone.
+      bounds: (out) => {
+        const box = list.bounds!(this._itemBounds);
+        return source.bounds
+          ? source.bounds(out).union(box)
+          : out.copyFrom(box);
+      },
+    };
+  }
+
   // A list of items as a source: each item tested against the frustum with
   // its world bounds. Items without positions are always drawn.
   private listSource(items: Iterable<Renderable>): RenderSource {
@@ -1551,6 +1664,7 @@ export class Renderer {
     layers: number,
     lights: readonly (DirectionalLight | SpotLight)[],
     receivers: Aabb,
+    camera: Camera,
   ): { atlas: TextureHandle; tiles: ShadowTile[]; casters: number } {
     const format = this.backend.depthFormat;
     const tiles = this._shadowCameras.tiles(
@@ -1558,6 +1672,7 @@ export class Renderer {
       sphereOf(receivers),
       source.bounds?.(new Aabb()),
       this._shadowAtlasSize,
+      camera,
     );
     let casterCount = 0;
     const shadowVariants = this.shadowVariants();
@@ -1590,7 +1705,9 @@ export class Renderer {
           entries.push(entry);
         }
       }
-      entries.sort(byPipeline);
+      // Instanced as in the scene: the casters sharing a mesh and a
+      // material in one draw.
+      sortByState(entries);
       if (entries.length > 0) {
         this.writeView(view, entries[0].layout, {
           viewProjection: tile.matrix,
@@ -1689,6 +1806,7 @@ export class Renderer {
           ? { toneMapping: 'none', outputEncoding: 'linear' }
           : this._output),
       ...(variant?.shadows ? { shadows: true } : {}),
+      ...(variant?.fog && !variant.depthOnly ? { fog: true } : {}),
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
       features,
@@ -1869,7 +1987,9 @@ export class Renderer {
     if (passKey === undefined) {
       passKey = `${variant.cullMode}|${variant.format}|${variant.linear}|${
         variant.shadows
-      }|${variant.depthOnly}|${variant.samples}|${variant.outputsKey ?? ''}`;
+      }|${variant.fog ?? false}|${variant.depthOnly}|${variant.samples}|${
+        variant.outputsKey ?? ''
+      }`;
       this._passKeys.set(variant, passKey);
     }
     const cached = byPass.get(passKey);
@@ -2055,39 +2175,7 @@ export class Renderer {
     transparent: PreparedItem[],
     camera: CameraCache,
   ): void {
-    if (opaque.length > 1) {
-      // By pipeline, material, then mesh, each in order of appearance: the
-      // items sharing them follow each other, and become one instanced draw.
-      const materialOrder = new Map<Material, number>();
-      const meshOrder = new Map<Mesh, number>();
-      // The previous entry's, without lookups: they often follow each other.
-      let material: Material | undefined;
-      let mesh: Mesh | undefined;
-      let materialIndex = 0;
-      let meshIndex = 0;
-      for (const entry of opaque) {
-        if (entry.item.material !== material) {
-          material = entry.item.material;
-          let index = materialOrder.get(material);
-          if (index === undefined) {
-            index = materialOrder.size;
-            materialOrder.set(material, index);
-          }
-          materialIndex = index;
-        }
-        if (entry.item.mesh !== mesh) {
-          mesh = entry.item.mesh;
-          let index = meshOrder.get(mesh);
-          if (index === undefined) {
-            index = meshOrder.size;
-            meshOrder.set(mesh, index);
-          }
-          meshIndex = index;
-        }
-        entry.sortKey = materialIndex * MeshOrders + meshIndex;
-      }
-      opaque.sort(byState);
-    }
+    sortByState(opaque);
 
     if (transparent.length > 1) {
       const position = camera.camera.position;

@@ -231,6 +231,36 @@ describe('compile', () => {
       ]);
     });
 
+    it('turns the normal of the lit models towards the viewer on back faces', () => {
+      const lit = new GraphBuilder('lit');
+      lit.surface({ shadingModel: 'pbr', baseColor: [0.5, 0.5, 0.5] });
+      const builtins = ops(
+        stage(compile(lit.build()), 'fragment'),
+        'load-builtin',
+      );
+      expect(builtins.map((i) => i.op)).toEqual([
+        { kind: 'load-builtin', builtin: 'front-facing' },
+      ]);
+      // Unlit surfaces have no normal: nothing to turn.
+      const program = compile(texturedUnlit());
+      expect(ops(stage(program, 'fragment'), 'load-builtin')).toEqual([]);
+    });
+
+    it('fogs the color per fragment with the fog feature only', () => {
+      const lit = new GraphBuilder('lit');
+      lit.surface({ shadingModel: 'pbr', baseColor: [0.5, 0.5, 0.5] });
+      const graph = lit.build();
+      const powers = (program: CompiledProgram) =>
+        ops(stage(program, 'fragment'), 'intrinsic').filter(
+          (i) => i.op.kind === 'intrinsic' && i.op.name === 'pow',
+        );
+      const plain = compile(graph);
+      const fogged = compile(graph, { features: { fog: true } });
+      // e^(-falloff × height) and e^(-density × distance), per fragment.
+      expect(powers(fogged).length - powers(plain).length).toBe(2);
+      expect(fogged.programKey).not.toBe(plain.programKey);
+    });
+
     it('recomputes uniform values in the fragment stage instead of interpolating them', () => {
       const g = new GraphBuilder('uniform');
       g.surface({ baseColor: g.uniform('color', BuiltinTypes.vec3f) });

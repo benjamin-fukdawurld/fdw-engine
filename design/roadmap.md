@@ -67,7 +67,7 @@ Critères : les mesures de P0 avant et après ; le labyrinthe et la forêt en We
 
 - **Nombre de lumières dynamique** (RG6) : un culling des lumières en clusters (clustered forward) par une passe de calcul, et un **pool de lumières** disposé comme leur structure GPU, comme le pool de transforms. Il remplace la limite de 16 lumières (`MaxLights`). WebGL2, qui n'a pas de calcul, aura un repli : le culling sur le CPU, et les lumières dans une texture de données ([évolutions §1](evolutions.md#1-un-très-grand-nombre-de-lumières)).
 - **Prérequis** : les compute graphs dans le render graph (`addComputeGraphPass`), et le repli WebGL2 des storage buffers ([backlog §3](backlog.md#3-compute-graph)) — fait : storage buffers et calcul émulés par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md)), le culling des lumières peut y être le même calcul.
-- **Ombres** : les lumières ponctuelles (six faces), les cascades (CSM) pour les grandes scènes, le culling des projeteurs par tuile.
+- **Ombres** : les lumières ponctuelles (six faces), les cascades (CSM) pour les grandes scènes, le culling des projeteurs par tuile. — _Les cascades faites avec P8_ (17 octobre 2026), pour une lumière directionnelle par image, avec un brouillard ([p8-tps.md](p8-tps.md) §3.1, §3.5).
 - **Éclairage par environnement (IBL)** : cubemap, irradiance, spéculaire préfiltré, table BRDF. C'est l'écart de qualité le plus visible aujourd'hui.
 
 ### P2b. Cibles de rendu multiples, rendu différé et détails de surface
@@ -131,7 +131,7 @@ Démos et exemples : le displacement mapping de P2b rendu adaptatif, un terrain 
 
 ### P4. Caméras, entrées, ordonnanceur — démo FPS
 
-- **Contrôleurs de caméra** ([backlog §9](backlog.md#9-vers-un-middleware-de-création-3d)) — _premiers opérateurs faits_ (14 octobre 2026), avec leur tutoriel : `@fdw/engine-camera`, orbite et vol libre ou marche, au clavier, à la souris et à la manette, liaisons réaffectables ([p4-camera-operators.md](p4-camera-operators.md)). Le reste : TPS (bras à ressort, collisions), stratégie et isométrique (plan XZ), le zoom vers le curseur ; des contraintes composables, des ressorts amortis, des transitions entre caméras.
+- **Contrôleurs de caméra** ([backlog §9](backlog.md#9-vers-un-middleware-de-création-3d)) — _premiers opérateurs faits_ (14 octobre 2026), avec leur tutoriel : `@fdw/engine-camera`, orbite et vol libre ou marche, au clavier, à la souris et à la manette, liaisons réaffectables ([p4-camera-operators.md](p4-camera-operators.md)). Le reste : TPS (bras à ressort, collisions) — _fait avec P8_ (17 octobre 2026) : `ThirdPersonOperator`, les collisions par une sonde de l'application ([p8-tps.md](p8-tps.md) §3.3) —, stratégie et isométrique (plan XZ), le zoom vers le curseur ; des contraintes composables, des ressorts amortis, des transitions entre caméras.
 - **Entrées** — _fait_ (14 octobre 2026), avec son tutoriel « Contrôles à la première personne » : le verrouillage du pointeur (déplacements relatifs), les contextes d'actions (menu, jeu), les vibrations ([p4-input.md](p4-input.md)).
 - **L'ordonnanceur de systèmes ECS** — _fait_ (14 octobre 2026), avec son tutoriel « Les systèmes et le pas fixe » : `Scheduler` dans `engine-scene`, quatre phases, des systèmes ordonnés par contraintes, la boucle à pas fixe et l'interpolation intégrées ([p4-scheduler.md](p4-scheduler.md)).
 - **Un contrôleur de personnage** : une capsule qui marche, saute, glisse le long des murs et monte les marches, contre les volumes de la scène. Une API abstraite pour brancher un moteur physique plus tard (P7b). — _L'API faite avec P7b_ (16 octobre 2026) : `PhysicsCharacter`, implémenté sur Rapier ([p7b-physics.md](p7b-physics.md)) ; la version contre les volumes de la scène reste à écrire.
@@ -151,7 +151,7 @@ Démo : la forêt avec des modèles chargés ; la page « Charger des modèles �
 
 ### P6. Cœur de graph et animation
 
-_Faite_ (16 octobre 2026), avec son tutoriel « Un personnage animé » et le guide « Animation » : le design et ce qui a été fait sont dans [p6-animation.md](p6-animation.md). `engine-graph` (le cœur, le material graph réécrit dessus), `engine-animation` (squelettes, clips, poses, mélanges, masques, l'animation graph et son `Animator`), `engine-skinning` (en calcul en WebGPU et Vulkan, dans le vertex stage en WebGL2). Reportés : la démo jouable du personnage (avec P8), le root motion, les morph targets.
+_Faite_ (16 octobre 2026), avec son tutoriel « Un personnage animé » et le guide « Animation » : le design et ce qui a été fait sont dans [p6-animation.md](p6-animation.md). `engine-graph` (le cœur, le material graph réécrit dessus), `engine-animation` (squelettes, clips, poses, mélanges, masques, l'animation graph et son `Animator`), `engine-skinning` (en calcul en WebGPU et Vulkan, dans le vertex stage en WebGL2). Reportés : la démo jouable du personnage (avec P8 : faite), le root motion, les morph targets.
 
 - **Un cœur de graph commun** : extraire du material graph ce qui est général (nœuds, ports typés, sérialisation, validation), pour les matériaux, les animations, les comportements (P9) et, plus tard, leurs éditeurs.
 - **L'animation squelettique** : le skinning dans une passe de calcul, dont les sommets servent au rendu, aux ombres et plus tard au ray tracing (§6) — en WebGL2, sans calcul, le repli est le transform feedback ou le vertex shader —, les clips de glTF, l'échantillonnage et les mélanges.
@@ -184,6 +184,10 @@ Insérée après P7 sans renuméroter. Le moteur n'écrit pas sa propre physique
 Démo : des objets qui tombent, s'empilent et se renversent, des tirs par rayons, la même scène dans le navigateur et en natif ; le tutoriel (EN et FR) avec un exemple vivant.
 
 ### P8. Démo TPS : l'épée dans la forêt
+
+_Faite_ (17 octobre 2026), avec ses tutoriels « Les ombres en cascades et le brouillard », « Les niveaux de détail », « La caméra à la troisième personne » et la page « Un jeu à la troisième personne » : le design, les mesures et ce qui a été fait sont dans [p8-tps.md](p8-tps.md). Au moteur : les ombres en cascades et le brouillard (`engine-core`, `engine-shader`), les faces arrière éclairées, la scène et des items dans un même rendu, l'instancing des passes d'ombre (3 669 draws par image dans la forêt, 207 après) ; les niveaux de détail (`SceneLods`, `findLodGroups` dans `engine-scene`) ; `ThirdPersonOperator` (`engine-camera`). Les outils `tools/assets` préparent des assets CC0 (Poly Haven, Quaternius) : le sapin de 4 millions de triangles en trois niveaux faits de cartes d'aiguilles, les clips du rôdeur recopiés par nom d'os, l'épée placée par la pose de la main. La démo : la scène `tps` (2 460 sapins, un rôdeur, des vagues d'orcs puis un démon, des coups par volumes, une IA en systèmes ECS, des sons faits par le code), sur le web et en natif (environ 90 images par seconde sur Vulkan, 62 sur Dawn). Reportés : le coût des requêtes de la scène (cinq parcours d'octree par image), les groupes de collision des personnages, le root motion, la recherche de chemin, la liaison des clips par nom au chargement.
+
+Le plan d'origine :
 
 Elle réunit les phases précédentes : la forêt instanciée (P1), les ombres en cascades (P2), l'occlusion par les arbres et le relief (P3), la caméra TPS et le contrôleur de personnage (P4), les modèles (P5), l'animation graph (P6), les sons (P7), la physique (P7b). En plus : des volumes d'attaque et de dégâts, une IA d'ennemis écrite en systèmes ECS. Un terrain (heightmap) sera sans doute à ajouter.
 

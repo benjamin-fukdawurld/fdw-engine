@@ -9,6 +9,18 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
+      "path": "../../packages/engine-resources-native/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-resources/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-gltf/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-assets/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-webgpu/tsconfig.lib.json"
     },
     {

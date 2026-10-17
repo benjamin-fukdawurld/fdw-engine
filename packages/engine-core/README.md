@@ -17,16 +17,16 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 
 ## Public API
 
-| Export             | Kind  | Description                                                                                                              |
-| ------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------ |
-| `Transform`        | class | Position, rotation (quaternion) and scale of an object: a block of a `TransformPool`, with its world and normal matrices |
-| `TransformPool`    | class | Transforms in blocks of a `Float32Array`, laid out as the object uniforms; grown by a factor (2) when full               |
-| `Camera`           | class | Position, rotation and perspective / orthographic projection                                                             |
-| `BaseLight`        | class | Base class for lights: `ambient`, `diffuse` and `specular` colors                                                        |
-| `DirectionalLight` | class | Light with a `direction`; casts shadows with `castShadow` (see `ShadowOptions`)                                          |
-| `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation                                                    |
-| `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles; casts shadows with `castShadow`     |
-| `ShadowOptions`    | type  | `bias`, `normalBias` (in texels), `bounds` (the sphere covered by a directional light)                                   |
+| Export             | Kind  | Description                                                                                                                                                                                  |
+| ------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Transform`        | class | Position, rotation (quaternion) and scale of an object: a block of a `TransformPool`, with its world and normal matrices                                                                     |
+| `TransformPool`    | class | Transforms in blocks of a `Float32Array`, laid out as the object uniforms; grown by a factor (2) when full                                                                                   |
+| `Camera`           | class | Position, rotation and perspective / orthographic projection                                                                                                                                 |
+| `BaseLight`        | class | Base class for lights: `ambient`, `diffuse` and `specular` colors                                                                                                                            |
+| `DirectionalLight` | class | Light with a `direction`; casts shadows with `castShadow` (see `ShadowOptions`)                                                                                                              |
+| `PointLight`       | class | Light with a `position` and constant / linear / quadratic attenuation                                                                                                                        |
+| `SpotLight`        | class | Light with a `position`, a `direction`, attenuation and inner / outer cutoff angles; casts shadows with `castShadow`                                                                         |
+| `ShadowOptions`    | type  | `bias`, `normalBias` (in texels), `bounds` (the sphere covered by a directional light), `cascades` (`ShadowCascades`: up to 4 shadow maps cut by depth, for one directional light per frame) |
 
 ### Rendering (`render/`)
 
@@ -35,7 +35,7 @@ engine-…         ← future backends (Vulkan, DirectX, Metal…)
 | `Material`    | class | A material graph (`@fdw/engine-shader`) with its values (uniforms, textures, samplers), its features (static parameters selecting a variant of the program) and its `RenderState`. Changing a value never recompiles anything |
 | `RenderState` | type  | `alphaMode` (`opaque` / `mask` / `blend`; `mask` discards the fragments whose alpha is below the `alphaCutoff` value, 0.5 by default), `doubleSided`, `depthTest`, `depthWrite`                                               |
 | `Mesh`        | class | CPU-side geometry: vertex buffers laid out as described by a `MeshDescription`, optional indices                                                                                                                              |
-| `Renderer`    | class | Draws `RenderItem`s (`{ mesh, material, transform }`) on any `RenderBackend`                                                                                                                                                  |
+| `Renderer`    | class | Draws `RenderItem`s (`{ mesh, material, transform }`) on any `RenderBackend`: from a `source` (a scene), a list of `items`, or both; with an optional `fog` (`FogOptions`: exponential, falling with the height)              |
 
 ## Design
 

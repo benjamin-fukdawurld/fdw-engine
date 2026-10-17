@@ -14,6 +14,7 @@ import { Route as TriangleVerticesRouteRouteImport } from './routes/triangle-ver
 import { Route as TriangleStripRouteRouteImport } from './routes/triangle-strip/route'
 import { Route as TriangleHardColorRouteRouteImport } from './routes/triangle-hard-color/route'
 import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
+import { Route as TpsRouteRouteImport } from './routes/tps/route'
 import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
 import { Route as TerrainRouteRouteImport } from './routes/terrain/route'
 import { Route as SsrRouteRouteImport } from './routes/ssr/route'
@@ -58,6 +59,11 @@ const TriangleHardColorRouteRoute = TriangleHardColorRouteRouteImport.update({
 const TriangleRouteRoute = TriangleRouteRouteImport.update({
   id: '/triangle',
   path: '/triangle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TpsRouteRoute = TpsRouteRouteImport.update({
+  id: '/tps',
+  path: '/tps',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TexturedTriangleRouteRoute = TexturedTriangleRouteRouteImport.update({
@@ -183,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
+  '/tps': typeof TpsRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
   '/triangle-strip': typeof TriangleStripRouteRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
+  '/tps': typeof TpsRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
   '/triangle-strip': typeof TriangleStripRouteRoute
@@ -238,6 +246,7 @@ export interface FileRoutesById {
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
+  '/tps': typeof TpsRouteRoute
   '/triangle': typeof TriangleRouteRoute
   '/triangle-hard-color': typeof TriangleHardColorRouteRoute
   '/triangle-strip': typeof TriangleStripRouteRoute
@@ -267,6 +276,7 @@ export interface FileRouteTypes {
     | '/ssr'
     | '/terrain'
     | '/textured-triangle'
+    | '/tps'
     | '/triangle'
     | '/triangle-hard-color'
     | '/triangle-strip'
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/ssr'
     | '/terrain'
     | '/textured-triangle'
+    | '/tps'
     | '/triangle'
     | '/triangle-hard-color'
     | '/triangle-strip'
@@ -321,6 +332,7 @@ export interface FileRouteTypes {
     | '/ssr'
     | '/terrain'
     | '/textured-triangle'
+    | '/tps'
     | '/triangle'
     | '/triangle-hard-color'
     | '/triangle-strip'
@@ -349,6 +361,7 @@ export interface RootRouteChildren {
   SsrRouteRoute: typeof SsrRouteRoute
   TerrainRouteRoute: typeof TerrainRouteRoute
   TexturedTriangleRouteRoute: typeof TexturedTriangleRouteRoute
+  TpsRouteRoute: typeof TpsRouteRoute
   TriangleRouteRoute: typeof TriangleRouteRoute
   TriangleHardColorRouteRoute: typeof TriangleHardColorRouteRoute
   TriangleStripRouteRoute: typeof TriangleStripRouteRoute
@@ -391,6 +404,13 @@ declare module '@tanstack/react-router' {
       path: '/triangle'
       fullPath: '/triangle'
       preLoaderRoute: typeof TriangleRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tps': {
+      id: '/tps'
+      path: '/tps'
+      fullPath: '/tps'
+      preLoaderRoute: typeof TpsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/textured-triangle': {
@@ -557,6 +577,7 @@ const rootRouteChildren: RootRouteChildren = {
   SsrRouteRoute: SsrRouteRoute,
   TerrainRouteRoute: TerrainRouteRoute,
   TexturedTriangleRouteRoute: TexturedTriangleRouteRoute,
+  TpsRouteRoute: TpsRouteRoute,
   TriangleRouteRoute: TriangleRouteRoute,
   TriangleHardColorRouteRoute: TriangleHardColorRouteRoute,
   TriangleStripRouteRoute: TriangleStripRouteRoute,

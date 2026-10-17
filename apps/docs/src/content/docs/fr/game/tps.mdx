@@ -1,0 +1,307 @@
+---
+title: Un jeu à la troisième personne
+description: Un rôdeur armé d'une estoc dans une forêt, des vagues d'orcs et un démon — la forêt du moteur, une caméra à la troisième personne, des personnages animés, des coups et des ennemis en systèmes.
+sidebar:
+  order: 7
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un troisième jeu, vu par-dessus l'épaule. Un rôdeur se tient dans la
+clairière d'une forêt de sapins, sous un soleil bas ; des orcs sortent des
+arbres, par vagues, puis un démon mène la dernière. Le rôdeur frappe avec
+une estoc — trois coups enchaînés, ou un coup lourd —, pare, roule hors de
+portée, saute. La partie est gagnée quand le démon tombe, perdue quand le
+rôdeur tombe.
+
+Le jeu réunit l'essentiel du moteur : la forêt est instanciée, avec ses
+niveaux de détail (P1), sous des ombres en cascades (P2), sur un terrain
+en patchs (P3b), ses troncs cachant ce qui est derrière eux (P3) ; la
+caméra suit le rôdeur par-dessus l'épaule, le rôdeur est un contrôleur de
+personnage (P4, P7b) ; les modèles et leurs animations viennent de
+fichiers glTF (P5, P6), les sons sont faits par le code (P7). Il ajoute ce
+qu'un combat demande : des coups comme des volumes testés pendant que les
+animations frappent, et des ennemis en systèmes.
+
+<Example name="tps" code={false} />
+
+Cliquez sur la forêt, puis **Play** : la **souris** tourne la caméra,
+**Z Q S D** (W A S D en QWERTY) fait avancer, **Maj** fait courir, un
+**clic** frappe (cliquez encore pour le coup suivant), le **bouton droit**
+ou **E** frappe fort, **F** maintenu pare, **C** fait rouler, **Espace**
+fait sauter. **Échap** ou **P** ouvre le menu. Avec une manette : les
+sticks pour avancer et tourner, le bouton ouest pour frapper, le bouton
+nord pour un coup lourd, la gâchette haute gauche pour parer, le bouton
+est pour rouler, le bouton sud pour sauter, Start pour le menu.
+
+## Où est le code
+
+Le code du jeu est dans `packages/demo-scenes/src/tps/`, partagé par :
+
+- la démo dans le navigateur : `npx nx serve demo`, puis la route **TPS** ;
+- la démo native : `npx nx run demo-native:start -- tps` (**P** y met en
+  pause, Échap quitte) ;
+- cette page.
+
+| Fichier       | Contenu                                                                    |
+| ------------- | -------------------------------------------------------------------------- |
+| `assets.ts`   | Le chargement des modèles et des textures, avec la progression             |
+| `forest.ts`   | Le terrain, les sapins et le sol, leurs niveaux et leurs corps             |
+| `actor.ts`    | Un personnage : un contrôleur, un modèle tourné, animé                     |
+| `hero.ts`     | Le rôdeur : ses actions, son animation graph, sa lame                      |
+| `combat.ts`   | Les coups : des volumes qui ne touchent qu'une fois par coup               |
+| `enemies.ts`  | Les orcs et le démon : un composant, et les systèmes qui le parcourent     |
+| `controls.ts` | Les actions du jeu et du menu                                              |
+| `sounds.ts`   | Les sons, faits par le code                                                |
+| `tps.ts`      | La `SceneFactory` : le menu, les vagues, l'image menée par un ordonnanceur |
+
+## 1. Les modèles
+
+Tous les modèles sont **CC0** : libres d'utilisation, de modification et
+de partage, sans mention obligatoire.
+
+| Modèle                                                  | Auteur                               | Pour                     |
+| ------------------------------------------------------- | ------------------------------------ | ------------------------ |
+| Fir Tree 01, Fern 02, Grass Medium 01, Forest Ground 04 | [Poly Haven](https://polyhaven.com)  | La forêt, le sol         |
+| Antique Estoc                                           | [Poly Haven](https://polyhaven.com)  | L'épée                   |
+| Modular Character Outfits – Fantasy (Male Ranger)       | [Quaternius](https://quaternius.com) | Le rôdeur                |
+| Universal Animation Library 1 et 2                      | [Quaternius](https://quaternius.com) | Les animations du rôdeur |
+| Ultimate Monsters (Orc, Demon)                          | [Quaternius](https://quaternius.com) | Les ennemis              |
+
+Ils ne sont pas utilisés tels quels : le sapin a 4 millions de triangles,
+les textures du rôdeur 4096 px, ses animations sont dans d'autres
+fichiers. Deux outils les préparent en `.glb` compacts, dans
+`apps/docs/public/models/forest/` (26 Mo en tout) :
+
+- `tools/assets/make-forest.mjs` : les sapins en trois niveaux de détail
+  (voir [Les niveaux de détail](/fdw-engine/fr/tutorials/levels-of-detail/)),
+  les fougères et l'herbe simplifiées, rendues opaques (leurs feuilles sont
+  de la géométrie, pas des textures avec alpha) ;
+- `tools/assets/make-characters.mjs` : le rôdeur aux textures réduites, les
+  clips qu'il joue recopiés des bibliothèques d'animations **par les noms
+  des os** (le même squelette), et l'estoc dans sa main droite. La place
+  de l'estoc est calculée depuis la pose de la main dans la garde de
+  `Sword_Idle` : la poignée à travers les phalanges du milieu, la lame du
+  côté du pouce, la garde le long des doigts.
+
+## 2. La forêt
+
+`buildForest` construit le niveau, depuis une graine :
+
+- **Un terrain** de 512 m, dessiné en patchs comme dans
+  [La tessellation](/fdw-engine/fr/tutorials/tessellation/), avec ses propres
+  hauteurs : une clairière plate, de légers reliefs, et autour de la zone
+  de jeu un rebord trop raide pour que le personnage le gravisse
+  (`maxSlope` de 42°). Le sol est l'humus de Poly Haven, répété tous les
+  4 m, sa normal map sur la normale de la carte des hauteurs.
+- **2 500 sapins**, à au moins 6 m les uns des autres, de trois sortes,
+  tournés et mis à l'échelle au hasard. Chaque sorte, chaque niveau, chaque
+  primitive est un seul `scene.createBatch` pour tous ses sapins ;
+  `SceneLods` choisit leurs niveaux pour la caméra (30 m, 80 m, 320 m). Les
+  troncs sont des occludeurs.
+- **De l'herbe et des fougères**, environ 5 000 touffes, dessinées dans un
+  rayon de 30 à 40 m autour de la caméra (un seul niveau chacune).
+- **Leurs corps** : le terrain comme un heightfield, depuis les mêmes
+  hauteurs ; les troncs près de la zone de jeu comme des capsules.
+
+Le renderer dessine la scène et le terrain ensemble, en une quarantaine
+d'appels pour la vue et 200 avec les quatre cascades :
+
+```ts title="tps/tps.ts"
+forest.terrain.surface.update(camera, surface);
+renderer.render({
+  source: scene,
+  items: [forest.terrain.surface],
+  camera,
+  surface,
+  fog,
+  occlusion,
+  prepare: (graph) => {
+    hero.actor.addPass(graph);
+    enemies.addPasses(graph);
+  },
+});
+```
+
+Le soleil a quatre cascades jusqu'à 110 m
+([Les ombres en cascades et le brouillard](/fdw-engine/fr/tutorials/shadow-cascades/)) ;
+un brouillard qui baisse avec la hauteur cache le bout de la forêt, et ce
+que les niveaux de détail laissent de côté.
+
+## 3. Un personnage : `Actor`
+
+Le rôdeur et les ennemis sont des `Actor` : un corps déplacé par un
+contrôleur de personnage, son nœud sous la racine (dessiné entre deux pas
+par `ScenePhysics`), le modèle dessous, tourné là où regarde le
+personnage, skinné et animé.
+
+```ts title="tps/actor.ts"
+this.body = scene.root.add({ position: center });
+this.visual = this.body.add({ position: { y: -center.y }, scale });
+this.instance = instantiate(model, scene, { parent: this.visual });
+this.skinning = new Skinning(backend, this.instance, model);
+this.animator = new Animator(graph, { skeleton, clips });
+this.character = physics.addCharacter(this.body, {
+  shape: Shapes.capsule(halfHeight, radius),
+});
+```
+
+`move(step, velocity)` ajoute la gravité et déplace le contrôleur au pas
+fixe ; `face(direction, step)` tourne le modèle ; `animate(dt)`, à chaque
+image, joue l'animator et pose la peau.
+
+## 4. Le rôdeur : une action à la fois
+
+Le rôdeur fait une chose à la fois : `move`, `air`, `roll`, `attackA`,
+`attackB`, `attackC`, une reprise après les deux premiers coups, `heavy`,
+`block`, `hit`, `dead`. Le code du jeu décide de l'action ; l'animation
+graph la suit, par un paramètre :
+
+```ts title="tps/hero.ts"
+const move = g.blend1d(
+  [g.clip('SwordIdle'), g.clip('Walk'), g.clip('Jog'), g.clip('Sprint')],
+  [0, 1.6, 4.5, 7],
+  g.param('speed'),
+);
+g.stateMachine({
+  states: { move, air, roll, attackA /* … */ },
+  transitions: HeroActions.map((action, index) => ({
+    from: '*',
+    to: action,
+    conditions: [{ parameter: 'action', value: index }],
+    duration: fadeOf(action),
+  })),
+});
+```
+
+Les règles restent dans le code, où elles se lisent et se testent
+facilement :
+
+- **L'enchaînement.** Un clic pendant un coup met le suivant en attente,
+  qui part une fois que la lame a frappé (60 % du clip) ; sans lui, le
+  coup finit par sa reprise, que bouger ou frapper écourte.
+- **Face à l'ennemi.** Quand un coup part, le rôdeur se tourne vers
+  l'ennemi le plus proche devant lui à moins de 4,5 m, sinon vers là où
+  regarde la caméra.
+- **La roulade** porte le rôdeur sur 4 m ; pendant l'essentiel, rien ne le
+  blesse.
+- **La parade** retire 85 % d'un coup, de face seulement.
+
+## 5. Les coups
+
+Les clips disent quand la lame frappe : des événements ajoutés aux
+moments où la main va le plus vite (mesurés sur les clips) :
+
+```ts title="tps/hero.ts"
+AttackA: { windows: [[0.15, 0.32]], damage: 20 },
+AttackC: { windows: [[0.12, 0.3], [0.55, 0.72]], damage: 30 },
+```
+
+Entre `strike` et `strikeEnd`, à chaque pas fixe, la lame est une
+**capsule** de la garde à la pointe, testée contre les corps des ennemis
+par `world.overlap` ; le balayage de la pointe depuis le pas précédent
+l'est aussi : une lame rapide traverse un corps entre deux pas.
+
+```ts title="tps/combat.ts"
+export class Blow {
+  readonly hit = new Set<PhysicsCollider>();
+  constructor(
+    readonly damage: number,
+    readonly against: (collider: PhysicsCollider) => boolean,
+  ) {}
+}
+```
+
+Un `Blow` se souvient de ce qu'il a touché : une cible n'est frappée
+**qu'une fois par coup**, quel que soit le nombre de pas où la lame la
+traverse. Les ennemis frappent de la même façon, avec une sphère devant
+eux.
+
+## 6. Les ennemis : un composant, et ses systèmes
+
+Chaque ennemi est un `Actor` et une entité avec un composant `enemy` —
+son état, le temps passé dedans, sa vie, sa recharge — parcouru par trois
+systèmes du pas fixe :
+
+- `decide` : `spawn` (un grognement), `chase`, `attack`, `recover`,
+  `hurt`, `dead`. Deux au plus frappent à la fois : les autres attendent.
+- `steer` : vers le héros, ou pour ceux qui attendent, vers leur propre
+  place sur un cercle autour de lui ; à l'écart les uns des autres ;
+  autour des troncs devant eux, par une poussée de côté (une grille des
+  troncs dit lesquels sont proches). Pas de recherche de chemin : la
+  forêt est un terrain ouvert.
+- `strike` : les coups de ceux qui frappent.
+
+Les orcs vacillent à chaque coup ; le démon seulement aux coups lourds (sa
+`poise`). Les morts s'enfoncent dans le sol, puis disparaissent.
+
+## 7. La caméra
+
+Un `ThirdPersonOperator` (voir
+[La caméra à la troisième personne](/fdw-engine/fr/tutorials/third-person-camera/)),
+à 4,2 m derrière le rôdeur, par-dessus son épaule. Sa sonde lance une
+sphère dans la physique : les troncs, le sol et les ennemis l'arrêtent,
+jamais le rôdeur lui-même.
+
+## 8. L'image
+
+```ts title="tps/tps.ts"
+// fixed : le rôdeur et ses coups, les ennemis, la physique, les vagues.
+scheduler.add('hero', heroStep, { phase: 'fixed' });
+scheduler.add('enemies:decide', decide, { phase: 'fixed', after: ['hero'] });
+scheduler.add('enemies:steer', steer, {
+  phase: 'fixed',
+  after: ['enemies:decide'],
+});
+scheduler.add('enemies:strike', strike, {
+  phase: 'fixed',
+  after: ['enemies:steer'],
+});
+physics.install(scheduler, { after: ['enemies:strike'] });
+scheduler.add('waves', waves, { phase: 'fixed', after: ['physics'] });
+
+// update : les corps dessinés entre deux pas, animés ; la caméra.
+scheduler.add('animate', animate, { after: ['physics:sync'] });
+scheduler.add('camera', followHero, { after: ['animate'] });
+
+// render : les niveaux de détail pour la caméra, les sons, la vue.
+forest.lods.install(scheduler, camera, { before: ['render'] });
+```
+
+Les boutons pressés sont gardés jusqu'au pas fixe suivant : une image peut
+n'en exécuter aucun, ou plusieurs. Le menu met la phase fixe en pause,
+comme dans [le FPS](/fdw-engine/fr/game/fps/).
+
+## 9. Les sons
+
+Faits par le code, comme ceux du FPS : les pas sur l'humus, la lame qui
+fend l'air, les coups, les parades (l'acier sur l'acier), les grognements
+des orcs et le cri du démon (une voix bourdonnante à travers deux
+formants), là où ils se produisent ; le vent et les oiseaux de la forêt
+au calme, en fondu enchaîné avec une musique quand des ennemis sont là.
+
+## Le tester
+
+`tps/tps.spec.ts` teste les parties sans GPU : les hauteurs de la forêt
+(une clairière plate, un rebord), la grille des troncs, les coups (une
+fois par coup, la capsule le long de la lame), l'animation graph et les
+clips du rôdeur, les actions, les sons sur un `FakeAudioEngine`, et la
+progression affichée pendant le chargement.
+
+## Ce que nous avons
+
+- Une forêt de 2 500 sapins instanciés et 5 000 touffes d'herbe, avec
+  leurs niveaux de détail, des ombres en cascades et du brouillard, à 60
+  images par seconde et plus.
+- Des modèles préparés par des outils depuis des assets CC0 : des niveaux
+  faits de cartes, des clips recopiés par les noms des os, une épée placée
+  par la pose d'une main.
+- Une caméra à la troisième personne qui s'arrête aux troncs.
+- Un rôdeur dont le code décide des actions et que son animation graph
+  suit ; des coups comme des volumes, qui ne touchent qu'une fois.
+- Des ennemis en systèmes : ils encerclent le héros, frappent à deux,
+  contournent les arbres.
+
+Quelques idées pour plus tard : le root motion, pour des coups qui portent
+le rôdeur ; la recherche de chemin, pour un niveau avec des murs ; les
+ennemis en graphs de comportement (P9).

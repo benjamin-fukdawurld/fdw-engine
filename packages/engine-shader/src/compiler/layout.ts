@@ -167,6 +167,57 @@ export const lightArrayType = (type: ShaderType): ArrayType =>
   arrayType(type.kind === 'matrix' ? type : BuiltinTypes.vec4f, MaxLights);
 
 /**
+ * Maximum number of shadow cascades of the cascaded light of a frame.
+ *
+ * @group Program layout
+ */
+export const MaxCascades = 4;
+
+/**
+ * The shadow cascades of the frame, in the 'frame' uniform block: the
+ * light whose `shadow.x` is 2 reads its shadows from them instead of its
+ * own tile (one directional light per frame).
+ *
+ * - cascadeMatrix0..3: world to clip space of each cascade.
+ * - cascadeRect0..3: its tile in the shadow atlas, uv offset (xy) and size
+ *   (zw).
+ * - cascadeSplits: the view depth where each cascade ends (the unused ones
+ *   repeat the last).
+ * - cascadeOffsets: the normal offset of each cascade, in world units (the
+ *   size of its texels).
+ *
+ * @group Program layout
+ */
+export const cascadeMembers: readonly { name: string; type: ShaderType }[] = [
+  ...Array.from({ length: MaxCascades }, (_, i) => ({
+    name: `cascadeMatrix${i}`,
+    type: BuiltinTypes.mat4f,
+  })),
+  ...Array.from({ length: MaxCascades }, (_, i) => ({
+    name: `cascadeRect${i}`,
+    type: BuiltinTypes.vec4f,
+  })),
+  { name: 'cascadeSplits', type: BuiltinTypes.vec4f },
+  { name: 'cascadeOffsets', type: BuiltinTypes.vec4f },
+];
+
+/**
+ * The fog of the frame, in the 'frame' uniform block, read by the programs
+ * with the 'fog' feature:
+ *
+ * - fogColor: the color of the fog (rgb, linear) and its density (w), per
+ *   unit of distance.
+ * - fogHeight: how fast the density falls with the height (x, per unit;
+ *   0 for an even fog) above a base height (y).
+ *
+ * @group Program layout
+ */
+export const fogMembers: readonly { name: string; type: ShaderType }[] = [
+  { name: 'fogColor', type: BuiltinTypes.vec4f },
+  { name: 'fogHeight', type: BuiltinTypes.vec4f },
+];
+
+/**
  * Members of the uniform blocks of the engine slots: a fixed contract.
  *
  * @group Program layout
@@ -194,6 +245,8 @@ export const engineUniformBlocks: Readonly<
       name: member,
       type: lightArrayType(type),
     })),
+    ...cascadeMembers,
+    ...fogMembers,
   ],
   object: [
     { name: 'world', type: BuiltinTypes.mat4f },
@@ -242,6 +295,14 @@ export const engineValueLocations: Readonly<
   exposure: { slot: 'frame', member: 'exposure' },
   'object.world': { slot: 'object', member: 'world' },
   'object.normalMatrix': { slot: 'object', member: 'normalMatrix' },
+  ...Object.fromEntries(
+    cascadeMembers.map(({ name }) => [
+      `shadow.${name}`,
+      { slot: 'frame', member: name },
+    ]),
+  ),
+  'fog.color': { slot: 'frame', member: 'fogColor' },
+  'fog.height': { slot: 'frame', member: 'fogHeight' },
 };
 
 /**

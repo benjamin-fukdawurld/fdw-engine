@@ -99,6 +99,34 @@ The normal matrix is computed later still, only for the objects drawn.
   `scene.occluders()` lists them. The [occlusion culling](#occlusion-culling)
   does not need them: every opaque object drawn hides what is behind it.
 
+## Levels of detail
+
+`SceneLods` draws groups of nodes one level at a time, chosen by their
+distance from a camera (see
+[Levels of detail](/fdw-engine/tutorials/levels-of-detail/)):
+
+```ts
+const lods = new SceneLods(scene, { hysteresis: 0.1, referenceFov: 60 });
+lods.add(tree, [
+  { nodes: [lod0], maxDistance: 30 },
+  { nodes: [lod1], maxDistance: 80 },
+  { nodes: [lod2], maxDistance: 300 },
+]);
+lods.install(scheduler, camera); // or lods.update(camera) each frame
+```
+
+- A group is a component (`lod`) of the entity that places it; a level
+  lists nodes or entities (those of a batch), with their descendants.
+  `findLodGroups(root)` finds the levels named `<name>_LOD0`,
+  `<name>_LOD1`…
+- The levels left out get `NodeFlags.Culled` on their renderers: the
+  queries skip them (the renderer, the raycasts), without invalidating
+  their transforms nor their place in the octrees. Switching costs a few
+  writes, and static nodes stay static.
+- Chosen for one camera, the levels are the same in the shadow maps and
+  the occlusion culling. `bias` multiplies the distances; a narrower field
+  of view than `referenceFov` keeps finer levels further.
+
 ## The scene as a source
 
 ```ts

@@ -1,0 +1,143 @@
+---
+title: Levels of detail
+description: Draw a model finely near the camera and coarsely far from it, with groups of levels chosen at each frame by their distance.
+sidebar:
+  order: 27
+---
+
+import Example from '../../../components/Example.astro';
+
+400 firs, walked through. Each comes in three **levels of detail**: about
+30 000 triangles near the camera, 5 000 a little further, 800 far away,
+none beyond 300 m, where the fog has hidden it. Drawn at the finest level
+everywhere, the forest would be 30 times heavier for the same picture.
+
+Click the canvas: **L** switches between the levels of detail and the
+finest level everywhere. The line under it counts the firs at each level.
+
+<Example name="levels-of-detail" />
+
+## The levels of a model
+
+The model, `forest/fir.glb`, holds three firs. Each is a node with its
+levels as children, named as modeling tools and engines do:
+
+```
+fir_a
+├── fir_a_LOD0   (the finest)
+├── fir_a_LOD1
+└── fir_a_LOD2   (the coarsest)
+```
+
+`findLodGroups` finds them in a branch of the scene, by their names:
+
+```ts
+import { findLodGroups, SceneLods } from '@fdw/engine-scene';
+
+const lods = new SceneLods(scene);
+const fir = instantiate(handle, scene, { position, rotation, scale });
+for (const { group, levels } of findLodGroups(fir.root)) {
+  lods.add(group, [
+    { nodes: [levels[0]], maxDistance: 30 },
+    { nodes: [levels[1]], maxDistance: 80 },
+    { nodes: [levels[2]], maxDistance: 300 },
+  ]);
+}
+```
+
+`lods.add(at, levels)` makes a group: the node `at` places it (its
+distance is that of this node), each level lists what it draws (nodes and
+their descendants) and up to which distance. Beyond the last level, the
+group draws nothing.
+
+The levels of all the firs share their meshes and materials: the
+renderer draws each level of each kind in a few instanced calls, whatever
+the number of firs.
+
+## Choosing at each frame
+
+```ts
+onFrame(() => {
+  lods.update(camera);
+  renderer.render({ source: scene, camera, surface });
+});
+```
+
+`update(camera)` measures the distance of each group from the camera and
+shows its level. With a scheduler, `lods.install(scheduler, camera)` adds
+it as a system of the `render` phase.
+
+- The levels are chosen **for the camera**: the shadow maps and the
+  occlusion culling see the same levels as the view. A tree does not cast
+  the shadow of another level than the one drawn.
+- Switching a level costs a few writes: the renderers of the other levels
+  get a flag, `NodeFlags.Culled`, that the queries of the scene skip.
+  Their transforms and their place in the spatial index do not change.
+  A static forest stays static.
+- **The boundaries do not flicker**: a group changes level only once its
+  distance is 10 % past a boundary (`hysteresis`, 0.1 by default).
+- **The field of view counts**: the distances are for a vertical field of
+  view of 60° (`referenceFov`). A narrower one, a zoom, keeps the finer
+  levels further away.
+- `bias` multiplies the distances: below 1, coarser levels sooner, for a
+  weaker machine. Here, **L** gives it a huge value: the finest level
+  everywhere.
+
+## Many copies: batches
+
+`instantiate` makes a node per node of the model: right for a few hundred
+firs. For thousands, `scene.createBatch` creates the entities of a
+primitive for all the copies at once, without nodes. A group then lists
+entities:
+
+```ts
+const near = scene.createBatch({
+  count,
+  positions,
+  mesh,
+  material,
+  static: true,
+});
+const far = scene.createBatch({
+  count,
+  positions,
+  mesh: coarse,
+  material,
+  static: true,
+});
+for (let i = 0; i < count; i++) {
+  lods.add(near[i], [
+    { nodes: [near[i]], maxDistance: 40 },
+    { nodes: [far[i]], maxDistance: 300 },
+  ]);
+}
+```
+
+The forest of [the third-person game](/fdw-engine/game/tps/) plants its
+2 500 firs and its grass this way.
+
+## Where the levels come from
+
+The fir of [Poly Haven](https://polyhaven.com/a/fir_tree_01) has 4 million
+triangles: 800 000 needles, each a strip of five triangles. A
+simplification by edge collapses has nothing to merge in it.
+`tools/assets/make-forest.mjs` makes the levels as real-time foliage does:
+
+- the needles are grouped in the cells of a grid (30 cm for the first
+  level, 60 cm, then 1.2 m), and each cell becomes a **card**, a quad in
+  the plane of its needles (their principal axes);
+- the needles of a typical cell are drawn into a texture with alpha,
+  which every card shows (`alphaMode: 'mask'`): the shape of the tree
+  stays, the detail goes into the texture;
+- the normals of the cards lean away from the trunk: the crown is lit as
+  a volume;
+- the trunk and the branches are simplified by `meshoptimizer`.
+
+The levels are written as nodes `_LOD0`, `_LOD1`, `_LOD2` of one `.glb`.
+
+## Next
+
+- [The scene graph](/fdw-engine/guides/scene-graph/), the guide: the
+  levels of detail among the components of a scene.
+- [Shadow cascades and fog](/fdw-engine/tutorials/shadow-cascades/): the
+  shadows as far as the levels go.

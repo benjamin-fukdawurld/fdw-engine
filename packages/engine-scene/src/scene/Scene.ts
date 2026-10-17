@@ -44,6 +44,9 @@ export const NodeFlags = {
   Queued: 16,
   // Hidden by itself or by an ancestor: computed with the world matrix.
   HiddenInTree: 32,
+  // Left out by its level of detail (SceneLods): not drawn nor found, but
+  // kept in its index, without invalidation. Set on the renderers.
+  Culled: 64,
 } as const;
 
 /** What a node is created with. */
@@ -713,7 +716,7 @@ export class Scene implements SceneGraph {
     const occlusion = camera ? this.occlusion : undefined;
     const emit = (entity: number) => {
       if (
-        flags[entity] & NodeFlags.HiddenInTree ||
+        flags[entity] & (NodeFlags.HiddenInTree | NodeFlags.Culled) ||
         !(layerColumn[entity] & layers) ||
         (occlusion && !occlusion.visible(this, entity))
       ) {
@@ -847,7 +850,11 @@ export class Scene implements SceneGraph {
     { layers = AllLayers, hidden = false }: QueryOptions,
   ): boolean {
     return (
-      (hidden || !(this.NodeState.flags[entity] & NodeFlags.HiddenInTree)) &&
+      (hidden ||
+        !(
+          this.NodeState.flags[entity] &
+          (NodeFlags.HiddenInTree | NodeFlags.Culled)
+        )) &&
       (this.NodeState.layers[entity] & layers) !== 0
     );
   }
