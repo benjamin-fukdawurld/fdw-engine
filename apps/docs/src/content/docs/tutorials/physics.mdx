@@ -1,0 +1,203 @@
+---
+title: Physics
+description: Give bodies to the nodes of a scene, simulate them at a fixed step on Rapier, push them with rays, and see their shapes in the debug view.
+sidebar:
+  order: 23
+---
+
+import Example from '../../../components/Example.astro';
+
+Shapes fall on a pyramid of boxes, which topples. The engine does not
+write its own physics: it defines an **abstract API**
+(`@fdw/engine-physics`) and plugs a physics engine behind it — here
+[Rapier](https://rapier.rs), compiled to WebAssembly
+(`@fdw/engine-physics-rapier`), the same module in the browser and in the
+native demos.
+
+Click the canvas: a click pushes what is under the pointer, **Space**
+throws a ball there, **D** shows the debug view (the shapes, the contacts,
+the rays), **R** starts again.
+
+<Example name="physics" />
+
+## An engine, a world
+
+```ts
+import { createRapierPhysics } from '@fdw/engine-physics-rapier';
+
+const engine = await createRapierPhysics(); // loads the WebAssembly, once
+const world = engine.createWorld({ gravity: { x: 0, y: -9.81, z: 0 } });
+```
+
+Everything after this line is written against the API of
+`@fdw/engine-physics`: `PhysicsEngine`, `PhysicsWorld`, `PhysicsBody`.
+Another engine — Jolt, PhysX, one of yours — would only change these two
+lines. The units are meters, kilograms and seconds; y is up.
+
+## Bodies on the nodes
+
+```ts
+import { ScenePhysics, Shapes } from '@fdw/engine-physics';
+
+const physics = new ScenePhysics(scene, world);
+
+const ground = scene.root.add({ position: { y: -0.5 } });
+ground.setMesh(cube, grey);
+physics.add(ground, {
+  type: 'static',
+  colliders: [{ shape: Shapes.box(8, 0.5, 8) }],
+});
+
+const box = scene.root.add({ position: { y: 3 } });
+box.setMesh(cube, red);
+physics.add(box, {
+  type: 'dynamic',
+  colliders: [{ shape: Shapes.box(0.5), material: { friction: 0.6 } }],
+});
+```
+
+`physics.add(node, desc)` creates a body at the pose of the node and makes
+it a **component** of its entity. There are three types of bodies:
+
+| Type        | Moved by                           | For                                 |
+| ----------- | ---------------------------------- | ----------------------------------- |
+| `static`    | nothing                            | the ground, the walls; the cheapest |
+| `dynamic`   | the simulation: gravity, contacts  | what falls, rolls, topples          |
+| `kinematic` | the code, pushing the dynamic ones | a platform, a door, a character     |
+
+A body has **colliders**: a shape (`sphere`, `box`, `capsule`,
+`cylinder`, `convex`, `mesh`, `heightfield`), an offset, a density, a
+material (friction and bounce). The shapes have the size they say: the
+scale of the node is the one of its mesh, not of its shape — hence the
+`Shapes.box(0.5)` of a unit cube.
+
+Removing the node removes its body; `physics.remove(node)` removes the body
+alone.
+
+## The fixed step
+
+```ts
+const scheduler = new Scheduler({ step: 1 / 60 });
+physics.install(scheduler);
+```
+
+`install` adds two [systems](/fdw-engine/tutorials/systems/):
+
+- **`physics`**, in the `fixed` phase: the kinematic bodies moved to their
+  nodes, one step of the world, the poses of the moving bodies read;
+- **`physics:sync`**, in the `update` phase: the nodes of the dynamic
+  bodies written **between the last two steps**, by `scheduler.alpha`.
+
+The simulation advances at 60 steps per second whatever the screen; the
+nodes move at every frame. A system that acts on the bodies — a character,
+a gun — runs in the `fixed` phase, `before: ['physics']`; a body at rest
+stops writing its node.
+
+Without a scheduler: `physics.step(dt)` at each step, then
+`physics.sync(alpha)` at each frame.
+
+## Rays
+
+```ts
+const hit = world.raycast(eye, direction, 50); // direction normalized
+if (hit?.body.type === 'dynamic') {
+  hit.body.applyImpulse(push, hit.point);
+}
+const node = hit && physics.nodeOf(hit.collider);
+```
+
+A hit gives the collider and its body, the distance, the point and the
+normal. `raycastAll` visits every hit, `shapeCast` moves a shape along a
+direction (what a fast ball would touch), `overlap` lists the colliders in
+a shape. A filter keeps the queries to some colliders: `mask` (collision
+groups), `exclude` (the body asking), `skip` (some types of bodies),
+`sensors`, a `predicate`.
+
+The queries see the world **as of the last step**: a body created or moved
+since is seen after the next one.
+
+## Contacts and triggers
+
+```ts
+const zone = world.createBody({
+  type: 'static',
+  position: { z: 9 },
+  colliders: [{ shape: Shapes.box(3, 1, 2), sensor: true }],
+});
+
+// After each step:
+for (const event of physics.events) {
+  if (event.sensor) {
+    const other = event.a.body === zone ? event.b : event.a;
+    light(physics.nodeOf(other), event.type === 'begin');
+  }
+}
+```
+
+A **sensor** pushes nothing: it reports the colliders entering
+(`begin`) and leaving (`end`) it — a trigger volume, a zone of damage. A
+collider with `events: true` reports its contacts the same way.
+
+## Joints
+
+```ts
+world.createJoint({
+  type: 'hinge',
+  bodyA: post,
+  bodyB: door,
+  anchorA: { x: 0.15 },
+  anchorB: { x: -1 },
+  axis: { x: 0, y: 1, z: 0 },
+  limits: [-Math.PI / 2, Math.PI / 2],
+});
+```
+
+`fixed` welds two bodies, `ball` lets them turn around a common point (a
+chain), `hinge` around an axis (a door, a wheel), `slider` slide along one
+(a piston); the last two take limits and a motor. The physics playground of
+the [demos](/fdw-engine/getting-started/native/) has a chain and a door.
+
+## A character
+
+```ts
+const character = physics.addCharacter(node, {
+  shape: Shapes.capsule(0.5, 0.3),
+  maxSlope: Math.PI / 4,
+  stepHeight: 0.3,
+});
+
+scheduler.add(
+  'walk',
+  (step) => character.move({ x: vx * step, y: -5 * step, z: vz * step }),
+  { phase: 'fixed', before: ['physics'] },
+);
+```
+
+A character controller is a kinematic body moved by the code: it slides
+along the walls, climbs the steps and the gentle slopes, stays on the
+ground, and pushes the dynamic bodies. `move` returns what was done of the
+movement, whether it is `grounded` and what it hit.
+
+## The debug view
+
+```ts
+const debug = new PhysicsDebugView(scene, world);
+scheduler.add('debug', (dt) => debug.update(dt), { after: ['physics:sync'] });
+
+debug.ray(eye, direction, 50, hit); // drawn for a second
+debug.enabled = false;
+```
+
+It draws in lines the shapes of the colliders, colored by the state of
+their body (static grey, dynamic orange, asleep blue, kinematic purple,
+sensors yellow), the contact points and their normals, the joints, and the
+rays given to it. It is written against the abstract API: any engine gets
+it. The lines are a mesh of the scene, `topology: 'line-list'`, unlit, on
+the three backends.
+
+## Next
+
+- [Physics guide](/fdw-engine/guides/physics/): the API in full, how to
+  plug another engine.
+- [Systems and the fixed step](/fdw-engine/tutorials/systems/): the
+  scheduler under the physics.

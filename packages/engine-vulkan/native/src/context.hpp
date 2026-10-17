@@ -127,6 +127,9 @@ struct fdw_vk_pipeline {
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkPipelineLayout layout = VK_NULL_HANDLE;
   VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  // Whether each set of the layout has bindings: a group still bound from
+  // another pipeline is not rebound where this one has an empty set.
+  std::vector<bool> usedSets;
 };
 
 struct fdw_vk_query_pool {

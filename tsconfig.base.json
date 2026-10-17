@@ -50,7 +50,11 @@
       "@fdw/engine-ktx2": ["packages/engine-ktx2/src/index.ts"],
       "@fdw/engine-graph": ["packages/engine-graph/src/index.ts"],
       "@fdw/engine-animation": ["packages/engine-animation/src/index.ts"],
-      "@fdw/engine-skinning": ["packages/engine-skinning/src/index.ts"]
+      "@fdw/engine-skinning": ["packages/engine-skinning/src/index.ts"],
+      "@fdw/engine-physics": ["packages/engine-physics/src/index.ts"],
+      "@fdw/engine-physics-rapier": [
+        "packages/engine-physics-rapier/src/index.ts"
+      ]
     }
   }
 }

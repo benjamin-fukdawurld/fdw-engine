@@ -47,7 +47,9 @@ donne les détails.
 
 ## Lancer la démo native
 
-`apps/demo-native` exécute les scènes de la démo (`shadows`, `pbr`) :
+`apps/demo-native` exécute les scènes de la démo (`shadows`, `pbr`, `maze`,
+`fps`, `city`, `terrain`, `physics` : le terrain de jeu physique, sur
+Rapier) :
 
 ```sh
 npx nx run demo-native:start -- shadows              # WebGPU on Dawn

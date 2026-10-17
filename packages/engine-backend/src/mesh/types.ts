@@ -1,4 +1,5 @@
 import { GpuBuffer } from '../gpu';
+import type { PrimitiveTopology } from '../render/types';
 
 export const MeshAttributeSemanticNames = [
   'position',
@@ -80,6 +81,9 @@ export type MeshDescription = {
   vertexBuffers: MeshBufferDescription[];
   vertexCount: number;
   indexBuffer?: MeshIndexDescription;
+  // How the vertices make primitives. Default 'triangle-list'; the lines
+  // are for the debug views (no shading, no shadow).
+  topology?: PrimitiveTopology;
 };
 
 export type Vertex = Partial<Record<MeshAttributeSemantic, ArrayLike<number>>>;

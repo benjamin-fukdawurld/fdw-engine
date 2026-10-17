@@ -10,6 +10,7 @@
     "@fdw/engine-input": "0.0.1",
     "@fdw/engine-input-native": "0.0.1",
     "@fdw/engine-native": "0.0.1",
+    "@fdw/engine-physics-rapier": "0.0.1",
     "@fdw/engine-shader": "0.0.1",
     "@fdw/engine-vulkan": "0.0.1",
     "@fdw/engine-webgpu": "0.0.1"

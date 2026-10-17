@@ -235,9 +235,12 @@ int flushGroups(Replay &replay) {
   if (!replay.pipeline) {
     return fail("No pipeline set before drawing");
   }
+  const std::vector<bool> &used = replay.pipeline->usedSets;
   for (uint32_t index = 0; index < replay.groups.size(); index++) {
     fdw_vk_group *group = replay.groups[index];
-    if (!replay.dirty[index] || !group) {
+    // A set empty in this pipeline: what is bound there stays for the next.
+    if (!replay.dirty[index] || !group || index >= used.size() ||
+        !used[index]) {
       continue;
     }
     vkCmdBindDescriptorSets(replay.commands, replay.pipeline->bindPoint,

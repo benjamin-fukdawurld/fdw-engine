@@ -9,7 +9,8 @@
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
 // fps (the first person shooter; P pauses),
 // city (the occlusion culling; city-no-occlusion to compare), terrain (the
-// tessellation; terrain-uniform: every patch at the finest level).
+// tessellation; terrain-uniform: every patch at the finest level), physics
+// (the physics playground, on Rapier).
 // Escape or closing the window quits.
 import type { Engine, Surface } from '@fdw/engine-backend';
 import {
@@ -21,6 +22,7 @@ import {
   VulkanWindowSurface,
 } from '@fdw/engine-native';
 import { NativeInputSource } from '@fdw/engine-input-native';
+import { createRapierPhysics } from '@fdw/engine-physics-rapier';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createCity,
@@ -33,6 +35,7 @@ import {
   createMazeStep4,
   createFpsScene,
   createPbrScene,
+  createPhysicsScene,
   createShadowsScene,
   SceneFactory,
 } from '@fdw/demo-scenes';
@@ -51,6 +54,11 @@ const scenes: Record<string, SceneFactory> = {
   terrain: createTerrainScene,
   'terrain-uniform': createTerrain({ minLevel: 6 }),
 };
+// The scenes loading something first: Rapier, the same WebAssembly module
+// as in the browser.
+const loadedScenes: Record<string, () => Promise<SceneFactory>> = {
+  physics: async () => createPhysicsScene(await createRapierPhysics()),
+};
 
 const args = process.argv.slice(2);
 const option = (name: string) => {
@@ -58,7 +66,9 @@ const option = (name: string) => {
   return index >= 0 ? args[index + 1] : undefined;
 };
 const name =
-  args.find((arg) => !arg.startsWith('--') && arg in scenes) ?? 'shadows';
+  args.find(
+    (arg) => !arg.startsWith('--') && (arg in scenes || arg in loadedScenes),
+  ) ?? 'shadows';
 // Stops after this many frames (tests, profiling).
 const maxFrames = Number(option('--frames') ?? Infinity);
 const vulkan = args.includes('--vulkan');
@@ -108,7 +118,8 @@ if (!backend) {
 }
 // The information of the scene, shown in the title with the frame rate.
 let info = '';
-const scene = scenes[name](backend, surface, {
+const factory = scenes[name] ?? (await loadedScenes[name]());
+const scene = factory(backend, surface, {
   input: new NativeInputSource(window),
   info: (text) => {
     info = text;

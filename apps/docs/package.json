@@ -18,6 +18,8 @@
     "@fdw/engine-input-web": "0.0.1",
     "@fdw/engine-obj": "0.0.1",
     "@fdw/engine-occlusion": "0.0.1",
+    "@fdw/engine-physics": "0.0.1",
+    "@fdw/engine-physics-rapier": "0.0.1",
     "@fdw/engine-resources": "0.0.1",
     "@fdw/engine-resources-web": "0.0.1",
     "@fdw/engine-scene": "0.0.1",

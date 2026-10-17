@@ -1,0 +1,206 @@
+---
+title: La physique
+description: Donner des corps aux nœuds d'une scène, les simuler à pas fixe sur Rapier, les pousser par des rayons, et voir leurs formes dans la vue de débogage.
+sidebar:
+  order: 23
+---
+
+import Example from '../../../../components/Example.astro';
+
+Des formes tombent sur une pyramide de boîtes, qui s'écroule. Le moteur
+n'écrit pas sa propre physique : il définit une **API abstraite**
+(`@fdw/engine-physics`) et branche un moteur physique derrière — ici
+[Rapier](https://rapier.rs), compilé en WebAssembly
+(`@fdw/engine-physics-rapier`), le même module dans le navigateur et dans
+les démos natives.
+
+Cliquez sur le canvas : un clic pousse ce qui est sous le pointeur,
+**Espace** y lance une balle, **D** affiche la vue de débogage (les formes,
+les contacts, les rayons), **R** recommence.
+
+<Example name="physics" />
+
+## Un moteur, un monde
+
+```ts
+import { createRapierPhysics } from '@fdw/engine-physics-rapier';
+
+const engine = await createRapierPhysics(); // charge le WebAssembly, une fois
+const world = engine.createWorld({ gravity: { x: 0, y: -9.81, z: 0 } });
+```
+
+Tout ce qui suit est écrit contre l'API de `@fdw/engine-physics` :
+`PhysicsEngine`, `PhysicsWorld`, `PhysicsBody`. Un autre moteur — Jolt,
+PhysX, le vôtre — ne changerait que ces deux lignes. Les unités sont le
+mètre, le kilogramme et la seconde ; y pointe vers le haut.
+
+## Des corps sur les nœuds
+
+```ts
+import { ScenePhysics, Shapes } from '@fdw/engine-physics';
+
+const physics = new ScenePhysics(scene, world);
+
+const ground = scene.root.add({ position: { y: -0.5 } });
+ground.setMesh(cube, grey);
+physics.add(ground, {
+  type: 'static',
+  colliders: [{ shape: Shapes.box(8, 0.5, 8) }],
+});
+
+const box = scene.root.add({ position: { y: 3 } });
+box.setMesh(cube, red);
+physics.add(box, {
+  type: 'dynamic',
+  colliders: [{ shape: Shapes.box(0.5), material: { friction: 0.6 } }],
+});
+```
+
+`physics.add(node, desc)` crée un corps à la pose du nœud et en fait un
+**composant** de son entité. Il y a trois types de corps :
+
+| Type        | Déplacé par                         | Pour                                     |
+| ----------- | ----------------------------------- | ---------------------------------------- |
+| `static`    | rien                                | le sol, les murs ; le moins coûteux      |
+| `dynamic`   | la simulation : gravité, contacts   | ce qui tombe, roule, se renverse         |
+| `kinematic` | le code, en poussant les dynamiques | une plateforme, une porte, un personnage |
+
+Un corps a des **colliders** : une forme (`sphere`, `box`, `capsule`,
+`cylinder`, `convex`, `mesh`, `heightfield`), un décalage, une densité, un
+matériau (frottement et rebond). Les formes ont la taille qu'elles disent :
+l'échelle du nœud est celle de son mesh, pas de sa forme — d'où le
+`Shapes.box(0.5)` d'un cube unité.
+
+Retirer le nœud retire son corps ; `physics.remove(node)` retire le corps
+seul.
+
+## Le pas fixe
+
+```ts
+const scheduler = new Scheduler({ step: 1 / 60 });
+physics.install(scheduler);
+```
+
+`install` ajoute deux [systèmes](/fdw-engine/fr/tutorials/systems/) :
+
+- **`physics`**, dans la phase `fixed` : les corps cinématiques amenés à
+  leurs nœuds, un pas du monde, les poses des corps qui bougent lues ;
+- **`physics:sync`**, dans la phase `update` : les nœuds des corps
+  dynamiques écrits **entre les deux derniers pas**, selon
+  `scheduler.alpha`.
+
+La simulation avance à 60 pas par seconde quel que soit l'écran ; les
+nœuds bougent à chaque image. Un système qui agit sur les corps — un
+personnage, une arme — s'exécute dans la phase `fixed`,
+`before: ['physics']` ; un corps au repos n'écrit plus son nœud.
+
+Sans ordonnanceur : `physics.step(dt)` à chaque pas, puis
+`physics.sync(alpha)` à chaque image.
+
+## Les rayons
+
+```ts
+const hit = world.raycast(eye, direction, 50); // direction normalisée
+if (hit?.body.type === 'dynamic') {
+  hit.body.applyImpulse(push, hit.point);
+}
+const node = hit && physics.nodeOf(hit.collider);
+```
+
+Un impact donne le collider et son corps, la distance, le point et la
+normale. `raycastAll` visite tous les impacts, `shapeCast` déplace une
+forme le long d'une direction (ce que toucherait une balle rapide),
+`overlap` liste les colliders dans une forme. Un filtre restreint les
+requêtes : `mask` (groupes de collision), `exclude` (le corps qui
+demande), `skip` (des types de corps), `sensors`, un `predicate`.
+
+Les requêtes voient le monde **du dernier pas** : un corps créé ou déplacé
+depuis est vu après le suivant.
+
+## Contacts et déclencheurs
+
+```ts
+const zone = world.createBody({
+  type: 'static',
+  position: { z: 9 },
+  colliders: [{ shape: Shapes.box(3, 1, 2), sensor: true }],
+});
+
+// Après chaque pas :
+for (const event of physics.events) {
+  if (event.sensor) {
+    const other = event.a.body === zone ? event.b : event.a;
+    light(physics.nodeOf(other), event.type === 'begin');
+  }
+}
+```
+
+Un **capteur** (`sensor`) ne pousse rien : il signale les colliders qui y
+entrent (`begin`) et en sortent (`end`) — un volume déclencheur, une zone
+de dégâts. Un collider avec `events: true` signale ses contacts de la même
+façon.
+
+## Les articulations
+
+```ts
+world.createJoint({
+  type: 'hinge',
+  bodyA: post,
+  bodyB: door,
+  anchorA: { x: 0.15 },
+  anchorB: { x: -1 },
+  axis: { x: 0, y: 1, z: 0 },
+  limits: [-Math.PI / 2, Math.PI / 2],
+});
+```
+
+`fixed` soude deux corps, `ball` les laisse tourner autour d'un point
+commun (une chaîne), `hinge` autour d'un axe (une porte, une roue),
+`slider` glisser le long d'un axe (un piston) ; les deux derniers prennent
+des limites et un moteur. Le terrain de jeu physique des
+[démos](/fdw-engine/fr/getting-started/native/) a une chaîne et une porte.
+
+## Un personnage
+
+```ts
+const character = physics.addCharacter(node, {
+  shape: Shapes.capsule(0.5, 0.3),
+  maxSlope: Math.PI / 4,
+  stepHeight: 0.3,
+});
+
+scheduler.add(
+  'walk',
+  (step) => character.move({ x: vx * step, y: -5 * step, z: vz * step }),
+  { phase: 'fixed', before: ['physics'] },
+);
+```
+
+Un contrôleur de personnage est un corps cinématique déplacé par le code :
+il glisse le long des murs, monte les marches et les pentes douces, reste
+au sol, et pousse les corps dynamiques. `move` renvoie ce qui a été fait du
+déplacement, s'il est au sol (`grounded`) et ce qu'il a heurté.
+
+## La vue de débogage
+
+```ts
+const debug = new PhysicsDebugView(scene, world);
+scheduler.add('debug', (dt) => debug.update(dt), { after: ['physics:sync'] });
+
+debug.ray(eye, direction, 50, hit); // dessiné une seconde
+debug.enabled = false;
+```
+
+Elle dessine en lignes les formes des colliders, colorées selon l'état de
+leur corps (statique gris, dynamique orange, endormi bleu, cinématique
+violet, capteurs jaunes), les points de contact et leurs normales, les
+articulations, et les rayons qu'on lui donne. Elle est écrite contre l'API
+abstraite : tout moteur en profite. Les lignes sont un mesh de la scène,
+`topology: 'line-list'`, sans éclairage, sur les trois backends.
+
+## Ensuite
+
+- [Guide de la physique](/fdw-engine/fr/guides/physics/) : l'API
+  complète, comment brancher un autre moteur.
+- [Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/) :
+  l'ordonnanceur sous la physique.

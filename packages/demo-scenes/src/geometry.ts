@@ -180,6 +180,75 @@ export function createPlane(segments = 1): Mesh {
   });
 }
 
+// A capsule along y around the origin: a cylinder of 2 × halfHeight closed
+// by two half spheres of `radius`, with positions, normals and uvs. The
+// sphere of createSphere, its two halves moved apart.
+export function createCapsule(
+  halfHeight: number,
+  radius: number,
+  segments = 24,
+  rings = 12,
+): Mesh {
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  // Each half: from its pole to the equator, the equator twice.
+  const half = rings / 2;
+  const rows: [number, number][] = [];
+  for (let ring = 0; ring <= half; ring++) {
+    rows.push([ring, halfHeight]);
+  }
+  for (let ring = half; ring <= rings; ring++) {
+    rows.push([ring, -halfHeight]);
+  }
+  for (const [ring, offset] of rows) {
+    const theta = (ring / rings) * Math.PI;
+    for (let segment = 0; segment <= segments; segment++) {
+      const phi = (segment / segments) * 2 * Math.PI;
+      const normal = [
+        Math.sin(theta) * Math.sin(phi),
+        Math.cos(theta),
+        Math.sin(theta) * Math.cos(phi),
+      ];
+      vertices.push(
+        normal[0] * radius,
+        normal[1] * radius + offset,
+        normal[2] * radius,
+        ...normal,
+        segment / segments,
+        ring / rings,
+      );
+    }
+  }
+  const row = segments + 1;
+  for (let i = 0; i + 1 < rows.length; i++) {
+    for (let segment = 0; segment < segments; segment++) {
+      const a = i * row + segment;
+      const b = a + row;
+      indices.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  return new Mesh({
+    label: 'capsule',
+    description: {
+      vertexBuffers: [
+        {
+          stride: 32,
+          stepMode: 'vertex',
+          attributes: [
+            { semantic: 'position', format: 'float32x3', offset: 0 },
+            { semantic: 'normal', format: 'float32x3', offset: 12 },
+            { semantic: 'uv', format: 'float32x2', offset: 24 },
+          ],
+        },
+      ],
+      vertexCount: vertices.length / 8,
+      indexBuffer: { format: 'uint16', count: indices.length },
+    },
+    vertices: [new Float32Array(vertices)],
+    indices: new Uint16Array(indices),
+  });
+}
+
 // Rotation of `angle` radians around a unit axis, as a quaternion.
 export const axisAngle = (x: number, y: number, z: number, angle: number) => {
   const s = Math.sin(angle / 2);

@@ -45,7 +45,8 @@ details.
 
 ## Run the native demo
 
-`apps/demo-native` runs the scenes of the demo (`shadows`, `pbr`):
+`apps/demo-native` runs the scenes of the demo (`shadows`, `pbr`, `maze`,
+`fps`, `city`, `terrain`, `physics`: the physics playground, on Rapier):
 
 ```sh
 npx nx run demo-native:start -- shadows              # WebGPU on Dawn

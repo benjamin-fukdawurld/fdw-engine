@@ -1,0 +1,7 @@
+{
+  "name": "engine-physics",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-physics/src",
+  "projectType": "library",
+  "tags": []
+}

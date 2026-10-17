@@ -96,6 +96,8 @@ packages/
   engine-input-web/     The input source of a page (DOM events, Gamepad API)
   engine-input-native/  The input source of a native window (SDL3)
   engine-camera/        Camera operators (orbit, fly, walk) driven by the actions of the input
+  engine-physics/       Physics: an abstract API, the bodies as components of the scene, a debug view
+  engine-physics-rapier/ The physics API on Rapier (WebAssembly, in the browser and in Node)
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)
   engine-vulkan/        Vulkan backend (Node-API addon, HLSL compiled to SPIR-V by DXC)
   demo-scenes/          Scenes shared by the web and native demos
