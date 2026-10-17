@@ -1,0 +1,7 @@
+{
+  "name": "engine-audio",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-audio/src",
+  "projectType": "library",
+  "tags": []
+}

@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@fdw/demo-scenes": "0.0.1",
+    "@fdw/engine-audio-native": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-input": "0.0.1",

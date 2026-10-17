@@ -1,6 +1,7 @@
 # Native part of @fdw/engine-native:
 # - fdw_window: the window library (C API over SDL3), static;
 # - fdw_image: the image decoder (stb_image, vendored in third_party), static;
+# - fdw_audio: the audio library (C API over miniaudio), static;
 # - fdw_native.node: their Node-API addon.
 # Dependencies are fetched at fixed versions, the same on every platform.
 
@@ -43,11 +44,44 @@ target_link_libraries(fdw_window PRIVATE SDL3::SDL3-static)
 add_library(fdw_image STATIC third_party/stb/stb_image.c)
 target_include_directories(fdw_image PUBLIC third_party/stb)
 
-add_library(fdw_native MODULE src/node_window.c src/node_image.c)
+# miniaudio, used as source files: its own CMake project is not built
+# (SOURCE_SUBDIR has none). Its decoders (WAV, FLAC, MP3) and stb_vorbis
+# (Ogg Vorbis, in its extras) are compiled in miniaudio_impl.c.
+FetchContent_Declare(
+  miniaudio
+  GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+  GIT_TAG 0.11.25
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR none
+)
+FetchContent_MakeAvailable(miniaudio)
+
+find_package(Threads REQUIRED)
+add_library(fdw_audio STATIC src/audio.c src/miniaudio_impl.c)
+target_include_directories(fdw_audio PUBLIC include
+                           PRIVATE ${miniaudio_SOURCE_DIR}
+                                   ${miniaudio_SOURCE_DIR}/extras)
+# No resource manager (the engine reads its sounds from memory), no
+# encoder, no generators.
+target_compile_definitions(fdw_audio PRIVATE MA_NO_RESOURCE_MANAGER
+                                             MA_NO_ENCODING MA_NO_GENERATION)
+target_link_libraries(fdw_audio PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+if(UNIX AND NOT APPLE)
+  target_link_libraries(fdw_audio PRIVATE m)
+endif()
+if(APPLE)
+  # The CoreAudio backend.
+  target_link_libraries(fdw_audio PRIVATE "-framework CoreFoundation"
+                                          "-framework CoreAudio"
+                                          "-framework AudioToolbox")
+endif()
+
+add_library(fdw_native MODULE src/node_window.c src/node_image.c
+                              src/node_audio.c)
 target_include_directories(fdw_native PRIVATE ${NODE_API_INCLUDE_DIR})
 target_compile_definitions(fdw_native PRIVATE NAPI_VERSION=8
                                               NODE_GYP_MODULE_NAME=fdw_native)
-target_link_libraries(fdw_native PRIVATE fdw_window fdw_image)
+target_link_libraries(fdw_native PRIVATE fdw_window fdw_image fdw_audio)
 set_target_properties(fdw_native PROPERTIES PREFIX "" SUFFIX ".node")
 if(APPLE)
   # Node-API symbols are resolved by the Node process.

@@ -34,6 +34,12 @@
       "path": "../../packages/engine-resources/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-audio/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-audio-web/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-physics-rapier/tsconfig.lib.json"
     },
     {

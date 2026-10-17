@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@fdw/engine-audio": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-camera": "0.0.1",
     "@fdw/engine-core": "0.0.1",

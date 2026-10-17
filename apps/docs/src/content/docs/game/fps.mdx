@@ -45,6 +45,7 @@ The code of the game is in `packages/demo-scenes/src/fps/`, shared by:
 | `weapon.ts`   | The weapon in the hand, the crosshair, the sparks              |
 | `drones.ts`   | The enemies: a component, and the systems that go through it   |
 | `game.ts`     | The rules: the shots, the blows, the waves, the score          |
+| `sounds.ts`   | The sounds, made by code: effects, hums, music                 |
 | `fps.ts`      | The `SceneFactory`: the menu, and the frame run by a scheduler |
 
 ## 1. The arena: a static level
@@ -519,6 +520,48 @@ The drones come in through the gates in turn — north first, ahead of the
 player at the start — three abreast at most in each. Their phases differ,
 so they do not bob together.
 
+## 10. The sounds
+
+The game tells what happens — a shot, a hit, a drone shot down, a blow, a
+wave — to an `FpsSoundEvents`, given when there is an audio engine
+(`context.audio`: a `WebAudioEngine` in the page, a `NativeAudioEngine` in
+the native demo). `FpsSounds` plays them on the
+[audio](/fdw-engine/tutorials/audio/) of the engine:
+
+```ts title="fps/sounds.ts"
+this.audio = new SceneAudio(scene, engine);
+this.audio.listener = eye; // the ears of the player
+
+this._shot = new SoundEffect(engine, shot, {
+  bus: sfx,
+  pitchVariation: 0.06, // never twice the same
+  maxVoices: 6,
+});
+
+spawned(drone: Node): void {
+  // A hum that follows the drone, each its pitch.
+  this.audio.play(drone, this._hum, {
+    loop: true,
+    pitch: 0.9 + 0.2 * Math.random(),
+    spatial: { refDistance: 2 },
+  });
+}
+```
+
+- **The effects** (the shot, the tick of a hit, the blow) are
+  `SoundEffect`s: a pitch drawn at each play, a number of voices bounded.
+- **The drones hum where they fly**: a voice per drone, attached to its
+  node, heard from the eye; the hum fades out when the drone falls, and
+  an explosion rings where it is.
+- **The music** is a `MusicPlayer`: a calm loop under the menu, crossfaded
+  to a faster one in the game, on a `music` bus at half the volume.
+- The menu has a **Sound** entry: the master bus muted.
+
+Every sound is **made by code** (`demo-scenes/src/audio/synth.ts`: noise,
+sines, envelopes, a small sequencer for the music): nothing to load, the
+same in the browser and in the native demo. In the page, the sound starts
+at the first click.
+
 ## Testing it
 
 The game runs without a page and without a GPU: `FpsGame` takes a scene, an
@@ -526,7 +569,10 @@ arena, a camera and an `ActionMap`, and a `FakeInputSource` drives the
 actions. `fps/fps.spec.ts` walks the player into a wall, makes it jump,
 shoots a drone down in three hits, shoots at the floor without hitting
 what the player carries, lets the drones strike until the game is over,
-and checks that a wave down brings a bigger one.
+and checks that a wave down brings a bigger one. On a `FakeAudioEngine`,
+it checks that each drone hums where it flies, that the shots and hits
+play, that a drone shot down explodes in the world, and that the music
+crossfades when the game starts.
 
 ## What we have
 
@@ -541,6 +587,8 @@ and checks that a wave down brings a bigger one.
   drone.
 - A pause menu: two contexts of actions, the pointer locked and released,
   the scheduler paused.
+- Sounds made by code: effects varied at each play, drones humming in
+  space, a music crossfaded between the menu and the game.
 
 Some ideas left for later: drones that shoot back, with rays of their own;
 a weapon drawn in a pass of its own, so that it never sinks into a wall; a

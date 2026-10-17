@@ -1,0 +1,17 @@
+{
+  "name": "engine-audio-native",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-audio-native/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "test": {
+      "dependsOn": [
+        {
+          "projects": ["engine-native"],
+          "target": "build-native"
+        }
+      ]
+    }
+  }
+}

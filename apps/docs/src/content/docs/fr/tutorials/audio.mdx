@@ -1,0 +1,191 @@
+---
+title: L'audio
+description: Jouer des effets courts et de la musique, les mixer sur des bus, placer des sons dans le monde autour d'un auditeur, et les charger par le système de ressources.
+sidebar:
+  order: 25
+---
+
+import Example from '../../../../components/Example.astro';
+
+Trois haut-parleurs tournent autour d'une tête, chacun bourdonnant à sa
+propre hauteur : le bourdonnement passe d'une oreille à l'autre quand un
+haut-parleur passe, plus doux quand il est loin. Le moteur définit une
+**API audio abstraite** (`@fdw/engine-audio`) et la joue sur WebAudio dans
+le navigateur (`@fdw/engine-audio-web`), sur [miniaudio](https://miniaud.io)
+dans les démos natives (`@fdw/engine-audio-native`).
+
+Cliquez sur le canvas pour démarrer le son — les navigateurs attendent un
+geste. Un **clic** ou **Espace** fait sonner un carillon sur un
+haut-parleur, **M** enchaîne la musique en fondu vers l'autre morceau,
+**S** coupe les effets. Un casque aide.
+
+<Example name="audio" />
+
+## Un moteur, ses bus
+
+```ts
+import { unlockAudio, WebAudioEngine } from '@fdw/engine-audio-web';
+
+const engine = new WebAudioEngine();
+unlockAudio(engine, canvas); // le relance au premier clic ou à la première touche
+
+const sfx = engine.createBus('sfx');
+const music = engine.createBus('music', { volume: 0.5 });
+```
+
+Tout ce qui suit la première ligne est écrit contre l'`AudioEngine` de
+`@fdw/engine-audio` : dans Node, `new NativeAudioEngine()` prend sa place,
+et le reste est le même.
+
+Un **bus** mixe les voix et les bus qui sont sous lui à un volume : le bus
+maître est la sortie, le jeu ajoute les siens dessous — les effets, la
+musique, les dialogues —, chacun avec son curseur. `bus.muted` le rend
+muet, `bus.stopAll(fadeOut)` arrête ce qui y joue.
+
+## Clips et flux
+
+Un son est joué depuis l'une de deux sources :
+
+| Source        | Ce qu'elle garde                       | Pour                                    |
+| ------------- | -------------------------------------- | --------------------------------------- |
+| `AudioClip`   | Les échantillons, décodés une fois     | Les sons courts joués souvent : effets  |
+| `AudioStream` | Les octets encodés, décodés à l'écoute | Les sons longs joués une fois : musique |
+
+Une minute de musique stéréo décodée, c'est 20 Mo d'échantillons ; encodée
+en Ogg Vorbis, moins d'un mégaoctet. Un clip démarre tout de suite et peut
+être joué par des dizaines de voix ensemble ; un flux coûte un peu plus
+pendant qu'il joue.
+
+Ils sont chargés par le [système de ressources](/fdw-engine/fr/tutorials/resources/) :
+
+```ts
+import {
+  AudioClipType,
+  AudioStreamType,
+  installAudio,
+} from '@fdw/engine-audio';
+import { HttpSource, ResourceStore } from '@fdw/engine-resources';
+
+const resources = new ResourceStore();
+resources.mount('http', new HttpSource({ base: '/sounds/' }), {
+  default: true,
+});
+installAudio(resources, engine);
+
+const hum = resources.load(AudioClipType, 'hum.ogg');
+const calm = resources.load(AudioStreamType, 'music-calm.ogg');
+await Promise.all([hum.ready, calm.ready]);
+engine.play(hum.require(), { loop: true });
+```
+
+`installAudio` enregistre les deux chargeurs et le moteur qui décode pour
+eux. Gardez les **poignées** tant que leurs sons servent : le store libère
+le son d'une poignée relâchée — ou oubliée. Les formats sont WAV, Ogg Vorbis, MP3 et FLAC ; un clip tenu par le
+store est mis en cache, partagé et libéré comme toute ressource. Un son
+fait par le code est un clip aussi : `engine.createClip([samples], sampleRate)`.
+
+## Jouer un son
+
+```ts
+const voice = engine.play(clip, {
+  bus: sfx,
+  volume: 0.8,
+  pitch: 1.2, // plus vite, plus aigu
+  pan: -0.5, // vers la gauche
+  loop: false,
+  fadeIn: 0.1, // secondes
+});
+
+voice.volume = 0.5;
+voice.fadeTo(0.2, 1); // les fondus multiplient le volume
+voice.pause();
+voice.resume();
+voice.stop(0.3); // s'éteint en fondu, puis s'arrête
+await voice.ended;
+```
+
+Chaque appel à `play` crée une **voix**. Elle joue jusqu'à la fin de sa
+source, sauf si elle boucle, et disparaît alors : son `state` est
+`stopped` et `ended` se résout. Appelez `engine.update()` à chaque frame —
+`SceneAudio` le fait (plus bas).
+
+## Les effets courts
+
+Un effet sonore est joué souvent, et ne doit pas sonner pareil à chaque
+fois :
+
+```ts
+import { SoundEffect } from '@fdw/engine-audio';
+
+const chime = new SoundEffect(engine, [chime1, chime2, chime3], {
+  bus: sfx,
+  pitchVariation: 0.05, // ± 5 % à chaque lecture
+  volumeVariation: 0.1,
+  maxVoices: 4, // la plus ancienne s'arrête pour la plus récente
+  cooldown: 0.05, // secondes entre deux lectures
+});
+
+chime.play();
+chime.playAt(speaker.worldPosition); // dans le monde
+```
+
+Il tire l'une de ses variantes, jamais la même deux fois de suite, fait
+varier la hauteur et le volume, borne ses voix — une mitrailleuse
+n'empile pas cent tirs — et ignore les lectures trop rapprochées.
+
+## Des sons dans le monde
+
+```ts
+import { SceneAudio } from '@fdw/engine-audio';
+
+const audio = new SceneAudio(scene, engine);
+audio.listener = head; // d'habitude, le nœud de la caméra
+
+audio.play(speaker, hum, {
+  bus: sfx,
+  loop: true,
+  spatial: { refDistance: 1.5 },
+});
+
+audio.install(scheduler); // le système `audio`, dans la phase render
+```
+
+Une voix **spatiale** a une position dans le monde ; elle est entendue
+depuis l'auditeur — de sa gauche ou de sa droite, plus doucement à mesure
+qu'elle s'éloigne. `SceneAudio` les lie à la scène :
+
+- l'**auditeur suit un nœud** — la caméra, ou ici une tête qui ne bouge
+  pas ;
+- une voix jouée **sur un nœud le suit** : c'est un composant de son
+  entité, arrêté quand le nœud est retiré ;
+- son système, après tout ce qui déplace les nœuds, écrit les positions,
+  puis appelle `engine.update()`.
+
+Le volume baisse avec la distance au-delà de `refDistance` (1 m par
+défaut), selon le modèle de WebAudio : `inverse` (par défaut, le modèle
+physique), `linear` (muet à `maxDistance`) ou `exponential`, plus vite avec
+un `rolloff` plus grand.
+
+## La musique
+
+```ts
+import { MusicPlayer } from '@fdw/engine-audio';
+
+const player = new MusicPlayer(engine, { bus: music, crossfade: 2 });
+player.play(calm);
+// Un combat commence :
+player.play(tense);
+```
+
+Un morceau à la fois, en boucle : en jouer un autre l'**enchaîne en
+fondu** — le nouveau monte pendant que le précédent descend, sur les mêmes
+secondes. Rejouer le morceau en cours ne fait rien. `stop(fadeOut)`,
+`pause()` et `resume()` agissent sur le morceau en cours.
+
+## La suite
+
+- [Guide de l'audio](/fdw-engine/fr/guides/audio/) : l'API en entier, les
+  différences entre les moteurs, comment en brancher un autre.
+- [Le FPS](/fdw-engine/fr/game/fps/) : des sons faits par le code, des
+  drones qui bourdonnent dans l'espace, une musique pour le menu et une
+  pour le jeu.
