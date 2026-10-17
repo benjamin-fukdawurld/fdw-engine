@@ -105,6 +105,18 @@ layout(std140) uniform FrameUniforms {
   vec4 u_lightShadows[16];
   vec4 u_lightShadowRects[16];
   mat4 u_lightShadowMatrices[16];
+  mat4 u_cascadeMatrix0;
+  mat4 u_cascadeMatrix1;
+  mat4 u_cascadeMatrix2;
+  mat4 u_cascadeMatrix3;
+  vec4 u_cascadeRect0;
+  vec4 u_cascadeRect1;
+  vec4 u_cascadeRect2;
+  vec4 u_cascadeRect3;
+  vec4 u_cascadeSplits;
+  vec4 u_cascadeOffsets;
+  vec4 u_fogColor;
+  vec4 u_fogHeight;
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {
@@ -162,6 +174,18 @@ layout(std140) uniform FrameUniforms {
   vec4 u_lightShadows[16];
   vec4 u_lightShadowRects[16];
   mat4 u_lightShadowMatrices[16];
+  mat4 u_cascadeMatrix0;
+  mat4 u_cascadeMatrix1;
+  mat4 u_cascadeMatrix2;
+  mat4 u_cascadeMatrix3;
+  vec4 u_cascadeRect0;
+  vec4 u_cascadeRect1;
+  vec4 u_cascadeRect2;
+  vec4 u_cascadeRect3;
+  vec4 u_cascadeSplits;
+  vec4 u_cascadeOffsets;
+  vec4 u_fogColor;
+  vec4 u_fogHeight;
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {

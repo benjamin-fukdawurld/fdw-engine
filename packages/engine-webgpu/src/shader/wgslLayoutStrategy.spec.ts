@@ -89,8 +89,20 @@ describe('wgslLayoutStrategy', () => {
       ['lightShadowRects', 2336, 256],
       // Arrays of 16 mat4.
       ['lightShadowMatrices', 2592, 1024],
+      ['cascadeMatrix0', 3616, 64],
+      ['cascadeMatrix1', 3680, 64],
+      ['cascadeMatrix2', 3744, 64],
+      ['cascadeMatrix3', 3808, 64],
+      ['cascadeRect0', 3872, 16],
+      ['cascadeRect1', 3888, 16],
+      ['cascadeRect2', 3904, 16],
+      ['cascadeRect3', 3920, 16],
+      ['cascadeSplits', 3936, 16],
+      ['cascadeOffsets', 3952, 16],
+      ['fogColor', 3968, 16],
+      ['fogHeight', 3984, 16],
     ]);
-    expect(block('frame').size).toBe(3616);
+    expect(block('frame').size).toBe(4000);
   });
 
   it('pads the mat3 columns of the object block', () => {

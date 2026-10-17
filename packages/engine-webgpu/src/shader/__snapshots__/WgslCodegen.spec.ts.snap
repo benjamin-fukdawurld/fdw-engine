@@ -22,6 +22,18 @@ struct FrameUniforms {
   u_lightShadows: array<vec4<f32>, 16>,
   u_lightShadowRects: array<vec4<f32>, 16>,
   u_lightShadowMatrices: array<mat4x4<f32>, 16>,
+  u_cascadeMatrix0: mat4x4<f32>,
+  u_cascadeMatrix1: mat4x4<f32>,
+  u_cascadeMatrix2: mat4x4<f32>,
+  u_cascadeMatrix3: mat4x4<f32>,
+  u_cascadeRect0: vec4<f32>,
+  u_cascadeRect1: vec4<f32>,
+  u_cascadeRect2: vec4<f32>,
+  u_cascadeRect3: vec4<f32>,
+  u_cascadeSplits: vec4<f32>,
+  u_cascadeOffsets: vec4<f32>,
+  u_fogColor: vec4<f32>,
+  u_fogHeight: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> frameUniforms: FrameUniforms;
 
