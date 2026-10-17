@@ -2,6 +2,7 @@ import {
   BlendFactor,
   BlendState,
   CompareFunction,
+  ComputePipelineDescriptor,
   GpuBindGroup,
   GpuBindGroupEntry,
   GpuBindGroupLayout,
@@ -23,10 +24,12 @@ import {
   orientationUniform,
 } from '../shader/combinedSamplers';
 import {
+  ComputeNames,
   GlslEsCodegen,
   glslBlockName,
   ObjectTableNames,
 } from '../shader/GlslEsCodegen';
+import { StorageNames } from '../shader/storage';
 
 // Where a resource of a bind group is found: group index and binding.
 interface BindingRef {
@@ -47,6 +50,13 @@ export interface WebGl2Program {
     // The orientation of a 2d texture (see orientationUniform), set when
     // it is bound.
     readonly orientation?: WebGLUniformLocation;
+  }[];
+  // The storage buffers: the uniform of their size, and the unit of the
+  // data texture of those read, after the samplers and the object table.
+  readonly storage: readonly {
+    readonly binding: BindingRef;
+    readonly size: WebGLUniformLocation | null;
+    readonly unit?: number;
   }[];
   // The object table: its two data textures on the units after those of
   // the samplers, and the uniform of the first instance of a draw.
@@ -88,6 +98,32 @@ export class WebGl2RenderPipeline implements GpuRenderPipeline {
   get vertexBuffers(): readonly number[] {
     return this.buffers.map((buffer) => buffer.buffer);
   }
+}
+
+/**
+ * A compute stage, emulated by draws (see GlslComputeDraw): for each write,
+ * a program rendering points to the data texture of the storage buffer
+ * written.
+ */
+export class WebGl2ComputePipeline implements GpuComputePipeline {
+  constructor(
+    readonly workgroupSize: readonly [number, number, number],
+    readonly draws: readonly {
+      readonly program: WebGl2Program;
+      // The storage buffer written.
+      readonly target: BindingRef;
+      readonly texels: number;
+      readonly masks: readonly (readonly [
+        boolean,
+        boolean,
+        boolean,
+        boolean,
+      ])[];
+      readonly numWorkgroups: WebGLUniformLocation | null;
+      readonly component: WebGLUniformLocation | null;
+    }[],
+    readonly label?: string,
+  ) {}
 }
 
 export class WebGl2BindGroupLayout implements GpuBindGroupLayout {
@@ -251,12 +287,56 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
     return this.pipeline(descriptor, linkedProgram);
   }
 
-  createComputePipeline(): GpuComputePipeline {
-    throw new Error('WebGL2 has no compute shaders');
+  // WebGL2 has no compute shaders: the stage is emulated by draws into the
+  // data textures of the storage buffers (see GlslComputeDraw).
+  createComputePipeline({
+    program,
+    label,
+  }: ComputePipelineDescriptor): WebGl2ComputePipeline {
+    const layout = this.resolveLayout(program);
+    const sources = this.codegen.emitCompute(program.module, layout);
+    const written = new Set(sources.draws.map((draw) => draw.resource));
+    const bindingOf = new Map<string, BindingRef>();
+    for (const group of layout.groups) {
+      for (const { binding, resource } of group.bindings) {
+        bindingOf.set(resource.name, { group: group.index, binding });
+      }
+    }
+    const gl = this.gl;
+    const draws = sources.draws.map((draw, i) => {
+      const { program: glProgram, finish } = this.link(
+        program,
+        { vertex: draw.vertex, fragment: draw.fragment },
+        written,
+        `${program.programKey}:${i}`,
+      );
+      const linked = finish(glProgram);
+      return {
+        program: linked,
+        target: bindingOf.get(draw.resource) as BindingRef,
+        texels: draw.texels,
+        masks: draw.masks,
+        numWorkgroups: gl.getUniformLocation(
+          linked.program,
+          ComputeNames.numWorkgroups,
+        ),
+        component: gl.getUniformLocation(
+          linked.program,
+          ComputeNames.component,
+        ),
+      };
+    });
+    return new WebGl2ComputePipeline(
+      sources.workgroupSize,
+      draws,
+      label ?? program.name,
+    );
   }
 
-  async createComputePipelineAsync(): Promise<GpuComputePipeline> {
-    throw new Error('WebGL2 has no compute shaders');
+  async createComputePipelineAsync(
+    descriptor: ComputePipelineDescriptor,
+  ): Promise<GpuComputePipeline> {
+    return this.createComputePipeline(descriptor);
   }
 
   async createRenderPipelineAsync(
@@ -285,15 +365,26 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
   // Starts compiling and linking a program. finish() checks the result and
   // assigns the binding points; with KHR_parallel_shader_compile, it should
   // only be called once the link is complete, not to block.
-  private link(compiled: CompiledProgram): {
+  // A compute draw gives its sources, the storage buffers it writes, and
+  // its own key.
+  private link(
+    compiled: CompiledProgram,
+    stages?: { readonly vertex: string; readonly fragment: string },
+    written?: ReadonlySet<string>,
+    key = compiled.programKey,
+  ): {
     program: WebGLProgram;
     finish: (program: WebGLProgram) => WebGl2Program;
   } {
     const gl = this.gl;
     const layout = this.resolveLayout(compiled);
-    const sources = this.codegen.emit(compiled.module, layout);
-    if (sources.kind !== 'per-stage') {
-      throw new Error('The GLSL generator must produce one source per stage');
+    let sources = stages;
+    if (!sources) {
+      const emitted = this.codegen.emit(compiled.module, layout);
+      if (emitted.kind !== 'per-stage') {
+        throw new Error('The GLSL generator must produce one source per stage');
+      }
+      sources = emitted;
     }
     const shader = (type: GLenum, source: string) => {
       const result = gl.createShader(type) as WebGLShader;
@@ -309,7 +400,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
     gl.linkProgram(program);
 
     const finish = (linkedProgram: WebGLProgram): WebGl2Program => {
-      const cached = this._linkedPrograms.get(compiled.programKey);
+      const cached = this._linkedPrograms.get(key);
       if (cached) {
         return cached;
       }
@@ -326,8 +417,13 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
       }
       gl.deleteShader(vertex);
       gl.deleteShader(fragment);
-      const result = this.assignBindings(linkedProgram, compiled, layout);
-      this._linkedPrograms.set(compiled.programKey, result);
+      const result = this.assignBindings(
+        linkedProgram,
+        compiled,
+        layout,
+        written,
+      );
+      this._linkedPrograms.set(key, result);
       return result;
     };
     return { program, finish };
@@ -340,6 +436,7 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
     program: WebGLProgram,
     compiled: CompiledProgram,
     layout: PhysicalProgramLayout,
+    written: ReadonlySet<string> = new Set(),
   ): WebGl2Program {
     const gl = this.gl;
     const bindingOf = new Map<string, BindingRef>();
@@ -386,12 +483,37 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
       },
     );
     const objectTable = this.objectTable(program, layout, samplers.length);
+    // The storage buffers read, on the units after those.
+    let unit = samplers.length + (objectTable ? 2 : 0);
+    const storage: WebGl2Program['storage'][number][] = [];
+    for (const group of layout.groups) {
+      for (const { binding, resource } of group.bindings) {
+        if (resource.kind !== 'storage-buffer') {
+          continue;
+        }
+        const texture = written.has(resource.name)
+          ? null
+          : gl.getUniformLocation(program, StorageNames.texture(resource.name));
+        if (texture) {
+          gl.uniform1i(texture, unit);
+        }
+        storage.push({
+          binding: { group: group.index, binding },
+          size: gl.getUniformLocation(
+            program,
+            StorageNames.size(resource.name),
+          ),
+          ...(texture ? { unit: unit++ } : {}),
+        });
+      }
+    }
     gl.useProgram(null);
 
     return {
       program,
       uniformBlocks,
       samplers,
+      storage,
       ...(objectTable ? { objectTable } : {}),
     };
   }

@@ -20,12 +20,9 @@ import type { Example } from './runtime';
 const side = 96;
 
 // Ripples computed on the GPU: a compute graph writes the height of each
-// vertex of a grid into a storage buffer, which its material reads.
+// vertex of a grid into a storage buffer, which its material reads. On
+// every backend: WebGL2 runs the graph by rendering to a texture.
 const example: Example = ({ backend, surface, onFrame }) => {
-  if (backend.capabilities?.compute === false) {
-    throw new Error('This example needs compute shaders: open it with WebGPU.');
-  }
-
   // The compute graph: one thread per vertex, in workgroups of 8 × 8.
   const c = new GraphBuilder('ripples');
   const id = c.builtin('global-invocation-id');

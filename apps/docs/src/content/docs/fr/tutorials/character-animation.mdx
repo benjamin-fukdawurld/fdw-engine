@@ -2,7 +2,7 @@
 title: Un personnage animé
 description: Charger un personnage glTF skinné, piloter ses clips avec un animation graph — un blend space, une machine à états, une couche — et le skinner sur le GPU.
 sidebar:
-  order: 22
+  order: 23
 ---
 
 import Example from '../../../../components/Example.astro';
@@ -37,8 +37,8 @@ elle : le graphe du matériau du modèle, le skinning ajouté.
 - En **WebGPU** et en Vulkan, une passe de calcul skinne les sommets une
   fois par image, dans un buffer que lit le vertex stage de chaque passe :
   la caméra, la shadow map, plus tard le ray tracing.
-- En **WebGL2**, sans calcul, le vertex stage de chaque passe skinne son
-  sommet, les matrices des articulations lues dans une texture.
+- En **WebGL2**, dont le calcul est émulé, le vertex stage de chaque passe
+  skinne son sommet, les matrices des articulations lues dans une texture.
 
 La ligne sous le canvas dit lequel tourne ; `{ mode: 'vertex' }` impose le
 second partout.

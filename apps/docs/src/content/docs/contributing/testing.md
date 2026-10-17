@@ -56,9 +56,9 @@ On Vulkan, a test fails if the validation layer reports anything.
 - compiles each of them in HLSL with DXC, validates the SPIR-V with
   `spirv-val`, and compares the uniform offsets of the layout with the
   reflection of `spirv-cross`;
-- generates those WebGL2 can run (no compute stage, no storage buffer) in
-  GLSL ES 3.00, and validates and links them with `glslangValidator`,
-  stricter than the compilers of the browsers.
+- generates them in GLSL ES 3.00 (the compute stages as the draws that
+  emulate them on WebGL2), and validates and links them with
+  `glslangValidator`, stricter than the compilers of the browsers.
 
 Pixel tests check **exact** values where the GPU computes them exactly
 (clears, unlit colors), and ranges elsewhere (edges, filtering): the GPUs
@@ -134,8 +134,7 @@ npx nx run docs:visual -- --update-snapshots   # writes new references
 ```
 
 The examples run with their clock stopped and stop after a few frames
-(`?time=1.5&frames=10`): the image is the same at every run. An example
-that needs compute shaders shows its message on WebGL2 instead.
+(`?time=1.5&frames=10`): the image is the same at every run.
 
 When a change modifies what an example draws, update its references, look
 at them, and commit them with the change. If the CI renders a little

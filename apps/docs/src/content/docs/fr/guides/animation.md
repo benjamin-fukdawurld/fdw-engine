@@ -141,13 +141,15 @@ calcule les matrices des articulations (inverse(nœud) × articulation ×
 inverse bind matrix), les envoie au GPU et met à jour les bornes des
 primitives, depuis une sphère autour de chaque articulation.
 
-| Mode      | Où                                                                                                 | Backends       |
-| --------- | -------------------------------------------------------------------------------------------------- | -------------- |
-| `compute` | Une passe de calcul écrit les sommets skinnés dans un buffer, que chaque passe lit par leur numéro | WebGPU, Vulkan |
-| `vertex`  | Le vertex stage de chaque passe skinne son sommet, depuis les matrices dans une texture            | Tous, WebGL2   |
+| Mode      | Où                                                                                                 | Backends |
+| --------- | -------------------------------------------------------------------------------------------------- | -------- |
+| `compute` | Une passe de calcul écrit les sommets skinnés dans un buffer, que chaque passe lit par leur numéro | Tous     |
+| `vertex`  | Le vertex stage de chaque passe skinne son sommet, depuis les matrices dans une texture            | Tous     |
 
-Le mode est `compute` quand le backend a les compute shaders et les
-storage buffers, `vertex` ailleurs ; `{ mode }` choisit. En mode
+Le mode est `compute` quand le backend a des compute shaders, `vertex`
+ailleurs : en WebGL2, qui émule le calcul par rendu dans des textures (voir
+[En WebGL2](/fdw-engine/fr/guides/compute/#en-webgl2)), le vertex stage
+coûte moins. `{ mode }` choisit. En mode
 `compute`, la caméra, les shadow maps et plus tard le ray tracing lisent
 les mêmes sommets, skinnés une fois par image.
 

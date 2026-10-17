@@ -76,8 +76,9 @@ compilateur vérifie les programmes en conséquence :
 
 | Capacité                           | Signification                                                    | WebGL2                                         |
 | ---------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------- |
-| `compute`                          | Étapes de calcul                                                 | false                                          |
-| `storageBuffers`                   | Storage buffers                                                  | false                                          |
+| `compute`                          | Étapes de calcul                                                 | true (émulées)                                 |
+| `emulatedCompute`                  | Calcul émulé par des dessins dans des textures                   | true                                           |
+| `storageBuffers`                   | Storage buffers                                                  | true (textures de données)                     |
 | `maxVaryings`                      | Valeurs interpolées entre les étapes                             | selon le contexte                              |
 | `renderableFormats`                | Formats de couleur utilisables comme attachments (`rgba16float`) | avec `EXT_color_buffer_float`                  |
 | `objectTable`                      | Les données des objets lues dans une table, par instance         | true (textures de données)                     |

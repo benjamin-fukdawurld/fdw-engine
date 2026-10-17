@@ -29,7 +29,8 @@ import { canRun } from '@fdw/engine-backend/testing';
 // - in HLSL, compiled to SPIR-V by DXC, validated by spirv-val, and its
 //   uniform blocks reflected against the layout of the Vulkan backend;
 // - in GLSL ES 3.00 (WebGL2), validated and linked by glslangValidator,
-//   stricter than the compilers of the browsers.
+//   stricter than the compilers of the browsers: the compute stages as the
+//   draws that emulate them.
 // Needs Dawn and the Vulkan SDK (dxc, spirv-val, spirv-cross,
 // glslangValidator).
 
@@ -159,31 +160,31 @@ describe.skipIf(skipGlsl)(
       const failures: string[] = [];
       let validated = 0;
       for (const program of programs.values()) {
-        // WebGL2 has no compute stage, nor storage buffers: those programs
-        // only run where the backend has them.
+        // WebGL2 emulates the compute stages by draws: a program per write.
         const compute = program.module.entryPoints.some(
           (entry) => entry.stage === 'compute',
         );
-        const storage = program.layout.groups.some((group) =>
-          group.bindings.some((binding) => binding.kind === 'storage-buffer'),
-        );
-        if (compute || storage) {
-          continue;
-        }
         const layout = std140LayoutStrategy.resolve(program.layout);
         try {
-          const sources = codegen.emit(program.module, layout);
-          if (sources.kind !== 'per-stage') {
-            throw new Error('GLSL is a source per stage');
+          if (compute) {
+            for (const draw of codegen.emitCompute(program.module, layout)
+              .draws) {
+              await validateGlsl(draw.vertex, draw.fragment);
+            }
+          } else {
+            const sources = codegen.emit(program.module, layout);
+            if (sources.kind !== 'per-stage') {
+              throw new Error('GLSL is a source per stage');
+            }
+            await validateGlsl(sources.vertex, sources.fragment);
           }
-          await validateGlsl(sources.vertex, sources.fragment);
           validated++;
         } catch (error) {
           failures.push(`${program.name}: ${(error as Error).message}`);
         }
       }
       expect(failures).toEqual([]);
-      expect(validated).toBeGreaterThan(25);
+      expect(validated).toBeGreaterThan(30);
     });
   },
 );

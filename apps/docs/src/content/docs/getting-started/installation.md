@@ -13,8 +13,8 @@ workspace, next to them.
 
 - **Node.js 20 or later** (24 recommended) and npm.
 - **A browser**: a WebGPU one (recent Chrome or Edge, Firefox Nightly,
-  Safari Technology Preview) for every feature, or any WebGL2 browser for
-  everything but compute.
+  Safari Technology Preview), or any WebGL2 browser: compute is emulated
+  there, without indirect dispatches.
 - For the native backends only: CMake, a C/C++20 compiler and, for Vulkan,
   the Vulkan SDK. See [Native window](/fdw-engine/getting-started/native/).
 

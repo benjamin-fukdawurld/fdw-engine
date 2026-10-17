@@ -12,10 +12,10 @@ chaque image par un compute graph, puis lues par le matériau de la grille.
 
 <Example name="compute-waves" />
 
-:::caution[WebGPU et Vulkan]
-Les compute shaders ne sont pas disponibles en WebGL2. L'exemple le signale
-lorsque la page s'exécute en WebGL2 : ouvrez-la dans un navigateur prenant en
-charge WebGPU.
+:::note[Sur tous les backends]
+WebGL2 n'a pas de compute shaders : il exécute le même graphe par rendu
+dans une texture, sans changer le code (voir
+[En WebGL2](/fdw-engine/fr/guides/compute/#en-webgl2)).
 :::
 
 ## Un compute graph
@@ -66,8 +66,9 @@ const ripples = compile(c.build(), { capabilities: backend.capabilities });
 - `c.write(array, { index, value, when })` écrit un élément ; `when`, un
   booléen, protège les threads situés au-delà de la fin du tableau.
 
-Compilé avec les capacités du backend, le graphe échoue avec un message clair
-sur un backend sans compute.
+Compilé avec les capacités du backend, le graphe échouerait avec un message
+clair sur un backend sans compute ; tous les backends du moteur l'ont,
+WebGL2 par rendu dans des textures.
 
 Le compilateur refuse ce qui ne peut pas fonctionner dans un compute shader :
 `std.textureSample` (il a besoin des dérivées d'un fragment shader : utilisez
@@ -98,7 +99,7 @@ les soumissions dans l'ordre : l'image dessinée ensuite voit les nouvelles
 hauteurs.
 
 `workgroups` peut aussi être un buffer écrit par le GPU, `{ buffer, offset }`,
-contenant trois `u32` : un dispatch indirect.
+contenant trois `u32` : un dispatch indirect (pas en WebGL2).
 
 Pour lire les résultats sur le CPU, donnez au buffer l'usage `copy-src` et
 faites `await buffer.read()`, qui se résout avec un `ArrayBuffer`.
@@ -137,5 +138,8 @@ compilateur place chaque calcul dans l'étape où ses entrées sont disponibles.
 
 ## Pour aller plus loin
 
-[Guide du compute](/fdw-engine/fr/guides/compute/) : les passes de compute
-dans un render graph, et les règles des storage buffers.
+- [Particules sur le GPU](/fdw-engine/fr/tutorials/gpu-particles/) : une
+  simulation dont l'état est lu et écrit tour à tour, sur les trois
+  backends.
+- [Guide du compute](/fdw-engine/fr/guides/compute/) : les passes de compute
+  dans un render graph, et les règles des storage buffers.

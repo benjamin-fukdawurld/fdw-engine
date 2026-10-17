@@ -67,9 +67,9 @@ export const CompilerVersion = 5;
 export interface CompilerCapabilities {
   /** Maximum number of varyings between the vertex and fragment stages. */
   readonly maxVaryings: number;
-  /** Storage buffers (not in WebGL2). */
+  /** Storage buffers (data textures in WebGL2). */
   readonly storageBuffers: boolean;
-  /** Compute stages (not in WebGL2). */
+  /** Compute stages (emulated by draws in WebGL2). */
   readonly compute: boolean;
   /**
    * The object data in a table indexed per instance (an 'object-table'
@@ -289,7 +289,7 @@ function checkSupport(
       const type = params['type'] as ShaderType;
       if (!capabilities.storageBuffers) {
         error(
-          `storage buffer "${params['name']}": the backend has no storage buffers (WebGL2)`,
+          `storage buffer "${params['name']}": the backend has no storage buffers`,
         );
         continue;
       }
@@ -780,7 +780,7 @@ export function compile(
     fail([
       {
         severity: 'error',
-        message: 'the backend has no compute shaders (WebGL2)',
+        message: 'the backend has no compute shaders',
       },
     ]);
   }

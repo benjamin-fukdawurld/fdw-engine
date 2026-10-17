@@ -1,20 +1,28 @@
 import type {
   GpuAttachmentTarget,
   GpuBindGroup,
+  GpuBindGroupEntry,
   GpuBuffer,
   GpuCommandBuffer,
   GpuCommandEncoder,
   GpuComputePassEncoder,
+  GpuComputePipeline,
   GpuRenderPassEncoder,
   GpuRenderPipeline,
   IndexFormat,
+  PassTiming,
   RenderPassDescriptor,
   VertexAttributeFormat,
 } from '@fdw/engine-backend';
 import { GL } from '../gl';
 import { WebGl2Buffer } from '../gpu/WebGl2Buffer';
 import { WebGl2Sampler, WebGl2Texture } from '../gpu/WebGl2Texture';
-import { WebGl2BindGroup, WebGl2RenderPipeline } from './WebGl2PipelineFactory';
+import {
+  WebGl2BindGroup,
+  WebGl2ComputePipeline,
+  WebGl2Program,
+  WebGl2RenderPipeline,
+} from './WebGl2PipelineFactory';
 import { WebGl2ObjectTable } from './WebGl2ObjectTable';
 import { WebGl2PassTimer } from './WebGl2PassTimer';
 import { WebGl2RenderTarget } from './WebGl2RenderTarget';
@@ -191,17 +199,93 @@ function loadSampler(gl: WebGL2RenderingContext): WebGLSampler {
   return sampler;
 }
 
-function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
-  const { program } = state.pipeline;
-  const resource = (group: number, binding: number) => {
-    const value = state.groups[group]?.resources.get(binding);
-    if (!value) {
-      throw new Error(
-        `No resource bound at group ${group}, binding ${binding}`,
-      );
-    }
-    return value;
+type BindGroups = readonly (WebGl2BindGroup | undefined)[];
+
+function resourceOf(
+  groups: BindGroups,
+  group: number,
+  binding: number,
+): GpuBindGroupEntry['resource'] {
+  const value = groups[group]?.resources.get(binding);
+  if (!value) {
+    throw new Error(`No resource bound at group ${group}, binding ${binding}`);
+  }
+  return value;
+}
+
+// The storage buffer bound to a binding.
+function storageOf(
+  groups: BindGroups,
+  { group, binding }: { group: number; binding: number },
+): WebGl2Buffer & { storage: NonNullable<WebGl2Buffer['storage']> } {
+  const buffer = unwrap(
+    resourceOf(groups, group, binding),
+    WebGl2Buffer,
+    'The storage buffer',
+  );
+  if (!buffer.storage) {
+    throw new Error(
+      `The buffer "${buffer.label ?? '(unlabeled)'}" bound as a storage buffer needs the storage usage`,
+    );
+  }
+  return buffer as WebGl2Buffer & {
+    storage: NonNullable<WebGl2Buffer['storage']>;
   };
+}
+
+/**
+ * The storage buffers a program uses, whose copies must be up to date
+ * before its draws (see WebGl2Buffer.storage): those it reads as uniform
+ * blocks or vertices (`buffers`), and as storage (`textures`). Found when
+ * recording; brought up to date when running, before the framebuffer of
+ * the pass is bound, as updating binds the framebuffers of the textures.
+ */
+interface StorageUpdates {
+  readonly buffers: Set<WebGl2Buffer>;
+  readonly textures: Set<WebGl2Buffer>;
+}
+
+function collectUpdates(
+  updates: StorageUpdates,
+  program: WebGl2Program,
+  groups: BindGroups,
+  vertexBuffers: readonly (WebGl2Buffer | undefined)[] = [],
+): void {
+  for (const buffer of vertexBuffers) {
+    if (buffer?.storage) {
+      updates.buffers.add(buffer);
+    }
+  }
+  for (const { group, binding } of program.uniformBlocks) {
+    const buffer = groups[group]?.resources.get(binding);
+    if (buffer instanceof WebGl2Buffer && buffer.storage) {
+      updates.buffers.add(buffer);
+    }
+  }
+  for (const { binding, unit } of program.storage) {
+    const buffer = groups[binding.group]?.resources.get(binding.binding);
+    if (unit !== undefined && buffer instanceof WebGl2Buffer) {
+      updates.textures.add(buffer);
+    }
+  }
+}
+
+function applyUpdates({ buffers, textures }: StorageUpdates): void {
+  for (const buffer of buffers) {
+    buffer.updateBuffer();
+  }
+  for (const buffer of textures) {
+    buffer.updateTexture();
+  }
+}
+
+function bindResources(
+  gl: WebGL2RenderingContext,
+  program: WebGl2Program,
+  groups: BindGroups,
+): void {
+  const resource = (group: number, binding: number) =>
+    resourceOf(groups, group, binding);
   for (const block of program.uniformBlocks) {
     const buffer = unwrap(
       resource(block.group, block.binding),
@@ -253,6 +337,20 @@ function bindResources(gl: WebGL2RenderingContext, state: DrawState): void {
       gl.bindSampler(unit, null);
     }
   }
+  // The storage buffers: their size, and the texture of those read (by
+  // texelFetch: no sampler object).
+  for (const { binding, size, unit } of program.storage) {
+    const buffer = storageOf(groups, binding);
+    const { storage } = buffer;
+    if (size) {
+      gl.uniform3ui(size, storage.width, storage.height, buffer.size);
+    }
+    if (unit !== undefined) {
+      gl.activeTexture(GL.TEXTURE0 + unit);
+      gl.bindTexture(GL.TEXTURE_2D, storage.texture);
+      gl.bindSampler(unit, null);
+    }
+  }
 }
 
 // The first instance of a draw, for the programs reading the object table
@@ -292,6 +390,8 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     },
     // Recorded after the pass: the end of its timer query.
     private readonly _onEnd?: Command,
+    // The storage buffers to bring up to date before the pass.
+    private readonly _updates?: StorageUpdates,
   ) {}
 
   setPipeline(pipeline: GpuRenderPipeline): void {
@@ -398,18 +498,127 @@ class WebGl2RenderPassEncoder implements GpuRenderPassEncoder {
     if (!this._pipeline) {
       throw new Error('No pipeline set before drawing');
     }
-    return {
+    const state = {
       pipeline: this._pipeline,
       groups: [...this._groups],
       vertexBuffers: [...this._vertexBuffers],
       indexBuffer: this._indexBuffer,
     };
+    if (this._updates) {
+      collectUpdates(
+        this._updates,
+        state.pipeline.program,
+        state.groups,
+        state.vertexBuffers,
+      );
+    }
+    return state;
   }
 
   private prepare(gl: WebGL2RenderingContext, state: DrawState): void {
     applyPipeline(gl, state.pipeline);
     bindVertices(gl, state);
-    bindResources(gl, state);
+    bindResources(gl, state.pipeline.program, state.groups);
+  }
+}
+
+/**
+ * Records the dispatches of a compute pass. WebGL2 has no compute shaders:
+ * each write of the stage is a draw of points into the data texture of the
+ * storage buffer written (see WebGl2ComputePipeline), a point per thread
+ * and per texel of the element written.
+ */
+class WebGl2ComputePassEncoder implements GpuComputePassEncoder {
+  private _pipeline?: WebGl2ComputePipeline;
+  private readonly _groups: (WebGl2BindGroup | undefined)[] = [];
+
+  constructor(
+    private readonly _commands: Command[],
+    private readonly _onEnd?: Command,
+  ) {}
+
+  setPipeline(pipeline: GpuComputePipeline): void {
+    this._pipeline = unwrap(pipeline, WebGl2ComputePipeline, 'The pipeline');
+  }
+
+  setBindGroup(index: number, group: GpuBindGroup): void {
+    this._groups[index] = unwrap(group, WebGl2BindGroup, 'The bind group');
+  }
+
+  dispatchWorkgroups(x: number, y = 1, z = 1): void {
+    const pipeline = this._pipeline;
+    if (!pipeline) {
+      throw new Error('No pipeline set before dispatching');
+    }
+    const groups = [...this._groups];
+    const [sx, sy, sz] = pipeline.workgroupSize;
+    const threads = x * y * z * sx * sy * sz;
+    if (threads === 0) {
+      return;
+    }
+    this._commands.push((gl) => {
+      for (const draw of pipeline.draws) {
+        const target = storageOf(groups, draw.target);
+        // The buffer written is a framebuffer: reading it too would loop.
+        for (const { binding, unit } of draw.program.storage) {
+          if (unit !== undefined && storageOf(groups, binding) === target) {
+            throw new Error(
+              `Compute "${pipeline.label}": the storage buffer "${target.label ?? '(unlabeled)'}" is both read and written`,
+            );
+          }
+        }
+        const updates: StorageUpdates = {
+          buffers: new Set(),
+          textures: new Set([target]),
+        };
+        collectUpdates(updates, draw.program, groups);
+        applyUpdates(updates);
+
+        const { storage } = target;
+        gl.bindFramebuffer(GL.FRAMEBUFFER, framebufferFor(gl, storage));
+        gl.viewport(0, 0, storage.width, storage.height);
+        for (const capability of [
+          GL.DEPTH_TEST,
+          GL.BLEND,
+          GL.CULL_FACE,
+          GL.SCISSOR_TEST,
+          GL.POLYGON_OFFSET_FILL,
+          GL.RASTERIZER_DISCARD,
+        ]) {
+          gl.disable(capability);
+        }
+        gl.useProgram(draw.program.program);
+        bindResources(gl, draw.program, groups);
+        if (draw.numWorkgroups) {
+          gl.uniform3ui(draw.numWorkgroups, x, y, z);
+        }
+        gl.bindVertexArray(null);
+        // The elements smaller than a texel: one draw per component.
+        for (const mask of draw.masks) {
+          gl.colorMask(mask[0], mask[1], mask[2], mask[3]);
+          if (draw.component) {
+            gl.uniform1ui(draw.component, mask.indexOf(true));
+          }
+          gl.drawArraysInstanced(GL.POINTS, 0, draw.texels, threads);
+        }
+        gl.colorMask(true, true, true, true);
+        target.changed('texture');
+      }
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+    });
+  }
+
+  dispatchWorkgroupsIndirect(): void {
+    // The counts would have to be read back first.
+    throw new Error(
+      'WebGL2 has no indirect dispatch: give the number of workgroups',
+    );
+  }
+
+  end(): void {
+    if (this._onEnd) {
+      this._commands.push(this._onEnd);
+    }
   }
 }
 
@@ -456,7 +665,13 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
       this._commands.push((gl) => gl.beginQuery(timer.target, query));
     }
 
+    // Filled by the draws of the pass, when recording.
+    const updates: StorageUpdates = {
+      buffers: new Set(),
+      textures: new Set(),
+    };
     this._commands.push((gl) => {
+      applyUpdates(updates);
       gl.bindFramebuffer(
         GL.FRAMEBUFFER,
         framebufferFor(gl, targets, depthTarget),
@@ -501,6 +716,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
         ? { from: targets, depth: depthTarget, to: resolves }
         : undefined,
       timer && query ? (gl) => gl.endQuery(timer.target) : undefined,
+      updates,
     );
   }
 
@@ -514,6 +730,9 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
     const from = unwrap(source, WebGl2Buffer, 'The source buffer');
     const to = unwrap(destination, WebGl2Buffer, 'The destination buffer');
     this._commands.push((gl) => {
+      // The storage buffers: from their textures, if written there.
+      from.updateBuffer();
+      to.updateBuffer();
       gl.bindBuffer(GL.COPY_READ_BUFFER, from.buffer);
       gl.bindBuffer(GL.COPY_WRITE_BUFFER, to.buffer);
       gl.copyBufferSubData(
@@ -523,6 +742,7 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
         destinationOffset,
         size,
       );
+      to.changed('buffer');
     });
   }
 
@@ -573,8 +793,21 @@ export class WebGl2CommandEncoder implements GpuCommandEncoder {
     this._commands.push((gl) => levels.generateMipmaps(gl));
   }
 
-  beginComputePass(): GpuComputePassEncoder {
-    throw new Error('WebGL2 has no compute shaders');
+  beginComputePass(
+    _label?: string,
+    timing?: PassTiming,
+  ): GpuComputePassEncoder {
+    const timer = timing
+      ? unwrap(timing.timer, WebGl2PassTimer, 'The pass timer')
+      : undefined;
+    const query = timing ? timer?.query(timing.index) : undefined;
+    if (timer && query) {
+      this._commands.push((gl) => gl.beginQuery(timer.target, query));
+    }
+    return new WebGl2ComputePassEncoder(
+      this._commands,
+      timer && query ? (gl) => gl.endQuery(timer.target) : undefined,
+    );
   }
 
   finish(): GpuCommandBuffer {

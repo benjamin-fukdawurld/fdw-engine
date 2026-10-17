@@ -66,7 +66,7 @@ Critères : les mesures de P0 avant et après ; le labyrinthe et la forêt en We
 ### P2. Lumières et ombres à grande échelle
 
 - **Nombre de lumières dynamique** (RG6) : un culling des lumières en clusters (clustered forward) par une passe de calcul, et un **pool de lumières** disposé comme leur structure GPU, comme le pool de transforms. Il remplace la limite de 16 lumières (`MaxLights`). WebGL2, qui n'a pas de calcul, aura un repli : le culling sur le CPU, et les lumières dans une texture de données ([évolutions §1](evolutions.md#1-un-très-grand-nombre-de-lumières)).
-- **Prérequis** : les compute graphs dans le render graph (`addComputeGraphPass`), et le repli WebGL2 des storage buffers ([backlog §3](backlog.md#3-compute-graph)).
+- **Prérequis** : les compute graphs dans le render graph (`addComputeGraphPass`), et le repli WebGL2 des storage buffers ([backlog §3](backlog.md#3-compute-graph)) — fait : storage buffers et calcul émulés par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md)), le culling des lumières peut y être le même calcul.
 - **Ombres** : les lumières ponctuelles (six faces), les cascades (CSM) pour les grandes scènes, le culling des projeteurs par tuile.
 - **Éclairage par environnement (IBL)** : cubemap, irradiance, spéculaire préfiltré, table BRDF. C'est l'écart de qualité le plus visible aujourd'hui.
 

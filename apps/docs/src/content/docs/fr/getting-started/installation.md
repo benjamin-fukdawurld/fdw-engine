@@ -13,8 +13,8 @@ dans l'espace de travail, à côté d'eux.
 
 - **Node.js 20 ou plus récent** (24 recommandé) et npm.
 - **Un navigateur** : un navigateur compatible WebGPU (Chrome ou Edge récent,
-  Firefox Nightly, Safari Technology Preview) pour toutes les fonctionnalités,
-  ou n'importe quel navigateur WebGL2 pour tout sauf le compute.
+  Firefox Nightly, Safari Technology Preview), ou n'importe quel navigateur
+  WebGL2 : le calcul y est émulé, sans dispatchs indirects.
 - Pour les backends natifs uniquement : CMake, un compilateur C/C++20 et, pour
   Vulkan, le SDK Vulkan. Voir [Fenêtre native](/fdw-engine/fr/getting-started/native/).
 

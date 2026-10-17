@@ -27,8 +27,9 @@ on under the canvas. Add `?backend=webgl2` to force WebGL2.
 
 ### "the backend has no compute shaders"
 
-A compute graph, or a graph reading a storage buffer, compiled for WebGL2.
-Test `backend.capabilities.compute` and offer a fallback, or require WebGPU.
+A compute graph compiled with the capabilities of a backend without compute
+(`capabilities.compute === false`). The backends of the engine all have it,
+WebGL2 by rendering to textures: check the capabilities given to `compile`.
 
 ### Nothing is drawn
 

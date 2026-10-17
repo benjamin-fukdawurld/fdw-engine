@@ -18,6 +18,12 @@ import {
   combinedSamplers,
   orientationUniform,
 } from './combinedSamplers';
+import {
+  storageDeclarations,
+  storageElement,
+  StorageNames,
+  texelOf,
+} from './storage';
 
 const scalarNames = { f32: 'float', i32: 'int', u32: 'uint', bool: 'bool' };
 const vectorPrefixes = { f32: 'vec', i32: 'ivec', u32: 'uvec', bool: 'bvec' };
@@ -120,6 +126,30 @@ function literal(type: ShaderType, value: ConstantValue): string {
 
 const isHandle = (type: ShaderType) =>
   type.kind === 'texture' || type.kind === 'sampler';
+
+/**
+ * The names of the uniforms of the compute stages in GLSL ES (WebGL2), set
+ * by the backend at each draw: the number of workgroups dispatched (a
+ * uvec3), and the component of the texels written by a masked draw (a uint,
+ * see GlslComputeDraw).
+ */
+export const ComputeNames = {
+  numWorkgroups: 'c_numWorkgroups',
+  component: 'c_component',
+} as const;
+
+// A storage buffer: a runtime-sized array.
+const isStorage = (type: ShaderType) =>
+  type.kind === 'array' && type.length === undefined;
+
+// The compute builtins, variables of the vertex shaders of the compute
+// stages.
+const computeBuiltins = {
+  'global-invocation-id': 'c_globalId',
+  'local-invocation-id': 'c_localId',
+  'workgroup-id': 'c_workgroupId',
+  'num-workgroups': ComputeNames.numWorkgroups,
+} as const;
 
 // Values used inline rather than stored in a variable: handles, and the
 // arrays of uniform blocks, indexed in place rather than copied.
@@ -230,11 +260,14 @@ function emitInstructions(
         continue;
       }
       case 'index':
-        expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
+        // A storage buffer (runtime-sized) is read from its texture.
+        expression = isStorage(typeOf(instruction.args[0]))
+          ? `${arg(instruction, 0)}Load(uint(${arg(instruction, 1)}))`
+          : `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
         break;
       case 'array-length':
-        // The compiler rejects storage buffers for WebGL2 (capability).
-        throw new Error('GLSL ES 3.00 has no storage buffers');
+        expression = `${arg(instruction, 0)}Length()`;
+        break;
       case 'constant':
         expression = literal(type, op.value);
         break;
@@ -264,11 +297,16 @@ function emitInstructions(
             } + uint(gl_InstanceID))`;
             break;
           default:
-            throw new Error(`GLSL ES 3.00 has no ${op.builtin} (compute)`);
+            // Compute: computed from the instance at the start of the
+            // vertex shader (see emitCompute).
+            expression = computeBuiltins[op.builtin];
         }
         break;
       case 'load-resource':
-        if (isHandle(type)) {
+        if (isStorage(type)) {
+          // Read through the functions of its texture.
+          expression = StorageNames.texture(op.binding);
+        } else if (isHandle(type)) {
           // Textures and samplers are only used through the combined
           // samplers, by the sample instructions.
           expression = op.binding;
@@ -518,8 +556,260 @@ function objectTable(
   };
 }
 
+/**
+ * A draw of a compute stage in GLSL ES (WebGL2), which has no compute
+ * shaders: a point per thread (the instance) and per texel of the element
+ * it writes (the vertex), rendered to the data texture of a storage buffer.
+ * The vertex shader runs the stage and places the point on the texel of the
+ * element written; the fragment shader writes its bits. A stage makes one
+ * draw per write, in order.
+ */
+export interface GlslComputeDraw {
+  readonly vertex: string;
+  readonly fragment: string;
+  /** The storage buffer written. */
+  readonly resource: string;
+  /** The points of a thread: the texels of the element written. */
+  readonly texels: number;
+  /**
+   * The components of the texels written, one draw (masked) per entry:
+   * elements smaller than a texel share it. Each draw sets the component
+   * uniform to its first component; the threads whose element starts
+   * elsewhere make no point.
+   */
+  readonly masks: readonly (readonly [boolean, boolean, boolean, boolean])[];
+}
+
+/** The draws of a compute stage in GLSL ES (see GlslComputeDraw). */
+export interface GlslComputeSources {
+  readonly kind: 'compute-draws';
+  readonly workgroupSize: readonly [number, number, number];
+  readonly draws: readonly GlslComputeDraw[];
+}
+
+const allComponents = [true, true, true, true] as const;
+const masksOf = (stride: number) =>
+  stride === 4
+    ? [0, 1, 2, 3].map((c) => [0, 1, 2, 3].map((k) => k === c))
+    : stride === 8
+      ? [
+          [true, true, false, false],
+          [false, false, true, true],
+        ]
+      : [allComponents];
+
+interface Declarations {
+  readonly header: string;
+  readonly resources: readonly string[];
+  readonly samplers: readonly CombinedSampler[];
+  readonly table?: ObjectTableCode;
+}
+
+// The declarations shared by the stages of a program: GLSL requires the
+// blocks shared by the stages to match. `written`: the storage buffers
+// rendered to, not read.
+function declarations(
+  module: ShaderModuleIR,
+  layout: PhysicalProgramLayout,
+  written?: ReadonlySet<string>,
+): Declarations {
+  const samplers = combinedSamplers(module, layout);
+  const samplerTypes = [
+    ...new Set(
+      samplers.map((sampler) =>
+        glslSamplerType(sampler.type, sampler.comparison),
+      ),
+    ),
+  ].sort();
+
+  const header = [
+    '#version 300 es',
+    `// Generated from ${written ? 'compute' : 'material'} graph "${
+      module.name
+    }". Do not edit.`,
+    '',
+    'precision highp float;',
+    'precision highp int;',
+    ...samplerTypes.map((type) => `precision highp ${type};`),
+  ].join('\n');
+
+  const resources: string[] = [];
+  for (const group of layout.groups) {
+    for (const { resource } of group.bindings) {
+      if (resource.kind !== 'uniform-block') {
+        continue;
+      }
+      resources.push(
+        [
+          `layout(std140) uniform ${glslBlockName(resource.name)} {`,
+          ...resource.members.map(
+            (member) =>
+              `  ${declaration(member.type, memberIdentifier(member.name))};`,
+          ),
+          `} ${identifier(resource.name)};`,
+        ].join('\n'),
+      );
+    }
+  }
+  if (samplers.length > 0) {
+    resources.push(
+      samplers
+        .flatMap((sampler) => {
+          const orientation = orientationUniform(sampler);
+          return [
+            `uniform ${glslSamplerType(sampler.type, sampler.comparison)} ${
+              sampler.name
+            };`,
+            ...(orientation ? [`uniform vec2 ${orientation};`] : []),
+          ];
+        })
+        .join('\n'),
+    );
+  }
+  const storage = storageDeclarations(layout, glslType, written);
+  if (storage) {
+    resources.push(storage);
+  }
+
+  const table = objectTable(layout);
+  if (table) {
+    resources.push(table.declarations);
+  }
+  return { header, resources, samplers, ...(table ? { table } : {}) };
+}
+
+// The fragment shader of the compute draws: the bits of the point.
+const computeFragment = [
+  '#version 300 es',
+  '// Writes the texel of a compute draw. Do not edit.',
+  '',
+  'precision highp float;',
+  'precision highp int;',
+  '',
+  'flat in highp uvec4 c_value;',
+  'layout(location = 0) out highp uvec4 c_texel;',
+  '',
+  'void main() {',
+  '  c_texel = c_value;',
+  '}',
+  '',
+].join('\n');
+
 export class GlslEsCodegen implements ShaderCodegen {
   readonly language = 'glsl-es-300' as const;
+
+  /**
+   * The draws emulating a compute stage (see GlslComputeDraw): one program
+   * per write.
+   */
+  emitCompute(
+    module: ShaderModuleIR,
+    layout: PhysicalProgramLayout,
+  ): GlslComputeSources {
+    const compute = module.entryPoints.find(
+      (entryPoint) => entryPoint.stage === 'compute',
+    );
+    if (!compute) {
+      throw new Error('The program has no compute entry point');
+    }
+    const workgroupSize = compute.workgroupSize ?? [1, 1, 1];
+    const storage = new Map(
+      layout.groups
+        .flatMap((group) => group.bindings)
+        .flatMap(({ resource }) =>
+          resource.kind === 'storage-buffer'
+            ? [[resource.name, resource] as const]
+            : [],
+        ),
+    );
+    const written = new Set((compute.writes ?? []).map((w) => w.resource));
+    const { header, resources, samplers } = declarations(
+      module,
+      layout,
+      written,
+    );
+    const body = emitBody(compute, samplers);
+    const value = (id: number) => body.expressions.get(id) as string;
+    const [x, y, z] = workgroupSize;
+    const size = `uvec3(${x}u, ${y}u, ${z}u)`;
+    const prologue = [
+      '  // The thread of the instance, in the grid of the dispatch.',
+      `  uvec3 c_threads = ${ComputeNames.numWorkgroups} * ${size};`,
+      '  uint c_thread = uint(gl_InstanceID);',
+      '  uvec3 c_globalId = uvec3(c_thread % c_threads.x, (c_thread / c_threads.x) % c_threads.y, c_thread / (c_threads.x * c_threads.y));',
+      `  uvec3 c_localId = c_globalId % ${size};`,
+      `  uvec3 c_workgroupId = c_globalId / ${size};`,
+    ];
+
+    const draws = (compute.writes ?? []).map((write): GlslComputeDraw => {
+      const resource = storage.get(write.resource);
+      if (!resource) {
+        throw new Error(`Binding "${write.resource}" is not in the layout`);
+      }
+      const element = resource.type.element;
+      const { stride, texels } = storageElement(element);
+      const sizeName = StorageNames.size(write.resource);
+      const component = ComputeNames.component;
+      // The texel of the point, and whether the thread writes it: within
+      // the buffer, when the condition holds, and for the elements sharing
+      // a texel, in the component of the draw.
+      const placement =
+        stride === 4
+          ? [
+              '  uint c_texel = c_index / 4u;',
+              `  c_written = c_written && c_index % 4u == ${component};`,
+            ]
+          : stride === 8
+            ? [
+                '  uint c_texel = c_index / 2u;',
+                `  c_written = c_written && (c_index % 2u) * 2u == ${component};`,
+              ]
+            : [`  uint c_texel = c_index * ${texels}u + uint(gl_VertexID);`];
+      const texel =
+        element.kind === 'matrix'
+          ? texelOf(
+              { kind: 'vector', scalar: 'f32', size: element.rows },
+              `${value(write.value)}[gl_VertexID]`,
+            )
+          : texelOf(element, value(write.value));
+      const vertex = [
+        header,
+        ...resources,
+        [
+          `uniform uvec3 ${ComputeNames.numWorkgroups};`,
+          `uniform uint ${component};`,
+          'flat out highp uvec4 c_value;',
+        ].join('\n'),
+        [
+          'void main() {',
+          ...prologue,
+          ...body.lines,
+          `  // Writes the element of "${write.resource}".`,
+          `  uint c_index = uint(${value(write.index)});`,
+          `  bool c_written = c_index < ${StorageNames.texture(
+            write.resource,
+          )}Length()${
+            write.condition !== undefined ? ` && ${value(write.condition)}` : ''
+          };`,
+          ...placement,
+          `  c_value = ${texel};`,
+          `  vec2 c_pixel = (vec2(uvec2(c_texel % ${sizeName}.x, c_texel / ${sizeName}.x)) + 0.5) / vec2(${sizeName}.xy);`,
+          '  // The points not written are clipped.',
+          '  gl_Position = c_written ? vec4(c_pixel * 2.0 - 1.0, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);',
+          '  gl_PointSize = 1.0;',
+          '}',
+        ].join('\n'),
+      ];
+      return {
+        vertex: `${vertex.filter(Boolean).join('\n\n')}\n`,
+        fragment: computeFragment,
+        resource: write.resource,
+        texels: Math.max(texels, 1),
+        masks: masksOf(stride) as GlslComputeDraw['masks'],
+      };
+    });
+    return { kind: 'compute-draws', workgroupSize, draws };
+  }
 
   emit(module: ShaderModuleIR, layout: PhysicalProgramLayout): ShaderSources {
     const vertex = module.entryPoints.find(
@@ -529,70 +819,15 @@ export class GlslEsCodegen implements ShaderCodegen {
       (entryPoint) => entryPoint.stage === 'fragment',
     );
     if (module.entryPoints.some((entry) => entry.stage === 'compute')) {
-      throw new Error('GLSL ES 3.00 has no compute shaders');
+      throw new Error(
+        'GLSL ES 3.00 has no compute shaders: compute stages are emulated by draws (emitCompute)',
+      );
     }
     if (!vertex || !fragment) {
       throw new Error('A program needs a vertex and a fragment entry point');
     }
 
-    const samplers = combinedSamplers(module, layout);
-    const samplerTypes = [
-      ...new Set(
-        samplers.map((sampler) =>
-          glslSamplerType(sampler.type, sampler.comparison),
-        ),
-      ),
-    ].sort();
-
-    const header = [
-      '#version 300 es',
-      `// Generated from material graph "${module.name}". Do not edit.`,
-      '',
-      'precision highp float;',
-      'precision highp int;',
-      ...samplerTypes.map((type) => `precision highp ${type};`),
-    ].join('\n');
-
-    // The same declarations in both stages: GLSL requires the blocks shared
-    // by the stages to match.
-    const resources: string[] = [];
-    for (const group of layout.groups) {
-      for (const { resource } of group.bindings) {
-        if (resource.kind !== 'uniform-block') {
-          continue;
-        }
-        resources.push(
-          [
-            `layout(std140) uniform ${glslBlockName(resource.name)} {`,
-            ...resource.members.map(
-              (member) =>
-                `  ${declaration(member.type, memberIdentifier(member.name))};`,
-            ),
-            `} ${identifier(resource.name)};`,
-          ].join('\n'),
-        );
-      }
-    }
-    if (samplers.length > 0) {
-      resources.push(
-        samplers
-          .flatMap((sampler) => {
-            const orientation = orientationUniform(sampler);
-            return [
-              `uniform ${glslSamplerType(sampler.type, sampler.comparison)} ${
-                sampler.name
-              };`,
-              ...(orientation ? [`uniform vec2 ${orientation};`] : []),
-            ];
-          })
-          .join('\n'),
-      );
-    }
-
-    const table = objectTable(layout);
-    if (table) {
-      resources.push(table.declarations);
-    }
+    const { header, resources, samplers, table } = declarations(module, layout);
     const vertexBody = emitBody(vertex, samplers, table);
     const vertexOutputs = vertex.outputs.filter((output) => !output.builtin);
     const vertexSource = [

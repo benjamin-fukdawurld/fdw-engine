@@ -10,6 +10,7 @@ import {
   compile,
   defineFunction,
   GraphBuilder,
+  ShaderType,
   std,
   stdMacros,
 } from '@fdw/engine-shader';
@@ -2792,6 +2793,13 @@ export function describeRenderer(
         if (backend.capabilities?.compute === false) {
           return;
         }
+        if (backend.capabilities?.emulatedCompute) {
+          // WebGL2: the counts would have to be read back first.
+          expect(() =>
+            backend.buffers.create({ size: 16, usage: ['indirect'] }),
+          ).toThrow(/no indirect/);
+          return;
+        }
         // 2 workgroups of 64: the first 128 values, not the next ones.
         const values = Float32Array.from({ length: 200 }, (_, i) => i);
         const input = backend.buffers.create({
@@ -2902,6 +2910,139 @@ export function describeRenderer(
         runner.destroy();
       });
 
+      it('writes and reads elements of every size', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        // 5 elements, in 3 workgroups of 2 threads: the 6th thread is past
+        // the end, the scalars end in the middle of a texel in WebGL2.
+        const count = 5;
+        const runner = new ComputeRunner(backend);
+        // Each thread copies its element, plus its index (but the
+        // matrices), and gives what the output holds.
+        const copy = async (
+          type: ShaderType,
+          input: Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>,
+        ): Promise<number[]> => {
+          const g = new GraphBuilder('copy');
+          const index = g.builtin('global-invocation-id').swizzle('x');
+          const value = g.call(std.index, {
+            array: g.storage('input', arrayType(type)),
+            index,
+          });
+          const scalar = type === BuiltinTypes.u32 ? type : BuiltinTypes.f32;
+          g.write(
+            g.storage('output', arrayType(type), { access: 'read-write' }),
+            {
+              index,
+              value:
+                type.kind === 'matrix'
+                  ? value
+                  : g.call(std.add, {
+                      a: value,
+                      b: g.call(
+                        std.convert,
+                        { value: index },
+                        { params: { to: scalar } },
+                      ),
+                    }),
+            },
+          );
+          g.compute({ workgroupSize: [2, 1, 1] });
+          const values = {
+            input: backend.buffers.create({
+              size: input.byteLength,
+              usage: ['storage', 'copy-dst'],
+              initialData: input,
+            }),
+            output: backend.buffers.create({
+              size: input.byteLength,
+              usage: ['storage', 'copy-src'],
+            }),
+          };
+          runner.dispatch(
+            compile(g.build(), { capabilities: backend.capabilities }),
+            { values, workgroups: [3] },
+          );
+          const bytes = await values.output.read();
+          values.input.destroy();
+          values.output.destroy();
+          return type === BuiltinTypes.u32
+            ? [...new Uint32Array(bytes)]
+            : [...new Float32Array(bytes)];
+        };
+
+        const scalars = Float32Array.from({ length: count }, (_, i) => i / 2);
+        expect(await copy(BuiltinTypes.f32, scalars)).toEqual(
+          [...scalars].map((v, i) => v + i),
+        );
+        const integers = Uint32Array.from(
+          { length: count },
+          (_, i) => 1000 + i,
+        );
+        expect(await copy(BuiltinTypes.u32, integers)).toEqual(
+          [...integers].map((v, i) => v + i),
+        );
+        const pairs = Float32Array.from({ length: count * 2 }, (_, i) => -i);
+        expect(await copy(BuiltinTypes.vec2f, pairs)).toEqual(
+          [...pairs].map((v, i) => v + Math.floor(i / 2)),
+        );
+        // The padding of the vec3 is not compared.
+        const triples = Float32Array.from({ length: count * 4 }, (_, i) => i);
+        const copied = await copy(BuiltinTypes.vec3f, triples);
+        for (let i = 0; i < count * 4; i++) {
+          if (i % 4 !== 3) {
+            expect(copied[i]).toBe(triples[i] + Math.floor(i / 4));
+          }
+        }
+        const matrices = Float32Array.from(
+          { length: count * 16 },
+          (_, i) => i * 3,
+        );
+        expect(await copy(BuiltinTypes.mat4f, matrices)).toEqual([...matrices]);
+        runner.destroy();
+      });
+
+      it('sees the writes of the CPU and of the dispatches in order', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        const program = compile(scaleGraph(), {
+          capabilities: backend.capabilities,
+        });
+        const a = backend.buffers.create({
+          size: 16,
+          usage: ['storage', 'copy-src', 'copy-dst'],
+          initialData: new Float32Array([1, 2, 3, 4]),
+        });
+        const b = backend.buffers.create({
+          size: 16,
+          usage: ['storage', 'copy-src', 'copy-dst'],
+        });
+        const runner = new ComputeRunner(backend);
+        const scale = (input: GpuBuffer, output: GpuBuffer, factor: number) =>
+          runner.dispatch(program, {
+            values: { input, output, factor },
+            workgroups: [1],
+          });
+        scale(a, b, 2);
+        // A write of part of b, after the dispatch that wrote all of it.
+        b.write(4, new Float32Array([10]).buffer);
+        expect([...new Float32Array(await b.read())]).toEqual([2, 10, 6, 8]);
+        // Read by the next dispatch.
+        scale(b, a, 3);
+        expect([...new Float32Array(await a.read())]).toEqual([6, 30, 18, 24]);
+        // Copied, then read by a dispatch.
+        const encoder = backend.createCommandEncoder();
+        encoder.copyBufferToBuffer(a, 0, b, 0, 8);
+        backend.submit([encoder.finish()]);
+        scale(b, a, 1);
+        expect([...new Float32Array(await a.read())]).toEqual([6, 30, 6, 8]);
+        runner.destroy();
+        a.destroy();
+        b.destroy();
+      });
+
       it('samples textures at an explicit level in fragment shaders', async () => {
         const g = new GraphBuilder('sampled at a level');
         const texel = g.call(std.textureSampleLevel, {
@@ -3008,13 +3149,23 @@ export function describeRenderer(
         skinning.applyPose(pose).update();
         return { scene, skinning, mesh };
       };
+      // Compute too where it is emulated (WebGL2), though not the default.
       const modes = (): ('vertex' | 'compute')[] =>
-        defaultSkinningMode(backend) === 'compute'
-          ? ['vertex', 'compute']
-          : ['vertex'];
+        backend.capabilities?.compute === false
+          ? ['vertex']
+          : ['vertex', 'compute'];
+
+      it('skins in the vertex stage by default without compute shaders', () => {
+        const capabilities = backend.capabilities;
+        expect(defaultSkinningMode(backend)).toBe(
+          capabilities?.compute === false || capabilities?.emulatedCompute
+            ? 'vertex'
+            : 'compute',
+        );
+      });
 
       it('skins in a compute pass the vertices the CPU skins', async () => {
-        if (defaultSkinningMode(backend) !== 'compute') {
+        if (!modes().includes('compute')) {
           return;
         }
         const { skinning, mesh } = bent('compute');

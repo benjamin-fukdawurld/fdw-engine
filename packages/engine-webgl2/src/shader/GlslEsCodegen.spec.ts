@@ -3,12 +3,14 @@ import {
   std140LayoutStrategy,
 } from '@fdw/engine-backend';
 import {
+  arrayType,
   BuiltinTypes,
   compile,
   GraphBuilder,
   IrEntryPoint,
   IrInstruction,
   ShaderModuleIR,
+  ShaderType,
   std,
   stdLights,
 } from '@fdw/engine-shader';
@@ -576,5 +578,179 @@ describe('GlslEsCodegen', () => {
     );
     expect(sources.vertex).toMatchSnapshot('vertex');
     expect(sources.fragment).toMatchSnapshot('fragment');
+  });
+
+  describe('storage buffers', () => {
+    const layoutOf = (program: ReturnType<typeof compile>) =>
+      std140LayoutStrategy.resolve(program.layout);
+
+    it('reads the elements of a storage buffer from its data texture', () => {
+      const g = new GraphBuilder('palette');
+      const palette = g.storage('palette', arrayType(BuiltinTypes.vec4f));
+      const weights = g.storage('weights', arrayType(BuiltinTypes.f32));
+      const last = g.call(std.sub, {
+        a: g.call(std.arrayLength, { array: palette }),
+        b: 1,
+      });
+      g.surface({
+        baseColor: g.call(std.mul, {
+          a: g.call(std.index, { array: palette, index: last }).swizzle('rgb'),
+          b: g.call(std.index, { array: weights, index: 0 }),
+        }),
+      });
+      const program = compile(g.build());
+      const { fragment } = emit(program.module, layoutOf(program));
+      expect(fragment).toContain('uniform highp usampler2D s_palette;');
+      expect(fragment).toContain('uniform uvec3 s_paletteSize;');
+      expect(fragment).toContain('return s_paletteSize.z / 16u;');
+      expect(fragment).toContain(
+        'return uintBitsToFloat(s_paletteTexel(i).xyzw);',
+      );
+      expect(fragment).toContain(
+        'return uintBitsToFloat(s_weightsTexel(i / 4u)[i % 4u]);',
+      );
+      expect(fragment).toContain('s_paletteLoad(uint(');
+    });
+
+    it('reads vec2, matrices and integers', () => {
+      const g = new GraphBuilder('elements');
+      const at = (name: string, type: Parameters<typeof arrayType>[0]) =>
+        g.call(std.index, {
+          array: g.storage(name, arrayType(type)),
+          index: g.builtin('vertex-index'),
+        });
+      const offset = at('offsets', BuiltinTypes.vec2f);
+      const matrix = at('matrices', BuiltinTypes.mat4f);
+      const count = at('counts', BuiltinTypes.i32);
+      g.surface({
+        positionOffset: g.call(std.mul, {
+          a: g.call(std.vec3, {
+            x: offset.swizzle('x'),
+            y: offset.swizzle('y'),
+          }),
+          b: g.call(
+            std.convert,
+            { value: count },
+            { params: { to: BuiltinTypes.f32 } },
+          ),
+        }),
+        baseColor: g
+          .call(std.transform, { matrix, vector: [1, 1, 1, 1] })
+          .swizzle('rgb'),
+      });
+      const program = compile(g.build());
+      const { vertex } = emit(program.module, layoutOf(program));
+      expect(vertex).toContain('uvec4 t = s_offsetsTexel(i / 2u);');
+      expect(vertex).toContain(
+        'return uintBitsToFloat(i % 2u == 0u ? t.xy : t.zw);',
+      );
+      expect(vertex).toContain(
+        'return mat4(uintBitsToFloat(s_matricesTexel(i * 4u + 0u).xyzw)',
+      );
+      expect(vertex).toContain('return int(s_countsTexel(i / 4u)[i % 4u]);');
+    });
+  });
+
+  describe('compute stages', () => {
+    // output[i] = input[i] × factor, for i < arrayLength(input).
+    const scale = (element: ShaderType = BuiltinTypes.f32) => {
+      const g = new GraphBuilder('scale');
+      const index = g.builtin('global-invocation-id').swizzle('x');
+      const input = g.storage('input', arrayType(element));
+      const output = g.storage('output', arrayType(element), {
+        access: 'read-write',
+      });
+      g.write(output, {
+        index,
+        value: g.call(std.mul, {
+          a: g.call(std.index, { array: input, index }),
+          b: g.uniform('factor', BuiltinTypes.f32),
+        }),
+        when: g.call(std.less, {
+          a: index,
+          b: g.call(std.arrayLength, { array: input }),
+        }),
+      });
+      g.compute({ workgroupSize: [64, 1, 1] });
+      const program = compile(g.build());
+      return codegen.emitCompute(
+        program.module,
+        std140LayoutStrategy.resolve(program.layout),
+      );
+    };
+
+    it('emulates a compute stage with a draw of points per write', () => {
+      const sources = scale();
+      expect(sources.workgroupSize).toEqual([64, 1, 1]);
+      expect(sources.draws).toHaveLength(1);
+      const [draw] = sources.draws;
+      expect(draw.resource).toBe('output');
+      // A quarter of texel per f32: four draws, one per component.
+      expect(draw.texels).toBe(1);
+      expect(draw.masks).toHaveLength(4);
+      expect(draw.masks[2]).toEqual([false, false, true, false]);
+      expect(draw.vertex).toMatchSnapshot('vertex');
+      expect(draw.fragment).toMatchSnapshot('fragment');
+    });
+
+    it('does not read the buffers it writes', () => {
+      const { vertex } = scale().draws[0];
+      expect(vertex).not.toContain('usampler2D s_output;');
+      expect(vertex).toContain('uniform uvec3 s_outputSize;');
+      expect(vertex).toContain('uniform highp usampler2D s_input;');
+    });
+
+    it('writes the elements of a texel or more in one draw', () => {
+      const [vector] = scale(BuiltinTypes.vec4f).draws;
+      expect(vector.masks).toEqual([[true, true, true, true]]);
+      expect(vector.vertex).toContain(
+        'uint c_texel = c_index * 1u + uint(gl_VertexID);',
+      );
+      const [pair] = scale(BuiltinTypes.vec2f).draws;
+      expect(pair.masks).toEqual([
+        [true, true, false, false],
+        [false, false, true, true],
+      ]);
+      expect(pair.vertex).toContain(
+        'c_written = c_written && (c_index % 2u) * 2u == c_component;',
+      );
+    });
+
+    it('writes matrices a column per texel', () => {
+      const g = new GraphBuilder('matrices');
+      const output = g.storage('output', arrayType(BuiltinTypes.mat4f), {
+        access: 'read-write',
+      });
+      g.write(output, {
+        index: g.builtin('global-invocation-id').swizzle('x'),
+        value: g.uniform('matrix', BuiltinTypes.mat4f),
+      });
+      g.compute({ workgroupSize: [1, 1, 1] });
+      const program = compile(g.build());
+      const [draw] = codegen.emitCompute(
+        program.module,
+        std140LayoutStrategy.resolve(program.layout),
+      ).draws;
+      expect(draw.texels).toBe(4);
+      expect(draw.vertex).toMatch(
+        /c_value = floatBitsToUint\(.*\[gl_VertexID\]\);/,
+      );
+    });
+
+    it('refuses compute stages in emit', () => {
+      const g = new GraphBuilder('empty');
+      const output = g.storage('output', arrayType(BuiltinTypes.f32), {
+        access: 'read-write',
+      });
+      g.write(output, { index: 0, value: 1 });
+      g.compute({ workgroupSize: [1, 1, 1] });
+      const program = compile(g.build());
+      expect(() =>
+        codegen.emit(
+          program.module,
+          std140LayoutStrategy.resolve(program.layout),
+        ),
+      ).toThrow(/emulated by draws/);
+    });
   });
 });

@@ -15,6 +15,7 @@ const examples: Record<string, string> = {
   transparency: 'tutorials/transparency/',
   reflections: 'tutorials/reflections/',
   'compute-waves': 'tutorials/compute/',
+  'gpu-particles': 'tutorials/gpu-particles/',
   'scene-forest': 'tutorials/scene/',
   'occlusion-culling': 'tutorials/occlusion-culling/',
   tessellation: 'tutorials/tessellation/',
@@ -32,9 +33,6 @@ const examples: Record<string, string> = {
   'maze-4': 'game/the-game/',
   fps: 'game/fps/',
 };
-
-// The examples that need compute shaders: on WebGL2, they say so.
-const needsCompute = new Set(['compute-waves']);
 
 // The clock of the examples, stopped: the same image at every run.
 const time = 1.5;
@@ -56,11 +54,6 @@ for (const [name, page] of Object.entries(examples)) {
     await example.scrollIntoViewIfNeeded();
     const canvas = example.locator('canvas');
     const status = example.locator('.fdw-example-status');
-    if (backend === 'webgl2' && needsCompute.has(name)) {
-      await expect(status).toContainText('needs compute shaders');
-      return;
-    }
-
     await expect(status).not.toHaveAttribute('data-error');
     await expect
       .poll(

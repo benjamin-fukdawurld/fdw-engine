@@ -28,7 +28,7 @@ Ce document décrit le **compute graph** : son but, son intérêt, son coût, le
 - Il lit des uniforms, des **storage buffers** et des textures, et **écrit** dans des storage buffers et des storage textures. Les storage buffers (le chantier 4 du material graph) sont son prérequis et sa première étape.
 - Il est **compilé une fois** et mis en cache, comme un matériau ; une **passe de calcul** du [render graph](render-graph.md) l'exécute à chaque frame, ou à la demande.
 - Les écritures sont des **résultats** du programme, pas des instructions : le corps de l'IR reste pur, comme pour le `discard` du material graph.
-- WebGL2 n'a pas de calcul : le compute graph n'y est pas disponible pour l'instant.
+- WebGL2 n'a pas de calcul : le compute graph y est émulé par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md)), d'abord non disponible.
 
 ---
 
@@ -118,6 +118,8 @@ Les compute graphs sont **compilés une fois**, mis en cache par `programKey` co
 ### 5.3 Sans calcul : WebGL2
 
 WebGL2 n'a ni compute shaders ni storage buffers. **Décision : le compute graph n'y est pas disponible pour l'instant** ; la capacité `compute` vaut `false`, et une passe de calcul fait échouer la compilation du render graph avec un message clair.
+
+_Mis à jour (17/10/2026)_ : le repli par rendu dans des textures est fait, voir [cg-webgl2.md](cg-webgl2.md). WebGL2 déclare `compute`, `storageBuffers` et `emulatedCompute` ; seul le dispatch indirect y reste refusé.
 
 Deux replis pourront être étudiés plus tard :
 
@@ -270,7 +272,7 @@ Les buffers gagnent l'usage `storage` (déjà déclaré dans l'API) et une relec
 | **Structures** dans les storage buffers                                                                                                 | données de scène lisibles (instances, lumières)                                                                          |
 | **Kernels en code natif** (nœuds `native`)                                                                                              | algorithmes critiques, reprise de code existant (§5.1, alternative D)                                                    |
 | **Sorties de ray tracing** (`output.rayGeneration`, `output.closestHit`, `output.miss`)                                                 | ray tracing matériel, sur les backends natifs ([render graph §12](render-graph.md#12-compatibilité-avec-le-ray-tracing)) |
-| **Replis WebGL2** (CPU, rendu dans des textures)                                                                                        | les fonctionnalités de calcul sur WebGL2 (§5.3)                                                                          |
+| ~~**Replis WebGL2** (CPU, rendu dans des textures)~~ : fait par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md))                  | les fonctionnalités de calcul sur WebGL2 (§5.3)                                                                          |
 
 ---
 
@@ -307,12 +309,12 @@ Les passes de calcul du render graph (RG2) utilisent ensuite ces programmes.
 | -------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Expressivité               | Des algorithmes impossibles sans atomiques ni mémoire partagée | Ajouts prévus (§8) ; code natif en dernier recours                                       |
 | Écritures concurrentes     | Résultats qui dépendent de l'ordre des fils                    | Écritures comme résultats de l'IR ; lecture-écriture d'une même ressource refusée (§6.4) |
-| WebGL2                     | Pas de calcul                                                  | Non disponible pour l'instant ; replis étudiés plus tard (§5.3)                          |
+| WebGL2                     | Pas de calcul                                                  | Émulé par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md))                         |
 | Performance du code généré | Moins efficace qu'un kernel écrit à la main                    | Mesures ; code natif pour les cas critiques                                              |
 
 **Décisions (08/10/2026) :**
 
 1. **Les kernels sont des graphes** ; le code natif sera étudié plus tard (alternative C, puis éventuellement D, du §5.1).
 2. **Les compute graphs sont compilés une fois** et mis en cache ; seules les passes qui les exécutent sont déclarées à chaque frame.
-3. **WebGL2 n'a pas de calcul** pour l'instant ; les replis CPU et par rendu dans des textures seront étudiés plus tard.
+3. **WebGL2 n'a pas de calcul** pour l'instant ; les replis CPU et par rendu dans des textures seront étudiés plus tard. _Remplacée le 17/10/2026 : calcul émulé par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md))._
 4. **Les storage buffers (chantier 4) sont la première étape** (CG1).

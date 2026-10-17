@@ -136,13 +136,15 @@ own: the graph of the model's material with the skinning added. Its
 bind matrix), sends them to the GPU and updates the bounds of the
 primitives, from a sphere around each joint.
 
-| Mode      | Where                                                                                 | Backends       |
-| --------- | ------------------------------------------------------------------------------------- | -------------- |
-| `compute` | A compute pass writes the skinned vertices into a buffer, read by every pass by index | WebGPU, Vulkan |
-| `vertex`  | The vertex stage of each pass skins its vertex, from the joint matrices in a texture  | All, WebGL2    |
+| Mode      | Where                                                                                 | Backends |
+| --------- | ------------------------------------------------------------------------------------- | -------- |
+| `compute` | A compute pass writes the skinned vertices into a buffer, read by every pass by index | All      |
+| `vertex`  | The vertex stage of each pass skins its vertex, from the joint matrices in a texture  | All      |
 
-The mode is `compute` where the backend has compute shaders and storage
-buffers, `vertex` elsewhere; `{ mode }` chooses. In `compute` mode, the
+The mode is `compute` where the backend has compute shaders, `vertex`
+elsewhere: on WebGL2, which emulates compute by rendering to textures (see
+[On WebGL2](/fdw-engine/guides/compute/#on-webgl2)), the vertex stage costs
+less. `{ mode }` chooses. In `compute` mode, the
 camera, the shadow maps and later the ray tracing read the same vertices,
 skinned once per frame.
 

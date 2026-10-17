@@ -82,6 +82,10 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   // Whether the color targets of a pipeline can have different blend
   // states. Without it (WebGL2), the float targets share the same.
   readonly independentBlend?: boolean;
+  // Compute stages emulated by draws into textures (WebGL2), not compute
+  // shaders: no indirect dispatch, and slower. The features with another
+  // path there prefer it (the skinning in the vertex stage).
+  readonly emulatedCompute?: boolean;
 }
 
 // Everything a renderer needs from a backend, once its device is ready.
