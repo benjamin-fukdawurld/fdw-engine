@@ -72,8 +72,9 @@ the programs against it:
 
 | Capability                         | Meaning                                             | WebGL2                                        |
 | ---------------------------------- | --------------------------------------------------- | --------------------------------------------- |
-| `compute`                          | Compute stages                                      | false                                         |
-| `storageBuffers`                   | Storage buffers                                     | false                                         |
+| `compute`                          | Compute stages                                      | true (emulated)                               |
+| `emulatedCompute`                  | Compute emulated by draws into textures             | true                                          |
+| `storageBuffers`                   | Storage buffers                                     | true (data textures)                          |
 | `maxVaryings`                      | Values interpolated between the stages              | from the context                              |
 | `renderableFormats`                | Color formats usable as attachments (`rgba16float`) | with `EXT_color_buffer_float`                 |
 | `objectTable`                      | The object data read from a table, per instance     | true (data textures)                          |

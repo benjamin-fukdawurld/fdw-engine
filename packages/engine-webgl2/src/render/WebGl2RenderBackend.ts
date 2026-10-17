@@ -43,10 +43,13 @@ export class WebGl2RenderBackend implements RenderBackend {
     this.pipelines = new WebGl2PipelineFactory(gl);
     this.capabilities = {
       maxVaryings: gl.getParameter(GL.MAX_VARYING_VECTORS),
-      storageBuffers: false,
+      // Storage buffers in data textures, written by compute stages
+      // emulated by draws into them (see WebGl2ComputePipeline).
+      storageBuffers: true,
+      compute: true,
+      emulatedCompute: true,
       // The object data in data textures.
       objectTable: true,
-      compute: false,
       // Float color attachments need EXT_color_buffer_float (enabled by
       // getExtension), widely available on WebGL2.
       renderableFormats: gl.getExtension('EXT_color_buffer_float')

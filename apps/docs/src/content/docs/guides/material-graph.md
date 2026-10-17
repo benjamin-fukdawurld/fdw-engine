@@ -37,7 +37,7 @@ const graph = g.build();
 | `g.attribute(semantic, type)`                     | A vertex attribute of the mesh                                                                                             |
 | `g.uniform(name, type, { default, slot })`        | A value of the material                                                                                                    |
 | `g.texture(name)`, `g.sampler(name)`              | A texture (`dimension: 'cube'` for a cube), a sampler of the material (`comparison: true` for depth tests)                 |
-| `g.storage(name, arrayType(element), { access })` | A storage buffer (WebGPU, Vulkan)                                                                                          |
+| `g.storage(name, arrayType(element), { access })` | A storage buffer (a data texture on WebGL2)                                                                                |
 | `g.builtin(name)`                                 | `vertex-index`, `instance-index`, `frag-coord`, `front-facing`, `screen-uv`, `global-invocation-id`…                       |
 | `g.engine(name)`                                  | `camera.view`, `camera.projection`, `camera.inverseViewProjection`, `camera.position`, `object.world`, `time`, `exposure`… |
 | `g.constant(type, value)`                         | A constant, part of the code                                                                                               |
@@ -227,7 +227,6 @@ code: `WgslCodegen`, `GlslEsCodegen`, `HlslCodegen`.
 
 - At most 16 lights per frame.
 - No image-based lighting yet: the ambient term is a color per light.
-- Storage buffers hold arrays of scalars, vectors or matrices (no structs),
-  and are not available on WebGL2.
+- Storage buffers hold arrays of scalars, vectors or matrices (no structs).
 - Function inputs have concrete types (no generics), and `textureSample`
   takes 2D textures only.

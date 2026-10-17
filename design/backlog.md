@@ -41,7 +41,7 @@ Détails dans [compute-graph.md](compute-graph.md).
 
 - ~~Un dispatch de compute graph dans une passe du render graph~~ : fait, `ComputeRunner.record(pass, program, dispatch)` (utilisé par le skinning). Reste éventuellement une `addComputeGraphPass`, comme `addFullscreenPass` pour les matériaux.
 - Storage textures (écriture d'images par les kernels).
-- Repli WebGL2 des storage buffers (texture de données lue par `texelFetch`).
+- ~~Repli WebGL2 des storage buffers (texture de données lue par `texelFetch`)~~ : fait, avec le calcul émulé par rendu dans des textures ([cg-webgl2.md](cg-webgl2.md)). Reste éventuellement le rectangle plein écran pour les écritures à l'indice du thread, plus rapide que les points.
 
 ## 4. Material graph
 

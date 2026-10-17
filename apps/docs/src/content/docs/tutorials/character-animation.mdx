@@ -2,7 +2,7 @@
 title: An animated character
 description: Load a skinned glTF character, drive its clips with an animation graph — a blend space, a state machine, a layer — and skin it on the GPU.
 sidebar:
-  order: 22
+  order: 23
 ---
 
 import Example from '../../../components/Example.astro';
@@ -36,8 +36,8 @@ of the model, with the skinning added.
 - On **WebGPU** and Vulkan, a compute pass skins the vertices once per
   frame, into a buffer that the vertex stage of every pass reads: the
   camera, the shadow map, later the ray tracing.
-- On **WebGL2**, without compute, the vertex stage of each pass skins its
-  vertex, the joint matrices read from a texture.
+- On **WebGL2**, whose compute is emulated, the vertex stage of each pass
+  skins its vertex, the joint matrices read from a texture.
 
 The line under the canvas says which one runs; `{ mode: 'vertex' }` forces
 the second anywhere.

@@ -12,9 +12,10 @@ frame by a compute graph, then read by the material of the grid.
 
 <Example name="compute-waves" />
 
-:::caution[WebGPU and Vulkan]
-Compute shaders are not available on WebGL2. The example reports it when the
-page runs on WebGL2: open it in a browser with WebGPU.
+:::note[On every backend]
+WebGL2 has no compute shaders: it runs the same graph by rendering to a
+texture, without a change to the code (see
+[On WebGL2](/fdw-engine/guides/compute/#on-webgl2)).
 :::
 
 ## A compute graph
@@ -64,8 +65,9 @@ const ripples = compile(c.build(), { capabilities: backend.capabilities });
 - `c.write(array, { index, value, when })` writes an element; `when`, a
   boolean, guards the threads beyond the end of the array.
 
-Compiled with the capabilities of the backend, the graph fails with a clear
-message on a backend without compute.
+Compiled with the capabilities of the backend, the graph would fail with a
+clear message on a backend without compute; every backend of the engine has
+it, WebGL2 by rendering to textures.
 
 The compiler refuses what cannot work in a compute shader:
 `std.textureSample` (it needs the derivatives of a fragment shader: use
@@ -95,7 +97,8 @@ buffers — and submits `workgroups` groups of threads. The GPU runs the
 submissions in order: the frame drawn next sees the new heights.
 
 `workgroups` can also be a buffer written by the GPU,
-`{ buffer, offset }`, holding three `u32`: an indirect dispatch.
+`{ buffer, offset }`, holding three `u32`: an indirect dispatch (not on
+WebGL2).
 
 To read results on the CPU, give the buffer the `copy-src` usage and
 `await buffer.read()`, which resolves with an `ArrayBuffer`.
@@ -133,5 +136,7 @@ places each computation in the stage where its inputs are available.
 
 ## Next
 
-[Compute guide](/fdw-engine/guides/compute/): compute passes in a render
-graph, and the rules of storage buffers.
+- [GPU particles](/fdw-engine/tutorials/gpu-particles/): a simulation whose
+  state is read and written in turn, on the three backends.
+- [Compute guide](/fdw-engine/guides/compute/): compute passes in a render
+  graph, and the rules of storage buffers.

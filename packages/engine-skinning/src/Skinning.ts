@@ -31,7 +31,7 @@ import { bindCenters, MeshSkin } from './MeshSkin';
 export interface SkinningOptions {
   /**
    * `compute` where the backend has compute shaders and storage buffers,
-   * `vertex` elsewhere (WebGL2), by default.
+   * `vertex` elsewhere, and where compute is emulated (WebGL2), by default.
    */
   readonly mode?: SkinningMode;
   /** Records the kernels in `compute` mode: one per backend by default. */
@@ -49,7 +49,8 @@ let skinnings = 0;
 export function defaultSkinningMode(backend: RenderBackend): SkinningMode {
   const capabilities = backend.capabilities;
   return capabilities?.compute === false ||
-    capabilities?.storageBuffers === false
+    capabilities?.storageBuffers === false ||
+    capabilities?.emulatedCompute === true
     ? 'vertex'
     : 'compute';
 }

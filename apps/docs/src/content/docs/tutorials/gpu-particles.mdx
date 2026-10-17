@@ -1,0 +1,174 @@
+---
+title: GPU particles
+description: Simulate thousands of particles with a compute graph, on WebGPU, Vulkan and WebGL2, reading and writing two states in turn.
+sidebar:
+  order: 13
+---
+
+import Example from '../../../components/Example.astro';
+
+A fountain of 4096 particles: each frame, a compute graph moves every
+particle from its previous state to the next one, and a material draws a
+small quad at each position. The simulation never leaves the GPU, on every
+backend, WebGL2 included.
+
+<Example name="gpu-particles" />
+
+The [Compute tutorial](/fdw-engine/tutorials/compute/) introduces compute
+graphs and storage buffers; this one builds a simulation on them.
+
+## The state of a particle
+
+Each particle has a position, an age and a velocity: two `vec4` per
+particle, in two storage buffers. The age is in the `w` of the position.
+
+A compute graph **cannot read a buffer it writes**: its threads run in any
+order, and one thread could read a particle another one already moved. The
+state is therefore kept twice: the step reads one copy and writes the other,
+and the two swap at each frame.
+
+```ts
+const buffer = (data?: Float32Array<ArrayBuffer>) =>
+  backend.buffers.create({
+    size: count * 16,
+    usage: ['storage', 'copy-dst'],
+    ...(data ? { initialData: data } : {}),
+  });
+const states = [
+  { positions: buffer(positions), velocities: buffer(velocities) },
+  { positions: buffer(), velocities: buffer() },
+];
+```
+
+A third buffer holds the launch velocity of each particle, read when it
+starts again.
+
+## The simulation step
+
+One thread per particle. It reads the particle, adds the gravity to its
+velocity and its velocity to its position. At the end of its life, the
+particle starts again from the origin: the graph has no branch, so
+`std.select` chooses between the two results.
+
+```ts
+const c = new GraphBuilder('fountain');
+const index = c.builtin('global-invocation-id').swizzle('x');
+const read = (name: string) =>
+  c.call(std.index, {
+    array: c.storage(name, arrayType(BuiltinTypes.vec4f)),
+    index,
+  });
+const state = read('positions');
+const velocity = read('velocities');
+const dt = c.uniform('dt', BuiltinTypes.f32);
+const age = c.call(std.add, { a: state.swizzle('w'), b: dt });
+const reborn = c.call(std.greater, { a: age, b: life });
+const nextVelocity = c.call(std.select, {
+  ifFalse: c.call(std.add, {
+    a: velocity.swizzle('xyz'),
+    b: c.call(std.mul, { a: [0, -9.8, 0], b: dt }),
+  }),
+  ifTrue: read('launches').swizzle('xyz'),
+  condition: reborn,
+});
+```
+
+The position and the age are computed the same way, then written with
+`c.write`, one write per buffer:
+
+```ts
+const write = (name: string) =>
+  c.storage(name, arrayType(BuiltinTypes.vec4f), { access: 'read-write' });
+c.write(write('nextPositions'), {
+  index,
+  value: c.call(std.extend, { xyz: nextPosition, w: nextAge }),
+});
+c.write(write('nextVelocities'), {
+  index,
+  value: c.call(std.extend, { xyz: nextVelocity, w: 0 }),
+});
+c.compute({ workgroupSize: [64, 1, 1] });
+const step = compile(c.build(), { capabilities: backend.capabilities });
+```
+
+## Each frame
+
+The step reads the state of the previous frame and writes the other one;
+the material then draws the state just written, which the next step reads:
+
+```ts
+onFrame((time) => {
+  const [from, to] = [states[current], states[1 - current]];
+  compute.dispatch(step, {
+    values: {
+      positions: from.positions,
+      velocities: from.velocities,
+      launches: launchBuffer,
+      nextPositions: to.positions,
+      nextVelocities: to.velocities,
+      dt,
+    },
+    workgroups: [count / 64],
+  });
+  material.setValue('positions', to.positions);
+  current = 1 - current;
+  renderer.render({
+    items: [{ mesh: quads, material, transform }],
+    camera,
+    surface,
+  });
+});
+```
+
+`setValue` changes the buffer the material reads without recompiling it.
+
+## Drawing the particles
+
+The mesh holds a quad per particle: four vertices around the origin. The
+vertex `4 × i + k` is the corner `k` of the particle `i`; the material reads
+the position of its particle and moves the corner there:
+
+```ts
+const g = new GraphBuilder('particle');
+const particle = g.call(std.index, {
+  array: g.storage('positions', arrayType(BuiltinTypes.vec4f)),
+  index: g.call(std.div, { a: g.builtin('vertex-index'), b: 4 }),
+});
+g.surface({
+  positionOffset: particle.swizzle('xyz'),
+  baseColor: g.call(std.mix, {
+    a: [1, 0.85, 0.4],
+    b: [0.2, 0.4, 1],
+    t: g.call(std.saturate, {
+      x: g.call(std.div, { a: particle.swizzle('w'), b: life }),
+    }),
+  }),
+});
+```
+
+The integer division of `vertex-index` by `4` gives the particle; the color
+goes from yellow to blue with its age.
+
+## On WebGL2
+
+WebGL2 has no compute shaders: the same graph runs there by **rendering to
+textures**, the GPGPU technique that predates compute shaders.
+
+- Each storage buffer has a copy in a data texture, 16 bytes per texel.
+- Each write of the graph becomes a draw of points: one point per thread,
+  placed by the vertex shader on the texel of the element written, and whose
+  value the fragment shader writes. The step above makes two draws, one per
+  buffer written.
+- The engine copies each buffer to its texture and back on the GPU, when a
+  use needs it: a dispatch, a draw, `read()`.
+
+The code does not change. The example shows, under the canvas, which way
+the backend computes. The [Compute guide](/fdw-engine/guides/compute/#on-webgl2)
+details what WebGL2 does not do: indirect dispatches, mainly.
+
+## Next
+
+- [Compute guide](/fdw-engine/guides/compute/): the rules of compute graphs,
+  compute passes in a render graph.
+- [Render graph guide](/fdw-engine/guides/render-graph/): run the step in a
+  compute pass, with the other passes of the frame.

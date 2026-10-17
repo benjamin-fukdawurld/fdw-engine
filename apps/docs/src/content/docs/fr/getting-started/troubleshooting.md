@@ -27,9 +27,10 @@ WebGL2.
 
 ### « the backend has no compute shaders »
 
-Un compute graph, ou un graphe qui lit un storage buffer, compilé pour
-WebGL2. Testez `backend.capabilities.compute` et proposez une alternative, ou
-exigez WebGPU.
+Un compute graph compilé avec les capacités d'un backend sans calcul
+(`capabilities.compute === false`). Les backends du moteur l'ont tous,
+WebGL2 par rendu dans des textures : vérifiez les capacités données à
+`compile`.
 
 ### Rien ne s'affiche
 

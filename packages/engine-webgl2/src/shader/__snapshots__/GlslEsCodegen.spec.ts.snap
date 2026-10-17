@@ -1,5 +1,83 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`GlslEsCodegen > compute stages > emulates a compute stage with a draw of points per write > fragment 1`] = `
+"#version 300 es
+// Writes the texel of a compute draw. Do not edit.
+
+precision highp float;
+precision highp int;
+
+flat in highp uvec4 c_value;
+layout(location = 0) out highp uvec4 c_texel;
+
+void main() {
+  c_texel = c_value;
+}
+"
+`;
+
+exports[`GlslEsCodegen > compute stages > emulates a compute stage with a draw of points per write > vertex 1`] = `
+"#version 300 es
+// Generated from compute graph "scale". Do not edit.
+
+precision highp float;
+precision highp int;
+
+layout(std140) uniform MaterialUniforms {
+  float u_factor;
+} materialUniforms;
+
+// Storage buffer "input": a data texture, 4 bytes per element.
+uniform uvec3 s_inputSize;
+uint s_inputLength() {
+  return s_inputSize.z / 4u;
+}
+uniform highp usampler2D s_input;
+uvec4 s_inputTexel(uint t) {
+  return texelFetch(s_input, ivec2(int(t % s_inputSize.x), int(t / s_inputSize.x)), 0);
+}
+float s_inputLoad(uint i) {
+  return uintBitsToFloat(s_inputTexel(i / 4u)[i % 4u]);
+}
+
+// Storage buffer "output": a data texture, 4 bytes per element.
+uniform uvec3 s_outputSize;
+uint s_outputLength() {
+  return s_outputSize.z / 4u;
+}
+
+uniform uvec3 c_numWorkgroups;
+uniform uint c_component;
+flat out highp uvec4 c_value;
+
+void main() {
+  // The thread of the instance, in the grid of the dispatch.
+  uvec3 c_threads = c_numWorkgroups * uvec3(64u, 1u, 1u);
+  uint c_thread = uint(gl_InstanceID);
+  uvec3 c_globalId = uvec3(c_thread % c_threads.x, (c_thread / c_threads.x) % c_threads.y, c_thread / (c_threads.x * c_threads.y));
+  uvec3 c_localId = c_globalId % uvec3(64u, 1u, 1u);
+  uvec3 c_workgroupId = c_globalId / uvec3(64u, 1u, 1u);
+  uvec3 v1 = c_globalId; // #n1
+  float v4_factor = materialUniforms.u_factor; // #n5
+  uint v5 = v1.x;
+  float v6 = s_inputLoad(uint(v5)); // #n4
+  uint v7 = s_inputLength(); // #n7
+  float v8 = v6 * v4_factor; // #n6
+  bool v9 = v5 < v7; // #n8
+  // Writes the element of "output".
+  uint c_index = uint(v5);
+  bool c_written = c_index < s_outputLength() && v9;
+  uint c_texel = c_index / 4u;
+  c_written = c_written && c_index % 4u == c_component;
+  c_value = uvec4(floatBitsToUint(v8));
+  vec2 c_pixel = (vec2(uvec2(c_texel % s_outputSize.x, c_texel / s_outputSize.x)) + 0.5) / vec2(s_outputSize.xy);
+  // The points not written are clipped.
+  gl_Position = c_written ? vec4(c_pixel * 2.0 - 1.0, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+  gl_PointSize = 1.0;
+}
+"
+`;
+
 exports[`GlslEsCodegen > generates a complete program > fragment 1`] = `
 "#version 300 es
 // Generated from material graph "textured-unlit". Do not edit.

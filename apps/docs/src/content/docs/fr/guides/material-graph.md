@@ -37,7 +37,7 @@ const graph = g.build();
 | `g.attribute(semantic, type)`                     | Un attribut de sommet du mesh                                                                                              |
 | `g.uniform(name, type, { default, slot })`        | Une valeur du matériau                                                                                                     |
 | `g.texture(name)`, `g.sampler(name)`              | Une texture (`dimension: 'cube'` pour un cube), un sampler du matériau (`comparison: true` pour les tests de profondeur)   |
-| `g.storage(name, arrayType(element), { access })` | Un storage buffer (WebGPU, Vulkan)                                                                                         |
+| `g.storage(name, arrayType(element), { access })` | Un storage buffer (une texture de données en WebGL2)                                                                       |
 | `g.builtin(name)`                                 | `vertex-index`, `instance-index`, `frag-coord`, `front-facing`, `screen-uv`, `global-invocation-id`…                       |
 | `g.engine(name)`                                  | `camera.view`, `camera.projection`, `camera.inverseViewProjection`, `camera.position`, `object.world`, `time`, `exposure`… |
 | `g.constant(type, value)`                         | Une constante, intégrée au code                                                                                            |
@@ -238,6 +238,6 @@ génèrent le code : `WgslCodegen`, `GlslEsCodegen`, `HlslCodegen`.
 - Pas encore d'éclairage basé sur l'image (IBL) : le terme ambiant est une
   couleur par lumière.
 - Les storage buffers contiennent des tableaux de scalaires, de vecteurs ou
-  de matrices (pas de structures), et ne sont pas disponibles en WebGL2.
+  de matrices (pas de structures).
 - Les entrées des fonctions ont des types concrets (pas de génériques), et
   `textureSample` n'accepte que des textures 2D.

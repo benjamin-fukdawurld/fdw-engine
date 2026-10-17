@@ -59,8 +59,8 @@ enregistre les programmes compilés par la suite, puis :
 - compile chacun d’eux en HLSL avec DXC, valide le SPIR-V avec
   `spirv-val`, et compare les offsets des uniforms du layout avec la
   réflexion de `spirv-cross` ;
-- génère ceux que WebGL2 peut exécuter (pas d’étage compute, pas de
-  storage buffer) en GLSL ES 3.00, puis les valide et les lie avec
+- les génère en GLSL ES 3.00 (les étapes de calcul comme les dessins qui
+  les émulent en WebGL2), puis les valide et les lie avec
   `glslangValidator`, plus strict que les compilateurs des navigateurs.
 
 Les tests de pixels vérifient des valeurs **exactes** là où le GPU les
@@ -140,8 +140,7 @@ npx nx run docs:visual -- --update-snapshots   # writes new references
 
 Les exemples s’exécutent avec leur horloge arrêtée et s’arrêtent après
 quelques frames (`?time=1.5&frames=10`) : l’image est la même à chaque
-exécution. Un exemple qui nécessite des compute shaders affiche à la place
-son message sur WebGL2.
+exécution.
 
 Quand une modification change ce qu’un exemple dessine, mettez à jour ses
 références, regardez-les, et commitez-les avec la modification. Si la CI

@@ -7,8 +7,9 @@ sidebar:
 
 Un **compute graph** s'exécute sur le GPU en dehors de tout draw : un thread
 par élément de travail, regroupés en workgroups. Il s'écrit avec les nœuds
-des material graphs, et écrit dans des **storage buffers**. Le calcul
-nécessite WebGPU ou Vulkan : WebGL2 n'a pas de compute shaders.
+des material graphs, et écrit dans des **storage buffers**. Il s'exécute
+sur tous les backends : WebGL2, qui n'a pas de compute shaders, l'exécute
+par rendu dans des textures (voir [En WebGL2](#en-webgl2)).
 
 ## Un compute graph
 
@@ -57,7 +58,7 @@ Le compilateur refuse ce qui serait incorrect ou non portable :
   un ordre quelconque ;
 - l'écriture dans un buffer déclaré en lecture seule ;
 - sur un backend sans calcul (`capabilities.compute === false`) : une erreur
-  explicite.
+  explicite. Aucun backend du moteur n'est dans ce cas.
 
 Un compute graph ne possède que les slots de ressources qu'il utilise.
 Passez-lui ses entrées sous forme d'uniforms (un temps, une taille), définis
@@ -138,8 +139,50 @@ avant celles de la scène.
 
 ## Selon les backends
 
-| Backend | Compute shaders                                                   |
-| ------- | ----------------------------------------------------------------- |
-| WebGPU  | Points d'entrée compute en WGSL                                   |
-| Vulkan  | HLSL compilé en SPIR-V ; barrières insérées avant chaque dispatch |
-| WebGL2  | Aucun : la compilation d'un compute graph échoue, avec la raison  |
+| Backend | Étapes de calcul                                                                   |
+| ------- | ---------------------------------------------------------------------------------- |
+| WebGPU  | Points d'entrée compute en WGSL                                                    |
+| Vulkan  | HLSL compilé en SPIR-V ; barrières insérées avant chaque dispatch                  |
+| WebGL2  | Émulées par des dessins dans des textures ; storage buffers en textures de données |
+
+## En WebGL2
+
+WebGL2 n'a ni compute shaders ni storage buffers. Le moteur y exécute les
+mêmes graphes par **rendu dans des textures**, le GPGPU de WebGL : ses
+capacités indiquent `compute: true`, `storageBuffers: true` et
+`emulatedCompute: true`.
+
+- **Storage buffers** : chacun a une copie dans une texture de données,
+  `rgba32uint`, 16 octets par texel, les octets du buffer dans l'ordre. Les
+  programmes lisent leurs éléments par `texelFetch`, matériaux compris.
+- **Dispatches** : chaque écriture du graphe est un dessin de points dans
+  la texture du buffer écrit, un point par thread (et par texel de
+  l'élément : quatre pour une `mat4`). Le vertex shader exécute le graphe,
+  place le point sur le texel de l'élément, ou hors de la vue quand `when`
+  est faux ; le fragment shader en écrit les bits. Les éléments plus petits
+  qu'un texel (`f32`, `vec2`) sont écrits par des dessins masqués, un par
+  partie du texel. Les builtins viennent de l'instance dessinée et du nombre
+  de workgroups.
+- **Les deux copies** d'un buffer sont mises à jour l'une depuis l'autre
+  sur le GPU, par des pixel buffers, seulement quand un usage le demande :
+  la texture avant un dispatch ou un dessin qui la lit, le buffer avant une
+  lecture de sommets, une copie ou `read()`. Un buffer écrit par un dispatch
+  peut donc servir de vertex buffer.
+
+Ce qui change :
+
+- **Pas de dispatch indirect** : il faudrait d'abord relire les nombres ;
+  `dispatchWorkgroupsIndirect` et l'usage `indirect` lèvent une erreur.
+- Un même buffer ne peut pas être lié deux fois, lu et écrit, dans un
+  dispatch : une erreur explicite (le compilateur refuse déjà un graphe qui
+  lit le buffer qu'il écrit).
+- Un buffer contient au plus `MAX_TEXTURE_SIZE` lignes de 2048 texels
+  (64 Mo avec le minimum de WebGL2).
+- C'est plus lent que des compute shaders : un graphe à plusieurs écritures
+  s'exécute une fois par écriture, et les scalaires quatre fois. Les
+  fonctionnalités qui ont un autre chemin le préfèrent : le skinning reste
+  par défaut dans l'étape de sommets (`defaultSkinningMode`), mais peut être
+  demandé en calcul.
+
+Le [tutoriel Particules sur le GPU](/fdw-engine/fr/tutorials/gpu-particles/)
+exécute une simulation sur les trois backends.
