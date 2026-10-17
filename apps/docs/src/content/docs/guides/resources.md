@@ -6,7 +6,7 @@ sidebar:
 ---
 
 The resource system loads what an application reads from files: images,
-models, sounds later, its own data. It is split like the input:
+models, sounds ([Audio](/fdw-engine/guides/audio/)), its own data. It is split like the input:
 
 | Package                                                   | Contents                                                                                                      |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |

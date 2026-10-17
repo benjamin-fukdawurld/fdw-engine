@@ -5,8 +5,8 @@ sidebar:
   order: 5
 ---
 
-Deux paquets contiennent du code natif : `engine-native` (fenêtres, sur
-SDL3) et `engine-vulkan` (le backend Vulkan). Chacun a un répertoire
+Deux paquets contiennent du code natif : `engine-native` (fenêtres sur
+SDL3, audio sur miniaudio) et `engine-vulkan` (le backend Vulkan). Chacun a un répertoire
 `native/` compilé par CMake dans `build/`, par le script partagé
 `tools/native/build-addon.mjs`.
 
@@ -21,8 +21,11 @@ SDL3) et `engine-vulkan` (le backend Vulkan). Chacun a un répertoire
   ailleurs.
 - Pour Vulkan, le **SDK Vulkan**, 1.3 ou ultérieur.
 
-SDL3 est téléchargé par CMake (`FetchContent`) lors du premier build, et lié
-statiquement : l’addon n’en dépend pas à l’exécution.
+SDL3 et miniaudio sont téléchargés par CMake (`FetchContent`) lors du
+premier build, et liés statiquement : l’addon n’en dépend pas à
+l’exécution. miniaudio charge le système audio de la machine à la création
+d’un moteur (PulseAudio ou ALSA sous Linux), et se replie sur un
+périphérique nul sans lui.
 
 ## Le SDK Vulkan
 

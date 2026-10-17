@@ -27,6 +27,7 @@ const examples: Record<string, string> = {
   'city-walk': 'tutorials/city-walk/',
   'character-animation': 'tutorials/character-animation/',
   physics: 'tutorials/physics/',
+  audio: 'tutorials/audio/',
   'maze-1': 'game/maze/',
   'maze-2': 'game/character/',
   'maze-3': 'game/flashlight/',

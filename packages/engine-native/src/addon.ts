@@ -36,7 +36,98 @@ export interface RawWindowEvent {
   readonly modifiers?: number;
 }
 
-export interface NativeAddon {
+/**
+ * The audio of the addon (native/include/fdw/audio.h, over miniaudio): what
+ * @fdw/engine-audio-native reads.
+ */
+export interface NativeAudioAddon {
+  // An engine on the default device, or without device (offline: 1), the
+  // mix then read by audioRender. 0: the rate and channels of the device.
+  audioCreate(
+    sampleRate: number,
+    channels: number,
+    offline: number,
+  ): AudioEngineHandle;
+  audioDestroy(engine: AudioEngineHandle): void;
+  // [sampleRate, channels].
+  audioInfo(engine: AudioEngineHandle): [number, number];
+  // The clock of the mix, in seconds.
+  audioTime(engine: AudioEngineHandle): number;
+  audioSetRunning(engine: AudioEngineHandle, running: number): boolean;
+  // Mixes out.length / channels frames into out; returns the frames.
+  audioRender(engine: AudioEngineHandle, out: Float32Array): number;
+  // A bus under `parent` (0: the master); its id, or -1.
+  audioBusCreate(engine: AudioEngineHandle, parent: number): number;
+  audioBusVolume(engine: AudioEngineHandle, bus: number, volume: number): void;
+  // The position, the forward and the up of the listener (9 floats).
+  audioListener(engine: AudioEngineHandle, pose: Float32Array): void;
+  // A clip of interleaved samples, copied.
+  audioClipCreate(
+    samples: Float32Array,
+    channels: number,
+    sampleRate: number,
+  ): AudioClipHandle;
+  // A WAV, FLAC, MP3 or Ogg Vorbis file decoded on the thread pool.
+  audioDecode(bytes: Uint8Array): Promise<AudioClipHandle>;
+  // [frames, channels, sampleRate].
+  audioClipInfo(clip: AudioClipHandle): [number, number, number];
+  // A copy of the interleaved samples.
+  audioClipSamples(clip: AudioClipHandle): Float32Array<ArrayBuffer>;
+  // Freed once the voices playing it are done.
+  audioClipRelease(clip: AudioClipHandle): void;
+  // The bytes of a file kept encoded, decoded by each voice as it plays.
+  audioStreamCreate(bytes: Uint8Array): Promise<AudioStreamHandle>;
+  // [duration (-1: unknown), channels, sampleRate, bytes].
+  audioStreamInfo(stream: AudioStreamHandle): [number, number, number, number];
+  audioStreamRelease(stream: AudioStreamHandle): void;
+  // The id of the voice, or -1. params: volume, pitch, pan, loop, offset,
+  // fadeIn, paused, spatial, x, y, z, refDistance, maxDistance, rolloff,
+  // distanceModel (0 inverse, 1 linear, 2 exponential).
+  audioPlay(
+    engine: AudioEngineHandle,
+    source: AudioClipHandle | AudioStreamHandle,
+    bus: number,
+    params: Float32Array,
+  ): number;
+  // param: 0 volume, 1 pitch, 2 pan, 3 loop.
+  audioVoiceSet(
+    engine: AudioEngineHandle,
+    voice: number,
+    param: number,
+    value: number,
+  ): void;
+  audioVoicePosition(
+    engine: AudioEngineHandle,
+    voice: number,
+    x: number,
+    y: number,
+    z: number,
+  ): void;
+  audioVoiceFade(
+    engine: AudioEngineHandle,
+    voice: number,
+    gain: number,
+    seconds: number,
+  ): void;
+  audioVoicePause(
+    engine: AudioEngineHandle,
+    voice: number,
+    paused: number,
+  ): void;
+  audioVoiceStop(
+    engine: AudioEngineHandle,
+    voice: number,
+    seconds: number,
+  ): void;
+  audioVoiceTime(engine: AudioEngineHandle, voice: number): number;
+  // 0 stopped, 1 playing, 2 paused.
+  audioVoiceState(engine: AudioEngineHandle, voice: number): number;
+  // Frees the voices that have ended, writes their ids; returns how many.
+  audioUpdate(engine: AudioEngineHandle, ended: Int32Array): number;
+  audioVoiceCount(engine: AudioEngineHandle): number;
+}
+
+export interface NativeAddon extends NativeAudioAddon {
   init(): void;
   quit(): void;
   createWindow(
@@ -84,6 +175,13 @@ export interface NativeAddon {
   // stb_image, on the thread pool: RGBA pixels, floats for HDR images.
   decodeImage(bytes: Uint8Array): Promise<DecodedNativeImage>;
 }
+
+/** An opaque handle of a native audio engine. */
+export type AudioEngineHandle = { readonly __audioEngine: unique symbol };
+/** An opaque handle of decoded samples. */
+export type AudioClipHandle = { readonly __audioClip: unique symbol };
+/** An opaque handle of encoded bytes, decoded while playing. */
+export type AudioStreamHandle = { readonly __audioStream: unique symbol };
 
 /** An image decoded by the addon. */
 export interface DecodedNativeImage {

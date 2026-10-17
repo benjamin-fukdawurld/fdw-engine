@@ -1,6 +1,7 @@
 import { Input } from '@fdw/engine-input';
 import {
   NativeAddon,
+  NativeAudioAddon,
   NativeWindow,
   RawWindowEvent,
   setAddon,
@@ -10,9 +11,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { NativeInputSource } from './NativeInputSource';
 
 // An addon with a window of 200 × 100 pixels, events queued by the test,
-// and a gamepad (id 3) whose left stick is pushed up.
+// and a gamepad (id 3) whose left stick is pushed up; without the audio.
 function fakeAddon(queue: RawWindowEvent[], calls: string[] = []): NativeAddon {
-  return {
+  const addon: Omit<NativeAddon, keyof NativeAudioAddon> = {
     init: () => undefined,
     quit: () => undefined,
     createWindow: () => ({}) as WindowHandle,
@@ -42,6 +43,7 @@ function fakeAddon(queue: RawWindowEvent[], calls: string[] = []): NativeAddon {
         pixels: new Uint8Array(4),
       }),
   };
+  return addon as NativeAddon;
 }
 
 afterEach(() => setAddon(undefined));

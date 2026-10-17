@@ -68,8 +68,8 @@ export class Drones {
     return count;
   }
 
-  /** A new drone at a point, ready to fly. */
-  spawn(x: number, z: number, phase: number): void {
+  /** A new drone at a point, ready to fly; its node. */
+  spawn(x: number, z: number, phase: number): Node {
     const { cube, sphere } = this._meshes;
     const node = this._scene.root.add({ name: 'drone', position: { x, z } });
     const body = node
@@ -103,6 +103,7 @@ export class Drones {
       phase,
       body,
     });
+    return node;
   }
 
   /** Removes every drone. */

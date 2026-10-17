@@ -98,6 +98,15 @@
     },
     {
       "path": "./packages/engine-physics-rapier"
+    },
+    {
+      "path": "./packages/engine-audio"
+    },
+    {
+      "path": "./packages/engine-audio-web"
+    },
+    {
+      "path": "./packages/engine-audio-native"
     }
   ]
 }

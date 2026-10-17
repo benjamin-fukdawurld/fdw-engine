@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Le système de ressources charge ce qu'une application lit dans des
-fichiers : images, modèles, plus tard des sons, ses propres données. Il est
+fichiers : images, modèles, sons ([L'audio](/fdw-engine/fr/guides/audio/)), ses propres données. Il est
 découpé comme l'entrée :
 
 | Paquet                                                    | Contenu                                                                                                                                 |

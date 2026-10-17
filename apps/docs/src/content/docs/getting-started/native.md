@@ -62,6 +62,7 @@ Its options:
 | `--no-vsync`   | Renders as fast as possible, to measure                        |
 | `--frames <n>` | Stops after `n` frames                                         |
 | `--hidden`     | Hides the window (tests)                                       |
+| `--no-audio`   | No sound (the FPS plays its sounds on the default device)      |
 
 Escape or closing the window quits. The title shows the frame rate.
 

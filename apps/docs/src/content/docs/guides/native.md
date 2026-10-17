@@ -13,6 +13,7 @@ the surface are native.
 
 ```
 @fdw/engine-native (TS) ──► fdw_native.node (C, Node-API) ──► fdw_window (C++, C API) ──► SDL3
+                                                           └─► fdw_audio (C, C API) ──► miniaudio
 @fdw/engine-vulkan (TS) ──► fdw_vulkan.node (C, Node-API) ──► fdw_vulkan (C++20, C API) ──► Vulkan, DXC
 ```
 

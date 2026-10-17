@@ -1,10 +1,11 @@
 import type { Camera } from '@fdw/engine-core';
 import { Ray } from '@fdw/engine-geometry';
 import type { ActionMap } from '@fdw/engine-input';
-import type { Scene } from '@fdw/engine-scene';
+import type { Node, Scene } from '@fdw/engine-scene';
 import type { Arena } from './arena';
 import { Drones } from './drones';
 import { FpsPlayer } from './player';
+import type { FpsSoundEvents } from './sounds';
 import { Sparks, ViewLayer, Weapon } from './weapon';
 
 /** Where the game is: playing, or the player is down. */
@@ -35,6 +36,8 @@ export class FpsGame {
   rumble = true;
   /** The time left of the red of a blow, for the view. */
   hurt = 0;
+  /** What hears the game: its sounds, when there is an audio engine. */
+  sounds?: FpsSoundEvents;
   private _pause = 0;
   private readonly _ray = new Ray([0, 0, 0], [0, 0, -1]);
 
@@ -43,12 +46,15 @@ export class FpsGame {
     private readonly _arena: Arena,
     camera: Camera,
     private readonly _actions: ActionMap,
+    // The sounds, heard from the eye of the player.
+    sounds?: (eye: Node) => FpsSoundEvents,
   ) {
     const { cube, sphere, Solid, half } = _arena;
     this.player = new FpsPlayer(_scene, Solid, camera, _actions, half);
     this.weapon = new Weapon(this.player.eye, cube, sphere);
     this.drones = new Drones(_scene, Solid, { cube, sphere });
     this.sparks = new Sparks(_scene, cube);
+    this.sounds = sounds?.(this.player.eye);
     this.reset();
   }
 
@@ -75,6 +81,7 @@ export class FpsGame {
     }
     this.player.health = Math.max(0, this.player.health - damage);
     this.hurt = 0.25;
+    this.sounds?.hurt();
     if (this.rumble) {
       this._actions.rumble(1, 0.5, 0.3);
     }
@@ -107,6 +114,7 @@ export class FpsGame {
       return;
     }
     this.shots++;
+    this.sounds?.shot();
     const { position, forward } = this.player;
     const ray = this._ray;
     ray.origin[0] = position.x;
@@ -131,10 +139,12 @@ export class FpsGame {
     if (drone !== undefined) {
       this.hits++;
       this.weapon.markHit();
+      this.sounds?.hit();
       strength = 0.35;
       if (this.drones.hit(drone)) {
         this.score += 100 * this.wave;
         strength = 0.7;
+        this.sounds?.down(this._scene.node(drone));
       }
     } else if (hit) {
       // A spark a little before the surface: not inside it.
@@ -163,17 +173,19 @@ export class FpsGame {
   private nextWave(): void {
     this._pause = 0;
     this.wave++;
+    this.sounds?.wave(this.wave);
     const count = Math.min(1 + 2 * this.wave, maxDrones);
     const gates = this._arena.gates;
     for (let k = 0; k < count; k++) {
       const gate = gates[k % gates.length];
       const offset = [0, -1.1, 1.1][Math.floor(k / gates.length) % 3];
       const across = gate.x === 0;
-      this.drones.spawn(
+      const drone = this.drones.spawn(
         gate.x + (across ? offset : 0),
         gate.z + (across ? 0 : offset),
         k * 1.7,
       );
+      this.sounds?.spawned(drone);
     }
   }
 }

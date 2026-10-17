@@ -7,6 +7,9 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
+      "path": "../engine-audio/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-tessellation/tsconfig.lib.json"
     },
     {

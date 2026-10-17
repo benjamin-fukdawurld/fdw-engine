@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "fdw/window.h"
+#include "node_audio.h"
 #include "node_image.h"
 
 // The handle given to JavaScript: destroyed explicitly, or when collected.
@@ -431,7 +432,8 @@ static napi_value init_module(napi_env env, napi_value exports) {
   if (napi_define_properties(env, exports,
                              sizeof(properties) / sizeof(properties[0]),
                              properties) != napi_ok ||
-      fdw_register_image(env, exports) != napi_ok) {
+      fdw_register_image(env, exports) != napi_ok ||
+      fdw_register_audio(env, exports) != napi_ok) {
     return NULL;
   }
   return exports;

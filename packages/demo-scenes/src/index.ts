@@ -8,3 +8,4 @@ export * from './city';
 export * from './terrain';
 export * from './fps';
 export * from './physics';
+export * from './audio';
