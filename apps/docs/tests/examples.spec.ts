@@ -44,8 +44,13 @@ const time = 1.5;
 // Frames rendered before the capture, then the rendering stops: the
 // shadows, the caches and the smoothed cameras settle, and the image stays.
 const frames = 10;
-// More for the examples waiting for results read back from the GPU.
-const framesOf: Record<string, number> = { 'occlusion-culling': 40 };
+// More for the examples waiting for results read back from the GPU. Fewer
+// for the game in the forest: thousands of firs in its shadow maps, seconds
+// a frame on SwiftShader; its image is the same from the first frame.
+const framesOf: Record<string, number> = {
+  'occlusion-culling': 40,
+  tps: 2,
+};
 // Longer for the examples loading many files.
 const timeouts: Record<string, number> = {
   tps: 120_000,
@@ -240,25 +245,34 @@ test('shadow-cascades-one-map', async ({ page: browser }, info) => {
 });
 
 // The third-person game: Play leaves the menu; the first wave is on its
-// way. The pointer lock may be refused to a headless browser.
-test('tps-play', async ({ page: browser }, info) => {
+// way. The pointer lock may be refused to a headless browser. Its own
+// browser: the game, never stopped, queues a minute of frames on
+// SwiftShader, which the next test of a shared browser would wait for;
+// closed, the browser drops them.
+test('tps-play', async ({ playwright, baseURL, viewport }, info) => {
   test.setTimeout(180_000);
-  const backend = info.project.name;
-  await browser.goto(
-    `/fdw-engine/game/tps/?time=${time}${
-      backend === 'webgl2' ? '&backend=webgl2' : ''
-    }`,
-  );
-  const example = browser.locator('[data-example="tps"]').first();
-  await example.scrollIntoViewIfNeeded();
-  const canvas = example.locator('canvas');
-  const status = example.locator('.fdw-example-status');
-  await expect(status).toContainText('[Play]', { timeout: 120_000 });
-  // A frame takes seconds on SwiftShader: the click is read at the next.
-  await canvas.click();
-  await expect(status).not.toContainText('[Play]', { timeout: 60_000 });
-  await expect(status).toContainText('Get ready');
-  await expect(status).not.toHaveAttribute('data-error');
+  const own = await playwright.chromium.launch(info.project.use.launchOptions);
+  try {
+    const browser = await own.newPage({ baseURL, viewport });
+    const backend = info.project.name;
+    await browser.goto(
+      `/fdw-engine/game/tps/?time=${time}${
+        backend === 'webgl2' ? '&backend=webgl2' : ''
+      }`,
+    );
+    const example = browser.locator('[data-example="tps"]').first();
+    await example.scrollIntoViewIfNeeded();
+    const canvas = example.locator('canvas');
+    const status = example.locator('.fdw-example-status');
+    await expect(status).toContainText('[Play]', { timeout: 120_000 });
+    // A frame takes seconds on SwiftShader: the click is read at the next.
+    await canvas.click();
+    await expect(status).not.toContainText('[Play]', { timeout: 60_000 });
+    await expect(status).toContainText('Get ready');
+    await expect(status).not.toHaveAttribute('data-error');
+  } finally {
+    await own.close();
+  }
 });
 
 // Camera navigation: C switches from the orbit to the walk. The clock is
