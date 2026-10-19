@@ -6,8 +6,15 @@ import {
 import type { Model } from '@fdw/engine-assets';
 import type { RenderGraph } from '@fdw/engine-core';
 import type { PhysicsCollider, ScenePhysics } from '@fdw/engine-physics';
+import { type BehaviorMode, BehaviorSystem } from '@fdw/engine-behavior';
 import type { Scene } from '@fdw/engine-scene';
 import { Actor } from './actor';
+import {
+  type EnemyActivity,
+  enemyGraph,
+  type EnemyHost,
+  enemyRegistry,
+} from './brain';
 import { Blow, strikeSphere } from './combat';
 
 /** What an enemy is: its model, its size, how it moves and strikes. */
@@ -61,21 +68,6 @@ export const EnemyKinds = {
   },
 } as const satisfies Record<string, EnemyKind>;
 
-/** The states of an enemy. */
-export const EnemyStates = [
-  'spawn',
-  'chase',
-  'attack',
-  'recover',
-  'hurt',
-  'dead',
-] as const;
-export type EnemyActivity = (typeof EnemyStates)[number];
-const State = Object.fromEntries(EnemyStates.map((s, i) => [s, i])) as Record<
-  EnemyActivity,
-  number
->;
-
 /** What the enemies tell the sounds. */
 export interface EnemyEvents {
   spawned?(at: IVec3, kind: EnemyKind): void;
@@ -86,7 +78,7 @@ export interface EnemyEvents {
 }
 
 /** The animation graph of the monsters: locomotion by speed, an action at a time. */
-function enemyGraph(kind: EnemyKind) {
+function animationGraph(kind: EnemyKind) {
   const g = new AnimationGraphBuilder(`${kind.name}`);
   g.parameter('speed', 'number');
   g.parameter('action', 'number');
@@ -121,7 +113,7 @@ function enemyGraph(kind: EnemyKind) {
   return g.build();
 }
 
-const actionOf: Record<EnemyActivity, number> = {
+const actionOf: Record<string, number> = {
   spawn: 0,
   chase: 0,
   attack: 1,
@@ -184,7 +176,7 @@ export class TrunkGrid {
   }
 }
 
-// The objects of an enemy, kept in a column of its component.
+// The objects of an enemy.
 interface Agent {
   readonly kind: EnemyKind;
   readonly actor: Actor;
@@ -201,22 +193,31 @@ export interface Target {
 }
 
 /**
- * The enemies, as an ECS: a component on the body of each (its kind, its
- * state, its health, its cooldown), systems for the fixed step: deciding
- * (`decide`: chase, surround, strike, stagger, fall), steering (`steer`:
- * towards the hero or a place around it, apart from each other, around the
- * trunks), striking (`strike`); and for the frame, `animate`.
+ * The enemies: an entity per enemy, the body of an `Actor`, with an `enemy`
+ * component (its kind, its place around the hero), and a behavior graph
+ * deciding what each one does (`enemyGraph`, in `brain.ts`): the graph is
+ * the system of the fixed step, its instances the enemies. This class is
+ * the host of the graph: it does what the nodes of the game ask (steering
+ * towards the hero, around the trunks and apart from each other; the blows
+ * as volumes), and animates the enemies at each frame.
  *
  * No path finding: the forest is open ground with trunks to go around.
  */
-export class Enemies {
+export class Enemies implements EnemyHost {
   readonly Enemy;
+  /** The graph of the enemies, run for each: install it in the fixed step. */
+  readonly behavior: BehaviorSystem<EnemyHost>;
   events: EnemyEvents = {};
   /** At most this many strike at once: the others wait around. */
   maxAttackers = 2;
+  /** The hero they fight. */
+  target: Target | undefined;
   private readonly _query;
   private readonly _agents = new Map<number, Agent>();
-  private readonly _graphs = new Map<string, ReturnType<typeof enemyGraph>>();
+  private readonly _graphs = new Map<
+    string,
+    ReturnType<typeof animationGraph>
+  >();
   private readonly _bodies = new Set<PhysicsCollider>();
 
   constructor(
@@ -225,24 +226,25 @@ export class Enemies {
     readonly physics: ScenePhysics,
     readonly models: Readonly<Record<string, Model>>,
     readonly trunks: TrunkGrid,
+    options: { readonly mode?: BehaviorMode } = {},
   ) {
     this.Enemy = scene.world.defineComponent('enemy', {
-      state: 'u8',
-      time: 'f32',
-      health: 'f32',
-      cooldown: 'f32',
-      // Where it stands around the hero while it waits: an angle.
+      // Its place around the hero while it waits: an angle.
       around: 'f32',
-      striking: 'u8',
     });
     this._query = scene.world.query(this.Enemy);
+    this.behavior = new BehaviorSystem(enemyGraph(), {
+      host: this,
+      registry: enemyRegistry,
+      mode: options.mode ?? 'compile',
+    });
   }
 
   /** How many are alive (not falling). */
   get alive(): number {
     let count = 0;
-    for (const entity of this._query.entities) {
-      if (this.Enemy.state[entity] !== State.dead) count++;
+    for (const instance of this.behavior.instances) {
+      if (instance.variables['state'] !== 'dead') count++;
     }
     return count;
   }
@@ -252,13 +254,14 @@ export class Enemies {
     return this._query.entities;
   }
 
-  /** The state of an enemy. */
+  /** The state of an enemy: the `state` variable of its graph. */
   state(entity: number): EnemyActivity {
-    return EnemyStates[this.Enemy.state[entity]];
+    return (this.behavior.instance(entity)?.variables['state'] ??
+      'dead') as EnemyActivity;
   }
 
   health(entity: number): number {
-    return this.Enemy.health[entity];
+    return (this.behavior.instance(entity)?.variables['health'] ?? 0) as number;
   }
 
   agent(entity: number): Agent | undefined {
@@ -279,7 +282,7 @@ export class Enemies {
   /** A new enemy at a place on the ground, facing the hero. */
   spawn(kind: EnemyKind, at: IVec3, facing: IVec3): number {
     let graph = this._graphs.get(kind.name);
-    if (!graph) this._graphs.set(kind.name, (graph = enemyGraph(kind)));
+    if (!graph) this._graphs.set(kind.name, (graph = animationGraph(kind)));
     const actor = new Actor(this.backend, this.scene, this.physics, at, {
       model: this.models[kind.name],
       scale: kind.scale,
@@ -291,12 +294,18 @@ export class Enemies {
     actor.face({ x: facing.x - at.x, z: facing.z - at.z }, 1, 100);
     const entity = actor.body.entity;
     this.scene.world.add(entity, this.Enemy, {
-      state: State.spawn,
-      time: 0,
+      around: Math.random() * Math.PI * 2,
+    });
+    // The kind, in the variables of its graph.
+    this.behavior.attach(entity, {
       health: kind.health,
       cooldown: 0.5 + Math.random(),
-      around: Math.random() * Math.PI * 2,
-      striking: 0,
+      reach: kind.reach,
+      poise: kind.poise,
+      rest: kind.cooldown,
+      strikeStart: kind.strike[0],
+      strikeEnd: kind.strike[1],
+      attackLength: actor.clips['Weapon'].duration,
     });
     actor.character.body.colliders.forEach((c) => this._bodies.add(c));
     const agent: Agent = { kind, actor };
@@ -305,7 +314,7 @@ export class Enemies {
       if (
         event.name === 'step' &&
         event.weight > 0.5 &&
-        this.Enemy.state[entity] === State.chase
+        this.state(entity) === 'chase'
       ) {
         this.events.step?.(actor.body.worldPosition, kind);
       }
@@ -314,219 +323,175 @@ export class Enemies {
     return entity;
   }
 
-  /** A blow of the hero: hurts, staggers or fells the enemy. */
+  /** A blow of the hero: the `hit` event of its graph. */
   hit(entity: number, damage: number): void {
+    this.behavior.emit(entity, 'hit', { damage });
+  }
+
+  // --- What the graph asks ----------------------------------------------
+
+  get heroAlive(): boolean {
+    return this.target?.alive ?? false;
+  }
+
+  attackers(): number {
+    let count = 0;
+    for (const instance of this.behavior.instances) {
+      if (instance.variables['state'] === 'attack') count++;
+    }
+    return count;
+  }
+
+  heroDistance(entity: number): number {
     const agent = this._agents.get(entity);
-    const { Enemy } = this;
-    if (!agent || Enemy.state[entity] === State.dead) return;
-    Enemy.health[entity] -= damage;
-    const at = agent.actor.body.worldPosition;
-    if (Enemy.health[entity] <= 0) {
-      this.enter(entity, 'dead');
-      // The body no longer blocks the way, nor takes blows.
-      agent.actor.character.body.colliders.forEach((c) =>
-        this._bodies.delete(c),
-      );
-      this.events.death?.(at, agent.kind);
-      return;
-    }
-    this.events.hurt?.(at, agent.kind);
-    if (damage >= agent.kind.poise) this.enter(entity, 'hurt');
+    if (!agent || !this.target) return Infinity;
+    const p = agent.actor.body.worldPosition;
+    const h = this.target.position;
+    return Math.hypot(h.x - p.x, h.z - p.z);
   }
 
-  private enter(entity: number, state: EnemyActivity): void {
-    this.Enemy.state[entity] = State[state];
-    this.Enemy.time[entity] = 0;
-    this.Enemy.striking[entity] = 0;
+  startAttack(entity: number): void {
+    const agent = this._agents.get(entity);
+    const hero = this.target;
+    if (!agent || !hero) return;
+    agent.blow = new Blow(agent.kind.damage, (c) => hero.colliders.includes(c));
   }
 
-  /** The fixed step: what each enemy does next. */
-  decide(step: number, hero: Target): void {
-    const { Enemy } = this;
-    // Those striking or about to: the others wait around.
-    let attackers = 0;
-    for (const entity of this._query.entities) {
-      if (Enemy.state[entity] === State.attack) attackers++;
-    }
-    for (const entity of [...this._query.entities]) {
-      const agent = this._agents.get(entity);
-      if (!agent) continue;
-      const { kind, actor } = agent;
-      Enemy.time[entity] += step;
-      Enemy.cooldown[entity] = Math.max(0, Enemy.cooldown[entity] - step);
-      const time = Enemy.time[entity];
-      const p = actor.body.worldPosition;
-      const distance = Math.hypot(hero.position.x - p.x, hero.position.z - p.z);
-      switch (EnemyStates[Enemy.state[entity]]) {
-        case 'spawn':
-          if (time > 0.8) this.enter(entity, 'chase');
-          break;
-        case 'chase':
-          if (
-            hero.alive &&
-            distance < kind.reach + 0.3 &&
-            Enemy.cooldown[entity] === 0 &&
-            attackers < this.maxAttackers
-          ) {
-            attackers++;
-            this.enter(entity, 'attack');
-            agent.blow = new Blow(kind.damage, (c) =>
-              hero.colliders.includes(c),
-            );
-          }
-          break;
-        case 'attack': {
-          const duration = actor.clips['Weapon'].duration;
-          const [start, end] = kind.strike;
-          if (time >= start - 0.1 && time - step < start - 0.1) {
-            this.events.swing?.(p, kind);
-          }
-          Enemy.striking[entity] = time >= start && time <= end ? 1 : 0;
-          if (time >= duration) {
-            Enemy.cooldown[entity] =
-              kind.cooldown * (0.8 + Math.random() * 0.4);
-            this.enter(entity, 'recover');
-          }
-          break;
-        }
-        case 'recover':
-          if (time > 0.4) this.enter(entity, 'chase');
-          break;
-        case 'hurt':
-          if (time > 0.45) this.enter(entity, 'chase');
-          break;
-        case 'dead':
-          // Fallen, then sunk into the ground, then gone.
-          if (time > 2.5) {
-            actor.visual.transform.position = {
-              y: -actor.halfHeight - actor.radius - (time - 2.5) * 0.8,
-            };
-          }
-          if (time > 4) this.remove(entity);
-          break;
-      }
-    }
+  swing(entity: number): void {
+    const agent = this._agents.get(entity);
+    if (agent) this.events.swing?.(agent.actor.body.worldPosition, agent.kind);
   }
 
-  /** The fixed step: the enemies move, after deciding. */
-  steer(step: number, hero: Target): void {
-    const { Enemy } = this;
-    const entities = this._query.entities;
-    const positions = new Map<number, IVec3>();
-    for (const [entity, agent] of this._agents) {
-      positions.set(entity, agent.actor.body.worldPosition);
-    }
-    let attackers = 0;
-    for (const entity of entities) {
-      if (Enemy.state[entity] === State.attack) attackers++;
-    }
-    for (const [entity, { kind, actor }] of this._agents) {
-      const state = EnemyStates[Enemy.state[entity]];
-      const p = positions.get(entity) ?? actor.body.worldPosition;
-      const to = { x: hero.position.x - p.x, z: hero.position.z - p.z };
-      const distance = Math.hypot(to.x, to.z) || 1;
-      let velocity = { x: 0, z: 0 };
-      if (state === 'chase' && hero.alive) {
-        // Its own place around the hero while others strike; the hero
-        // itself when its turn comes.
-        const waiting =
-          attackers >= this.maxAttackers || Enemy.cooldown[entity] > 0;
-        const ring = kind.reach + 2;
-        const goal = waiting
-          ? {
-              x: hero.position.x + Math.cos(Enemy.around[entity]) * ring,
-              z: hero.position.z + Math.sin(Enemy.around[entity]) * ring,
-            }
-          : hero.position;
-        const g = { x: goal.x - p.x, z: goal.z - p.z };
-        const gd = Math.hypot(g.x, g.z);
-        const near = waiting ? 0.5 : kind.reach * 0.7;
-        if (gd > near) {
-          const pace =
-            distance > 10 ? kind.run : waiting ? kind.walk : kind.run * 0.8;
-          velocity = { x: (g.x / gd) * pace, z: (g.z / gd) * pace };
-        }
-        // Apart from the others.
-        for (const [other, q] of positions) {
-          if (other === entity) continue;
-          const away = { x: p.x - q.x, z: p.z - q.z };
-          const d = Math.hypot(away.x, away.z);
-          if (d > 0 && d < 1.8) {
-            velocity.x += (away.x / d) * (1.8 - d) * 3;
-            velocity.z += (away.z / d) * (1.8 - d) * 3;
-          }
-        }
-        // Around the trunks ahead: a push sideways.
-        const speed = Math.hypot(velocity.x, velocity.z);
-        if (speed > 0.1) {
-          const dir = { x: velocity.x / speed, z: velocity.z / speed };
-          this.trunks.near(p.x, p.z, 2.5, (tx, tz, r) => {
-            const t = { x: tx - p.x, z: tz - p.z };
-            const ahead = t.x * dir.x + t.z * dir.z;
-            if (ahead <= 0) return;
-            const side = t.x * dir.z - t.z * dir.x;
-            const clearance = kind.radius + r + 0.3;
-            if (Math.abs(side) < clearance) {
-              // Steer to the side the trunk is not on: (-dir.z, dir.x)
-              // points away from a trunk on the side > 0.
-              const sign = side >= 0 ? 1 : -1;
-              const push =
-                ((clearance - Math.abs(side)) / clearance) * speed * 1.5;
-              velocity.x += -dir.z * sign * push;
-              velocity.z += dir.x * sign * push;
-            }
-          });
-        }
-        actor.face(waiting && gd < 1 ? to : velocity, step, 8);
-      } else if (
-        state === 'attack' ||
-        state === 'recover' ||
-        state === 'spawn'
-      ) {
-        // Turned towards the hero, slower once the blow is on its way.
-        const time = Enemy.time[entity];
-        actor.face(
-          to,
-          step,
-          state === 'attack' && time > kind.strike[0] ? 1 : 6,
-        );
-      }
-      actor.move(step, velocity);
-      if (state !== 'dead') {
-        const animator = actor.animator;
-        animator.set('speed', Math.hypot(velocity.x, velocity.z));
-      }
-    }
-  }
-
-  /** The fixed step: the blows of the enemies that strike now. */
-  strike(hero: Target): void {
+  /** The blow in front of the enemy, against the hero. */
+  strike(entity: number): void {
+    const agent = this._agents.get(entity);
+    if (!agent?.blow || !this.target) return;
+    const { actor, kind, blow } = agent;
+    const p = actor.body.worldPosition;
+    const f = actor.forward;
+    // In front, at the height of the chest, as far as the blow reaches.
+    const center = {
+      x: p.x + f.x * kind.reach * 0.6,
+      y: p.y + 0.2,
+      z: p.z + f.z * kind.reach * 0.6,
+    };
     const world = this.physics.world;
-    for (const entity of this._query.entities) {
-      const agent = this._agents.get(entity);
-      if (!this.Enemy.striking[entity] || !agent?.blow) continue;
-      const { actor, kind, blow } = agent;
-      const p = actor.body.worldPosition;
-      const f = actor.forward;
-      // In front, at the height of the chest, as far as the blow reaches.
-      const center = {
-        x: p.x + f.x * kind.reach * 0.6,
-        y: p.y + 0.2,
-        z: p.z + f.z * kind.reach * 0.6,
-      };
-      if (strikeSphere(world, blow, center, kind.reach * 0.45).length > 0) {
-        hero.hurt(kind.damage, p);
-      }
+    if (strikeSphere(world, blow, center, kind.reach * 0.45).length > 0) {
+      this.target.hurt(kind.damage, p);
     }
   }
+
+  /**
+   * Moves an enemy for a step: chasing, to the hero or its place around it,
+   * apart from the others, around the trunks ahead; turned towards the hero
+   * while it strikes; still otherwise.
+   */
+  steer(
+    entity: number,
+    step: number,
+    state: string,
+    time: number,
+    cooldown: number,
+  ): void {
+    const agent = this._agents.get(entity);
+    const hero = this.target;
+    if (!agent || !hero) return;
+    const { kind, actor } = agent;
+    const p = actor.body.worldPosition;
+    const to = { x: hero.position.x - p.x, z: hero.position.z - p.z };
+    const distance = Math.hypot(to.x, to.z) || 1;
+    let velocity = { x: 0, z: 0 };
+    if (state === 'chase' && hero.alive) {
+      // Its own place around the hero while others strike; the hero
+      // itself when its turn comes.
+      const waiting = this.attackers() >= this.maxAttackers || cooldown > 0;
+      const ring = kind.reach + 2;
+      const around = this.Enemy.around[entity];
+      const goal = waiting
+        ? {
+            x: hero.position.x + Math.cos(around) * ring,
+            z: hero.position.z + Math.sin(around) * ring,
+          }
+        : hero.position;
+      const g = { x: goal.x - p.x, z: goal.z - p.z };
+      const gd = Math.hypot(g.x, g.z);
+      const near = waiting ? 0.5 : kind.reach * 0.7;
+      if (gd > near) {
+        const pace =
+          distance > 10 ? kind.run : waiting ? kind.walk : kind.run * 0.8;
+        velocity = { x: (g.x / gd) * pace, z: (g.z / gd) * pace };
+      }
+      // Apart from the others.
+      for (const [other, { actor: neighbour }] of this._agents) {
+        if (other === entity) continue;
+        const q = neighbour.body.worldPosition;
+        const away = { x: p.x - q.x, z: p.z - q.z };
+        const d = Math.hypot(away.x, away.z);
+        if (d > 0 && d < 1.8) {
+          velocity.x += (away.x / d) * (1.8 - d) * 3;
+          velocity.z += (away.z / d) * (1.8 - d) * 3;
+        }
+      }
+      // Around the trunks ahead: a push sideways.
+      const speed = Math.hypot(velocity.x, velocity.z);
+      if (speed > 0.1) {
+        const dir = { x: velocity.x / speed, z: velocity.z / speed };
+        this.trunks.near(p.x, p.z, 2.5, (tx, tz, r) => {
+          const t = { x: tx - p.x, z: tz - p.z };
+          const ahead = t.x * dir.x + t.z * dir.z;
+          if (ahead <= 0) return;
+          const side = t.x * dir.z - t.z * dir.x;
+          const clearance = kind.radius + r + 0.3;
+          if (Math.abs(side) < clearance) {
+            // Steer to the side the trunk is not on: (-dir.z, dir.x)
+            // points away from a trunk on the side > 0.
+            const sign = side >= 0 ? 1 : -1;
+            const push =
+              ((clearance - Math.abs(side)) / clearance) * speed * 1.5;
+            velocity.x += -dir.z * sign * push;
+            velocity.z += dir.x * sign * push;
+          }
+        });
+      }
+      actor.face(waiting && gd < 1 ? to : velocity, step, 8);
+    } else if (state === 'attack' || state === 'recover' || state === 'spawn') {
+      // Turned towards the hero, slower once the blow is on its way.
+      actor.face(to, step, state === 'attack' && time > kind.strike[0] ? 1 : 6);
+    }
+    actor.move(step, velocity);
+    if (state !== 'dead') {
+      actor.animator.set('speed', Math.hypot(velocity.x, velocity.z));
+    }
+  }
+
+  hurt(entity: number): void {
+    const agent = this._agents.get(entity);
+    if (agent) this.events.hurt?.(agent.actor.body.worldPosition, agent.kind);
+  }
+
+  die(entity: number): void {
+    const agent = this._agents.get(entity);
+    if (!agent) return;
+    // The body no longer blocks the way, nor takes blows.
+    agent.actor.character.body.colliders.forEach((c) => this._bodies.delete(c));
+    this.events.death?.(agent.actor.body.worldPosition, agent.kind);
+  }
+
+  sink(entity: number, time: number): void {
+    const agent = this._agents.get(entity);
+    if (!agent) return;
+    const { actor } = agent;
+    actor.visual.transform.position = {
+      y: -actor.halfHeight - actor.radius - (time - 2.5) * 0.8,
+    };
+  }
+
+  // --- The frame ---------------------------------------------------------
 
   /** A frame: the animations and the skins. */
   animate(dt: number): void {
     for (const [entity, { actor }] of this._agents) {
-      actor.animator.set(
-        'action',
-        actionOf[EnemyStates[this.Enemy.state[entity]]],
-      );
+      actor.animator.set('action', actionOf[this.state(entity)] ?? 0);
       actor.animate(dt);
     }
   }
@@ -540,6 +505,7 @@ export class Enemies {
   remove(entity: number): void {
     const agent = this._agents.get(entity);
     if (!agent) return;
+    this.behavior.detach(entity);
     agent.actor.character.body.colliders.forEach((c) => this._bodies.delete(c));
     this._agents.delete(entity);
     this.physics.remove(agent.actor.body);

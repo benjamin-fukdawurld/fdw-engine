@@ -1,6 +1,6 @@
 ---
 title: A third-person game
-description: A ranger with an estoc in a forest, waves of orcs and a demon — the forest of the engine, a third-person camera, animated characters, blows and enemies as systems.
+description: A ranger with an estoc in a forest, waves of orcs and a demon — the forest of the engine, a third-person camera, animated characters, blows and enemies run by a behavior graph.
 sidebar:
   order: 7
 ---
@@ -19,7 +19,8 @@ patches (P3b), its trunks hiding what is behind them (P3); the camera
 follows the ranger over its shoulder, the ranger is a character controller
 (P4, P7b); the models and their animations come from glTF files (P5, P6),
 the sounds are made by code (P7). It adds what a fight needs: blows as
-volumes tested while the animations strike, and enemies as systems.
+volumes tested while the animations strike, and enemies decided by a
+behavior graph (P9).
 
 <Example name="tps" code={false} />
 
@@ -47,7 +48,8 @@ The code of the game is in `packages/demo-scenes/src/tps/`, shared by:
 | `actor.ts`    | A character: a controller, a model turned where it faces, animated    |
 | `hero.ts`     | The ranger: its actions, its animation graph, its blade               |
 | `combat.ts`   | The blows: volumes struck once per blow                               |
-| `enemies.ts`  | The orcs and the demon: a component, and the systems going through it |
+| `brain.ts`    | The behavior graph of the enemies, and the nodes of the game it calls |
+| `enemies.ts`  | The orcs and the demon: their bodies, what the nodes of the graph do  |
 | `controls.ts` | The actions of the game and of the menu                               |
 | `sounds.ts`   | The sounds, made by code                                              |
 | `tps.ts`      | The `SceneFactory`: the menu, the waves, the frame run by a scheduler |
@@ -208,22 +210,59 @@ A `Blow` remembers what it struck: a target is hit **once per blow**,
 however many steps the blade stays in it. The enemies strike the same way,
 with a sphere in front of them.
 
-## 6. The enemies: a component, and its systems
+## 6. The enemies: a behavior graph
 
-Each enemy is an `Actor` and an entity with an `enemy` component — its
-state, the time in it, its health, its cooldown — gone through by three
-systems of the fixed step:
+Each enemy is an `Actor` and an entity; what it does, a **behavior graph**
+decides (see [Behavior graphs](/fdw-engine/tutorials/behavior-graphs/)):
+the same graph for the orcs and the demon, an instance per enemy, their
+differences in the variables given when attached.
 
-- `decide`: `spawn` (a roar), `chase`, `attack`, `recover`, `hurt`,
-  `dead`. At most two strike at once: the others wait.
-- `steer`: towards the hero, or for those waiting, towards their own
+```ts title="tps/enemies.ts"
+this.behavior.attach(entity, {
+  health: kind.health,
+  reach: kind.reach,
+  poise: kind.poise,
+  rest: kind.cooldown,
+  strikeStart: kind.strike[0],
+  strikeEnd: kind.strike[1],
+  attackLength: actor.clips['Weapon'].duration,
+});
+```
+
+At each fixed step, `event.update` advances its clocks, then a switch on
+its `state` variable decides: `spawn` (a roar), `chase`, `attack`,
+`recover`, `hurt`, `dead`. It goes to `attack` when the hero is within
+reach, its cooldown over, and fewer than two strike already; the others
+wait. Then it moves (`enemy.steer`), and strikes during the window of its
+blow (`enemy.strike`). A blow of the ranger is an event, `hit`, with its
+damage: the health drops, the enemy falls, or staggers if the blow beats
+its `poise` — the orcs at every blow, the demon at the heavy ones.
+
+```ts title="tps/brain.ts"
+const decide = g.switch(steps.exec('then1'), state, EnemyStates);
+enter(after(decide.exec('spawn'), 0.8), 'chase');
+const engage = g.branch(decide.exec('chase'), ready);
+const attack = enter(engage.exec('true'), 'attack');
+g.node('enemy.startAttack', { from: attack.then });
+```
+
+The graph decides; the game does the work its nodes ask for (`brain.ts`
+declares them, `Enemies` implements them):
+
+- `enemy.steer`: towards the hero, or for those waiting, towards their own
   place on a ring around it; apart from each other; around the trunks
   ahead of them, by a push sideways (a grid of the trunks answers which
   are near). No path finding: the forest is open ground.
-- `strike`: the blows of those striking.
+- `enemy.strike`: the blow, a sphere in front of the enemy, against the
+  hero.
+- `enemy.heroDistance`, `enemy.canAttack`, `enemy.swing`, `enemy.die`,
+  `enemy.sink`, `enemy.remove`: the distance, the place among those
+  striking, the sounds, the fallen sinking into the ground, then gone.
 
-The orcs stagger at every blow; the demon only at the heavy ones (its
-`poise`). The fallen sink into the ground, then are removed.
+The graph is compiled to JavaScript; `createTpsScene({ behavior:
+'interpret' })` has it interpreted, for its debugger. Both cost about
+0.2 ms a frame for a wave, mostly in the moves of the character
+controllers.
 
 ## 7. The camera
 
@@ -238,16 +277,9 @@ ranger itself.
 ```ts title="tps/tps.ts"
 // fixed: the ranger and its blows, the enemies, the physics, the waves.
 scheduler.add('hero', heroStep, { phase: 'fixed' });
-scheduler.add('enemies:decide', decide, { phase: 'fixed', after: ['hero'] });
-scheduler.add('enemies:steer', steer, {
-  phase: 'fixed',
-  after: ['enemies:decide'],
-});
-scheduler.add('enemies:strike', strike, {
-  phase: 'fixed',
-  after: ['enemies:steer'],
-});
-physics.install(scheduler, { after: ['enemies:strike'] });
+// The graph of the enemies is a system.
+enemies.behavior.install(scheduler, { name: 'enemies', after: ['hero'] });
+physics.install(scheduler, { after: ['enemies'] });
 scheduler.add('waves', waves, { phase: 'fixed', after: ['physics'] });
 
 // update: the bodies drawn between two steps, animated; the camera.
@@ -275,8 +307,9 @@ calm, crossfaded to a music when enemies are around.
 `tps/tps.spec.ts` tests the parts without a GPU: the heights of the forest
 (a flat clearing, a rim), the grid of the trunks, the blows (struck once,
 the capsule along the blade), the graph and the clips of the ranger, the
-actions, the sounds on a `FakeAudioEngine`, and the progress shown while
-loading.
+actions, the graph of the enemies on a fake game (the roar, the chase, the
+blow in its window, two striking at once, the `poise`, the fall), the
+sounds on a `FakeAudioEngine`, and the progress shown while loading.
 
 ## What we have
 
@@ -288,8 +321,9 @@ loading.
 - A third-person camera that stops at the trunks.
 - A ranger whose actions are decided by code and followed by its
   animation graph; blows as volumes, struck once per blow.
-- Enemies as systems: surrounding the hero, striking two at a time, going
-  around the trees.
+- Enemies decided by a behavior graph, compiled to JavaScript:
+  surrounding the hero, striking two at a time, going around the trees.
 
 Some ideas left for later: root motion for blows that carry the ranger;
-path finding for a level with walls; enemies in behavior graphs (P9).
+path finding for a level with walls; an editor for the graph of the
+enemies (P13).

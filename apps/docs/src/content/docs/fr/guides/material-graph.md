@@ -152,9 +152,10 @@ Les nœuds, les ports typés, les arêtes, les registres, les diagnostics, la
 sérialisation et les vérifications de structure (ports inconnus, entrée qui
 reçoit deux arêtes, cycles) viennent de `@fdw/engine-graph`, commun à tous
 les types de graphes : les material graphs, les animation graphs (voir le
-guide [Animation](/fdw-engine/fr/guides/animation/)) et, plus tard, les
-graphs de comportement. Le material graph y ajoute ses types, son
-inférence et son compilateur.
+guide [Animation](/fdw-engine/fr/guides/animation/)) et les graphs de
+comportement (voir le guide
+[Les graphs de comportement](/fdw-engine/fr/guides/behavior-graphs/)). Le
+material graph y ajoute ses types, son inférence et son compilateur.
 
 ## Fonctions
 

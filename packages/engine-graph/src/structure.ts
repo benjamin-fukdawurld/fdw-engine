@@ -7,14 +7,34 @@ import {
 } from './GraphData';
 
 /**
+ * How many edges a port takes: an input takes one by default, an output
+ * feeds many. The execution ports of the behavior graphs reverse both: an
+ * execution output goes on to one node, an execution input is reached from
+ * many.
+ *
+ * @group Validation
+ */
+export type PortConnections = 'one' | 'many';
+
+/**
+ * A port, as the structural checks see it.
+ *
+ * @group Validation
+ */
+export interface PortShape {
+  readonly name: string;
+  readonly connections?: PortConnections;
+}
+
+/**
  * A node whose ports are known: what the structural checks need.
  *
  * @group Validation
  */
 export interface NodePorts {
   readonly node: Pick<GraphNode, 'id' | 'type' | 'defaults'>;
-  readonly inputs: readonly { readonly name: string }[];
-  readonly outputs: readonly { readonly name: string }[];
+  readonly inputs: readonly PortShape[];
+  readonly outputs: readonly PortShape[];
 }
 
 /**
@@ -50,9 +70,10 @@ export function resolveNodes<N extends GraphNode, R>(
 }
 
 /**
- * The edges between ports that exist, an input receiving one edge at
- * most; the others are reported and left out. `check` adds the checks of a
- * kind of graph (the swizzles of the material graph), after the ports.
+ * The edges between ports that exist, each port taking as many edges as
+ * its `connections` allow (one per input, many per output by default); the
+ * others are reported and left out. `check` adds the checks of a kind of
+ * graph (the swizzles of the material graph), after the ports.
  *
  * @group Validation
  */
@@ -65,6 +86,7 @@ export function resolveEdges<E extends GraphEdge>(
 ): E[] {
   const kept: E[] = [];
   const connected = new Set<string>();
+  const feeding = new Set<string>();
   for (const edge of edges) {
     const label = `edge ${edge.from.node}.${edge.from.port} → ${edge.to.node}.${edge.to.port}`;
     if (!seen.has(edge.from.node) || !seen.has(edge.to.node)) {
@@ -80,7 +102,8 @@ export function resolveEdges<E extends GraphEdge>(
       // The node itself is invalid and already reported.
       continue;
     }
-    if (!source.outputs.some((port) => port.name === edge.from.port)) {
+    const output = source.outputs.find((port) => port.name === edge.from.port);
+    if (!output) {
       diagnostics.push({
         severity: 'error',
         node: edge.from.node,
@@ -89,7 +112,8 @@ export function resolveEdges<E extends GraphEdge>(
       });
       continue;
     }
-    if (!target.inputs.some((port) => port.name === edge.to.port)) {
+    const input = target.inputs.find((port) => port.name === edge.to.port);
+    if (!input) {
       diagnostics.push({
         severity: 'error',
         node: edge.to.node,
@@ -104,7 +128,7 @@ export function resolveEdges<E extends GraphEdge>(
       continue;
     }
     const key = portKey(edge.to);
-    if (connected.has(key)) {
+    if (input.connections !== 'many' && connected.has(key)) {
       diagnostics.push({
         severity: 'error',
         node: edge.to.node,
@@ -113,7 +137,18 @@ export function resolveEdges<E extends GraphEdge>(
       });
       continue;
     }
+    const from = portKey(edge.from);
+    if (output.connections === 'one' && feeding.has(from)) {
+      diagnostics.push({
+        severity: 'error',
+        node: edge.from.node,
+        port: edge.from.port,
+        message: `${label}: output "${edge.from.port}" can only feed one edge`,
+      });
+      continue;
+    }
     connected.add(key);
+    feeding.add(from);
     kept.push(edge);
   }
   return kept;

@@ -193,6 +193,10 @@ Elle réunit les phases précédentes : la forêt instanciée (P1), les ombres e
 
 ### P9. Graphs de comportement
 
+_Faite_ (18 octobre 2026), avec son tutoriel « Les graphs de comportement » et son guide : le design, les mesures et ce qui a été fait sont dans [p9-behavior.md](p9-behavior.md). `engine-behavior` : le modèle des blueprints (événements, flux d'exécution, valeurs à la demande, variables par instance, 40 nœuds et ceux de l'application), le graph exécuté comme un système (`BehaviorSystem`, une instance par entité), compilé en JavaScript ou interprété sur les mêmes instances — 0,10 contre 1,8 µs par instance et par pas pour l'IA du TPS —, le débogueur sur l'interpréteur (points d'arrêt, pas à pas, états des nœuds, trace) ; au cœur de graph, les connexions par port et le flux de contrôle qui peut boucler. L'IA des ennemis du TPS est un graph : la décision dans le graph, le pilotage et les coups en actions du jeu, au même coût (0,2 ms par image). Reportés : l'éditeur (P13), les fonctions et macros, les événements pour toutes les instances, les nœuds qui durent.
+
+Le plan d'origine :
+
 - Sur le cœur de graph de P6 : un flux d'exécution déclenché par des événements et un flux de données, comme les blueprints d'Unreal.
 - Leur exécution : interprétés, ou compilés en JavaScript (à comparer), et intégrés à l'ordonnanceur ECS (un graph est un système).
 - Le débogage : l'état des nœuds pendant l'exécution, des points d'arrêt.

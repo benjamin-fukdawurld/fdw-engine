@@ -1,4 +1,5 @@
 export * from './assets';
+export * from './brain';
 export * from './combat';
 export * from './controls';
 export * from './enemies';

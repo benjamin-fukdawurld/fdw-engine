@@ -256,7 +256,9 @@ onFrame((dt) => scheduler.update(dt));
 - **Control**: `paused`, `timeScale` and `step()` act on the `fixed` phase
   only (paused by a step, the steps left in the frame are dropped); `system.enabled`, `remove(name)`, `systems(phase)`.
 - A system is a function `(dt) => void`: the scheduler knows nothing of
-  worlds, and `FixedStep` is usable alone.
+  worlds, and `FixedStep` is usable alone. A behavior graph is one too:
+  `BehaviorSystem.install(scheduler)` runs it for its entities (see
+  [Behavior graphs](/fdw-engine/guides/behavior-graphs/)).
 
 See the tutorial [Systems and the fixed step](/fdw-engine/tutorials/systems/).
 

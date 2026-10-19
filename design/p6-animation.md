@@ -120,7 +120,7 @@ L'`Animator` (`Animator.bench.ts`, Node 24) : un squelette de 18 articulations, 
 1. **La démo** : le personnage dans une démo jouable (P8 en fera le héros du TPS), avec le contrôleur de personnage de P4.
 2. **Root motion** : le déplacement des hanches pris au clip pour déplacer le personnage.
 3. **Les morph targets** (les canaux `weights` de glTF), dans la même passe de calcul.
-4. **Les événements des états** (entrée, sortie) et des nœuds de calcul sur les paramètres ; la compilation en JavaScript, comparée en P9.
+4. **Les événements des états** (entrée, sortie) et des nœuds de calcul sur les paramètres ; la compilation en JavaScript, comparée en P9 ([p9-behavior.md](p9-behavior.md) §8 : environ 18 fois plus rapide que l'interpréteur pour un graph de comportement ; l'`Animator`, dont le coût est dans les poses, n'en a pas besoin pour l'instant).
 5. **Le skinning par quaternions doubles**, contre la perte de volume des articulations tordues.
 6. **Le ray tracing** (P10) : le buffer skinné comme vertex buffer des BLAS (l'usage `vertex` à ajouter), leur mise à jour à chaque image.
 7. **Les éditeurs** (P13) sur le cœur de graph : material graphs et animation graphs.

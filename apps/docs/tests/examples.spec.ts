@@ -37,6 +37,7 @@ const examples: Record<string, string> = {
   'levels-of-detail': 'tutorials/levels-of-detail/',
   'third-person-camera': 'tutorials/third-person-camera/',
   tps: 'game/tps/',
+  'behavior-graphs': 'tutorials/behavior-graphs/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -368,6 +369,51 @@ test('systems-steps', async ({ page: browser }, info) => {
   await expect(canvas).toHaveScreenshot(`systems-steps-${backend}.png`, {
     timeout: 20_000,
   });
+});
+
+// Behavior graphs: N stops the watched guard before its next node, H
+// sends a noise, which it handles node by node; C lets the others go.
+// The clock is stopped: only the events move the graphs.
+test('behavior-graphs-steps', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/behavior-graphs/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="behavior-graphs"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect(status).toContainText('compile · guard 1: patrol');
+  await canvas.click();
+  // One press per frame at most: wait for each.
+  await browser.keyboard.press('KeyN');
+  await expect(status).toContainText('interpret · guard 1: patrol');
+  await browser.keyboard.press('KeyH');
+  await expect(status).toContainText('stopped before "noise"');
+  await browser.keyboard.press('KeyN');
+  await expect(status).toContainText('stopped before "on patrol?"');
+  await browser.keyboard.press('KeyN');
+  await expect(status).toContainText('stopped before "there"');
+  await browser.keyboard.press('KeyN');
+  await expect(status).toContainText('stopped before "search"');
+  await browser.keyboard.press('KeyC');
+  await expect(status).toContainText(
+    'guard 1: search · breakpoint off · noise → on patrol? → there → search',
+  );
+  const after = Number((await canvas.getAttribute('data-frames')) ?? 0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(after + frames);
+  await expect(canvas).toHaveScreenshot(
+    `behavior-graphs-steps-${backend}.png`,
+    {
+      timeout: 20_000,
+    },
+  );
 });
 
 // Physics: a click pushes what is at the center (the clock is stopped: it

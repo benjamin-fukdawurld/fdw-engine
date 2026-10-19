@@ -148,8 +148,8 @@ the serialization and the structural checks (unknown ports, an input
 receiving two edges, cycles) come from `@fdw/engine-graph`, shared by
 every kind of graph: the material graphs, the animation graphs (see the
 [Animation](/fdw-engine/guides/animation/) guide), and the behavior graphs
-to come. The material graph adds its types, its inference and its
-compiler.
+(see the [Behavior graphs](/fdw-engine/guides/behavior-graphs/) guide). The
+material graph adds its types, its inference and its compiler.
 
 ## Functions
 

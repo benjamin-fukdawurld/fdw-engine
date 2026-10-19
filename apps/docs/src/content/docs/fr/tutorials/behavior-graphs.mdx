@@ -1,0 +1,236 @@
+---
+title: Les graphs de comportement
+description: Écrire la logique de gardes en graph de comportement — des événements, un flux d'exécution, des valeurs, les actions du jeu —, l'exécuter comme un système, compilé ou interprété, et le déboguer avec des points d'arrêt.
+sidebar:
+  order: 29
+---
+
+import Example from '../../../../components/Example.astro';
+
+Quatre gardes patrouillent dans une arène, chacun autour de son carré. Un
+**graph de comportement** décide de ce que fait chacun : il patrouille de
+point en point, poursuit l'intrus (la balle jaune) quand il le voit, et
+quand il le perd, le cherche là où il l'a vu pour la dernière fois, y
+attend, puis reprend sa ronde. Vert : en patrouille ; rouge : en
+poursuite ; orange : en recherche.
+
+L'intrus suit une boucle. Cliquez dans le canvas pour le diriger avec
+**W A S D** (Z Q S D en AZERTY) ; **H** fait du bruit là où il se trouve,
+ce qui y envoie les gardes en patrouille. Les touches du débogueur : **B**
+pose un point d'arrêt là où un garde repère l'intrus, **N** exécute un
+nœud, **C** continue, **1** à **4** choisissent le garde observé, **M**
+bascule entre le graph compilé et l'interpréteur.
+
+<Example name="behavior-graphs" />
+
+## Deux flux
+
+Un graph de comportement est un graph de nœuds, comme un blueprint
+d'Unreal, avec deux sortes de fils :
+
+- **le flux d'exécution** (les ports `exec`) : un **événement** lance une
+  chaîne — `event.update` à chaque pas, `event.on` quand le jeu envoie un
+  événement — et chaque nœud de la chaîne s'exécute, puis continue par
+  l'une de ses sorties d'exécution : un `flow.branch` par `true` ou
+  `false`, un `flow.switch` par le nom d'un état, une action par la sortie
+  qu'elle renvoie ;
+- **le flux de données** : les valeurs que lisent les nœuds. Un nœud
+  **pur** (une somme, une comparaison, une variable) n'a pas de port
+  d'exécution : il est calculé quand un nœud de la chaîne le lit, une fois
+  pour ce nœud.
+
+Le garde utilise les deux : à chaque pas, `event.update` mène à un switch
+sur sa variable `state` ; la branche de `patrol` lit `sees`, une
+comparaison de la distance entre le garde et l'intrus.
+
+## Les nœuds du jeu
+
+Le graph ne connaît pas le jeu : le jeu lui donne des nœuds. Un nœud pur
+répond à une question, une action fait quelque chose puis continue :
+
+```ts
+const position = pureNode<Guards>({
+  id: 'guard.position',
+  output: 'vec3',
+  evaluate: (call) => call.self.host.positions.get(call.self.entity),
+});
+const moveTo = actionNode<Guards>({
+  id: 'guard.moveTo',
+  inputs: { target: 'vec3', speed: 'number', dt: 'number' },
+  exits: ['moving', 'arrived'],
+  run: (call, target: Vec3, speed: number, dt: number) => {
+    // …déplace le garde de call.self.entity de speed × dt…
+    return distance <= reach ? 'arrived' : 'moving';
+  },
+});
+const registry = createBehaviorRegistry([position, intruder, waypoint, moveTo]);
+```
+
+`call.self` est l'instance qui exécute le graph : son `entity`, ses
+`variables`, et `host`, l'objet que l'application donne au système (ici
+les positions des gardes, leurs rondes, l'intrus). `moveTo` a deux
+sorties : le graph continue par celle que renvoie `run`.
+
+## Construire le graph
+
+`BehaviorGraphBuilder` ajoute un nœud par méthode ; une action ou un nœud
+du flux prend d'abord les sorties d'exécution après lesquelles il vient ;
+les valeurs sont des poignées, ou des constantes.
+
+```ts
+const g = new BehaviorGraphBuilder('guard', registry);
+g.variable('state', 'string', 'patrol');
+g.variable('waypoint', 'number', 0);
+g.variable('target', 'vec3');
+g.event('noise', { at: 'vec3' });
+
+const me = g.node('guard.position').value();
+const thief = g.node('guard.intruder').value();
+const distance = g.distance(me, thief);
+const sees = g.compare(distance, '<', 3.5);
+
+const update = g.onUpdate();
+const dt = update.value('dt');
+const decide = g.switch(update.then, g.get('state'), [
+  'patrol',
+  'chase',
+  'search',
+]);
+```
+
+Les **variables** appartiennent à chaque instance : chaque garde a son
+état et son point de ronde. Les **événements** sont déclarés avec leurs
+champs ; `update.value('dt')` est la durée du pas, une sortie de données
+de l'événement.
+
+La patrouille : une branche sur `sees` ; vu, l'état devient `chase` — un
+nœud avec un id, `spot`, pour y poser un point d'arrêt ; sinon le garde
+marche vers son point de ronde, puis vers le suivant une fois arrivé :
+
+```ts
+const watch = g.branch(decide.exec('patrol'), sees);
+g.set(watch.exec('true'), 'state', 'chase', { id: 'spot' });
+const index = g.get('waypoint');
+const walk = g.node('guard.moveTo', {
+  from: watch.exec('false'),
+  inputs: {
+    target: g.node('guard.waypoint', { inputs: { index } }).value(),
+    speed: 1.6,
+    dt,
+  },
+});
+g.set(
+  walk.exec('arrived'),
+  'waypoint',
+  g.select(g.compare(index, '>=', 3), 0, g.add(index, 1)),
+);
+```
+
+La recherche attend deux secondes sur place, par un **délai** : la chaîne
+s'arrête à `flow.delay` et reprend deux secondes plus tard. Atteint de
+nouveau pendant qu'il attend — à chaque pas, le garde étant arrivé —, il
+ne fait rien.
+
+```ts
+const go = g.node('guard.moveTo', {
+  from: look.exec('false'),
+  inputs: { target: g.get('target'), speed: 2.2, dt },
+});
+const wait = g.delay(go.exec('arrived'), 2);
+const still = g.branch(wait.then, g.equals(g.get('state'), 'search'));
+g.set(still.exec('true'), 'state', 'patrol');
+```
+
+Les **événements** du jeu ont leurs propres chaînes : un bruit envoie un
+garde en patrouille là d'où il vient.
+
+```ts
+const noise = g.on('noise');
+const calm = g.branch(noise.then, g.equals(g.get('state'), 'patrol'));
+const there = g.set(calm.exec('true'), 'target', noise.value('at'));
+g.set(there.then, 'state', 'search');
+
+const graph = g.build();
+```
+
+`build()` valide le graph et lève ses erreurs, situées par nœud et par
+port : une variable inconnue ou d'un autre type, une sortie d'exécution
+qui mène à deux nœuds, des valeurs qui s'alimentent en boucle (le flux
+d'exécution, lui, peut boucler), un cas nommé deux fois. Le graph est une
+donnée : `serializeBehaviorGraph(graph)` l'écrit en JSON,
+`parseBehaviorGraph` le relit.
+
+## Un graph est un système
+
+```ts
+const guardsSystem = new BehaviorSystem(graph, { host, registry });
+for (const { entity } of guards) {
+  guardsSystem.attach(entity);
+}
+guardsSystem.install(scheduler, { name: 'guards', after: ['intruder'] });
+```
+
+`BehaviorSystem` exécute le graph pour chaque entité attachée : une
+instance chacune, avec ses variables (`attach(entity, { state: 'chase' })`
+en donne d'autres valeurs à certaines), son horloge et ses délais.
+`install` l'ajoute à l'ordonnanceur des
+[systèmes](/fdw-engine/fr/tutorials/systems/), dans le pas fixe par
+défaut : une exécution démarre les nouvelles instances (`event.start`),
+réveille les délais échus, puis exécute `event.update` pour chacune.
+
+```ts
+guardsSystem.emit(entity, 'noise', { at: { x, y: 0, z } });
+```
+
+Un événement est traité aussitôt, ou, envoyé par un graph (`event.emit`)
+ou pendant qu'une chaîne s'exécute, dès que la chaîne est finie.
+
+## Compilé ou interprété
+
+Le système exécute son graph de l'une de deux façons (`mode`) :
+
+- **`compile`**, par défaut : le graph devient du JavaScript, une fonction
+  par nœud du flux, les nœuds purs en expressions. Son source se lit :
+  `guardsSystem.compiled.source`. Une page dont la Content Security Policy
+  interdit `unsafe-eval` ne peut pas compiler : le système interprète
+  alors.
+- **`interpret`** : le système parcourt les nœuds un par un. Plus lent,
+  mais il peut s'arrêter avant n'importe quel nœud, et il garde les
+  valeurs de chaque nœud.
+
+Pour la décision d'un ennemi du TPS, 1000 instances par pas : environ
+1,8 ms interprétée, 0,1 ms compilée (Node 24). La ligne d'état dit lequel
+tourne ; **M** bascule.
+
+## Déboguer
+
+```ts
+const debug = guardsSystem.debug();
+debug.entity = guards[watched].entity; // seul celui-ci s'arrête
+debug.toggleBreakpoint('spot');
+debug.onPause(() => (scheduler.paused = true));
+// …plus tard :
+debug.step(); // un nœud
+debug.continue(); // jusqu'au prochain point d'arrêt
+debug.trace(entity); // les nœuds exécutés au dernier pas, dans l'ordre
+debug.states(entity); // par nœud : ses exécutions, ses sorties, s'il attend
+```
+
+Le débogueur fait interpréter son graph au système jusqu'à `close()`. Un
+point d'arrêt l'arrête avant un nœud : le système ne s'exécute plus, le
+reste du jeu continue, sauf si l'application le met en pause — ici, le pas
+fixe s'arrête, et l'intrus attend. `step()` exécute un nœud et s'arrête
+avant le suivant, dans la même chaîne ou la prochaine à s'exécuter ; la
+ligne d'état montre où le garde observé s'est arrêté et les nœuds qu'il a
+exécutés, qu'un éditeur de graphs dessinera sur les fils.
+
+Appuyez sur **B**, puis attendez qu'un garde voie l'intrus (**1** à **4**
+pour en observer un autre) : l'arène s'arrête sur `spot`. **N** avance
+dans le reste de la chaîne, **C** continue.
+
+## Ensuite
+
+Le guide [Les graphs de comportement](/fdw-engine/fr/guides/behavior-graphs/)
+décrit chaque nœud et le détail de l'exécution. Les ennemis du
+[jeu à la troisième personne](/fdw-engine/fr/game/tps/) sont décidés par
+un graph de comportement.

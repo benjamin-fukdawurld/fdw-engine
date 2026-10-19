@@ -11,6 +11,8 @@ import { Scene } from '@fdw/engine-scene';
 import { describe, expect, it } from 'vitest';
 import { Blow, strikeCapsule, strikeSphere } from './combat';
 import { tpsControls } from './controls';
+import { BehaviorSystem } from '@fdw/engine-behavior';
+import { type EnemyHost, enemyGraph, enemyRegistry } from './brain';
 import { EnemyKinds, TrunkGrid } from './enemies';
 import { forestHeights } from './forest';
 import { HeroActions, heroClips, heroGraph } from './hero';
@@ -212,6 +214,110 @@ describe('the enemies', () => {
     expect(demon.run).toBeLessThan(orc.run);
     expect(demon.poise).toBeGreaterThan(orc.poise);
     expect(demon.reach).toBeGreaterThan(orc.reach);
+  });
+});
+
+describe('enemyGraph', () => {
+  // A game reduced to what the graph asks: distances given, the calls
+  // recorded.
+  const game = (distance: number) => {
+    const calls: string[] = [];
+    const host: EnemyHost & { distance: number; alive: boolean } = {
+      maxAttackers: 2,
+      distance,
+      alive: true,
+      get heroAlive() {
+        return this.alive;
+      },
+      attackers: () =>
+        [...system.instances].filter((i) => i.variables['state'] === 'attack')
+          .length,
+      heroDistance: () => host.distance,
+      startAttack: (e) => calls.push(`attack ${e}`),
+      swing: (e) => calls.push(`swing ${e}`),
+      strike: (e) => calls.push(`strike ${e}`),
+      steer: () => undefined,
+      hurt: (e) => calls.push(`hurt ${e}`),
+      die: (e) => calls.push(`die ${e}`),
+      sink: () => undefined,
+      remove: (e) => {
+        calls.push(`remove ${e}`);
+        system.detach(e);
+      },
+    };
+    const system: BehaviorSystem<EnemyHost> = new BehaviorSystem(enemyGraph(), {
+      host,
+      registry: enemyRegistry,
+      random: () => 0.5,
+    });
+    const steps = (seconds: number) => {
+      for (let t = 0; t < seconds - 1e-9; t += 0.05) system.run(0.05);
+    };
+    return { system, host, calls, steps };
+  };
+  const orc = {
+    health: 60,
+    cooldown: 0,
+    reach: 1.9,
+    poise: 0,
+    rest: 1.3,
+    strikeStart: 0.3,
+    strikeEnd: 0.45,
+    attackLength: 1,
+  };
+
+  it.each(['compile', 'interpret'] as const)(
+    'roars, chases, strikes in the window of its blow, recovers (%s)',
+    (mode) => {
+      const { system, host, calls, steps } = game(10);
+      system.mode = mode;
+      const enemy = system.attach(1, orc);
+      steps(0.5);
+      expect(enemy.get('state')).toBe('spawn');
+      steps(0.5);
+      expect(enemy.get('state')).toBe('chase');
+      // Within reach.
+      host.distance = 1;
+      steps(0.05);
+      expect(enemy.get('state')).toBe('attack');
+      steps(1);
+      expect(calls[0]).toBe('attack 1');
+      expect(calls.filter((c) => c === 'swing 1')).toHaveLength(1);
+      // Struck at each step of the window: 0.3 to 0.45 s.
+      expect(calls.filter((c) => c === 'strike 1').length).toBeGreaterThan(1);
+      expect(enemy.get('state')).toBe('recover');
+      expect(enemy.get('cooldown')).toBeCloseTo(1.3, 1);
+    },
+  );
+
+  it('lets two strike at once, the others wait', () => {
+    const { system, steps } = game(1);
+    for (let e = 1; e <= 3; e++) system.attach(e, orc);
+    steps(0.9);
+    const states = [...system.instances].map((i) => i.variables['state']);
+    expect(states.filter((s) => s === 'attack')).toHaveLength(2);
+    expect(states.filter((s) => s === 'chase')).toHaveLength(1);
+  });
+
+  it('staggers when the blow beats its poise, falls, sinks, and is gone', () => {
+    const { system, calls, steps } = game(10);
+    const demon = system.attach(1, { ...orc, health: 320, poise: 50 });
+    const weak = system.attach(2, orc);
+    steps(1);
+    system.emit(1, 'hit', { damage: 20 });
+    system.emit(2, 'hit', { damage: 20 });
+    expect(demon.get('health')).toBe(300);
+    expect(demon.get('state')).toBe('chase');
+    expect(weak.get('state')).toBe('hurt');
+    expect(calls).toEqual(['hurt 1', 'hurt 2']);
+    system.emit(2, 'hit', { damage: 50 });
+    expect(weak.get('state')).toBe('dead');
+    // A fallen enemy takes no more blows.
+    system.emit(2, 'hit', { damage: 50 });
+    expect(weak.get('health')).toBe(-10);
+    steps(4.1);
+    expect(calls.slice(2)).toEqual(['die 2', 'remove 2']);
+    expect(system.instance(2)).toBeUndefined();
   });
 });
 

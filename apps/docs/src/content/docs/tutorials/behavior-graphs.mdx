@@ -1,0 +1,229 @@
+---
+title: Behavior graphs
+description: Write the logic of guards as a behavior graph — events, a flow of execution, values, the actions of the game — run it as a system, compiled or interpreted, and debug it with breakpoints.
+sidebar:
+  order: 29
+---
+
+import Example from '../../../components/Example.astro';
+
+Four guards patrol an arena, each around its own square. A **behavior
+graph** decides what each one does: it patrols from waypoint to waypoint,
+chases the intruder (the yellow ball) when it sees it, and when it loses
+it, searches where it was last seen, waits there, then goes back to its
+patrol. Green: patrolling; red: chasing; orange: searching.
+
+The intruder walks a loop. Click the canvas to take it over with
+**W A S D** (Z Q S D on AZERTY); **H** makes a noise where it stands,
+which sends the guards on patrol there. The keys of the debugger: **B**
+puts a breakpoint where a guard spots the intruder, **N** runs one node,
+**C** continues, **1** to **4** choose the guard watched, **M** switches
+between the compiled graph and the interpreter.
+
+<Example name="behavior-graphs" />
+
+## Two flows
+
+A behavior graph is a graph of nodes, like a blueprint of Unreal, with two
+kinds of wires:
+
+- **the flow of execution** (the `exec` ports): an **event** starts a
+  chain — `event.update` at each step, `event.on` when the game sends an
+  event — and each node of the chain runs, then goes on by one of its exec
+  outputs: a `flow.branch` by `true` or `false`, a `flow.switch` by the
+  name of a state, an action by the exit it returns;
+- **the data flow**: the values the nodes read. A **pure** node (a sum, a
+  comparison, a variable) has no exec port: it is computed when a node of
+  the chain reads it, once for that node.
+
+The guard uses both: at each step, `event.update` goes to a switch on its
+`state` variable; the branch of `patrol` reads `sees`, a comparison of the
+distance between the guard and the intruder.
+
+## The nodes of the game
+
+The graph does not know the game: the game gives it nodes. A pure node
+answers a question, an action does something then goes on:
+
+```ts
+const position = pureNode<Guards>({
+  id: 'guard.position',
+  output: 'vec3',
+  evaluate: (call) => call.self.host.positions.get(call.self.entity),
+});
+const moveTo = actionNode<Guards>({
+  id: 'guard.moveTo',
+  inputs: { target: 'vec3', speed: 'number', dt: 'number' },
+  exits: ['moving', 'arrived'],
+  run: (call, target: Vec3, speed: number, dt: number) => {
+    // …moves the guard of call.self.entity by speed × dt…
+    return distance <= reach ? 'arrived' : 'moving';
+  },
+});
+const registry = createBehaviorRegistry([position, intruder, waypoint, moveTo]);
+```
+
+`call.self` is the instance running the graph: its `entity`, its
+`variables`, and `host`, the object the application gives the system (here
+the positions of the guards, their routes, the intruder). `moveTo` has two
+exits: the graph goes on by the one `run` returns.
+
+## Building the graph
+
+`BehaviorGraphBuilder` adds a node per method; an action or a node of the
+flow takes, first, the exec outputs it comes after; values are handles,
+or constants.
+
+```ts
+const g = new BehaviorGraphBuilder('guard', registry);
+g.variable('state', 'string', 'patrol');
+g.variable('waypoint', 'number', 0);
+g.variable('target', 'vec3');
+g.event('noise', { at: 'vec3' });
+
+const me = g.node('guard.position').value();
+const thief = g.node('guard.intruder').value();
+const distance = g.distance(me, thief);
+const sees = g.compare(distance, '<', 3.5);
+
+const update = g.onUpdate();
+const dt = update.value('dt');
+const decide = g.switch(update.then, g.get('state'), [
+  'patrol',
+  'chase',
+  'search',
+]);
+```
+
+**Variables** belong to each instance: each guard has its own state and
+waypoint. **Events** are declared with their fields; `update.value('dt')`
+is the time of the step, a data output of the event.
+
+The patrol: a branch on `sees`; seen, the state becomes `chase` — a node
+with an id, `spot`, to put a breakpoint on it; else the guard walks to its
+waypoint, and the next one once there:
+
+```ts
+const watch = g.branch(decide.exec('patrol'), sees);
+g.set(watch.exec('true'), 'state', 'chase', { id: 'spot' });
+const index = g.get('waypoint');
+const walk = g.node('guard.moveTo', {
+  from: watch.exec('false'),
+  inputs: {
+    target: g.node('guard.waypoint', { inputs: { index } }).value(),
+    speed: 1.6,
+    dt,
+  },
+});
+g.set(
+  walk.exec('arrived'),
+  'waypoint',
+  g.select(g.compare(index, '>=', 3), 0, g.add(index, 1)),
+);
+```
+
+The search waits two seconds at the place, with a **delay**: the chain
+stops at `flow.delay` and goes on two seconds later. Reached again while
+it waits — at every step, the guard being there — it does nothing.
+
+```ts
+const go = g.node('guard.moveTo', {
+  from: look.exec('false'),
+  inputs: { target: g.get('target'), speed: 2.2, dt },
+});
+const wait = g.delay(go.exec('arrived'), 2);
+const still = g.branch(wait.then, g.equals(g.get('state'), 'search'));
+g.set(still.exec('true'), 'state', 'patrol');
+```
+
+The **events** of the game have their own chains: a noise sends a guard
+on patrol to where it came from.
+
+```ts
+const noise = g.on('noise');
+const calm = g.branch(noise.then, g.equals(g.get('state'), 'patrol'));
+const there = g.set(calm.exec('true'), 'target', noise.value('at'));
+g.set(there.then, 'state', 'search');
+
+const graph = g.build();
+```
+
+`build()` validates the graph and throws its errors, located by node and
+port: a variable unknown or of another type, an exec output going to two
+nodes, values feeding each other in a loop (the flow of execution, it,
+may loop), a case named twice. The graph is data:
+`serializeBehaviorGraph(graph)` writes it as JSON, `parseBehaviorGraph`
+reads it back.
+
+## A graph is a system
+
+```ts
+const guardsSystem = new BehaviorSystem(graph, { host, registry });
+for (const { entity } of guards) {
+  guardsSystem.attach(entity);
+}
+guardsSystem.install(scheduler, { name: 'guards', after: ['intruder'] });
+```
+
+`BehaviorSystem` runs the graph for each entity attached: an instance
+each, with its variables (`attach(entity, { state: 'chase' })` gives some
+of them other values), its clock and its delays. `install` adds it to the
+scheduler of [the systems](/fdw-engine/tutorials/systems/), in the fixed
+step by default: a run starts the new instances (`event.start`), wakes
+the delays that are due, then runs `event.update` for each.
+
+```ts
+guardsSystem.emit(entity, 'noise', { at: { x, y: 0, z } });
+```
+
+An event is handled at once, or, sent from a graph (`event.emit`) or while
+a chain runs, as soon as the chain is over.
+
+## Compiled or interpreted
+
+The system runs its graph in one of two ways (`mode`):
+
+- **`compile`**, by default: the graph becomes JavaScript, a function per
+  node of the flow, the pure nodes inlined as expressions. Its source can
+  be read: `guardsSystem.compiled.source`. A page whose Content Security
+  Policy forbids `unsafe-eval` cannot compile: the system then
+  interprets.
+- **`interpret`**: the system walks the nodes one at a time. Slower, but
+  it can stop before any node, and it keeps the values of every node.
+
+For the decision of an enemy of the TPS, 1000 instances per step: about
+1.8 ms interpreted, 0.1 ms compiled (Node 24). The status line says which
+one runs; **M** switches.
+
+## Debugging
+
+```ts
+const debug = guardsSystem.debug();
+debug.entity = guards[watched].entity; // only this one stops
+debug.toggleBreakpoint('spot');
+debug.onPause(() => (scheduler.paused = true));
+// …later:
+debug.step(); // one node
+debug.continue(); // to the next breakpoint
+debug.trace(entity); // the nodes run by the last step, in order
+debug.states(entity); // per node: its runs, its outputs, whether it waits
+```
+
+The debugger makes the system interpret its graph until `close()`. A
+breakpoint stops it before a node: the system no longer runs, the rest of
+the game goes on unless the application pauses it — here, the fixed step
+stops, so the intruder waits. `step()` runs one node and stops before the
+next, in the same chain or the next one to run; the status line shows
+where the watched guard stopped and the nodes it ran, which an editor of
+graphs will draw over the wires.
+
+Press **B**, then wait for a guard to see the intruder (**1** to **4** to
+watch another): the arena stops on `spot`. **N** steps through the rest
+of the chain, **C** goes on.
+
+## Next
+
+The [Behavior graphs](/fdw-engine/guides/behavior-graphs/) guide lists
+every node and the details of the execution. The enemies of
+[the third-person game](/fdw-engine/game/tps/) are decided by a behavior
+graph.
