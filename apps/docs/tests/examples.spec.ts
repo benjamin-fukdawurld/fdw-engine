@@ -38,6 +38,7 @@ const examples: Record<string, string> = {
   'third-person-camera': 'tutorials/third-person-camera/',
   tps: 'game/tps/',
   'behavior-graphs': 'tutorials/behavior-graphs/',
+  'static-batching': 'tutorials/static-batching/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -443,4 +444,37 @@ test('physics-debug', async ({ page: browser }, info) => {
   await expect(canvas).toHaveScreenshot(`physics-debug-${backend}.png`, {
     timeout: 20_000,
   });
+});
+
+// Static batching: the identifier of an object merged in a batch, read back
+// under the mouse; then the same object drawn alone.
+test('static-batching-picking', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/static-batching/?time=${time}&frames=${frames}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="static-batching"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBe(frames);
+  const box = await canvas.boundingBox();
+  if (!box) {
+    throw new Error('The canvas is not visible');
+  }
+  // A column in the front, a little left of the center.
+  const column = { x: box.x + box.width * 0.435, y: box.y + box.height * 0.82 };
+  await browser.mouse.move(column.x, column.y);
+  await expect(status).toContainText(/under the mouse: column \d+, in a batch/);
+  // A click switches the batching off: the same column, alone.
+  await browser.mouse.click(column.x, column.y);
+  await expect(status).toContainText('batching off');
+  await browser.mouse.move(column.x + 1, column.y);
+  await expect(status).toContainText(/under the mouse: column \d+$/);
 });

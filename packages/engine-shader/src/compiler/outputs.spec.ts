@@ -103,6 +103,33 @@ describe('surface outputs', () => {
     );
   });
 
+  it('reads the identifier per vertex when the mesh has an objectId attribute', () => {
+    const output: SurfaceOutput = {
+      name: 'id',
+      location: 1,
+      value: 'object-id',
+      channels: 1,
+      scalar: 'u32',
+    };
+    const merged = compile(pbr().build(), {
+      ...options([output]),
+      vertexAttributes: ['position', 'normal', 'uv', 'objectId'],
+    });
+    const vertex = stage(merged, 'vertex');
+    expect(vertex.inputs).toContainEqual(
+      expect.objectContaining({ name: 'a_objectId', type: BuiltinTypes.u32 }),
+    );
+    expect(merged.variantKey['hasAttribute.objectId']).toBe(true);
+    // Without the attribute, from the table: another variant.
+    const single = compile(pbr().build(), options([output]));
+    expect(
+      stage(single, 'vertex').inputs.some(
+        (input) => input.name === 'a_objectId',
+      ),
+    ).toBe(false);
+    expect(single.programKey).not.toBe(merged.programKey);
+  });
+
   it('leaves the shading model out without color', () => {
     const lit = compile(pbr().build(), options([]));
     const gbuffer = compile(

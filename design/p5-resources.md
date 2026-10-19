@@ -29,7 +29,7 @@ Ce qui existe déjà et que l'on réutilise : `Mesh` (CPU, versionné, `setVerti
 
 - Une API **unique** pour tout type de ressource ; ajouter un format ou un type, c'est enregistrer un chargeur.
 - Charger sans bloquer, annuler, afficher une progression (écran de chargement), ne pas charger deux fois, libérer ce qui n'est plus utilisé.
-- Les démos, la doc (« Charger des modèles »), l'éditeur de P13 et l'audio de P7 partagent le même système.
+- Les démos, la doc (« Charger des modèles »), l'éditeur de jeu de P20 et l'audio de P7 partagent le même système.
 - Le rechargement à chaud raccourcit la boucle de travail sur les modèles, les textures et plus tard les matériaux.
 
 ## 4. Coût
@@ -341,7 +341,7 @@ scope.dispose();
 - Deux façons d'appliquer, au choix du chargeur :
   - **en place** quand `update(current, next)` sait faire : un `Mesh` reçoit les nouveaux sommets (`Mesh.setVertices` incrémente déjà sa version, et le `Renderer` rebascule) ; un `Material` reçoit `setValue`. Les nœuds de la scène, qui tiennent ces objets, voient le changement sans rien faire. La `Texture` est toujours remplacée : réécrire la `GpuTexture` demanderait de garder les pixels de la nouvelle valeur, et le matériau qui en dépend, mis à jour en place avec la nouvelle, donne le même effet aux nœuds ;
   - **par remplacement** sinon : `handle.value` change, `version` augmente, les dépendants sont **invalidés** transitivement et se réalisent à nouveau (un `Material` dont la texture a changé de dimensions rebind la nouvelle).
-- Un modèle rechargé dont la **hiérarchie** change ne modifie pas les `ModelInstance` existantes (on ne devine pas ce que l'application a fait des nœuds). Les meshes et matériaux mis à jour en place sont vus par les instances ; un `Model` remplacé ne l'est pas. `ModelInstance.rebuild()` recrée les nœuds depuis le `Model` courant ; le suivi automatique (`follow`) est laissé à l'éditeur (P13), qui sait ce que l'utilisateur a modifié.
+- Un modèle rechargé dont la **hiérarchie** change ne modifie pas les `ModelInstance` existantes (on ne devine pas ce que l'application a fait des nœuds). Les meshes et matériaux mis à jour en place sont vus par les instances ; un `Model` remplacé ne l'est pas. `ModelInstance.rebuild()` recrée les nœuds depuis le `Model` courant ; le suivi automatique (`follow`) est laissé à l'éditeur de jeu (P20), qui sait ce que l'utilisateur a modifié.
 - **Le `Material` en place** : seulement quand le graphe généré est le même (mêmes caractéristiques, §6.11) ; ses valeurs sont alors réécrites par `setValue`. Un graphe différent (une texture ajoutée) donne un nouveau `Material` par remplacement : `Material.graph` est `readonly`, et c'est voulu (le programme en dépend).
 - Les sous-ressources ont des identifiants stables (`#mesh/2`, `#material/Bark`) pour que la mise à jour retrouve ses objets.
 
@@ -503,4 +503,4 @@ Les étapes R1 à R5 couvrent le sens du mot « modèles chargés dans les démo
 - _Le transcodeur Basis_ est une dépendance WASM lourde ; il se charge à la demande et reste hors du chemin des images ordinaires.
 - _Le rechargement en place_ promet beaucoup : chaque chargeur doit déclarer ce qu'il sait mettre à jour. Le défaut sûr est le remplacement.
 - _Les identifiants de sous-ressources_ deviennent une API stable : `#mesh/2` (index) casse si le modèle change de contenu ; le nom (`#mesh/Body`) est plus stable, l'index sert de repli.
-- _Les GUID_ (renommer un fichier sans casser une scène) ne sont pas prévus : l'éditeur (P13) ajoutera un catalogue au-dessus des URI.
+- _Les GUID_ (renommer un fichier sans casser une scène) ne sont pas prévus : l'éditeur de jeu (P20) ajoutera un catalogue au-dessus des URI.

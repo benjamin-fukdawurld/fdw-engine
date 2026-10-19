@@ -127,6 +127,33 @@ lods.install(scheduler, camera); // or lods.update(camera) each frame
   the occlusion culling. `bias` multiplies the distances; a narrower field
   of view than `referenceFov` keeps finer levels further.
 
+## Static batches
+
+`StaticBatches` merges the static renderers of a cell of a grid and of a
+material into one mesh in world space, drawn in one call (see
+[Static batching](/fdw-engine/tutorials/static-batching/)): for the static
+sets where every object has its own mesh, which instancing cannot group.
+
+```ts
+const batches = new StaticBatches(scene, { cellSize: 40 });
+// … batches.stats, batches.batchOf(entity), batches.destroy()
+```
+
+- The renderers merged get `NodeFlags.Batched`: the render queries give
+  their batch instead, the other queries still find them, in the static
+  index.
+- A batch is rebuilt at the next flush when one of its renderers moves,
+  is hidden, removed, or changes mesh, material or layers
+  (`scene.rendererChanged(entity)` for the systems writing the columns
+  directly).
+- Left out: the transparent materials, the meshes that `mergeKey` refuses
+  (other primitives than triangles, skins, positions in other formats than
+  32-bit floats), and what the `filter` option rejects (the levels of
+  detail).
+- Each renderer has an identifier, `scene.objectId(entity)` (its entity
+  plus one; `scene.entityOf(id)` back), stored per vertex in the batches:
+  the `'object-id'` outputs give the object, batched or not.
+
 ## The scene as a source
 
 ```ts
@@ -300,3 +327,10 @@ step 1 of the maze game, about 3700 objects drawn per frame with their
 shadows, runs at about 170 frames per second on Vulkan (about 89 before
 the object table and instancing) and 120 on Dawn (42 before the object
 table).
+
+The static objects of their own meshes are merged by the static batches:
+the 1 600 objects of the set of
+[Static batching](/fdw-engine/tutorials/static-batching/), 1 200 draws
+alone, are about 70 batched, from 169 to about 830 frames per second on
+Vulkan and from 50 to about 300 on Dawn; the batches cost a second copy
+of their geometry (5.2 MB there) and about 60 ms to build.

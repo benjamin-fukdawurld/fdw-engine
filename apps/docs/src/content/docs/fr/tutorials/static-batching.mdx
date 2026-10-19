@@ -1,0 +1,144 @@
+---
+title: Le batching statique
+description: Dessiner en quelques appels un décor statique où chaque objet a son mesh, en fusionnant les objets d'une cellule et d'un matériau en un seul mesh.
+sidebar:
+  order: 30
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une place de ruines, un marché et des rochers : 1 600 objets statiques,
+et pas deux pareils. Chaque colonne, pierre, caisse, tonneau et rocher a
+son propre mesh. L'instancing dessine en un appel les objets qui
+partagent mesh et matériau (les murs du [labyrinthe](/fdw-engine/fr/game/maze/),
+les sapins de [la forêt](/fdw-engine/fr/tutorials/levels-of-detail/)) : ici,
+il n'a rien à partager, et chaque objet serait un appel de dessin. Le
+**batching statique** fusionne les objets statiques d'une région et d'un
+matériau en un seul mesh : environ 70 appels au lieu de 1 200.
+
+Cliquez sur le canvas pour couper et remettre le batching. Survolez un
+objet : son nom revient du GPU, fusionné ou non.
+
+<Example name="static-batching" />
+
+## Fusionner une scène
+
+```ts
+import { Scene, StaticBatches } from '@fdw/engine-scene';
+
+const scene = new Scene();
+// … des nœuds statiques : scene.root.add({ static: true }).setMesh(mesh, material)
+const batches = new StaticBatches(scene, { cellSize: 40 });
+```
+
+C'est tout : la scène, source du renderer, donne les lots au lieu des
+objets qu'ils contiennent. `StaticBatches` regroupe les renderers des
+**nœuds statiques** par cellule d'une grille (`cellSize`, dans les unités
+de la scène) et par matériau, et fusionne chaque groupe en un mesh, dans
+l'espace du monde. `batches.destroy()` les redessine un par un.
+
+Ce qui est fusionné :
+
+- les renderers des nœuds statiques, visibles ;
+- dont le mesh est fait de triangles, avec ses positions, normales et
+  tangentes en flottants 32 bits, et sans skin (`mergeKey(mesh)` dit s'il
+  peut l'être) ;
+- dont le matériau est opaque ou masqué : les objets transparents sont
+  triés un par un, de l'arrière vers l'avant, et restent seuls ;
+- avec les mêmes attributs, calques et ombre (`castShadow`) que les autres
+  de leur groupe ;
+- que garde l'option `filter` : écartez-en les nœuds d'un
+  [niveau de détail](/fdw-engine/fr/tutorials/levels-of-detail/), qui
+  changent de niveau à chaque image, et ceux qu'un éditeur va déplacer.
+
+Un groupe d'un seul renderer n'est pas fusionné (`minCount`, 2 par
+défaut), et un groupe de plus de `maxVertices` (262 144) sommets est
+découpé.
+
+## Quand un objet change
+
+Un lot est **reconstruit quand un de ses objets change** : déplacé,
+caché, retiré, doté d'un autre mesh ou d'un autre matériau
+(`node.setMesh`), d'autres calques. Les changements sont appliqués au
+prochain flush de la scène, avant l'image suivante, comme les bornes et
+l'index spatial. Un système qui écrit directement les colonnes des
+renderers appelle `scene.rendererChanged(entity)`.
+
+Reconstruire un lot, c'est fusionner de nouveau ses meshes : environ une
+milliseconde pour les centaines de rochers d'une cellule, 60 ms pour
+toute la place au départ. Très bien pour une porte ouverte de temps en
+temps, pas pour un objet qui bouge à chaque image : celui-là n'est pas
+statique.
+
+## La sélection dans un lot
+
+Les renderers d'une scène ont des identifiants : `scene.objectId(entity)`,
+l'entité plus un (0 : aucun objet). Les sorties `'object-id'` des passes
+de scène les écrivent pour chaque pixel, comme pour
+[la sélection](/fdw-engine/fr/tutorials/picking/). Un lot est un seul draw,
+une seule ligne de la table des objets : les identifiants de ses objets
+sont rangés **par sommet**, dans un attribut `objectId`, que les passes de
+scène lisent à la place de la table.
+
+```ts
+const [id] = await pickIds(backend, ids, pixel);
+const entity = scene.entityOf(id); // l'objet, fusionné ou non
+const batch = batches.batchOf(entity); // son lot, s'il en a un
+```
+
+Les autres requêtes de la scène (lancers de rayon, volumes) ne voient pas
+les lots : elles trouvent les objets eux-mêmes, qui restent dans l'index
+spatial.
+
+## Ce qu'il coûte
+
+- **La géométrie, deux fois.** Chaque lot garde une copie des meshes de
+  ses objets, dans l'espace du monde, plus 4 octets par sommet pour les
+  identifiants : 5,2 Mo pour les 4,7 Mo de la place, côté CPU et côté
+  GPU. `batches.stats` donne les octets, les lots, les reconstructions et
+  leur durée.
+- **Un culling par cellule.** Un lot est dessiné en entier dès qu'une
+  partie de sa cellule est visible, et projette toutes ses ombres. Des
+  cellules plus petites cullent plus finement et reconstruisent moins ;
+  de plus grandes font moins d'appels. L'occlusion culling voit aussi un
+  lot comme un seul objet.
+- **L'espace du monde dans les matériaux.** Un lot est placé par
+  l'identité : ses attributs sont déjà dans l'espace du monde. Un matériau
+  qui calcule la position dans le monde à partir de `object.world` et de
+  la position, comme la plupart, ne voit pas de différence ; un matériau
+  qui lit la position ou la normale comme celles de l'objet, si.
+
+## Mesures
+
+La place de l'exemple, dans la démo native
+(`nx run demo-native:start -- decor`, et `decor-no-batching`), sans
+vsync, sur la machine de développement :
+
+|                              | Seuls         | Fusionnés   |
+| ---------------------------- | ------------- | ----------- |
+| Appels de dessin (la caméra) | environ 1 200 | environ 70  |
+| Vulkan                       | 169 fps       | **833 fps** |
+| WebGPU (Dawn)                | 50 fps        | **305 fps** |
+| `Renderer.render`, CPU seul  | 1,57 ms       | **0,14 ms** |
+
+La dernière ligne est un benchmark d'`engine-scene`
+(`StaticBatches.bench.ts`) : 1 000 objets avec chacun son mesh, en 4
+matériaux, sur le backend factice. Le gain vient des appels économisés,
+pas du GPU : les triangles sont les mêmes.
+
+## Instancing ou batching ?
+
+- **Le même mesh, beaucoup de fois** (arbres, murs, foules) :
+  l'instancing, automatique, et rien n'est copié.
+- **Des objets statiques, tous différents** (un décor fait main, un
+  niveau importé, un assemblage CAO) : le batching statique.
+- **Des objets qui bougent** : ni l'un ni l'autre ne les fusionne ; chaque
+  objet mobile est un draw, ou une instance de son mesh.
+
+## Ensuite
+
+- [Le graphe de scène](/fdw-engine/fr/guides/scene-graph/), le guide : les
+  nœuds statiques, l'index spatial, et les lots parmi les composants
+  d'une scène.
+- [La sélection](/fdw-engine/fr/tutorials/picking/) : les identifiants des
+  objets, relus sous la souris.

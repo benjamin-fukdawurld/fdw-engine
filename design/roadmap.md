@@ -1,6 +1,6 @@
 # Plan de développement
 
-Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne les chantiers du [backlog](backlog.md) (y compris ceux laissés de côté jusqu'ici) et les nouveaux (caméras, ressources, animation, audio, comportements, démos, éditeur). Il sera revu à la fin de chaque phase.
+Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne les chantiers du [backlog](backlog.md) (y compris ceux laissés de côté jusqu'ici) et les nouveaux (caméras, ressources, animation, audio, comportements, démos, outils d'édition, eau et fluides, éditeur). Il sera revu à la fin de chaque phase.
 
 ## 1. Principes
 
@@ -28,12 +28,22 @@ Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne le
 | P7b   | Physique : une API abstraite, un moteur intégré     | Des corps qui tombent et s'empilent, web et natif                   | Grande      |
 | P8    | Le jeu à la troisième personne                      | **Démo TPS : l'épée dans la forêt**                                 | Moyenne     |
 | P9    | Graphs de comportement                              | L'IA des ennemis du TPS en graphs                                   | Grande      |
+| P12   | Batching statique                                   | Moins de draws pour les scènes statiques hétérogènes                | Moyenne     |
+| P14   | Shaders procéduraux                                 | Des matériaux et un terrain sans texture : bruits, motifs           | Moyenne     |
+| P15   | Sélection, gizmos, commandes                        | Déplacer, tourner, mettre à l'échelle des objets ; annuler, refaire | Moyenne     |
+| P16   | Scènes et niveaux : import et export modulaires     | Le niveau du TPS enregistré, rechargé, échangé en glTF              | Grande      |
+| P17   | La mer et les vagues                                | Une mer animée, des objets qui flottent                             | Grande      |
+| P18   | L'application Electron                              | La base de l'éditeur : React, un viewport en rendu natif            | Grande      |
+| P19   | L'éditeur de graphs                                 | Matériaux, animations, comportements édités et débogués à la souris | Grande      |
+| P20   | L'éditeur de jeu                                    | **Un petit jeu fait dans l'éditeur**                                | Très grande |
+| P21   | Les fluides                                         | De l'eau et de la fumée simulées                                    | Grande      |
 | P10   | Ray tracing : hybride, puis path tracer             | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU          | Grande      |
 | P11   | Plateformes et distribution                         | Windows, macOS, binaires précompilés                                | Moyenne     |
-| P12   | Batching statique                                   | Moins de draws pour les scènes statiques hétérogènes (CAO, BIM)     | Moyenne     |
-| P13   | L'éditeur : la modélisation, puis le middleware     | **L'application de modélisation, base de l'éditeur**                | Très grande |
+| P13   | Le modeleur CAO, dans l'éditeur                     | **L'application de modélisation**                                   | Très grande |
 
-Les phases sont dans l'ordre de leurs dépendances (§4). Certaines peuvent se chevaucher : P11 peut avancer en fond dès P1, et P7 est indépendante de P5 et P6, sauf pour le chargement des sons.
+Les numéros sont des identifiants stables : le tableau donne l'ordre prévu, qui suit les dépendances (§4). Certaines phases peuvent se chevaucher : les phases de rendu (P14, P17, P21) sont indépendantes de celles de l'éditeur (P15, P16, P18 à P20) et peuvent s'intercaler, et P11 peut avancer en fond.
+
+**Revu le 18 octobre 2026, après P9.** Le ray tracing (P10), les plateformes (P11) et le modeleur CAO (P13) passent après l'éditeur de jeu : sans outil pour faire des scènes, le ray tracing n'aurait que les démos à montrer ; Linux suffit tant que rien n'est distribué ; le modeleur gagne à reprendre les fondations de l'éditeur de jeu (sélection, gizmos, commandes, sérialisation, application, éditeurs de graphs) plutôt qu'à les poser lui-même. Le batching statique (P12) devient la prochaine phase.
 
 ## 3. Les phases
 
@@ -77,7 +87,7 @@ _Étapes 1 à 7 faites_ (13 octobre 2026), avec leurs tutoriels ; reste la démo
 - **Les cibles de rendu multiples (MRT) sur tous les backends.** L'API (`colorAttachments`, `targets` des pipelines) et les encodeurs WebGPU et Vulkan acceptent déjà plusieurs attachments ; **WebGL2 les refuse** aujourd'hui (« renders to one color target ») alors que WebGL2 les supporte : `drawBuffers` et un framebuffer à plusieurs attachments, la résolution du multi-échantillonnage attachment par attachment (`readBuffer` et `blitFramebuffer`). À traiter : une sortie par attachment dans le material graph et les trois générateurs, la limite du nombre d'attachments en capacité (`maxColorAttachments` : 8 en WebGPU, au moins 4 en WebGL2), le mélange par attachment (WebGL2 n'a qu'un état de mélange sans `OES_draw_buffers_indexed`), et `pass.writeColor` répété dans le render graph.
 - **Des sorties de surface au choix.** `addScenePasses` reçoit les cibles voulues, chacune avec son format et la valeur écrite, prise dans la surface du matériau ou dans le moteur. Le graphe du matériau ne change pas : c'est la cible de compilation `gbuffer` prévue au [render graph §8](render-graph.md#8-les-matériaux-dans-les-passes), généralisée à une liste de sorties choisie par l'utilisateur.
   - **Les normales** : la normale par pixel (après normal mapping), dans l'espace de la vue, dans une cible `rgba16float` ou encodée en octaèdre dans `rg16float`. Avec la profondeur, elle sert à l'**occlusion ambiante** (SSAO, en passe plein écran, ou en calcul en WebGPU et Vulkan), à des contours, aux reflets en espace écran.
-  - **Les identifiants** : l'utilisateur donne un identifiant (u32) à chaque mesh dessiné ; une cible `r32uint` reçoit, pour chaque pixel, l'identifiant de l'objet qui y est visible (0 : aucun). L'identifiant vient de la table des objets (P1), donc l'instancing le garde ; les matériaux masqués respectent leur `discard`. La relecture d'un pixel ou d'un rectangle est asynchrone, sans bloquer la frame. C'est la base de la **sélection** de l'éditeur (P13) : clic, rectangle, survol des gizmos.
+  - **Les identifiants** : l'utilisateur donne un identifiant (u32) à chaque mesh dessiné ; une cible `r32uint` reçoit, pour chaque pixel, l'identifiant de l'objet qui y est visible (0 : aucun). L'identifiant vient de la table des objets (P1), donc l'instancing le garde ; les matériaux masqués respectent leur `discard`. La relecture d'un pixel ou d'un rectangle est asynchrone, sans bloquer la frame. C'est la base de la **sélection** des outils d'édition (P15) : clic, rectangle, survol des objets.
 - **Le rendu différé, pour qui le veut.** Une passe écrit les cibles choisies (le G-buffer), des passes plein écran écrites en material graph calculent l'éclairage en les lisant, les transparents restent dessinés en forward par-dessus. Avec le pool de lumières et le culling en clusters de P2, il permet beaucoup de lumières. À documenter : son coût en bande passante, et son incompatibilité pratique avec le MSAA.
 - **Les détails de surface**, en fonctions de la bibliothèque standard, documentés et chacun avec un exemple :
   - **normal mapping** : dans l'espace tangent, avec les tangentes des meshes (calculées par le moteur, ou lues dans glTF en P5) ; à défaut, un repère tangent calculé à partir des dérivées d'écran ;
@@ -193,7 +203,7 @@ Elle réunit les phases précédentes : la forêt instanciée (P1), les ombres e
 
 ### P9. Graphs de comportement
 
-_Faite_ (18 octobre 2026), avec son tutoriel « Les graphs de comportement » et son guide : le design, les mesures et ce qui a été fait sont dans [p9-behavior.md](p9-behavior.md). `engine-behavior` : le modèle des blueprints (événements, flux d'exécution, valeurs à la demande, variables par instance, 40 nœuds et ceux de l'application), le graph exécuté comme un système (`BehaviorSystem`, une instance par entité), compilé en JavaScript ou interprété sur les mêmes instances — 0,10 contre 1,8 µs par instance et par pas pour l'IA du TPS —, le débogueur sur l'interpréteur (points d'arrêt, pas à pas, états des nœuds, trace) ; au cœur de graph, les connexions par port et le flux de contrôle qui peut boucler. L'IA des ennemis du TPS est un graph : la décision dans le graph, le pilotage et les coups en actions du jeu, au même coût (0,2 ms par image). Reportés : l'éditeur (P13), les fonctions et macros, les événements pour toutes les instances, les nœuds qui durent.
+_Faite_ (18 octobre 2026), avec son tutoriel « Les graphs de comportement » et son guide : le design, les mesures et ce qui a été fait sont dans [p9-behavior.md](p9-behavior.md). `engine-behavior` : le modèle des blueprints (événements, flux d'exécution, valeurs à la demande, variables par instance, 40 nœuds et ceux de l'application), le graph exécuté comme un système (`BehaviorSystem`, une instance par entité), compilé en JavaScript ou interprété sur les mêmes instances — 0,10 contre 1,8 µs par instance et par pas pour l'IA du TPS —, le débogueur sur l'interpréteur (points d'arrêt, pas à pas, états des nœuds, trace) ; au cœur de graph, les connexions par port et le flux de contrôle qui peut boucler. L'IA des ennemis du TPS est un graph : la décision dans le graph, le pilotage et les coups en actions du jeu, au même coût (0,2 ms par image). Reportés : l'éditeur (P19), les fonctions et macros, les événements pour toutes les instances, les nœuds qui durent.
 
 Le plan d'origine :
 
@@ -202,7 +212,137 @@ Le plan d'origine :
 - Le débogage : l'état des nœuds pendant l'exécution, des points d'arrêt.
 - Validation : l'IA des ennemis du TPS réécrite en graphs.
 
+### P12. Batching statique
+
+_Faite_ (19 octobre 2026), avec son tutoriel « Le batching statique » et ses guides : la comparaison avec le rendu piloté par le GPU, le design et les mesures sont dans [p12-batching.md](p12-batching.md). Le rendu piloté par le GPU ne retirerait pas les appels dans le navigateur (ni multi-draw en WebGPU, ni draws indirects en WebGL2) : le batching d'abord, le GPU plus tard pour Vulkan. `mergeMeshes` (`engine-core`) fusionne des meshes dans l'espace du monde, avec un identifiant d'objet par sommet que lit la sortie `object-id` ; `StaticBatches` (`engine-scene`) fusionne les renderers statiques d'une cellule d'une grille et d'un matériau, reconstruit un lot quand un de ses objets change, et laisse les objets aux requêtes de l'application. Le décor de la démo (1 614 objets, chacun son mesh) : de 1 150 à 67 draws, de 169 à 833 fps sous Vulkan, de 50 à 305 fps sous Dawn, pour une seconde copie de la géométrie (5,2 Mo) et 63 ms de construction. Reportés : la copie CPU libérée après l'envoi, la mise à jour incrémentale d'un lot, les lots des niveaux de détail.
+
+Le plan d'origine :
+
+Reporté de P1 : l'instancing dessine déjà en un appel les objets qui partagent mesh et matériau (les murs du labyrinthe, une forêt d'arbres identiques). Le batching statique ne sert qu'aux scènes statiques **hétérogènes**, où chaque objet a son mesh : un décor fait main, un niveau importé (P16) ou construit dans l'éditeur de jeu (P20), plus tard une maquette BIM ou un assemblage CAO (P13).
+
+- Fusionner les meshes statiques d'une cellule de l'octree et d'un même matériau en un mesh dans l'espace du monde, reconstruit quand un objet de la cellule change.
+- Ce qu'il coûte : la géométrie dupliquée en mémoire, un culling par cellule plutôt que par objet, et la sélection d'un objet dans un mesh fusionné (un identifiant d'objet par sommet).
+- À comparer, avant de l'écrire, avec le rendu piloté par le GPU (culling et draws indirects, [évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), qui pourrait le rendre inutile.
+
+Démo : un décor hétérogène (des centaines de meshes différents), avec ses mesures avant et après.
+
+### P14. Shaders procéduraux
+
+Des matériaux calculés plutôt que lus dans des textures : sans uv, sans répétition visible, à résolution infinie, animables. Le material graph a le nécessaire (fonctions de la bibliothèque standard, trois générateurs, dérivées d'écran de P2b) mais aucun bruit ni motif aujourd'hui.
+
+- **Les bruits**, en fonctions de la bibliothèque standard, en 2D, 3D et 4D (le temps) : un hachage entier (PCG ou équivalent) identique sur les trois backends, le bruit de valeur, le bruit de gradient (Perlin), le simplex, le bruit cellulaire (Worley, Voronoï : distances et identifiants de cellule) ; leurs sommes (fBm, ridged, turbulence) et la déformation du domaine (domain warping). Les octaves en boucle fixe, ou par la boucle `fold` des [écarts](material-graph-gaps.md).
+- **Les motifs** : damier, briques, tuiles, bandes, et des matériaux composés (bois, marbre, roche) en exemples.
+- **Le placement** : le mapping triplanaire (terrains, objets sans uv), les coordonnées objet ou monde.
+- **L'aliasing** : le filtrage des motifs par leurs dérivées d'écran (damier filtré), l'atténuation des octaves trop fines pour le pixel.
+- **La cuisson** : un graph coûteux rendu une fois dans une texture (passe plein écran ou calcul), avec ses mipmaps ; les mêmes bruits en TypeScript, pour les hauteurs d'un terrain côté CPU (la physique, le placement d'objets), comparés au GPU dans les tests.
+
+Démo : le terrain du TPS texturé par des bruits et le mapping triplanaire, et une galerie de matériaux procéduraux ; les tutoriels (EN et FR) avec des exemples vivants.
+
+### P15. Sélection, gizmos et commandes
+
+Les outils d'édition du moteur, dans un package à part, utilisables par n'importe quelle application (l'éditeur de jeu, le modeleur, un configurateur dans une page web). Ils étaient la première étape de l'ancien P13.
+
+- **La sélection** : le clic et le rectangle par le buffer d'identifiants de P2b, la multi-sélection, le contour des objets sélectionnés ; le survol.
+- **Les gizmos de déplacement, de rotation et de mise à l'échelle** : par axe, par plan, uniforme ou dans le plan de l'écran ; en repère local ou monde ; un pivot (centre de la sélection, origine de l'objet) ; le pas magnétique (snapping) ; une taille constante à l'écran, dessinés par-dessus la scène dans une passe à eux. Le survol et la saisie testés analytiquement sur le CPU (rayon contre axes, anneaux, plans), sans attendre la relecture du buffer d'identifiants. Souris, et tactile ensuite.
+- **Les commandes** : chaque modification est une commande réversible, groupées en transactions (un glissement de gizmo est une seule entrée) ; l'historique avec annuler et refaire.
+- **Les événements de la scène** : ce qui a changé (créé, supprimé, déplacé, modifié), pour les panneaux de l'éditeur et l'enregistrement.
+
+Démo : sélectionner et transformer les objets d'une scène dans un exemple vivant de la doc, avec annuler et refaire ; les tutoriels (EN et FR).
+
+### P16. Scènes et niveaux : import et export modulaires
+
+Enregistrer et recharger un niveau entier, pas seulement ses modèles : les nœuds, les meshes et les matériaux, mais aussi les lumières, les caméras, les corps et leurs formes de collision (P7b), les sons (P7), les animation graphs (P6) et les graphs de comportement (P9). Les ressources restent référencées par leur URI (P5).
+
+- **Les schémas des composants** : chaque composant ECS décrit ses champs (types, valeurs par défaut, version). Ils servent l'enregistrement, l'inspecteur de l'éditeur (P20) et les commandes (P15) ; les composants de l'utilisateur se décrivent de la même façon.
+- **Des importeurs et des exporteurs modulaires**, enregistrés comme les chargeurs de P5 : une interface pour lire ou écrire une scène, et des codecs par composant, pour qu'un utilisateur ajoute son format ou ses composants sans toucher au moteur. Les migrations entre versions d'un format.
+- **Les formats fournis** : le format du moteur (JSON, les buffers à part), et glTF en import comme en export (KHR_lights_punctual, KHR_physics_rigid_bodies et KHR_implicit_shapes pour les corps et les formes, une extension du moteur pour les graphs).
+- **Les préfabriqués** (une scène instanciée dans une autre, avec ses surcharges) : à décider dans le design, ici ou avec l'éditeur.
+- Le chargement asynchrone, annulable, avec sa progression, par le système de ressources.
+
+Démo : le niveau du TPS enregistré, rechargé et rejoué à l'identique, puis exporté en glTF et ouvert dans un autre outil ; un tutoriel sur l'écriture d'un importeur.
+
+### P17. La mer et les vagues
+
+Une mer animée sur les trois backends, éclairée de façon physique, et qui interagit avec la physique.
+
+- **Les vagues** : des sommes de vagues de Gerstner d'abord (tous les backends, évaluables sur le CPU), puis le spectre océanique de Tessendorf (Phillips ou JONSWAP) par FFT : en calcul en WebGPU et Vulkan, en passes de rendu dans des textures en WebGL2 ([cg-webgl2.md](cg-webgl2.md)) ; plusieurs tuiles à des échelles différentes contre la répétition.
+- **La surface** : une grille adaptative autour de la caméra, par la tessellation de P3b ou des anneaux de niveaux (clipmap), déplacée dans le vertex shader.
+- **Le rendu** : la réflexion de Fresnel (IBL, reflet en espace écran), la réfraction et l'absorption selon la profondeur de l'eau (la cible de profondeur de P2b), une diffusion sous la surface approchée, l'écume (le jacobien de la FFT, le bord de côte).
+- **La flottaison** : la hauteur de l'eau demandée par la physique (P7b) ; analytique pour Gerstner, relue sans attendre (une image de retard) pour la FFT.
+- **Plus tard** : la vue sous l'eau, les sillages.
+
+Démo : une côte, une mer qui s'agite, des caisses et une barque qui flottent ; les tutoriels (EN et FR).
+
+### P18. L'application Electron
+
+La base de l'éditeur : une application de bureau en Electron et React. **Le moteur garde son rendu natif** (l'addon de `engine-native` : Vulkan, ou Dawn) dans une surface native posée dans la zone centrale de la fenêtre ; la WebView ne sert qu'à l'interface (panneaux, menus, inspecteur). Le rendu 3D ne passe pas par un `<canvas>` WebGL ou WebGPU. Le rendu web reste possible en option, comme dans la doc.
+
+**Le contrat du viewport** : React réserve une zone de la page et la mesure (`ResizeObserver`) ; la couche native y place sa surface, gère le DPI, et recrée la swapchain et les cibles de rendu quand la taille change. Selon le système :
+
+| Système        | Surface native                                                                                       | État                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Linux, X11     | Une fenêtre X11 enfant de celle d'Electron, une surface Vulkan (`VK_KHR_xlib_surface` ou `xcb`)      | Le prototype ; sous XWayland aussi (`--ozone-platform=x11`) |
+| Linux, Wayland | Une sous-surface (`wl_subsurface`) : demande la `wl_surface` d'Electron, que son handle ne donne pas | À étudier, après X11                                        |
+| Windows        | Une fenêtre `WS_CHILD` dans le `HWND` d'Electron, une surface Vulkan Win32                           | Après la validation du contrat                              |
+| macOS          | Une `NSView` avec un `CAMetalLayer` dans la vue d'Electron (MoltenVK, ou Dawn sur Metal)             | Electron le permet ; après la validation du contrat         |
+
+**Les étapes :**
+
+1. **Un prototype Linux** : Electron, React et un addon C++ qui crée une surface native dans la zone centrale de la fenêtre et y affiche une scène Vulkan minimale.
+2. **Le viewport dans la zone HTML** : la surface placée dans la zone réservée par React, avec des panneaux latéraux. C'est le principal risque technique.
+3. **La synchronisation du layout et du rendu** : les dimensions mesurées par React transmises à la couche native, qui gère la position, le DPI et la recréation des ressources de rendu.
+4. **Les interactions** : la souris, le clavier, le focus, la capture de la souris pour la navigation 3D, le redimensionnement, la minimisation et la restauration de la fenêtre. À trancher : la surface native transparente aux entrées (une région d'entrée vide sous X11, `HTTRANSPARENT` sous Windows, `hitTest:` qui rend `nil` sous macOS), les événements arrivant alors à l'élément de la page, où `engine-input-web` et le verrouillage du pointeur de Chromium servent tels quels ; ou la surface qui reçoit les entrées, lues par `engine-input-native`, au prix du focus partagé avec la WebView.
+5. **Les performances** : le coût CPU et GPU mesuré ; un chemin de rendu direct, sans transfert systématique des pixels par la mémoire du CPU.
+6. **Les autres plateformes** : une fois le contrat du viewport validé, Windows et macOS, indispensables même si le développement commence sous Linux.
+
+**Les points de vigilance :**
+
+- **L'intégration native** : `getNativeWindowHandle()` donne la fenêtre d'Electron, mais ce handle ne suffit pas à intégrer une surface enfant à la composition HTML ; c'est l'objet des étapes 2 et 3.
+- **Linux** : X11 (et XWayland) et Wayland testés séparément, en commençant par le chemin le plus simple sur la configuration de développement.
+- **La composition** : le rendu hors écran dans une texture partagée avec Chromium (le module `sharedTexture` d'Electron) est écarté au départ : plus complexe, inutile si une surface native intégrée fonctionne. Il reste le recours si l'intégration échoue sur un système.
+- **Pas d'interface transparente sur la 3D** au départ (pas de panneaux en `backdrop-filter: blur` par-dessus le rendu) : des panneaux classiques autour du viewport simplifient la composition et les performances. Les menus et les infobulles qui débordent sur la zone du viewport sont à vérifier.
+- **Le processus du moteur** : la surface enfant dépend du handle de la fenêtre, connu du processus principal ; le moteur ne doit pas bloquer son thread d'interface (un thread à lui dans le processus principal, ou un processus utilitaire qui reçoit le handle, ce que permettent X11 et Win32 mais pas une `NSView`).
+
+**Ensuite** : l'accès aux fichiers d'un projet par `engine-resources-native`, le rechargement à chaud, un système de panneaux agençables en React, des composants partagés avec la doc pour que chaque panneau ait aussi son exemple vivant ; la distribution, Linux d'abord, l'addon précompilé pour Electron rejoignant P11.
+
+Démo : l'application ouvre un niveau de P16 dans son viewport natif, entre ses panneaux, et le montre avec les outils de P15.
+
+### P19. L'éditeur de graphs
+
+Un éditeur de programmation visuelle sur le cœur de graph de P6, le même pour les matériaux, les animations et les comportements. Il est un composant web : il vit dans l'application de P18 et dans les exemples vivants de la doc.
+
+- **L'édition** : les nœuds et leurs ports typés, les connexions refusées quand les types ne s'accordent pas (la validation du cœur de graph), la recherche de nœuds, les commentaires et les groupes, copier et coller, annuler et refaire par les commandes de P15. Le design comparera une écriture maison et les bibliothèques existantes (Rete.js, LiteGraph, React Flow), sur leur taille et leur dépendance à un framework.
+- **Les material graphs** : l'aperçu en direct, recompilé à chaque modification, les erreurs sur les nœuds, les source maps nœud ↔ ligne (§5).
+- **Les animation graphs** : les machines à états, l'état et les poids courants pendant la lecture.
+- **Les graphs de comportement** : le débogueur de P9 à la souris : les états des nœuds et la trace sur les fils, les points d'arrêt, le pas à pas ; puis les fonctions et les macros (un graph appelé par un autre).
+
+Démo : un matériau procédural (P14) et l'IA du TPS modifiés et débogués dans l'éditeur ; les tutoriels (EN et FR).
+
+### P20. L'éditeur de jeu
+
+Un petit éditeur de jeu dans l'application de P18, qui réunit P15, P16 et P19. Il précède le ray tracing et le modeleur CAO, qu'il accueillera.
+
+- **Les panneaux** : l'arbre de la scène, l'inspecteur (généré par les schémas des composants de P16), le navigateur de ressources (P5), la vue avec les gizmos (P15), les éditeurs de graphs (P19), la console.
+- **La mise en place d'un niveau** : poser des modèles, des lumières, des caméras, des volumes ; éditer les formes de collision avec la vue de débogage de P7b ; peindre ou sculpter le terrain, plus tard.
+- **Jouer dans l'éditeur** : lancer le jeu sur la scène en cours (l'ordonnanceur, la physique, les comportements), le mettre en pause, l'arrêter et retrouver la scène d'avant.
+- **La publication** : le jeu construit pour le web (une page autonome), et en natif.
+
+Démo : **un petit jeu fait entièrement dans l'éditeur**, par exemple un niveau du TPS reconstruit, joué dans l'éditeur puis publié sur le web.
+
+### P21. Les fluides
+
+Des simulations de fluides basées sur la physique, en passes de calcul (et de rendu dans des textures en WebGL2). Le design comparera les méthodes sur leur coût, leur rendu et leur repli WebGL2 :
+
+- **Les champs de hauteur** (shallow water) : bassins, rivières, ondes ; peu coûteux, sur tous les backends ; une extension naturelle de la surface de P17.
+- **Les grilles eulériennes** (stable fluids) : la fumée, le feu, en 2D puis en 3D ; des passes plein écran, adaptées à WebGL2. Le rendu par marche dans le volume.
+- **Les particules** (SPH, position-based fluids) : l'eau qui coule et éclabousse, en WebGPU et Vulkan (la recherche des voisins demande le calcul) ; le rendu de la surface en espace écran (profondeur des particules, lissage, normales).
+- **Le couplage avec la physique** (P7b) : les corps poussent le fluide, le fluide fait flotter les corps.
+
+Démo : un bassin où l'on jette des objets, de la fumée qui contourne un obstacle ; les tutoriels (EN et FR).
+
 ### P10. Ray tracing
+
+_Repoussée (18 octobre 2026) après l'éditeur de jeu (P20)_ : sans outil pour faire des scènes, elle n'aurait que les démos à montrer. Les contraintes du §6 restent tenues d'ici là.
 
 L'éditeur reste en rastérisation ; les jeux et le rendu final peuvent passer au ray tracing, **au choix de l'utilisateur** : une option du rendu, désactivable, la rastérisation restant toujours disponible.
 
@@ -222,37 +362,22 @@ Démos : le TPS et le FPS avec des ombres et des reflets tracés, puis une vue e
 
 ### P11. Plateformes et distribution
 
-Peut avancer en fond dès P1.
+_Repoussée (18 octobre 2026)_ : Linux suffit tant que rien n'est distribué. Elle reviendra quand l'application de P18 le sera ; elle peut toujours avancer en fond.
 
 - **Windows et macOS** : addons, surfaces (Win32, Metal par MoltenVK), DXC ; construits et testés en CI.
 - **Binaires précompilés** des addons, pour installer sans CMake ni compilateur ; une application en un seul exécutable.
 - **Le démarrage** : un cache de pipelines persisté, la précompilation des programmes (phase 7 du material graph).
 - **N5** : Dawn sans copie, Direct3D 12.
 
-### P12. Batching statique
+### P13. Le modeleur CAO
 
-Reporté de P1 : l'instancing dessine déjà en un appel les objets qui partagent mesh et matériau (les murs du labyrinthe, une forêt d'arbres identiques). Le batching statique ne sert qu'aux scènes statiques **hétérogènes**, où chaque objet a son mesh : une maquette BIM, un assemblage CAO, un décor fait main — ce qu'ouvrira l'éditeur.
+_Repoussée (18 octobre 2026) après l'éditeur de jeu (P20)_ : ses fondations (la sélection, les gizmos, les commandes, la sérialisation, l'interface, les éditeurs de graphs) sont devenues P15, P16, P18, P19 et P20. Il reste ce qui est propre à la CAO, dans l'application de P18, à côté de l'éditeur de jeu. Chaque étape a son design.
 
-- Fusionner les meshes statiques d'une cellule de l'octree et d'un même matériau en un mesh dans l'espace du monde, reconstruit quand un objet de la cellule change.
-- Ce qu'il coûte : la géométrie dupliquée en mémoire, un culling par cellule plutôt que par objet, et la sélection d'un objet dans un mesh fusionné (un identifiant d'objet par sommet).
-- À comparer, avant de l'écrire, avec le rendu piloté par le GPU (culling et draws indirects, [évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), qui pourrait le rendre inutile.
-
-### P13. L'éditeur
-
-L'application de modélisation, puis l'éditeur du middleware. Elle est découpée en étapes, chacune avec son design.
-
-1. **Les fondations d'un éditeur** :
-   - la sélection (picking par le buffer d'identifiants de P2b) ;
-   - les gizmos de transformation ;
-   - les événements de la scène (ce qui a changé) ;
-   - un système de commandes avec annuler et refaire ;
-   - la sérialisation des scènes ;
-   - la précision des grandes coordonnées (rendu relatif à la caméra), décisive pour la CAO et le BIM.
-2. **L'interface** : le choix de sa technologie (web, ou native, ou les deux), ses panneaux (arbre de scène, propriétés, ressources).
-3. **Le noyau géométrique abstrait** : l'API que les moteurs géométriques implémentent (profils, solides, opérations, triangulation pour l'affichage). Le moteur fournit une implémentation de base : profils 2D, extrusion, révolution, triangulation des faces. Un noyau complet (OpenCascade, par exemple) peut se brancher derrière l'API, sans être une dépendance du projet.
-4. **Les esquisses** : le dessin 2D sur un plan (segments, arcs, cercles), les contraintes (coïncidence, parallélisme, distances, angles) et leur solveur.
-5. **Les opérations et l'arbre paramétrique** : extrusion, révolution autour d'un axe, puis d'autres (balayage, lissage, booléens selon le noyau). Un historique qu'on modifie et qui se recalcule.
-6. **L'éditeur du middleware** : les scènes, les ressources, les éditeurs de graphs (matériaux, animations, comportements) sur le cœur de graph commun.
+1. **La précision des grandes coordonnées** (rendu relatif à la caméra), décisive pour la CAO et le BIM.
+2. **Le noyau géométrique abstrait** : l'API que les moteurs géométriques implémentent (profils, solides, opérations, triangulation pour l'affichage). Le moteur fournit une implémentation de base : profils 2D, extrusion, révolution, triangulation des faces. Un noyau complet (OpenCascade, par exemple) peut se brancher derrière l'API, sans être une dépendance du projet.
+3. **Les esquisses** : le dessin 2D sur un plan (segments, arcs, cercles), les contraintes (coïncidence, parallélisme, distances, angles) et leur solveur.
+4. **Les opérations et l'arbre paramétrique** : extrusion, révolution autour d'un axe, puis d'autres (balayage, lissage, booléens selon le noyau). Un historique qu'on modifie et qui se recalcule.
+5. **L'éditeur du middleware** : le modeleur et l'éditeur de jeu réunis, les pièces modélisées posées dans les niveaux.
 
 ## 4. Les dépendances
 
@@ -262,11 +387,18 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 - **P4** avant **P8** (caméra TPS, contrôleur de personnage) et avant **P13** (orbite CAO).
 - **P5** avant **P6** (squelettes et clips de glTF), **P7** (sons chargés) et **P8**.
 - **P4** (ordonnanceur à pas fixe, contrôleur de personnage) avant **P7b** ; **P7b** avant **P8** (le contrôleur de personnage et les volumes d'attaque sur l'API physique). Elle est indépendante de P5, P6 et P7, sauf pour les ragdolls (P6).
-- **P6** (cœur de graph) avant **P9** et avant les éditeurs de graphs de **P13**.
-- **P10** après **P8** (des scènes à tracer) ; ses prérequis sont posés dès P1 (§6).
+- **P6** (cœur de graph) avant **P9** et avant l'éditeur de graphs (**P19**).
+- **P10** après **P20** (des scènes à tracer, faites dans l'éditeur) ; ses prérequis sont posés dès P1 (§6).
 - **P3b** après **P2** (compute graphs dans le render graph) et le displacement mapping de **P2b** ; faite sans draws indirects : ils restent à ajouter pour les deux phases sans retard de **P3** (sa suite) et le choix des niveaux en calcul. Avant **P8** si la forêt a un terrain : le terrain existe (`buildTerrain` des demo-scenes).
-- **P12** avant **P13** : les scènes de CAO et de BIM qu'ouvre l'éditeur.
-- **P13** s'appuie sur presque tout : la sélection (le buffer d'identifiants de P2b) et le culling (P1, P3), la caméra CAO (P4), les ressources (P5), les graphs (P6, P9).
+- **P12** avant **P20** et **P13** : les décors faits main et les scènes de CAO et de BIM.
+- **P14** avant **P17** (les bruits des vagues et de l'écume) et avant la démo de **P19** ; indépendante de l'éditeur.
+- **P15** (sélection par le buffer d'identifiants de P2b, commandes) avant **P19** (annuler et refaire dans les graphs) et **P20**.
+- **P16** sur **P5** (ressources), **P6** et **P9** (graphs en JSON), **P7b** (formes de collision) ; avant **P20**. Ses schémas de composants servent aussi les commandes de **P15**.
+- **P17** après **P14** ; elle reprend la tessellation de **P3b**, la cible de profondeur de **P2b** et la physique de **P7b** (flottaison).
+- **P18** avant **P20** ; **P19** est un composant web qui peut commencer avant, dans la doc.
+- **P20** réunit **P15**, **P16**, **P18** et **P19**.
+- **P21** après **P17** (le rendu de l'eau partagé) ; elle s'appuie sur les compute graphs et leur repli WebGL2.
+- **P13** après **P20** : elle reprend son application et ses outils.
 
 ## 5. Plus tard, hors du plan
 
@@ -277,11 +409,11 @@ L'application de modélisation, puis l'éditeur du middleware. Elle est découp�
 | Sortie HDR et couleurs étendues ([évolutions §4](evolutions.md#4-la-sortie-hdr-et-les-couleurs-étendues)) | Écrans HDR et navigateurs inégaux (canvas étendu surtout dans Chrome) ; aucune démo n'en dépend ; le tone mapping actuel suffit              |
 | Travail en parallèle sur le GPU ([évolutions §5](evolutions.md#5-le-travail-en-parallèle-sur-le-gpu))     | WebGPU n'a qu'une file ; le gain n'existe qu'une fois le GPU saturé par des passes de calcul (après P2, P3, à mesurer)                       |
 | Transparence indépendante de l'ordre (OIT)                                                                | Peu d'objets transparents jusqu'ici, le tri suffit ; coûteuse en mémoire et en bande passante. À revoir pour le verre en CAO et en BIM (P13) |
-| Material graph : fonctions génériques, vraies fonctions dans le code généré                               | Ne compte que pour de gros graphs (taille du code, temps de compilation) ; à revoir avec les éditeurs de graphs (P13)                        |
+| Material graph : fonctions génériques, vraies fonctions dans le code généré                               | Ne compte que pour de gros graphs (taille du code, temps de compilation) ; à revoir avec l'éditeur de graphs (P19)                           |
 | Material graph : `f16` de bout en bout                                                                    | Un gain surtout sur mobile, et une capacité inégale selon les GPU                                                                            |
 | Material graph : `frag-coord` en WebGL2                                                                   | Aucun besoin jusqu'ici                                                                                                                       |
-| Material graph : structures dans les storage buffers                                                      | Pas encore utile ; le pool de lumières (P2) ou le ray tracing (P10) pourraient le faire remonter                                             |
-| Material graph : source maps nœud ↔ ligne                                                                 | Un confort de débogage, à faire avec les éditeurs de graphs (P13)                                                                            |
+| Material graph : structures dans les storage buffers                                                      | Pas encore utile ; le pool de lumières (P2), les particules des fluides (P21) ou le ray tracing (P10) pourraient le faire remonter           |
+| Material graph : source maps nœud ↔ ligne                                                                 | Un confort de débogage, à faire avec l'éditeur de graphs (P19)                                                                               |
 | Material graph : limite et préchauffage des variantes                                                     | Lié au temps de démarrage : à traiter avec la précompilation (P11)                                                                           |
 | Render graph : coût de la clé structurelle                                                                | Invisible aux tailles actuelles : à mesurer quand les graphes grossiront                                                                     |
 | Vulkan : barrières groupées par le render graph                                                           | Une optimisation à justifier par le profilage (P0)                                                                                           |
@@ -300,4 +432,6 @@ Les contraintes déjà posées ([évolutions §6](evolutions.md#6-contraintes-de
 - **P5** : les meshes chargés restent des buffers GPU accessibles (storage), pas seulement des vertex buffers ; les textures prêtes pour le bindless.
 - **P3b** : les rayons ne voient pas la géométrie évaluée dans le vertex shader. Le calcul des niveaux doit pouvoir écrire aussi les sommets tessellés dans un buffer, pour les BLAS (à un niveau fixé ou choisi pour la caméra), comme le skinning en calcul de P6.
 - **P6** : **le skinning dans une passe de calcul**, qui écrit les sommets animés dans un buffer, plutôt que dans le vertex shader : la rastérisation, les ombres et la mise à jour des BLAS lisent alors les mêmes sommets.
-- **P13** : l'éditeur rend en rastérisation, avec la même scène et les mêmes matériaux ; une vue en ray tracing y devient un aperçu, pas un second moteur.
+- **P14** : les bruits et les motifs sont des fonctions de surface : la cible BSDF du path tracer les compile comme le reste.
+- **P17**, **P21** : comme pour P3b, la mer déplacée dans le vertex shader est invisible des rayons : ses sommets doivent pouvoir être écrits dans un buffer pour les BLAS. Les particules et les surfaces des fluides restent dans des storage buffers.
+- **P20**, **P13** : l'éditeur rend en rastérisation, avec la même scène et les mêmes matériaux ; une vue en ray tracing y devient un aperçu, pas un second moteur.

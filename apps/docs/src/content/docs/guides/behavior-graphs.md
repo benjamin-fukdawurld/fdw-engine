@@ -234,4 +234,4 @@ wait; the rest of the game goes on unless the application pauses it in
 - No graph calls another (functions, macros), and no event reaches all
   the instances at once: send it to each.
 - No editor yet: the graphs are built in code or written as JSON. The
-  states of the nodes and the trace are what an editor will show (P13).
+  states of the nodes and the trace are what the graph editor will show (P19).

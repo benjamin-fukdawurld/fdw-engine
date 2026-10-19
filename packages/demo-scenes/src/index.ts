@@ -5,6 +5,7 @@ export * from './shadows';
 export * from './maze';
 export * from './ssr';
 export * from './city';
+export * from './decor';
 export * from './terrain';
 export * from './fps';
 export * from './physics';

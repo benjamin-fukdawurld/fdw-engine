@@ -144,12 +144,17 @@ export class Node implements SceneNode {
       volume,
     }: { castShadow?: boolean; volume?: Volume } = {},
   ): this {
-    return this.attach(this.scene.MeshRenderer, {
+    const had = this.scene.MeshRenderer.has(this.entity);
+    this.attach(this.scene.MeshRenderer, {
       mesh,
       material,
       noShadow: castShadow ? 0 : 1,
       volume,
     });
+    if (had) {
+      this.scene.rendererChanged(this.entity);
+    }
+    return this;
   }
 
   /**
@@ -181,6 +186,7 @@ export class Node implements SceneNode {
   set layers(layers: number) {
     this.check();
     this.scene.NodeState.layers[this.entity] = layers;
+    this.scene.rendererChanged(this.entity);
   }
 
   /** Hidden nodes are not drawn, nor their descendants. */

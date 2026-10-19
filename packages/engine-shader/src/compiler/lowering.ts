@@ -25,8 +25,9 @@ export interface SurfaceOutput {
   /**
    * What is written:
    * - a value of the surface or of the engine, by name: `view-normal`,
-   *   `world-normal`, `view-depth`, `world-position`, `object-id`, `uv`,
-   *   or an input of the surface (`base-color`, `alpha`, `roughness`…, its
+   *   `world-normal`, `view-depth`, `world-position`, `object-id` (from the
+   *   `objectId` attribute when the mesh has one, a u32), `uv`, or an
+   *   input of the surface (`base-color`, `alpha`, `roughness`…, its
    *   default when the shading model has none); converted to the format;
    * - a function graph whose inputs are named after these values
    *   (`viewNormal`, `baseColor`…), the same for every material;
@@ -357,6 +358,7 @@ export function lowerSurface(
     surfaceInputs,
     interpolatedNormal,
     worldPosition: out(worldPosition),
+    feature,
   });
   removeOutputValues(graph);
   if (!targets) {
@@ -613,6 +615,7 @@ function lowerOutputs(
     readonly surfaceInputs: Readonly<Record<string, InputSource | undefined>>;
     readonly interpolatedNormal: () => InputSource;
     readonly worldPosition: InputSource;
+    readonly feature: (name: string) => StaticValue | undefined;
   },
 ): boolean {
   const out = (node: string, port = 'result'): InputSource => ({
@@ -712,10 +715,17 @@ function lowerOutputs(
           type: BuiltinTypes.f32,
         };
       }),
+    // From the object table, or per vertex: the meshes merged from many
+    // objects (static batches) give each vertex the identifier of its own.
     objectId: () =>
       cached('objectId', () => ({
         source: out(
-          graph.addNode('input.engine', { value: 'object.id' }),
+          context.feature('hasAttribute.objectId')
+            ? graph.addNode('input.attribute', {
+                semantic: 'objectId',
+                type: BuiltinTypes.u32,
+              })
+            : graph.addNode('input.engine', { value: 'object.id' }),
           'value',
         ),
         type: BuiltinTypes.u32,

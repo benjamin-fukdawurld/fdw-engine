@@ -1,0 +1,139 @@
+---
+title: Static batching
+description: Draw a static set where every object has its own mesh in a few calls, by merging the objects of a cell and of a material into one mesh.
+sidebar:
+  order: 30
+---
+
+import Example from '../../../components/Example.astro';
+
+A square of ruins, a market and rocks: 1 600 static objects, and no two
+alike. Every column, stone, crate, barrel and rock has a mesh of its own.
+Instancing draws in one call the objects that share a mesh and a
+material (the walls of [the maze](/fdw-engine/game/maze/), the firs of
+[the forest](/fdw-engine/tutorials/levels-of-detail/)): here it has
+nothing to share, and each object would be a draw call. The **static
+batching** merges the static objects of a region and of a material into
+one mesh: about 70 calls instead of 1 200.
+
+Click the canvas to switch the batching off and on. Hover an object: its
+name comes back from the GPU, batched or not.
+
+<Example name="static-batching" />
+
+## Batching a scene
+
+```ts
+import { Scene, StaticBatches } from '@fdw/engine-scene';
+
+const scene = new Scene();
+// … static nodes: scene.root.add({ static: true }).setMesh(mesh, material)
+const batches = new StaticBatches(scene, { cellSize: 40 });
+```
+
+That is all: the scene, as the source of the renderer, gives the batches
+instead of the objects they hold. `StaticBatches` groups the renderers of
+the **static nodes** by the cell of a grid (`cellSize`, in units of the
+scene) and by material, and merges each group into one mesh, in world
+space. `batches.destroy()` draws them alone again.
+
+What is merged:
+
+- the renderers of static nodes, visible;
+- whose mesh has triangles, with its positions, normals and tangents in
+  32-bit floats, and no skin (`mergeKey(mesh)` says whether it can be);
+- whose material is opaque or masked: the transparent objects are sorted
+  one by one, from back to front, and stay alone;
+- with the same attributes, layers and shadow (`castShadow`) as the others
+  of their group;
+- that the `filter` option keeps: leave out the nodes of a
+  [level of detail](/fdw-engine/tutorials/levels-of-detail/), which switch
+  levels at every frame, and those an editor is about to move.
+
+A group of a single renderer is not merged (`minCount`, 2 by default),
+and a group of more than `maxVertices` (262 144) vertices is split.
+
+## When an object changes
+
+A batch is **rebuilt when one of its objects changes**: moved, hidden,
+removed, given another mesh or material (`node.setMesh`), other layers.
+The changes are applied at the next flush of the scene, before the next
+frame, like the bounds and the spatial index. A system writing the
+columns of the renderers directly calls `scene.rendererChanged(entity)`.
+
+Rebuilding a batch is merging its meshes again: about a millisecond for
+the hundreds of rocks of a cell, 60 ms for the whole square at the
+start. Fine for a door opened from time to time, not for an object that
+moves at every frame: that one is not static.
+
+## Picking in a batch
+
+The renderers of a scene have identifiers: `scene.objectId(entity)`,
+the entity plus one (0 is no object). The `'object-id'` outputs of the
+scene passes write them for each pixel, as in
+[picking](/fdw-engine/tutorials/picking/). A batch is one draw, one row of
+the object table: the identifiers of its objects are stored **per
+vertex**, in an `objectId` attribute, which the scene passes read instead
+of the table.
+
+```ts
+const [id] = await pickIds(backend, ids, pixel);
+const entity = scene.entityOf(id); // the object, batched or not
+const batch = batches.batchOf(entity); // its batch, if any
+```
+
+The other queries of the scene (raycasts, volumes) do not see the
+batches: they find the objects themselves, which stay in the spatial
+index.
+
+## What it costs
+
+- **The geometry, twice.** Each batch holds a copy of the meshes of its
+  objects, in world space, plus 4 bytes per vertex for the identifiers:
+  5.2 MB for the 4.7 MB of the square, on the CPU and on the GPU.
+  `batches.stats` gives the bytes, the batches, the rebuilds and their
+  time.
+- **Culling by cell.** A batch is drawn whole as soon as a part of its
+  cell is in view, and casts all its shadows. Smaller cells cull finer
+  and rebuild less; larger ones draw fewer calls. The occlusion culling
+  sees a batch as one object too.
+- **World space in the materials.** A batch is placed by the identity:
+  its attributes are already in world space. A material computing the
+  world position from `object.world` and the position, as most do, sees
+  no difference; one reading the position or the normal as those of the
+  object does.
+
+## Measures
+
+The square of the example, in the native demo
+(`nx run demo-native:start -- decor`, and `decor-no-batching`), without
+vsync, on the development machine:
+
+|                             | Alone       | Batched     |
+| --------------------------- | ----------- | ----------- |
+| Draw calls (the camera)     | about 1 200 | about 70    |
+| Vulkan                      | 169 fps     | **833 fps** |
+| WebGPU (Dawn)               | 50 fps      | **305 fps** |
+| `Renderer.render`, CPU only | 1.57 ms     | **0.14 ms** |
+
+The last line is a benchmark of `engine-scene` (`StaticBatches.bench.ts`):
+1 000 objects of their own meshes, in 4 materials, on the fake backend.
+The gain comes from the calls saved, not from the GPU: the triangles are
+the same.
+
+## Instancing or batching?
+
+- **The same mesh many times** (trees, walls, crowds): instancing,
+  automatic, and nothing is copied.
+- **Static objects, all different** (a hand-made set, an imported level, a
+  CAD assembly): the static batching.
+- **Moving objects**: neither merges them; each moving object is a draw,
+  or an instance of its mesh.
+
+## Next
+
+- [The scene graph](/fdw-engine/guides/scene-graph/), the guide: static
+  nodes, the spatial index, and the batches among the components of a
+  scene.
+- [Picking](/fdw-engine/tutorials/picking/): the identifiers of the
+  objects, read back under the mouse.

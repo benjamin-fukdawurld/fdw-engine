@@ -24,6 +24,7 @@ import {
   RenderGraphRunner,
   DirectionalLight,
   Material,
+  mergeMeshes,
   Mesh,
   pickIds,
   PointLight,
@@ -1502,6 +1503,80 @@ export function describeRenderer(
         });
         runner.destroy();
         ids.destroy();
+      });
+      it('picks the objects of a merged mesh, per vertex', async () => {
+        // Four quads in one mesh, in world space (static batching): one
+        // draw, an identifier per vertex.
+        const translation = (x: number, y: number) => [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          x,
+          y,
+          0,
+          1,
+        ];
+        const merged = mergeMeshes(
+          [
+            [-0.5, 0.5],
+            [0.5, 0.5],
+            [-0.5, -0.5],
+            [0.5, -0.5],
+          ].map(([x, y], i) => ({
+            mesh: quad(),
+            matrix: translation(x, y),
+            id: 5 + i,
+          })),
+        );
+        const ids = backend.textures.createTexture({
+          label: 'ids',
+          type: '2d',
+          format: 'r32uint',
+          dimensions: { width: size, height: size },
+          usage: ['render-attachment', 'copy-src'],
+        });
+        const graph = new RenderGraph();
+        renderer.addScenePasses(graph, {
+          items: [
+            {
+              mesh: merged,
+              material: new Material({ graph: colorGraph() }),
+              transform: new Transform(),
+              // Ignored: the vertices have their own.
+              id: 1,
+            },
+          ],
+          camera,
+          outputs: {
+            id: {
+              format: 'r32uint',
+              value: 'object-id',
+              target: graph.importTexture('ids', ids),
+            },
+          },
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        const picks = await Promise.all([
+          pickIds(backend, ids, { x: 16, y: 16 }),
+          pickIds(backend, ids, { x: 48, y: 16 }),
+          pickIds(backend, ids, { x: 16, y: 48 }),
+          pickIds(backend, ids, { x: 48, y: 48 }),
+        ]);
+        expect(picks).toEqual([[5], [6], [7], [8]]);
+        expect(renderer.stats.get('scene')).toMatchObject({ drawCalls: 1 });
+        runner.destroy();
+        ids.destroy();
+        merged.destroy();
       });
     });
 
