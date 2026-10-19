@@ -1,4 +1,5 @@
 import type { IVec3, RenderBackend } from '@fdw/engine-backend';
+import type { BehaviorMode } from '@fdw/engine-behavior';
 import { RenderBackendService } from '@fdw/engine-assets';
 import { ThirdPersonOperator } from '@fdw/engine-camera';
 import {
@@ -49,6 +50,11 @@ export interface TpsOptions {
   readonly waves?: readonly Wave[];
   /** Starts playing at once, without the menu (the tests, the screenshots). */
   readonly autoplay?: boolean;
+  /**
+   * How the graph of the enemies runs: compiled to JavaScript (default),
+   * or interpreted, for its debugger.
+   */
+  readonly behavior?: BehaviorMode;
 }
 
 // The speeds of the pointer the menu offers, in radians per height of the
@@ -86,7 +92,8 @@ interface Game {
  * of detail, shadows in cascades, the terrain, the occlusion of the
  * trunks), the third-person camera and the character controller (P4,
  * P7b), the models and their animations (P5, P6), the sounds (P7); blows
- * as volumes tested while the animations strike, enemies as ECS systems.
+ * as volumes tested while the animations strike, enemies decided by a
+ * behavior graph (P9).
  */
 export function createTpsScene(
   options: TpsOptions,
@@ -222,6 +229,7 @@ export function createTpsScene(
         physics,
         { orc: assets.orc, demon: assets.demon },
         trunks,
+        options.behavior ? { mode: options.behavior } : {},
       );
       const hero = new Hero(
         backend,
@@ -383,19 +391,14 @@ export function createTpsScene(
         },
         { phase: 'fixed' },
       );
-      scheduler.add('enemies:decide', (step) => enemies.decide(step, target), {
-        phase: 'fixed',
+      // The graph of the enemies is a system: it decides, moves and
+      // strikes for each enemy.
+      enemies.target = target;
+      enemies.behavior.install(scheduler, {
+        name: 'enemies',
         after: ['hero'],
       });
-      scheduler.add('enemies:steer', (step) => enemies.steer(step, target), {
-        phase: 'fixed',
-        after: ['enemies:decide'],
-      });
-      scheduler.add('enemies:strike', () => enemies.strike(target), {
-        phase: 'fixed',
-        after: ['enemies:steer'],
-      });
-      physics.install(scheduler, { after: ['enemies:strike'] });
+      physics.install(scheduler, { after: ['enemies'] });
       scheduler.add(
         'waves',
         (step) => {

@@ -11,6 +11,7 @@ import type { Registry } from './Registry';
 import {
   checkDefaults,
   incomingEdges,
+  type PortConnections,
   resolveEdges,
   resolveNodes,
   topologicalOrder,
@@ -29,6 +30,11 @@ export interface PortSpec<T = string> {
   readonly default?: unknown;
   /** An optional input can stay unconnected without a default value. */
   readonly optional?: boolean;
+  /**
+   * How many edges the port takes: one per input and many per output by
+   * default.
+   */
+  readonly connections?: PortConnections;
   readonly description?: string;
 }
 
@@ -83,7 +89,10 @@ export interface DocumentValidation<
   readonly edges: readonly E[];
   /** The edges arriving at each node. */
   readonly incoming: ReadonlyMap<NodeId, readonly E[]>;
-  /** Each node after those feeding it; empty when the graph has a cycle. */
+  /**
+   * Each node after those feeding it, the control flow left out; empty
+   * when the graph has a cycle.
+   */
   readonly order: readonly NodeId[];
 }
 
@@ -100,6 +109,12 @@ export interface ValidationRules<T = string, N extends GraphNode = GraphNode> {
   readonly typeName?: (type: T) => string;
   /** Checks the parameters of the other kinds than the basic ones. */
   readonly param?: ParamCheck;
+  /**
+   * Whether the edges between ports of a type carry the control flow (the
+   * execution of the behavior graphs) rather than values: they may loop,
+   * and do not count in the order. None by default.
+   */
+  readonly flow?: (type: T) => boolean;
   /**
    * Checks the graph as a whole, its nodes resolved: its outputs, the
    * names its nodes declare.
@@ -207,7 +222,16 @@ export function validateDocument<T, N extends GraphNode, E extends GraphEdge>(
   }
 
   rules.graph?.(nodes, diagnostics);
-  const order = topologicalOrder(nodes.keys(), edges, diagnostics) ?? [];
+  const flow = rules.flow;
+  const values = flow
+    ? edges.filter((edge) => {
+        const from = nodes
+          .get(edge.from.node)
+          ?.outputs.find((port) => port.name === edge.from.port);
+        return !from || !flow(from.type);
+      })
+    : edges;
+  const order = topologicalOrder(nodes.keys(), values, diagnostics) ?? [];
   return {
     valid: hasNoError(diagnostics),
     diagnostics,

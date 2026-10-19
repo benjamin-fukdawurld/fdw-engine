@@ -1,0 +1,7 @@
+{
+  "name": "engine-behavior",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-behavior/src",
+  "projectType": "library",
+  "tags": []
+}

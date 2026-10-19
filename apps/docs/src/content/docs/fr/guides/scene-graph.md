@@ -273,7 +273,9 @@ onFrame((dt) => scheduler.update(dt));
   phase `fixed` (mis en pause par un pas, les pas restants de la frame sont
   abandonnés) ; `system.enabled`, `remove(name)`, `systems(phase)`.
 - Un système est une fonction `(dt) => void` : l'ordonnanceur ne connaît
-  pas de monde, et `FixedStep` s'utilise seul.
+  pas de monde, et `FixedStep` s'utilise seul. Un graph de comportement en
+  est un aussi : `BehaviorSystem.install(scheduler)` l'exécute pour ses
+  entités (voir [Les graphs de comportement](/fdw-engine/fr/guides/behavior-graphs/)).
 
 Voir le tutoriel [Les systèmes et le pas fixe](/fdw-engine/fr/tutorials/systems/).
 

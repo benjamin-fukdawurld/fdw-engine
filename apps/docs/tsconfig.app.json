@@ -82,6 +82,9 @@
       "path": "../../packages/engine-animation/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-behavior/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/demo-scenes/tsconfig.lib.json"
     }
   ]

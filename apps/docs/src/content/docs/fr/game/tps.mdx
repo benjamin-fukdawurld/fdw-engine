@@ -1,6 +1,6 @@
 ---
 title: Un jeu à la troisième personne
-description: Un rôdeur armé d'une estoc dans une forêt, des vagues d'orcs et un démon — la forêt du moteur, une caméra à la troisième personne, des personnages animés, des coups et des ennemis en systèmes.
+description: Un rôdeur armé d'une estoc dans une forêt, des vagues d'orcs et un démon — la forêt du moteur, une caméra à la troisième personne, des personnages animés, des coups et des ennemis menés par un graph de comportement.
 sidebar:
   order: 7
 ---
@@ -21,7 +21,8 @@ caméra suit le rôdeur par-dessus l'épaule, le rôdeur est un contrôleur de
 personnage (P4, P7b) ; les modèles et leurs animations viennent de
 fichiers glTF (P5, P6), les sons sont faits par le code (P7). Il ajoute ce
 qu'un combat demande : des coups comme des volumes testés pendant que les
-animations frappent, et des ennemis en systèmes.
+animations frappent, et des ennemis décidés par un graph de comportement
+(P9).
 
 <Example name="tps" code={false} />
 
@@ -50,7 +51,8 @@ Le code du jeu est dans `packages/demo-scenes/src/tps/`, partagé par :
 | `actor.ts`    | Un personnage : un contrôleur, un modèle tourné, animé                     |
 | `hero.ts`     | Le rôdeur : ses actions, son animation graph, sa lame                      |
 | `combat.ts`   | Les coups : des volumes qui ne touchent qu'une fois par coup               |
-| `enemies.ts`  | Les orcs et le démon : un composant, et les systèmes qui le parcourent     |
+| `brain.ts`    | Le graph de comportement des ennemis, et les nœuds du jeu qu'il appelle    |
+| `enemies.ts`  | Les orcs et le démon : leurs corps, ce que font les nœuds du graph         |
 | `controls.ts` | Les actions du jeu et du menu                                              |
 | `sounds.ts`   | Les sons, faits par le code                                                |
 | `tps.ts`      | La `SceneFactory` : le menu, les vagues, l'image menée par un ordonnanceur |
@@ -217,23 +219,61 @@ Un `Blow` se souvient de ce qu'il a touché : une cible n'est frappée
 traverse. Les ennemis frappent de la même façon, avec une sphère devant
 eux.
 
-## 6. Les ennemis : un composant, et ses systèmes
+## 6. Les ennemis : un graph de comportement
 
-Chaque ennemi est un `Actor` et une entité avec un composant `enemy` —
-son état, le temps passé dedans, sa vie, sa recharge — parcouru par trois
-systèmes du pas fixe :
+Chaque ennemi est un `Actor` et une entité ; ce qu'il fait, un **graph de
+comportement** le décide (voir
+[Les graphs de comportement](/fdw-engine/fr/tutorials/behavior-graphs/)) :
+le même graph pour les orcs et le démon, une instance par ennemi, ses
+différences dans les variables données à l'attache.
 
-- `decide` : `spawn` (un grognement), `chase`, `attack`, `recover`,
-  `hurt`, `dead`. Deux au plus frappent à la fois : les autres attendent.
-- `steer` : vers le héros, ou pour ceux qui attendent, vers leur propre
-  place sur un cercle autour de lui ; à l'écart les uns des autres ;
+```ts title="tps/enemies.ts"
+this.behavior.attach(entity, {
+  health: kind.health,
+  reach: kind.reach,
+  poise: kind.poise,
+  rest: kind.cooldown,
+  strikeStart: kind.strike[0],
+  strikeEnd: kind.strike[1],
+  attackLength: actor.clips['Weapon'].duration,
+});
+```
+
+À chaque pas fixe, `event.update` avance ses horloges, puis un switch sur
+sa variable `state` décide : `spawn` (un grognement), `chase`, `attack`,
+`recover`, `hurt`, `dead`. Il passe à `attack` quand le héros est à
+portée, sa recharge finie, et que moins de deux frappent déjà ; les autres
+attendent. Puis il se déplace (`enemy.steer`), et frappe pendant la
+fenêtre de son coup (`enemy.strike`). Un coup du rôdeur est un événement,
+`hit`, avec ses dégâts : la vie baisse, l'ennemi tombe, ou vacille si le
+coup bat sa `poise` — les orcs à chaque coup, le démon aux coups lourds.
+
+```ts title="tps/brain.ts"
+const decide = g.switch(steps.exec('then1'), state, EnemyStates);
+enter(after(decide.exec('spawn'), 0.8), 'chase');
+const engage = g.branch(decide.exec('chase'), ready);
+const attack = enter(engage.exec('true'), 'attack');
+g.node('enemy.startAttack', { from: attack.then });
+```
+
+Le graph décide ; le jeu fait le travail que demandent ses nœuds
+(`brain.ts` les déclare, `Enemies` les implémente) :
+
+- `enemy.steer` : vers le héros, ou pour ceux qui attendent, vers leur
+  propre place sur un cercle autour de lui ; à l'écart les uns des autres ;
   autour des troncs devant eux, par une poussée de côté (une grille des
   troncs dit lesquels sont proches). Pas de recherche de chemin : la
   forêt est un terrain ouvert.
-- `strike` : les coups de ceux qui frappent.
+- `enemy.strike` : le coup, une sphère devant l'ennemi, contre le héros.
+- `enemy.heroDistance`, `enemy.canAttack`, `enemy.swing`, `enemy.die`,
+  `enemy.sink`, `enemy.remove` : la distance, la place parmi ceux qui
+  frappent, les sons, les morts qui s'enfoncent dans le sol, puis
+  disparaissent.
 
-Les orcs vacillent à chaque coup ; le démon seulement aux coups lourds (sa
-`poise`). Les morts s'enfoncent dans le sol, puis disparaissent.
+Le graph est compilé en JavaScript ; `createTpsScene({ behavior:
+'interpret' })` le fait interpréter, pour son débogueur. Les deux coûtent
+environ 0,2 ms par image pour une vague, l'essentiel dans les déplacements
+des contrôleurs de personnage.
 
 ## 7. La caméra
 
@@ -248,16 +288,9 @@ jamais le rôdeur lui-même.
 ```ts title="tps/tps.ts"
 // fixed : le rôdeur et ses coups, les ennemis, la physique, les vagues.
 scheduler.add('hero', heroStep, { phase: 'fixed' });
-scheduler.add('enemies:decide', decide, { phase: 'fixed', after: ['hero'] });
-scheduler.add('enemies:steer', steer, {
-  phase: 'fixed',
-  after: ['enemies:decide'],
-});
-scheduler.add('enemies:strike', strike, {
-  phase: 'fixed',
-  after: ['enemies:steer'],
-});
-physics.install(scheduler, { after: ['enemies:strike'] });
+// Le graph des ennemis est un système.
+enemies.behavior.install(scheduler, { name: 'enemies', after: ['hero'] });
+physics.install(scheduler, { after: ['enemies'] });
 scheduler.add('waves', waves, { phase: 'fixed', after: ['physics'] });
 
 // update : les corps dessinés entre deux pas, animés ; la caméra.
@@ -285,7 +318,9 @@ au calme, en fondu enchaîné avec une musique quand des ennemis sont là.
 `tps/tps.spec.ts` teste les parties sans GPU : les hauteurs de la forêt
 (une clairière plate, un rebord), la grille des troncs, les coups (une
 fois par coup, la capsule le long de la lame), l'animation graph et les
-clips du rôdeur, les actions, les sons sur un `FakeAudioEngine`, et la
+clips du rôdeur, les actions, le graph des ennemis sur un faux jeu (le
+grognement, la poursuite, le coup dans sa fenêtre, deux qui frappent à la
+fois, la `poise`, la chute), les sons sur un `FakeAudioEngine`, et la
 progression affichée pendant le chargement.
 
 ## Ce que nous avons
@@ -299,9 +334,10 @@ progression affichée pendant le chargement.
 - Une caméra à la troisième personne qui s'arrête aux troncs.
 - Un rôdeur dont le code décide des actions et que son animation graph
   suit ; des coups comme des volumes, qui ne touchent qu'une fois.
-- Des ennemis en systèmes : ils encerclent le héros, frappent à deux,
-  contournent les arbres.
+- Des ennemis décidés par un graph de comportement, compilé en
+  JavaScript : ils encerclent le héros, frappent à deux, contournent les
+  arbres.
 
 Quelques idées pour plus tard : le root motion, pour des coups qui portent
-le rôdeur ; la recherche de chemin, pour un niveau avec des murs ; les
-ennemis en graphs de comportement (P9).
+le rôdeur ; la recherche de chemin, pour un niveau avec des murs ; un
+éditeur pour le graph des ennemis (P13).

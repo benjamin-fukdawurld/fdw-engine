@@ -91,6 +91,9 @@
       "path": "./packages/engine-animation"
     },
     {
+      "path": "./packages/engine-behavior"
+    },
+    {
       "path": "./packages/engine-skinning"
     },
     {

@@ -154,6 +154,57 @@ describe('validateDocument', () => {
     ]);
     expect(result.order).toEqual([]);
   });
+
+  it('counts the edges of each port, and lets the control flow loop', () => {
+    // A step of a program: reached from many steps, going on to one.
+    const step: NodeType = {
+      id: 'step',
+      inputs: () => [
+        { name: 'in', type: 'flow', connections: 'many', optional: true },
+        { name: 'n', type: 'number', default: 0 },
+      ],
+      outputs: () => [
+        { name: 'next', type: 'flow', connections: 'one' },
+        { name: 'out', type: 'number' },
+      ],
+    };
+    const rules = {
+      registry: new Registry<NodeType>([step]),
+      flow: (type: string) => type === 'flow',
+    };
+    const nodes = [
+      { id: 'a', type: 'step', params: {} },
+      { id: 'b', type: 'step', params: {} },
+      { id: 'c', type: 'step', params: {} },
+    ];
+    // a → b → a, and a feeds b with a value: a loop of the flow, no cycle
+    // of values.
+    const loop = validateDocument(
+      doc(nodes, [
+        edge('a', 'next', 'b', 'in'),
+        edge('b', 'next', 'a', 'in'),
+        edge('c', 'next', 'a', 'in'),
+        edge('a', 'out', 'b', 'n'),
+      ]),
+      rules,
+    );
+    expect(loop.diagnostics).toEqual([]);
+    expect(loop.order.indexOf('a')).toBeLessThan(loop.order.indexOf('b'));
+
+    const twice = validateDocument(
+      doc(nodes, [edge('a', 'next', 'b', 'in'), edge('a', 'next', 'c', 'in')]),
+      rules,
+    );
+    expect(twice.diagnostics.map(formatDiagnostic)).toEqual([
+      'error: #a.next: edge a.next → c.in: output "next" can only feed one edge',
+    ]);
+    // Without `flow`, the loop is a cycle.
+    const strict = validateDocument(
+      doc(nodes, [edge('a', 'next', 'b', 'in'), edge('b', 'next', 'a', 'in')]),
+      { registry: rules.registry },
+    );
+    expect(strict.valid).toBe(false);
+  });
 });
 
 describe('topologicalOrder', () => {
