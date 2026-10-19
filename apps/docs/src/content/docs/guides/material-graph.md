@@ -81,12 +81,18 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 | Textures    | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel`; `textureLoad`, `textureLoadDepth`: a texel by its integer coordinates, without sampler (depths, `r32float`) |
 | Derivatives | `dpdx`, `dpdy`, `fwidth`: the change from a pixel to the next one (fragment stage only, `y` down)                                                                                                                         |
 | Arrays      | `index`, `arrayLength` (storage buffers)                                                                                                                                                                                  |
+| Integers    | `remainder`, `bitAnd`, `bitOr`, `bitXor`, `shiftLeft`, `shiftRight`, `uvec2`, `uvec3`, `uvec4`: u32 products wrap around on every backend                                                                                 |
+| Loops       | `fold`, `state`, `index`, `end` (`stdLoops`, `g.fold`): a loop carrying a state, not unrolled                                                                                                                             |
+| Noises      | `fbm`, `ridged`, `turbulence`, `warp`, `value`, `perlin`, `simplex`, `worley` (`stdNoise`), and by id the hashes `noise.pcg…`, `noise.hash2…4`, `noise.random2…4`                                                         |
+| Patterns    | `checker`, `checkerFiltered`, `stripes`, `stripesFiltered`, `bricks`, `tiles` (`stdPatterns`)                                                                                                                             |
+| Mapping     | `objectPosition`, `worldPosition`, `objectNormal`, `worldNormal`, `triplanar`, `triplanarTexture`, `triplanarWeights` (`stdMapping`)                                                                                      |
 | Stages      | `perFragment`: what depends on it is computed per pixel                                                                                                                                                                   |
 | Lights      | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                                                                                |
 | Macros      | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`)                                                                |
 
-They are all in `std`, `stdLights` and `stdMacros`; `createStandardRegistry()`
-returns a registry of every standard node type.
+They are all in `std`, `stdLights`, `stdLoops`, `stdNoise`, `stdPatterns`,
+`stdMapping` and `stdMacros`; `createStandardRegistry()` returns a registry
+of every standard node type.
 
 ## Surfaces and shading models
 
@@ -169,6 +175,75 @@ g.surface({ baseColor: g.call(scale, { value: color }) });
 The compiler inlines it: the program is the same as with the nodes written
 in place. `build()` embeds the functions a graph calls, so its JSON compiles
 on its own. Recursion is refused.
+
+## Loops
+
+Two loops, for two needs:
+
+- `macro.repeat` **unrolls**: the body is written `count` times, `count`
+  known at compilation.
+- `g.fold(initial, count, body)` **loops**: state = initial, then `count`
+  times state = body(state, index). The count can be a uniform (a `u32`):
+  the number of octaves of a noise chosen at run time. The nodes of the body
+  that depend on neither the state nor the index are computed once, before
+  the loop. Loops nest; the state is a numeric scalar or vector.
+
+```ts
+// 1 + 1/2 + 1/4… over `terms` terms: the state is (sum, term).
+const sum = g
+  .fold([0, 1], g.uniform('terms', BuiltinTypes.u32), (state) =>
+    g.call(std.vec2, {
+      x: g.call(std.add, { a: state.swizzle('x'), b: state.swizzle('y') }),
+      y: g.call(std.mul, { a: state.swizzle('y'), b: 0.5 }),
+    }),
+  )
+  .swizzle('x');
+```
+
+`stdLoops.fold` does the same over a function node (`params: { body }`),
+whose `state` and `index` inputs the loop feeds. The derivatives and the
+texture reads of a loop body need a count that is the same for the whole
+draw (a constant or a uniform).
+
+## Procedural materials
+
+Materials computed instead of read from textures: no uv needed, no visible
+repetition, any resolution, animated by the time.
+
+- **Noises** (`stdNoise`), for points of 2, 3 or 4 dimensions (the 4th one:
+  time): value, gradient (Perlin), simplex, cellular (Worley: the distances
+  to the two nearest feature points, the identifier of the cell); their
+  fractal sums `fbm`, `ridged`, `turbulence`, octaves unrolled or in a fold
+  loop (`params: { loop: 'fold' }`, the count from `octaveCount`); the
+  domain warping `warp`. Their hashes are integer hashes of the PCG family:
+  the same bits on every backend.
+- **Patterns** (`stdPatterns`): checkerboard, stripes, bricks, tiles. The
+  bricks and the tiles give the cell of each brick (`noise.random2` gives it
+  a color) and the distance to the joint.
+- **Placement** (`stdMapping`): the position of the object or of the world,
+  per fragment, and the triplanar mapping of a function or of a texture,
+  for the terrains and the meshes without uv.
+- **Antialiasing**: `checkerFiltered` and `stripesFiltered` average the
+  pattern over the pixel; the fractal sums with `filtered: true` fade out
+  the octaves finer than the pixel. Both use the derivatives: fragment
+  stage only.
+- **Baking**: `bakeTexture(renderer, { material, width })` renders an
+  expensive full screen graph once into a texture with its levels.
+- **On the CPU**: `@fdw/engine-noise` computes the same noises in
+  TypeScript (heights of a terrain, placement of objects); the rendering
+  tests compare them with the GPU on every backend.
+
+```ts
+const position = g.call(stdMapping.worldPosition);
+const clouds = g.call(
+  stdNoise.fbm,
+  { point: g.call(std.extend, { xyz: position, w: g.engine('time') }) },
+  { params: { noise: 'simplex', octaves: 5 } },
+);
+```
+
+See [Procedural materials](/fdw-engine/tutorials/procedural-materials/) and
+[A procedural terrain](/fdw-engine/tutorials/procedural-terrain/).
 
 ## Macros and variants
 

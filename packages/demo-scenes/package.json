@@ -8,6 +8,7 @@
     "@fdw/engine-audio": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-behavior": "0.0.1",
+    "@fdw/engine-noise": "0.0.1",
     "@fdw/engine-camera": "0.0.1",
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-geometry": "0.0.1",

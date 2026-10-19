@@ -39,6 +39,7 @@ function expandMacro(
   const context: MacroContext = {
     node,
     params,
+    ports: resolved.inputs,
     input: (port) => {
       const connected = graph.inputSource(node, port);
       if (connected) {
@@ -187,7 +188,14 @@ function inlineFunction(
       throw new Error(`input "${name}" is not connected`);
     }
     if ('value' in given) {
-      if (!source.swizzle) {
+      const type = types.inputs[name];
+      // Literals are floats where nothing else types them: those of
+      // integer and boolean inputs keep their type in a constant node.
+      const typed =
+        (type?.kind === 'scalar' || type?.kind === 'vector') &&
+        type.scalar !== 'f32' &&
+        type.scalar !== 'f16';
+      if (!source.swizzle && !typed) {
         return given;
       }
       // A literal cannot be swizzled: it becomes a constant node.

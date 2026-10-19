@@ -1,0 +1,134 @@
+---
+title: A procedural terrain
+description: The same noises on the CPU and on the GPU — the heights of a terrain and the placement of objects in TypeScript with @fdw/engine-noise, its ground painted by the material graph, a rock baked once and read in triplanar mapping.
+sidebar:
+  order: 32
+---
+
+import Example from '../../../components/Example.astro';
+
+A procedural material lives on the GPU, but the game lives on the CPU: the
+physics needs the heights of the ground, the placement of objects needs to
+know where the moss grows. `@fdw/engine-noise` computes **the same noises
+in TypeScript** as the material graph: the same integer hashes, the same
+algorithms, the same constants.
+
+In the example, the heights come from the CPU; the ground is painted by the
+GPU: grass, dark moss where a fbm is high, rock on the slopes. The CPU
+computes **the same fbm** to set boulders on the moss, and only there.
+
+<Example name="procedural-terrain" />
+
+## The heights, on the CPU
+
+The terrain of the [tessellation](/fdw-engine/tutorials/tessellation/)
+takes its heights from 0 to 1 in an array. A ridged sum makes the crests, a
+fbm the hills:
+
+```ts
+import { fbm, ridged } from '@fdw/engine-noise';
+
+for (let j = 0; j < resolution; j++) {
+  for (let i = 0; i < resolution; i++) {
+    const x = ((i + 0.5) / resolution - 0.5) * size;
+    const z = ((j + 0.5) / resolution - 0.5) * size;
+    const p = [x / 80, z / 80];
+    const crests = ridged(p, { noise: 'simplex', octaves: 5, seed: 4 });
+    const hills = fbm(p, { octaves: 4, seed: 9 }) * 0.5 + 0.5;
+    heights[j * resolution + i] = /* … */;
+  }
+}
+const terrain = buildTerrain(backend, { size, height, resolution, heights });
+```
+
+The options are those of the macros of the graph: `noise`, `octaves`,
+`lacunarity`, `gain`, `seed`, `footprint`. The noises take arrays of 2, 3
+or 4 coordinates (`valueNoise`, `perlinNoise`, `simplexNoise`,
+`worleyNoise`, or `noise(kind, point)`), and the hashes are there too
+(`pcg`, `pcg3d`, `hashCell`, `random`). The physics reads the same array:
+in the [third-person game](/fdw-engine/game/tps/), the heightfield of the
+forest comes from it.
+
+## The ground, on the GPU
+
+The material reads the world position and computes the moss with the same
+fbm, at the same scale, with the same seed:
+
+```ts
+const moss = { noise: 'simplex', octaves: 3, seed: 21 } as const;
+
+const world = g.call(stdMapping.worldPosition);
+const patches = g.call(
+  stdNoise.fbm,
+  { point: g.call(std.mul, { a: world.swizzle('xz'), b: 1 / 14 }), seed: 21 },
+  { params: { noise: 'simplex', octaves: 3 } },
+);
+const mossy = g.call(std.smoothstep, { low: 0.15, high: 0.3, x: patches });
+```
+
+The grass has a fine variation of its own, faded where it is smaller than a
+pixel (`filtered: true`, see
+[Procedural materials](/fdw-engine/tutorials/procedural-materials/#antialiasing)).
+
+## The boulders, on the CPU
+
+One candidate per cell of 5 m, moved in its cell by a random of the cell
+(`random`: floats in [0, 1) per integer cell, as `noise.random2…4` on the
+GPU), kept where the fbm is above 0.3, where the moss is full:
+
+```ts
+import { fbm, random } from '@fdw/engine-noise';
+
+for (let cz = -20; cz < 20; cz++) {
+  for (let cx = -20; cx < 20; cx++) {
+    const [jx, jz, r] = random([cx, cz, 0], 3);
+    const x = (cx + jx) * cell;
+    const z = (cz + jz) * cell;
+    if (fbm([x / 14, z / 14], moss) < 0.3) continue;
+    const y = terrain.heightAt(x, z);
+    // … a boulder at (x, y, z), of a size given by r.
+  }
+}
+```
+
+No texture is read back from the GPU, no table is shared: both sides
+compute the noise. The boulders fall on the moss whatever the seed, the
+scale or the number of octaves, as long as both sides use the same.
+
+## How close are the two sides
+
+The **hashes are equal bit for bit**: the integers of the CPU (`Math.imul`,
+`>>>`) wrap around as the `u32` of the GPU. The floats differ: the CPU
+computes in doubles, the GPU in floats, and the GPU may fuse a product and
+a sum. The values agree to about 10⁻⁵; a threshold on a noise is crossed at
+the same place but for a few micrometers. Only the cell of a Worley noise
+can jump, where two points are at the same distance.
+
+The rendering tests check it on every backend: a compute graph evaluates
+every noise, every dimension and every fractal sum at sample points, the
+CPU evaluates the same, and they are compared — on Dawn, Vulkan and WebGL2.
+
+## The rock of the slopes
+
+The rock is the texture baked in
+[Procedural materials](/fdw-engine/tutorials/procedural-materials/#triplanar-mapping-and-baking),
+read in triplanar mapping: on a slope, the uv of a terrain stretch, the
+three planes of the world do not.
+
+```ts
+const rock = g.call(stdMapping.triplanarTexture, {
+  texture: g.texture('rock'),
+  sampler: g.sampler('rockSampler'),
+  normal,
+  scale: 1 / 5,
+  sharpness: 6,
+});
+const rocky = g.call(std.sub, {
+  a: 1,
+  b: g.call(std.smoothstep, { low: 0.72, high: 0.86, x: normal.swizzle('y') }),
+});
+```
+
+Without `position`, `triplanarTexture` reads at the world position; the
+normal is that of the height map, per pixel (`terrainBase`). The height of
+the rock, in its alpha, tilts the normal by bump mapping.

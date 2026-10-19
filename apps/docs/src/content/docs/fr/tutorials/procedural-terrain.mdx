@@ -1,0 +1,139 @@
+---
+title: Un terrain procédural
+description: Les mêmes bruits sur le CPU et sur le GPU — les hauteurs d'un terrain et le placement d'objets en TypeScript avec @fdw/engine-noise, son sol peint par le material graph, une roche cuite une fois et lue en mapping triplanaire.
+sidebar:
+  order: 32
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un matériau procédural vit sur le GPU, mais le jeu vit sur le CPU : la
+physique a besoin des hauteurs du sol, le placement des objets a besoin de
+savoir où pousse la mousse. `@fdw/engine-noise` calcule **les mêmes bruits
+en TypeScript** que le material graph : les mêmes hachages entiers, les
+mêmes algorithmes, les mêmes constantes.
+
+Dans l'exemple, les hauteurs viennent du CPU ; le sol est peint par le GPU :
+de l'herbe, une mousse sombre là où un fbm est haut, de la roche sur les
+pentes. Le CPU calcule **le même fbm** pour poser des rochers sur la mousse,
+et seulement là.
+
+<Example name="procedural-terrain" />
+
+## Les hauteurs, sur le CPU
+
+Le terrain de la [tessellation](/fdw-engine/fr/tutorials/tessellation/)
+prend ses hauteurs de 0 à 1 dans un tableau. Une somme ridged fait les
+crêtes, un fbm les collines :
+
+```ts
+import { fbm, ridged } from '@fdw/engine-noise';
+
+for (let j = 0; j < resolution; j++) {
+  for (let i = 0; i < resolution; i++) {
+    const x = ((i + 0.5) / resolution - 0.5) * size;
+    const z = ((j + 0.5) / resolution - 0.5) * size;
+    const p = [x / 80, z / 80];
+    const crests = ridged(p, { noise: 'simplex', octaves: 5, seed: 4 });
+    const hills = fbm(p, { octaves: 4, seed: 9 }) * 0.5 + 0.5;
+    heights[j * resolution + i] = /* … */;
+  }
+}
+const terrain = buildTerrain(backend, { size, height, resolution, heights });
+```
+
+Les options sont celles des macros du graphe : `noise`, `octaves`,
+`lacunarity`, `gain`, `seed`, `footprint`. Les bruits prennent des tableaux
+de 2, 3 ou 4 coordonnées (`valueNoise`, `perlinNoise`, `simplexNoise`,
+`worleyNoise`, ou `noise(kind, point)`), et les hachages sont là aussi
+(`pcg`, `pcg3d`, `hashCell`, `random`). La physique lit le même tableau :
+dans le [jeu à la troisième personne](/fdw-engine/fr/game/tps/), le
+heightfield de la forêt en vient.
+
+## Le sol, sur le GPU
+
+Le matériau lit la position dans le monde et calcule la mousse avec le même
+fbm, à la même échelle, avec la même graine :
+
+```ts
+const moss = { noise: 'simplex', octaves: 3, seed: 21 } as const;
+
+const world = g.call(stdMapping.worldPosition);
+const patches = g.call(
+  stdNoise.fbm,
+  { point: g.call(std.mul, { a: world.swizzle('xz'), b: 1 / 14 }), seed: 21 },
+  { params: { noise: 'simplex', octaves: 3 } },
+);
+const mossy = g.call(std.smoothstep, { low: 0.15, high: 0.3, x: patches });
+```
+
+L'herbe a une fine variation à elle, effacée là où elle est plus petite
+qu'un pixel (`filtered: true`, voir
+[Les matériaux procéduraux](/fdw-engine/fr/tutorials/procedural-materials/#laliasing)).
+
+## Les rochers, sur le CPU
+
+Un candidat par cellule de 5 m, déplacé dans sa cellule par un aléa de la
+cellule (`random` : des flottants dans [0, 1) par cellule entière, comme
+`noise.random2…4` sur le GPU), gardé là où le fbm dépasse 0,3, là où la
+mousse est pleine :
+
+```ts
+import { fbm, random } from '@fdw/engine-noise';
+
+for (let cz = -20; cz < 20; cz++) {
+  for (let cx = -20; cx < 20; cx++) {
+    const [jx, jz, r] = random([cx, cz, 0], 3);
+    const x = (cx + jx) * cell;
+    const z = (cz + jz) * cell;
+    if (fbm([x / 14, z / 14], moss) < 0.3) continue;
+    const y = terrain.heightAt(x, z);
+    // … un rocher en (x, y, z), d'une taille donnée par r.
+  }
+}
+```
+
+Aucune texture n'est relue depuis le GPU, aucune table n'est partagée : les
+deux côtés calculent le bruit. Les rochers tombent sur la mousse quelles que
+soient la graine, l'échelle ou le nombre d'octaves, du moment que les deux
+côtés utilisent les mêmes.
+
+## L'écart entre les deux côtés
+
+Les **hachages sont égaux au bit près** : les entiers du CPU (`Math.imul`,
+`>>>`) bouclent comme les `u32` du GPU. Les flottants diffèrent : le CPU
+calcule en doubles, le GPU en flottants, et le GPU peut fusionner un produit
+et une somme. Les valeurs concordent à environ 10⁻⁵ près ; un seuil sur un
+bruit est franchi au même endroit, à quelques micromètres près. Seule la
+cellule d'un bruit de Worley peut changer, là où deux points sont à la même
+distance.
+
+Les tests de rendu le vérifient sur chaque backend : un compute graph évalue
+chaque bruit, chaque dimension et chaque somme fractale en des points
+d'échantillon, le CPU évalue les mêmes, et ils sont comparés — sur Dawn, sur
+Vulkan et en WebGL2.
+
+## La roche des pentes
+
+La roche est la texture cuite dans
+[Les matériaux procéduraux](/fdw-engine/fr/tutorials/procedural-materials/#le-mapping-triplanaire-et-la-cuisson),
+lue en mapping triplanaire : sur une pente, les uv d'un terrain s'étirent,
+les trois plans du monde non.
+
+```ts
+const rock = g.call(stdMapping.triplanarTexture, {
+  texture: g.texture('rock'),
+  sampler: g.sampler('rockSampler'),
+  normal,
+  scale: 1 / 5,
+  sharpness: 6,
+});
+const rocky = g.call(std.sub, {
+  a: 1,
+  b: g.call(std.smoothstep, { low: 0.72, high: 0.86, x: normal.swizzle('y') }),
+});
+```
+
+Sans `position`, `triplanarTexture` lit à la position dans le monde ; la
+normale est celle de la carte des hauteurs, par pixel (`terrainBase`). La
+hauteur de la roche, dans son alpha, incline la normale par bump mapping.

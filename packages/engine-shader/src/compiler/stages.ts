@@ -3,6 +3,7 @@ import type { NodeTypes } from '../graph/inference';
 import type { GraphNode, NodeId, PortRef } from '../graph/MaterialGraphData';
 import type { ResolvedNode } from '../graph/validateGraph';
 import { ShaderType, typeToString } from '../types/ShaderType';
+import type { LoopAnalysis } from './loops';
 import type { WorkingGraph } from './WorkingGraph';
 
 /** When a value is computed, from the cheapest to the most expensive. */
@@ -53,6 +54,10 @@ function nodeFrequency(
     case 'input':
       if (node.type === 'input.attribute') {
         return Frequency.Vertex;
+      }
+      if (node.type === 'loop.state' || node.type === 'loop.index') {
+        // Raised to the frequency of their loop (see planStages).
+        return Frequency.Constant;
       }
       if (node.type === 'light.current') {
         // The body of a light loop, which runs per fragment.
@@ -107,6 +112,7 @@ export function planStages({
   types,
   maxVaryings,
   diagnostics,
+  loops,
 }: {
   graph: WorkingGraph;
   nodes: ReadonlyMap<NodeId, ResolvedNode>;
@@ -114,6 +120,7 @@ export function planStages({
   types: ReadonlyMap<NodeId, NodeTypes>;
   maxVaryings: number;
   diagnostics: Diagnostic[];
+  loops?: LoopAnalysis;
 }): StagePlan | undefined {
   const frequencies = new Map<NodeId, Frequency>();
   for (const id of order) {
@@ -121,6 +128,18 @@ export function planStages({
       .incoming(id)
       .map((edge) => frequencies.get(edge.from.node) ?? Frequency.Constant);
     frequencies.set(id, nodeFrequency(nodes.get(id) as ResolvedNode, inputs));
+  }
+  // The body of a loop runs where its end runs, at its frequency: none of
+  // its values crosses to the other stage on its own. Outer loops first,
+  // whose bodies hold the ends of the inner ones.
+  for (const loop of loops?.loops.values() ?? []) {
+    const frequency = frequencies.get(loop.end) ?? Frequency.Constant;
+    for (const id of loop.body) {
+      frequencies.set(
+        id,
+        Math.max(frequencies.get(id) ?? 0, frequency) as Frequency,
+      );
+    }
   }
 
   const findOutput = (type: string) =>

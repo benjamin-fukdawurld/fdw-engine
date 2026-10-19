@@ -1,0 +1,305 @@
+---
+title: Les matériaux procéduraux
+description: Des matériaux calculés à chaque pixel plutôt que lus dans des textures — bruits, sommes fractales, déformation du domaine, bruit cellulaire, motifs, anti-aliasing, mapping triplanaire et cuisson.
+sidebar:
+  order: 31
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une texture a une résolution, se répète, et demande des uv. Un **matériau
+procédural** calcule sa couleur à chaque pixel depuis la position du pixel :
+pas d'uv, pas de répétition visible, aussi net à un mètre qu'à un
+centimètre, et animé sans effort. La bibliothèque standard du material
+graph a ce qu'il faut : des bruits, des motifs, et les coordonnées où les
+lire.
+
+La galerie ci-dessous en montre sept, aucun avec une texture à lui. Devant :
+le bois, le marbre, la roche, la lave (animée). Derrière : les briques et les
+tuiles (sur les uv de cubes), et une roche **cuite** une fois dans une
+texture, lue en **mapping triplanaire** sur une sphère dont elle ignore les
+uv. Le sol est un damier **moyenné sur les pixels** : cliquez pour le voir
+sans le filtre, scintillant au loin.
+
+<Example name="procedural-materials" />
+
+Les graphes de la galerie sont dans
+`packages/demo-scenes/src/procedural/materials.ts` ; cette page les
+parcourt.
+
+## Où calculer
+
+Un matériau procédural lit une **position** :
+`stdMapping.objectPosition`, la position dans le mesh (le matériau bouge et
+tourne avec l'objet), ou `stdMapping.worldPosition`, la position dans le
+monde (le matériau se continue d'un objet au suivant : un terrain, des
+murs). Les deux sont calculées **par fragment** : un bruit n'est pas
+linéaire, il ne peut pas être interpolé depuis les sommets.
+
+```ts
+import { stdMapping, stdNoise } from '@fdw/engine-shader';
+
+const p = g.call(std.mul, { a: g.call(stdMapping.objectPosition), b: 3 });
+```
+
+L'échelle fixe la taille des motifs : les bruits ont environ un motif par
+unité.
+
+## Les bruits
+
+| Bruit                | Nœud               | Ressemble à                                            |
+| -------------------- | ------------------ | ------------------------------------------------------ |
+| De valeur            | `stdNoise.value`   | Des taches douces, un peu carrées                      |
+| De gradient (Perlin) | `stdNoise.perlin`  | Des collines et des vallées lisses                     |
+| Simplex              | `stdNoise.simplex` | Comme Perlin, moins cher en 3D et 4D, sans biais d'axe |
+| Cellulaire (Worley)  | `stdNoise.worley`  | Des cellules : pierres, écailles, fissures             |
+
+Chacun prend un point de **2, 3 ou 4 dimensions** : le type du point choisit
+`noise.perlin2`, `noise.perlin3` ou `noise.perlin4`. La 4e dimension est
+d'ordinaire le **temps**. Tous prennent une graine `seed` (un `u32`) : une
+autre graine, un autre bruit. Les bruits de valeur, de gradient et simplex
+sont dans [-1, 1].
+
+Ils reposent sur des **hachages entiers** de la famille PCG (`noise.pcg`,
+`noise.pcg3d`…) : des produits sur 32 bits, des décalages et des ou
+exclusifs, sur des entiers qui bouclent de la même façon sur tous les GPU.
+Un bruit donne les mêmes bits en WebGPU, en WebGL2 et en Vulkan, et en
+TypeScript : voir [Un terrain procédural](/fdw-engine/fr/tutorials/procedural-terrain/).
+
+## Les sommes fractales
+
+Un bruit seul est trop régulier. Ses **octaves** (le bruit à des fréquences
+croissantes et des amplitudes décroissantes) additionnées donnent le détail
+de la nature :
+
+```ts
+const value = g.call(
+  stdNoise.fbm,
+  { point: p, lacunarity: 2, gain: 0.5 },
+  { params: { noise: 'simplex', octaves: 5 } },
+);
+```
+
+| Macro                 | Chaque octave ajoute | Intervalle | Pour                         |
+| --------------------- | -------------------- | ---------- | ---------------------------- |
+| `stdNoise.fbm`        | le bruit             | [-1, 1]    | Nuages, collines, variations |
+| `stdNoise.ridged`     | (1 - \|bruit\|)²     | [0, 1]     | Crêtes, veines               |
+| `stdNoise.turbulence` | \|bruit\|            | [0, 1]     | Plis, flammes, fumée         |
+
+Les octaves sont **déroulées** par défaut : le code du bruit est écrit une
+fois par octave. Avec `loop: 'fold'`, elles tournent dans une **boucle**,
+dont le nombre de tours peut changer sans recompiler, depuis un uniform :
+
+```ts
+g.call(
+  stdNoise.fbm,
+  { point: p, octaveCount: g.uniform('octaves', BuiltinTypes.u32) },
+  { params: { loop: 'fold' } },
+);
+```
+
+La boucle est le `fold` du material graph : un état porté d'une itération à
+la suivante. Voir le [guide](/fdw-engine/fr/guides/material-graph/#boucles).
+
+## La déformation du domaine
+
+Un bruit lu en un point déplacé par un autre bruit tourbillonne et
+s'étire. `stdNoise.warp` déplace un point par un fbm par coordonnée. Le
+marbre est un sinus du point déformé, ses veines là où le sinus passe par
+zéro :
+
+```ts
+const warped = g.call(
+  stdNoise.warp,
+  { point: p, strength: 1.1 },
+  { params: { octaves: 4, noise: 'simplex' } },
+);
+const wave = g.call(std.sin, {
+  x: g.call(std.mul, {
+    a: g.call(std.add, {
+      a: warped.swizzle('x'),
+      b: g.call(std.mul, { a: warped.swizzle('y'), b: 0.6 }),
+    }),
+    b: 5,
+  }),
+});
+// De fines veines là où le sinus est proche de 0.
+const vein = g.call(std.pow, {
+  base: g.call(std.sub, { a: 1, b: g.call(std.abs, { x: wave }) }),
+  exponent: 4,
+});
+```
+
+Le bois déforme un peu le plan de ses cernes, pour qu'ils serpentent.
+
+## Le bruit cellulaire
+
+`stdNoise.worley` place un point au hasard dans chaque cellule d'une
+grille, et donne quatre sorties : `f1` et `f2`, les distances au point le
+plus proche et au deuxième ; `id`, l'identifiant de la cellule du plus
+proche ; `random`, un flottant dans [0, 1) pour cette cellule. La roche les
+utilise toutes :
+
+```ts
+const cells = g.node(stdNoise.worley, { inputs: { point: p } });
+// Des fissures là où les deux points les plus proches le sont autant.
+const crack = g.call(std.sub, {
+  a: 1,
+  b: g.call(std.smoothstep, {
+    low: 0,
+    high: 0.07,
+    x: g.call(std.sub, { a: cells.f2, b: cells.f1 }),
+  }),
+});
+// Chaque pierre sa teinte.
+const shade = g.call(std.mix, {
+  a: [0.3, 0.28, 0.26],
+  b: [0.46, 0.42, 0.37],
+  t: g.call(std.vec3, { x: cells.random, y: cells.random, z: cells.random }),
+});
+```
+
+Son relief est le bump mapping de la même hauteur (`macro.bumpMapping`,
+voir [Détails de surface](/fdw-engine/fr/tutorials/surface-details/)) : pas
+de normal map non plus.
+
+## L'animation
+
+La lave lit un bruit 4D dont la 4e coordonnée est le temps : ses fissures
+chaudes bougent sous la croûte. Le temps est la valeur moteur `time`,
+donnée à `renderer.render({ time })` :
+
+```ts
+const flow = g.call(
+  stdNoise.fbm,
+  {
+    point: g.call(std.extend, {
+      xyz: p,
+      w: g.call(std.mul, { a: g.engine('time'), b: 0.25 }),
+    }),
+  },
+  { params: { noise: 'simplex', octaves: 4 } },
+);
+```
+
+## Les motifs
+
+`stdPatterns` dessine des motifs réguliers depuis n'importe quelles
+coordonnées 2D : les uv d'un mesh, un plan de la position dans le monde.
+
+| Motif                                 | Sorties                                                      |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `checker`, `checkerFiltered`          | 0 ou 1 par case                                              |
+| `stripes`, `stripesFiltered`          | 1 sur les bandes, 0 entre elles                              |
+| `bricks` (`size`, `mortar`, `offset`) | `mask`, `local` (dans la brique), `cell` (la brique), `edge` |
+| `tiles` (`size`, `gap`, `radius`)     | les mêmes, des tuiles aux coins arrondis                     |
+
+La cellule `cell` d'une brique, donnée à `noise.random2`, donne à chaque
+brique sa couleur :
+
+```ts
+const bricks = g.node(stdPatterns.bricks, {
+  inputs: { uv, size: [0.25, 0.1], mortar: 0.014, bevel: 0.008 },
+});
+const tint = g.call('noise.random2', { point: bricks.cell });
+const brick = g.call(std.mix, {
+  a: [0.5, 0.16, 0.1],
+  b: [0.66, 0.3, 0.18],
+  t: tint.swizzle('xxx'),
+});
+const color = g.call(std.mix, {
+  a: [0.55, 0.53, 0.5],
+  b: brick,
+  t: g.call(std.vec3, { x: bricks.mask, y: bricks.mask, z: bricks.mask }),
+});
+```
+
+## L'aliasing
+
+Une texture a des niveaux de détail : au loin, le GPU lit un niveau flou.
+Un motif procédural n'en a pas : là où ses cases sont plus petites qu'un
+pixel, chaque pixel en tire une au hasard, et le motif scintille (cliquez
+sur l'exemple). Deux remèdes, tous deux par les **dérivées d'écran**, la
+largeur d'un pixel dans les unités du motif :
+
+- **Les motifs filtrés** (`checkerFiltered`, `stripesFiltered`) moyennent
+  le motif sur le pixel : gris là où les cases sont plus petites.
+- **Les sommes filtrées** (`filtered: true`) effacent les octaves plus
+  fines que deux pixels, vers leur moyenne.
+
+```ts
+const value = g.call(stdPatterns.checkerFiltered, {
+  uv: position.swizzle('xz'),
+});
+g.call(stdNoise.fbm, { point: p }, { params: { octaves: 6, filtered: true } });
+```
+
+Les dérivées n'existent que dans l'étape de fragments.
+
+## Le mapping triplanaire et la cuisson
+
+La dernière sphère a bien une texture, faite de bruits, une fois. Un
+**bruit cellulaire 4D et un fbm** de cinq octaves coûtent cher par pixel ;
+calculés une fois dans une texture, ils coûtent une lecture.
+
+```ts
+import { bakeTexture } from '@fdw/engine-core';
+
+const rock = await bakeTexture(renderer, {
+  material: new Material({ graph: rockTextureGraph() }),
+  width: 512,
+});
+```
+
+`bakeTexture` rend un matériau qui se termine par `g.fullscreen` dans une
+nouvelle texture, puis calcule ses niveaux. Pour se répéter sans couture,
+la texture doit **se raccorder** : son graphe lit les bruits sur un tore de
+l'espace 4D, le `u` et le `v` de la texture comme deux angles, pour que ses
+bords se rejoignent :
+
+```ts
+const angles = g.call(std.mul, { a: g.builtin('screen-uv'), b: 2 * Math.PI });
+const torus = g.call(std.vec4, {
+  x: g.call(std.cos, { x: angles.swizzle('x') }),
+  y: g.call(std.sin, { x: angles.swizzle('x') }),
+  z: g.call(std.cos, { x: angles.swizzle('y') }),
+  w: g.call(std.sin, { x: angles.swizzle('y') }),
+});
+```
+
+La sphère la lit en **mapping triplanaire** : sur les trois plans des axes,
+mélangés selon la normale. Pas d'uv, pas d'étirement :
+
+```ts
+const color = g.call(stdMapping.triplanarTexture, {
+  texture: g.texture('rock'),
+  sampler: g.sampler('rockSampler'),
+  position: g.call(stdMapping.objectPosition),
+  normal: g.call(stdMapping.objectNormal),
+  scale: 1.2,
+  sharpness: 6,
+});
+```
+
+`stdMapping.triplanar` fait de même avec une fonction d'un uv (un motif, un
+bruit 2D) : trois appels, mélangés. La forêt du
+[jeu à la troisième personne](/fdw-engine/fr/game/tps/) met cette roche sur
+ses pentes.
+
+## Ce que ça coûte
+
+Un matériau procédural coûte des instructions au lieu de mémoire. Les
+instructions de la représentation intermédiaire de l'étape de fragments
+d'un matériau qui lit un bruit à la position dans le monde (constantes
+comprises) :
+
+| Bruit       | 2D  | 3D    | 4D                         |
+| ----------- | --- | ----- | -------------------------- |
+| De valeur   | 220 | 400   | 860                        |
+| De gradient | 250 | 460   | 990                        |
+| Simplex     | 230 | 290   | 420                        |
+| Cellulaire  | 480 | 1 350 | 110, dans une boucle de 81 |
+
+Le bruit simplex croît le moins vite avec la dimension : préférez-le en 3D
+et en 4D. Une somme fractale coûte ses octaves. Cuisez ce qui ne change
+pas, filtrez ce qui est loin, et gardez les octaves que le pixel peut voir.

@@ -22,6 +22,7 @@ const packages = [
   'engine-animation',
   'engine-skinning',
   'engine-behavior',
+  'engine-noise',
   'engine-physics',
   'engine-physics-rapier',
   'engine-audio',

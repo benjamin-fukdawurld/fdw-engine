@@ -81,13 +81,18 @@ error: #n3.b: std.mul: got vec4<f32>, incompatible with vec3<f32> connected to "
 | Textures     | `textureSample`, `textureSampleLevel`, `textureSampleCompare`, `textureSampleCube`, `textureSampleCubeLevel` ; `textureLoad`, `textureLoadDepth` : un texel par ses coordonnées entières, sans sampler (profondeurs, `r32float`) |
 | Dérivées     | `dpdx`, `dpdy`, `fwidth` : le changement d'un pixel au suivant (stage fragment seulement, `y` vers le bas)                                                                                                                       |
 | Tableaux     | `index`, `arrayLength` (storage buffers)                                                                                                                                                                                         |
+| Entiers      | `remainder`, `bitAnd`, `bitOr`, `bitXor`, `shiftLeft`, `shiftRight`, `uvec2`, `uvec3`, `uvec4` : les produits de u32 bouclent sur tous les backends                                                                              |
+| Boucles      | `fold`, `state`, `index`, `end` (`stdLoops`, `g.fold`) : une boucle qui porte un état, non déroulée                                                                                                                              |
+| Bruits       | `fbm`, `ridged`, `turbulence`, `warp`, `value`, `perlin`, `simplex`, `worley` (`stdNoise`), et par leur identifiant les hachages `noise.pcg…`, `noise.hash2…4`, `noise.random2…4`                                                |
+| Motifs       | `checker`, `checkerFiltered`, `stripes`, `stripesFiltered`, `bricks`, `tiles` (`stdPatterns`)                                                                                                                                    |
+| Placement    | `objectPosition`, `worldPosition`, `objectNormal`, `worldNormal`, `triplanar`, `triplanarTexture`, `triplanarWeights` (`stdMapping`)                                                                                             |
 | Étapes       | `perFragment` : ce qui en dépend est calculé par pixel                                                                                                                                                                           |
 | Lumières     | `light.current`, `light.sum`, `light.shadow` (`stdLights`)                                                                                                                                                                       |
 | Macros       | `staticSwitch`, `optionalAttribute`, `repeat`, `normalMapping`, `bumpMapping`, `parallaxMapping`, `parallaxOcclusionMapping`, `displacement` (`stdMacros`)                                                                       |
 
-Ils se trouvent tous dans `std`, `stdLights` et `stdMacros` ;
-`createStandardRegistry()` renvoie un registre de tous les types de nœuds
-standard.
+Ils se trouvent tous dans `std`, `stdLights`, `stdLoops`, `stdNoise`,
+`stdPatterns`, `stdMapping` et `stdMacros` ; `createStandardRegistry()`
+renvoie un registre de tous les types de nœuds standard.
 
 ## Surfaces et modèles d'éclairage
 
@@ -175,6 +180,77 @@ g.surface({ baseColor: g.call(scale, { value: color }) });
 Le compilateur l'insère en ligne : le programme est le même que si les nœuds
 étaient écrits sur place. `build()` embarque les fonctions qu'un graphe
 appelle, de sorte que son JSON se compile seul. La récursion est refusée.
+
+## Boucles
+
+Deux boucles, pour deux besoins :
+
+- `macro.repeat` **déroule** : le corps est écrit `count` fois, `count`
+  connu à la compilation.
+- `g.fold(initial, count, body)` **boucle** : état = initial, puis `count`
+  fois état = body(état, index). Le nombre de tours peut être un uniform
+  (un `u32`) : le nombre d'octaves d'un bruit choisi à l'exécution. Les
+  nœuds du corps qui ne dépendent ni de l'état ni de l'index sont calculés
+  une fois, avant la boucle. Les boucles s'imbriquent ; l'état est un
+  scalaire ou un vecteur numérique.
+
+```ts
+// 1 + 1/2 + 1/4… sur `terms` termes : l'état est (somme, terme).
+const sum = g
+  .fold([0, 1], g.uniform('terms', BuiltinTypes.u32), (state) =>
+    g.call(std.vec2, {
+      x: g.call(std.add, { a: state.swizzle('x'), b: state.swizzle('y') }),
+      y: g.call(std.mul, { a: state.swizzle('y'), b: 0.5 }),
+    }),
+  )
+  .swizzle('x');
+```
+
+`stdLoops.fold` fait de même sur un nœud fonction (`params: { body }`),
+dont la boucle alimente les entrées `state` et `index`. Les dérivées et
+les lectures de textures d'un corps de boucle demandent un nombre de tours
+identique pour tout le draw (une constante ou un uniform).
+
+## Matériaux procéduraux
+
+Des matériaux calculés plutôt que lus dans des textures : sans uv, sans
+répétition visible, à toute résolution, animés par le temps.
+
+- **Les bruits** (`stdNoise`), de points de 2, 3 ou 4 dimensions (la 4e :
+  le temps) : de valeur, de gradient (Perlin), simplex, cellulaire (Worley :
+  les distances aux deux points les plus proches, l'identifiant de la
+  cellule) ; leurs sommes fractales `fbm`, `ridged`, `turbulence`, octaves
+  déroulées ou dans une boucle fold (`params: { loop: 'fold' }`, le nombre
+  par `octaveCount`) ; la déformation du domaine `warp`. Leurs hachages sont
+  des hachages entiers de la famille PCG : les mêmes bits sur tous les
+  backends.
+- **Les motifs** (`stdPatterns`) : damier, bandes, briques, tuiles. Les
+  briques et les tuiles donnent la cellule de chaque brique
+  (`noise.random2` lui donne une couleur) et la distance au joint.
+- **Le placement** (`stdMapping`) : la position dans l'objet ou dans le
+  monde, par fragment, et le mapping triplanaire d'une fonction ou d'une
+  texture, pour les terrains et les meshes sans uv.
+- **L'aliasing** : `checkerFiltered` et `stripesFiltered` moyennent le
+  motif sur le pixel ; les sommes fractales avec `filtered: true` effacent
+  les octaves plus fines que le pixel. Les deux utilisent les dérivées :
+  étape de fragments seulement.
+- **La cuisson** : `bakeTexture(renderer, { material, width })` rend une
+  fois un graphe plein écran coûteux dans une texture, avec ses niveaux.
+- **Sur le CPU** : `@fdw/engine-noise` calcule les mêmes bruits en
+  TypeScript (hauteurs d'un terrain, placement d'objets) ; les tests de
+  rendu les comparent au GPU sur chaque backend.
+
+```ts
+const position = g.call(stdMapping.worldPosition);
+const clouds = g.call(
+  stdNoise.fbm,
+  { point: g.call(std.extend, { xyz: position, w: g.engine('time') }) },
+  { params: { noise: 'simplex', octaves: 5 } },
+);
+```
+
+Voir [Les matériaux procéduraux](/fdw-engine/fr/tutorials/procedural-materials/)
+et [Un terrain procédural](/fdw-engine/fr/tutorials/procedural-terrain/).
 
 ## Macros et variantes
 

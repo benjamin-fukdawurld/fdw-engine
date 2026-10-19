@@ -11,12 +11,28 @@ import {
   compile,
   defineFunction,
   GraphBuilder,
+  PortHandle,
   ShaderType,
   std,
   stdMacros,
+  stdNoise,
+  stdPatterns,
 } from '@fdw/engine-shader';
+import {
+  fbm,
+  hashCell,
+  perlinNoise,
+  random,
+  ridged,
+  simplexNoise,
+  turbulence,
+  valueNoise,
+  warp,
+  worleyNoise,
+} from '@fdw/engine-noise';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  bakeTexture,
   BaseLight,
   Camera,
   computeTangents,
@@ -3957,6 +3973,393 @@ export function describeRenderer(
           [255, 0, 0, 255],
         );
         asyncRenderer.destroy();
+      });
+    });
+
+    describe('procedural materials', () => {
+      // The points of the samples: multiples of 1/32, exact in floats, the
+      // same on the CPU and the GPU.
+      const samples = 64;
+      const coordinate = (i: number, k: number) =>
+        ((i * (k + 3) * 7) % 61) * 0.40625 - (12.15625 - k * 0.15625);
+      const pointOf = (i: number, n: number) =>
+        Array.from({ length: n }, (_, k) => coordinate(i, k));
+      // The same points in a compute graph, from the index of the thread.
+      const samplePoint = (g: GraphBuilder, n: 2 | 3 | 4) => {
+        const index = g.builtin('global-invocation-id').swizzle('x');
+        const coordinates = Array.from({ length: n }, (_, k) =>
+          g.call(std.sub, {
+            a: g.call(std.mul, {
+              a: g.call(
+                std.convert,
+                {
+                  value: g.call(std.remainder, {
+                    a: g.call(std.mul, { a: index, b: (k + 3) * 7 }),
+                    b: 61,
+                  }),
+                },
+                { params: { to: BuiltinTypes.f32 } },
+              ),
+              b: 0.40625,
+            }),
+            b: 12.15625 - k * 0.15625,
+          }),
+        );
+        const vector = [std.vec2, std.vec3, std.vec4][n - 2];
+        return {
+          index,
+          point: g.call(
+            vector,
+            Object.fromEntries(
+              coordinates.map((value, k) => ['xyzw'[k], value]),
+            ),
+          ),
+        };
+      };
+      const run = async (
+        graph: ReturnType<GraphBuilder['build']>,
+        buffers: Record<string, number>,
+      ) => {
+        const created = Object.fromEntries(
+          Object.entries(buffers).map(([name, size]) => [
+            name,
+            backend.buffers.create({
+              size,
+              usage: ['storage', 'copy-src', 'copy-dst'],
+            }),
+          ]),
+        );
+        const runner = new ComputeRunner(backend);
+        runner.dispatch(
+          compile(graph, { capabilities: backend.capabilities }),
+          {
+            values: created,
+            workgroups: [samples / 64],
+          },
+        );
+        const read = Object.fromEntries(
+          await Promise.all(
+            Object.entries(created).map(
+              async ([name, buffer]) => [name, await buffer.read()] as const,
+            ),
+          ),
+        );
+        runner.destroy();
+        for (const buffer of Object.values(created)) {
+          buffer.destroy();
+        }
+        return read;
+      };
+
+      for (const n of [2, 3, 4] as const) {
+        it(`computes the ${n}D noises and hashes of the CPU`, async () => {
+          if (backend.capabilities?.compute === false) {
+            return;
+          }
+          const g = new GraphBuilder(`noises ${n}D`);
+          const { index, point } = samplePoint(g, n);
+          const worley = g.node(`noise.worley${n}`, {
+            inputs: { point, seed: 3 },
+          });
+          const floats = g.storage('floats', arrayType(BuiltinTypes.vec4f), {
+            access: 'read-write',
+          });
+          const ints = g.storage('ints', arrayType(BuiltinTypes.u32), {
+            access: 'read-write',
+          });
+          const at = (offset: number) =>
+            g.call(std.add, {
+              a: g.call(std.mul, { a: index, b: 2 }),
+              b: g.constant(BuiltinTypes.u32, offset),
+            });
+          g.write(floats, {
+            index: at(0),
+            value: g.call(std.vec4, {
+              x: g.call(`noise.value${n}`, { point }),
+              y: g.call(`noise.perlin${n}`, { point }),
+              z: g.call(`noise.simplex${n}`, { point, seed: 5 }),
+              w: worley.f1,
+            }),
+          });
+          g.write(floats, {
+            index: at(1),
+            value: g.call(std.vec4, {
+              x: worley.f2,
+              y: worley.random,
+              z: g.call(`noise.random${n}`, { point }).swizzle('x'),
+            }),
+          });
+          g.write(ints, {
+            index: at(0),
+            value: g
+              .call(`noise.hash${n}`, { cell: point, seed: 7 })
+              .swizzle('x'),
+          });
+          g.write(ints, { index: at(1), value: worley.id });
+          g.compute({ workgroupSize: [64, 1, 1] });
+          const read = await run(g.build(), {
+            floats: samples * 32,
+            ints: samples * 8,
+          });
+          const gpu = new Float32Array(read['floats']);
+          const bits = new Uint32Array(read['ints']);
+          for (let i = 0; i < samples; i++) {
+            const p = pointOf(i, n);
+            const cell = worleyNoise(p, 3);
+            const expected = [
+              valueNoise(p),
+              perlinNoise(p),
+              simplexNoise(p, 5),
+              cell.f1,
+              cell.f2,
+              cell.random,
+              random(p)[0],
+            ];
+            expected.forEach((value, k) => {
+              const actual = gpu[i * 8 + k];
+              expect(
+                Math.abs(actual - value),
+                `sample ${i} (${p}), value ${k}: ${actual} on the GPU, ${value} on the CPU`,
+              ).toBeLessThan(2e-5);
+            });
+            expect(bits[i * 2]).toBe(hashCell(p, 7)[0]);
+            // The cell, where the two nearest points are not as near.
+            if (cell.f2 - cell.f1 > 1e-3) {
+              expect(bits[i * 2 + 1]).toBe(cell.id);
+            }
+          }
+        });
+      }
+
+      it('adds up the octaves as the CPU, unrolled or in a fold loop', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        const g = new GraphBuilder('fractal sums');
+        const { index, point } = samplePoint(g, 3);
+        const octaves = (
+          macro: typeof stdNoise.fbm,
+          params: Record<string, string | number>,
+          inputs: Record<string, unknown> = {},
+        ) => g.call(macro, { point, ...inputs } as never, { params });
+        const flat = g.call(std.vec2, {
+          x: point.swizzle('x'),
+          y: point.swizzle('z'),
+        });
+        const warped = g.call(
+          stdNoise.warp,
+          { point: flat, strength: 0.8 },
+          { params: { octaves: 3, noise: 'simplex' } },
+        );
+        const output = g.storage('values', arrayType(BuiltinTypes.vec4f), {
+          access: 'read-write',
+        });
+        const at = (offset: number) =>
+          g.call(std.add, {
+            a: g.call(std.mul, { a: index, b: 2 }),
+            b: g.constant(BuiltinTypes.u32, offset),
+          });
+        g.write(output, {
+          index: at(0),
+          value: g.call(std.vec4, {
+            x: octaves(stdNoise.fbm, { octaves: 4 }),
+            y: octaves(
+              stdNoise.fbm,
+              { octaves: 4, loop: 'fold' },
+              { octaveCount: g.uniform('octaveCount', BuiltinTypes.u32) },
+            ),
+            z: octaves(
+              stdNoise.ridged,
+              { noise: 'simplex', octaves: 3 },
+              {
+                gain: 0.6,
+                lacunarity: 2.5,
+              },
+            ),
+            w: octaves(
+              stdNoise.turbulence,
+              { noise: 'value', octaves: 3, loop: 'fold' },
+              { seed: 4, footprint: 0.05 },
+            ),
+          }),
+        });
+        g.write(output, {
+          index: at(1),
+          value: g.call(std.vec4, {
+            x: warped.swizzle('x'),
+            y: warped.swizzle('y'),
+            z: octaves(stdNoise.fbm, {
+              noise: 'worley',
+              octaves: 2,
+              loop: 'fold',
+            }),
+          }),
+        });
+        g.compute({ workgroupSize: [64, 1, 1] });
+        const values = backend.buffers.create({
+          size: samples * 32,
+          usage: ['storage', 'copy-src', 'copy-dst'],
+        });
+        const runner = new ComputeRunner(backend);
+        runner.dispatch(
+          compile(g.build(), { capabilities: backend.capabilities }),
+          {
+            values: { values, octaveCount: 4 },
+            workgroups: [samples / 64],
+          },
+        );
+        const gpu = new Float32Array(await values.read());
+        runner.destroy();
+        values.destroy();
+        for (let i = 0; i < samples; i++) {
+          const p = pointOf(i, 3);
+          const [x, y] = warp([p[0], p[2]], {
+            strength: 0.8,
+            octaves: 3,
+            noise: 'simplex',
+          });
+          const expected = [
+            fbm(p, { octaves: 4 }),
+            fbm(p, { octaves: 4 }),
+            ridged(p, {
+              noise: 'simplex',
+              octaves: 3,
+              gain: 0.6,
+              lacunarity: 2.5,
+            }),
+            turbulence(p, {
+              noise: 'value',
+              octaves: 3,
+              seed: 4,
+              footprint: 0.05,
+            }),
+            x,
+            y,
+            fbm(p, { noise: 'worley', octaves: 2 }),
+          ];
+          expected.forEach((value, k) => {
+            const actual = gpu[i * 8 + k];
+            expect(
+              Math.abs(actual - value),
+              `sample ${i}, value ${k}: ${actual} on the GPU, ${value} on the CPU`,
+            ).toBeLessThan(5e-5);
+          });
+        }
+      });
+
+      // The pixels of the frame, from the top left.
+      const framePixels = async () => {
+        const pixels = await fixture.readPixels();
+        return (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+      };
+      const drawUv = (
+        build: (g: GraphBuilder, uv: PortHandle) => PortHandle,
+      ) => {
+        const g = new GraphBuilder('pattern');
+        const value = build(g, g.builtin('screen-uv'));
+        g.fullscreen({
+          color: g.call(std.vec4, { x: value, y: value, z: value, w: 1 }),
+        });
+        const graph = new RenderGraph();
+        renderer.addFullscreenPass(graph, 'pattern', {
+          material: new Material({ graph: g.build() }),
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        runner.destroy();
+      };
+
+      it('averages the checkerboard over the pixels where its squares are smaller', async () => {
+        // Squares of 4 pixels: black and white, filtered or not.
+        drawUv((g2, uv) =>
+          g2.call(stdPatterns.checkerFiltered, {
+            uv: g2.call(std.mul, { a: uv, b: size / 4 }),
+          }),
+        );
+        let pixel = await framePixels();
+        expectColor(pixel(1, 1), [0, 0, 0, 255]);
+        expectColor(pixel(5, 1), [255, 255, 255, 255]);
+        // Squares of a tenth of a pixel: aliased without the filter, gray
+        // with it.
+        const fine = (g2: GraphBuilder, uv: PortHandle) =>
+          g2.call(std.mul, { a: uv, b: size * 10.3 });
+        drawUv((g2, uv) =>
+          g2.call(stdPatterns.checkerFiltered, { uv: fine(g2, uv) }),
+        );
+        pixel = await framePixels();
+        for (const [x, y] of [
+          [3, 7],
+          [40, 21],
+          [60, 60],
+        ]) {
+          const [gray] = pixel(x, y);
+          expect(
+            Math.abs(gray - 128),
+            `pixel ${x}, ${y}: ${gray}`,
+          ).toBeLessThan(24);
+        }
+        drawUv((g2, uv) => g2.call(stdPatterns.checker, { uv: fine(g2, uv) }));
+        pixel = await framePixels();
+        const values = new Set([...Array(size)].map((_, x) => pixel(x, 31)[0]));
+        expect([...values].sort((a, b) => a - b)).toEqual([0, 255]);
+      });
+      it('bakes a material into a texture with its levels', async () => {
+        // A checkerboard of 8 × 8 squares in a 64 × 64 texture.
+        const pattern = new GraphBuilder('baked checker');
+        const value = pattern.call(stdPatterns.checker, {
+          uv: pattern.call(std.mul, { a: pattern.builtin('screen-uv'), b: 8 }),
+        });
+        pattern.fullscreen({
+          color: pattern.call(std.vec4, { x: value, y: value, z: value, w: 1 }),
+        });
+        const baked = await bakeTexture(renderer, {
+          material: new Material({ graph: pattern.build() }),
+          width: 64,
+        });
+        expect(baked.mipLevelCount).toBe(7);
+        const texels = new Uint8Array(
+          await backend.textures.readTexture(baked),
+        );
+        for (const [x, y] of [
+          [0, 0],
+          [9, 0],
+          [9, 9],
+          [63, 5],
+        ]) {
+          const expected =
+            (Math.floor(x / 8) + Math.floor(y / 8)) % 2 === 0 ? 0 : 255;
+          expect(texels[(y * 64 + x) * 4], `texel ${x}, ${y}`).toBe(expected);
+        }
+        // Its last level (1 × 1): the average, mid-gray.
+        const read = new GraphBuilder('last level');
+        const texel = read.call(std.textureSampleLevel, {
+          texture: read.texture('baked'),
+          sampler: read.sampler('bakedSampler'),
+          uv: read.builtin('screen-uv'),
+          level: 6,
+        });
+        read.fullscreen({
+          color: read.call(std.extend, { xyz: texel.swizzle('rgb'), w: 1 }),
+        });
+        const graph = new RenderGraph();
+        renderer.addFullscreenPass(graph, 'last level', {
+          material: new Material({
+            graph: read.build(),
+            values: { baked, bakedSampler: backend.textures.createSampler() },
+          }),
+          target: graph.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+        });
+        const runner = new RenderGraphRunner(backend);
+        runner.execute(graph);
+        runner.destroy();
+        const [gray] = (await framePixels())(32, 32);
+        expect(Math.abs(gray - 128)).toBeLessThan(4);
+        baked.destroy();
       });
     });
   });

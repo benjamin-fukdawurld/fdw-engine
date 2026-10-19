@@ -187,9 +187,18 @@ export type IntrinsicOp =
   | 'not-equal'
   // Sums its input over the lights of the frame (light.sum).
   | 'light-sum'
+  // The end of a fold loop (loop.end): the state after count iterations.
+  | 'loop-fold'
   // array[index], and the number of elements of a runtime-sized array.
   | 'index'
-  | 'array-length';
+  | 'array-length'
+  // Integers: bitwise operators, shifts and remainder, component-wise.
+  | 'bit-and'
+  | 'bit-or'
+  | 'bit-xor'
+  | 'shift-left'
+  | 'shift-right'
+  | 'remainder';
 
 /**
  * Code provided per shading language. Breaks portability: compilation fails
@@ -237,6 +246,8 @@ export interface MacroContext {
   readonly node: GraphNode;
   /** Its resolved compile-time parameters. */
   readonly params: StaticParams;
+  /** Its input ports, resolved from its parameters. */
+  readonly ports: readonly PortSchema[];
   /**
    * The value feeding an input: its edge, the node default or the port
    * default; undefined for an unconnected optional input.

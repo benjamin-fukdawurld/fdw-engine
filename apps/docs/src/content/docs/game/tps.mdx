@@ -88,10 +88,14 @@ prepare them into compact `.glb` files, in `apps/docs/public/models/forest/`
 
 - **A terrain** of 512 m, drawn by patches as in
   [Tessellation](/fdw-engine/tutorials/tessellation/), with heights of its
-  own: a flat clearing, gentle bumps, and around the play area a rim too
-  steep for the character to climb (`maxSlope` of 42°). The ground is the
-  forest floor of Poly Haven, repeated every 4 m, its normal map over the
-  normal of the height map.
+  own: a flat clearing, gentle bumps (a fbm of `@fdw/engine-noise`), and
+  around the play area a rim too steep for the character to climb
+  (`maxSlope` of 42°). The ground is the forest floor of Poly Haven,
+  repeated every 4 m, its normal map over the normal of the height map; its
+  repetition broken by noises of the world position (patches greener or
+  drier, the scan read at a second scale); on the slopes, a rock baked from
+  noises while the models load, read in triplanar mapping (see
+  [A procedural terrain](/fdw-engine/tutorials/procedural-terrain/)).
 - **2 500 firs**, at least 6 m apart, of three kinds, turned and scaled at
   random. Each kind, each level, each primitive is a single
   `scene.createBatch` for all its firs; `SceneLods` chooses their levels

@@ -259,6 +259,34 @@ function emitInstructions(
         expressions.set(instruction.id, sum);
         continue;
       }
+      case 'loop-fold': {
+        // The state lives in a variable, read by the body as it is at the
+        // start of the iteration and written at its end.
+        const fold = valueName(instruction);
+        const index = `v${op.index}`;
+        lines.push(
+          `${indent}${glslType(type)} ${fold} = ${arg(instruction, 1)};`,
+          `${indent}for (uint ${index} = 0u; ${index} < ${arg(
+            instruction,
+            0,
+          )}; ${index}++) {`,
+        );
+        expressions.set(op.index, index);
+        expressions.set(op.state, fold);
+        instructions.set(op.state, {
+          id: op.state,
+          type,
+          op: { kind: 'load-input', input: fold },
+          args: [],
+        });
+        emitInstructions(op.body, samplers, state, `${indent}  `);
+        lines.push(
+          `${indent}  ${fold} = ${expressions.get(op.result)};`,
+          `${indent}}`,
+        );
+        expressions.set(instruction.id, fold);
+        continue;
+      }
       case 'index':
         // A storage buffer (runtime-sized) is read from its texture.
         expression = isStorage(typeOf(instruction.args[0]))

@@ -306,6 +306,35 @@ describe('WgslCodegen', () => {
     expect(code).toMatch(/ {4}(v\d+) = \1 \+ v\d+;\n {2}\}/);
   });
 
+  it('carries the state of a fold loop, and writes the integer operators', () => {
+    const g = new GraphBuilder('folded hash');
+    const seed = g.uniform('seed', BuiltinTypes.u32);
+    const bits = g.fold(seed, g.uniform('rounds', BuiltinTypes.u32), (state) =>
+      g.call(std.bitXor, {
+        a: g.call(std.mul, { a: state, b: 747796405 }),
+        b: g.call(std.shiftRight, { value: state, amount: 16 }),
+      }),
+    );
+    const unit = g.call(
+      std.convert,
+      { value: g.call(std.bitAnd, { a: bits, b: 255 }) },
+      { params: { to: BuiltinTypes.f32 } },
+    );
+    g.surface({ baseColor: g.call(std.vec3, { x: unit }) });
+    const program = compile(g.build());
+    const code = emit(
+      program.module,
+      wgslLayoutStrategy.resolve(program.layout),
+    );
+    expect(code).toMatch(
+      /var (v\d+): u32 = v\w+;\n {2}for \(var (v\d+): u32 = 0u; \2 < v\w+; \2 = \2 \+ 1u\) \{/,
+    );
+    expect(code).toMatch(/let v\d+: u32 = (v\d+) \* v\d+;/);
+    expect(code).toMatch(/let v\d+: u32 = v\d+ >> v\d+;/);
+    expect(code).toMatch(/ {4}(v\d+) = v\d+;\n {2}\}/);
+    expect(code).toMatch(/let v\d+: u32 = v\d+ & v\d+;/);
+  });
+
   it('discards after the whole body, before returning the color', () => {
     const g = new GraphBuilder('masked');
     const texel = g.call(std.textureSample, {

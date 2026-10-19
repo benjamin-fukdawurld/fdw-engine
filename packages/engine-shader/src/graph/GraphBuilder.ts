@@ -576,6 +576,51 @@ export class GraphBuilder {
   }
 
   /**
+   * A fold loop: state = initial, then `count` times state = body(state,
+   * index); returns the last state. The nodes `body` adds that depend on
+   * the state or the index are computed at each iteration, the others once
+   * before the loop. Unlike an unrolled loop (macro.repeat), the count can
+   * be a uniform (a u32). The state is a numeric scalar or vector, of the
+   * type of `initial` (or `type` for a literal).
+   *
+   * @example The sum of 1, 1/2, 1/4… over a number of terms
+   * ```ts
+   * const sum = g.fold([0, 1], g.uniform('terms', BuiltinTypes.u32), (s) =>
+   *   g.call(std.vec2, {
+   *     x: g.call(std.add, { a: s.swizzle('x'), b: s.swizzle('y') }),
+   *     y: g.call(std.mul, { a: s.swizzle('y'), b: 0.5 }),
+   *   }),
+   * ).swizzle('x');
+   * ```
+   */
+  fold(
+    initial: PortHandle | ConstantValue,
+    count: PortHandle | number,
+    body: (state: PortHandle, index: PortHandle) => PortHandle,
+    options: { type?: ShaderType; label?: string } = {},
+  ): PortHandle {
+    const type =
+      initial instanceof PortHandle
+        ? initial.type
+        : (options.type ??
+          (Array.isArray(initial)
+            ? ({
+                kind: 'vector',
+                size: initial.length,
+                scalar: 'f32',
+              } as ShaderType)
+            : ({ kind: 'scalar', scalar: 'f32' } as ShaderType)));
+    const state = this.call('loop.state', {}, { params: { type } });
+    const index = this.call('loop.index');
+    const next = body(state, index);
+    return this.call(
+      'loop.end',
+      { initial, count, next, state, index },
+      options.label ? { label: options.label } : {},
+    );
+  }
+
+  /**
    * A constant value. It is part of the generated code: changing it recompiles
    * the shader. Use {@link GraphBuilder.uniform} for values that change.
    */

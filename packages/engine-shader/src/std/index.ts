@@ -6,14 +6,22 @@ import * as inputs from './inputs';
 import { createCameraFunctions } from './camera';
 import { createColorFunctions } from './color';
 import { createShadingModels } from './lighting';
+import * as fractal from './fractal';
 import * as lights from './lights';
+import * as loops from './loops';
 import * as macros from './macros';
+import * as mapping from './mapping';
+import { createMappingFunctions } from './mapping';
+import { createNoiseFunctions } from './noise';
+import { createPatternFunctions } from './patterns';
 import * as outputs from './outputs';
 import * as subgraphs from './subgraphs';
 
 export { ShadingModelNames } from './outputs';
 export { defineShadingModel } from './lighting';
 export { ToneMappingNames } from './color';
+export { NoiseNames } from './fractal';
+export type { NoiseName } from './fractal';
 export type { ToneMapping } from './color';
 export type { ShadingModel } from './outputs';
 
@@ -25,11 +33,12 @@ export type { ShadingModel } from './outputs';
  * `cross`, `length`, `normalize`, `reflect`), interpolation (`mix`, `clamp`,
  * `smoothstep`, `select`), comparisons (`less`, `lessEqual`, `greater`,
  * `greaterEqual`, `equal`, `notEqual`), arrays (`index`, `arrayLength`,
- * for storage buffers), textures (`textureSample`, `textureSampleLevel`,
+ * for storage buffers), integers (`remainder`, `bitAnd`, `bitOr`,
+ * `bitXor`, `shiftLeft`, `shiftRight`), textures (`textureSample`, `textureSampleLevel`,
  * `textureSampleCube`, `textureSampleCubeLevel`, `textureLoad`,
  * `textureLoadDepth`), screen space derivatives
  * (`dpdx`, `dpdy`, `fwidth`, fragment stage only), construction (`vec2`,
- * `vec3`, `vec4`, `extend`, `convert`), transforms (`transform`,
+ * `vec3`, `vec4`, `uvec2`, `uvec3`, `uvec4`, `extend`, `convert`), transforms (`transform`,
  * `transform3`) and `perFragment`.
  *
  * @example
@@ -67,6 +76,12 @@ export const std = {
   select: functions.select,
   index: functions.index,
   arrayLength: functions.arrayLength,
+  remainder: functions.remainder,
+  bitAnd: functions.bitAnd,
+  bitOr: functions.bitOr,
+  bitXor: functions.bitXor,
+  shiftLeft: functions.shiftLeft,
+  shiftRight: functions.shiftRight,
   less: functions.less,
   lessEqual: functions.lessEqual,
   greater: functions.greater,
@@ -86,6 +101,9 @@ export const std = {
   vec2: functions.vec2,
   vec3: functions.vec3,
   vec4: functions.vec4,
+  uvec2: functions.uvec2,
+  uvec3: functions.uvec3,
+  uvec4: functions.uvec4,
   extend: functions.extend,
   mat3: functions.mat3,
   transform: functions.transform,
@@ -165,6 +183,96 @@ export const stdLights = {
 } as const;
 
 /**
+ * The fold loops: `fold`, a loop over a function node, and its parts
+ * `state`, `index` and `end` (see {@link GraphBuilder.fold}). The loop is
+ * not unrolled: its count can be a uniform.
+ *
+ * @group Standard library
+ */
+export const stdLoops = {
+  fold: loops.fold,
+  state: loops.state,
+  index: loops.index,
+  end: loops.end,
+} as const;
+
+/**
+ * The noises, for points of 2 to 4 dimensions (the 4th one: time):
+ * - the fractal sums `fbm`, `ridged`, `turbulence` and the domain warping
+ *   `warp`, macros with the noise and the octaves as parameters;
+ * - `value`, `perlin`, `simplex`, `worley`, the noise of the dimension of
+ *   the point;
+ * - by id, the function graphs they call: `noise.value2`…`noise.value4`,
+ *   `noise.perlin2…4`, `noise.simplex2…4`, `noise.worley2…4`, the hashes
+ *   `noise.pcg` (u32), `noise.pcg2d…4d`, `noise.hash2…4` (the cell of a
+ *   point) and `noise.random2…4` (floats in [0, 1) per cell).
+ *
+ * The same noises in TypeScript: the package @fdw/engine-noise.
+ *
+ * @example
+ * ```ts
+ * const height = g.call(stdNoise.fbm, { point: position.swizzle('xz') }, {
+ *   params: { noise: 'simplex', octaves: 6 },
+ * });
+ * ```
+ *
+ * @group Standard library
+ */
+export const stdNoise = {
+  fbm: fractal.fbm,
+  ridged: fractal.ridged,
+  turbulence: fractal.turbulence,
+  warp: fractal.warp,
+  value: fractal.value,
+  perlin: fractal.perlin,
+  simplex: fractal.simplex,
+  worley: fractal.worley,
+} as const;
+
+/**
+ * The patterns, function graphs by id (from a uv: any 2d coordinates):
+ * `checker`, `stripes`, their filtered versions `checkerFiltered`,
+ * `stripesFiltered` (averaged over the pixel by the screen space
+ * derivatives, fragment stage only), `bricks` and `tiles` (mask, position
+ * in the cell, cell, distance to the edge).
+ *
+ * @example
+ * ```ts
+ * const bricks = g.node(stdPatterns.bricks, { inputs: { uv } });
+ * const color = g.call(std.mix, { a: mortar, b: brick, t: bricks.mask });
+ * ```
+ *
+ * @group Standard library
+ */
+export const stdPatterns = {
+  checker: 'pattern.checker',
+  checkerFiltered: 'pattern.checkerFiltered',
+  stripes: 'pattern.stripes',
+  stripesFiltered: 'pattern.stripesFiltered',
+  bricks: 'pattern.bricks',
+  tiles: 'pattern.tiles',
+} as const;
+
+/**
+ * Where a procedural material is computed: the coordinates of the object
+ * or of the world, per fragment (`objectPosition`, `worldPosition`,
+ * `objectNormal`, `worldNormal`), and the triplanar mapping of a function
+ * (`triplanar`) or of a texture (`triplanarTexture`), with its weights
+ * (`mapping.triplanarWeights`, by id).
+ *
+ * @group Standard library
+ */
+export const stdMapping = {
+  triplanar: mapping.triplanar,
+  triplanarTexture: mapping.triplanarTexture,
+  triplanarWeights: 'mapping.triplanarWeights',
+  objectPosition: mapping.objectPosition,
+  worldPosition: mapping.worldPositionNode,
+  objectNormal: mapping.objectNormal,
+  worldNormal: mapping.worldNormal,
+} as const;
+
+/**
  * Macros, by short name: g.node(stdMacros.staticSwitch, { params, inputs }).
  *
  * @group Standard library
@@ -195,6 +303,9 @@ const baseDefinitions: readonly NodeDefinition[] = [
   ...functions.functionDefinitions,
   ...Object.values(stdOutputs),
   ...lights.lightDefinitions,
+  ...loops.loopDefinitions,
+  ...fractal.fractalDefinitions,
+  ...mapping.mappingDefinitions,
   ...subgraphs.subgraphDefinitions,
   ...macros.macroDefinitions,
 ];
@@ -226,6 +337,9 @@ export function standardNodeDefinitions(): readonly NodeDefinition[] {
         ...createColorFunctions(base),
         ...createCameraFunctions(base),
         ...createShadingModels(base),
+        ...createNoiseFunctions(base),
+        ...createPatternFunctions(base),
+        ...createMappingFunctions(base),
       ];
     } finally {
       buildingShadingModels = false;

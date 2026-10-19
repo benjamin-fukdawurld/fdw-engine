@@ -23,6 +23,7 @@ import {
   lightMembers,
   uniformBlockName,
 } from './layout';
+import type { LoopAnalysis } from './loops';
 import type { StagePlan } from './stages';
 import type { WorkingGraph } from './WorkingGraph';
 
@@ -44,7 +45,18 @@ function normalizeConstant(
   return value;
 }
 
-const binaryOperators = { add: '+', sub: '-', mul: '*', div: '/' } as const;
+const binaryOperators = {
+  add: '+',
+  sub: '-',
+  mul: '*',
+  div: '/',
+  remainder: '%',
+  'bit-and': '&',
+  'bit-or': '|',
+  'bit-xor': '^',
+  'shift-left': '<<',
+  'shift-right': '>>',
+} as const;
 
 const comparisons = {
   less: '<',
@@ -357,6 +369,12 @@ function translateNode(
     case 'sub':
     case 'mul':
     case 'div':
+    case 'remainder':
+    case 'bit-and':
+    case 'bit-or':
+    case 'bit-xor':
+    case 'shift-left':
+    case 'shift-right':
       output(
         'result',
         type,
@@ -415,8 +433,10 @@ interface StageContext {
   readonly nodes: ReadonlyMap<NodeId, ResolvedNode>;
   readonly order: readonly NodeId[];
   readonly types: ReadonlyMap<NodeId, NodeTypes>;
-  /** Nodes computed in the body of a light loop. */
+  /** Nodes computed in the body of a light loop or of a fold loop. */
   readonly loopBodies: ReadonlySet<NodeId>;
+  /** The fold loops. */
+  readonly loops: LoopAnalysis;
   /** Output ports of each node read by other nodes. */
   readonly usedPorts: ReadonlyMap<NodeId, ReadonlySet<string>>;
 }
@@ -456,6 +476,10 @@ function translate(
   const resolved = context.nodes.get(id) as ResolvedNode;
   if (resolved.node.type === 'light.sum') {
     translateLightSum(context, builder, resolved);
+    return;
+  }
+  if (resolved.node.type === 'loop.end') {
+    translateFold(context, builder, resolved);
     return;
   }
   translateNode(
@@ -516,6 +540,74 @@ function translateLightSum(
   );
 }
 
+// A fold loop: the state starts from the initial value, then each
+// iteration computes the next one with the nodes the loop owns (the ends
+// of the loops nested in it translate theirs). The other nodes the body
+// depends on are computed before the loop.
+function translateFold(
+  context: StageContext,
+  builder: StageBuilder,
+  { node, inputs }: ResolvedNode,
+): void {
+  const types = context.types.get(node.id) as NodeTypes;
+  const loop = context.loops.loops.get(node.id);
+  const port = (name: string) =>
+    inputs.find((input) => input.name === name) as PortSchema;
+  const count = builder.input(
+    node,
+    port('count'),
+    types.inputs['count'],
+  ) as ValueId;
+  const initial = builder.input(
+    node,
+    port('initial'),
+    types.inputs['initial'],
+  ) as ValueId;
+  const index = builder.newId();
+  const state = builder.newId();
+  builder.beginLoop(index);
+  if (loop?.state !== undefined) {
+    builder.define({ node: loop.state, port: 'value' }, state);
+  }
+  if (loop?.index !== undefined) {
+    builder.define({ node: loop.index, port: 'index' }, index);
+  }
+  for (const id of context.order) {
+    if (
+      context.loops.owner.get(id) === node.id &&
+      id !== loop?.state &&
+      id !== loop?.index
+    ) {
+      translate(context, builder, id, {});
+    }
+  }
+  const result = builder.input(
+    node,
+    port('next'),
+    types.inputs['next'],
+  ) as ValueId;
+  const instructions = builder.endLoop();
+  builder.define(
+    { node: node.id, port: 'result' },
+    builder.emit(
+      types.outputs['result'],
+      { kind: 'loop-fold', index, state, body: instructions, result },
+      [count, initial],
+      node,
+    ),
+  );
+}
+
+// The nodes computed in a loop: the bodies of the light loops and of the
+// fold loops, translated with their light.sum or loop.end.
+function loopBodies(graph: WorkingGraph, loops: LoopAnalysis): Set<NodeId> {
+  const bodies = lightLoopBodies(graph);
+  for (const id of loops.owner.keys()) {
+    bodies.add(id);
+  }
+  return bodies;
+}
+
 function translateStage(
   context: StageContext,
   builder: StageBuilder,
@@ -523,7 +615,7 @@ function translateStage(
   results: Record<string, ValueId>,
 ): void {
   for (const id of context.order) {
-    // Loop bodies are translated with their light.sum.
+    // Loop bodies are translated with their light.sum or loop.end.
     if (stageNodes.has(id) && !context.loopBodies.has(id)) {
       translate(context, builder, id, results);
     }
@@ -537,11 +629,13 @@ export function generateComputeIr({
   nodes,
   order,
   types,
+  loops,
 }: {
   graph: WorkingGraph;
   nodes: ReadonlyMap<NodeId, ResolvedNode>;
   order: readonly NodeId[];
   types: ReadonlyMap<NodeId, NodeTypes>;
+  loops: LoopAnalysis;
 }): ShaderModuleIR {
   const usedPorts = new Map<NodeId, Set<string>>();
   for (const edge of graph.edges) {
@@ -557,7 +651,8 @@ export function generateComputeIr({
     nodes,
     order,
     types,
-    loopBodies: new Set(),
+    loopBodies: loopBodies(graph, loops),
+    loops,
     usedPorts,
   };
   const builder = new StageBuilder(graph, types, new Map());
@@ -572,7 +667,10 @@ export function generateComputeIr({
       continue;
     }
     if (node.type !== 'write.storage') {
-      translate(context, builder, id, {});
+      // Loop bodies are translated with their loop.end.
+      if (!context.loopBodies.has(id)) {
+        translate(context, builder, id, {});
+      }
       continue;
     }
     const portTypes = types.get(id) as NodeTypes;
@@ -622,12 +720,14 @@ export function generateIr({
   order,
   types,
   plan,
+  loops,
 }: {
   graph: WorkingGraph;
   nodes: ReadonlyMap<NodeId, ResolvedNode>;
   order: readonly NodeId[];
   types: ReadonlyMap<NodeId, NodeTypes>;
   plan: StagePlan;
+  loops: LoopAnalysis;
 }): ShaderModuleIR {
   const usedPorts = new Map<NodeId, Set<string>>();
   for (const edge of graph.edges) {
@@ -643,7 +743,8 @@ export function generateIr({
     nodes,
     order,
     types,
-    loopBodies: lightLoopBodies(graph),
+    loopBodies: loopBodies(graph, loops),
+    loops,
     usedPorts,
   };
 

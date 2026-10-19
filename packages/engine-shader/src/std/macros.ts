@@ -159,7 +159,7 @@ export const vertexNormal = (context: MacroContext): ValueSource =>
 
 // The world position of the fragment, from the position attribute (before
 // any positionOffset).
-function worldPosition(context: MacroContext): ValueSource {
+export function worldPosition(context: MacroContext): ValueSource {
   const local = call(context, 'std.extend', {
     xyz: context.add('input.attribute', {
       semantic: 'position',

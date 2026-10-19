@@ -83,6 +83,43 @@ export const arrayLength = intrinsic(
   BuiltinTypes.u32,
 );
 
+// Integer operators, component-wise: the basis of the hash functions of
+// the noises (noise.pcg…), identical on every backend. Unsigned integers
+// wrap around on overflow (std.mul of two u32 keeps the low 32 bits).
+const integerBinary = (id: string, op: IntrinsicOp) =>
+  intrinsic(id, op, [port('a', integer), port('b', integer)], integer);
+
+/** a % b, for integers (the sign of a for i32). */
+export const remainder = integerBinary('remainder', 'remainder');
+/** Bitwise and of integers. */
+export const bitAnd = integerBinary('bitAnd', 'bit-and');
+/** Bitwise or of integers. */
+export const bitOr = integerBinary('bitOr', 'bit-or');
+/** Bitwise exclusive or of integers. */
+export const bitXor = integerBinary('bitXor', 'bit-xor');
+
+/**
+ * value << amount: the bits moved towards the high ones, zeros coming in.
+ * The amount is below the bit count (32).
+ */
+export const shiftLeft = intrinsic(
+  'shiftLeft',
+  'shift-left',
+  [port('value', integer), port('amount', integer)],
+  integer,
+);
+
+/**
+ * value >> amount: the bits moved towards the low ones; zeros coming in for
+ * u32, the sign for i32. The amount is below the bit count (32).
+ */
+export const shiftRight = intrinsic(
+  'shiftRight',
+  'shift-right',
+  [port('value', integer), port('amount', integer)],
+  integer,
+);
+
 export const less = comparison('less', 'less');
 export const lessEqual = comparison('lessEqual', 'less-equal');
 export const greater = comparison('greater', 'greater');
@@ -366,6 +403,24 @@ export const vec4 = intrinsic(
   BuiltinTypes.vec4f,
 );
 
+// Unsigned integer vectors from their components (hashes, cells).
+const unsignedVector = (size: 2 | 3 | 4) =>
+  intrinsic(
+    `uvec${size}`,
+    'construct',
+    ['x', 'y', 'z', 'w']
+      .slice(0, size)
+      .map((name) => port(name, BuiltinTypes.u32, 0)),
+    { kind: 'vector', size, scalar: 'u32' },
+  );
+
+/** A vec2<u32> from its components. */
+export const uvec2 = unsignedVector(2);
+/** A vec3<u32> from its components. */
+export const uvec3 = unsignedVector(3);
+/** A vec4<u32> from its components. */
+export const uvec4 = unsignedVector(4);
+
 /** vec4(xyz, w): typically a color with its alpha, or a position with w = 1. */
 export const extend = intrinsic(
   'extend',
@@ -440,6 +495,12 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   select,
   index,
   arrayLength,
+  remainder,
+  bitAnd,
+  bitOr,
+  bitXor,
+  shiftLeft,
+  shiftRight,
   less,
   lessEqual,
   greater,
@@ -459,6 +520,9 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   vec2,
   vec3,
   vec4,
+  uvec2,
+  uvec3,
+  uvec4,
   extend,
   mat3,
   transform,

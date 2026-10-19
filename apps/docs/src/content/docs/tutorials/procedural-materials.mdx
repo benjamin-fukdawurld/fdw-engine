@@ -1,0 +1,297 @@
+---
+title: Procedural materials
+description: Materials computed at each pixel instead of read from textures — noises, fractal sums, domain warping, cellular noise, patterns, antialiasing, triplanar mapping and baking.
+sidebar:
+  order: 31
+---
+
+import Example from '../../../components/Example.astro';
+
+A texture has a resolution, repeats itself, and needs uv. A **procedural
+material** computes its color at each pixel from the position of the pixel:
+no uv, no visible repetition, as sharp from a meter as from a centimeter,
+and animated for free. The standard library of the material graph has what
+it takes: noises, patterns, and the coordinates to read them at.
+
+The gallery below shows seven of them, none with a texture of its own. In
+front: wood, marble, rock, lava (animated). Behind: bricks and tiles (on the
+uv of cubes), and a rock **baked** once into a texture, read in **triplanar
+mapping** on a sphere whose uv it ignores. The floor is a checkerboard
+**averaged over the pixels**: click to see it without the filter, flickering
+in the distance.
+
+<Example name="procedural-materials" />
+
+The graphs of the gallery are in
+`packages/demo-scenes/src/procedural/materials.ts`; this page goes through
+them.
+
+## Where to compute
+
+A procedural material reads a **position**: `stdMapping.objectPosition`,
+the position in the mesh (the material moves and turns with the object), or
+`stdMapping.worldPosition`, the position in the world (the material is
+continuous from an object to the next: a terrain, walls). Both are computed
+**per fragment**: a noise is not linear, it cannot be interpolated from the
+vertices.
+
+```ts
+import { stdMapping, stdNoise } from '@fdw/engine-shader';
+
+const p = g.call(std.mul, { a: g.call(stdMapping.objectPosition), b: 3 });
+```
+
+The scale sets the size of the features: the noises have about one feature
+per unit.
+
+## The noises
+
+| Noise             | Node               | Looks like                                    |
+| ----------------- | ------------------ | --------------------------------------------- |
+| Value             | `stdNoise.value`   | Soft blobs, a little square                   |
+| Gradient (Perlin) | `stdNoise.perlin`  | Smooth hills and valleys                      |
+| Simplex           | `stdNoise.simplex` | As Perlin, cheaper in 3D and 4D, no axis bias |
+| Cellular (Worley) | `stdNoise.worley`  | Cells: stones, scales, cracks                 |
+
+Each takes a point of **2, 3 or 4 dimensions**: the type of the point picks
+`noise.perlin2`, `noise.perlin3` or `noise.perlin4`. The 4th dimension is
+usually the **time**. All take a `seed` (a `u32`): another seed, another
+noise. The value, gradient and simplex noises are in [-1, 1].
+
+They are built on **integer hashes** of the PCG family (`noise.pcg`,
+`noise.pcg3d`…): 32-bit products, shifts and exclusive ors, on integers
+that wrap around the same way on every GPU. A noise gives the same bits on
+WebGPU, WebGL2 and Vulkan, and in TypeScript: see
+[A procedural terrain](/fdw-engine/tutorials/procedural-terrain/).
+
+## Fractal sums
+
+A single noise is too regular. Its **octaves** (the noise at growing
+frequencies and shrinking amplitudes) added up give the detail of nature:
+
+```ts
+const value = g.call(
+  stdNoise.fbm,
+  { point: p, lacunarity: 2, gain: 0.5 },
+  { params: { noise: 'simplex', octaves: 5 } },
+);
+```
+
+| Macro                 | Each octave adds | Range   | For                       |
+| --------------------- | ---------------- | ------- | ------------------------- |
+| `stdNoise.fbm`        | the noise        | [-1, 1] | Clouds, hills, variations |
+| `stdNoise.ridged`     | (1 - \|noise\|)² | [0, 1]  | Crests, veins             |
+| `stdNoise.turbulence` | \|noise\|        | [0, 1]  | Creases, flames, smoke    |
+
+The octaves are **unrolled** by default: the code of the noise is written
+once per octave. With `loop: 'fold'`, they run in a **loop** instead, whose
+count can change without recompiling, from a uniform:
+
+```ts
+g.call(
+  stdNoise.fbm,
+  { point: p, octaveCount: g.uniform('octaves', BuiltinTypes.u32) },
+  { params: { loop: 'fold' } },
+);
+```
+
+The loop is the `fold` of the material graph: a state carried from an
+iteration to the next. See the [guide](/fdw-engine/guides/material-graph/#loops).
+
+## Domain warping
+
+A noise read at a point moved by another noise swirls and stretches.
+`stdNoise.warp` moves a point by a fbm per coordinate. The marble is a sine
+of the warped point, its veins where the sine crosses zero:
+
+```ts
+const warped = g.call(
+  stdNoise.warp,
+  { point: p, strength: 1.1 },
+  { params: { octaves: 4, noise: 'simplex' } },
+);
+const wave = g.call(std.sin, {
+  x: g.call(std.mul, {
+    a: g.call(std.add, {
+      a: warped.swizzle('x'),
+      b: g.call(std.mul, { a: warped.swizzle('y'), b: 0.6 }),
+    }),
+    b: 5,
+  }),
+});
+// Thin veins where the sine is near 0.
+const vein = g.call(std.pow, {
+  base: g.call(std.sub, { a: 1, b: g.call(std.abs, { x: wave }) }),
+  exponent: 4,
+});
+```
+
+The wood warps the plane of its rings a little, so that they wander.
+
+## Cellular noise
+
+`stdNoise.worley` places a point at random in each cell of a grid, and
+gives four outputs: `f1` and `f2`, the distances to the nearest point and
+to the second one; `id`, the identifier of the cell of the nearest point;
+`random`, a float in [0, 1) for that cell. The rock uses all of them:
+
+```ts
+const cells = g.node(stdNoise.worley, { inputs: { point: p } });
+// Cracks where the two nearest points are about as near.
+const crack = g.call(std.sub, {
+  a: 1,
+  b: g.call(std.smoothstep, {
+    low: 0,
+    high: 0.07,
+    x: g.call(std.sub, { a: cells.f2, b: cells.f1 }),
+  }),
+});
+// Each stone its own shade.
+const shade = g.call(std.mix, {
+  a: [0.3, 0.28, 0.26],
+  b: [0.46, 0.42, 0.37],
+  t: g.call(std.vec3, { x: cells.random, y: cells.random, z: cells.random }),
+});
+```
+
+Its relief is the bump mapping of the same height (`macro.bumpMapping`,
+see [Surface details](/fdw-engine/tutorials/surface-details/)): no normal
+map either.
+
+## Animation
+
+The lava reads a 4D noise whose 4th coordinate is the time: its hot cracks
+move under the crust. The time is the `time` engine value, given to
+`renderer.render({ time })`:
+
+```ts
+const flow = g.call(
+  stdNoise.fbm,
+  {
+    point: g.call(std.extend, {
+      xyz: p,
+      w: g.call(std.mul, { a: g.engine('time'), b: 0.25 }),
+    }),
+  },
+  { params: { noise: 'simplex', octaves: 4 } },
+);
+```
+
+## Patterns
+
+`stdPatterns` draws regular patterns from any 2D coordinates: the uv of a
+mesh, a plane of the world position.
+
+| Pattern                               | Outputs                                                    |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `checker`, `checkerFiltered`          | 0 or 1 per square                                          |
+| `stripes`, `stripesFiltered`          | 1 on the stripes, 0 between                                |
+| `bricks` (`size`, `mortar`, `offset`) | `mask`, `local` (in the brick), `cell` (the brick), `edge` |
+| `tiles` (`size`, `gap`, `radius`)     | the same, tiles with rounded corners                       |
+
+The `cell` of a brick, given to `noise.random2`, gives each brick its own
+color:
+
+```ts
+const bricks = g.node(stdPatterns.bricks, {
+  inputs: { uv, size: [0.25, 0.1], mortar: 0.014, bevel: 0.008 },
+});
+const tint = g.call('noise.random2', { point: bricks.cell });
+const brick = g.call(std.mix, {
+  a: [0.5, 0.16, 0.1],
+  b: [0.66, 0.3, 0.18],
+  t: tint.swizzle('xxx'),
+});
+const color = g.call(std.mix, {
+  a: [0.55, 0.53, 0.5],
+  b: brick,
+  t: g.call(std.vec3, { x: bricks.mask, y: bricks.mask, z: bricks.mask }),
+});
+```
+
+## Antialiasing
+
+A texture has levels of detail: far away, the GPU reads a blurred level. A
+procedural pattern has none: where its squares are smaller than a pixel,
+each pixel picks one at random, and the pattern flickers (click the
+example). Two remedies, both from the **screen space derivatives**, the
+width of a pixel in the units of the pattern:
+
+- **The filtered patterns** (`checkerFiltered`, `stripesFiltered`) average
+  the pattern over the pixel: gray where the squares are smaller.
+- **The filtered sums** (`filtered: true`) fade out the octaves finer than
+  two pixels, to their average.
+
+```ts
+const value = g.call(stdPatterns.checkerFiltered, {
+  uv: position.swizzle('xz'),
+});
+g.call(stdNoise.fbm, { point: p }, { params: { octaves: 6, filtered: true } });
+```
+
+The derivatives exist in the fragment stage only.
+
+## Triplanar mapping and baking
+
+The last sphere has a texture after all, made by noises, once. A **4D
+cellular noise and a fbm** of five octaves cost a lot per pixel; computed
+once into a texture, they cost one read.
+
+```ts
+import { bakeTexture } from '@fdw/engine-core';
+
+const rock = await bakeTexture(renderer, {
+  material: new Material({ graph: rockTextureGraph() }),
+  width: 512,
+});
+```
+
+`bakeTexture` renders a material ending with `g.fullscreen` into a new
+texture, then computes its levels. To repeat without seams, the texture
+must **tile**: its graph reads the noises on a torus of the 4D space, the
+`u` and `v` of the texture as two angles, so that the edges meet:
+
+```ts
+const angles = g.call(std.mul, { a: g.builtin('screen-uv'), b: 2 * Math.PI });
+const torus = g.call(std.vec4, {
+  x: g.call(std.cos, { x: angles.swizzle('x') }),
+  y: g.call(std.sin, { x: angles.swizzle('x') }),
+  z: g.call(std.cos, { x: angles.swizzle('y') }),
+  w: g.call(std.sin, { x: angles.swizzle('y') }),
+});
+```
+
+The sphere reads it in **triplanar mapping**: on the three planes of the
+axes, blended by the normal. No uv, no stretching:
+
+```ts
+const color = g.call(stdMapping.triplanarTexture, {
+  texture: g.texture('rock'),
+  sampler: g.sampler('rockSampler'),
+  position: g.call(stdMapping.objectPosition),
+  normal: g.call(stdMapping.objectNormal),
+  scale: 1.2,
+  sharpness: 6,
+});
+```
+
+`stdMapping.triplanar` does the same with a function of a uv (a pattern, a
+2D noise): three calls, blended. The forest of the
+[third-person game](/fdw-engine/game/tps/) puts this rock on its slopes.
+
+## What it costs
+
+A procedural material costs instructions instead of memory. The
+instructions of the intermediate representation of the fragment stage of a
+material reading one noise at the world position (constants included):
+
+| Noise    | 2D  | 3D    | 4D                   |
+| -------- | --- | ----- | -------------------- |
+| Value    | 220 | 400   | 860                  |
+| Gradient | 250 | 460   | 990                  |
+| Simplex  | 230 | 290   | 420                  |
+| Cellular | 480 | 1 350 | 110, in a loop of 81 |
+
+The simplex noise grows the slowest with the dimension: prefer it in 3D
+and 4D. A fractal sum costs its octaves. Bake what does not change, filter
+what is far, and keep the octaves that the pixel can see.

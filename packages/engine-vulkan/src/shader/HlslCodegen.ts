@@ -297,6 +297,30 @@ function emitInstructions(
         expressions.set(instruction.id, sum);
         continue;
       }
+      case 'loop-fold': {
+        // The state lives in a variable, read by the body as it is at the
+        // start of the iteration and written at its end.
+        const fold = valueName(instruction);
+        const index = `v${op.index}`;
+        lines.push(
+          `${indent}${hlslType(type)} ${fold} = ${arg(instruction, 1)};`,
+          `${indent}for (uint ${index} = 0u; ${index} < ${arg(
+            instruction,
+            0,
+          )}; ${index} = ${index} + 1u) {`,
+        );
+        expressions.set(op.index, index);
+        types.set(op.index, { kind: 'scalar', scalar: 'u32' });
+        expressions.set(op.state, fold);
+        types.set(op.state, type);
+        emitInstructions(op.body, resources, state, `${indent}  `);
+        lines.push(
+          `${indent}  ${fold} = ${expressions.get(op.result)};`,
+          `${indent}}`,
+        );
+        expressions.set(instruction.id, fold);
+        continue;
+      }
       case 'index':
         expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
         break;
