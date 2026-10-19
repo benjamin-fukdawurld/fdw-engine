@@ -118,7 +118,7 @@ Un jeu tient donc une centaine de voix sans y penser ; au-delà, `SoundEffect.ma
 3. **Un nombre de voix global** avec des priorités (les voix lointaines et faibles volées les premières), au-delà de `SoundEffect.maxVoices`.
 4. **Le TPS (P8)** : les pas sur les événements de l'animation graph (P6), les coups d'épée, l'ambiance de la forêt en flux.
 5. **Les graphs de comportement (P9)** : des nœuds « jouer un son ».
-6. **L'éditeur (P13)** : les bus et leurs curseurs, l'écoute des sons de la bibliothèque.
+6. **L'éditeur de jeu (P20)** : les bus et leurs curseurs, l'écoute des sons de la bibliothèque.
 
 ## 9. Décisions
 

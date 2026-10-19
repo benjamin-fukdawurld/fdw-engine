@@ -216,6 +216,10 @@ The functions and the materials give values of the type of the format:
   `r32uint` texture back (see [Picking](/fdw-engine/tutorials/picking/)).
   Beyond 2^24 objects, select by ray casting
   (`scene.raycast`) rather than with an identifier buffer.
+  The items of a scene have theirs (`scene.objectId(entity)`). A mesh with
+  an `objectId` attribute (`uint32`, a merged mesh: `mergeMeshes`, the
+  [static batches](/fdw-engine/tutorials/static-batching/)) gives its own
+  to each vertex, in place of the item's.
 - **Transparent items only blend their color**: they write no output, and
   cannot be selected through `object-id`.
 - `samples` sets the multisampling of a call (the renderer's by default).

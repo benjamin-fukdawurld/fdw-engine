@@ -244,4 +244,4 @@ l'application le met en pause dans `onPause`.
   chacune.
 - Pas encore d'éditeur : les graphs se construisent en code ou s'écrivent
   en JSON. Les états des nœuds et la trace sont ce qu'un éditeur montrera
-  (P13).
+  (P19).

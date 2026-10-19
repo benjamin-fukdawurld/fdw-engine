@@ -224,6 +224,10 @@ Les fonctions et les matériaux donnent des valeurs du type du format :
   [sélection au pixel](/fdw-engine/fr/tutorials/picking/)). Au-delà de 2^24
   objets, sélectionnez par lancer de rayons (`scene.raycast`) plutôt
   qu'avec un buffer d'identifiants.
+  Les éléments d'une scène ont les leurs (`scene.objectId(entity)`). Un
+  mesh doté d'un attribut `objectId` (`uint32`, un mesh fusionné :
+  `mergeMeshes`, les [lots statiques](/fdw-engine/fr/tutorials/static-batching/))
+  donne le sien à chaque sommet, à la place de celui de l'élément.
 - **Les transparents ne mélangent que leur couleur** : ils n'écrivent
   aucune sortie, et ne peuvent pas être sélectionnés par `object-id`.
 - `samples` règle le multi-échantillonnage d'un appel (celui du renderer

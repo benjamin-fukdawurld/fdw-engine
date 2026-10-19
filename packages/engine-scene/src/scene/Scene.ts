@@ -47,6 +47,9 @@ export const NodeFlags = {
   // Left out by its level of detail (SceneLods): not drawn nor found, but
   // kept in its index, without invalidation. Set on the renderers.
   Culled: 64,
+  // Drawn in a static batch (StaticBatches): left out of the render
+  // queries, which give the batch instead, but found by the others.
+  Batched: 128,
 } as const;
 
 /** What a node is created with. */
@@ -106,6 +109,26 @@ export interface OcclusionCuller {
   visible(scene: Scene, entity: number): boolean;
 }
 
+/**
+ * @internal What a scene tells its static batches (StaticBatches), which
+ * draw some of its static renderers.
+ */
+export interface SceneBatching {
+  // The renderer may have changed: its transform, mesh, material, flags.
+  changed(entity: number): void;
+  // The renderer is about to go.
+  removed(entity: number): void;
+  // At the end of a flush: rebuilds the batches whose renderers changed.
+  apply(): void;
+  // The batches of the render queries.
+  query(
+    frustum: Frustum,
+    layers: number,
+    visit: (item: Renderable) => void,
+    camera: boolean,
+  ): void;
+}
+
 const None = -1;
 
 const {
@@ -156,6 +179,8 @@ export class Scene implements SceneGraph {
 
   /** Called before a camera query keeps a node: the occlusion culling. */
   occlusion?: OcclusionCuller;
+  /** @internal The static batches, set by StaticBatches. */
+  batching?: SceneBatching;
 
   private readonly _dynamic = new Octree<number>();
   private readonly _static = new Octree<number>();
@@ -185,7 +210,7 @@ export class Scene implements SceneGraph {
       previous: 'i32',
     });
     this.NodeState = world.defineComponent('node state', {
-      flags: 'u8',
+      flags: 'u16',
       layers: 'u32',
       lastVisible: 'u32',
       label: 'ref',
@@ -216,6 +241,7 @@ export class Scene implements SceneGraph {
       this.queue(entity);
     });
     world.onRemoved(this.MeshRenderer, (entity) => {
+      this.batching?.removed(entity);
       this.unindex(entity);
       (this.MeshRenderer.item[entity] as SceneItem).detach();
     });
@@ -442,6 +468,19 @@ export class Scene implements SceneGraph {
   }
 
   /**
+   * Signals that the mesh, the material, the shadow or the layers of a
+   * renderer changed (Node.setMesh and Node.layers call it; systems
+   * writing the columns of MeshRenderer or NodeState directly too): its
+   * bounds and its static batch follow at the next flush.
+   */
+  rendererChanged(entity: number): void {
+    if (this.MeshRenderer.has(entity)) {
+      this.MeshRenderer.boundsVersion[entity] = 0xffffffff;
+      this.queue(entity);
+    }
+  }
+
+  /**
    * Computes the world matrix of an entity if it is stale (and those of its
    * stale ancestors first), in its block of the pool. The normal matrix is
    * computed when read (TransformPool.updateNormal()).
@@ -490,6 +529,7 @@ export class Scene implements SceneGraph {
       this._pendingStatic = [];
       this._static.insertAll(this.staticEntries(pending));
     }
+    this.batching?.apply();
   }
 
   // The static renderers waiting for the index, with their bounds: one box,
@@ -514,6 +554,7 @@ export class Scene implements SceneGraph {
     const { MeshRenderer, Light, CameraView } = this;
     if (MeshRenderer.has(entity)) {
       this.updateBounds(entity);
+      this.batching?.changed(entity);
     }
     if (Light.has(entity)) {
       this.follow(entity, Light.light[entity] as BaseLight);
@@ -560,6 +601,21 @@ export class Scene implements SceneGraph {
     }
     const b = MeshRenderer.bounds;
     const o = entity * 6;
+    const isStatic = this.NodeState.flags[entity] & NodeFlags.Static;
+    const indexed = MeshRenderer.indexed[entity];
+    // The same bounds, in the right index (a renderer given another mesh
+    // or other layers): nothing to move.
+    if (
+      indexed === (isStatic ? 2 : 1) &&
+      b[o] === Math.fround(box.min[0]) &&
+      b[o + 1] === Math.fround(box.min[1]) &&
+      b[o + 2] === Math.fround(box.min[2]) &&
+      b[o + 3] === Math.fround(box.max[0]) &&
+      b[o + 4] === Math.fround(box.max[1]) &&
+      b[o + 5] === Math.fround(box.max[2])
+    ) {
+      return;
+    }
     b[o] = box.min[0];
     b[o + 1] = box.min[1];
     b[o + 2] = box.min[2];
@@ -568,8 +624,6 @@ export class Scene implements SceneGraph {
     b[o + 5] = box.max[2];
     (MeshRenderer.item[entity] as SceneItem).boundsChanged(box);
 
-    const isStatic = this.NodeState.flags[entity] & NodeFlags.Static;
-    const indexed = MeshRenderer.indexed[entity];
     if (isStatic) {
       if (indexed === 2) {
         // Indexed at the end of the flush, if not yet.
@@ -685,6 +739,21 @@ export class Scene implements SceneGraph {
     return out;
   }
 
+  /**
+   * The identifier of the object of a renderer, written by the 'object-id'
+   * outputs of the scene passes for its pixels, in a static batch too: its
+   * entity + 1 (0 is no object).
+   */
+  objectId(entity: number): number {
+    return entity + 1;
+  }
+
+  /** The entity of an identifier read back (pickIds), if alive. */
+  entityOf(objectId: number): number | undefined {
+    const entity = objectId - 1;
+    return objectId > 0 && this.world.isAlive(entity) ? entity : undefined;
+  }
+
   /** The nodes marked as occluders, for the occlusion culling. */
   occluders(): number[] {
     this.flush();
@@ -716,7 +785,8 @@ export class Scene implements SceneGraph {
     const occlusion = camera ? this.occlusion : undefined;
     const emit = (entity: number) => {
       if (
-        flags[entity] & (NodeFlags.HiddenInTree | NodeFlags.Culled) ||
+        flags[entity] &
+          (NodeFlags.HiddenInTree | NodeFlags.Culled | NodeFlags.Batched) ||
         !(layerColumn[entity] & layers) ||
         (occlusion && !occlusion.visible(this, entity))
       ) {
@@ -729,6 +799,7 @@ export class Scene implements SceneGraph {
     };
     this._static.queryFrustum(frustum, emit);
     this._dynamic.queryFrustum(frustum, emit);
+    this.batching?.query(frustum, layers, visit, camera);
   }
 
   lights(): BaseLight[] {
@@ -953,5 +1024,10 @@ export class SceneItem implements RenderItem {
 
   get castShadow(): boolean {
     return this._scene.MeshRenderer.noShadow[this.entity] === 0;
+  }
+
+  /** The identifier of the object, for picking: Scene.objectId(). */
+  get id(): number {
+    return this.entity + 1;
   }
 }

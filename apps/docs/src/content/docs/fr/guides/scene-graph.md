@@ -132,6 +132,34 @@ lods.install(scheduler, camera); // ou lods.update(camera) à chaque image
   et l'occlusion culling. `bias` multiplie les distances ; un champ de
   vision plus étroit que `referenceFov` garde les niveaux fins plus loin.
 
+## Lots statiques
+
+`StaticBatches` fusionne les renderers statiques d'une cellule d'une
+grille et d'un matériau en un seul mesh dans l'espace du monde, dessiné en
+un appel (voir [Le batching statique](/fdw-engine/fr/tutorials/static-batching/)) :
+pour les décors statiques où chaque objet a son mesh, que l'instancing ne
+peut pas regrouper.
+
+```ts
+const batches = new StaticBatches(scene, { cellSize: 40 });
+// … batches.stats, batches.batchOf(entity), batches.destroy()
+```
+
+- Les renderers fusionnés reçoivent `NodeFlags.Batched` : les requêtes de
+  rendu donnent leur lot à leur place, les autres requêtes les trouvent
+  toujours, dans l'index statique.
+- Un lot est reconstruit au flush suivant quand un de ses renderers bouge,
+  est caché, retiré, ou change de mesh, de matériau ou de calques
+  (`scene.rendererChanged(entity)` pour les systèmes qui écrivent
+  directement les colonnes).
+- Écartés : les matériaux transparents, les meshes que `mergeKey` refuse
+  (d'autres primitives que des triangles, des skins, des positions dans
+  un autre format que des flottants 32 bits), et ce que l'option `filter`
+  rejette (les niveaux de détail).
+- Chaque renderer a un identifiant, `scene.objectId(entity)` (son entité
+  plus un ; `scene.entityOf(id)` pour revenir), rangé par sommet dans les
+  lots : les sorties `'object-id'` donnent l'objet, fusionné ou non.
+
 ## La scène comme source
 
 ```ts
@@ -318,3 +346,11 @@ l'étape 1 du jeu du labyrinthe, environ 3700 objets dessinés par frame avec
 leurs ombres, tourne à environ 170 images par seconde sous Vulkan (environ 89
 avant la table d'objets et l'instanciation) et 120 sous Dawn (42 avant la
 table d'objets).
+
+Les objets statiques qui ont chacun leur mesh sont fusionnés par les lots
+statiques : les 1 600 objets du décor du
+[batching statique](/fdw-engine/fr/tutorials/static-batching/), 1 200 draws
+un par un, en font environ 70 fusionnés, de 169 à environ 830 images par
+seconde sous Vulkan et de 50 à environ 300 sous Dawn ; les lots coûtent une
+seconde copie de leur géométrie (5,2 Mo ici) et environ 60 ms de
+construction.

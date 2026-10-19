@@ -9,4 +9,6 @@ export { lightRange } from './lightRange';
 export { lightReaches, spotVolume } from './lightVolumes';
 export { MaxObjectId } from './ObjectRows';
 export { computeTangents } from './tangents';
+export { mergeKey, mergeMeshes } from './merge';
+export type { MeshPart } from './merge';
 export { cascadeSplits, sliceSphere } from './shadows';

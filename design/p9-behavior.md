@@ -2,7 +2,7 @@
 
 Le design de la phase P9 de la [roadmap](roadmap.md#p9-graphs-de-comportement) : des graphs de comportement sur le cœur de graph de P6, un flux d'exécution déclenché par des événements et un flux de données, comme les blueprints d'Unreal ; leur exécution, interprétée ou compilée en JavaScript, comparées, intégrée à l'ordonnanceur ECS (un graph est un système) ; leur débogage (l'état des nœuds pendant l'exécution, des points d'arrêt) ; la validation : l'IA des ennemis du TPS réécrite en graph.
 
-Contraintes : un package indépendant (le cœur de graph seulement, pas la scène ni le rendu) ; le même graph sur le web et en natif ; des graphs qui restent des données JSON, pour les éditeurs de P13 ; pas de code injectable par un graph chargé d'un fichier ; le TPS au même coût et au même comportement qu'avec ses systèmes écrits à la main.
+Contraintes : un package indépendant (le cœur de graph seulement, pas la scène ni le rendu) ; le même graph sur le web et en natif ; des graphs qui restent des données JSON, pour l'éditeur de graphs de P19 ; pas de code injectable par un graph chargé d'un fichier ; le TPS au même coût et au même comportement qu'avec ses systèmes écrits à la main.
 
 ## 1. Aujourd'hui
 
@@ -144,7 +144,7 @@ Le code compilé est environ 18 fois plus rapide que l'interpréteur ; la versio
 
 ## 10. Décisions
 
-Prises pour la réalisation (18 octobre 2026), à revoir avec P13 :
+Prises pour la réalisation (18 octobre 2026), à revoir avec l'éditeur de graphs (P19) :
 
 1. **Le modèle des blueprints** : un flux d'exécution et un flux de données ; une machine à états est un switch sur une variable (§2.1).
 2. **Les valeurs à la demande, une fois par nœud du flux** qui les lit (§2.2).
@@ -160,7 +160,7 @@ Prises pour la réalisation (18 octobre 2026), à revoir avec P13 :
 
 ## 12. La suite
 
-1. **L'éditeur de graphs** (P13) : les états des nœuds et la trace dessinés sur les fils, les points d'arrêt posés à la souris, sur le cœur de graph commun aux matériaux et aux animations.
+1. **L'éditeur de graphs** (P19) : les états des nœuds et la trace dessinés sur les fils, les points d'arrêt posés à la souris, sur le cœur de graph commun aux matériaux et aux animations.
 2. **Des fonctions et des macros** : un graph appelé par un autre, ses entrées et ses sorties déclarées.
 3. **Un événement pour toutes les instances** (`broadcast`), et des événements entre systèmes (un graph de niveau qui réveille les ennemis).
 4. **Des nœuds qui durent** au-delà du délai (aller quelque part, jouer une animation jusqu'au bout), et un arbre de comportement construit dessus.

@@ -126,7 +126,7 @@ La liaison coûte donc environ 0,6 µs par corps en mouvement et par pas (lectur
 3. **Les ragdolls** sur les squelettes de P6, les véhicules (le `DynamicRayCastVehicleController` de Rapier), les corps mous.
 4. **Le déterminisme multi-plateforme** (le paquet déterministe de Rapier) pour le réseau, et l'instantané du monde (`takeSnapshot`) pour les sauvegardes.
 5. **Un moteur natif** (un addon Rust ou C++) derrière la même API, si une démo dépasse le budget d'une image.
-6. **L'éditeur (P13)** : les formes en données simples se sérialisent et s'éditent ; la vue de débogage y servira telle quelle.
+6. **L'éditeur de jeu (P20)** : les formes en données simples se sérialisent et s'éditent ; la vue de débogage y servira telle quelle.
 
 ## 9. Décisions
 
