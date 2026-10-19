@@ -17,7 +17,8 @@ batching** merges the static objects of a region and of a material into
 one mesh: about 70 calls instead of 1 200.
 
 Click the canvas to switch the batching off and on. Hover an object: its
-name comes back from the GPU, batched or not.
+name comes back from the GPU, batched or not. A fallen drum rolls to and
+fro: its batch is not rebuilt, only its vertices are written again.
 
 <Example name="static-batching" />
 
@@ -55,16 +56,20 @@ and a group of more than `maxVertices` (262 144) vertices is split.
 
 ## When an object changes
 
-A batch is **rebuilt when one of its objects changes**: moved, hidden,
-removed, given another mesh or material (`node.setMesh`), other layers.
-The changes are applied at the next flush of the scene, before the next
-frame, like the bounds and the spatial index. A system writing the
+An object that **moves in its cell** has its vertices rewritten in
+place: the renderer writes only these bytes to the GPU, about 0.03 ms for
+an object of the square. A batch is **rebuilt** when one of its objects
+leaves its cell, is hidden, removed, given another mesh or material
+(`node.setMesh`), other layers, or a mirror more or less (its faces turn
+over). The changes are applied at the next flush of the scene, before the
+next frame, like the bounds and the spatial index. A system writing the
 columns of the renderers directly calls `scene.rendererChanged(entity)`.
 
 Rebuilding a batch is merging its meshes again: about a millisecond for
 the hundreds of rocks of a cell, 60 ms for the whole square at the
-start. Fine for a door opened from time to time, not for an object that
-moves at every frame: that one is not static.
+start. `batches.stats` counts the `rebuilds` and the moves in place
+(`updates`). Fine for a door opened from time to time; an object that
+moves at every frame is not static, and is better drawn alone.
 
 ## Picking in a batch
 
@@ -88,11 +93,13 @@ index.
 
 ## What it costs
 
-- **The geometry, twice.** Each batch holds a copy of the meshes of its
-  objects, in world space, plus 4 bytes per vertex for the identifiers:
-  5.2 MB for the 4.7 MB of the square, on the CPU and on the GPU.
-  `batches.stats` gives the bytes, the batches, the rebuilds and their
-  time.
+- **The geometry, twice on the GPU.** Each batch holds a copy of the
+  meshes of its objects, in world space, plus 4 bytes per vertex for the
+  identifiers: 5.2 MB for the 4.7 MB of the square. On the CPU, a batch
+  gives its copy back once uploaded (`stats.cpuBytes` falls to 0 after the
+  first frame); it merges its objects again only if its data is read, by
+  another renderer for example. `batches.stats` gives the bytes, the
+  batches, the rebuilds and their time.
 - **Culling by cell.** A batch is drawn whole as soon as a part of its
   cell is in view, and casts all its shadows. Smaller cells cull finer
   and rebuild less; larger ones draw fewer calls. The occlusion culling

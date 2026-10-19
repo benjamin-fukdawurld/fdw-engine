@@ -142,10 +142,13 @@ const batches = new StaticBatches(scene, { cellSize: 40 });
 - The renderers merged get `NodeFlags.Batched`: the render queries give
   their batch instead, the other queries still find them, in the static
   index.
-- A batch is rebuilt at the next flush when one of its renderers moves,
-  is hidden, removed, or changes mesh, material or layers
-  (`scene.rendererChanged(entity)` for the systems writing the columns
-  directly).
+- A renderer that moves in its cell rewrites its own vertices in place
+  (only these bytes go to the GPU). A batch is rebuilt at the next flush
+  when one of its renderers leaves its cell, is hidden, removed, mirrored,
+  or changes mesh, material or layers (`scene.rendererChanged(entity)` for
+  the systems writing the columns directly).
+- Once uploaded, a batch gives its CPU copy back, and merges again if its
+  data is read.
 - Left out: the transparent materials, the meshes that `mergeKey` refuses
   (other primitives than triangles, skins, positions in other formats than
   32-bit floats), and what the `filter` option rejects (the levels of
@@ -333,4 +336,5 @@ the 1 600 objects of the set of
 [Static batching](/fdw-engine/tutorials/static-batching/), 1 200 draws
 alone, are about 70 batched, from 169 to about 830 frames per second on
 Vulkan and from 50 to about 300 on Dawn; the batches cost a second copy
-of their geometry (5.2 MB there) and about 60 ms to build.
+of their geometry on the GPU (5.2 MB there), about 60 ms to build, and
+0.03 ms to move an object in place.

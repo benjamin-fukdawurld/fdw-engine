@@ -17,7 +17,9 @@ il n'a rien à partager, et chaque objet serait un appel de dessin. Le
 matériau en un seul mesh : environ 70 appels au lieu de 1 200.
 
 Cliquez sur le canvas pour couper et remettre le batching. Survolez un
-objet : son nom revient du GPU, fusionné ou non.
+objet : son nom revient du GPU, fusionné ou non. Un tambour tombé roule
+d'avant en arrière : son lot n'est pas reconstruit, seuls ses sommets sont
+réécrits.
 
 <Example name="static-batching" />
 
@@ -57,18 +59,22 @@ découpé.
 
 ## Quand un objet change
 
-Un lot est **reconstruit quand un de ses objets change** : déplacé,
-caché, retiré, doté d'un autre mesh ou d'un autre matériau
-(`node.setMesh`), d'autres calques. Les changements sont appliqués au
+Un objet qui **bouge dans sa cellule** voit ses sommets réécrits sur
+place : le renderer n'envoie que ces octets au GPU, environ 0,03 ms pour
+un objet de la place. Un lot est **reconstruit** quand un de ses objets
+quitte sa cellule, est caché, retiré, doté d'un autre mesh ou d'un autre
+matériau (`node.setMesh`), d'autres calques, ou d'un miroir de plus ou de
+moins (ses faces se retournent). Les changements sont appliqués au
 prochain flush de la scène, avant l'image suivante, comme les bornes et
 l'index spatial. Un système qui écrit directement les colonnes des
 renderers appelle `scene.rendererChanged(entity)`.
 
 Reconstruire un lot, c'est fusionner de nouveau ses meshes : environ une
 milliseconde pour les centaines de rochers d'une cellule, 60 ms pour
-toute la place au départ. Très bien pour une porte ouverte de temps en
-temps, pas pour un objet qui bouge à chaque image : celui-là n'est pas
-statique.
+toute la place au départ. `batches.stats` compte les reconstructions
+(`rebuilds`) et les déplacements sur place (`updates`). Très bien pour une
+porte ouverte de temps en temps ; un objet qui bouge à chaque image n'est
+pas statique, et se dessine mieux seul.
 
 ## La sélection dans un lot
 
@@ -92,11 +98,13 @@ spatial.
 
 ## Ce qu'il coûte
 
-- **La géométrie, deux fois.** Chaque lot garde une copie des meshes de
-  ses objets, dans l'espace du monde, plus 4 octets par sommet pour les
-  identifiants : 5,2 Mo pour les 4,7 Mo de la place, côté CPU et côté
-  GPU. `batches.stats` donne les octets, les lots, les reconstructions et
-  leur durée.
+- **La géométrie, deux fois sur le GPU.** Chaque lot garde une copie des
+  meshes de ses objets, dans l'espace du monde, plus 4 octets par sommet
+  pour les identifiants : 5,2 Mo pour les 4,7 Mo de la place. Côté CPU,
+  un lot rend sa copie une fois envoyé (`stats.cpuBytes` tombe à 0 après
+  la première image) ; il ne refusionne ses objets que si ses données sont
+  relues, par un autre renderer par exemple. `batches.stats` donne les
+  octets, les lots, les reconstructions et leur durée.
 - **Un culling par cellule.** Un lot est dessiné en entier dès qu'une
   partie de sa cellule est visible, et projette toutes ses ombres. Des
   cellules plus petites cullent plus finement et reconstruisent moins ;

@@ -19,7 +19,8 @@ import type { Example } from './runtime';
 // stones, crates, barrels, rocks. Instancing cannot draw them together;
 // the static batching merges those of a cell and of a material into one
 // mesh. Click the canvas to switch it off and on; hover an object to name
-// it, batched or not.
+// it, batched or not. A fallen drum rolls to and fro: in its batch, only
+// its vertices are written again.
 const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const scene = new Scene();
   const decor = buildDecor(scene);
@@ -38,14 +39,27 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const runner = new RenderGraphRunner(backend);
   let drawCalls = 0;
   let hover = '—';
-  const show = () =>
+  const show = () => {
+    const stats = batches?.stats;
     info(
       `batching ${batches ? 'on' : 'off'} (click) · ${drawCalls} draw calls for ${
         decor.objects.length
       } objects${
-        batches ? ` (${batches.stats.batches} batches)` : ''
+        stats
+          ? ` (${stats.batches} batches, ${(stats.bytes / 1e6).toFixed(
+              1,
+            )} MB on the GPU, ${(stats.cpuBytes / 1e6).toFixed(
+              1,
+            )} MB on the CPU, ${stats.updates} moves in place)`
+          : ''
       } · under the mouse: ${hover}`,
     );
+  };
+
+  // The drum that rolls, along its axis, staying in its cell.
+  const drum = decor.objects.find((node) => node.name === 'drum');
+  const from = drum?.transform.position;
+  const start = from && { x: from.x, y: from.y, z: from.z };
 
   // The static nodes of a cell of 40 m and of a material: one mesh each.
   let batches: StaticBatches | undefined = new StaticBatches(scene, {
@@ -96,6 +110,13 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   });
 
   onFrame((time) => {
+    if (drum && start) {
+      drum.transform.position = {
+        x: start.x + Math.sin(time * 1.5) * 0.8,
+        y: start.y,
+        z: start.z,
+      };
+    }
     // Around the square, looking at its center.
     const angle = time * 0.08;
     const radius = decor.half * 0.9;

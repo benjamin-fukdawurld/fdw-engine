@@ -1,6 +1,8 @@
 import {
+  isMirror,
   mergeKey,
   mergeMeshes,
+  updateMergedVertices,
   type Material,
   type Mesh,
   type MeshPart,
@@ -45,11 +47,16 @@ export interface StaticBatchesStats {
   readonly batched: number;
   readonly vertices: number;
   // The bytes of the merged vertices and indices: a second copy of the
-  // geometry of the batched renderers, on the GPU and on the CPU.
+  // geometry of the batched renderers, on the GPU.
   readonly bytes: number;
+  // Those still on the CPU: the batches not drawn yet. A batch gives its
+  // CPU copy back once uploaded, and merges again if it is read.
+  readonly cpuBytes: number;
   // The batches rebuilt since the start, and the time spent, in ms.
   readonly rebuilds: number;
   readonly rebuildTime: number;
+  // The renderers moved in place: their vertices rewritten, not the batch.
+  readonly updates: number;
 }
 
 /** A batch: the renderers of a cell and of a material, merged in one mesh. */
@@ -67,8 +74,24 @@ export class StaticBatch implements WorldRenderItem {
     readonly layers: number,
     // The renderers merged, in the order of their vertices.
     readonly entities: Uint32Array,
+    /** @internal The first vertex of each renderer in the mesh. */
+    readonly firstVertices: Uint32Array,
+    /** @internal 1 for the renderers merged with a mirror. */
+    readonly mirrors: Uint8Array,
   ) {}
 }
+
+// The bytes of a mesh, from its description: its data may be on the GPU
+// only.
+const byteLength = ({ description }: Mesh) =>
+  description.vertexBuffers.reduce(
+    (sum, buffer) => sum + buffer.stride * description.vertexCount,
+    0,
+  ) +
+  (description.indexBuffer
+    ? description.indexBuffer.count *
+      (description.indexBuffer.format === 'uint16' ? 2 : 4)
+    : 0);
 
 // The renderers of a cell, of a material, of the same attributes, layers
 // and shadow: what can be merged.
@@ -84,6 +107,9 @@ interface Member {
   worldVersion: number;
   mesh: Mesh;
   meshVersion: number;
+  // Its batch, and its place there, once built.
+  batch?: StaticBatch;
+  slot: number;
 }
 
 /**
@@ -94,8 +120,10 @@ interface Member {
  * draws in one call the objects sharing a mesh and a material.
  *
  * A batch is rebuilt, at the next flush of the scene, when one of its
- * renderers changes (moves, is hidden, removed, given another mesh or
- * material: see Scene.rendererChanged). The renderers batched get the flag
+ * renderers changes (is hidden, removed, given another mesh or material,
+ * leaves its cell: see Scene.rendererChanged). A renderer that moves in its
+ * cell only rewrites its own vertices, in place: the renderers write these
+ * bytes alone to the GPU. Once uploaded, a batch gives its CPU copy back. The renderers batched get the flag
  * NodeFlags.Batched: the render queries give their batch instead, the
  * other queries (raycasts, volumes) still find them, and the 'object-id'
  * outputs still write their own identifier, stored per vertex.
@@ -114,12 +142,15 @@ export class StaticBatches implements SceneBatching {
   private readonly _groups = new Map<string, Group>();
   private readonly _members = new Map<number, Member>();
   private readonly _dirty = new Set<Group>();
+  // The batches whose renderers moved in place: their bounds to update.
+  private readonly _moved = new Set<StaticBatch>();
   private readonly _index = new Octree<StaticBatch>();
   private readonly _materials = new WeakMap<Material, number>();
   private _nextMaterial = 0;
   private readonly _box = new Aabb();
   private _rebuilds = 0;
   private _rebuildTime = 0;
+  private _updates = 0;
 
   constructor(
     private readonly _scene: Scene,
@@ -148,9 +179,7 @@ export class StaticBatches implements SceneBatching {
   /** The batch drawing a renderer, if any. */
   batchOf(entity: number): StaticBatch | undefined {
     this._scene.flush();
-    return this._members
-      .get(entity)
-      ?.group.batches.find((batch) => batch.entities.includes(entity));
+    return this._members.get(entity)?.batch;
   }
 
   get stats(): StaticBatchesStats {
@@ -158,21 +187,24 @@ export class StaticBatches implements SceneBatching {
     let batched = 0;
     let vertices = 0;
     let bytes = 0;
+    let cpuBytes = 0;
     for (const batch of this.batches) {
       batches++;
       batched += batch.entities.length;
       vertices += batch.mesh.description.vertexCount;
-      bytes +=
-        batch.mesh.vertices.reduce((sum, data) => sum + data.byteLength, 0) +
-        (batch.mesh.indices?.byteLength ?? 0);
+      const size = byteLength(batch.mesh);
+      bytes += size;
+      cpuBytes += batch.mesh.released ? 0 : size;
     }
     return {
       batches,
       batched,
       vertices,
       bytes,
+      cpuBytes,
       rebuilds: this._rebuilds,
       rebuildTime: this._rebuildTime,
+      updates: this._updates,
     };
   }
 
@@ -190,6 +222,7 @@ export class StaticBatches implements SceneBatching {
     this._groups.clear();
     this._members.clear();
     this._dirty.clear();
+    this._moved.clear();
     this._scene.batching = undefined;
   }
 
@@ -217,6 +250,17 @@ export class StaticBatches implements SceneBatching {
     ) {
       return;
     }
+    if (
+      member?.batch &&
+      member.group.key === key &&
+      member.mesh === mesh &&
+      member.meshVersion === mesh.version &&
+      !this._dirty.has(member.group) &&
+      this.moveInPlace(entity, member)
+    ) {
+      member.worldVersion = worldVersion;
+      return;
+    }
     if (member && member.group.key !== key) {
       this.leave(entity, member);
     }
@@ -231,6 +275,7 @@ export class StaticBatches implements SceneBatching {
       worldVersion,
       mesh,
       meshVersion: mesh.version,
+      slot: 0,
     });
     this._dirty.add(group);
   }
@@ -245,15 +290,22 @@ export class StaticBatches implements SceneBatching {
 
   /** @internal */
   apply(): void {
-    if (this._dirty.size === 0) {
-      return;
+    if (this._dirty.size > 0) {
+      const start = performance.now();
+      for (const group of this._dirty) {
+        this.rebuild(group);
+      }
+      this._dirty.clear();
+      this._rebuildTime += performance.now() - start;
     }
-    const start = performance.now();
-    for (const group of this._dirty) {
-      this.rebuild(group);
+    for (const batch of this._moved) {
+      // Rebuilt since: bounded already.
+      if (!batch.mesh.destroyed) {
+        this.bound(batch);
+        this._index.update(batch, batch.bounds);
+      }
     }
-    this._dirty.clear();
-    this._rebuildTime += performance.now() - start;
+    this._moved.clear();
   }
 
   /** @internal */
@@ -321,6 +373,36 @@ export class StaticBatches implements SceneBatching {
     }|${attributes}`;
   }
 
+  // Rewrites the vertices of a renderer moved in its batch; false when its
+  // faces would turn over (a mirror more or less): the batch is rebuilt.
+  private moveInPlace(entity: number, member: Member): boolean {
+    const batch = member.batch as StaticBatch;
+    const matrix = this._scene.worldMatrix(entity);
+    if (isMirror(matrix) !== (batch.mirrors[member.slot] === 1)) {
+      return false;
+    }
+    updateMergedVertices(
+      batch.mesh,
+      { mesh: member.mesh, matrix, id: this._scene.objectId(entity) },
+      batch.firstVertices[member.slot],
+    );
+    this._moved.add(batch);
+    this._updates++;
+    return true;
+  }
+
+  // The bounds of a batch: those of its renderers.
+  private bound(batch: StaticBatch): void {
+    const b = this._scene.MeshRenderer.bounds;
+    const box = this._box;
+    batch.bounds.makeEmpty();
+    for (const entity of batch.entities) {
+      const o = entity * 6;
+      box.setFrom([b[o], b[o + 1], b[o + 2]], [b[o + 3], b[o + 4], b[o + 5]]);
+      batch.bounds.union(box);
+    }
+  }
+
   private leave(entity: number, member: Member): void {
     const { group } = member;
     group.members.delete(entity);
@@ -348,26 +430,44 @@ export class StaticBatches implements SceneBatching {
     let parts: MeshPart[] = [];
     let entities: number[] = [];
     let vertices = 0;
+    // The parts of renderers as they are now: to merge them again when the
+    // data of a batch is read after it was given back.
+    const partsOf = (of: Uint32Array) => () =>
+      Array.from(of, (entity) => ({
+        mesh: MeshRenderer.mesh[entity] as Mesh,
+        matrix: this._scene.worldMatrix(entity),
+        id: this._scene.objectId(entity),
+      }));
     const flushParts = () => {
       if (entities.length >= this._minCount) {
+        const merged = Uint32Array.from(entities);
+        const firstVertices = new Uint32Array(merged.length);
+        const mirrors = new Uint8Array(merged.length);
+        let first = 0;
+        parts.forEach((part, slot) => {
+          firstVertices[slot] = first;
+          mirrors[slot] = isMirror(part.matrix) ? 1 : 0;
+          first += part.mesh.description.vertexCount;
+        });
         const batch = new StaticBatch(
-          mergeMeshes(parts, { label: `static batch (${parts.length})` }),
+          mergeMeshes(parts, {
+            label: `static batch (${parts.length})`,
+            source: partsOf(merged),
+          }),
           material,
           castShadow,
           layers,
-          Uint32Array.from(entities),
+          merged,
+          firstVertices,
+          mirrors,
         );
-        const b = MeshRenderer.bounds;
-        const box = this._box;
-        for (const entity of entities) {
+        merged.forEach((entity, slot) => {
           flags[entity] |= NodeFlags.Batched;
-          const o = entity * 6;
-          box.setFrom(
-            [b[o], b[o + 1], b[o + 2]],
-            [b[o + 3], b[o + 4], b[o + 5]],
-          );
-          batch.bounds.union(box);
-        }
+          const member = this._members.get(entity) as Member;
+          member.batch = batch;
+          member.slot = slot;
+        });
+        this.bound(batch);
         group.batches.push(batch);
         this._index.insert(batch, batch.bounds);
         this._rebuilds++;
@@ -399,6 +499,10 @@ export class StaticBatches implements SceneBatching {
     for (const batch of group.batches) {
       for (const entity of batch.entities) {
         flags[entity] &= ~NodeFlags.Batched;
+        const member = this._members.get(entity);
+        if (member?.batch === batch) {
+          member.batch = undefined;
+        }
       }
       this._index.remove(batch);
       batch.mesh.destroy();

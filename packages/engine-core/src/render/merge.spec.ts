@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { mergeKey, mergeMeshes } from './merge';
+import { Camera } from '../Camera';
+import { Transform } from '../Transform';
+import { colorGraph, fakeBackend, surface } from '../testing/fakeBackend';
+import { Material } from './Material';
+import { isMirror, mergeKey, mergeMeshes, updateMergedVertices } from './merge';
 import { Mesh } from './Mesh';
+import { Renderer } from './Renderer';
 
 // A triangle in the plane z = 0, facing +z: positions, normals, uvs
 // interleaved, and a tangent along +x.
@@ -200,5 +205,103 @@ describe('mergeMeshes', () => {
     const merged = mergeMeshes(parts);
     expect(merged.description.indexBuffer?.format).toBe('uint32');
     expect(merged.indices?.[40_002]).toBe(40_002);
+  });
+
+  it('rewrites the vertices of one part in place', () => {
+    const parts = [0, 1].map((i) => ({
+      mesh: triangle(),
+      matrix: translation(i * 10, 0, 0),
+      id: i + 1,
+    }));
+    const merged = mergeMeshes(parts);
+    const version = merged.version;
+    updateMergedVertices(
+      merged,
+      { ...parts[1], matrix: translation(0, 0, 7) },
+      3,
+    );
+    expect(read(merged, 'position', 3)).toEqual([0, 0, 7]);
+    expect(read(merged, 'position', 0)).toEqual([0, 0, 0]);
+    // One partial update, of the 3 vertices of the part.
+    const updates = merged.updatesSince(version);
+    expect(updates).toHaveLength(1);
+    expect(updates?.[0]).toMatchObject({ buffer: 0, byteOffset: 3 * 48 });
+    expect(updates?.[0].data.byteLength).toBe(3 * 48);
+    expect(isMirror(translation(1, 2, 3))).toBe(false);
+    expect(isMirror([-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])).toBe(
+      true,
+    );
+  });
+});
+
+describe('Mesh data on the GPU', () => {
+  const draw = (renderer: Renderer, mesh: Mesh) =>
+    renderer.render({
+      items: [
+        {
+          mesh,
+          material: new Material({ graph: colorGraph() }),
+          transform: new Transform(),
+        },
+      ],
+      camera: new Camera({ position: { x: 0, y: 0, z: 10 } }),
+      surface,
+    });
+
+  it('gives the CPU copy back once uploaded, and makes it again when read', () => {
+    let regenerated = 0;
+    const parts = () => [{ mesh: triangle(), matrix: translation(1, 0, 0) }];
+    const merged = mergeMeshes(parts(), {
+      source: () => {
+        regenerated++;
+        return parts();
+      },
+    });
+    expect(merged.releasable).toBe(true);
+    const { backend } = fakeBackend();
+    const renderer = new Renderer(backend);
+    draw(renderer, merged);
+    expect(merged.released).toBe(true);
+    expect(regenerated).toBe(0);
+    // Read: merged again.
+    expect(read(merged, 'position', 0)).toEqual([1, 0, 0]);
+    expect(regenerated).toBe(1);
+    expect(merged.released).toBe(false);
+    // A mesh without a way to make it again keeps it.
+    const plain = triangle();
+    draw(renderer, plain);
+    expect(plain.released).toBe(false);
+    expect(() => plain.releaseData()).toThrow(/cannot regenerate/);
+  });
+
+  it('writes only the parts updated, or everything when too far behind', () => {
+    const merged = mergeMeshes([
+      { mesh: triangle(), matrix: translation(0, 0, 0) },
+    ]);
+    const { backend, log } = fakeBackend();
+    const renderer = new Renderer(backend);
+    draw(renderer, merged);
+    const buffers = log.buffers.length;
+    const vertices = log.buffers.find((b) => b.label?.endsWith('vertices 0'));
+    const writes = vertices?.writes ?? 0;
+    merged.updateVertices(0, 48, new Float32Array(12));
+    draw(renderer, merged);
+    // No buffer created: one write into the one there.
+    expect(
+      log.buffers.filter((b) => b.label?.startsWith('merged')),
+    ).toHaveLength(
+      log.buffers.filter((b) => b.label?.startsWith('merged')).length,
+    );
+    expect(vertices?.writes).toBe(writes + 1);
+    expect(vertices?.destroyed).toBe(false);
+    // Unaligned: refused.
+    expect(() => merged.updateVertices(0, 2, new Float32Array(1))).toThrow(
+      /aligned/,
+    );
+    // A whole change: uploaded again.
+    merged.setVertices(0, new Float32Array(36) as Float32Array<ArrayBuffer>);
+    draw(renderer, merged);
+    expect(vertices?.destroyed).toBe(true);
+    expect(log.buffers.length).toBeGreaterThan(buffers);
   });
 });
