@@ -2,7 +2,15 @@ import type { GpuTexture, RenderBackend } from '@fdw/engine-backend';
 import type { Model } from '@fdw/engine-assets';
 import { PhysicsWorld, Shapes } from '@fdw/engine-physics';
 import { Scene, SceneLods, type LodLevel } from '@fdw/engine-scene';
-import { GraphBuilder, std, stdMacros } from '@fdw/engine-shader';
+import { fbm } from '@fdw/engine-noise';
+import type { PortHandle } from '@fdw/engine-shader';
+import {
+  GraphBuilder,
+  std,
+  stdMacros,
+  stdMapping,
+  stdNoise,
+} from '@fdw/engine-shader';
 import { seededRandom } from '../maze/maze';
 import { buildTerrain, terrainBase, type Terrain } from '../terrain/terrain';
 
@@ -52,24 +60,6 @@ export interface Forest {
   destroy(): void;
 }
 
-// Value noise in [0, 1], smooth, on a lattice of 256 × 256 random values.
-function valueNoise(seed: number) {
-  const random = seededRandom(seed);
-  const values = Float32Array.from({ length: 256 * 256 }, random);
-  return (x: number, y: number) => {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
-    const fx = x - ix;
-    const fy = y - iy;
-    const sx = fx * fx * (3 - 2 * fx);
-    const sy = fy * fy * (3 - 2 * fy);
-    const at = (i: number, j: number) => values[((j & 255) << 8) | (i & 255)];
-    const top = at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * sx;
-    const bottom = at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * sx;
-    return top + (bottom - top) * sy;
-  };
-}
-
 const smoothstep = (low: number, high: number, x: number) => {
   const t = Math.min(Math.max((x - low) / (high - low), 0), 1);
   return t * t * (3 - 2 * t);
@@ -94,24 +84,23 @@ export function forestHeights(
     seed: number;
   },
 ): Float32Array {
-  const noise = valueNoise(seed);
   const heights = new Float32Array(resolution * resolution);
+  const octaves = {
+    noise: 'simplex',
+    octaves: 4,
+    lacunarity: 2.2,
+    gain: 0.45,
+    seed,
+  } as const;
   for (let j = 0; j < resolution; j++) {
     for (let i = 0; i < resolution; i++) {
       const x = ((i + 0.5) / resolution - 0.5) * size;
       const z = ((j + 0.5) / resolution - 0.5) * size;
       const r = Math.hypot(x, z);
-      // Bumps of a few meters, every 30 m or so, none in the clearing.
-      let bumps = 0;
-      let amplitude = 3;
-      let frequency = 1 / 30;
-      for (let octave = 0; octave < 4; octave++) {
-        bumps +=
-          amplitude * (noise(x * frequency + 50, z * frequency + 50) - 0.5);
-        amplitude *= 0.45;
-        frequency *= 2.2;
-      }
-      bumps *= smoothstep(12, 30, r);
+      // Bumps of a few meters, every 30 m or so, none in the clearing: the
+      // fbm of @fdw/engine-noise, the same as a material would compute.
+      const bumps =
+        2.6 * fbm([x / 30, z / 30], octaves) * smoothstep(12, 30, r);
       // The rim: 0 inside the play area, up to the full height past it,
       // steeper than the character can climb.
       const rim = smoothstep(playRadius + 4, playRadius + 40, r) * height * 0.9;
@@ -125,8 +114,11 @@ export function forestHeights(
 }
 
 // The material of the ground: the forest floor of Poly Haven, repeated
-// every 4 m, its normal map over the normal of the height map; drier and
-// lighter on the slopes.
+// every 4 m, its normal map over the normal of the height map; its
+// repetition broken by noises of the world position (patches of moss and
+// of dry earth, the scan read at a second scale); the baked rock on the
+// slopes, in triplanar mapping (no stretching where the uv of the terrain
+// stretches), bumped by its height.
 function groundMaterial(options: {
   size: number;
   height: number;
@@ -134,33 +126,79 @@ function groundMaterial(options: {
 }) {
   const g = new GraphBuilder('forest ground');
   const { uv, normal } = terrainBase(g, options);
+  const splat = (x: PortHandle) => g.call(std.vec3, { x, y: x, z: x });
   const tiled = g.call(std.mul, { a: uv, b: options.size / 4 });
   const sampler = g.sampler('groundSampler');
-  const sample = (name: string) =>
-    g.call(std.textureSample, { texture: g.texture(name), sampler, uv: tiled });
-  // A little darker than the scan: under the canopy.
-  const color = g.call(std.mul, {
+  const sample = (name: string, at: PortHandle = tiled) =>
+    g.call(std.textureSample, { texture: g.texture(name), sampler, uv: at });
+  const world = g.call(stdMapping.worldPosition);
+  // Large patches, tens of meters: a fbm of the ground plane.
+  const patches = g.call(
+    stdNoise.fbm,
+    { point: g.call(std.div, { a: world.swizzle('xz'), b: 23 }), seed: 11 },
+    { params: { noise: 'simplex', octaves: 3 } },
+  );
+  const patch = g.call(std.smoothstep, { low: -0.35, high: 0.45, x: patches });
+  // The scan, and the scan at a larger scale, mixed by the patches: the
+  // tiles of the texture no longer line up.
+  const scan = g.call(std.mix, {
     a: sample('groundColor').swizzle('rgb'),
-    b: [0.62, 0.66, 0.6],
+    b: sample('groundColor', g.call(std.mul, { a: tiled, b: 0.37 })).swizzle(
+      'rgb',
+    ),
+    t: splat(g.call(std.mul, { a: patch, b: 0.6 })),
   });
-  const slope = g.call(std.sub, {
-    a: 1,
-    b: g.call(std.smoothstep, { low: 0.7, high: 0.95, x: normal.swizzle('y') }),
+  // A little darker than the scan (under the canopy), greener or drier
+  // from a patch to the next.
+  const tint = g.call(std.mix, {
+    a: [0.58, 0.68, 0.52],
+    b: [0.72, 0.66, 0.55],
+    t: splat(patch),
   });
-  const dry = g.call(std.mix, {
-    a: color,
-    b: g.call(std.mul, { a: color, b: [1.25, 1.15, 0.95] }),
-    t: g.call(std.vec3, { x: slope, y: slope, z: slope }),
+  const color = g.call(std.mul, { a: scan, b: tint });
+  // The rock where the ground is steep, its edge broken by a noise.
+  const rock = g.call(stdMapping.triplanarTexture, {
+    texture: g.texture('rock'),
+    sampler,
+    position: world,
+    normal,
+    scale: 1 / 6,
+    sharpness: 6,
+  });
+  const steep = g.call(std.smoothstep, {
+    low: 0.68,
+    high: 0.86,
+    x: g.call(std.add, {
+      a: normal.swizzle('y'),
+      b: g.call(std.mul, { a: patches, b: 0.08 }),
+    }),
+  });
+  const rocky = g.call(std.sub, { a: 1, b: steep });
+  const groundNormal = g.call(stdMacros.normalMapping, {
+    sample: sample('groundNormal').swizzle('rgb'),
+    uv: tiled,
+    normal,
+  });
+  const rockNormal = g.call(stdMacros.bumpMapping, {
+    height: rock.swizzle('a'),
+    scale: 0.35,
+    normal,
   });
   g.surface({
     shadingModel: 'pbr',
-    baseColor: dry,
-    roughness: sample('groundRoughness').swizzle('r'),
+    baseColor: g.call(std.mix, {
+      a: color,
+      b: g.call(std.mul, { a: rock.swizzle('rgb'), b: [0.85, 0.83, 0.8] }),
+      t: splat(rocky),
+    }),
+    roughness: g.call(std.mix, {
+      a: sample('groundRoughness').swizzle('r'),
+      b: 0.8,
+      t: rocky,
+    }),
     metallic: 0,
-    normal: g.call(stdMacros.normalMapping, {
-      sample: sample('groundNormal').swizzle('rgb'),
-      uv: tiled,
-      normal,
+    normal: g.call(std.normalize, {
+      x: g.call(std.mix, { a: groundNormal, b: rockNormal, t: splat(rocky) }),
     }),
   });
   return g.build();
@@ -265,6 +303,8 @@ export function buildForest(
   scene: Scene,
   world: PhysicsWorld | undefined,
   models: ForestModels,
+  // The rock of the slopes: color, and height in alpha (bakeRockTexture).
+  rock: GpuTexture,
   options: ForestOptions = {},
 ): Forest {
   const size = options.size ?? 512;
@@ -294,6 +334,7 @@ export function buildForest(
         groundColor: models.ground.color,
         groundNormal: models.ground.normal,
         groundRoughness: models.ground.roughness,
+        rock,
         groundSampler: sampler,
       },
     },

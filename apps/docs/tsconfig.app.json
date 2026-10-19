@@ -85,6 +85,9 @@
       "path": "../../packages/engine-behavior/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-noise/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/demo-scenes/tsconfig.lib.json"
     }
   ]

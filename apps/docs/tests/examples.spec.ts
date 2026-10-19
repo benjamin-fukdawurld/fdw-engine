@@ -39,6 +39,8 @@ const examples: Record<string, string> = {
   tps: 'game/tps/',
   'behavior-graphs': 'tutorials/behavior-graphs/',
   'static-batching': 'tutorials/static-batching/',
+  'procedural-materials': 'tutorials/procedural-materials/',
+  'procedural-terrain': 'tutorials/procedural-terrain/',
 };
 
 // The clock of the examples, stopped: the same image at every run.

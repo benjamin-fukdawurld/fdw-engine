@@ -47,6 +47,7 @@ import {
   SurfaceOutput,
   surfaceOutputType,
 } from './lowering';
+import { analyzeLoops } from './loops';
 import { expandMacros } from './macros';
 import { optimize, structuralParams } from './optimize';
 import { planStages } from './stages';
@@ -904,6 +905,10 @@ export function compile(
       : lowered;
   optimize(working, registry, tabled.order, tabled.types);
   const optimized = revalidate();
+  const loops = analyzeLoops(working, optimized.types, diagnostics);
+  if (diagnostics.length > 0) {
+    fail(diagnostics);
+  }
 
   if (compute) {
     return {
@@ -915,6 +920,7 @@ export function compile(
         nodes: optimized.nodes,
         order: optimized.order,
         types: optimized.types,
+        loops,
       }),
       layout: buildLayout(optimized.nodes.values(), { usedSlotsOnly: true }),
       vertexInputs: [],
@@ -934,6 +940,12 @@ export function compile(
         severity: 'error',
         node: id,
         message: 'depends on light.current without going through a light.sum',
+      });
+    } else if (node.type === 'loop.end') {
+      diagnostics.push({
+        severity: 'error',
+        node: id,
+        message: 'a fold loop cannot depend on light.current',
       });
     }
   }
@@ -971,6 +983,7 @@ export function compile(
     types: optimized.types,
     maxVaryings: capabilities.maxVaryings,
     diagnostics,
+    loops,
   });
   if (!plan) {
     return fail(diagnostics);
@@ -982,6 +995,7 @@ export function compile(
     order: optimized.order,
     types: optimized.types,
     plan,
+    loops,
   });
 
   return {

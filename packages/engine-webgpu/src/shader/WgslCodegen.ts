@@ -239,6 +239,28 @@ function emitInstructions(
         expressions.set(instruction.id, sum);
         continue;
       }
+      case 'loop-fold': {
+        // The state lives in a variable, read by the body as it is at the
+        // start of the iteration and written at its end.
+        const fold = valueName(instruction);
+        const index = `v${op.index}`;
+        lines.push(
+          `${indent}var ${fold}: ${wgslType(type)} = ${arg(instruction, 1)};`,
+          `${indent}for (var ${index}: u32 = 0u; ${index} < ${arg(
+            instruction,
+            0,
+          )}; ${index} = ${index} + 1u) {`,
+        );
+        expressions.set(op.index, index);
+        expressions.set(op.state, fold);
+        emitInstructions(op.body, resources, state, `${indent}  `);
+        lines.push(
+          `${indent}  ${fold} = ${expressions.get(op.result)};`,
+          `${indent}}`,
+        );
+        expressions.set(instruction.id, fold);
+        continue;
+      }
       case 'index':
         expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
         break;
@@ -285,6 +307,18 @@ function emitInstructions(
         )}].${memberIdentifier(op.member)}`;
         break;
       case 'binary':
+        // The amount of a shift is unsigned in WGSL.
+        expression =
+          (op.operator === '<<' || op.operator === '>>') &&
+          (type.kind === 'scalar' || type.kind === 'vector') &&
+          type.scalar === 'i32'
+            ? `${arg(instruction, 0)} ${op.operator} ${wgslType(
+                type.kind === 'scalar'
+                  ? { kind: 'scalar', scalar: 'u32' }
+                  : { kind: 'vector', size: type.size, scalar: 'u32' },
+              )}(${arg(instruction, 1)})`
+            : `${arg(instruction, 0)} ${op.operator} ${arg(instruction, 1)}`;
+        break;
       case 'compare':
         // Comparisons are component-wise for vectors in WGSL.
         expression = `${arg(instruction, 0)} ${op.operator} ${arg(

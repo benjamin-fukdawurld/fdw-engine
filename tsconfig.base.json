@@ -51,6 +51,7 @@
       "@fdw/engine-graph": ["packages/engine-graph/src/index.ts"],
       "@fdw/engine-animation": ["packages/engine-animation/src/index.ts"],
       "@fdw/engine-behavior": ["packages/engine-behavior/src/index.ts"],
+      "@fdw/engine-noise": ["packages/engine-noise/src/index.ts"],
       "@fdw/engine-skinning": ["packages/engine-skinning/src/index.ts"],
       "@fdw/engine-physics": ["packages/engine-physics/src/index.ts"],
       "@fdw/engine-physics-rapier": [

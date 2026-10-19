@@ -92,10 +92,15 @@ fichiers. Deux outils les préparent en `.glb` compacts, dans
 
 - **Un terrain** de 512 m, dessiné en patchs comme dans
   [La tessellation](/fdw-engine/fr/tutorials/tessellation/), avec ses propres
-  hauteurs : une clairière plate, de légers reliefs, et autour de la zone
-  de jeu un rebord trop raide pour que le personnage le gravisse
-  (`maxSlope` de 42°). Le sol est l'humus de Poly Haven, répété tous les
-  4 m, sa normal map sur la normale de la carte des hauteurs.
+  hauteurs : une clairière plate, de légers reliefs (un fbm de
+  `@fdw/engine-noise`), et autour de la zone de jeu un rebord trop raide
+  pour que le personnage le gravisse (`maxSlope` de 42°). Le sol est
+  l'humus de Poly Haven, répété tous les 4 m, sa normal map sur la normale
+  de la carte des hauteurs ; sa répétition cassée par des bruits de la
+  position dans le monde (des taches plus vertes ou plus sèches, le scan lu
+  à une seconde échelle) ; sur les pentes, une roche cuite à partir de
+  bruits pendant le chargement des modèles, lue en mapping triplanaire
+  (voir [Un terrain procédural](/fdw-engine/fr/tutorials/procedural-terrain/)).
 - **2 500 sapins**, à au moins 6 m les uns des autres, de trois sortes,
   tournés et mis à l'échelle au hasard. Chaque sorte, chaque niveau, chaque
   primitive est un seul `scene.createBatch` pour tous ses sapins ;

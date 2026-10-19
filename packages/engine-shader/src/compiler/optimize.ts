@@ -20,6 +20,8 @@ const rootTypes = new Set([
   'write.storage',
 ]);
 
+const loopSources = new Set(['loop.state', 'loop.index']);
+
 /** Removes the nodes that do not contribute to the stage outputs. */
 export function eliminateDeadCode(graph: WorkingGraph): void {
   const live = new Set<NodeId>();
@@ -218,13 +220,11 @@ function foldNode(
     return;
   }
 
-  graph.edges = graph.edges
-    .filter((edge) => edge.to.node !== node.id)
-    .map((edge) =>
-      edge.from.node === node.id
-        ? { ...edge, from: { node: node.id, port: 'value' } }
-        : edge,
-    );
+  graph.removeIncoming(node.id);
+  graph.redirectPort(
+    { node: node.id, port: 'result' },
+    { ref: { node: node.id, port: 'value' } },
+  );
   graph.nodes.set(node.id, {
     id: node.id,
     type: 'const.value',
@@ -290,7 +290,8 @@ export function optimize(
     foldNode(graph, node, registry, types.get(id));
 
     const current = graph.nodes.get(id) as GraphNode;
-    if (rootTypes.has(current.type)) {
+    // The state and the index of each loop are its own, however alike.
+    if (rootTypes.has(current.type) || loopSources.has(current.type)) {
       continue;
     }
     const key = nodeKey(graph, current);

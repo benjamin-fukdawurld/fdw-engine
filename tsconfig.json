@@ -94,6 +94,9 @@
       "path": "./packages/engine-behavior"
     },
     {
+      "path": "./packages/engine-noise"
+    },
+    {
       "path": "./packages/engine-skinning"
     },
     {

@@ -12,3 +12,5 @@ export { computeTangents } from './tangents';
 export { isMirror, mergeKey, mergeMeshes, updateMergedVertices } from './merge';
 export type { MeshPart } from './merge';
 export { cascadeSplits, sliceSphere } from './shadows';
+export { bakeTexture } from './bake';
+export type { BakeTextureOptions } from './bake';

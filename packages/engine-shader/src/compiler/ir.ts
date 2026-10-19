@@ -5,8 +5,9 @@ import type { ShaderType } from '../types/ShaderType';
 // Intermediate representation produced by the compiler and translated by the
 // code generators. The graph has no control flow, so each entry point is a
 // straight list of typed instructions in SSA form: every value is defined
-// once, before its uses. The only loop is loop-sum, a structured sum whose
-// body is itself a straight list of instructions.
+// once, before its uses. The only loops are loop-sum, a structured sum, and
+// loop-fold, a loop carrying a state; their bodies are themselves straight
+// lists of instructions.
 
 /**
  * Id of a value, unique in its entry point.
@@ -40,7 +41,22 @@ export type IrBuiltin =
  *
  * @group Intermediate representation
  */
-export type IrBinaryOperator = '+' | '-' | '*' | '/';
+export type IrBinaryOperator =
+  | '+'
+  | '-'
+  | '*'
+  | '/'
+  /**
+   * Integers only: remainder, bitwise and, or, xor, shifts (the amount is
+   * of the type of the value, below its bit count). Unsigned integers wrap
+   * around on overflow, on every backend.
+   */
+  | '%'
+  | '&'
+  | '|'
+  | '^'
+  | '<<'
+  | '>>';
 
 /**
  * Comparison operators: component-wise for vectors, giving booleans.
@@ -150,6 +166,22 @@ export type IrOp =
       readonly index: ValueId;
       readonly body: readonly IrInstruction[];
       /** The value of the body summed over the iterations. */
+      readonly result: ValueId;
+    }
+  /**
+   * A loop carrying a state: state = initial (args[1]), then, for index
+   * from 0 to count - 1 (args[0], a u32), state = result, computed by the
+   * body from the state and the index. The value is the last state. The
+   * body is straight code, as for loop-sum; it may contain other loops.
+   */
+  | {
+      readonly kind: 'loop-fold';
+      /** Id of the loop index, a u32 read by the body. */
+      readonly index: ValueId;
+      /** Id of the state at the start of an iteration, read by the body. */
+      readonly state: ValueId;
+      readonly body: readonly IrInstruction[];
+      /** The state at the end of an iteration. */
       readonly result: ValueId;
     };
 
@@ -264,7 +296,10 @@ export function forEachInstruction(
 ): void {
   for (const instruction of body) {
     visit(instruction);
-    if (instruction.op.kind === 'loop-sum') {
+    if (
+      instruction.op.kind === 'loop-sum' ||
+      instruction.op.kind === 'loop-fold'
+    ) {
       forEachInstruction(instruction.op.body, visit);
     }
   }

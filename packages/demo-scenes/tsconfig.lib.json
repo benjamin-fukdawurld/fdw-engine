@@ -22,6 +22,9 @@
       "path": "../engine-behavior/tsconfig.lib.json"
     },
     {
+      "path": "../engine-noise/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-audio/tsconfig.lib.json"
     },
     {

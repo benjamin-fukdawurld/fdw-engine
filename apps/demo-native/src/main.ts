@@ -12,7 +12,8 @@
 // static batching; decor-no-batching to compare), terrain (the
 // tessellation; terrain-uniform: every patch at the finest level), physics
 // (the physics playground, on Rapier), tps (the third-person game in the
-// forest; its models from apps/docs/public/models/forest).
+// forest; its models from apps/docs/public/models/forest), procedural (the
+// gallery of procedural materials; F switches the filter of the floor).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent).
 // Escape or closing the window quits.
@@ -43,6 +44,7 @@ import {
   createFpsScene,
   createPbrScene,
   createPhysicsScene,
+  createProceduralGallery,
   createShadowsScene,
   createTpsScene,
   SceneFactory,
@@ -71,6 +73,7 @@ const scenes: Record<string, SceneFactory> = {
   'decor-no-batching': createDecor({ batching: false }),
   terrain: createTerrainScene,
   'terrain-uniform': createTerrain({ minLevel: 6 }),
+  procedural: createProceduralGallery,
 };
 // The scenes loading something first: Rapier, the same WebAssembly module
 // as in the browser.

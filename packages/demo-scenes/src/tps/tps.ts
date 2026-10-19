@@ -1,4 +1,4 @@
-import type { IVec3, RenderBackend } from '@fdw/engine-backend';
+import type { GpuTexture, IVec3, RenderBackend } from '@fdw/engine-backend';
 import type { BehaviorMode } from '@fdw/engine-behavior';
 import { RenderBackendService } from '@fdw/engine-assets';
 import { ThirdPersonOperator } from '@fdw/engine-camera';
@@ -19,6 +19,7 @@ import { followAspect, type Scene, type SceneFactory } from '../scene';
 import { loadTpsAssets, type TpsAssets } from './assets';
 import { tpsControls } from './controls';
 import { Enemies, EnemyKinds, TrunkGrid, type EnemyKind } from './enemies';
+import { bakeRockTexture } from '../procedural/materials';
 import { buildForest, type Forest, type ForestOptions } from './forest';
 import { Hero, type HeroIntent } from './hero';
 import { TpsSounds } from './sounds';
@@ -217,10 +218,17 @@ export function createTpsScene(
     // step, or several.
     const pressed = { jump: false, roll: false, attack: false, heavy: false };
 
-    const start = (assets: TpsAssets) => {
+    const start = (assets: TpsAssets, rock: GpuTexture) => {
       const world = options.physics.createWorld();
       const physics = new ScenePhysics(scene, world);
-      const forest = buildForest(backend, scene, world, assets, options.forest);
+      const forest = buildForest(
+        backend,
+        scene,
+        world,
+        assets,
+        rock,
+        options.forest,
+      );
       const trunks = new TrunkGrid(forest.trees);
       trunksOf.set(forest, trunks);
       const enemies = new Enemies(
@@ -557,9 +565,11 @@ export function createTpsScene(
       }`;
     };
 
-    const ready = loading.ready.then(
-      (assets) => {
-        if (!destroyed) start(assets);
+    // The rock of the slopes, baked from noises while the models load.
+    const baking = bakeRockTexture(renderer);
+    const ready = Promise.all([loading.ready, baking]).then(
+      ([assets, rock]) => {
+        if (!destroyed) start(assets, rock);
       },
       (error: unknown) => {
         failed = error instanceof Error ? error.message : String(error);
@@ -585,6 +595,7 @@ export function createTpsScene(
           game.forest.destroy();
         }
         loading.release();
+        void baking.then((rock) => rock.destroy());
         input.dispose();
         renderer.destroy();
       },

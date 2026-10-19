@@ -11,3 +11,4 @@ export * from './fps';
 export * from './physics';
 export * from './audio';
 export * from './tps';
+export * from './procedural';
