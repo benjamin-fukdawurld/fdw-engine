@@ -195,6 +195,23 @@ Le `Renderer` a besoin de `createObjectTable` : un backend personnalisé
 l'implémente (un `GpuObjectTable` : `writeRows`, `writeInstances`), ainsi que
 le binding `object-table` des programmes.
 
+## Les données des meshes
+
+Un `Mesh` garde ses données côté CPU ; le renderer les envoie au premier
+dessin du mesh, et de nouveau après `setVertices` ou `setIndices`.
+
+- **Les mises à jour partielles** : `mesh.updateVertices(buffer, byteOffset, data)`
+  réécrit une partie d'un buffer de sommets (décalage et taille multiples
+  de 4) : les renderers n'écrivent que ces octets dans le buffer qu'ils
+  ont. Un renderer en retard de plus de 64 mises à jour renvoie tout le
+  mesh.
+- **Sur le GPU seulement** : un mesh créé avec `regenerate` (une fonction
+  qui refait ses données, telles qu'elles sont alors) rend sa copie CPU
+  une fois qu'un renderer l'a envoyé (`mesh.released`) ; lire `vertices`
+  ou `indices` la refait. `mergeMeshes(parts, { source })` crée ainsi son
+  mesh fusionné : les [lots statiques](/fdw-engine/fr/tutorials/static-batching/)
+  ne gardent leur géométrie que sur le GPU.
+
 ## Pipelines
 
 Les pipelines sont créés à leur première utilisation, ce qui peut bloquer

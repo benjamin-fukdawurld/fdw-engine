@@ -2526,6 +2526,20 @@ export class Renderer {
     if (mesh.destroyed) {
       throw new Error(`The mesh "${mesh.label ?? 'mesh'}" is destroyed`);
     }
+    // Parts of its vertices rewritten (Mesh.updateVertices): only them.
+    const updates = gpu && mesh.updatesSince(gpu.version);
+    if (gpu && updates) {
+      for (const { buffer, byteOffset, data } of updates) {
+        gpu.vertexBuffers[buffer].write(
+          byteOffset,
+          data.buffer,
+          data.byteOffset,
+          data.byteLength,
+        );
+      }
+      gpu.version = mesh.version;
+      return gpu;
+    }
     gpu?.vertexBuffers.forEach((buffer) => buffer.destroy());
     gpu?.indexBuffer?.destroy();
     const unsubscribe =
@@ -2555,6 +2569,10 @@ export class Renderer {
         : {}),
     };
     this._meshes.set(mesh, gpu);
+    // On the GPU now: a mesh that can make its data again gives it back.
+    if (mesh.releasable) {
+      mesh.releaseData();
+    }
     return gpu;
   }
 
@@ -2618,8 +2636,10 @@ export class Renderer {
         state.vertexBuffers[slot] = buffer;
       }
     }
-    if (mesh.indexBuffer && item.mesh.indices) {
-      const format = item.mesh.description.indexBuffer?.format ?? 'uint32';
+    // From the description: the data may be on the GPU only.
+    const indices = item.mesh.description.indexBuffer;
+    if (mesh.indexBuffer && indices) {
+      const format = indices.format;
       if (
         state.indexBuffer !== mesh.indexBuffer ||
         state.indexFormat !== format
@@ -2628,7 +2648,7 @@ export class Renderer {
         state.indexBuffer = mesh.indexBuffer;
         state.indexFormat = format;
       }
-      pass.drawIndexed(item.mesh.indices.length, instances, instance);
+      pass.drawIndexed(indices.count, instances, instance);
     } else {
       pass.draw(item.mesh.description.vertexCount, instances, instance);
     }

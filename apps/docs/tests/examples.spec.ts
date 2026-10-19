@@ -468,6 +468,10 @@ test('static-batching-picking', async ({ page: browser }, info) => {
   if (!box) {
     throw new Error('The canvas is not visible');
   }
+  // The batches on the GPU only, the drum moved in its batch at each frame.
+  await expect(status).toContainText(
+    /0\.0 MB on the CPU, [1-9]\d* moves in place/,
+  );
   // A column in the front, a little left of the center.
   const column = { x: box.x + box.width * 0.435, y: box.y + box.height * 0.82 };
   await browser.mouse.move(column.x, column.y);

@@ -1,3 +1,4 @@
+import { Aabb } from '@fdw/engine-geometry';
 import type {
   GpuBuffer,
   GpuTexture,
@@ -26,6 +27,7 @@ import {
   Material,
   mergeMeshes,
   Mesh,
+  updateMergedVertices,
   pickIds,
   PointLight,
   Renderable,
@@ -1507,7 +1509,7 @@ export function describeRenderer(
       it('picks the objects of a merged mesh, per vertex', async () => {
         // Four quads in one mesh, in world space (static batching): one
         // draw, an identifier per vertex.
-        const translation = (x: number, y: number) => [
+        const translation = (x: number, y: number, z = 0) => [
           1,
           0,
           0,
@@ -1522,21 +1524,23 @@ export function describeRenderer(
           0,
           x,
           y,
-          0,
+          z,
           1,
         ];
-        const merged = mergeMeshes(
-          [
-            [-0.5, 0.5],
-            [0.5, 0.5],
-            [-0.5, -0.5],
-            [0.5, -0.5],
-          ].map(([x, y], i) => ({
+        const corners = [
+          [-0.5, 0.5],
+          [0.5, 0.5],
+          [-0.5, -0.5],
+          [0.5, -0.5],
+        ];
+        const parts = () =>
+          corners.map(([x, y], i) => ({
             mesh: quad(),
             matrix: translation(x, y),
             id: 5 + i,
-          })),
-        );
+          }));
+        // With a source: its CPU copy given back once uploaded.
+        const merged = mergeMeshes(parts(), { source: parts });
         const ids = backend.textures.createTexture({
           label: 'ids',
           type: '2d',
@@ -1544,28 +1548,38 @@ export function describeRenderer(
           dimensions: { width: size, height: size },
           usage: ['render-attachment', 'copy-src'],
         });
-        const graph = new RenderGraph();
-        renderer.addScenePasses(graph, {
-          items: [
-            {
-              mesh: merged,
-              material: new Material({ graph: colorGraph() }),
-              transform: new Transform(),
-              // Ignored: the vertices have their own.
-              id: 1,
+        const material = new Material({ graph: colorGraph() });
+        const render = () => {
+          const graph = new RenderGraph();
+          renderer.addScenePasses(graph, {
+            items: [
+              {
+                mesh: merged,
+                material,
+                transform: new Transform(),
+                // Ignored: the vertices have their own.
+                id: 1,
+                // Known, as a static batch knows its own: the mesh is not
+                // read back to bound it.
+                bounds: Aabb.fromPoints([
+                  [-1, -1, -1],
+                  [1, 1, 1],
+                ]),
+              },
+            ],
+            camera,
+            outputs: {
+              id: {
+                format: 'r32uint',
+                value: 'object-id',
+                target: graph.importTexture('ids', ids),
+              },
             },
-          ],
-          camera,
-          outputs: {
-            id: {
-              format: 'r32uint',
-              value: 'object-id',
-              target: graph.importTexture('ids', ids),
-            },
-          },
-        });
+          });
+          return graph;
+        };
         const runner = new RenderGraphRunner(backend);
-        runner.execute(graph);
+        runner.execute(render());
         const picks = await Promise.all([
           pickIds(backend, ids, { x: 16, y: 16 }),
           pickIds(backend, ids, { x: 48, y: 16 }),
@@ -1574,6 +1588,22 @@ export function describeRenderer(
         ]);
         expect(picks).toEqual([[5], [6], [7], [8]]);
         expect(renderer.stats.get('scene')).toMatchObject({ drawCalls: 1 });
+        // On the GPU only now; the top left quad moved over the bottom
+        // right one, in front: only its vertices are written again.
+        expect(merged.released).toBe(true);
+        updateMergedVertices(
+          merged,
+          { mesh: quad(), matrix: translation(0.5, -0.5, 1), id: 5 },
+          0,
+        );
+        runner.execute(render());
+        expect(
+          await Promise.all([
+            pickIds(backend, ids, { x: 16, y: 16 }),
+            pickIds(backend, ids, { x: 48, y: 48 }),
+          ]),
+        ).toEqual([[], [5]]);
+        expect(merged.released).toBe(true);
         runner.destroy();
         ids.destroy();
         merged.destroy();

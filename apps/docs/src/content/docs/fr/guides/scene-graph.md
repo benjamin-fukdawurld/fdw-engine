@@ -148,10 +148,14 @@ const batches = new StaticBatches(scene, { cellSize: 40 });
 - Les renderers fusionnés reçoivent `NodeFlags.Batched` : les requêtes de
   rendu donnent leur lot à leur place, les autres requêtes les trouvent
   toujours, dans l'index statique.
-- Un lot est reconstruit au flush suivant quand un de ses renderers bouge,
-  est caché, retiré, ou change de mesh, de matériau ou de calques
+- Un renderer qui bouge dans sa cellule réécrit ses sommets sur place
+  (seuls ces octets vont au GPU). Un lot est reconstruit au flush suivant
+  quand un de ses renderers quitte sa cellule, est caché, retiré, mis en
+  miroir, ou change de mesh, de matériau ou de calques
   (`scene.rendererChanged(entity)` pour les systèmes qui écrivent
   directement les colonnes).
+- Une fois envoyé, un lot rend sa copie CPU, et refusionne si ses données
+  sont relues.
 - Écartés : les matériaux transparents, les meshes que `mergeKey` refuse
   (d'autres primitives que des triangles, des skins, des positions dans
   un autre format que des flottants 32 bits), et ce que l'option `filter`
@@ -352,5 +356,5 @@ statiques : les 1 600 objets du décor du
 [batching statique](/fdw-engine/fr/tutorials/static-batching/), 1 200 draws
 un par un, en font environ 70 fusionnés, de 169 à environ 830 images par
 seconde sous Vulkan et de 50 à environ 300 sous Dawn ; les lots coûtent une
-seconde copie de leur géométrie (5,2 Mo ici) et environ 60 ms de
-construction.
+seconde copie de leur géométrie sur le GPU (5,2 Mo ici), environ 60 ms
+de construction, et 0,03 ms pour déplacer un objet sur place.

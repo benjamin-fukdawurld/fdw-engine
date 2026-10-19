@@ -23,6 +23,9 @@
       "path": "../../packages/engine-assets"
     },
     {
+      "path": "../../packages/engine-geometry"
+    },
+    {
       "path": "../../packages/engine-webgl2"
     },
     {

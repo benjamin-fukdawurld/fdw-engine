@@ -108,12 +108,20 @@ describe('StaticBatches', () => {
     const first = batches.batchOf(nodes[0].entity) as StaticBatch;
     expect(batches.stats.rebuilds).toBe(1);
 
-    // Moved: rebuilt, in world space.
-    nodes[1].transform.position = { x: 0, y: 2, z: 0 };
+    // Moved in its cell: its vertices rewritten in place, the batch kept.
+    const version = first.mesh.version;
+    nodes[1].transform.position = { x: 2, y: 2, z: 0 };
+    expect(batches.batchOf(nodes[0].entity)).toBe(first);
+    expect(first.mesh.destroyed).toBe(false);
+    expect(first.mesh.updatesSince(version)).toHaveLength(1);
+    expect(first.bounds.max[1]).toBe(2);
+    expect(batches.stats).toMatchObject({ rebuilds: 1, updates: 1 });
+    // Mirrored: its faces turn over, the batch is rebuilt.
+    nodes[1].transform.scale = { x: -1, y: 1, z: 1 };
     const moved = batches.batchOf(nodes[0].entity) as StaticBatch;
     expect(moved).not.toBe(first);
     expect(first.mesh.destroyed).toBe(true);
-    expect(moved.bounds.max[1]).toBe(2);
+    expect(batches.stats.rebuilds).toBe(2);
 
     // Hidden: left out, the others still batched.
     nodes[0].visible = false;
@@ -208,5 +216,28 @@ describe('StaticBatches', () => {
     batches.destroy();
     renderer.render({ source: scene, camera, surface });
     expect(renderer.stats.get('scene')?.drawCalls).toBe(10);
+  });
+
+  it('gives the CPU copy of a batch back once drawn', () => {
+    const { backend } = fakeBackend();
+    const renderer = new Renderer(backend);
+    const scene = new Scene();
+    const nodes = decor(scene, 4);
+    const batches = new StaticBatches(scene);
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    expect(batches.stats.cpuBytes).toBe(batches.stats.bytes);
+    renderer.render({ source: scene, camera, surface });
+    expect(batches.stats).toMatchObject({ cpuBytes: 0, batches: 1 });
+    // Moved while on the GPU only: the data read again is up to date.
+    nodes[3].transform.position = { x: 3, y: 5, z: 0 };
+    renderer.render({ source: scene, camera, surface });
+    const batch = batches.batchOf(nodes[3].entity) as StaticBatch;
+    expect(batch.mesh.released).toBe(true);
+    const data = batch.mesh.vertices[0];
+    const view = new DataView(data.buffer, data.byteOffset);
+    const stride = batch.mesh.description.vertexBuffers[0].stride;
+    // The positions of the triangle are 0: its vertices at the node.
+    expect(view.getFloat32(9 * stride + 4, true)).toBe(5);
+    expect(batches.stats.cpuBytes).toBe(batches.stats.bytes);
   });
 });

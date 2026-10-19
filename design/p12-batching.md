@@ -21,8 +21,8 @@ La roadmap demandait de comparer, avant d'écrire, avec le rendu piloté par le 
 | WebGPU                   | Oui                                                                                            | Pas de multi-draw dans la norme (une extension expérimentale de Chrome) : **aucun gain d'appels** pour des meshes différents                                                                                                                                |
 | WebGL2                   | Oui                                                                                            | Pas de draws indirects ; `WEBGL_multi_draw` dessine des plages d'un même buffer en un appel, mais le culling reste sur le CPU                                                                                                                               |
 | Culling                  | Par cellule (un lot entier ou rien)                                                            | Par objet, et par Hi-Z sur le GPU                                                                                                                                                                                                                           |
-| Mémoire                  | La géométrie en double (CPU et GPU)                                                            | Une seule copie, sous-allouée dans un grand buffer                                                                                                                                                                                                          |
-| Objets qui changent      | Le lot reconstruit (de l'ordre de la milliseconde)                                             | Rien : une ligne de la table                                                                                                                                                                                                                                |
+| Mémoire                  | La géométrie en double sur le GPU (la copie CPU rendue après l'envoi, §6)                      | Une seule copie, sous-allouée dans un grand buffer                                                                                                                                                                                                          |
+| Objets qui changent      | Ses sommets réécrits sur place (0,03 ms), le lot reconstruit sinon (1 ms)                      | Rien : une ligne de la table                                                                                                                                                                                                                                |
 | Sélection                | Un identifiant par sommet                                                                      | L'identifiant de la table, comme aujourd'hui                                                                                                                                                                                                                |
 | Ce qu'il faut construire | La fusion, les lots dans la scène, un attribut d'identifiant lu par le compilateur : **petit** | Les draws indirects dans l'API abstraite, un allocateur de meshes dans un grand buffer, les matériaux sans changement d'état (bindless ou tables), le calcul de culling, le Hi-Z, un repli WebGL2 : **très grand**, en partie le socle du ray tracing (P10) |
 
@@ -86,4 +86,37 @@ Ce qu'il coûte, sur le même décor :
 
 La géométrie des objets fait 4,73 Mo : les lots en ajoutent autant, plus 4 octets par sommet pour les identifiants, côté CPU (les `Mesh`) et côté GPU. La construction, au départ, se fait une fois ; un objet déplacé reconstruit un lot, de l'ordre de la milliseconde.
 
-Reportés : la libération de la copie CPU des lots une fois envoyés au GPU (le `Mesh` la garde pour les renvoyer) ; la mise à jour incrémentale d'un lot (réécrire la plage d'un objet plutôt que tout le lot) ; les lots des niveaux de détail ; le rendu piloté par le GPU, pour Vulkan ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)).
+Reportés : les lots des niveaux de détail (§7) ; le rendu piloté par le GPU, pour Vulkan ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)). La copie CPU et la mise à jour incrémentale, d'abord reportées, sont faites (§6).
+
+## 6. La copie CPU rendue, les objets déplacés sur place
+
+_Fait_ (19 octobre 2026), à la suite.
+
+**Dans `Mesh`** (`engine-core`), deux ajouts généraux, pas propres aux lots :
+
+- `regenerate` : une fonction qui refait les données du mesh, telles qu'elles sont alors. Un mesh qui en a une rend sa copie CPU (`releaseData`, `released`) dès qu'un renderer l'a envoyée au GPU ; lire `vertices` ou `indices` la refait. Un second renderer, ou un renderer qui a perdu ses buffers, la relit donc à la demande. `mergeMeshes(parts, { source })` s'en sert : la source donne les pièces telles qu'elles sont, et le mesh est refusionné.
+- `updateVertices(buffer, byteOffset, data)` : réécrit une partie d'un buffer de sommets (décalage et taille multiples de 4, comme l'exige `writeBuffer` en WebGPU), et l'ajoute à un journal de 64 mises à jour, par version. Un renderer en retard rejoue sur ses buffers les écritures qui lui manquent (`updatesSince`) ; plus en retard que le journal, il renvoie tout le mesh. La copie CPU, si elle est là, est mise à jour aussi.
+
+Le renderer lit désormais le nombre d'index dans la description du mesh, plus dans ses données (qui peuvent n'être que sur le GPU), et le constructeur de `Mesh` vérifie qu'ils concordent.
+
+**Dans `StaticBatches`** : chaque lot connaît le premier sommet de chacun de ses objets, et s'il était en miroir. Un objet qui bouge **sans quitter sa cellule**, avec le même mesh et le même sens de faces, a ses sommets réécrits sur place (`updateMergedVertices`) ; les bornes du lot sont recalculées au flush. Les index ne changent pas : un objet qui passe en miroir, ou qui change de mesh, reconstruit son lot, comme un objet qui quitte sa cellule, est caché ou retiré.
+
+Mesures, sur le décor (§5) :
+
+| Taille des cellules | Mémoire CPU des lots, avant et après la première image | Un objet déplacé sur place | Reconstruit |
+| ------------------- | ------------------------------------------------------ | -------------------------- | ----------- |
+| 20 m                | 5,14 Mo → 0                                            | 0,06 ms                    | 0,7 ms      |
+| 40 m                | 5,20 Mo → 0                                            | 0,035 ms                   | 0,9 ms      |
+| 80 m                | 5,20 Mo → 0                                            | 0,033 ms                   | 2,5 ms      |
+
+Un déplacement sur place coûte 25 à 75 fois moins qu'une reconstruction, et ne dépend plus de la taille du lot. Le décor reste à 912 fps sous Vulkan, 344 sous Dawn. L'exemple de la documentation fait rouler un tambour dans son lot ; la suite de rendu vérifie, sur les trois backends, l'écriture partielle d'un mesh qui n'est plus que sur le GPU.
+
+## 7. Les lots des niveaux de détail, reportés
+
+`SceneLods` choisit à chaque image le niveau de chaque groupe en posant le drapeau `Culled` sur les renderers des autres niveaux, sans prévenir la scène : c'est ce qui rend un changement de niveau gratuit. Les lots ne le voient pas. Un renderer fusionné qui passe en `Culled` reste dessiné dans son lot. Aujourd'hui, il faut donc écarter les nœuds des niveaux de détail par l'option `filter`, et les dessiner un par un (l'instancing les regroupe s'ils partagent leurs meshes, comme les sapins du TPS).
+
+Les pistes, à mesurer sur un décor hétérogène à niveaux (un niveau importé, P16) :
+
+- **Un lot par niveau et par cellule**, le niveau choisi pour la cellule entière (par la distance de son centre) plutôt que par objet : les lots restent fixes, le choix du niveau est un drapeau par lot. C'est le principe des HLOD des moteurs de jeu. Il faut changer la façon dont `SceneLods` regroupe (des groupes par cellule), et les transitions deviennent plus visibles.
+- **Des plages d'index par objet dans le lot** : le lot garde tous les niveaux, et un draw par plage d'objets visibles au bon niveau. On retrouve des appels par objet, sauf avec des draws indirects (le rendu piloté par le GPU).
+- **Prévenir la scène quand un niveau change** (`rendererChanged`) et reconstruire : simple, mais une reconstruction à chaque franchissement de distance, ce qui coûte trop cher pour une caméra qui bouge.

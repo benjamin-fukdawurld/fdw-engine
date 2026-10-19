@@ -69,6 +69,114 @@ export function mergeKey(mesh: Mesh): string | undefined {
     .join(',');
 }
 
+// Whether a world matrix mirrors: its faces must be turned back.
+export function isMirror(m: ArrayLike<number>): boolean {
+  return (
+    m[0] * (m[5] * m[10] - m[9] * m[6]) -
+      m[4] * (m[1] * m[10] - m[9] * m[2]) +
+      m[8] * (m[1] * m[6] - m[5] * m[2]) <
+    0
+  );
+}
+
+// Writes the vertices of a part in world space, in the merged layout, from
+// `firstVertex` of `bytes`.
+function writePart(
+  { mesh, matrix: m }: MeshPart,
+  layout: readonly MeshAttributeDescription[],
+  stride: number,
+  bytes: Uint8Array<ArrayBuffer>,
+  firstVertex: number,
+): void {
+  const out = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const n = new Float64Array(9);
+  const count = mesh.description.vertexCount;
+  // The inverse transpose of the upper 3 × 3, for the normals: its
+  // cofactors, over the determinant.
+  n[0] = m[5] * m[10] - m[6] * m[9];
+  n[1] = m[6] * m[8] - m[4] * m[10];
+  n[2] = m[4] * m[9] - m[5] * m[8];
+  n[3] = m[9] * m[2] - m[1] * m[10];
+  n[4] = m[0] * m[10] - m[8] * m[2];
+  n[5] = m[8] * m[1] - m[0] * m[9];
+  n[6] = m[1] * m[6] - m[5] * m[2];
+  n[7] = m[4] * m[2] - m[0] * m[6];
+  n[8] = m[0] * m[5] - m[4] * m[1];
+  const mirrored = isMirror(m);
+  // The sign of the determinant only: the normals are normalized.
+  if (mirrored) {
+    n.forEach((value, i) => (n[i] = -value));
+  }
+
+  for (const attribute of attributesOf(mesh)) {
+    const target = layout.find(
+      (candidate) => candidate.semantic === attribute.semantic,
+    ) as MeshAttributeDescription;
+    const source = mesh.vertices[attribute.buffer];
+    const sourceStride =
+      mesh.description.vertexBuffers[attribute.buffer].stride;
+    const view = new DataView(
+      source.buffer,
+      source.byteOffset,
+      source.byteLength,
+    );
+    const size = formatSize(attribute.format);
+    const sourceBytes = new Uint8Array(
+      source.buffer,
+      source.byteOffset,
+      source.byteLength,
+    );
+    const semantic = attribute.semantic;
+    for (let i = 0; i < count; i++) {
+      const from = i * sourceStride + attribute.offset;
+      const to = (firstVertex + i) * stride + target.offset;
+      if (!moved[semantic]) {
+        bytes.set(sourceBytes.subarray(from, from + size), to);
+        continue;
+      }
+      const x = view.getFloat32(from, true);
+      const y = view.getFloat32(from + 4, true);
+      const z = view.getFloat32(from + 8, true);
+      let rx: number;
+      let ry: number;
+      let rz: number;
+      if (semantic === 'position') {
+        rx = m[0] * x + m[4] * y + m[8] * z + m[12];
+        ry = m[1] * x + m[5] * y + m[9] * z + m[13];
+        rz = m[2] * x + m[6] * y + m[10] * z + m[14];
+      } else {
+        // Normals by the inverse transpose, tangents by the matrix.
+        const t = semantic === 'normal' ? n : undefined;
+        rx = t
+          ? t[0] * x + t[3] * y + t[6] * z
+          : m[0] * x + m[4] * y + m[8] * z;
+        ry = t
+          ? t[1] * x + t[4] * y + t[7] * z
+          : m[1] * x + m[5] * y + m[9] * z;
+        rz = t
+          ? t[2] * x + t[5] * y + t[8] * z
+          : m[2] * x + m[6] * y + m[10] * z;
+        const length = Math.hypot(rx, ry, rz) || 1;
+        rx /= length;
+        ry /= length;
+        rz /= length;
+      }
+      out.setFloat32(to, rx, true);
+      out.setFloat32(to + 4, ry, true);
+      out.setFloat32(to + 8, rz, true);
+      if (size === 16) {
+        const w = view.getFloat32(from + 12, true);
+        // The bitangent of a tangent turns with a mirror.
+        out.setFloat32(
+          to + 12,
+          semantic === 'tangent' && mirrored ? -w : w,
+          true,
+        );
+      }
+    }
+  }
+}
+
 /**
  * One mesh in world space from meshes placed in the world, of the same
  * mergeKey: the static batching. The positions, normals and tangents are
@@ -78,10 +186,22 @@ export function mergeKey(mesh: Mesh): string | undefined {
  * vertex the identifier of its part (`objectId`, uint32), which the
  * 'object-id' outputs of the scene passes read. The indices are 16-bit
  * when they can be.
+ *
+ * With `source`, which gives the parts as they are, the merged mesh does
+ * not keep its CPU copy once a renderer uploaded it: it merges them again
+ * if its data is read (Mesh.regenerate).
  */
 export function mergeMeshes(
   parts: readonly MeshPart[],
-  { ids = true, label }: { ids?: boolean; label?: string } = {},
+  {
+    ids = true,
+    label,
+    source,
+  }: {
+    ids?: boolean;
+    label?: string;
+    source?: () => readonly MeshPart[];
+  } = {},
 ): Mesh {
   if (parts.length === 0) {
     throw new Error('mergeMeshes needs at least one mesh');
@@ -123,7 +243,6 @@ export function mergeMeshes(
       mesh.description.indexBuffer?.count ?? mesh.description.vertexCount;
   }
   const bytes = new Uint8Array(vertexCount * stride);
-  const out = new DataView(bytes.buffer);
   const objectIds = ids ? new Uint32Array(vertexCount) : undefined;
   const indices =
     vertexCount <= 0xffff
@@ -132,100 +251,13 @@ export function mergeMeshes(
 
   let firstVertex = 0;
   let firstIndex = 0;
-  const normalMatrix = new Float64Array(9);
-  for (const { mesh, matrix: m, id = 0 } of parts) {
+  for (const part of parts) {
+    const { mesh, matrix, id = 0 } = part;
     const count = mesh.description.vertexCount;
-    // The inverse transpose of the upper 3 × 3, for the normals: its
-    // cofactors, over the determinant.
-    const det =
-      m[0] * (m[5] * m[10] - m[9] * m[6]) -
-      m[4] * (m[1] * m[10] - m[9] * m[2]) +
-      m[8] * (m[1] * m[6] - m[5] * m[2]);
-    const n = normalMatrix;
-    n[0] = m[5] * m[10] - m[6] * m[9];
-    n[1] = m[6] * m[8] - m[4] * m[10];
-    n[2] = m[4] * m[9] - m[5] * m[8];
-    n[3] = m[9] * m[2] - m[1] * m[10];
-    n[4] = m[0] * m[10] - m[8] * m[2];
-    n[5] = m[8] * m[1] - m[0] * m[9];
-    n[6] = m[1] * m[6] - m[5] * m[2];
-    n[7] = m[4] * m[2] - m[0] * m[6];
-    n[8] = m[0] * m[5] - m[4] * m[1];
-    const mirrored = det < 0;
-    // The sign of the determinant only: the normals are normalized.
-    if (mirrored) {
-      n.forEach((value, i) => (n[i] = -value));
-    }
-
-    for (const attribute of attributesOf(mesh)) {
-      const target = layout.find(
-        (candidate) => candidate.semantic === attribute.semantic,
-      ) as MeshAttributeDescription;
-      const source = mesh.vertices[attribute.buffer];
-      const sourceStride =
-        mesh.description.vertexBuffers[attribute.buffer].stride;
-      const view = new DataView(
-        source.buffer,
-        source.byteOffset,
-        source.byteLength,
-      );
-      const size = formatSize(attribute.format);
-      const sourceBytes = new Uint8Array(
-        source.buffer,
-        source.byteOffset,
-        source.byteLength,
-      );
-      const semantic = attribute.semantic;
-      for (let i = 0; i < count; i++) {
-        const from = i * sourceStride + attribute.offset;
-        const to = (firstVertex + i) * stride + target.offset;
-        if (!moved[semantic]) {
-          bytes.set(sourceBytes.subarray(from, from + size), to);
-          continue;
-        }
-        const x = view.getFloat32(from, true);
-        const y = view.getFloat32(from + 4, true);
-        const z = view.getFloat32(from + 8, true);
-        let rx: number;
-        let ry: number;
-        let rz: number;
-        if (semantic === 'position') {
-          rx = m[0] * x + m[4] * y + m[8] * z + m[12];
-          ry = m[1] * x + m[5] * y + m[9] * z + m[13];
-          rz = m[2] * x + m[6] * y + m[10] * z + m[14];
-        } else {
-          // Normals by the inverse transpose, tangents by the matrix.
-          const t = semantic === 'normal' ? n : undefined;
-          rx = t
-            ? t[0] * x + t[3] * y + t[6] * z
-            : m[0] * x + m[4] * y + m[8] * z;
-          ry = t
-            ? t[1] * x + t[4] * y + t[7] * z
-            : m[1] * x + m[5] * y + m[9] * z;
-          rz = t
-            ? t[2] * x + t[5] * y + t[8] * z
-            : m[2] * x + m[6] * y + m[10] * z;
-          const length = Math.hypot(rx, ry, rz) || 1;
-          rx /= length;
-          ry /= length;
-          rz /= length;
-        }
-        out.setFloat32(to, rx, true);
-        out.setFloat32(to + 4, ry, true);
-        out.setFloat32(to + 8, rz, true);
-        if (size === 16) {
-          const w = view.getFloat32(from + 12, true);
-          // The bitangent of a tangent turns with a mirror.
-          out.setFloat32(
-            to + 12,
-            semantic === 'tangent' && mirrored ? -w : w,
-            true,
-          );
-        }
-      }
-    }
+    writePart(part, layout, stride, bytes, firstVertex);
     objectIds?.fill(id, firstVertex, firstVertex + count);
 
+    const mirrored = isMirror(matrix);
     const source = mesh.indices;
     const faces = source?.length ?? count;
     for (let i = 0; i < faces; i += 3) {
@@ -270,5 +302,31 @@ export function mergeMeshes(
     },
     vertices: objectIds ? [bytes, objectIds] : [bytes],
     indices,
+    ...(source
+      ? {
+          // Merged again from the parts as they are then.
+          regenerate: () => {
+            const { vertices, indices } = mergeMeshes(source(), { ids });
+            return { vertices, indices };
+          },
+        }
+      : {}),
   });
+}
+
+/**
+ * Rewrites the vertices of one part of a merged mesh (mergeMeshes), from
+ * its first vertex, after its matrix changed: only these bytes go to the
+ * GPU. The indices stay: the part must have the same mesh, and mirror as
+ * before (isMirror), otherwise merge again.
+ */
+export function updateMergedVertices(
+  merged: Mesh,
+  part: MeshPart,
+  firstVertex: number,
+): void {
+  const { stride, attributes } = merged.description.vertexBuffers[0];
+  const bytes = new Uint8Array(part.mesh.description.vertexCount * stride);
+  writePart(part, attributes, stride, bytes, 0);
+  merged.updateVertices(0, firstVertex * stride, bytes);
 }
