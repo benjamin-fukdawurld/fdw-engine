@@ -19,6 +19,7 @@ const packages = [
   'engine-input-web',
   'engine-input-native',
   'engine-camera',
+  'engine-editing',
   'engine-animation',
   'engine-skinning',
   'engine-behavior',

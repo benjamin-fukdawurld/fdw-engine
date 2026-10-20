@@ -97,6 +97,9 @@
       "path": "./packages/engine-noise"
     },
     {
+      "path": "./packages/engine-editing"
+    },
+    {
       "path": "./packages/engine-skinning"
     },
     {

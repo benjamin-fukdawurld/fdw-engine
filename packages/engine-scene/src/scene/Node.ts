@@ -64,6 +64,7 @@ export class Node implements SceneNode {
   set name(name: string) {
     this.check();
     this.scene.NodeState.label[this.entity] = name;
+    this.scene.notify(this.entity, 'modified');
   }
 
   /** The world matrix, up to date: a view on the column of the scene. */
@@ -121,12 +122,14 @@ export class Node implements SceneNode {
   ): this {
     this.check();
     this.scene.world.add(this.entity, component, values);
+    this.scene.notify(this.entity, 'modified');
     return this;
   }
 
   detach(component: Component): this {
     this.check();
     this.scene.world.remove(this.entity, component);
+    this.scene.notify(this.entity, 'modified');
     return this;
   }
 
@@ -187,6 +190,7 @@ export class Node implements SceneNode {
     this.check();
     this.scene.NodeState.layers[this.entity] = layers;
     this.scene.rendererChanged(this.entity);
+    this.scene.notify(this.entity, 'modified');
   }
 
   /** Hidden nodes are not drawn, nor their descendants. */
@@ -197,6 +201,7 @@ export class Node implements SceneNode {
   set visible(visible: boolean) {
     this.setFlag(NodeFlags.Hidden, !visible);
     this.scene.touch(this.entity);
+    this.scene.notify(this.entity, 'modified');
   }
 
   /**
@@ -212,6 +217,7 @@ export class Node implements SceneNode {
       node.setFlag(NodeFlags.Static, value);
       // Re-indexed at the next flush.
       this.scene.MeshRenderer.boundsVersion[node.entity] = 0xffffffff;
+      this.scene.notify(node.entity, 'modified');
     });
     this.scene.touch(this.entity);
   }
@@ -223,6 +229,7 @@ export class Node implements SceneNode {
 
   set occluder(value: boolean) {
     this.setFlag(NodeFlags.Occluder, value);
+    this.scene.notify(this.entity, 'modified');
   }
 
   /** The last camera query (Scene.cameraQueries) that kept the node. */

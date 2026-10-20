@@ -1,0 +1,329 @@
+---
+title: Selection, gizmos and commands
+description: Select the objects of a scene, move, rotate and scale them with a gizmo, undo and redo, and hear what changed.
+sidebar:
+  order: 33
+---
+
+import Example from '../../../components/Example.astro';
+
+The editing tools of `@fdw/engine-editing`, for any application that lets
+its users change a scene: an editor, a modeler, a configurator in a web
+page. Click an object to select it (Shift adds, Ctrl toggles), drag a
+rectangle to select several; drag the handles of the gizmo; **W**, **E**,
+**R** move, rotate, scale; **X** switches the axes between the world and
+the object, **C** the pivot; **Ctrl+Z** and **Ctrl+Y** undo and redo;
+**Delete** removes. The right button turns the camera, the wheel zooms.
+
+<Example name="editing" />
+
+The pieces, each usable alone:
+
+| Piece               | What it does                                                                  |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `Viewport`          | The camera and the size in pixels: the ray under a pixel, the size of a pixel |
+| `Picker`            | The objects under a pixel or in a rectangle, by the texture of identifiers    |
+| `Selection`         | The selected objects (the last one is active) and the hovered one             |
+| `Outline`           | A line around objects, over the image                                         |
+| `TransformGizmo`    | The handles to move, rotate, scale; tested on the CPU                         |
+| `GizmoRenderer`     | Draws the gizmo over the scene, in passes of its own                          |
+| `History`, commands | Every change reversible, grouped in transactions; undo, redo                  |
+| `SceneEvents`       | What changed in the scene: created, removed, moved, modified                  |
+| `EditingTools`      | All of them on the pointer and the keyboard                                   |
+
+## The viewport
+
+The tools work in pixels of the texture the scene is drawn into, from its
+top left corner. A `Viewport` knows the camera and that size: it gives
+the ray through a pixel, projects a point back, and tells the size of a
+pixel at a distance (what keeps the gizmo the same size on screen).
+
+```ts
+import { Viewport } from '@fdw/engine-editing';
+
+const viewport = new Viewport(camera);
+// Each frame: the size of the target.
+viewport.resize(target.width, target.height);
+
+const ray = viewport.ray({ x, y }); // a Ray of @fdw/engine-geometry
+const { x, y, depth } = viewport.project([1, 2, 0]);
+```
+
+The pointer events give CSS pixels: `pointerPixel(event, canvas)` scales
+them by the size of the canvas, and `toolPointer(event, canvas)` adds the
+button, the type of pointer and the modifiers.
+
+## Picking
+
+A `Picker` owns the texture of the identifiers that the scene passes
+write for each pixel (see [Picking](/fdw-engine/tutorials/picking/)):
+exact to the pixel, whatever the meshes or the instancing. For a scene,
+`Picker.forScene` maps the identifiers to its nodes; its last argument maps
+the node drawn to the one to select, or to `undefined` when it is not
+selectable.
+
+```ts
+import { Picker } from '@fdw/engine-editing';
+
+const picker = Picker.forScene(backend, scene, (node) => {
+  // A leg selects its table: the ancestor just under the root.
+  let top = node;
+  while (top.parent && top.parent !== scene.root) {
+    top = top.parent;
+  }
+  return top.name === 'ground' ? undefined : top;
+});
+
+// Each frame, an output of the scene passes.
+let color = renderer.addScenePasses(graph, {
+  source: scene,
+  camera,
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+  outputs: { id: picker.output(graph, width, height) },
+}).color;
+
+// Asynchronous: a frame or two later.
+const node = await picker.pick({ x, y });
+const nodes = await picker.pickRect(from, to);
+```
+
+## The selection
+
+A `Selection` keeps the selected objects in the order they were selected:
+the last one is the **active** object (the gizmo pivots on its origin, its
+axes are the local ones). `apply(items, mode)` replaces, adds, removes or
+toggles; `selectionMode(event)` reads the mode from the modifiers (Shift
+adds, Ctrl or Cmd toggles, Alt removes). `hovered` is the object under the
+pointer. Listen with `onChange` and `onHover`.
+
+```ts
+import { Selection } from '@fdw/engine-editing';
+
+const selection = new Selection<Node>();
+selection.set([table]);
+selection.apply([cube], 'add');
+selection.active; // cube
+```
+
+The selection is not in the history: undoing changes the objects, not what
+is selected, as in most editors.
+
+### The outline
+
+`Outline` draws a line around objects, over the image: they are drawn into
+a mask by scene passes without color, then a full screen pass blends the
+line where the mask has an edge. Their silhouette is seen through what is
+in front of them. `renderablesOf(nodes)` gives the items of nodes and of
+their descendants.
+
+```ts
+import { Outline, renderablesOf } from '@fdw/engine-editing';
+
+const outline = new Outline(renderer, backend);
+// Each frame, after the scene passes: each pass writes a new version of
+// the image, the next one draws over it.
+color = outline.addPasses(graph, {
+  items: renderablesOf(selection.items),
+  camera,
+  target: color,
+  format: surface.format,
+  size: { width, height },
+  color: [1, 0.55, 0.1, 1], // in the encoding of the target
+  width: 2,
+});
+```
+
+Give a `name` to each outline of a frame: the example draws a thinner,
+white one around the hovered object.
+
+## The gizmo
+
+A `TransformGizmo` moves, rotates and scales its `targets`: nodes of a
+scene, or bare `Transform`s. Its handles:
+
+| Mode        | Handles                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------- |
+| `translate` | Along an axis (`x`, `y`, `z`), in a plane (`yz`, `zx`, `xy`), in the plane of the screen (`view`) |
+| `rotate`    | Around an axis (its ring), around the direction of the view (the outer ring)                      |
+| `scale`     | Along an axis, in a plane, uniform (`uniform`, the center)                                        |
+
+```ts
+import { History, TransformGizmo } from '@fdw/engine-editing';
+
+const history = new History();
+const gizmo = new TransformGizmo({
+  history,
+  mode: 'translate',
+  space: 'world', // or 'local': the axes of the active object
+  pivot: 'center', // or 'origin': around the origin of each object
+  snap: { translate: 0.5, rotate: 15, scale: 0.25 },
+  snapping: false, // Ctrl inverts it during a drag
+  size: 110, // the length of the axes, in pixels
+});
+gizmo.targets = selection.items;
+```
+
+- **The hover and the grab are tested on the CPU**, analytically: the ray
+  under the pointer against the segments of the axes, the squares of the
+  planes, the rings. No read back: the handle under the pointer is known
+  at once.
+- **A drag** goes `begin(viewport, point)` (false: no handle there),
+  `drag(viewport, point)` at each move, then `end()`, or `cancel()` to put
+  everything back. The targets follow at each step; at the end, **one
+  command** goes into the history: the whole drag is one undo.
+- **The pivot**: `'center'`, the center of the bounds of the selection,
+  everything turns and scales around it; `'origin'`, the gizmo at the
+  origin of the active object, each object turning and scaling around its
+  own.
+- **The scale** is always along the axes of the objects: along an axis of
+  the world, a turned object would be sheared, which its transform cannot
+  hold.
+- **Hierarchies**: a node selected with one of its ancestors moves once,
+  with it; a child moves in the space of its parent.
+- Axes seen end on, and planes seen edge on, are hidden: they could not be
+  dragged precisely.
+
+`GizmoRenderer` draws the gizmo over the scene, in scene passes of their
+own: a depth buffer of their own (the objects never hide the gizmo, its
+handles hide each other), unlit, without shadows. The hovered and dragged
+handles are yellow; `colors` changes them.
+
+```ts
+import { GizmoRenderer } from '@fdw/engine-editing';
+
+const gizmoRenderer = new GizmoRenderer(renderer);
+// Each frame, last:
+color = gizmoRenderer.addPasses(graph, gizmo, viewport, {
+  target: color,
+  format: surface.format,
+});
+```
+
+## The tools together
+
+`EditingTools` puts the viewport, the selection, the picker, the gizmo and
+the history on the pointer and the keyboard: a press on a handle drags it;
+elsewhere, a click selects and a drag selects in a rectangle; the pointer
+hovers. Only the primary button is used: the others are free for the
+camera.
+
+```ts
+import { EditingTools, toolPointer } from '@fdw/engine-editing';
+
+const tools = new EditingTools({ viewport, selection, picker, gizmo, history });
+canvas.addEventListener('pointerdown', (event) => {
+  if (tools.pointerDown(toolPointer(event, canvas))) {
+    canvas.setPointerCapture(event.pointerId);
+  }
+});
+canvas.addEventListener('pointermove', (event) =>
+  tools.pointerMove(toolPointer(event, canvas)),
+);
+canvas.addEventListener('pointerup', (event) =>
+  tools.pointerUp(toolPointer(event, canvas)),
+);
+canvas.addEventListener('keydown', (event) => {
+  if (tools.keyDown(event)) {
+    event.preventDefault();
+  }
+});
+```
+
+`tools.rectangle` is the rectangle being dragged, for the application to
+draw (the example draws a `div` over the canvas, in `tools.onChange`).
+`keyDown` knows the usual shortcuts: W, E, R, X, C, Ctrl+Z, Ctrl+Y or
+Ctrl+Shift+Z, Delete, Escape (cancels the drag, else clears the
+selection).
+
+**Touch**: a finger (`pointerType: 'touch'`) gets a larger tolerance
+around the handles (20 pixels instead of 8, `tolerance`) and does not
+hover. Set `touch-action: none` on the canvas.
+
+## Commands and history
+
+Every change is a **command**: `do()` and `undo()`, and what they need
+(the values before and after). The `History` executes them and keeps
+them; executing a command after undos drops those undone.
+
+```ts
+import {
+  CreateNodeCommand,
+  DeleteNodesCommand,
+  PropertyCommand,
+  ReparentCommand,
+  TransformCommand,
+} from '@fdw/engine-editing';
+
+history.execute(
+  new CreateNodeCommand('Add cube', scene.root, { name: 'cube' }, (node) =>
+    node.setMesh(mesh, material),
+  ),
+);
+history.execute(new DeleteNodesCommand('Delete', selection.items));
+history.execute(new ReparentCommand('Group', [a, b], group));
+history.undo();
+history.redo();
+```
+
+- **Transactions**: the commands between `begin(label)` and `commit()`
+  make one entry (`cancel()` undoes them); `history.transaction(label,
+body)` commits when `body` returns, cancels when it throws.
+- **Recorded after the fact**: `history.record(command)` keeps a command
+  already done, as the gizmo does at the end of a drag
+  (`TransformCommand.capture(targets)` reads the transforms before and
+  after).
+- **Merged**: `PropertyCommand` sets a value by a getter and a setter;
+  consecutive ones with the same `key` merge, so the steps of a slider
+  make one entry.
+- **Removed nodes are kept**: `DeleteNodesCommand` and an undone
+  `CreateNodeCommand` move the nodes to a hidden branch out of the tree
+  (`SceneTrash`): not drawn, not found, but alive, with their entity and
+  their components. Undone, they come back as they were; the history
+  destroys them when it drops the command (`dispose`).
+- `defineCommand(label, apply, revert)` makes a command of two functions;
+  `limit` (100 by default) bounds the history.
+
+## The events of the scene
+
+A panel of an editor (the tree of the scene, the inspector) and a save
+need to know what changed. `scene.observe(observer)` of
+`@fdw/engine-scene` tells each change as it happens: created, removed,
+moved (the local transform, the parent or the visibility), modified (a
+component, the mesh, the name, the layers). `SceneEvents` gathers them
+into batches, after the code that made them (or at `flush()`, with
+`delivery: 'manual'`), and counts the nodes of the trash as removed.
+
+```ts
+import { SceneEvents } from '@fdw/engine-editing';
+
+new SceneEvents(scene).listen(({ created, removed, moved, modified }) => {
+  tree.remove(removed);
+  tree.add(created);
+  inspector.refresh(moved, modified);
+});
+```
+
+An entity created then removed in the same batch is not listed; one
+removed is not listed as moved or modified. Systems writing the columns of
+the components directly call `scene.notify(entity, 'modified')`.
+
+## What to know
+
+- **Latency of the hover**: the object under the pointer comes from the
+  identifiers of the frame before; the handles of the gizmo, tested on the
+  CPU, have none.
+- **Multisampling**: the identifiers need scene passes with one sample per
+  pixel (see [Picking](/fdw-engine/tutorials/picking/#what-to-know)).
+- **Transparent objects** write no identifier: they cannot be clicked.
+- **Hierarchies with shear**: the gizmo reads the rotation of a parent from
+  its world matrix; a parent scaled unevenly, then turned, shears its
+  children, which a local transform cannot hold.
+
+## Next
+
+- [Picking](/fdw-engine/tutorials/picking/): the texture of identifiers,
+  read back.
+- [Scene graph guide](/fdw-engine/guides/scene-graph/): nodes,
+  hierarchies, observers.
+- [Editing guide](/fdw-engine/guides/editing/): every option of the tools.

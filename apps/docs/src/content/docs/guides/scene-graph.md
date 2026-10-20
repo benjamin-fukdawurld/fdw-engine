@@ -216,6 +216,24 @@ They test the bounds of the meshes, then the `volume` given to `setMesh()`
 when there is one. `options` filters by `layers`, and includes the hidden
 nodes with `hidden: true`. `visit` returns false to stop.
 
+## Observers
+
+`scene.observe(observer)` calls `observer(entity, change)` for each change,
+as it happens; it returns a function that stops. Without observers, the
+scene calls nothing.
+
+| Change       | When                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `'created'`  | `create()`, `node.add()`, each entity of `createBatch()`                                                      |
+| `'removed'`  | `destroy()`, `node.remove()`: each entity of the branch                                                       |
+| `'moved'`    | `touch()`: the local transform, the parent, the visibility                                                    |
+| `'modified'` | A component given or taken (`attach`, `setMesh`…), the name, the layers, the visibility, `static`, `occluder` |
+
+A system writing the columns of a component directly tells it with
+`scene.notify(entity, 'modified')`. `SceneEvents` of `@fdw/engine-editing`
+gathers the changes into batches, for the panels of an editor (see
+[Selection, gizmos and commands](/fdw-engine/tutorials/editing/#the-events-of-the-scene)).
+
 ## The ECS core
 
 The scene is built on a `World`, usable on its own:

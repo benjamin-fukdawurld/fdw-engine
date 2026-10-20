@@ -75,6 +75,7 @@ renderer.render({ source: scene, camera, surface });
 - **Indices**: the renderers are in two loose octrees (`@fdw/engine-geometry`), static and dynamic. Static nodes are indexed at once, at the next flush.
 - **Queries**: `scene.raycast(ray, visit)`, nearest first; `scene.queryVolume(volume, visit)`, with any `Volume`; options `layers` and `hidden`. Entity versions (`raycastEntities`, `queryVolumeEntities`) for the systems.
 - **Levels of detail**: `SceneLods`, a component (`lod`) and a system choosing, for a camera, the level of each group by its distance (with hysteresis, scaled by the field of view, multiplied by `bias`). The levels left out get `NodeFlags.Culled` on their renderers: skipped by the queries, without invalidation. `findLodGroups(root)` finds the levels named `<name>_LOD0`, `<name>_LOD1`…
+- **Observers**: `scene.observe(observer)` tells each change of an entity as it happens: `created`, `removed`, `moved` (transform, parent, visibility), `modified` (a component, the mesh, the name, the layers…); `scene.notify(entity, change)` for the systems writing columns directly. `SceneEvents` of `@fdw/engine-editing` gathers them in batches.
 - **Occlusion**: `scene.occlusion`, a stage applied to the camera queries only; `NodeState.lastVisible` remembers the last camera query that kept a node; `scene.occluders()` lists the occluders.
 
 `SceneNode` and `SceneGraph` describe a scene independently of this implementation.
