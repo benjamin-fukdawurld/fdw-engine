@@ -211,7 +211,10 @@ const twist = Math.atan2(
 );
 for (const frame of result) {
   const angle = (twist * frame.length) / last.length;
-  frame.r = add(scale(frame.r, Math.cos(angle)), scale(frame.s, Math.sin(angle)));
+  frame.r = add(
+    scale(frame.r, Math.cos(angle)),
+    scale(frame.s, Math.sin(angle)),
+  );
   frame.s = cross(frame.t, frame.r);
 }
 ```
