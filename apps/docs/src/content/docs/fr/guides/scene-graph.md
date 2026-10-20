@@ -229,6 +229,24 @@ Elles testent les englobants des meshes, puis le `volume` passé à
 `setMesh()` s'il y en a un. `options` filtre par `layers`, et inclut les
 nœuds cachés avec `hidden: true`. `visit` renvoie false pour s'arrêter.
 
+## Observateurs
+
+`scene.observe(observer)` appelle `observer(entity, change)` à chaque
+changement, quand il a lieu ; il renvoie une fonction qui arrête. Sans
+observateur, la scène n'appelle rien.
+
+| Changement   | Quand                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `'created'`  | `create()`, `node.add()`, chaque entité de `createBatch()`                                                    |
+| `'removed'`  | `destroy()`, `node.remove()` : chaque entité de la branche                                                    |
+| `'moved'`    | `touch()` : le transform local, le parent, la visibilité                                                      |
+| `'modified'` | Un composant donné ou retiré (`attach`, `setMesh`…), le nom, les calques, la visibilité, `static`, `occluder` |
+
+Un système qui écrit directement les colonnes d'un composant le signale
+par `scene.notify(entity, 'modified')`. `SceneEvents` de
+`@fdw/engine-editing` rassemble les changements en lots, pour les panneaux
+d'un éditeur (voir [Sélection, gizmos et commandes](/fdw-engine/fr/tutorials/editing/#les-événements-de-la-scène)).
+
 ## Le cœur ECS
 
 La scène est construite sur un `World`, utilisable seul :

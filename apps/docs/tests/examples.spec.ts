@@ -41,6 +41,7 @@ const examples: Record<string, string> = {
   'static-batching': 'tutorials/static-batching/',
   'procedural-materials': 'tutorials/procedural-materials/',
   'procedural-terrain': 'tutorials/procedural-terrain/',
+  editing: 'tutorials/editing/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -128,6 +129,59 @@ test('picking under the mouse', async ({ page: browser }, info) => {
   await browser.mouse.move(box.x + 4, center.y + 4, { steps: 4 });
   await browser.mouse.up();
   await expect(status).toContainText('selected 6, 7, 8, 9, 10');
+});
+
+// The editing tools: the gizmo dragged then undone, a rectangle of
+// selection, the selection removed then put back. The status line tells
+// the selection and the last entry of the history.
+test('editing with the gizmo', async ({ page: browser }, info) => {
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/editing/?time=${time}&frames=${frames}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="editing"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const canvas = example.locator('canvas');
+  const status = example.locator('.fdw-example-status');
+  await expect
+    .poll(async () => Number((await canvas.getAttribute('data-frames')) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBe(frames);
+  const box = await canvas.boundingBox();
+  if (!box) {
+    throw new Error('The canvas is not visible');
+  }
+  // In pixels of the canvas (630 × 354 CSS pixels).
+  const at = (x: number, y: number) => ({
+    x: box.x + (x * box.width) / 630,
+    y: box.y + (y * box.height) / 354,
+  });
+  await expect(status).toContainText('cube 1 selected · no change');
+  // The x axis of the gizmo on the first cube, dragged to the right.
+  const axis = at(255, 182);
+  await browser.mouse.move(axis.x, axis.y);
+  await browser.mouse.down();
+  const to = at(345, 194);
+  await browser.mouse.move(to.x, to.y, { steps: 6 });
+  await browser.mouse.up();
+  await expect(status).toContainText('cube 1 selected · Move');
+  await browser.keyboard.press('Control+z');
+  await expect(status).toContainText('cube 1 selected · no change');
+  // A rectangle around the yellow cube, the green sphere and the table.
+  const from = at(330, 120);
+  const corner = at(450, 270);
+  await browser.mouse.move(from.x, from.y);
+  await browser.mouse.down();
+  await browser.mouse.move(corner.x, corner.y, { steps: 6 });
+  await browser.mouse.up();
+  await expect(status).toContainText('cube 3, sphere 1, table selected');
+  await browser.keyboard.press('Delete');
+  await expect(status).toContainText('nothing selected · Delete 3 objects');
+  await browser.keyboard.press('Control+z');
+  await expect(status).toContainText('nothing selected · no change');
 });
 
 // Ambient occlusion: two clicks show the occlusion alone. The clock is

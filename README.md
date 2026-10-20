@@ -98,6 +98,7 @@ packages/
   engine-camera/        Camera operators (orbit, fly, walk) driven by the actions of the input
   engine-behavior/      Behavior graphs: events, a flow of execution, run as systems, interpreted or compiled, a debugger
   engine-noise/         The noises of the material graph in TypeScript (heights, placement), the same bits as the GPU
+  engine-editing/       Editing tools: selection and outlines, transform gizmos, undoable commands, scene events
   engine-physics/       Physics: an abstract API, the bodies as components of the scene, a debug view
   engine-physics-rapier/ The physics API on Rapier (WebAssembly, in the browser and in Node)
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)

@@ -449,3 +449,33 @@ describe('Scene with a Renderer', () => {
     expect(renderer.stats.get('scene')?.lights).toBe(1);
   });
 });
+
+describe('Scene observers', () => {
+  it('tell the creations, moves, changes and removals', () => {
+    const scene = new Scene();
+    const changes: string[] = [];
+    const stop = scene.observe((entity, change) =>
+      changes.push(`${change} ${entity}`),
+    );
+    const a = scene.root.add({ name: 'a' });
+    const b = a.add({ name: 'b' });
+    a.transform.position = { x: 1 };
+    b.name = 'bee';
+    b.visible = false;
+    scene.root.add(b);
+    a.remove();
+    expect(changes).toEqual([
+      `created ${a.entity}`,
+      `created ${b.entity}`,
+      `moved ${a.entity}`,
+      `modified ${b.entity}`,
+      `moved ${b.entity}`,
+      `modified ${b.entity}`,
+      `moved ${b.entity}`,
+      `removed ${a.entity}`,
+    ]);
+    stop();
+    scene.root.add();
+    expect(changes).toHaveLength(8);
+  });
+});

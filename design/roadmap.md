@@ -244,6 +244,10 @@ Démo : le terrain du TPS texturé par des bruits et le mapping triplanaire, et 
 
 ### P15. Sélection, gizmos et commandes
 
+_Faite_ (19 octobre 2026), avec son tutoriel « Sélection, gizmos et commandes » et son guide « Outils d'édition » : le design et ce qui a été fait sont dans [p15-editing.md](p15-editing.md). Le package `@fdw/engine-editing` : le `Viewport` (rayons, projections, taille d'un pixel), le `Picker` (clic et rectangle par le buffer d'identifiants, nœuds résolus par l'application), la `Selection` (multi-sélection, objet actif, survol) et son contour (masque puis passe plein écran) ; le `TransformGizmo` (axes, plans, écran, uniforme ; monde ou local ; pivot au centre ou aux origines ; pas magnétique ; taille constante ; testé analytiquement sur le CPU ; souris et doigt) et son `GizmoRenderer` (passes à lui) ; l'`History` (transactions imbriquées, fusion, limite) et les commandes (transforms, propriétés, création, suppression par une corbeille qui garde les entités, reparentage), un glissement de gizmo étant une seule entrée ; `SceneEvents` sur le nouveau `scene.observe()` d'`engine-scene`. `EditingTools` réunit le tout sur le pointeur et le clavier. Reportés : le contour atténué des parties cachées, la moitié arrière des anneaux, les gestes à plusieurs doigts, le rectangle par lancer de rayons, les commandes génériques des composants (avec les schémas de P16).
+
+Le plan d'origine :
+
 Les outils d'édition du moteur, dans un package à part, utilisables par n'importe quelle application (l'éditeur de jeu, le modeleur, un configurateur dans une page web). Ils étaient la première étape de l'ancien P13.
 
 - **La sélection** : le clic et le rectangle par le buffer d'identifiants de P2b, la multi-sélection, le contour des objets sélectionnés ; le survol.

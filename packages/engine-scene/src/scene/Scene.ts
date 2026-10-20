@@ -52,6 +52,17 @@ export const NodeFlags = {
   Batched: 128,
 } as const;
 
+/**
+ * What changed for an entity, as told to the observers of a scene
+ * (Scene.observe): created; removed (destroyed); moved (its local
+ * transform, its parent or its visibility: its branch moves with it);
+ * modified (a component given or taken, its mesh, its name, its layers…).
+ */
+export type SceneChange = 'created' | 'removed' | 'moved' | 'modified';
+
+/** Told of each change of the entities of a scene: see Scene.observe. */
+export type SceneObserver = (entity: number, change: SceneChange) => void;
+
 /** What a node is created with. */
 export interface NodeOptions {
   readonly name?: string;
@@ -194,6 +205,7 @@ export class Scene implements SceneGraph {
   private readonly _box = new Aabb();
   private readonly _meshRenderers;
   private readonly _lights;
+  private readonly _observers: SceneObserver[] = [];
 
   constructor() {
     const world = new World();
@@ -315,10 +327,15 @@ export class Scene implements SceneGraph {
     world.addMany(entities, NodeState, state);
     for (let i = 0; i < count; i++) {
       this.link(entities[i], parent);
-      this.touch(entities[i]);
+      this.invalidate(entities[i]);
     }
     if (renderer) {
       world.addMany(entities, MeshRenderer, renderer);
+    }
+    if (this._observers.length > 0) {
+      for (const entity of entities) {
+        this.notify(entity, 'created');
+      }
     }
     return entities;
   }
@@ -361,7 +378,8 @@ export class Scene implements SceneGraph {
     if (parent !== None) {
       this.link(entity, parent);
     }
-    this.touch(entity);
+    this.invalidate(entity);
+    this.notify(entity, 'created');
     return entity;
   }
 
@@ -374,6 +392,7 @@ export class Scene implements SceneGraph {
       this.destroy(child);
       child = next;
     }
+    this.notify(entity, 'removed');
     this.unlink(entity);
     this._nodes[entity]?.release();
     this._nodes[entity] = undefined;
@@ -405,15 +424,50 @@ export class Scene implements SceneGraph {
     return node;
   }
 
+  // --- Observers ---------------------------------------------------------------
+
+  /**
+   * Calls `observer` for each change of an entity, as it happens: created,
+   * removed, moved, modified (see SceneChange). The nodes and the scene
+   * tell their changes; systems writing the columns of the components
+   * directly call notify(), and touch() for the transforms. Returns a
+   * function that stops observing. Without observers, nothing is called.
+   */
+  observe(observer: SceneObserver): () => void {
+    this._observers.push(observer);
+    return () => {
+      const index = this._observers.indexOf(observer);
+      if (index >= 0) {
+        this._observers.splice(index, 1);
+      }
+    };
+  }
+
+  /** Tells the observers that an entity changed. */
+  notify(entity: number, change: SceneChange): void {
+    for (const observer of this._observers) {
+      observer(entity, change);
+    }
+  }
+
   // --- Invalidation ------------------------------------------------------------
 
   /**
    * Signals that the transform, the parent or the visibility of an entity
    * changed: the world matrices of its branch are stale, and the indices
    * will be updated before the next query. Systems writing the local values
-   * of the pool directly call it once per entity they moved.
+   * of the pool directly call it once per entity they moved. Observers are
+   * told the entity moved.
    */
   touch(entity: number): void {
+    this.invalidate(entity);
+    if (this._observers.length > 0) {
+      this.notify(entity, 'moved');
+    }
+  }
+
+  // touch(), without telling the observers.
+  private invalidate(entity: number): void {
     const flags = this.NodeState.flags;
     const parent = this.Hierarchy.parent[entity];
     // Already stale with its parent: its branch is queued already.
