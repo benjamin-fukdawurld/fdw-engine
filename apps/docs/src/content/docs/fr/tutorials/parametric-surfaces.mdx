@@ -1,0 +1,247 @@
+---
+title: Surfaces paramétriques
+description: Des maillages calculés à partir de formules — une surface échantillonnée sur une grille de (u, v), des surfaces faites de deux courbes dans des plans orthogonaux, des tuyaux balayés le long de courbes de l'espace avec des repères à rotation minimale.
+sidebar:
+  order: 34
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une surface paramétrique est une fonction : deux nombres `(u, v)` en
+entrée, un point de l'espace en sortie. Échantillonnée sur une grille de
+`(u, v)`, elle donne les sommets d'un maillage ; la grille donne ses
+triangles. Rien dans le moteur ne lui est propre : un `Mesh` se construit
+à partir de tableaux, et les tableaux peuvent venir d'une formule.
+
+Dans le premier exemple, deux surfaces sont faites de **deux courbes
+tracées dans des plans orthogonaux**, en rouge et en bleu. Les courbes
+changent avec le temps, et les surfaces suivent.
+
+<Example name="parametric-surfaces" />
+
+## Une surface, une grille
+
+La surface est échantillonnée sur `(columns + 1) × (rows + 1)` points. La
+normale est le produit vectoriel des deux dérivées partielles `∂S/∂u` et
+`∂S/∂v`, calculées ici par différences centrées ; avec une formule, on
+peut aussi les dériver à la main. Les uv sont `(u, v)` eux-mêmes :
+
+```ts
+type ParametricSurface = (u: number, v: number) => Vec3;
+
+for (let j = 0; j <= rows; j++) {
+  for (let i = 0; i <= columns; i++) {
+    const u = i / columns;
+    const v = j / rows;
+    const du = sub(S(Math.min(u + h, 1), v), S(Math.max(u - h, 0), v));
+    const dv = sub(S(u, Math.min(v + h, 1)), S(u, Math.max(v - h, 0)));
+    const n = normalize(cross(du, dv));
+    data.set([...S(u, v), ...n, u, v], (j * (columns + 1) + i) * 8);
+  }
+}
+```
+
+Chaque cellule de la grille fait deux triangles, dans le sens
+trigonométrique autour de `du × dv` : la face avant est celle vers
+laquelle pointe la normale. Une surface ouverte se voit des deux côtés ;
+l'exemple écrit chaque sommet deux fois, la seconde avec sa normale
+inversée, et les triangles de la face arrière dans le sens horaire.
+(`doubleSided` dans l'état de rendu du matériau dessine les faces
+arrière, mais avec la normale de la face avant.)
+
+Les lignes tracées sur les surfaces sont les **iso-courbes** : `u`
+constant, ou `v` constant, tous les seizièmes. Le matériau les lit dans
+les uv, larges d'un pixel à toute distance grâce à `fwidth`.
+
+## Deux courbes, deux plans orthogonaux
+
+### La surface de translation
+
+À gauche, la courbe **A** est tracée dans le plan `z = 1.5`, la courbe
+**B** dans le plan `x = -1.5`, orthogonal au premier. Elles partent du
+même coin `O = A(0) = B(0)`. La surface déplace une courbe le long de
+l'autre :
+
+```ts
+const translation: ParametricSurface = (u, v) => sub(add(A(u), B(v)), O);
+```
+
+Pour `v = 0`, c'est `A` ; pour `u = 0`, c'est `B` : les deux courbes sont
+deux bords de la surface. Chaque iso-courbe `v` constant est une copie de
+`A`, déplacée de `B(v) - O` ; chaque iso-courbe `u` constant est une
+copie de `B`. Quand la vague de `A` est plate, la surface est un cylindre
+de `B` : l'arche déplacée le long d'une droite.
+
+Comme les courbes sont dans des plans orthogonaux, la hauteur d'un point
+est la somme des deux hauteurs : `y = a(x) + b(z)`. Un profil en travers,
+un profil en long, et chaque point de la surface est défini.
+
+### Le produit sphérique
+
+À droite, la **méridienne** (en rouge) est tracée dans le plan XY : un
+rayon `r(u)` et une hauteur `y(u)`. La **section** (en bleu) est tracée
+dans le plan XZ : une courbe fermée `(x(v), z(v))`. La surface met la
+section à l'échelle du rayon à chaque hauteur :
+
+```ts
+const product: ParametricSurface = (u, v) => {
+  const [x, z] = section(v);
+  return [radius(u) * x, height(u), radius(u) * z];
+};
+```
+
+Avec un cercle pour section, c'est la surface de révolution de la
+méridienne : un tour. La section de l'exemple est une **superellipse**,
+`|x|ⁿ + |z|ⁿ = 1`, un cercle pour `n = 2`, de plus en plus proche d'un
+carré quand `n` grandit :
+
+```ts
+const section = (v: number): [number, number] => {
+  const c = Math.cos(2 * Math.PI * v);
+  const s = Math.sin(2 * Math.PI * v);
+  return [
+    Math.sign(c) * Math.abs(c) ** (2 / n),
+    Math.sign(s) * Math.abs(s) ** (2 / n),
+  ];
+};
+```
+
+Le rayon de la méridienne vaut 1 en bas : là, la surface est la section
+elle-même ; et pour `v = 0`, la section est le point `(1, 0)` : la
+surface est la méridienne. Ici encore, les deux courbes sont sur la
+surface.
+
+## Quand une courbe change
+
+Les surfaces sont échantillonnées à nouveau à chaque image, avec les
+nouvelles courbes, et le maillage prend les nouveaux sommets ; les
+indices ne changent pas :
+
+```ts
+onFrame((time) => {
+  amplitude = 0.45 * Math.cos(time * 0.5);
+  n = 2 + 3 * (0.5 - 0.5 * Math.cos(time * 0.7));
+  mesh.setVertices(0, sample(product, columns, rows));
+});
+```
+
+`setVertices` envoie de nouveau tout le buffer ; `updateVertices` n'en
+écrit qu'une plage, pour une surface qui change à un endroit. Pour une
+surface de millions de points qui change à chaque image,
+l'échantillonnage a sa place sur le GPU : voir la
+[tessellation](/fdw-engine/fr/tutorials/tessellation/), dont les sommets
+sont calculés dans le vertex shader.
+
+## Les tuyaux
+
+Un tuyau balaie un **cercle le long d'une courbe de l'espace**. La courbe
+est une liste de points ; sur chaque point, un cercle est posé dans le
+plan normal à la courbe ; les cercles consécutifs sont reliés par des
+quads, comme les rangées de la grille plus haut.
+
+<Example name="pipes" />
+
+### Un repère sur chaque point
+
+Sur le point `p` de tangente `t`, le cercle a besoin de deux directions
+`r` et `s`, normales à `t` et entre elles :
+
+```ts
+for (let k = 0; k <= sides; k++) {
+  const angle = (2 * Math.PI * k) / sides;
+  const normal = add(scale(r, Math.cos(angle)), scale(s, Math.sin(angle)));
+  vertices.push(...add(p, scale(normal, radius)), ...normal, length, k / sides);
+}
+```
+
+La normale du sommet est la direction depuis l'axe ; les uv sont la
+longueur le long de la courbe et le tour autour d'elle. Le sommet
+`k = sides` est sur le sommet `k = 0`, avec un `v` de 1 : la texture
+referme le cercle.
+
+Pour une courbe plane, le repère est facile : `s` est la normale du plan,
+`r = s × t` — les courbes du premier exemple sont tracées ainsi. Dans
+l'espace, le repère classique d'une courbe est le **repère de Frenet** :
+`r` vers le centre de courbure. Ce n'est pas un bon choix pour un tuyau :
+
+- sur une partie droite, il n'y a pas de courbure : `r` n'est pas
+  défini ;
+- à une inflexion, le centre de courbure passe de l'autre côté : `r` se
+  retourne d'un coup ;
+- le repère tourne autour de la tangente aussi vite que la courbe se
+  tord : le tuyau a l'air essoré.
+
+### Les repères à rotation minimale
+
+Les repères des tuyaux tournent aussi peu que possible autour de la
+tangente d'un point au suivant. La **double réflexion** de Wang,
+Jüttler, Zheng et Liu (2008) les calcule en quelques lignes : le repère
+d'un point est réfléchi dans le plan médiateur de la corde vers le point
+suivant, ce qui envoie `p` sur le point suivant ; une seconde réflexion,
+dans le plan entre la tangente réfléchie et la tangente suivante, aligne
+les tangentes.
+
+```ts
+const v1 = sub(point, previous.point);
+const c1 = dot(v1, v1);
+const rL = sub(previous.r, scale(v1, (2 / c1) * dot(v1, previous.r)));
+const tL = sub(previous.t, scale(v1, (2 / c1) * dot(v1, previous.t)));
+const v2 = sub(t, tL);
+const c2 = dot(v2, v2);
+r = c2 < 1e-12 ? rL : sub(rL, scale(v2, (2 / c2) * dot(v2, rL)));
+```
+
+Le premier repère prend n'importe quel `r` normal à la tangente. Deux
+réflexions font une rotation : le repère reste un repère, et sur une
+partie droite, il ne bouge pas. Les rayures des tuyaux le montrent :
+elles suivent la courbe sans faire de spirale.
+
+### Les courbes fermées
+
+Sur une courbe fermée, le repère propagé une fois le tour revient sur le
+premier point **tourné** d'un angle, l'holonomie de la courbe : les
+rayures ne se rejoindraient pas. L'exemple ajoute un repère sur le
+premier point, mesure l'angle entre lui et le premier repère, et fait
+tourner chaque repère en arrière de sa part de la longueur :
+
+```ts
+const twist = Math.atan2(
+  dot(cross(last.r, first.r), first.t),
+  dot(last.r, first.r),
+);
+for (const frame of result) {
+  const angle = (twist * frame.length) / last.length;
+  frame.r = add(scale(frame.r, Math.cos(angle)), scale(frame.s, Math.sin(angle)));
+  frame.s = cross(frame.t, frame.r);
+}
+```
+
+Le nœud de l'exemple est un **nœud de trèfle**, `(sin a + 2 sin 2a,
+cos a − 2 cos 2a, −sin 3a)` : les rayures se rejoignent là où la courbe
+se referme.
+
+### Les courbes ouvertes
+
+Un tuyau ouvert a ses extrémités fermées par des disques : un sommet au
+milieu, le cercle de l'extrémité, la normale le long de la tangente —
+vers l'extérieur. Les triangles tournent dans le sens trigonométrique
+autour de cette normale.
+
+La courbe du second tuyau passe par six points (en jaune) : une **spline
+de Catmull-Rom**. Entre les points `p1` et `p2`, la courbe est une
+cubique dont les tangentes sont celles des cordes `p2 − p0` et
+`p3 − p1` ; les extrémités sont prolongées par symétrie. La spline est
+échantillonnée à 32 points par segment, et le tuyau balayé le long des
+points.
+
+## Pour aller plus loin
+
+- **Un autre profil :** le cercle du tuyau est une courbe dans le plan
+  `(r, s)`. Toute courbe fermée de ce plan balaie une autre section — une
+  section carrée pour une poutre, la superellipse du vase.
+- **Un rayon variable :** le rayon peut dépendre de la longueur le long
+  de la courbe. La normale du sommet s'incline alors avec la pente du
+  rayon, comme les normales de la méridienne du vase.
+- **De nombreux tuyaux :** les maillages d'un réseau de tuyaux, statique,
+  se fusionnent par
+  [batching statique](/fdw-engine/fr/tutorials/static-batching/).
