@@ -1,5 +1,10 @@
 import { MemorySource, ResourceStore } from '@fdw/engine-resources';
 import { Scene, Scheduler } from '@fdw/engine-scene';
+import {
+  captureScene,
+  instantiateScene,
+  sceneCodecs,
+} from '@fdw/engine-scene-io';
 import { describe, expect, it } from 'vitest';
 import {
   AudioClipType,
@@ -13,6 +18,7 @@ import {
   resolvePlay,
   SceneAudio,
   sniffAudioFormat,
+  soundEmitterCodec,
   SoundEffect,
   type AudioEngine,
   type FakeVoice,
@@ -315,6 +321,63 @@ describe('SceneAudio', () => {
     const audio = new SceneAudio(scene, engine);
     const voice = engine.play(silence(engine, 1));
     expect(() => audio.attach(scene.root.add(), voice)).toThrow(/spatial/);
+  });
+
+  it('gives sounds to nodes, saved with the scene', async () => {
+    const engine = new FakeAudioEngine({ decodedDuration: 2 });
+    engine.createBus('sfx');
+    const store = new ResourceStore();
+    const wav = encodeWav([new Float32Array(100)], 8000);
+    store.mount('mem', new MemorySource({ 'fire.wav': wav, 'wind.ogg': wav }), {
+      default: true,
+    });
+    installAudio(store, engine);
+    const scene = new Scene();
+    const audio = new SceneAudio(scene, engine);
+    const fire = scene.root.add({ name: 'fire', position: { x: 3 } });
+    const voice = audio.addEmitter(fire, {
+      source: await store.load(AudioClipType, 'fire.wav').ready,
+      bus: 'sfx',
+      loop: true,
+      volume: 0.5,
+      spatial: { refDistance: 2 },
+    }) as FakeVoice;
+    expect(voice.bus.name).toBe('sfx');
+    expect(voice.position).toEqual({ x: 3, y: 0, z: 0 });
+    const wind = scene.root.add({ name: 'wind' });
+    expect(
+      audio.addEmitter(wind, {
+        source: await store.load(AudioStreamType, 'wind.ogg').ready,
+        autoplay: false,
+      }),
+    ).toBeUndefined();
+    const codecs = [...sceneCodecs, soundEmitterCodec(audio)];
+    const data = captureScene(scene, { store, codecs });
+    const sound = (name: string) =>
+      data.nodes.find((n) => n.name === name)!.components!['sound emitter']
+        .data;
+    expect(sound('fire')).toEqual({
+      source: 'mem:fire.wav',
+      bus: 'sfx',
+      loop: true,
+      volume: 0.5,
+      spatial: { refDistance: 2 },
+    });
+    expect(sound('wind')).toEqual({
+      source: 'mem:wind.ogg',
+      stream: true,
+      autoplay: false,
+    });
+    const other = new Scene();
+    const otherAudio = new SceneAudio(other, engine);
+    await instantiateScene(data, other, {
+      store,
+      codecs: [...sceneCodecs, soundEmitterCodec(otherAudio)],
+    });
+    expect(otherAudio.voicesOf(other.find('fire')!)).toHaveLength(1);
+    expect(otherAudio.emitterOf(other.find('wind')!)?.source.kind).toBe(
+      'stream',
+    );
   });
 
   it('is a system of the render phase', () => {

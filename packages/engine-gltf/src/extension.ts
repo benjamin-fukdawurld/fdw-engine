@@ -1,7 +1,7 @@
 import type {
+  MaterialData,
   ModelData,
   ModelNodeData,
-  PbrMaterialData,
   TextureRef,
 } from '@fdw/engine-assets';
 import type { ResourceUri } from '@fdw/engine-resources';
@@ -53,6 +53,8 @@ export interface GltfContext {
   buffer(index: number): Promise<Uint8Array<ArrayBuffer>>;
   /** The bytes of a buffer view, decoded by the extensions (meshopt). */
   bufferView(index: number): Promise<Uint8Array<ArrayBuffer>>;
+  /** The URI of an image of the file: its own file, or `model.glb#image/<index>`. */
+  image(index: number): Promise<ResourceUri>;
 }
 
 /**
@@ -82,12 +84,13 @@ export interface GltfExtension {
     primitive: GltfPrimitive,
     context: GltfContext,
   ): Promise<GltfDecodedPrimitive>;
+  /** A material, from its data so far; may return another kind (`FDW_scene`: a graph). */
   material?(
     ext: unknown,
-    data: PbrMaterialData,
+    data: MaterialData,
     context: GltfContext,
     material: GltfMaterial,
-  ): PbrMaterialData;
+  ): MaterialData | Promise<MaterialData>;
   /** The image of a texture, instead of its `source` (`KHR_texture_basisu`). */
   textureSource?(
     ext: unknown,

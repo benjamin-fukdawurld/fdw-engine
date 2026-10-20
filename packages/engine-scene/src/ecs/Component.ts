@@ -48,6 +48,23 @@ export type ComponentValues<S extends Schema> = {
       : number;
 };
 
+/** How a component is defined, besides its fields. */
+export interface ComponentOptions<S extends Schema> {
+  /**
+   * The values an entity receives with the component, for the fields not
+   * given: zero (and undefined for references) otherwise.
+   */
+  readonly defaults?: ComponentValues<S>;
+  /** The version of the schema, saved with the values. 1 by default. */
+  readonly version?: number;
+  /**
+   * Whether the component is saved with the scene (@fdw/engine-scene-io):
+   * by its codec, or field by field for a component of numbers. False by
+   * default: the state of the systems is rebuilt, not saved.
+   */
+  readonly persist?: boolean;
+}
+
 type NumberArray =
   | Float32Array
   | Float64Array
@@ -87,6 +104,9 @@ export class ComponentStore<S extends Schema = Schema> {
   readonly id: number;
   readonly name: string;
   readonly schema: S;
+  readonly defaults?: ComponentValues<S>;
+  readonly version: number;
+  readonly persist: boolean;
   private readonly _fields: Field[];
 
   // The entities that have the component: a sparse set (dense list, and
@@ -96,10 +116,19 @@ export class ComponentStore<S extends Schema = Schema> {
   private _count = 0;
 
   /** @internal Created by World.defineComponent(). */
-  constructor(id: number, name: string, schema: S, capacity: number) {
+  constructor(
+    id: number,
+    name: string,
+    schema: S,
+    capacity: number,
+    options: ComponentOptions<S> = {},
+  ) {
     this.id = id;
     this.name = name;
     this.schema = schema;
+    this.defaults = options.defaults;
+    this.version = options.version ?? 1;
+    this.persist = options.persist ?? false;
     this._fields = Object.entries(schema).map(([fieldName, field]) => {
       const [type, size] = typeof field === 'string' ? [field, 1] : field;
       return {
@@ -147,6 +176,9 @@ export class ComponentStore<S extends Schema = Schema> {
     this._sparse[entity] = this._count;
     this._dense[this._count++] = entity;
     // Its values are zero: new columns are, and delete() clears them.
+    if (this.defaults) {
+      this.write(entity, this.defaults);
+    }
     this.write(entity, values);
   }
 
@@ -169,6 +201,9 @@ export class ComponentStore<S extends Schema = Schema> {
       if (this._sparse[entity] < 0) {
         this._sparse[entity] = this._count;
         this._dense[this._count++] = entity;
+        if (this.defaults) {
+          this.write(entity, this.defaults);
+        }
       }
     }
     for (const field of this._fields) {

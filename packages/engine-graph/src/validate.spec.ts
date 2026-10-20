@@ -224,6 +224,40 @@ describe('documents', () => {
     expect(parseDocument(serializeDocument(graph), format)).toEqual(graph);
   });
 
+  it('migrates the documents of older versions', () => {
+    const v3 = {
+      ...format,
+      version: 3,
+      migrations: {
+        1: (d: Record<string, unknown>) => ({ ...d, name: `${d['title']}` }),
+        2: (d: Record<string, unknown>) => ({
+          ...d,
+          nodes: (d['nodes'] as { id: string }[]).map((n) => ({
+            ...n,
+            type: 'value',
+            params: {},
+          })),
+        }),
+      },
+    };
+    const old = {
+      format: 'test',
+      version: 1,
+      title: 'g',
+      nodes: [{ id: 'a' }],
+      edges: [],
+    };
+    expect(parseDocument(old, v3)).toEqual({
+      ...old,
+      version: 3,
+      name: 'g',
+      nodes: [{ id: 'a', type: 'value', params: {} }],
+    });
+    expect(() => parseDocument(old, { ...v3, migrations: {} })).toThrow(
+      'No migration of animation graph from version 1',
+    );
+  });
+
   it('refuses malformed documents', () => {
     expect(() => parseDocument('[]', format)).toThrow(
       'An animation graph must be a JSON object',

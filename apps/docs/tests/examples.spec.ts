@@ -44,6 +44,8 @@ const examples: Record<string, string> = {
   editing: 'tutorials/editing/',
   'parametric-surfaces': 'tutorials/parametric-surfaces/',
   pipes: 'tutorials/parametric-surfaces/',
+  'saving-scenes': 'tutorials/saving-scenes/',
+  'custom-importer': 'tutorials/writing-an-importer/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -62,6 +64,7 @@ const framesOf: Record<string, number> = {
 const timeouts: Record<string, number> = {
   tps: 120_000,
   'levels-of-detail': 60_000,
+  'saving-scenes': 60_000,
 };
 
 for (const [name, page] of Object.entries(examples)) {
@@ -184,6 +187,35 @@ test('editing with the gizmo', async ({ page: browser }, info) => {
   await expect(status).toContainText('nothing selected · Delete 3 objects');
   await browser.keyboard.press('Control+z');
   await expect(status).toContainText('nothing selected · no change');
+});
+
+// A scene saved, cleared, loaded back: the status line tells the files and
+// whether the scene is there; the image is the one of the scene loaded.
+test('saving and loading a scene', async ({ page: browser }, info) => {
+  test.setTimeout(120_000);
+  const backend = info.project.name;
+  await browser.goto(
+    `/fdw-engine/tutorials/saving-scenes/?time=${time}${
+      backend === 'webgl2' ? '&backend=webgl2' : ''
+    }`,
+  );
+  const example = browser.locator('[data-example="saving-scenes"]').first();
+  await example.scrollIntoViewIfNeeded();
+  const status = example.locator('.fdw-example-status');
+  const button = (label: string) =>
+    example.getByRole('button', { name: label, exact: true });
+  await expect(status).toContainText('loaded from level.scene.json', {
+    timeout: 60_000,
+  });
+  await expect(status).toContainText('level.scene.bin');
+  await button('Clear').click();
+  await expect(status).toContainText('cleared');
+  await button('Load').click();
+  await expect(status).toContainText('loaded from level.scene.json');
+  await expect(example.locator('canvas')).toHaveScreenshot(
+    `saving-scenes-loaded-${backend}.png`,
+    { timeout: 30_000 },
+  );
 });
 
 // Ambient occlusion: two clicks show the occlusion alone. The clock is

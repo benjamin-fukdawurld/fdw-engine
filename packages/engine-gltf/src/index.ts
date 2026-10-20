@@ -10,3 +10,4 @@ export * from './buffers';
 export * from './loader';
 export * from './install';
 export * from './workers';
+export * from './scene';

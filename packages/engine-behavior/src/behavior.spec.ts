@@ -1,4 +1,7 @@
 import { formatDiagnostic, GraphError } from '@fdw/engine-graph';
+import { MemorySource, ResourceStore } from '@fdw/engine-resources';
+import { Scene } from '@fdw/engine-scene';
+import { captureScene, instantiateScene } from '@fdw/engine-scene-io';
 import { describe, expect, it } from 'vitest';
 import {
   BehaviorGraphBuilder,
@@ -13,6 +16,8 @@ import {
 } from './data';
 import { actionNode, createBehaviorRegistry, pureNode } from './nodes';
 import { BehaviorError } from './program';
+import { behaviorCodec } from './codec';
+import { BehaviorGraphType, behaviorGraphLoader } from './resources';
 import {
   parseBehaviorGraph,
   serializeBehaviorGraph,
@@ -542,6 +547,62 @@ describe('BehaviorSystem', () => {
     system.attach(0);
     system.run(0);
     expect(host.calls).toEqual([name + name]);
+  });
+});
+
+describe('BehaviorGraphType', () => {
+  it('loads the graphs of their files through a store', async () => {
+    const g = builder('guard');
+    g.variable('health', 'number', 100);
+    const graph = g.build();
+    const store = new ResourceStore();
+    store.mount(
+      'mem',
+      new MemorySource({
+        'guard.behavior.json': serializeBehaviorGraph(graph),
+      }),
+      { default: true },
+    );
+    store.registerLoader(behaviorGraphLoader);
+    expect(
+      await store.load(BehaviorGraphType, 'guard.behavior.json').ready,
+    ).toEqual(graph);
+  });
+});
+
+describe('behaviorCodec', () => {
+  it('saves the entities a graph runs for, and their variables', async () => {
+    const g = builder('guard');
+    g.variable('health', 'number', 100);
+    g.variable('target', 'entity');
+    recordNode(g, g.onStart().then, 'start');
+    const graph = g.build();
+    const scene = new Scene();
+    const guard = scene.root.add({ name: 'guard' });
+    const door = scene.root.add({ name: 'door' });
+    const { system } = run(graph, 'interpret');
+    system.attach(guard.entity, { health: 40, target: door.entity });
+    const data = captureScene(scene, { codecs: [behaviorCodec([system])] });
+    const doorIndex = data.nodes.findIndex((n) => n.name === 'door');
+    expect(data.nodes.find((n) => n.name === 'guard')!.components).toEqual({
+      behavior: {
+        version: 1,
+        data: [
+          { graph: 'guard', variables: { health: 40, target: doorIndex } },
+        ],
+      },
+    });
+    const other = new Scene();
+    const again = run(graph, 'interpret').system;
+    const instance = await instantiateScene(data, other, {
+      store: new ResourceStore(),
+      codecs: [behaviorCodec({ guard: again })],
+    });
+    const entity = other.find('guard')!.entity;
+    expect(again.instance(entity)?.variables).toEqual({
+      health: 40,
+      target: instance.entities[doorIndex],
+    });
   });
 });
 

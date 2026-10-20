@@ -79,7 +79,7 @@ Commandes fournies : `TransformCommand`, `PropertyCommand`, `CreateNodeCommand` 
 - Les gestes à plusieurs doigts (pincer pour l'échelle) ; le tactile se limite au premier doigt.
 - La sélection au rectangle par le lancer de rayons (au-delà de 2^24 objets, ou sans GPU) : un frustum construit depuis le rectangle et `scene.queryVolume`.
 - Les commandes génériques des composants : avec leurs schémas (P16).
-- L'ordre des frères n'est pas rétabli quand un nœud revient de la corbeille (il passe en premier enfant).
+- L'ordre des frères n'est pas rétabli quand un nœud revient de la corbeille (il passe en dernier enfant, depuis P16).
 
 ## 8. État
 

@@ -1,0 +1,187 @@
+---
+title: Writing an importer
+description: Load a format of your own as a scene of the engine, with its meshes, its materials and the components of your game.
+sidebar:
+  order: 36
+---
+
+import Example from '../../../components/Example.astro';
+
+A level drawn in text, one character per cell: `#` a wall, `g` a gem,
+`S` the start, `.` the floor. Its importer is a loader of `SceneData`,
+registered in the store like the others: the level then loads as a glTF
+or a scene of the engine would, with its progress, its cancellation, its
+meshes shared.
+
+<Example name="custom-importer" />
+
+```text
+##########
+#S..#....#
+#.#.#.##g#
+#.#...#..#
+#.###.#.##
+#..g..#..#
+####.##.##
+#g.......#
+##########
+```
+
+## The importer: a loader of SceneData
+
+An importer reads the bytes of a file and gives a `SceneData`: nodes,
+batches, and the references to their meshes and materials. It is a
+`ResourceLoader` of `SceneDataType`; the store chooses it by the
+extension of the file, as it chooses the loader of glTF or of the scenes
+of the engine.
+
+```ts
+import type { ResourceLoader } from '@fdw/engine-resources';
+import { SceneDataType, type SceneData } from '@fdw/engine-scene-io';
+
+const levelImporter: ResourceLoader<SceneData> = {
+  type: SceneDataType,
+  extensions: ['level'],
+  async load(ctx) {
+    const rows = (await ctx.text()).split('\n').filter((row) => row);
+    // … the nodes and the batches of the cells
+    return { name: 'maze', nodes, batches, meshes: [], materials: [] };
+  },
+};
+
+store.registerLoader(levelImporter);
+```
+
+An error of the file is a `ResourceError('decode', …)`: the handle of the
+scene fails with it, its message tells the row and the column.
+
+## Meshes and materials
+
+The meshes and the materials of the format are **sub-resources** of its
+file: the loader provides their data (`MeshDataType`, `MaterialDataType`)
+under an id, and the nodes refer to them by `#mesh/<id>` and
+`#material/<id>`. Two levels using the same mesh share it; a reload of the
+file updates them. A material is data too: `pbr` or `phong` like those
+of glTF and OBJ, or `graph`, a material graph and its values.
+
+```ts
+ctx.provide(MeshDataType, 'mesh/0', box);
+ctx.provide(MaterialDataType, 'material/0', {
+  kind: 'pbr',
+  baseColor: [0.55, 0.52, 0.48, 1],
+  metallic: 0,
+  roughness: 0.8,
+  emissive: [0, 0, 0],
+  alphaMode: 'opaque',
+  alphaCutoff: 0.5,
+  doubleSided: false,
+});
+```
+
+A reference can also be the URI of another file, relative to the level:
+`"../models/fir.glb#mesh/0/0"`, or a whole model as an instance
+(`instance: { model: '../models/fir.glb' }`).
+
+## Nodes and batches
+
+A node has the fields of a node of the engine (`name`, `position`,
+`rotation`, `scale`, `visible`, `static`, `occluder`, `layers`), a
+`parent` (its index, before it), and its components by name, each with
+the version of its codec. The walls are a **batch**: a mesh, a material,
+a transform each in flat arrays, made in one call by `scene.createBatch`.
+
+```ts
+const nodes: SceneNodeData[] = [
+  {
+    name: 'gem',
+    position: [x, 0.5, z],
+    components: {
+      'mesh renderer': {
+        version: 1,
+        data: { mesh: '#mesh/1', material: '#material/2', castShadow: false },
+      },
+      gem: { version: 1, data: { value: 10 } },
+    },
+  },
+  {
+    name: 'glow',
+    parent: 0,
+    components: { light: { version: 1, data: { type: 'point', … } } },
+  },
+];
+const batches: SceneBatchData[] = [
+  {
+    name: 'wall',
+    count,
+    positions,
+    rotations,
+    scales,
+    static: true,
+    mesh: '#mesh/0',
+    material: '#material/0',
+  },
+];
+```
+
+The entities are numbered for the references between them (a parent, the
+levels of detail): the nodes first, then the entities of each batch in
+turn.
+
+## The components of your game
+
+`gem` is a component of the game. Its **codec** reads what the importer
+wrote into the component, and writes it back when the scene is saved: the
+level is then saved as a scene of the engine, gems and all.
+
+```ts
+import type { ComponentCodec } from '@fdw/engine-scene-io';
+
+const Gem = scene.world.defineComponent('gem', { value: 'u16' });
+const gemCodec: ComponentCodec<{ value: number }> = {
+  name: 'gem',
+  version: 1,
+  write: (entity) => ({ value: Gem.value[entity] }),
+  read: (data, entity, ctx) => ctx.scene.world.add(entity, Gem, data),
+};
+
+const maze = await instantiateScene(
+  store.load(SceneDataType, 'maze.level'),
+  scene,
+  {
+    store,
+    codecs: [...sceneCodecs, gemCodec],
+  },
+);
+```
+
+A component of numbers only can do without: defined with
+`persist: true`, it is read and written field by field. A codec is for
+the others: references to resources (`ctx.load`, `ctx.mesh`,
+`ctx.material`), to entities (`ctx.entity(index)`, `ctx.indexOf(entity)`),
+objects to make again. `phase` orders the codecs that need the components
+of others; `migrate` brings the data of an older version to the current
+one.
+
+## Exporting
+
+An exporter is the other way: a `SceneExporter` takes a `SceneData` and
+gives files. `writeFdwScene` (the format of the engine) and `writeGltf`
+(glTF) are the two of the engine; one of yours writes your format.
+
+```ts
+import type { SceneExporter } from '@fdw/engine-scene-io';
+
+const levelExporter: SceneExporter = {
+  format: 'level',
+  extensions: ['level'],
+  async write(data, path) {
+    const text = drawCells(data); // the walls of the batch, the gems…
+    return [{ path, bytes: new TextEncoder().encode(text) }];
+  },
+};
+```
+
+## Next
+
+- [Saving and loading scenes](/fdw-engine/tutorials/saving-scenes/).
+- The guide [Scenes and formats](/fdw-engine/guides/scenes/).

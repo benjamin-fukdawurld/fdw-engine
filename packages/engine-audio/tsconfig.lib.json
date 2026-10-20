@@ -9,6 +9,7 @@
   "references": [
     { "path": "../engine-backend/tsconfig.lib.json" },
     { "path": "../engine-resources/tsconfig.lib.json" },
-    { "path": "../engine-scene/tsconfig.lib.json" }
+    { "path": "../engine-scene/tsconfig.lib.json" },
+    { "path": "../engine-scene-io/tsconfig.lib.json" }
   ]
 }

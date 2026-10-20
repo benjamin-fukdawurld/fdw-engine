@@ -1,5 +1,6 @@
 import {
   type Diagnostic,
+  type DocumentMigration,
   type DocumentValidation,
   type GraphEdge,
   isRecord,
@@ -200,6 +201,14 @@ export function serializeAnimationGraph(graph: AnimationGraphData): string {
 }
 
 /**
+ * The migrations of the animation graph documents: `[n]` makes a document
+ * of version n one of version n + 1. Empty while there is one version.
+ *
+ * @group Animation graph
+ */
+export const animationGraphMigrations: Record<number, DocumentMigration> = {};
+
+/**
  * Parses an animation graph document and checks its structure; the
  * semantic checks are those of {@link validateAnimationGraph}.
  *
@@ -212,6 +221,7 @@ export function parseAnimationGraph(
     format: AnimationGraphFormat,
     version: AnimationGraphVersion,
     kind: 'animation graph',
+    migrations: animationGraphMigrations,
     document: (data) => {
       const parameters = data['parameters'];
       if (

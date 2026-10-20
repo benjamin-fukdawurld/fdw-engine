@@ -94,6 +94,11 @@ export class Material {
     return this._version;
   }
 
+  /** The values set on the material (not the defaults of the graph). */
+  get values(): ReadonlyMap<string, MaterialValue> {
+    return this._values;
+  }
+
   setValue(name: string, value: MaterialValue): this {
     this._values.set(name, value);
     this._version++;

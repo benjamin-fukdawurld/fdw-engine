@@ -151,4 +151,46 @@ describe('World', () => {
     world.destroy(entity);
     expect(() => world.add(entity, Velocity)).toThrow(/is not alive/);
   });
+
+  it('gives the defaults to the fields left out', () => {
+    const world = new World({ capacity: 4 });
+    const Health = world.defineComponent(
+      'health',
+      { value: 'f32', color: ['f32', 3], armor: 'u8' },
+      {
+        defaults: { value: 100, color: [1, 0.5, 0] },
+        version: 2,
+        persist: true,
+      },
+    );
+    const a = world.create();
+    world.add(a, Health, { armor: 3 });
+    expect([Health.value[a], Health.armor[a]]).toEqual([100, 3]);
+    expect([...Health.color.subarray(a * 3, a * 3 + 3)]).toEqual([1, 0.5, 0]);
+    // Writing again does not bring the defaults back.
+    world.add(a, Health, { value: 20 });
+    world.add(a, Health, { armor: 4 });
+    expect(Health.value[a]).toBe(20);
+    // Many at once, the values given over the defaults.
+    const many = Array.from({ length: 10 }, () => world.create());
+    world.addMany(many, Health, { value: 50 });
+    expect([...many.map((e) => Health.value[e])]).toEqual(Array(10).fill(50));
+    expect(Health.color[many[9] * 3]).toBe(1);
+    expect([Health.version, Health.persist]).toEqual([2, true]);
+  });
+
+  it('finds its components by name', () => {
+    const { world, Velocity, Tag } = setup();
+    expect(world.component('velocity')).toBe(Velocity);
+    expect(world.components).toEqual([
+      world.component('position'),
+      Velocity,
+      Tag,
+    ]);
+    expect(world.component('missing')).toBeUndefined();
+    expect([Velocity.version, Velocity.persist]).toEqual([1, false]);
+    // Defined again: the last one.
+    const Again = world.defineComponent('velocity', { x: 'f32' });
+    expect(world.component('velocity')).toBe(Again);
+  });
 });

@@ -1,0 +1,23 @@
+{
+  "name": "@fdw/engine-scene-io",
+  "version": "0.0.1",
+  "dependencies": {
+    "@fdw/engine-assets": "0.0.1",
+    "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-core": "0.0.1",
+    "@fdw/engine-resources": "0.0.1",
+    "@fdw/engine-scene": "0.0.1",
+    "@fdw/engine-shader": "0.0.1",
+    "tslib": "^2.3.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw-engine/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}

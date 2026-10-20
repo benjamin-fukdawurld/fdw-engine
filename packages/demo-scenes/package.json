@@ -8,15 +8,16 @@
     "@fdw/engine-audio": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-behavior": "0.0.1",
-    "@fdw/engine-noise": "0.0.1",
     "@fdw/engine-camera": "0.0.1",
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-geometry": "0.0.1",
     "@fdw/engine-input": "0.0.1",
+    "@fdw/engine-noise": "0.0.1",
     "@fdw/engine-occlusion": "0.0.1",
     "@fdw/engine-physics": "0.0.1",
     "@fdw/engine-resources": "0.0.1",
     "@fdw/engine-scene": "0.0.1",
+    "@fdw/engine-scene-io": "0.0.1",
     "@fdw/engine-shader": "0.0.1",
     "@fdw/engine-skinning": "0.0.1",
     "@fdw/engine-tessellation": "0.0.1",
@@ -31,5 +32,8 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     }
+  },
+  "devDependencies": {
+    "@fdw/engine-physics-rapier": "0.0.1"
   }
 }

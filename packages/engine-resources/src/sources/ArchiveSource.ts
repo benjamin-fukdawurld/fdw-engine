@@ -16,10 +16,17 @@ export interface ArchiveReader {
   open(bytes: ResourceBytes): ArchiveEntry[];
 }
 
-export type Inflate = (data: Uint8Array<ArrayBuffer>) => Promise<ResourceBytes>;
+/**
+ * Inflates raw deflate data. `limit`: the bytes it may produce; past them,
+ * it stops and throws (an entry lying about its size).
+ */
+export type Inflate = (
+  data: Uint8Array<ArrayBuffer>,
+  limit?: number,
+) => Promise<ResourceBytes>;
 
 /** Raw deflate through the platform. Swap in `fflate` where unsupported. */
-export const inflateRaw: Inflate = async (data) => {
+export const inflateRaw: Inflate = async (data, limit = Infinity) => {
   if (typeof DecompressionStream === 'undefined') {
     throw new ResourceError(
       'unsupported',
@@ -27,11 +34,46 @@ export const inflateRaw: Inflate = async (data) => {
       "DecompressionStream('deflate-raw') is unavailable: pass an `inflate` function (fflate)",
     );
   }
-  const stream = new Blob([data])
+  const reader = new Blob([data])
     .stream()
-    .pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+    .pipeThrough(new DecompressionStream('deflate-raw'))
+    .getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.byteLength;
+    if (length > limit) {
+      await reader.cancel();
+      throw new ResourceError(
+        'decode',
+        'zip',
+        `Invalid zip: an entry inflates past ${limit} bytes`,
+      );
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 };
+
+/** The limits of a zip read, against archives made to exhaust memory. */
+export interface ZipReaderOptions {
+  /** Raw deflate: `inflateRaw` by default. */
+  readonly inflate?: Inflate;
+  /** The entries an archive may have. 65 535 by default. */
+  readonly maxEntries?: number;
+  /** The size of an entry, once inflated. 1 GiB by default. */
+  readonly maxEntrySize?: number;
+  /** The size of all the entries, once inflated. 4 GiB by default. */
+  readonly maxTotalSize?: number;
+}
 
 const SIG_EOCD = 0x06054b50;
 const SIG_CENTRAL = 0x02014b50;
@@ -42,7 +84,19 @@ const SIG_LOCAL = 0x04034b50;
  * Stored and deflated entries; no encryption and no ZIP64.
  */
 export class ZipReader implements ArchiveReader {
-  constructor(private readonly inflate: Inflate = inflateRaw) {}
+  private readonly inflate: Inflate;
+  readonly maxEntries: number;
+  readonly maxEntrySize: number;
+  readonly maxTotalSize: number;
+
+  /** An `Inflate` alone is the inflate option. */
+  constructor(options: ZipReaderOptions | Inflate = {}) {
+    const o = typeof options === 'function' ? { inflate: options } : options;
+    this.inflate = o.inflate ?? inflateRaw;
+    this.maxEntries = o.maxEntries ?? 0xffff;
+    this.maxEntrySize = o.maxEntrySize ?? 2 ** 30;
+    this.maxTotalSize = o.maxTotalSize ?? 2 ** 32;
+  }
 
   open(bytes: ResourceBytes): ArchiveEntry[] {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -69,6 +123,10 @@ export class ZipReader implements ArchiveReader {
         'ZIP64 archives are not supported',
       );
     }
+    if (count > this.maxEntries) {
+      throw bad(`${count} entries, more than ${this.maxEntries}`);
+    }
+    let total = 0;
 
     const decoder = new TextDecoder('utf-8');
     const entries: ArchiveEntry[] = [];
@@ -95,6 +153,13 @@ export class ZipReader implements ArchiveReader {
       if (name.endsWith('/')) continue; // directory
 
       const path = normalizePath(name);
+      if (size > this.maxEntrySize) {
+        throw bad(`${path} has ${size} bytes, more than ${this.maxEntrySize}`);
+      }
+      total += size;
+      if (total > this.maxTotalSize) {
+        throw bad(`its entries have more than ${this.maxTotalSize} bytes`);
+      }
       entries.push({
         path,
         size,
@@ -116,7 +181,8 @@ export class ZipReader implements ArchiveReader {
           const raw = bytes.subarray(start, start + csize);
           if (method === 0) return new Uint8Array(raw);
           if (method === 8) {
-            const out = await this.inflate(raw);
+            // Never past the size declared, checked against the limits.
+            const out = await this.inflate(raw, size);
             if (out.byteLength !== size) throw bad(`size mismatch for ${path}`);
             return out;
           }

@@ -4,6 +4,7 @@ import {
   formatUri,
   normalizePath,
   parseUri,
+  relativePath,
   resolvePath,
 } from './uri';
 
@@ -66,5 +67,25 @@ describe('uri', () => {
     expect(extname('a.b/c')).toBe('');
     expect(extname('.hidden')).toBe('');
     expect(extname('x.png?v=3')).toBe('png');
+  });
+
+  it('makes a path relative to a resource, the inverse of resolvePath', () => {
+    const cases: [string, string, string][] = [
+      ['levels/forest.json', 'models/fir.glb', '../models/fir.glb'],
+      ['levels/forest.json', 'levels/forest.bin', 'forest.bin'],
+      ['forest.json', 'models/fir.glb', 'models/fir.glb'],
+      ['a/b/c.json', 'a/d.png', '../d.png'],
+      ['/abs/c.json', '/abs/sub/d.png', 'sub/d.png'],
+      ['https://host/a/c.json', 'https://host/b/d.png', '../b/d.png'],
+    ];
+    for (const [base, path, relative] of cases) {
+      expect(relativePath(base, path)).toBe(relative);
+      expect(resolvePath(base, relative)).toBe(normalizePath(path));
+    }
+    // Other origins, or a base above its root: unchanged.
+    expect(relativePath('https://a/x.json', 'https://b/y.png')).toBe(
+      'https://b/y.png',
+    );
+    expect(relativePath('../x.json', 'y.png')).toBe('y.png');
   });
 });

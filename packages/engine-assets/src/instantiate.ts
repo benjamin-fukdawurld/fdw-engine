@@ -5,7 +5,13 @@ import {
   type BaseLight,
 } from '@fdw/engine-core';
 import type { ResourceHandle } from '@fdw/engine-resources';
-import type { Node, NodeOptions, Scene } from '@fdw/engine-scene';
+import type {
+  Component,
+  Node,
+  NodeOptions,
+  Scene,
+  World,
+} from '@fdw/engine-scene';
 import type { LightData } from './data';
 import type { Model } from './models';
 
@@ -28,6 +34,66 @@ export interface ModelInstance {
   rebuild(): void;
   /** Destroys the nodes, and releases the handle of the model if it was given one. */
   dispose(): void;
+}
+
+/**
+ * What the root of an instance remembers (component `model instance`): its
+ * model, how it was made, and the entities made from the model under it
+ * (the others were added after). A saved scene writes the instance as its
+ * model and the changes made to these entities.
+ */
+export interface ModelInstanceRecord {
+  readonly model: Model;
+  readonly castShadow: boolean;
+  readonly lights: boolean;
+  /** The entities made from the model, by index of its data (`model.data.nodes`). */
+  readonly nodes: readonly number[];
+  /**
+   * Every entity made from the model (its nodes, and the children holding
+   * their primitives), with its generation: an entity destroyed then
+   * reused is no longer a member (see isInstanceMember).
+   */
+  readonly members: ReadonlyMap<number, number>;
+}
+
+/** Whether an entity is one made by an instance, still alive. */
+export function isInstanceMember(
+  scene: Scene,
+  record: ModelInstanceRecord,
+  entity: number,
+): boolean {
+  return (
+    scene.world.isAlive(entity) &&
+    record.members.get(entity) === scene.world.generation(entity)
+  );
+}
+
+type InstanceSchema = { record: 'ref' };
+const components = new WeakMap<World, Component<InstanceSchema>>();
+
+/** The component of the roots of the model instances of a scene: `record`, a ModelInstanceRecord. */
+export function modelInstanceComponent(
+  scene: Scene,
+): Component<InstanceSchema> {
+  let component = components.get(scene.world);
+  if (!component) {
+    component = scene.world.defineComponent('model instance', {
+      record: 'ref',
+    });
+    components.set(scene.world, component);
+  }
+  return component;
+}
+
+/** The record of the instance whose root is `entity`, if it is one. */
+export function modelInstanceOf(
+  scene: Scene,
+  entity: number,
+): ModelInstanceRecord | undefined {
+  const component = components.get(scene.world);
+  return component?.has(entity)
+    ? (component.record[entity] as ModelInstanceRecord)
+    : undefined;
 }
 
 const degrees = (radians: number) => (radians * 180) / Math.PI;
@@ -94,8 +160,12 @@ export function instantiate(
   let nodes: Node[] = [];
 
   const build = () => {
-    const { data, meshes } = target();
+    const model = target();
+    const { data, meshes } = model;
     nodes = new Array(data.nodes.length);
+    const members = new Map<number, number>();
+    const member = (entity: number) =>
+      members.set(entity, scene.world.generation(entity));
     const make = (index: number, parentNode: Node) => {
       const n = data.nodes[index];
       const node = scene.node(
@@ -116,6 +186,7 @@ export function instantiate(
         }),
       );
       nodes[index] = node;
+      member(node.entity);
       const primitives = n.mesh !== undefined ? (meshes[n.mesh] ?? []) : [];
       if (primitives.length === 1) {
         node.setMesh(primitives[0].mesh, primitives[0].material, {
@@ -123,9 +194,11 @@ export function instantiate(
         });
       } else {
         primitives.forEach(({ mesh, material }, i) =>
-          node
-            .add({ name: `${node.name}#${i}` })
-            .setMesh(mesh, material, { castShadow }),
+          member(
+            node
+              .add({ name: `${node.name}#${i}` })
+              .setMesh(mesh, material, { castShadow }).entity,
+          ),
         );
       }
       if (lights && n.light !== undefined && data.lights[n.light])
@@ -133,6 +206,14 @@ export function instantiate(
       for (const child of n.children) make(child, node);
     };
     for (const index of data.roots) make(index, root);
+    const record: ModelInstanceRecord = {
+      model,
+      castShadow,
+      lights,
+      nodes: nodes.map((node) => node.entity),
+      members,
+    };
+    root.attach(modelInstanceComponent(scene), { record });
   };
   build();
 

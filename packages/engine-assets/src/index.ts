@@ -7,6 +7,7 @@ export * from './image/imageLoader';
 export * from './image/Texture';
 export * from './meshes';
 export * from './graphs';
+export * from './graphResources';
 export * from './materials';
 export * from './models';
 export * from './instantiate';

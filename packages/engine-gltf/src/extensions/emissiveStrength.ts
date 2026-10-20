@@ -4,6 +4,7 @@ import type { GltfExtension } from '../extension';
 export const KHR_materials_emissive_strength: GltfExtension = {
   name: 'KHR_materials_emissive_strength',
   material(ext, data) {
+    if (data.kind === 'graph') return data;
     const strength =
       (ext as { emissiveStrength?: number }).emissiveStrength ?? 1;
     const [r, g, b] = data.emissive;

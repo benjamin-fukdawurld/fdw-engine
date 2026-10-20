@@ -3,6 +3,8 @@
   "version": "0.0.1",
   "dependencies": {
     "@fdw/engine-graph": "0.0.1",
+    "@fdw/engine-resources": "0.0.1",
+    "@fdw/engine-scene-io": "0.0.1",
     "tslib": "^2.3.0"
   },
   "type": "module",

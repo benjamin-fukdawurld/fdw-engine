@@ -12,10 +12,29 @@
     "src/testing/**/*.ts"
   ],
   "references": [
-    { "path": "../engine-resources/tsconfig.lib.json" },
-    { "path": "../engine-backend/tsconfig.lib.json" },
-    { "path": "../engine-assets/tsconfig.lib.json" },
-    { "path": "../engine-core/tsconfig.lib.json" },
-    { "path": "../engine-scene/tsconfig.lib.json" }
+    {
+      "path": "../engine-shader/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-scene-io/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-resources/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-physics/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-assets/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-scene/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-core/tsconfig.lib.json"
+    }
   ]
 }

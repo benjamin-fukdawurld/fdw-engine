@@ -1,0 +1,204 @@
+---
+title: Saving and loading scenes
+description: Save a scene as a file of the engine, load it back through the store, place a scene in another, and export it to glTF.
+sidebar:
+  order: 35
+---
+
+import Example from '../../../components/Example.astro';
+
+A scene built in code, saved as a file of the engine and loaded back:
+its nodes and their fields, the meshes and materials made in code
+(written with it), a model by its URI, a light, and a component of the
+application. At the start, the scene is built, saved, cleared and loaded:
+what you see is the loaded one. **Shuffle** moves the objects, **Load**
+brings the saved scene back; **Download** and **glTF** give the files.
+
+<Example name="saving-scenes" />
+
+The pieces, in `@fdw/engine-scene-io`:
+
+| Piece              | What it does                                                               |
+| ------------------ | -------------------------------------------------------------------------- |
+| `captureScene`     | A branch of a scene as `SceneData`: plain data, without the engine objects |
+| `writeFdwScene`    | `SceneData` as the files of the format of the engine: JSON, and its binary |
+| `installSceneIo`   | The loader of these files in a store: `store.load(SceneDataType, uri)`     |
+| `instantiateScene` | The nodes of a `SceneData` in a scene, its resources loaded by the store   |
+| Codecs             | How each component is written and read: those of the engine, and yours     |
+
+## Saving
+
+`captureScene` walks a branch of the scene (all of it by default) and
+writes each node: its name, its transform, its flags, its layers, and its
+components through their **codecs**. A mesh or a material is written by
+its URI when the store loaded it (`store.identify`), with the scene
+otherwise; `uri` is where the scene will be, the references are relative
+to it.
+
+```ts
+import { captureScene, writeFdwScene } from '@fdw/engine-scene-io';
+
+const data = captureScene(scene, {
+  store,
+  uri: 'saved:level.scene.json',
+  name: 'level',
+});
+const files = await writeFdwScene(data, 'level.scene.json');
+// [{ path: 'level.scene.json', bytes }, { path: 'level.scene.bin', bytes }]
+```
+
+The exporters give files, not writes: the application puts them where it
+wants. Here, a `MemorySource` mounted under `saved`; in Node,
+`writeFile` for each; in a page, a download. `binary: 'embedded'` puts the
+binary in the JSON, in base64: a single file.
+
+The JSON stays readable: the nodes, their components, the materials made
+in code with their graph (written once, shared). The typed arrays (the
+vertices, the transforms of the batches, a heightfield) go to the binary.
+
+```json
+{
+  "format": "fdw-scene",
+  "schemaVersion": 1,
+  "buffers": [{ "uri": "level.scene.bin", "byteLength": 9216 }],
+  "name": "level",
+  "nodes": [
+    {
+      "name": "crate 1",
+      "position": [-3, 0.5, 1.5],
+      "components": {
+        "mesh renderer": {
+          "version": 1,
+          "data": { "mesh": "#mesh/1", "material": "#material/1" }
+        },
+        "spin": { "version": 1, "data": { "speed": 0.4 } }
+      }
+    },
+    {
+      "name": "fir",
+      "position": [-1, 0, -1.5],
+      "scale": [0.35, 0.35, 0.35],
+      "instance": { "model": "http:forest/fir.glb" }
+    }
+  ]
+}
+```
+
+## Loading
+
+The files of the engine are resources: `installSceneIo(store)` registers
+their loader. A scene loads as a model does, with its progress and its
+cancellation; its meshes and materials are sub-resources
+(`level.scene.json#mesh/1`), shared by its instances. `instantiateScene`
+makes the nodes, under a node of their own (`root`), and reads the
+components, their resources loaded by the store and kept until
+`dispose()`.
+
+```ts
+import {
+  installSceneIo,
+  instantiateScene,
+  SceneDataType,
+} from '@fdw/engine-scene-io';
+
+installSceneIo(store);
+const handle = store.load(SceneDataType, 'saved:level.scene.json');
+const instance = await instantiateScene(handle, scene, { store });
+handle.release();
+// Later: the nodes and the resources go together.
+instance.dispose();
+```
+
+A `SceneData` in memory (captured, not written) is instantiated the same
+way; `wrap: false` puts its nodes straight under the parent (the nodes
+following a physics body must be under the root of the scene).
+
+## The components and their codecs
+
+A **codec** writes the data of a component and reads it back. Those of
+`engine-scene` are used by default: the mesh renderers, the lights, the
+cameras. The packages give the codecs of their components, made for their
+systems: `lodCodec(lods)` for the levels of detail, `physicsCodec(physics)`
+for the bodies, `soundEmitterCodec(audio)` for the sounds of the nodes,
+`behaviorCodec(systems)` for the behaviors.
+
+```ts
+import { lodCodec, sceneCodecs } from '@fdw/engine-scene-io';
+import { physicsCodec } from '@fdw/engine-physics';
+
+const codecs = [...sceneCodecs, lodCodec(lods), physicsCodec(physics)];
+const data = captureScene(scene, { store, codecs });
+await instantiateScene(data, other, { store, codecs });
+```
+
+A component of numbers needs no codec: defined with `persist: true`, it
+is written field by field. Its `version` is written with it, and its
+`defaults` fill the fields left out.
+
+```ts
+const Spin = scene.world.defineComponent(
+  'spin',
+  { speed: 'f32' },
+  { persist: true },
+);
+```
+
+The other components (objects, references) are not written unless they
+have a codec: the state of the systems is rebuilt, not saved. A component
+read without its codec is kept on its entity, and written again as it was.
+
+## Models and scenes by reference
+
+An instance of a model (`instantiate`) is written as its model and its
+**changes**: a node moved, hidden, removed, a material replaced, a node
+added under one of its nodes. They are found by their **path** from the
+root of the instance (the names of the nodes, `trunk/leaves`; `#2` for the
+third child when names repeat).
+
+A scene loaded by the store is a model too: an instance of
+`props/lamp.scene.json` placed in a level is written as a reference to it,
+with its changes. The lamp is made once; the level places it, again and
+again.
+
+```json
+{
+  "name": "right lamp",
+  "position": [2, 0, 0],
+  "instance": {
+    "scene": "../props/lamp.scene.json",
+    "overrides": [{ "path": "post/bulb", "position": [0, 3, 0] }]
+  }
+}
+```
+
+## Exporting to glTF
+
+`writeGltf` of `@fdw/engine-gltf` writes a `SceneData` as a `.glb` (or a
+`.gltf` and its `.bin`), for other tools: the meshes, the materials and
+their images, the lights (`KHR_lights_punctual`), the cameras, the bodies
+(`KHR_physics_rigid_bodies`, `KHR_implicit_shapes`), the batches
+(`EXT_mesh_gpu_instancing`). What glTF has no place for (the graph of a
+material, the components) goes to the extension of the engine,
+`FDW_scene`: the engine reads the file back without losing them. Capture
+with `instances: 'expand'`: glTF has no references.
+
+```ts
+import { installGltfScenes, writeGltf } from '@fdw/engine-gltf';
+
+const uri = 'saved:level.scene.json';
+const data = captureScene(scene, { store, uri, instances: 'expand' });
+const [glb] = await writeGltf(data, 'level.glb', { store, uri });
+
+// And back: a glTF loads as a scene too.
+installGltfScenes(store);
+const level = store.load(SceneDataType, 'level.glb');
+```
+
+## Next
+
+- [Writing an importer](/fdw-engine/tutorials/writing-an-importer/): a
+  format of your own, loaded as a scene.
+- The guide [Scenes and formats](/fdw-engine/guides/scenes/): the API,
+  the format, the versions and their migrations.
+- [A third-person game](/fdw-engine/game/tps/): its forest is a level of
+  the engine, built once and loaded by the game.

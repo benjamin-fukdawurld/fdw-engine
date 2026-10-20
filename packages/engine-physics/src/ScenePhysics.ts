@@ -72,6 +72,9 @@ export class ScenePhysics {
   ) {
     this.Body = scene.world.defineComponent('physics body', {
       body: 'ref',
+      // What the body was made from, to save it: a NodeBodyDesc, or the
+      // CharacterDesc of a character.
+      desc: 'ref',
       follow: 'u8',
       moved: 'u8',
       previous: ['f32', PoseSize],
@@ -112,7 +115,7 @@ export class ScenePhysics {
           : 'none');
     const [position, rotation] = this.nodePose(node, follow);
     const body = this.world.createBody({ ...desc, position, rotation });
-    this.attach(node, body, follow);
+    this.attach(node, body, follow, desc);
     return body;
   }
 
@@ -124,7 +127,7 @@ export class ScenePhysics {
     const [position] = this.nodePose(node, 'body');
     const character = this.world.createCharacter({ ...desc, position });
     this._characters.set(node.entity, character);
-    this.attach(node, character.body, 'body');
+    this.attach(node, character.body, 'body', desc);
     return character;
   }
 
@@ -137,6 +140,20 @@ export class ScenePhysics {
     const entity = typeof node === 'number' ? node : node.entity;
     return this.Body.has(entity)
       ? (this.Body.body[entity] as PhysicsBody)
+      : undefined;
+  }
+
+  /**
+   * What the body of a node was made from: its NodeBodyDesc, or the
+   * CharacterDesc of a character (see characterOf).
+   */
+  descOf(
+    node: Node | number,
+  ): NodeBodyDesc | Omit<CharacterDesc, 'position'> | undefined {
+    const entity = typeof node === 'number' ? node : node.entity;
+    return this.Body.has(entity)
+      ? (this.Body.desc[entity] as
+          NodeBodyDesc | Omit<CharacterDesc, 'position'>)
       : undefined;
   }
 
@@ -275,11 +292,16 @@ export class ScenePhysics {
     ];
   }
 
-  private attach(node: Node, body: PhysicsBody, follow: BodyFollow): void {
+  private attach(
+    node: Node,
+    body: PhysicsBody,
+    follow: BodyFollow,
+    desc: NodeBodyDesc | Omit<CharacterDesc, 'position'>,
+  ): void {
     if (this.Body.has(node.entity)) {
       this.remove(node);
     }
-    node.attach(this.Body, { body, follow: Follow[follow], moved: 0 });
+    node.attach(this.Body, { body, desc, follow: Follow[follow], moved: 0 });
     const o = node.entity * PoseSize;
     body.readPose(this.Body.current, o);
     this.Body.previous.set(this.Body.current.subarray(o, o + PoseSize), o);

@@ -100,6 +100,9 @@
       "path": "./packages/engine-editing"
     },
     {
+      "path": "./packages/engine-scene-io"
+    },
+    {
       "path": "./packages/engine-skinning"
     },
     {
