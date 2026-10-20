@@ -3,6 +3,7 @@ import type { ResourceStore } from '@fdw/engine-resources';
 import { ImageCodecRegistry, type ImageCodec } from './image/codecs';
 import { imageAssetLoader } from './image/imageLoader';
 import { textureLoader } from './image/Texture';
+import { materialGraphLoader } from './graphResources';
 import { materialLoader } from './materials';
 import { meshLoader } from './meshes';
 import { modelLoader } from './models';
@@ -23,7 +24,7 @@ export interface InstallAssetsOptions extends Partial<AssetsConfig> {
 
 /**
  * Registers the loaders of the graphical assets in a store (images,
- * textures, meshes, materials, models) and their services. Returns the
+ * textures, meshes, materials, material graphs, models) and their services. Returns the
  * codec registry, to which formats can add theirs (`installKtx2`).
  */
 export function installAssets(
@@ -38,6 +39,7 @@ export function installAssets(
     .registerLoader(meshLoader)
     .registerLoader(materialLoader)
     .registerLoader(modelLoader)
+    .registerLoader(materialGraphLoader)
     .provideService(ImageCodecsService, registry)
     .provideService(AssetsConfigService, { ...defaultAssetsConfig, ...config });
   if (backend) store.provideService(RenderBackendService, backend);

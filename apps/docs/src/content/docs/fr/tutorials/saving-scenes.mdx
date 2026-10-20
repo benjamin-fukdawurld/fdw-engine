@@ -1,0 +1,207 @@
+---
+title: Enregistrer et charger une scène
+description: Enregistrer une scène dans un fichier du moteur, la recharger par le store, placer une scène dans une autre, et l'exporter en glTF.
+sidebar:
+  order: 35
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une scène construite en code, enregistrée dans un fichier du moteur puis
+rechargée : ses nœuds et leurs champs, les meshes et les matériaux faits en
+code (écrits avec elle), un modèle par son URI, une lumière, et un
+composant de l'application. Au départ, la scène est construite,
+enregistrée, vidée puis chargée : ce que vous voyez est la scène chargée.
+**Shuffle** déplace les objets, **Load** ramène la scène enregistrée ;
+**Download** et **glTF** donnent les fichiers.
+
+<Example name="saving-scenes" />
+
+Les pièces, dans `@fdw/engine-scene-io` :
+
+| Pièce              | Ce qu'elle fait                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `captureScene`     | Une branche d'une scène en `SceneData` : des données simples, sans objets du moteur |
+| `writeFdwScene`    | Une `SceneData` en fichiers du format du moteur : le JSON, et son binaire           |
+| `installSceneIo`   | Le chargeur de ces fichiers dans un store : `store.load(SceneDataType, uri)`        |
+| `instantiateScene` | Les nœuds d'une `SceneData` dans une scène, ses ressources chargées par le store    |
+| Codecs             | Comment chaque composant s'écrit et se lit : ceux du moteur, et les vôtres          |
+
+## Enregistrer
+
+`captureScene` parcourt une branche de la scène (toute la scène par défaut)
+et écrit chaque nœud : son nom, sa transformation, ses drapeaux, ses
+calques, et ses composants par leurs **codecs**. Un mesh ou un matériau est
+écrit par son URI quand le store l'a chargé (`store.identify`), avec la
+scène sinon ; `uri` est l'endroit où sera la scène, les références y sont
+relatives.
+
+```ts
+import { captureScene, writeFdwScene } from '@fdw/engine-scene-io';
+
+const data = captureScene(scene, {
+  store,
+  uri: 'saved:level.scene.json',
+  name: 'level',
+});
+const files = await writeFdwScene(data, 'level.scene.json');
+// [{ path: 'level.scene.json', bytes }, { path: 'level.scene.bin', bytes }]
+```
+
+Les exporteurs donnent des fichiers, pas des écritures : l'application les
+met où elle veut. Ici, une `MemorySource` montée sous `saved` ; dans Node,
+un `writeFile` pour chacun ; dans une page, un téléchargement.
+`binary: 'embedded'` met le binaire dans le JSON, en base64 : un seul
+fichier.
+
+Le JSON reste lisible : les nœuds, leurs composants, les matériaux faits en
+code avec leur graphe (écrit une fois, partagé). Les tableaux typés (les
+sommets, les transformations des lots, un champ de hauteurs) vont dans le
+binaire.
+
+```json
+{
+  "format": "fdw-scene",
+  "schemaVersion": 1,
+  "buffers": [{ "uri": "level.scene.bin", "byteLength": 9216 }],
+  "name": "level",
+  "nodes": [
+    {
+      "name": "crate 1",
+      "position": [-3, 0.5, 1.5],
+      "components": {
+        "mesh renderer": {
+          "version": 1,
+          "data": { "mesh": "#mesh/1", "material": "#material/1" }
+        },
+        "spin": { "version": 1, "data": { "speed": 0.4 } }
+      }
+    },
+    {
+      "name": "fir",
+      "position": [-1, 0, -1.5],
+      "scale": [0.35, 0.35, 0.35],
+      "instance": { "model": "http:forest/fir.glb" }
+    }
+  ]
+}
+```
+
+## Charger
+
+Les fichiers du moteur sont des ressources : `installSceneIo(store)`
+enregistre leur chargeur. Une scène se charge comme un modèle, avec sa
+progression et son annulation ; ses meshes et ses matériaux sont des
+sous-ressources (`level.scene.json#mesh/1`), partagées par ses instances.
+`instantiateScene` crée les nœuds, sous un nœud à eux (`root`), et lit les
+composants, leurs ressources chargées par le store et gardées jusqu'à
+`dispose()`.
+
+```ts
+import {
+  installSceneIo,
+  instantiateScene,
+  SceneDataType,
+} from '@fdw/engine-scene-io';
+
+installSceneIo(store);
+const handle = store.load(SceneDataType, 'saved:level.scene.json');
+const instance = await instantiateScene(handle, scene, { store });
+handle.release();
+// Plus tard : les nœuds et les ressources partent ensemble.
+instance.dispose();
+```
+
+Une `SceneData` en mémoire (capturée, pas écrite) s'instancie de la même
+façon ; `wrap: false` met ses nœuds directement sous le parent (les nœuds
+qui suivent un corps physique doivent être sous la racine de la scène).
+
+## Les composants et leurs codecs
+
+Un **codec** écrit les données d'un composant et les relit. Ceux de
+`engine-scene` servent par défaut : les rendus de mesh, les lumières, les
+caméras. Les paquets donnent les codecs de leurs composants, faits pour
+leurs systèmes : `lodCodec(lods)` pour les niveaux de détail,
+`physicsCodec(physics)` pour les corps, `soundEmitterCodec(audio)` pour les
+sons des nœuds, `behaviorCodec(systems)` pour les comportements.
+
+```ts
+import { lodCodec, sceneCodecs } from '@fdw/engine-scene-io';
+import { physicsCodec } from '@fdw/engine-physics';
+
+const codecs = [...sceneCodecs, lodCodec(lods), physicsCodec(physics)];
+const data = captureScene(scene, { store, codecs });
+await instantiateScene(data, other, { store, codecs });
+```
+
+Un composant de nombres n'a pas besoin de codec : défini avec
+`persist: true`, il s'écrit champ par champ. Sa `version` est écrite avec
+lui, et ses `defaults` remplissent les champs omis.
+
+```ts
+const Spin = scene.world.defineComponent(
+  'spin',
+  { speed: 'f32' },
+  { persist: true },
+);
+```
+
+Les autres composants (objets, références) ne sont pas écrits sans codec :
+l'état des systèmes se reconstruit, il ne s'enregistre pas. Un composant lu
+sans son codec reste sur son entité, et est réécrit tel qu'il était.
+
+## Modèles et scènes par référence
+
+Une instance de modèle (`instantiate`) est écrite comme son modèle et ses
+**modifications** : un nœud déplacé, caché, retiré, un matériau remplacé,
+un nœud ajouté sous l'un de ses nœuds. On les trouve par leur **chemin**
+depuis la racine de l'instance (les noms des nœuds, `trunk/leaves` ; `#2`
+pour le troisième enfant quand les noms se répètent).
+
+Une scène chargée par le store est aussi un modèle : une instance de
+`props/lamp.scene.json` placée dans un niveau est écrite comme une
+référence vers elle, avec ses modifications. La lampe est faite une fois ;
+le niveau la place, encore et encore.
+
+```json
+{
+  "name": "right lamp",
+  "position": [2, 0, 0],
+  "instance": {
+    "scene": "../props/lamp.scene.json",
+    "overrides": [{ "path": "post/bulb", "position": [0, 3, 0] }]
+  }
+}
+```
+
+## Exporter en glTF
+
+`writeGltf` de `@fdw/engine-gltf` écrit une `SceneData` en `.glb` (ou en
+`.gltf` et son `.bin`), pour d'autres outils : les meshes, les matériaux et
+leurs images, les lumières (`KHR_lights_punctual`), les caméras, les corps
+(`KHR_physics_rigid_bodies`, `KHR_implicit_shapes`), les lots
+(`EXT_mesh_gpu_instancing`). Ce pour quoi glTF n'a pas de place (le graphe
+d'un matériau, les composants) va dans l'extension du moteur, `FDW_scene` :
+le moteur relit le fichier sans les perdre. Capturez avec
+`instances: 'expand'` : glTF n'a pas de références.
+
+```ts
+import { installGltfScenes, writeGltf } from '@fdw/engine-gltf';
+
+const uri = 'saved:level.scene.json';
+const data = captureScene(scene, { store, uri, instances: 'expand' });
+const [glb] = await writeGltf(data, 'level.glb', { store, uri });
+
+// Et le retour : un glTF se charge aussi comme une scène.
+installGltfScenes(store);
+const level = store.load(SceneDataType, 'level.glb');
+```
+
+## La suite
+
+- [Écrire un importeur](/fdw-engine/fr/tutorials/writing-an-importer/) : un
+  format à vous, chargé comme une scène.
+- Le guide [Scènes et formats](/fdw-engine/fr/guides/scenes/) : l'API, le
+  format, les versions et leurs migrations.
+- [Un jeu à la troisième personne](/fdw-engine/fr/game/tps/) : sa forêt est
+  un niveau du moteur, construit une fois et chargé par le jeu.

@@ -36,6 +36,13 @@ export interface ResourceScope {
   dispose(): void; // releases every handle
 }
 
+/** Where a value of a store comes from (ResourceStore.identify). */
+export interface ResourceIdentity<T = unknown> {
+  readonly type: ResourceType<T>;
+  readonly uri: ResourceUri;
+  readonly options: unknown;
+}
+
 export interface ResourceStoreOptions {
   /** Loads under way at once, 8 by default. Dependencies do not count. */
   concurrency?: number;
@@ -82,6 +89,8 @@ export class ResourceStore implements HandleHost {
     ResourceType<any>,
     Map<string, ResourceEntry<any>>
   >();
+  /** The entry of each object value, for identify(). */
+  private readonly owners = new WeakMap<object, ResourceEntry<any>>();
   /** Entries without handles, least recently used first. */
   private readonly idle = new Set<ResourceEntry<any>>();
   private readonly queue: Record<Priority, Run[]> = {
@@ -170,6 +179,24 @@ export class ResourceStore implements HandleHost {
     return this;
   }
 
+  /** The canonical form of a URI: its scheme (the default one if none), its path normalized. */
+  normalize(uri: ResourceUri): ResourceUri {
+    return this.canonical(uri).text;
+  }
+
+  /**
+   * Resolves a URI relative to a resource, as `ctx.resolve` does in its
+   * loader: `#mesh/0`, `../textures/a.png`, or a URI with its scheme.
+   */
+  resolve(base: ResourceUri, relative: string): ResourceUri {
+    return this.resolveUri(this.canonical(base).text, relative);
+  }
+
+  /** A service provided to the loaders, if any. */
+  service<S>(key: ServiceKey<S>): S | undefined {
+    return this.services.get(key.id) as S | undefined;
+  }
+
   // ------------------------------------------------------------------
   // Loading
   // ------------------------------------------------------------------
@@ -235,11 +262,31 @@ export class ResourceStore implements HandleHost {
       'defined',
     );
     entry.value = value;
+    this.own(entry);
     entry.version.value = 1;
     entry.status.value = 'ready';
     entry.done.resolve(value);
     map.set(key, entry);
     return this.newHandle(entry);
+  }
+
+  /**
+   * The type, URI and options of the entry whose value this is (loaded,
+   * defined or provided as a sub-resource): what a saved scene writes to
+   * find a mesh or a material again. Undefined for a value the store did
+   * not make, or whose entry is gone.
+   */
+  identify<T>(value: T): ResourceIdentity<T> | undefined {
+    if (typeof value !== 'object' || value === null) return undefined;
+    const entry = this.owners.get(value);
+    if (!entry || entry.disposed || entry.value !== value) return undefined;
+    return { type: entry.type, uri: entry.uri, options: entry.options };
+  }
+
+  private own(entry: ResourceEntry<any>): void {
+    const value: unknown = entry.value;
+    if (typeof value === 'object' && value !== null)
+      this.owners.set(value, entry);
   }
 
   scope(name?: string): ResourceScope {
@@ -692,6 +739,7 @@ export class ResourceStore implements HandleHost {
       batch(() => {
         entry.loader = loader;
         entry.value = value;
+        this.own(entry);
         entry.size = this.sizeOf(loader, value);
         entry.deps = run.deps;
         entry.depHandles.value = run.deps;
@@ -928,6 +976,7 @@ export class ResourceStore implements HandleHost {
         );
         child.owner = entry;
         child.value = value;
+        this.own(child);
         child.size = this.sizeOf(this.loaders.get(type)?.[0], value);
         child.version.value = 1;
         child.status.value = 'ready';
@@ -1086,7 +1135,10 @@ export class ResourceStore implements HandleHost {
     batch(() => {
       if (inPlace)
         this.disposeValue(entry.type, loader, s.value); // `next` was only a source
-      else entry.value = s.value;
+      else {
+        entry.value = s.value;
+        this.own(entry);
+      }
       entry.loader = loader;
       entry.size = this.sizeOf(loader, entry.value);
       entry.deps = s.deps;

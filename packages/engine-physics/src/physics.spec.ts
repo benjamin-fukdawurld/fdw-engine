@@ -3,10 +3,20 @@ import type { IQuat, IVec3 } from '@fdw/engine-backend';
 import { TransformLayout } from '@fdw/engine-core';
 import { Camera, Renderer } from '@fdw/engine-core';
 import { fakeBackend, surface } from '@fdw/engine-core/testing';
+import { ResourceStore } from '@fdw/engine-resources';
 import { Scene, Scheduler } from '@fdw/engine-scene';
+import {
+  captureScene,
+  instantiateScene,
+  parseFdwScene,
+  sceneCodecs,
+  writeFdwScene,
+} from '@fdw/engine-scene-io';
 import type {
   BodyDesc,
+  CharacterDesc,
   ColliderDesc,
+  PhysicsCharacter,
   PhysicsBody,
   PhysicsCollider,
   PhysicsEngine,
@@ -15,6 +25,7 @@ import type {
 import { DebugLines, drawShape, drawWorld } from './debug/DebugLines';
 import { PhysicsDebugView } from './debug/PhysicsDebugView';
 import { mixPoses, poseOfMatrix } from './math';
+import { physicsCodec } from './codec';
 import { ScenePhysics } from './ScenePhysics';
 import { Shapes } from './shapes';
 
@@ -158,8 +169,21 @@ class FakeWorld implements PhysicsWorld {
   removeJoint(): void {
     // Nothing in the fake.
   }
-  createCharacter(): never {
-    throw new Error('Not in the fake');
+  createCharacter(desc: CharacterDesc): PhysicsCharacter {
+    const body = this.createBody({
+      type: 'kinematic',
+      position: desc.position,
+      colliders: [{ shape: desc.shape }],
+    });
+    return {
+      body,
+      grounded: false,
+      move: () => ({
+        movement: { x: 0, y: 0, z: 0 },
+        grounded: false,
+        collisions: [],
+      }),
+    };
   }
   removeCharacter(): void {
     // Nothing in the fake.
@@ -420,6 +444,81 @@ describe('ScenePhysics', () => {
     const o = node.entity * stride + rotation;
     expect(close(scene.transforms.data.subarray(o, o + 4))).toEqual([
       0, 1, 0, 0,
+    ]);
+  });
+});
+
+describe('physicsCodec', () => {
+  it('saves the bodies of the nodes, made again when loaded', async () => {
+    const scene = new Scene();
+    const physics = new ScenePhysics(scene, fakeEngine.createWorld());
+    const ground = scene.root.add({ name: 'ground' });
+    const heights = new Float32Array([0, 1, 2, 3]);
+    physics.add(ground, {
+      type: 'static',
+      colliders: [
+        {
+          shape: Shapes.heightfield(2, 2, heights, { x: 10, y: 4, z: 10 }),
+          material: { friction: 0.8 },
+          userData: { app: 'object' },
+        },
+      ],
+    });
+    const crate = scene.root.add({ name: 'crate', position: { y: 3 } });
+    physics.add(crate, {
+      type: 'dynamic',
+      ccd: true,
+      colliders: [{ shape: Shapes.box(0.5), density: 2 }],
+    });
+    const hero = scene.root.add({ name: 'hero', position: { x: 2 } });
+    physics.addCharacter(hero, {
+      shape: Shapes.capsule(0.6, 0.3),
+      stepHeight: 0.2,
+    });
+    const codecs = [...sceneCodecs, physicsCodec(physics)];
+    const warnings: string[] = [];
+    const data = captureScene(scene, {
+      codecs,
+      warn: (m) => void warnings.push(m),
+    });
+    expect(warnings).toEqual([expect.stringMatching(/userData is not saved/)]);
+    const byName = (name: string) =>
+      data.nodes.find((n) => n.name === name)!.components!['physics body'];
+    expect(byName('crate')).toEqual({
+      version: 1,
+      data: {
+        body: {
+          type: 'dynamic',
+          ccd: true,
+          colliders: [{ shape: Shapes.box(0.5), density: 2 }],
+        },
+      },
+    });
+    expect(byName('hero').data).toEqual({
+      character: { shape: Shapes.capsule(0.6, 0.3), stepHeight: 0.2 },
+    });
+    // Through the format: the heights in the binary.
+    const files = await writeFdwScene(data, 'level.scene.json');
+    const read = parseFdwScene(
+      new TextDecoder().decode(files[0].bytes),
+      files[1].bytes,
+    );
+    const other = new Scene();
+    const world = fakeEngine.createWorld();
+    const otherPhysics = new ScenePhysics(other, world);
+    await instantiateScene(read, other, {
+      store: new ResourceStore(),
+      codecs: [...sceneCodecs, physicsCodec(otherPhysics)],
+      wrap: false,
+    });
+    const crateBody = otherPhysics.bodyOf(other.find('crate')!)!;
+    expect(crateBody.type).toBe('dynamic');
+    expect(crateBody.position.y).toBe(3);
+    expect(otherPhysics.characterOf(other.find('hero')!)).toBeDefined();
+    const shape = otherPhysics.bodyOf(other.find('ground')!)!.colliders[0]
+      .shape;
+    expect(shape.type === 'heightfield' && [...shape.heights]).toEqual([
+      0, 1, 2, 3,
     ]);
   });
 });

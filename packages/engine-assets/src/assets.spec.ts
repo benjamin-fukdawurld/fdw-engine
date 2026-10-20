@@ -22,7 +22,20 @@ import { featureKey, materialGraph, uvTransformRows } from './graphs';
 import { toHalf } from './image/half';
 import { ImageAssetType, type ImageAsset } from './image/ImageAsset';
 import { pixelCodec, type ImageCodec } from './image/codecs';
-import { TextureType, type Texture } from './image/Texture';
+import {
+  textureOf,
+  TextureType,
+  type Texture,
+  type TextureOptions,
+} from './image/Texture';
+import { MaterialGraphType } from './graphResources';
+import { MaterialType } from './materials';
+import {
+  BuiltinTypes,
+  GraphBuilder,
+  serializeGraph,
+  std,
+} from '@fdw/engine-shader';
 import { installAssets } from './install';
 import { instantiate } from './instantiate';
 import { MeshType } from './meshes';
@@ -350,5 +363,54 @@ describe('models', () => {
       ),
     ).toBe(true);
     expect(store.peek(MeshType, 'm.model#mesh/0')).toBeUndefined(); // the entry has options
+  });
+});
+
+describe('graph materials', () => {
+  it('loads material graphs, and realizes a graph material with its textures', async () => {
+    const g = new GraphBuilder('tinted');
+    const tint = g.uniform('tint', BuiltinTypes.vec3f);
+    const texel = g.call(std.textureSample, {
+      texture: g.texture('color'),
+      sampler: g.sampler('colorSampler'),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
+    });
+    g.surface({
+      shadingModel: 'unlit',
+      baseColor: g.call(std.mul, { a: texel.swizzle('rgb'), b: tint }),
+    });
+    const graph = g.build();
+    const { store } = setup({
+      'tinted.material.json': serializeGraph(graph),
+      'red.img': 'img 1 1 255 0 0 255',
+    });
+    expect(
+      await store.load(MaterialGraphType, 'tinted.material.json').ready,
+    ).toEqual(graph);
+    const data: MaterialData = {
+      kind: 'graph',
+      name: 'red',
+      graph,
+      values: {
+        tint: [1, 0.5, 0],
+        color: { texture: 'red.img', colorSpace: 'srgb' },
+        colorSampler: { sampler: { minFilter: 'nearest' } },
+      },
+      renderState: { doubleSided: true },
+    };
+    store.define(MaterialDataType, 'red.material', data);
+    const material = await store.load(MaterialType, 'red.material').ready;
+    expect(material.graph).toBe(graph);
+    expect(material.getValue('tint')).toEqual([1, 0.5, 0]);
+    expect(material.renderState.doubleSided).toBe(true);
+    const texture = await store.load<Texture, TextureOptions>(
+      TextureType,
+      'red.img',
+      {
+        options: { colorSpace: 'srgb' },
+      },
+    ).ready;
+    expect(material.getValue('color')).toBe(texture.texture);
+    expect(textureOf(texture.texture)).toBe(texture);
   });
 });

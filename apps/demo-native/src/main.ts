@@ -47,6 +47,7 @@ import {
   createProceduralGallery,
   createShadowsScene,
   createTpsScene,
+  TpsLevelPath,
   SceneFactory,
 } from '@fdw/demo-scenes';
 import { installAssets, pixelCodec } from '@fdw/engine-assets';
@@ -91,6 +92,7 @@ const loadedScenes: Record<string, () => Promise<SceneFactory>> = {
     return createTpsScene({
       physics: await createRapierPhysics(),
       resources: () => store,
+      level: TpsLevelPath,
     });
   },
 };

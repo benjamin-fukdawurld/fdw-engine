@@ -1,7 +1,8 @@
 import type { GpuTexture, RenderBackend } from '@fdw/engine-backend';
 import type { Model } from '@fdw/engine-assets';
-import { PhysicsWorld, Shapes } from '@fdw/engine-physics';
-import { Scene, SceneLods, type LodLevel } from '@fdw/engine-scene';
+import { Material } from '@fdw/engine-core';
+import { Shapes, type ScenePhysics } from '@fdw/engine-physics';
+import { Scene, SceneLods, type LodLevel, type Node } from '@fdw/engine-scene';
 import { fbm } from '@fdw/engine-noise';
 import type { PortHandle } from '@fdw/engine-shader';
 import {
@@ -13,6 +14,7 @@ import {
 } from '@fdw/engine-shader';
 import { seededRandom } from '../maze/maze';
 import { buildTerrain, terrainBase, type Terrain } from '../terrain/terrain';
+import { levelComponents } from './level';
 
 // The forest of the TPS demo: a terrain in a bowl (a clearing in the
 // middle, slopes too steep to climb around the play area), firs of three
@@ -50,6 +52,8 @@ export interface ForestModels {
 }
 
 export interface Forest {
+  /** The node holding the forest: what saveTpsLevel writes. */
+  readonly root: Node;
   readonly terrain: Terrain;
   readonly lods: SceneLods;
   // The firs: x, z, radius of the trunk.
@@ -257,6 +261,7 @@ const nodeIndex = (model: Model, name: string) =>
  */
 function plant(
   scene: Scene,
+  parent: number,
   model: Model,
   levels: readonly string[],
   transforms: { positions: number[]; rotations: number[]; scales: number[] },
@@ -278,6 +283,7 @@ function plant(
     for (const primitive of model.meshes[node.mesh]) {
       const entities = scene.createBatch({
         count,
+        parent,
         ...transforms,
         mesh: primitive.mesh,
         material: primitive.material,
@@ -292,16 +298,17 @@ function plant(
 }
 
 /**
- * Builds the forest in a scene: the terrain (drawn as an item: give
- * `terrain.surface` to the renderer), the firs and the ground cover as
- * batches with their levels of detail (`lods`, to update with the camera),
- * and their bodies in the physics: the terrain as a heightfield, the
- * trunks as capsules.
+ * Builds the forest in a scene, under a node `forest`: the terrain (a node
+ * whose terrain is drawn as an item: give `terrain.surface` to the
+ * renderer), the firs and the ground cover as batches with their levels of
+ * detail (`lods`, to update with the camera), and their bodies: the
+ * terrain as a heightfield, the trunks near the play area as capsules.
+ * Saved and loaded as a level by saveTpsLevel and loadTpsLevel.
  */
 export function buildForest(
   backend: RenderBackend,
   scene: Scene,
-  world: PhysicsWorld | undefined,
+  physics: ScenePhysics | undefined,
   models: ForestModels,
   // The rock of the slopes: color, and height in alpha (bakeRockTexture).
   rock: GpuTexture,
@@ -321,24 +328,42 @@ export function buildForest(
     wrapModeT: 'repeat',
     maxAnisotropy: 8,
   });
-  const terrain = buildTerrain(backend, {
+  const components = levelComponents(scene);
+  const root = scene.root.add({ name: 'forest' });
+  // The material of the ground as saved: the height map is the terrain's.
+  const ground = new Material({
+    graph: groundMaterial({ size, height, resolution }),
+    values: {
+      groundColor: models.ground.color,
+      groundNormal: models.ground.normal,
+      groundRoughness: models.ground.roughness,
+      rock,
+      groundSampler: sampler,
+    },
+    label: 'forest ground',
+  });
+  const terrainOptions = {
     size,
     height,
     resolution,
     heights,
     patches: 32,
     edgePixels: 10,
+  };
+  const terrain = buildTerrain(backend, {
+    ...terrainOptions,
     material: {
-      graph: groundMaterial({ size, height, resolution }),
-      values: {
-        groundColor: models.ground.color,
-        groundNormal: models.ground.normal,
-        groundRoughness: models.ground.roughness,
-        rock,
-        groundSampler: sampler,
-      },
+      graph: ground.graph,
+      values: Object.fromEntries(ground.values),
     },
   });
+  const terrainNode = root
+    .add({ name: 'terrain', static: true })
+    .attach(components.Terrain, {
+      terrain,
+      ground,
+      options: terrainOptions,
+    });
   const heightAt = terrain.heightAt;
   const random = seededRandom(seed);
   const lods = new SceneLods(scene, { hysteresis: 0.15 });
@@ -378,6 +403,7 @@ export function buildForest(
     if (transforms.positions.length === 0) return;
     const copies = plant(
       scene,
+      root.entity,
       models.fir,
       [0, 1, 2].map((level) => `${kind}_LOD${level}`),
       transforms,
@@ -427,7 +453,7 @@ export function buildForest(
     }
     names.forEach((name, k) => {
       if (perKind[k].positions.length === 0) return;
-      const copies = plant(scene, model, [name], perKind[k], {
+      const copies = plant(scene, root.entity, model, [name], perKind[k], {
         castShadow: () => false,
       });
       for (const [level] of copies) {
@@ -454,10 +480,9 @@ export function buildForest(
   );
 
   // The physics: the ground, and the trunks of the firs near the play area.
-  if (world) {
-    world.createBody({
+  if (physics) {
+    physics.add(terrainNode, {
       type: 'static',
-      position: { x: 0, y: 0, z: 0 },
       colliders: [
         {
           shape: Shapes.heightfield(resolution, resolution, heights, {
@@ -472,22 +497,29 @@ export function buildForest(
     for (let i = 0; i < trees.length; i += 3) {
       const [x, z, radius] = [trees[i], trees[i + 1], trees[i + 2]];
       if (Math.hypot(x, z) > playRadius + 20) continue;
-      world.createBody({
-        type: 'static',
-        position: { x, y: heightAt(x, z) + 2, z },
-        colliders: [{ shape: Shapes.capsule(2, radius) }],
-      });
+      physics.add(
+        root.add({
+          name: 'trunk',
+          position: { x, y: heightAt(x, z) + 2, z },
+          static: true,
+        }),
+        { type: 'static', colliders: [{ shape: Shapes.capsule(2, radius) }] },
+      );
     }
   }
+  const treeData = Float32Array.from(trees);
+  root.attach(components.Forest, { trees: treeData, playRadius });
 
   return {
+    root,
     terrain,
     lods,
-    trees: Float32Array.from(trees),
+    trees: treeData,
     treeCount: trees.length / 3,
     playRadius,
     heightAt,
     destroy: () => {
+      root.remove();
       lods.destroy();
       terrain.destroy();
       sampler.destroy();

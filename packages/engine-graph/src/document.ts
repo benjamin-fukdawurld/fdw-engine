@@ -15,7 +15,21 @@ export interface DocumentFormat {
   readonly edge?: (edge: Record<string, unknown>) => boolean;
   /** Checks the fields a document adds; throws when malformed. */
   readonly document?: (document: Record<string, unknown>) => void;
+  /**
+   * Brings the documents of older versions to the current one:
+   * `migrations[n]` makes a document of version n one of version n + 1.
+   */
+  readonly migrations?: Readonly<Record<number, DocumentMigration>>;
 }
+
+/**
+ * Makes a document of a version one of the next version.
+ *
+ * @group Serialization
+ */
+export type DocumentMigration = (
+  document: Record<string, unknown>,
+) => Record<string, unknown>;
 
 /**
  * Whether a value is a plain object.
@@ -55,20 +69,35 @@ export function parseDocument<G extends GraphDocument>(
   source: string | unknown,
   format: DocumentFormat,
 ): G {
-  const data: unknown =
+  const parsed: unknown =
     typeof source === 'string' ? JSON.parse(source) : source;
   const kind = format.kind;
   const article = /^[aeiou]/.test(kind) ? 'An' : 'A';
 
-  if (!isRecord(data)) {
+  if (!isRecord(parsed)) {
     throw new Error(`${article} ${kind} must be a JSON object`);
   }
+  let data = parsed;
   if (data['format'] !== format.format) {
     throw new Error(
       `Unsupported document format "${String(
         data['format'],
       )}", expected "${format.format}"`,
     );
+  }
+  for (
+    let version = data['version'];
+    typeof version === 'number' &&
+    Number.isInteger(version) &&
+    version >= 1 &&
+    version < format.version;
+    version++
+  ) {
+    const migrate = format.migrations?.[version];
+    if (!migrate) {
+      throw new Error(`No migration of ${kind} from version ${version}`);
+    }
+    data = { ...migrate(data), version: version + 1 };
   }
   if (data['version'] !== format.version) {
     throw new Error(

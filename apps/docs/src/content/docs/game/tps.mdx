@@ -45,6 +45,7 @@ The code of the game is in `packages/demo-scenes/src/tps/`, shared by:
 | ------------- | --------------------------------------------------------------------- |
 | `assets.ts`   | Loading the models and the textures, with the progress                |
 | `forest.ts`   | The terrain, the firs and the ground cover, their levels and bodies   |
+| `level.ts`    | The forest as a level of the engine: saved once, loaded by the game   |
 | `actor.ts`    | A character: a controller, a model turned where it faces, animated    |
 | `hero.ts`     | The ranger: its actions, its animation graph, its blade               |
 | `combat.ts`   | The blows: volumes struck once per blow                               |
@@ -104,6 +105,19 @@ prepare them into compact `.glb` files, in `apps/docs/public/models/forest/`
   camera (a single level each).
 - **Their bodies**: the terrain as a heightfield, from the same heights;
   the trunks near the play area as capsules.
+
+The forest is built once, by `tools/assets/make-tps-level.ts`, and saved
+as a level of the engine beside the models: `forest/forest.scene.json`
+(the nodes, the batches and their levels of detail, the bodies, the
+terrain and its material) and its binary (the transforms, the heights).
+The game loads it (`createTpsScene({ level: TpsLevelPath })`) instead of
+building it: the same forest, the same game, played the same. The terrain
+and what the game needs of the forest are two components of the demo,
+saved by codecs of its own (see
+[Saving and loading scenes](/fdw-engine/tutorials/saving-scenes/)); the
+rock baked at the start is defined in the store under the URI the level
+names (`defineTexture`). With `--gltf`, the tool writes the forest in glTF
+too, for other tools.
 
 The renderer draws the scene and the terrain together, in about 40 calls
 for the view and 200 with the four cascades:

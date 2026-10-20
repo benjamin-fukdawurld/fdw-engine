@@ -14,7 +14,10 @@ import {
   defineResourceType,
   ResourceError,
   type LoadContext,
+  type ResourceHandle,
   type ResourceLoader,
+  type ResourceStore,
+  type ResourceUri,
 } from '@fdw/engine-resources';
 import {
   AssetsConfigService,
@@ -87,6 +90,28 @@ export function sharedSampler(
   return sampler;
 }
 
+// The Texture of each GpuTexture made here: a material holds the GpuTexture,
+// a saved scene needs the URI of the Texture (ResourceStore.identify).
+const textures = new WeakMap<GpuTexture, Texture>();
+
+/** The Texture a GpuTexture was made for, by createTextureFromImage. */
+export const textureOf = (texture: GpuTexture): Texture | undefined =>
+  textures.get(texture);
+
+/**
+ * Defines a texture made by code (baked, rendered) in a store under a URI:
+ * the materials using it are saved with that URI, and load it where it is
+ * defined again. Released with the last handle, like `store.define`.
+ */
+export function defineTexture(
+  store: ResourceStore,
+  uri: ResourceUri,
+  texture: Texture,
+): ResourceHandle<Texture> {
+  textures.set(texture.texture, texture);
+  return store.define(TextureType, uri, texture);
+}
+
 /** Uploads an image: the GPU side of the texture loader, usable on its own. */
 export async function createTextureFromImage(
   backend: RenderBackend,
@@ -154,13 +179,15 @@ export async function createTextureFromImage(
       source: image.bitmap ?? levels[0],
     });
   }
-  return {
+  const result: Texture = {
     texture,
     sampler: sharedSampler(backend, options.sampler ?? defaultSampler),
     width: image.width,
     height: image.height,
     colorSpace,
   };
+  textures.set(texture, result);
+  return result;
 }
 
 /** An estimate of the bytes of a texture on the GPU, for the budget of the cache. */

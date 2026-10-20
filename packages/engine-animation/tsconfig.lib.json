@@ -6,5 +6,8 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"],
-  "references": [{ "path": "../engine-graph/tsconfig.lib.json" }]
+  "references": [
+    { "path": "../engine-graph/tsconfig.lib.json" },
+    { "path": "../engine-resources/tsconfig.lib.json" }
+  ]
 }

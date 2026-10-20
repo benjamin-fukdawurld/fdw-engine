@@ -8,3 +8,5 @@ export * from './Interpreter';
 export * from './compile';
 export * from './BehaviorSystem';
 export * from './BehaviorDebugger';
+export * from './codec';
+export * from './resources';

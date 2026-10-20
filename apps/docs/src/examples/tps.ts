@@ -1,4 +1,4 @@
-import { createTpsScene } from '@fdw/demo-scenes';
+import { createTpsScene, TpsLevelPath } from '@fdw/demo-scenes';
 import { bitmapCodec, installAssets } from '@fdw/engine-assets';
 import { unlockAudio, WebAudioEngine } from '@fdw/engine-audio-web';
 import { installGltf } from '@fdw/engine-gltf';
@@ -39,11 +39,11 @@ const example: Example = async ({
 
   const audio = new WebAudioEngine();
   unlockAudio(audio, canvas);
-  const game = createTpsScene({ physics, resources: () => resources })(
-    backend,
-    surface,
-    { input: new WebInputSource(canvas), audio, info },
-  );
+  const game = createTpsScene({
+    physics,
+    resources: () => resources,
+    level: TpsLevelPath,
+  })(backend, surface, { input: new WebInputSource(canvas), audio, info });
   // The models and the forest, before the first frame.
   const loading = setInterval(() => game.frame(0), 50);
   await game.ready;

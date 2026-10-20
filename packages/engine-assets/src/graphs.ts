@@ -28,6 +28,7 @@ export type TextureSlot =
 export function texturesOf(
   data: MaterialData,
 ): Partial<Record<TextureSlot, TextureRef>> {
+  if (data.kind === 'graph') return {};
   const slots: Partial<Record<TextureSlot, TextureRef | undefined>> =
     data.kind === 'pbr'
       ? {
@@ -74,6 +75,7 @@ const graphs = new Map<string, MaterialGraphData>();
 
 /** The graph of a material data, built once per set of features. */
 export function materialGraph(data: MaterialData): MaterialGraphData {
+  if (data.kind === 'graph') return data.graph;
   const key = featureKey(data);
   let graph = graphs.get(key);
   if (!graph) {

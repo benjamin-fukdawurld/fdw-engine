@@ -1,4 +1,8 @@
-import type { RenderBackend } from '@fdw/engine-backend';
+import type {
+  GpuSampler,
+  GpuSamplerConfiguration,
+  RenderBackend,
+} from '@fdw/engine-backend';
 import { Material, type MaterialValue } from '@fdw/engine-core';
 import {
   defineResourceType,
@@ -6,7 +10,12 @@ import {
   type LoadContext,
   type ResourceLoader,
 } from '@fdw/engine-resources';
-import { MaterialDataType, type MaterialData, type TextureRef } from './data';
+import {
+  MaterialDataType,
+  type GraphMaterialData,
+  type MaterialData,
+  type TextureRef,
+} from './data';
 import {
   colorSlots,
   materialGraph,
@@ -16,6 +25,7 @@ import {
 } from './graphs';
 import {
   placeholderTexture,
+  sharedSampler,
   TextureType,
   type Texture,
   type TextureOptions,
@@ -28,6 +38,17 @@ export const MaterialType = defineResourceType<Material>('material');
 export function materialFactors(
   data: MaterialData,
 ): Record<string, MaterialValue> {
+  if (data.kind === 'graph') {
+    const values: Record<string, MaterialValue> = {};
+    for (const [name, value] of Object.entries(data.values))
+      if (
+        typeof value === 'number' ||
+        typeof value === 'boolean' ||
+        Array.isArray(value)
+      )
+        values[name] = value as MaterialValue;
+    return values;
+  }
   const values: Record<string, MaterialValue> =
     data.kind === 'pbr'
       ? {
@@ -85,6 +106,31 @@ export async function realizeMaterial(
 ): Promise<Material> {
   const config = ctx.service(AssetsConfigService);
   let backend: RenderBackend | undefined;
+  if (data.kind === 'graph') {
+    const material = await realizeGraphMaterial(data, {
+      texture: async (uri, options) => {
+        const handle = ctx.use<Texture, TextureOptions>(
+          TextureType,
+          ctx.resolve(uri),
+          options,
+        );
+        try {
+          return await handle.ready;
+        } catch (e) {
+          if (config.onMissing === 'fail' || isAbortError(e)) throw e;
+          config.warn(
+            `${ctx.uri}: texture ${uri} replaced by a placeholder (${
+              (e as Error).message
+            })`,
+          );
+          return placeholderTexture(ctx.service(RenderBackendService));
+        }
+      },
+      sampler: (configuration) =>
+        sharedSampler(ctx.service(RenderBackendService), configuration),
+    });
+    return material;
+  }
   const textures = await Promise.all(
     Object.entries(texturesOf(data)).map(async ([slot, ref]) => {
       const handle = ctx.use<Texture, TextureOptions>(
@@ -116,6 +162,53 @@ export async function realizeMaterial(
     values,
     renderState: { alphaMode: data.alphaMode, doubleSided: data.doubleSided },
     label: data.name ?? ctx.uri,
+  });
+  madeWith.set(material, values);
+  return material;
+}
+
+const isVector = (value: unknown): value is readonly number[] =>
+  Array.isArray(value);
+
+/** How realizeGraphMaterial gets the textures and samplers of the values. */
+export interface GraphMaterialResources {
+  texture(uri: string, options?: TextureOptions): Promise<Texture>;
+  sampler(configuration: GpuSamplerConfiguration): GpuSampler;
+}
+
+/**
+ * Makes a `Material` from a graph material data: its numbers as they are,
+ * its textures and samplers from `resources`. The loader of materials uses
+ * it with the store; a scene in memory with its own handles.
+ */
+export async function realizeGraphMaterial(
+  data: GraphMaterialData,
+  resources: GraphMaterialResources,
+): Promise<Material> {
+  const values = materialFactors(data);
+  await Promise.all(
+    Object.entries(data.values).map(async ([name, value]) => {
+      if (typeof value !== 'object' || isVector(value)) return;
+      if ('texture' in value) {
+        const { texture, ...options } = value;
+        // No options: the entry of a texture defined in the store.
+        values[name] = (
+          await resources.texture(
+            texture,
+            Object.keys(options).length > 0 ? options : undefined,
+          )
+        ).texture;
+      } else {
+        values[name] = resources.sampler(value.sampler);
+      }
+    }),
+  );
+  const material = new Material({
+    graph: data.graph,
+    values,
+    features: data.features,
+    renderState: data.renderState,
+    label: data.name,
   });
   madeWith.set(material, values);
   return material;

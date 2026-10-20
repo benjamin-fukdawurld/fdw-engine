@@ -683,6 +683,34 @@ describe('sub-resources', () => {
     expect(disposed).toEqual(['trunk', 'leaf']);
   });
 
+  it('identifies the values it made: loaded, provided, defined', async () => {
+    const { store, mem } = modelStore({ 'm.glb': 'trunk,leaf' });
+    store.watch(true);
+    const model = store.load(ModelType, 'm.glb');
+    const value = await model.ready;
+    expect(store.identify(value)).toEqual({
+      type: ModelType,
+      uri: 'mem:m.glb',
+      options: undefined,
+    });
+    const leaf = value.meshes[1].value!;
+    expect(store.identify(leaf)?.uri).toBe('mem:m.glb#mesh/1');
+    const made = { name: 'made' };
+    const defined = store.define(MeshType, 'generated/a', made);
+    expect(store.identify(made)?.uri).toBe('mem:generated/a');
+    // Not made by the store, or gone.
+    expect(store.identify({ name: 'other' })).toBeUndefined();
+    expect(store.identify('text')).toBeUndefined();
+    defined.release();
+    expect(store.identify(made)).toBeUndefined();
+    // A reload that replaces the value identifies the new one.
+    mem.set('m.glb', 'TRUNK');
+    await sleep(10);
+    store.update();
+    expect(store.identify(model.value!)?.uri).toBe('mem:m.glb');
+    expect(store.identify(value)).toBeUndefined();
+  });
+
   it('lets a dependent use a sub-resource and follow it on reload', async () => {
     const { store, mem } = modelStore({ 'm.glb': 'trunk' });
     store.watch(true);

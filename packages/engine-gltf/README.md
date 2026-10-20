@@ -24,6 +24,10 @@ const instance = instantiate(await handle.ready, scene);
 - **Hierarchy**: nodes (a `matrix` is decomposed into translation, rotation and scale), the nodes of the default scene as roots, cameras, skins (`SkinData`) and animations (`AnimationClipData`, quantized outputs dequantized). They are data for P6: nothing plays them.
 - **Extensions**: `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_texture_transform`, `KHR_texture_basisu`, `KHR_mesh_quantization`, `KHR_lights_punctual`, `EXT_meshopt_compression` (with `options.meshopt`) and `KHR_draco_mesh_compression` (with `options.draco`). A required extension that is unknown, or whose decoder is missing, fails the load with a `ResourceError('unsupported')` naming it; an optional one is ignored with a warning.
 
+## Scenes
+
+`installGltfScenes(store)` also loads the files as scenes (`SceneDataType` of `@fdw/engine-scene-io`): the nodes, the meshes and materials (the sub-resources above), the lights, the cameras, the bodies (`KHR_physics_rigid_bodies`, `KHR_implicit_shapes`), the nodes of `EXT_mesh_gpu_instancing` as batches, and the components of the extension of the engine, `FDW_scene`. `writeGltf(data, path, { store, uri, binary, warn })` writes a `SceneData` as a `.glb` (or a `.gltf` and its `.bin`): the meshes de-interleaved, the images copied, the lights as a color and an intensity, the bodies in KHR, the batches instanced; what glTF has no place for (the graph of a material, the exact light or shape, the other components) goes to `FDW_scene`, read back without loss. See [the P16 design](../../design/p16-scenes.md).
+
 ## Extensions
 
 An extension is a `GltfExtension`: a name and hooks, each called only for the objects that carry it, with its JSON. Hooks that change data return a modified copy:

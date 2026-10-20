@@ -2,7 +2,8 @@ import type {
   GpuSamplerConfiguration,
   MeshDescription,
 } from '@fdw/engine-backend';
-import type { IndexData } from '@fdw/engine-core';
+import type { IndexData, RenderState } from '@fdw/engine-core';
+import type { MaterialGraphData, StaticValue } from '@fdw/engine-shader';
 import { defineResourceType, type ResourceUri } from '@fdw/engine-resources';
 
 // The data level: what the format loaders produce, on the CPU, without the
@@ -95,7 +96,37 @@ export interface PhongMaterialData {
   readonly doubleSided: boolean;
 }
 
-export type MaterialData = PbrMaterialData | PhongMaterialData;
+/**
+ * A value of a graph material, serializable: a number or a vector, a
+ * texture by its URI (loaded with these options), a sampler by its
+ * configuration.
+ */
+export type GraphMaterialValue =
+  | number
+  | boolean
+  | readonly number[]
+  | {
+      readonly texture: ResourceUri;
+      readonly colorSpace?: 'srgb' | 'linear';
+      readonly mips?: 'generate' | 'none' | 'file';
+    }
+  | { readonly sampler: GpuSamplerConfiguration };
+
+/**
+ * A material graph and its values: a material made in code (a terrain, a
+ * procedural surface), saved with a scene and realized like the others.
+ */
+export interface GraphMaterialData {
+  readonly kind: 'graph';
+  readonly name?: string;
+  readonly graph: MaterialGraphData;
+  readonly values: Readonly<Record<string, GraphMaterialValue>>;
+  readonly features?: Readonly<Record<string, StaticValue>>;
+  readonly renderState?: Partial<RenderState>;
+}
+
+export type MaterialData =
+  PbrMaterialData | PhongMaterialData | GraphMaterialData;
 
 export const MaterialDataType =
   defineResourceType<MaterialData>('material-data');

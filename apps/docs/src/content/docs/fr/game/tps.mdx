@@ -44,18 +44,19 @@ Le code du jeu est dans `packages/demo-scenes/src/tps/`, partagé par :
   pause, Échap quitte) ;
 - cette page.
 
-| Fichier       | Contenu                                                                    |
-| ------------- | -------------------------------------------------------------------------- |
-| `assets.ts`   | Le chargement des modèles et des textures, avec la progression             |
-| `forest.ts`   | Le terrain, les sapins et le sol, leurs niveaux et leurs corps             |
-| `actor.ts`    | Un personnage : un contrôleur, un modèle tourné, animé                     |
-| `hero.ts`     | Le rôdeur : ses actions, son animation graph, sa lame                      |
-| `combat.ts`   | Les coups : des volumes qui ne touchent qu'une fois par coup               |
-| `brain.ts`    | Le graph de comportement des ennemis, et les nœuds du jeu qu'il appelle    |
-| `enemies.ts`  | Les orcs et le démon : leurs corps, ce que font les nœuds du graph         |
-| `controls.ts` | Les actions du jeu et du menu                                              |
-| `sounds.ts`   | Les sons, faits par le code                                                |
-| `tps.ts`      | La `SceneFactory` : le menu, les vagues, l'image menée par un ordonnanceur |
+| Fichier       | Contenu                                                                       |
+| ------------- | ----------------------------------------------------------------------------- |
+| `assets.ts`   | Le chargement des modèles et des textures, avec la progression                |
+| `forest.ts`   | Le terrain, les sapins et le sol, leurs niveaux et leurs corps                |
+| `level.ts`    | La forêt comme un niveau du moteur : enregistrée une fois, chargée par le jeu |
+| `actor.ts`    | Un personnage : un contrôleur, un modèle tourné, animé                        |
+| `hero.ts`     | Le rôdeur : ses actions, son animation graph, sa lame                         |
+| `combat.ts`   | Les coups : des volumes qui ne touchent qu'une fois par coup                  |
+| `brain.ts`    | Le graph de comportement des ennemis, et les nœuds du jeu qu'il appelle       |
+| `enemies.ts`  | Les orcs et le démon : leurs corps, ce que font les nœuds du graph            |
+| `controls.ts` | Les actions du jeu et du menu                                                 |
+| `sounds.ts`   | Les sons, faits par le code                                                   |
+| `tps.ts`      | La `SceneFactory` : le menu, les vagues, l'image menée par un ordonnanceur    |
 
 ## 1. Les modèles
 
@@ -110,6 +111,20 @@ fichiers. Deux outils les préparent en `.glb` compacts, dans
   rayon de 30 à 40 m autour de la caméra (un seul niveau chacune).
 - **Leurs corps** : le terrain comme un heightfield, depuis les mêmes
   hauteurs ; les troncs près de la zone de jeu comme des capsules.
+
+La forêt est construite une fois, par `tools/assets/make-tps-level.ts`, et
+enregistrée comme un niveau du moteur à côté des modèles :
+`forest/forest.scene.json` (les nœuds, les lots et leurs niveaux de
+détail, les corps, le terrain et son matériau) et son binaire (les
+transforms, les hauteurs). Le jeu la charge
+(`createTpsScene({ level: TpsLevelPath })`) au lieu de la construire : la
+même forêt, le même jeu, joué à l'identique. Le terrain et ce que le jeu
+attend de la forêt sont deux composants de la démo, enregistrés par des
+codecs à elle (voir
+[Enregistrer et charger une scène](/fdw-engine/fr/tutorials/saving-scenes/)) ;
+la roche cuite au démarrage est définie dans le store sous l'URI que nomme
+le niveau (`defineTexture`). Avec `--gltf`, l'outil écrit aussi la forêt
+en glTF, pour d'autres outils.
 
 Le renderer dessine la scène et le terrain ensemble, en une quarantaine
 d'appels pour la vue et 200 avec les quatre cascades :

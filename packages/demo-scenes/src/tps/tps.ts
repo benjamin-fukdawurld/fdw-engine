@@ -21,6 +21,7 @@ import { tpsControls } from './controls';
 import { Enemies, EnemyKinds, TrunkGrid, type EnemyKind } from './enemies';
 import { bakeRockTexture } from '../procedural/materials';
 import { buildForest, type Forest, type ForestOptions } from './forest';
+import { defineRock, loadTpsLevel } from './level';
 import { Hero, type HeroIntent } from './hero';
 import { TpsSounds } from './sounds';
 
@@ -56,6 +57,11 @@ export interface TpsOptions {
    * or interpreted, for its debugger.
    */
   readonly behavior?: BehaviorMode;
+  /**
+   * The level, a scene of the engine in the store (saveTpsLevel,
+   * `forest/forest.scene.json`): loaded instead of building the forest.
+   */
+  readonly level?: string;
 }
 
 // The speeds of the pointer the menu offers, in radians per height of the
@@ -218,17 +224,19 @@ export function createTpsScene(
     // step, or several.
     const pressed = { jump: false, roll: false, attack: false, heavy: false };
 
-    const start = (assets: TpsAssets, rock: GpuTexture) => {
+    const start = async (assets: TpsAssets, rock: GpuTexture) => {
       const world = options.physics.createWorld();
       const physics = new ScenePhysics(scene, world);
-      const forest = buildForest(
-        backend,
-        scene,
-        world,
-        assets,
-        rock,
-        options.forest,
-      );
+      rockHandle = defineRock(store, backend, rock);
+      const forest = options.level
+        ? await loadTpsLevel(backend, scene, store, options.level, physics)
+        : buildForest(backend, scene, physics, assets, rock, options.forest);
+      if (destroyed) {
+        physics.destroy();
+        world.destroy();
+        forest.destroy();
+        return;
+      }
       const trunks = new TrunkGrid(forest.trees);
       trunksOf.set(forest, trunks);
       const enemies = new Enemies(
@@ -567,14 +575,12 @@ export function createTpsScene(
 
     // The rock of the slopes, baked from noises while the models load.
     const baking = bakeRockTexture(renderer);
-    const ready = Promise.all([loading.ready, baking]).then(
-      ([assets, rock]) => {
-        if (!destroyed) start(assets, rock);
-      },
-      (error: unknown) => {
+    let rockHandle: { release(): void } | undefined;
+    const ready = Promise.all([loading.ready, baking])
+      .then(([assets, rock]) => (destroyed ? undefined : start(assets, rock)))
+      .catch((error: unknown) => {
         failed = error instanceof Error ? error.message : String(error);
-      },
-    );
+      });
 
     let last = 0;
     return {
@@ -595,7 +601,9 @@ export function createTpsScene(
           game.forest.destroy();
         }
         loading.release();
-        void baking.then((rock) => rock.destroy());
+        // Defined in the store, the rock is destroyed with its handle.
+        if (rockHandle) rockHandle.release();
+        else void baking.then((rock) => rock.destroy());
         input.dispose();
         renderer.destroy();
       },

@@ -70,7 +70,7 @@ export const modelLoader: ResourceLoader<Model> = {
     };
     const tangents = async (id: string) => {
       const data = await ctx.use(MaterialDataType, sub(id)).ready;
-      return data.normalTexture !== undefined;
+      return data.kind !== 'graph' && data.normalTexture !== undefined;
     };
     const meshes = await Promise.all(
       data.meshes.map((m) =>

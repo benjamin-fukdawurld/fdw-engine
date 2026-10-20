@@ -66,3 +66,34 @@ export function decodeDataUri(uri: string): ResourceBytes | undefined {
   }
   return new TextEncoder().encode(decodeURIComponent(payload)) as ResourceBytes;
 }
+
+/** A GLB file from its JSON and its BIN chunk (the buffer 0 of the JSON). */
+export function encodeGlb(
+  json: object,
+  bin?: Uint8Array,
+): Uint8Array<ArrayBuffer> {
+  const pad = (bytes: Uint8Array, fill: number) => {
+    const out = new Uint8Array(Math.ceil(bytes.byteLength / 4) * 4).fill(fill);
+    out.set(bytes);
+    return out;
+  };
+  const chunks: [number, Uint8Array][] = [
+    [CHUNK_JSON, pad(new TextEncoder().encode(JSON.stringify(json)), 0x20)],
+  ];
+  if (bin) chunks.push([CHUNK_BIN, pad(bin, 0)]);
+  const length =
+    12 + chunks.reduce((sum, [, data]) => sum + 8 + data.byteLength, 0);
+  const out = new Uint8Array(length);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, MAGIC, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, length, true);
+  let offset = 12;
+  for (const [type, data] of chunks) {
+    view.setUint32(offset, data.byteLength, true);
+    view.setUint32(offset + 4, type, true);
+    out.set(data, offset + 8);
+    offset += 8 + data.byteLength;
+  }
+  return out;
+}

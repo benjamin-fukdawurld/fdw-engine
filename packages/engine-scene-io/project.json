@@ -1,0 +1,7 @@
+{
+  "name": "engine-scene-io",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-scene-io/src",
+  "projectType": "library",
+  "tags": []
+}

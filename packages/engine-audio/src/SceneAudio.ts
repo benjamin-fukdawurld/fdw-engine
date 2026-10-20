@@ -1,5 +1,11 @@
 import type { Node, Phase, Scene, Scheduler } from '@fdw/engine-scene';
-import type { AudioEngine, AudioSource, PlayOptions, Voice } from './api';
+import type {
+  AudioEngine,
+  AudioSource,
+  PlayOptions,
+  SpatialOptions,
+  Voice,
+} from './api';
 
 export interface SceneAudioInstallOptions {
   /** The name of the system. Default `audio`. */
@@ -8,6 +14,24 @@ export interface SceneAudioInstallOptions {
   readonly phase?: Phase;
   readonly before?: readonly string[];
   readonly after?: readonly string[];
+}
+
+/**
+ * A sound that belongs to a node (a fire, a waterfall, a radio): what it
+ * plays and how, kept by the node (component `sound emitter`) and saved
+ * with the scene.
+ */
+export interface SoundEmitterDesc {
+  readonly source: AudioSource;
+  /** The bus by its name (`engine.bus`); the master by default. */
+  readonly bus?: string;
+  readonly volume?: number;
+  readonly pitch?: number;
+  readonly loop?: boolean;
+  /** How it fades with the distance; at the node. */
+  readonly spatial?: Omit<SpatialOptions, 'position'>;
+  /** Plays as soon as it is added. Default true. */
+  readonly autoplay?: boolean;
 }
 
 export interface SceneAudioOptions {
@@ -30,6 +54,8 @@ export interface SceneAudioOptions {
 export class SceneAudio {
   /** The component of the entities playing voices: their voices. */
   readonly Emitter;
+  /** The sounds that belong to nodes: their SoundEmitterDesc. */
+  readonly SoundEmitter;
   /** The node the listener follows; none: it stays where it is. */
   listener: Node | undefined;
   removeFade: number;
@@ -46,6 +72,9 @@ export class SceneAudio {
     this.removeFade = options.removeFade ?? 0.05;
     this.Emitter = scene.world.defineComponent('audio emitter', {
       voices: 'ref',
+    });
+    this.SoundEmitter = scene.world.defineComponent('sound emitter', {
+      desc: 'ref',
     });
     this._query = scene.world.query(this.Emitter);
     // A node removed stops its voices.
@@ -70,6 +99,36 @@ export class SceneAudio {
     });
     this.attach(node, voice);
     return voice;
+  }
+
+  /**
+   * Gives a sound to a node: kept by the node, played at once unless
+   * `autoplay` is false (then `playEmitter`). Returns its voice, if played.
+   */
+  addEmitter(node: Node, desc: SoundEmitterDesc): Voice | undefined {
+    node.attach(this.SoundEmitter, { desc });
+    return desc.autoplay === false ? undefined : this.playEmitter(node);
+  }
+
+  /** The sound of a node, if it has one. */
+  emitterOf(node: Node): SoundEmitterDesc | undefined {
+    return this.SoundEmitter.has(node.entity)
+      ? (this.SoundEmitter.desc[node.entity] as SoundEmitterDesc)
+      : undefined;
+  }
+
+  /** Plays the sound of a node (see addEmitter). */
+  playEmitter(node: Node): Voice {
+    const desc = this.emitterOf(node);
+    if (!desc) throw new Error(`Node ${node.entity} has no sound`);
+    const bus = desc.bus !== undefined ? this.engine.bus(desc.bus) : undefined;
+    return this.play(node, desc.source, {
+      bus,
+      volume: desc.volume,
+      pitch: desc.pitch,
+      loop: desc.loop,
+      spatial: { ...desc.spatial },
+    });
   }
 
   /** Makes a spatial voice follow a node. */

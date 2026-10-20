@@ -1,0 +1,190 @@
+---
+title: Écrire un importeur
+description: Charger un format à vous comme une scène du moteur, avec ses meshes, ses matériaux et les composants de votre jeu.
+sidebar:
+  order: 36
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un niveau dessiné en texte, un caractère par case : `#` un mur, `g` une
+gemme, `S` le départ, `.` le sol. Son importeur est un chargeur de
+`SceneData`, enregistré dans le store comme les autres : le niveau se
+charge alors comme un glTF ou une scène du moteur, avec sa progression, son
+annulation, ses meshes partagés.
+
+<Example name="custom-importer" />
+
+```text
+##########
+#S..#....#
+#.#.#.##g#
+#.#...#..#
+#.###.#.##
+#..g..#..#
+####.##.##
+#g.......#
+##########
+```
+
+## L'importeur : un chargeur de SceneData
+
+Un importeur lit les octets d'un fichier et donne une `SceneData` : des
+nœuds, des lots, et les références vers leurs meshes et leurs matériaux.
+C'est un `ResourceLoader` de `SceneDataType` ; le store le choisit par
+l'extension du fichier, comme il choisit le chargeur de glTF ou des scènes
+du moteur.
+
+```ts
+import type { ResourceLoader } from '@fdw/engine-resources';
+import { SceneDataType, type SceneData } from '@fdw/engine-scene-io';
+
+const levelImporter: ResourceLoader<SceneData> = {
+  type: SceneDataType,
+  extensions: ['level'],
+  async load(ctx) {
+    const rows = (await ctx.text()).split('\n').filter((row) => row);
+    // … les nœuds et les lots des cases
+    return { name: 'maze', nodes, batches, meshes: [], materials: [] };
+  },
+};
+
+store.registerLoader(levelImporter);
+```
+
+Une erreur du fichier est une `ResourceError('decode', …)` : la poignée de
+la scène échoue avec elle, son message dit la ligne et la colonne.
+
+## Meshes et matériaux
+
+Les meshes et les matériaux du format sont des **sous-ressources** de son
+fichier : le chargeur fournit leurs données (`MeshDataType`,
+`MaterialDataType`) sous un identifiant, et les nœuds y renvoient par
+`#mesh/<id>` et `#material/<id>`. Deux niveaux qui utilisent le même mesh
+le partagent ; un rechargement du fichier les met à jour. Un matériau est
+aussi une donnée : `pbr` ou `phong` comme ceux de glTF et d'OBJ, ou
+`graph`, un graphe de matériau et ses valeurs.
+
+```ts
+ctx.provide(MeshDataType, 'mesh/0', box);
+ctx.provide(MaterialDataType, 'material/0', {
+  kind: 'pbr',
+  baseColor: [0.55, 0.52, 0.48, 1],
+  metallic: 0,
+  roughness: 0.8,
+  emissive: [0, 0, 0],
+  alphaMode: 'opaque',
+  alphaCutoff: 0.5,
+  doubleSided: false,
+});
+```
+
+Une référence peut aussi être l'URI d'un autre fichier, relative au
+niveau : `"../models/fir.glb#mesh/0/0"`, ou un modèle entier comme instance
+(`instance: { model: '../models/fir.glb' }`).
+
+## Nœuds et lots
+
+Un nœud a les champs d'un nœud du moteur (`name`, `position`, `rotation`,
+`scale`, `visible`, `static`, `occluder`, `layers`), un `parent` (son
+indice, placé avant lui), et ses composants par nom, chacun avec la version
+de son codec. Les murs forment un **lot** : un mesh, un matériau, une
+transformation chacun dans des tableaux plats, créé en un appel par
+`scene.createBatch`.
+
+```ts
+const nodes: SceneNodeData[] = [
+  {
+    name: 'gem',
+    position: [x, 0.5, z],
+    components: {
+      'mesh renderer': {
+        version: 1,
+        data: { mesh: '#mesh/1', material: '#material/2', castShadow: false },
+      },
+      gem: { version: 1, data: { value: 10 } },
+    },
+  },
+  {
+    name: 'glow',
+    parent: 0,
+    components: { light: { version: 1, data: { type: 'point', … } } },
+  },
+];
+const batches: SceneBatchData[] = [
+  {
+    name: 'wall',
+    count,
+    positions,
+    rotations,
+    scales,
+    static: true,
+    mesh: '#mesh/0',
+    material: '#material/0',
+  },
+];
+```
+
+Les entités sont numérotées pour les références entre elles (un parent, les
+niveaux de détail) : d'abord les nœuds, puis les entités de chaque lot à
+tour de rôle.
+
+## Les composants de votre jeu
+
+`gem` est un composant du jeu. Son **codec** lit ce que l'importeur a écrit
+dans le composant, et le réécrit quand la scène est enregistrée : le niveau
+s'enregistre alors comme une scène du moteur, gemmes comprises.
+
+```ts
+import type { ComponentCodec } from '@fdw/engine-scene-io';
+
+const Gem = scene.world.defineComponent('gem', { value: 'u16' });
+const gemCodec: ComponentCodec<{ value: number }> = {
+  name: 'gem',
+  version: 1,
+  write: (entity) => ({ value: Gem.value[entity] }),
+  read: (data, entity, ctx) => ctx.scene.world.add(entity, Gem, data),
+};
+
+const maze = await instantiateScene(
+  store.load(SceneDataType, 'maze.level'),
+  scene,
+  {
+    store,
+    codecs: [...sceneCodecs, gemCodec],
+  },
+);
+```
+
+Un composant de nombres seulement peut s'en passer : défini avec
+`persist: true`, il se lit et s'écrit champ par champ. Un codec sert pour
+les autres : références à des ressources (`ctx.load`, `ctx.mesh`,
+`ctx.material`), à des entités (`ctx.entity(index)`, `ctx.indexOf(entity)`),
+objets à refaire. `phase` ordonne les codecs qui ont besoin des composants
+des autres ; `migrate` amène les données d'une version plus ancienne à la
+version courante.
+
+## Exporter
+
+Un exporteur est le chemin inverse : un `SceneExporter` prend une
+`SceneData` et donne des fichiers. `writeFdwScene` (le format du moteur) et
+`writeGltf` (glTF) sont les deux du moteur ; un des vôtres écrit votre
+format.
+
+```ts
+import type { SceneExporter } from '@fdw/engine-scene-io';
+
+const levelExporter: SceneExporter = {
+  format: 'level',
+  extensions: ['level'],
+  async write(data, path) {
+    const text = drawCells(data); // les murs du lot, les gemmes…
+    return [{ path, bytes: new TextEncoder().encode(text) }];
+  },
+};
+```
+
+## La suite
+
+- [Enregistrer et charger une scène](/fdw-engine/fr/tutorials/saving-scenes/).
+- Le guide [Scènes et formats](/fdw-engine/fr/guides/scenes/).

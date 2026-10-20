@@ -170,7 +170,7 @@ export class Scene implements SceneGraph {
    * local values there calls `transforms.touch(e)` (or `scene.touch(e)`).
    */
   readonly transforms: TransformPool;
-  /** Parent, first child, next and previous siblings: entities, or -1. */
+  /** Parent, first and last children, next and previous siblings: entities, or -1. */
   readonly Hierarchy;
   /** NodeFlags, layers, the last camera query that kept it, a name (label). */
   readonly NodeState;
@@ -218,6 +218,7 @@ export class Scene implements SceneGraph {
     this.Hierarchy = world.defineComponent('hierarchy', {
       parent: 'i32',
       first: 'i32',
+      last: 'i32',
       next: 'i32',
       previous: 'i32',
     });
@@ -287,7 +288,13 @@ export class Scene implements SceneGraph {
       throw new Error('A batch with a mesh needs a material');
     }
     // The values of the components, the same for every entity.
-    const hierarchy = { parent: None, first: None, next: None, previous: None };
+    const hierarchy = {
+      parent: None,
+      first: None,
+      last: None,
+      next: None,
+      previous: None,
+    };
     const state = {
       flags:
         (options.visible === false ? NodeFlags.Hidden : 0) |
@@ -364,6 +371,7 @@ export class Scene implements SceneGraph {
     world.add(entity, this.Hierarchy, {
       parent: None,
       first: None,
+      last: None,
       next: None,
       previous: None,
     });
@@ -986,16 +994,20 @@ export class Scene implements SceneGraph {
 
   // --- Hierarchy -------------------------------------------------------------------
 
+  // The entity becomes the last child of its parent: the children are in
+  // the order they were added.
   private link(entity: number, parent: number): void {
     const { Hierarchy } = this;
-    const first = Hierarchy.first[parent];
+    const last = Hierarchy.last[parent];
     Hierarchy.parent[entity] = parent;
-    Hierarchy.previous[entity] = None;
-    Hierarchy.next[entity] = first;
-    if (first !== None) {
-      Hierarchy.previous[first] = entity;
+    Hierarchy.next[entity] = None;
+    Hierarchy.previous[entity] = last;
+    if (last !== None) {
+      Hierarchy.next[last] = entity;
+    } else {
+      Hierarchy.first[parent] = entity;
     }
-    Hierarchy.first[parent] = entity;
+    Hierarchy.last[parent] = entity;
   }
 
   private unlink(entity: number): void {
@@ -1013,6 +1025,8 @@ export class Scene implements SceneGraph {
     }
     if (next !== None) {
       Hierarchy.previous[next] = previous;
+    } else {
+      Hierarchy.last[parent] = previous;
     }
     Hierarchy.parent[entity] = None;
     Hierarchy.next[entity] = None;

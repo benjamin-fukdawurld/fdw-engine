@@ -1,7 +1,8 @@
 import { deflateRawSync, crc32 } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { ResourceError } from '../errors';
-import { ArchiveSource } from './ArchiveSource';
+import { ArchiveSource, ZipReader } from './ArchiveSource';
+import { CatalogSource } from './CatalogSource';
 import { DataUriSource } from './DataUriSource';
 import { HttpSource } from './HttpSource';
 import { MemorySource } from './MemorySource';
@@ -151,13 +152,14 @@ describe('HttpSource', () => {
 // --- a minimal zip writer, to test the reader -----------------------------
 
 function zip(
-  files: Record<string, { data: string; deflate?: boolean }>,
+  // `size`: the size declared, when it lies.
+  files: Record<string, { data: string; deflate?: boolean; size?: number }>,
 ): Uint8Array {
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
   const central: Uint8Array[] = [];
   let offset = 0;
-  for (const [name, { data, deflate }] of Object.entries(files)) {
+  for (const [name, { data, deflate, size }] of Object.entries(files)) {
     const raw = enc.encode(data);
     const stored = deflate ? deflateRawSync(raw) : raw;
     const nameBytes = enc.encode(name);
@@ -167,7 +169,7 @@ function zip(
     lv.setUint16(8, deflate ? 8 : 0, true);
     lv.setUint32(14, crc32(raw), true);
     lv.setUint32(18, stored.length, true);
-    lv.setUint32(22, raw.length, true);
+    lv.setUint32(22, size ?? raw.length, true);
     lv.setUint16(26, nameBytes.length, true);
     local.set(nameBytes, 30);
     const cd = new Uint8Array(46 + nameBytes.length);
@@ -176,7 +178,7 @@ function zip(
     cv.setUint16(10, deflate ? 8 : 0, true);
     cv.setUint32(16, crc32(raw), true);
     cv.setUint32(20, stored.length, true);
-    cv.setUint32(24, raw.length, true);
+    cv.setUint32(24, size ?? raw.length, true);
     cv.setUint16(28, nameBytes.length, true);
     cv.setUint32(42, offset, true);
     cd.set(nameBytes, 46);
@@ -259,6 +261,30 @@ describe('ArchiveSource (zip)', () => {
     });
   });
 
+  it('refuses the archives past its limits', async () => {
+    const open = (options: ConstructorParameters<typeof ZipReader>[0]) =>
+      new ZipReader(options).open(archive as Uint8Array<ArrayBuffer>);
+    expect(() => open({ maxEntries: 2 })).toThrow(/3 entries, more than 2/);
+    expect(() => open({ maxEntrySize: 10 })).toThrow(
+      /trees\/oak.txt has 23 bytes, more than 10/,
+    );
+    expect(() => open({ maxTotalSize: 25 })).toThrow(/more than 25 bytes/);
+    expect(
+      open({ maxEntries: 3, maxEntrySize: 23, maxTotalSize: 27 }),
+    ).toHaveLength(2);
+  });
+
+  it('stops inflating an entry at the size it declares', async () => {
+    const liar = zip({
+      'bomb.txt': { data: 'a'.repeat(100_000), deflate: true, size: 10 },
+    });
+    const mem = new MemorySource({ 'pack.zip': liar });
+    const src = new ArchiveSource({ source: mem, path: 'pack.zip' });
+    await expect(
+      src.read('bomb.txt', { signal: signal() }),
+    ).rejects.toMatchObject({ code: 'decode', message: /past 10 bytes/ });
+  });
+
   it('drops the index when the archive changes', async () => {
     const mem = new MemorySource({ 'pack.zip': archive });
     const src = new ArchiveSource({ source: mem, path: 'pack.zip' });
@@ -270,5 +296,41 @@ describe('ArchiveSource (zip)', () => {
     expect(text(await src.read('trees/pine.txt', { signal: signal() }))).toBe(
       'PINE',
     );
+  });
+});
+
+describe('CatalogSource', () => {
+  it('reads the files by their identifiers, and follows them when they move', async () => {
+    const mem = new MemorySource({
+      'trees/oak.txt': 'OAK',
+      'pine.txt': 'PINE',
+    });
+    const catalog = new CatalogSource({
+      source: mem,
+      entries: { '8d42c7e1': 'trees/oak.txt' },
+    });
+    expect(text(await catalog.read('8d42c7e1', { signal: signal() }))).toBe(
+      'OAK',
+    );
+    // Not an identifier: the path itself.
+    expect(text(await catalog.read('pine.txt', { signal: signal() }))).toBe(
+      'PINE',
+    );
+    expect(await catalog.list('')).toEqual(['8d42c7e1']);
+    const changed = vi.fn();
+    catalog.watch('8d42c7e1', changed);
+    mem.set('forest/oak.txt', 'MOVED');
+    catalog.set('8d42c7e1', 'forest/oak.txt');
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(catalog.pathOf('8d42c7e1')).toBe('forest/oak.txt');
+    expect(text(await catalog.read('8d42c7e1', { signal: signal() }))).toBe(
+      'MOVED',
+    );
+    catalog.delete('8d42c7e1');
+    await expect(
+      catalog.read('8d42c7e1', { signal: signal() }),
+    ).rejects.toMatchObject({
+      code: 'not-found',
+    });
   });
 });

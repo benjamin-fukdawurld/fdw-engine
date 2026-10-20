@@ -7,3 +7,4 @@ export * from './forest';
 export * from './hero';
 export * from './sounds';
 export * from './tps';
+export * from './level';

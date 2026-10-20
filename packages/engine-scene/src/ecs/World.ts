@@ -1,5 +1,6 @@
 import {
   Component,
+  ComponentOptions,
   ComponentStore,
   ComponentValues,
   Schema,
@@ -14,6 +15,9 @@ const reserved = new Set([
   'id',
   'name',
   'schema',
+  'defaults',
+  'version',
+  'persist',
   'count',
   'entities',
   'has',
@@ -45,6 +49,7 @@ export class World {
   private _next = 0;
   private _count = 0;
   private readonly _components: ComponentStore[] = [];
+  private readonly _byName = new Map<string, ComponentStore>();
   private readonly _queries = new Map<string, Query>();
   // The queries involving each component, by component id.
   private readonly _queriesOf: Query[][] = [];
@@ -76,9 +81,21 @@ export class World {
    * const Velocity = world.defineComponent('velocity', { x: 'f32', y: 'f32', z: 'f32' });
    * const Target = world.defineComponent('target', { entity: 'u32', weight: 'f32' });
    * const Path = world.defineComponent('path', { points: 'ref' });
+   * const Health = world.defineComponent('health', { value: 'f32' }, {
+   *   defaults: { value: 100 },
+   *   persist: true,
+   * });
    * ```
+   *
+   * The name identifies the component in saved scenes: `component(name)`
+   * gives the last one defined with it (a ScenePhysics made again on the
+   * same scene defines its components again).
    */
-  defineComponent<S extends Schema>(name: string, schema: S): Component<S> {
+  defineComponent<S extends Schema>(
+    name: string,
+    schema: S,
+    options?: ComponentOptions<S>,
+  ): Component<S> {
     for (const field of Object.keys(schema)) {
       if (reserved.has(field)) {
         throw new Error(`Component "${name}": "${field}" is a reserved name`);
@@ -89,12 +106,24 @@ export class World {
       name,
       schema,
       this._capacity,
+      options,
     );
+    this._byName.set(name, component);
     this._components.push(component);
     this._queriesOf.push([]);
     this._added.push([]);
     this._removed.push([]);
     return component as Component<S>;
+  }
+
+  /** The components of the world, in the order they were defined. */
+  get components(): readonly ComponentStore[] {
+    return this._components;
+  }
+
+  /** The last component defined with a name, if any. */
+  component(name: string): ComponentStore | undefined {
+    return this._byName.get(name);
   }
 
   create(): number {

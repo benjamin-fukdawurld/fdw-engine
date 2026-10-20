@@ -4,12 +4,15 @@
   "dependencies": {
     "@fdw/engine-assets": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-physics": "0.0.1",
     "@fdw/engine-resources": "0.0.1",
+    "@fdw/engine-scene-io": "0.0.1",
     "tslib": "^2.3.0"
   },
   "devDependencies": {
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-scene": "0.0.1",
+    "gltf-validator": "^2.0.0-dev.3.10",
     "meshoptimizer": "^1.3.0"
   },
   "type": "module",

@@ -1,5 +1,6 @@
 import {
   type Diagnostic,
+  type DocumentMigration,
   type DocumentValidation,
   type GraphEdge,
   isRecord,
@@ -238,6 +239,14 @@ export function serializeBehaviorGraph(graph: BehaviorGraphData): string {
 }
 
 /**
+ * The migrations of the behavior graph documents: `[n]` makes a document
+ * of version n one of version n + 1. Empty while there is one version.
+ *
+ * @group Behavior graph
+ */
+export const behaviorGraphMigrations: Record<number, DocumentMigration> = {};
+
+/**
  * Parses a behavior graph document and checks its structure; the semantic
  * checks are those of {@link validateBehaviorGraph}.
  *
@@ -250,6 +259,7 @@ export function parseBehaviorGraph(
     format: BehaviorGraphFormat,
     version: BehaviorGraphVersion,
     kind: 'behavior graph',
+    migrations: behaviorGraphMigrations,
     document: (data) => {
       const variables = data['variables'];
       if (

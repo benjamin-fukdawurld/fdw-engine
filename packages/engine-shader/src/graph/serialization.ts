@@ -1,4 +1,9 @@
-import { isRecord, parseDocument, serializeDocument } from '@fdw/engine-graph';
+import {
+  isRecord,
+  parseDocument,
+  serializeDocument,
+  type DocumentMigration,
+} from '@fdw/engine-graph';
 import {
   MaterialGraphData,
   MaterialGraphFormat,
@@ -15,6 +20,14 @@ export function serializeGraph(graph: MaterialGraphData): string {
 }
 
 /**
+ * The migrations of the material graph documents: `[n]` makes a document
+ * of version n one of version n + 1. Empty while there is one version.
+ *
+ * @group Graph model
+ */
+export const materialGraphMigrations: Record<number, DocumentMigration> = {};
+
+/**
  * Parses a graph document and checks its structure. The semantic checks
  * (node types, ports, types, cycles) are done by validateGraph.
  *
@@ -25,6 +38,7 @@ export function parseGraph(source: string | unknown): MaterialGraphData {
     format: MaterialGraphFormat,
     version: MaterialGraphVersion,
     kind: 'material graph',
+    migrations: materialGraphMigrations,
     edge: (edge) =>
       edge['swizzle'] === undefined || typeof edge['swizzle'] === 'string',
     document: (data) => {

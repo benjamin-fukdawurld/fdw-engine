@@ -2,6 +2,7 @@ import {
   defaultPbrMaterial,
   MaterialDataType,
   MeshDataType,
+  type MaterialData,
   type MeshData,
   type ModelData,
   type ModelMeshData,
@@ -135,6 +136,7 @@ export class GltfReader {
       warn,
       buffer: memoize((index) => this.readBuffer(index)),
       bufferView: memoize((index) => this.readBufferView(index)),
+      image: (index) => this.image(index),
     };
     this.accessor = accessorReader(json, this.context.bufferView);
   }
@@ -271,7 +273,7 @@ export class GltfReader {
    */
   private async readMaterials(): Promise<{
     ids: string[];
-    materials: PbrMaterialData[];
+    materials: MaterialData[];
     fallback?: PbrMaterialData;
   }> {
     const primitives = (this.json.meshes ?? [])
@@ -286,13 +288,13 @@ export class GltfReader {
     const keys = subResourceKeys(gltfMaterials, new Set(['default']));
     const materials = await Promise.all(
       gltfMaterials.map(async (material, i) => {
-        let data = await pbrMaterialData(
+        let data: MaterialData = await pbrMaterialData(
           material,
           (info) => this.textureRef(info),
           colored.has(i),
         );
         for (const [ext, extension] of this.hooks(material, 'material'))
-          data = extension.material(ext, data, this.context, material);
+          data = await extension.material(ext, data, this.context, material);
         this.ctx.provide(MaterialDataType, `material/${keys[i]}`, data);
         return data;
       }),
@@ -372,7 +374,11 @@ export class GltfReader {
               this.ctx.provide(
                 MeshDataType,
                 id,
-                await this.primitiveData(primitive, mesh.name, !material.unlit),
+                await this.primitiveData(
+                  primitive,
+                  mesh.name,
+                  !(material.kind === 'pbr' && material.unlit),
+                ),
               );
               return {
                 mesh: id,

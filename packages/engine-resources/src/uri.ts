@@ -77,3 +77,27 @@ export function resolvePath(basePath: string, relative: string): string {
   const dir = dirname(basePath);
   return normalizePath(dir ? `${dir}/${relative}` : relative);
 }
+
+/**
+ * The path of `path` relative to the folder of `basePath`: the inverse of
+ * resolvePath (`levels/forest.json`, `models/fir.glb` → `../models/fir.glb`).
+ * Paths of different origins stay as they are.
+ */
+export function relativePath(basePath: string, path: string): string {
+  const from = normalizePath(dirname(basePath));
+  const to = normalizePath(path);
+  const origin = (p: string) => URL_PREFIX.exec(p)?.[0] ?? '';
+  if (
+    origin(from) !== origin(to) ||
+    from.startsWith('/') !== to.startsWith('/') ||
+    from.split('/')[0] === '..'
+  ) {
+    return to;
+  }
+  const a = from.slice(origin(from).length).split('/').filter(Boolean);
+  const b = to.slice(origin(to).length).split('/').filter(Boolean);
+  let common = 0;
+  while (common < a.length && common < b.length - 1 && a[common] === b[common])
+    common++;
+  return [...a.slice(common).map(() => '..'), ...b.slice(common)].join('/');
+}

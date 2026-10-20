@@ -20,6 +20,7 @@ const packages = [
   'engine-input-native',
   'engine-camera',
   'engine-editing',
+  'engine-scene-io',
   'engine-animation',
   'engine-skinning',
   'engine-behavior',

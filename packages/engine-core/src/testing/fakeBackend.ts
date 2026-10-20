@@ -6,6 +6,7 @@ import {
   GpuBindGroupEntry,
   GpuBuffer,
   GpuRenderTarget,
+  GpuSamplerConfiguration,
   GpuTexture,
   GpuTextureConfiguration,
   GpuTextureWriteOptions,
@@ -261,7 +262,10 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         );
       },
       defaultMaxAnisotropy: 1,
-      createSampler: () => ({ destroy: () => undefined }),
+      createSampler: (descriptor?: GpuSamplerConfiguration) => ({
+        ...descriptor,
+        destroy: () => undefined,
+      }),
     } as RenderBackend['textures'],
     pipelines: {
       codegen: {} as RenderBackend['pipelines']['codegen'],
