@@ -42,6 +42,8 @@ const examples: Record<string, string> = {
   'procedural-materials': 'tutorials/procedural-materials/',
   'procedural-terrain': 'tutorials/procedural-terrain/',
   editing: 'tutorials/editing/',
+  'parametric-surfaces': 'tutorials/parametric-surfaces/',
+  pipes: 'tutorials/parametric-surfaces/',
 };
 
 // The clock of the examples, stopped: the same image at every run.

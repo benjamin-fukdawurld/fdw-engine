@@ -1,0 +1,234 @@
+---
+title: Parametric surfaces
+description: Meshes computed from formulas — a surface sampled on a grid of (u, v), surfaces made of two curves in orthogonal planes, pipes swept along curves of space with rotation-minimizing frames.
+sidebar:
+  order: 34
+---
+
+import Example from '../../../components/Example.astro';
+
+A parametric surface is a function: two numbers `(u, v)` in, a point of
+space out. Sampled on a grid of `(u, v)`, it gives the vertices of a
+mesh; the grid gives its triangles. Nothing in the engine is specific to
+it: a `Mesh` is built from arrays, and the arrays can come from a formula.
+
+In the first example, two surfaces are made of **two curves drawn in
+orthogonal planes**, in red and in blue. The curves change with time, and
+the surfaces follow.
+
+<Example name="parametric-surfaces" />
+
+## A surface, a grid
+
+The surface is sampled on `(columns + 1) × (rows + 1)` points. The normal
+is the cross product of the two partial derivatives `∂S/∂u` and `∂S/∂v`,
+computed here by central differences; with a formula, they can be
+derived by hand too. The uv are `(u, v)` themselves:
+
+```ts
+type ParametricSurface = (u: number, v: number) => Vec3;
+
+for (let j = 0; j <= rows; j++) {
+  for (let i = 0; i <= columns; i++) {
+    const u = i / columns;
+    const v = j / rows;
+    const du = sub(S(Math.min(u + h, 1), v), S(Math.max(u - h, 0), v));
+    const dv = sub(S(u, Math.min(v + h, 1)), S(u, Math.max(v - h, 0)));
+    const n = normalize(cross(du, dv));
+    data.set([...S(u, v), ...n, u, v], (j * (columns + 1) + i) * 8);
+  }
+}
+```
+
+Each cell of the grid makes two triangles, counterclockwise around
+`du × dv`: the front side is the one the normal points to. An open
+surface is seen from both sides; the example writes every vertex twice,
+the second time with its normal reversed, and the triangles of the back
+side clockwise. (`doubleSided` in the render state of the material draws
+the back faces, but with the normal of the front.)
+
+The lines drawn on the surfaces are the **iso-curves**: `u` constant, or
+`v` constant, every sixteenth. The material reads them from the uv, a
+pixel wide at any distance with `fwidth`.
+
+## Two curves, two orthogonal planes
+
+### The translation surface
+
+On the left, the curve **A** is drawn in the plane `z = 1.5`, the curve
+**B** in the plane `x = -1.5`, orthogonal to the first. They start from
+the same corner `O = A(0) = B(0)`. The surface moves one curve along the
+other:
+
+```ts
+const translation: ParametricSurface = (u, v) => sub(add(A(u), B(v)), O);
+```
+
+For `v = 0`, it is `A`; for `u = 0`, it is `B`: the two curves are two
+edges of the surface. Every iso-curve `v` constant is a copy of `A`,
+moved by `B(v) - O`; every iso-curve `u` constant is a copy of `B`.
+When the wave of `A` is flat, the surface is a cylinder of `B`: the arch
+moved along a straight line.
+
+Since the curves are in orthogonal planes, the height of a point is the
+sum of the two heights: `y = a(x) + b(z)`. Draw a profile across, a
+profile along, and every point of the surface is defined.
+
+### The spherical product
+
+On the right, the **meridian** (in red) is drawn in the plane XY: a
+radius `r(u)` and a height `y(u)`. The **section** (in blue) is drawn in
+the plane XZ: a closed curve `(x(v), z(v))`. The surface scales the
+section by the radius at each height:
+
+```ts
+const product: ParametricSurface = (u, v) => {
+  const [x, z] = section(v);
+  return [radius(u) * x, height(u), radius(u) * z];
+};
+```
+
+With a circle for the section, it is the surface of revolution of the
+meridian: a lathe. The section of the example is a **superellipse**,
+`|x|ⁿ + |z|ⁿ = 1`, a circle for `n = 2`, closer and closer to a square as
+`n` grows:
+
+```ts
+const section = (v: number): [number, number] => {
+  const c = Math.cos(2 * Math.PI * v);
+  const s = Math.sin(2 * Math.PI * v);
+  return [
+    Math.sign(c) * Math.abs(c) ** (2 / n),
+    Math.sign(s) * Math.abs(s) ** (2 / n),
+  ];
+};
+```
+
+The radius of the meridian is 1 at the bottom: there, the surface is the
+section itself; and for `v = 0`, the section is the point `(1, 0)`: the
+surface is the meridian. Here again, the two curves lie on the surface.
+
+## When a curve changes
+
+The surfaces are sampled again on every frame, with the new curves, and
+the mesh takes the new vertices; the indices do not change:
+
+```ts
+onFrame((time) => {
+  amplitude = 0.45 * Math.cos(time * 0.5);
+  n = 2 + 3 * (0.5 - 0.5 * Math.cos(time * 0.7));
+  mesh.setVertices(0, sample(product, columns, rows));
+});
+```
+
+`setVertices` uploads the whole buffer again; `updateVertices` writes
+only a range of it, for a surface changing in one place. For a surface of
+millions of points changing on every frame, the sampling belongs on the
+GPU: see the [tessellation](/fdw-engine/tutorials/tessellation/), whose
+vertices are computed in the vertex shader.
+
+## Pipes
+
+A pipe sweeps a **circle along a curve of space**. The curve is a list of
+points; on each point, a circle is set in the plane normal to the curve;
+consecutive circles are joined by quads, as the rows of the grid above.
+
+<Example name="pipes" />
+
+### A frame on each point
+
+On the point `p` of tangent `t`, the circle needs two directions `r` and
+`s` normal to `t` and to each other:
+
+```ts
+for (let k = 0; k <= sides; k++) {
+  const angle = (2 * Math.PI * k) / sides;
+  const normal = add(scale(r, Math.cos(angle)), scale(s, Math.sin(angle)));
+  vertices.push(...add(p, scale(normal, radius)), ...normal, length, k / sides);
+}
+```
+
+The normal of the vertex is the direction from the axis; the uv are the
+length along the curve and the turn around it. The vertex `k = sides` is
+on the vertex `k = 0`, with a `v` of 1: the texture closes the circle.
+
+For a curve in a plane, the frame is easy: `s` is the normal of the
+plane, `r = s × t` — the curves of the first example are drawn so. In
+space, the classic frame of a curve is the **Frenet frame**: `r` towards
+the center of curvature. It is not a good choice for a pipe:
+
+- on a straight part, there is no curvature: `r` is not defined;
+- at an inflection, the center of curvature goes to the other side: `r`
+  turns over in a single step;
+- the frame turns around the tangent as fast as the curve twists: the
+  pipe looks wrung.
+
+### Rotation-minimizing frames
+
+The frames used by the pipes turn as little as possible around the
+tangent from one point to the next. The **double reflection** of Wang,
+Jüttler, Zheng and Liu (2008) computes them in a few lines: the frame of
+a point is reflected in the plane bisecting the chord to the next point,
+which sends `p` on the next point; a second reflection, in the plane
+between the reflected tangent and the next tangent, aligns the tangents.
+
+```ts
+const v1 = sub(point, previous.point);
+const c1 = dot(v1, v1);
+const rL = sub(previous.r, scale(v1, (2 / c1) * dot(v1, previous.r)));
+const tL = sub(previous.t, scale(v1, (2 / c1) * dot(v1, previous.t)));
+const v2 = sub(t, tL);
+const c2 = dot(v2, v2);
+r = c2 < 1e-12 ? rL : sub(rL, scale(v2, (2 / c2) * dot(v2, rL)));
+```
+
+The first frame takes any `r` normal to the tangent. Two reflections make
+a rotation: the frame stays a frame, and on a straight part, it does not
+move. The stripes of the pipes show it: they run along the curve without
+spiraling.
+
+### Closed curves
+
+On a closed curve, the frame propagated once around comes back on the
+first point **turned** by an angle, the holonomy of the curve: the
+stripes would not meet. The example adds one frame on the first point,
+measures the angle between it and the first frame, and turns each frame
+back by its share of the length:
+
+```ts
+const twist = Math.atan2(
+  dot(cross(last.r, first.r), first.t),
+  dot(last.r, first.r),
+);
+for (const frame of result) {
+  const angle = (twist * frame.length) / last.length;
+  frame.r = add(scale(frame.r, Math.cos(angle)), scale(frame.s, Math.sin(angle)));
+  frame.s = cross(frame.t, frame.r);
+}
+```
+
+The knot of the example is a **trefoil**, `(sin a + 2 sin 2a,
+cos a − 2 cos 2a, −sin 3a)`: the stripes meet where the curve closes.
+
+### Open curves
+
+An open pipe has its ends closed by discs: a vertex in the middle, the
+circle of the end, the normal along the tangent — outwards. The triangles
+turn counterclockwise around that normal.
+
+The curve of the second pipe goes through six points (in yellow): a
+**Catmull-Rom spline**. Between the points `p1` and `p2`, the curve is a
+cubic whose tangents are those of the chords `p2 − p0` and `p3 − p1`; the
+ends are extended by symmetry. The spline is sampled at 32 points a
+segment, and the pipe swept along the points.
+
+## Further
+
+- **Another profile:** the circle of the pipe is a curve in the plane
+  `(r, s)`. Any closed curve there sweeps another section — a square
+  section for a beam, the superellipse of the vase.
+- **A varying radius:** the radius can depend on the length along the
+  curve. The normal of the vertex then tilts with the slope of the radius,
+  as the normals of the meridian of the vase.
+- **Many pipes:** the meshes of a network of pipes, static, are merged by
+  [static batching](/fdw-engine/tutorials/static-batching/).
