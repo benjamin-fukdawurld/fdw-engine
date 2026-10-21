@@ -64,6 +64,14 @@ import {
   Skinning,
 } from '@fdw/engine-skinning';
 import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
+import {
+  createSky,
+  evaluateSpectrum,
+  GerstnerWaves,
+  Ocean,
+  OceanRenderer,
+  OceanSpectrum,
+} from '@fdw/engine-ocean';
 
 // Rendering tests shared by every backend: the same graphs, meshes and
 // expected pixels, rendered through the whole engine on a real GPU API.
@@ -4360,6 +4368,112 @@ export function describeRenderer(
         const [gray] = (await framePixels())(32, 32);
         expect(Math.abs(gray - 128)).toBeLessThan(4);
         baked.destroy();
+      });
+    });
+
+    describe('ocean', () => {
+      it('computes the fields of the spectrum of the CPU', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        const time = 7.25;
+        const spectrum = new OceanSpectrum(backend, {
+          resolution: 32,
+          cascades: [60, 20],
+          windSpeed: 9,
+          choppiness: 0.9,
+          readback: false,
+        });
+        spectrum.update(time);
+        const gpu = await Promise.all([
+          spectrum.displacement.read(),
+          spectrum.derivatives.read(),
+        ]);
+        const cpu = evaluateSpectrum(spectrum.data, time, 0.9);
+        [cpu.displacement, cpu.derivatives].forEach((expected, field) => {
+          const actual = new Float32Array(gpu[field]);
+          expect(actual.length).toBe(expected.length);
+          // Each component within 0.2 % of its largest value.
+          for (let component = 0; component < 4; component++) {
+            let largest = 0;
+            let error = 0;
+            for (let i = component; i < expected.length; i += 4) {
+              largest = Math.max(largest, Math.abs(expected[i]));
+              error = Math.max(error, Math.abs(actual[i] - expected[i]));
+            }
+            expect(largest).toBeGreaterThan(0);
+            expect(
+              error,
+              `field ${field}, component ${component}: ${error} of ${largest}`,
+            ).toBeLessThan(largest * 2e-3);
+          }
+        });
+        spectrum.destroy();
+      });
+
+      it('shows the bottom through shallow water, its own color over deep water', async () => {
+        const formats = backend.capabilities?.renderableFormats ?? [];
+        if (!formats.includes('rgba16float')) {
+          return;
+        }
+        const sky = createSky(backend, { size: 8 });
+        const ocean = new Ocean({
+          waves: new GerstnerWaves([
+            { direction: 0, wavelength: 8, amplitude: 0.005 },
+          ]),
+          environment: sky,
+          grid: { cell: 0.25, levels: 3, size: 16 },
+        });
+        // A red bottom: 0.15 m deep on the left, 6 m on the right.
+        const g = new GraphBuilder('bottom');
+        g.surface({ baseColor: [0.8, 0.1, 0.1] });
+        const bottom = new Material({ graph: g.build() });
+        // The quad turned to face up.
+        const flat = { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
+        const box = (x: number, top: number) => ({
+          mesh: quad(),
+          material: bottom,
+          transform: new Transform({
+            position: { x, y: top, z: 0 },
+            rotation: flat,
+            scale: { x: 20, y: 20, z: 1 },
+          }),
+        });
+        const above = new Camera({
+          position: { x: 0, y: 10, z: 0 },
+          // Looking down: -z turned to -y.
+          rotation: flat,
+          projection: {
+            type: 'perspective',
+            fov: 60,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        ocean.update(above.position, 0);
+        const oceanRenderer = new OceanRenderer(renderer, {
+          toneMapping: 'none',
+          encoding: 'linear',
+        });
+        oceanRenderer.render({
+          ocean,
+          items: [box(-10, -0.15), box(10, -6)],
+          camera: above,
+          surface,
+        });
+        const pixels = await fixture.readPixels();
+        const pixel = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        const shallow = pixel(16, 32);
+        const deep = pixel(48, 32);
+        expect(shallow[0], `shallow ${shallow}`).toBeGreaterThan(80);
+        expect(deep[0], `deep ${deep}`).toBeLessThan(shallow[0] / 3);
+        expect(deep[2], `deep ${deep}`).toBeGreaterThan(deep[0]);
+        oceanRenderer.destroy();
+        ocean.destroy();
+        sky.destroy();
       });
     });
   });

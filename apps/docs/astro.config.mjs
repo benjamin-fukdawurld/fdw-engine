@@ -25,6 +25,7 @@ const packages = [
   'engine-skinning',
   'engine-behavior',
   'engine-noise',
+  'engine-ocean',
   'engine-physics',
   'engine-physics-rapier',
   'engine-audio',

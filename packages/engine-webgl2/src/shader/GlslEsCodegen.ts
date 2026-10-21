@@ -760,10 +760,14 @@ export class GlslEsCodegen implements ShaderCodegen {
     const value = (id: number) => body.expressions.get(id) as string;
     const [x, y, z] = workgroupSize;
     const size = `uvec3(${x}u, ${y}u, ${z}u)`;
-    const prologue = [
-      '  // The thread of the instance, in the grid of the dispatch.',
+    // A draw of texels × threads points, not instanced (an instance per
+    // thread is slow on many implementations): the thread and the texel of
+    // its element come from the vertex.
+    const prologue = (texels: number) => [
+      '  // The thread of the vertex, in the grid of the dispatch.',
       `  uvec3 c_threads = ${ComputeNames.numWorkgroups} * ${size};`,
-      '  uint c_thread = uint(gl_InstanceID);',
+      `  uint c_thread = uint(gl_VertexID) / ${texels}u;`,
+      `  uint c_part = uint(gl_VertexID) % ${texels}u;`,
       '  uvec3 c_globalId = uvec3(c_thread % c_threads.x, (c_thread / c_threads.x) % c_threads.y, c_thread / (c_threads.x * c_threads.y));',
       `  uvec3 c_localId = c_globalId % ${size};`,
       `  uvec3 c_workgroupId = c_globalId / ${size};`,
@@ -792,12 +796,12 @@ export class GlslEsCodegen implements ShaderCodegen {
                 '  uint c_texel = c_index / 2u;',
                 `  c_written = c_written && (c_index % 2u) * 2u == ${component};`,
               ]
-            : [`  uint c_texel = c_index * ${texels}u + uint(gl_VertexID);`];
+            : [`  uint c_texel = c_index * ${texels}u + c_part;`];
       const texel =
         element.kind === 'matrix'
           ? texelOf(
               { kind: 'vector', scalar: 'f32', size: element.rows },
-              `${value(write.value)}[gl_VertexID]`,
+              `${value(write.value)}[int(c_part)]`,
             )
           : texelOf(element, value(write.value));
       const vertex = [
@@ -810,7 +814,7 @@ export class GlslEsCodegen implements ShaderCodegen {
         ].join('\n'),
         [
           'void main() {',
-          ...prologue,
+          ...prologue(Math.max(texels, 1)),
           ...body.lines,
           `  // Writes the element of "${write.resource}".`,
           `  uint c_index = uint(${value(write.index)});`,

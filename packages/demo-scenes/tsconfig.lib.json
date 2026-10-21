@@ -28,6 +28,9 @@
       "path": "../engine-physics/tsconfig.lib.json"
     },
     {
+      "path": "../engine-ocean/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-occlusion/tsconfig.lib.json"
     },
     {

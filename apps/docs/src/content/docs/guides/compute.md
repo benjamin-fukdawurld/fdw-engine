@@ -153,7 +153,8 @@ capabilities say `compute: true`, `storageBuffers: true` and
   point on the texel of the element, or out of the view when `when` is
   false; the fragment shader writes its bits. Elements smaller than a texel
   (`f32`, `vec2`) are written by masked draws, one per part of the texel.
-  The builtins come from the instance drawn and from the workgroup counts.
+  The builtins come from the vertex drawn (a single draw of all the
+  points, not instanced) and from the workgroup counts.
 - **The two copies** of a buffer are brought up to date from each other on
   the GPU, through pixel buffers, only when a use needs it: the texture
   before a dispatch or a draw that reads it, the buffer before a vertex

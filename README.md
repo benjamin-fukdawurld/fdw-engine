@@ -101,6 +101,7 @@ packages/
   engine-editing/       Editing tools: selection and outlines, transform gizmos, undoable commands, scene events
   engine-physics/       Physics: an abstract API, the bodies as components of the scene, a debug view
   engine-physics-rapier/ The physics API on Rapier (WebAssembly, in the browser and in Node)
+  engine-ocean/         The sea: an ocean spectrum by FFT on the GPU or Gerstner waves, the water seen through, buoyancy
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)
   engine-vulkan/        Vulkan backend (Node-API addon, HLSL compiled to SPIR-V by DXC)
   demo-scenes/          Scenes shared by the web and native demos

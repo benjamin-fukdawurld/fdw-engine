@@ -98,6 +98,15 @@ describe('RapierPhysics', () => {
     // Off center: it turns.
     body.applyImpulse({ x: 0, y: 1, z: 0 }, { x: 0.5, y: 0, z: 0 });
     expect(body.angularVelocity.z).toBeGreaterThan(0);
+    // A force at a point turns it for one step: its torque is reset too.
+    const spin = body.angularVelocity.z;
+    const { x, y, z } = body.position;
+    body.applyForce({ x: 0, y: 60, z: 0 }, { x: x + 0.5, y, z });
+    world.step(1 / 60);
+    const pushed = body.angularVelocity.z;
+    expect(pushed).toBeGreaterThan(spin);
+    world.step(1 / 60);
+    expect(body.angularVelocity.z).toBeCloseTo(pushed, 3);
 
     const floating = world.createBody({
       type: 'dynamic',

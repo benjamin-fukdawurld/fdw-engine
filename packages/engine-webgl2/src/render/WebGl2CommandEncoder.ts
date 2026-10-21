@@ -599,7 +599,7 @@ class WebGl2ComputePassEncoder implements GpuComputePassEncoder {
           if (draw.component) {
             gl.uniform1ui(draw.component, mask.indexOf(true));
           }
-          gl.drawArraysInstanced(GL.POINTS, 0, draw.texels, threads);
+          gl.drawArrays(GL.POINTS, 0, draw.texels * threads);
         }
         gl.colorMask(true, true, true, true);
         target.changed('texture');

@@ -69,12 +69,14 @@ Chaque storage buffer d'un programme est déclaré dans les deux étapes : `unif
 
 `GlslEsCodegen.emitCompute` produit **un programme par écriture** (`GlslComputeDraw`) :
 
-- le **vertex shader** calcule le thread depuis l'instance (`gl_InstanceID`) et le nombre de workgroups (`c_numWorkgroups`, un uniform) : `global-invocation-id`, `local-invocation-id`, `workgroup-id` ; il exécute le corps, puis place le point sur le texel de l'élément écrit, ou hors de la vue si `when` est faux ou l'indice hors du buffer ;
+- le **vertex shader** calcule le thread depuis le sommet (`gl_VertexID` / le nombre de texels de l'élément) et le nombre de workgroups (`c_numWorkgroups`, un uniform) : `global-invocation-id`, `local-invocation-id`, `workgroup-id` ; il exécute le corps, puis place le point sur le texel de l'élément écrit, ou hors de la vue si `when` est faux ou l'indice hors du buffer ;
 - le **fragment shader** écrit les bits du point (`flat uvec4`) ;
-- un thread fait un point par texel de l'élément (le sommet `gl_VertexID` : quatre pour une `mat4`) ;
+- un thread fait un point par texel de l'élément (le reste `gl_VertexID` % texels : quatre pour une `mat4`) ;
 - les éléments plus petits qu'un texel sont écrits par des **dessins masqués** (`colorMask`) : quatre pour les scalaires, deux pour les `vec2` ; l'uniform `c_component` indique la partie du texel du dessin, les threads dont l'élément est ailleurs ne font pas de point.
 
-L'encodeur fait, pour chaque écriture : les mises à jour des copies, le framebuffer de la texture écrite, puis `drawArraysInstanced(POINTS, 0, texels, threads)` par masque. Les écritures sont faites dans l'ordre, comme le demande l'IR.
+L'encodeur fait, pour chaque écriture : les mises à jour des copies, le framebuffer de la texture écrite, puis `drawArrays(POINTS, 0, texels × threads)` par masque. Les écritures sont faites dans l'ordre, comme le demande l'IR.
+
+Un seul dessin non instancié : la première version dessinait une instance d'un point par thread (`drawArraysInstanced(POINTS, 0, texels, threads)`), que SwiftShader traite instance par instance. Les FFT de la mer de P17 ([p17-ocean.md](p17-ocean.md)), 32 dessins de 49 152 points par image, y passaient de 22 s à 0,36 s.
 
 ### 6.4 Les capacités
 
