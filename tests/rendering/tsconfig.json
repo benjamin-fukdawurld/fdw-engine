@@ -8,6 +8,9 @@
   "include": ["vitest.config.mts", "src/**/*.ts"],
   "references": [
     {
+      "path": "../../packages/engine-ocean"
+    },
+    {
       "path": "../../packages/engine-tessellation"
     },
     {
@@ -21,6 +24,9 @@
     },
     {
       "path": "../../packages/engine-assets"
+    },
+    {
+      "path": "../../packages/engine-noise"
     },
     {
       "path": "../../packages/engine-geometry"
@@ -39,9 +45,6 @@
     },
     {
       "path": "../../packages/engine-shader"
-    },
-    {
-      "path": "../../packages/engine-noise"
     },
     {
       "path": "../../packages/engine-core"

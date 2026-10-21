@@ -1,0 +1,118 @@
+---
+title: Des objets qui flottent
+description: Des caisses et une barque portées par les vagues — la hauteur de l'eau donnée à la physique, analytique pour les vagues de Gerstner, relue du GPU avec une image de retard pour le spectre océanique, et les forces d'Archimède en des points des corps.
+sidebar:
+  order: 38
+---
+
+import Example from '../../../../components/Example.astro';
+
+Les vagues de [la mer](/fdw-engine/fr/tutorials/ocean/) sont dessinées sur
+le GPU ; la physique tourne sur le CPU. Pour flotter, un corps a besoin de
+**la hauteur de l'eau** sous chacun de ses points. L'`Ocean` la donne, et
+`Buoyancy` en fait des forces.
+
+<Example name="coast" />
+
+Glissez pour tourner autour, la molette pour zoomer, WASD (ZQSD) pour vous
+déplacer ; **G** passe du spectre océanique aux vagues de Gerstner,
+**Espace** lâche une caisse, **R** recommence.
+
+## La hauteur de l'eau
+
+```ts
+const height = ocean.heightAt(x, z);
+```
+
+Les vagues déplacent l'eau sur le côté autant que vers le haut : l'eau
+au-dessus de (x, z) vient d'un autre point de la surface au repos, x0,
+déplacé de dx(x0) jusqu'à x. `heightAt` le trouve par quelques itérations
+de point fixe (x0 = x − dx(x0)), puis lit sa hauteur. `sampleAt(x, z)`
+donne aussi la normale et le jacobien en ce point.
+
+D'où viennent les hauteurs dépend des vagues :
+
+- **Les vagues de Gerstner** sont évaluées exactement sur le CPU, au temps
+  de l'image : la même formule que le vertex shader.
+- **Le spectre océanique** vit sur le GPU. Après chaque `update`, son buffer
+  de déplacements est **relu** (`buffer.read()`), sans attendre : la
+  physique utilise les hauteurs de l'image précédente, une image de retard,
+  à quelques millimètres près. Jusqu'à l'arrivée de la première lecture, le
+  CPU calcule lui-même les mêmes FFT (`evaluateSpectrum`, aussi le chemin
+  d'un serveur sans GPU : `readback: false`).
+
+## Archimède, point par point
+
+```ts
+import { boxPoints, Buoyancy } from '@fdw/engine-ocean';
+
+const buoyancy = new Buoyancy(ocean); // tout ce qui a heightAt(x, z)
+
+const body = physics.add(node, {
+  type: 'dynamic',
+  colliders: [{ shape: Shapes.box(0.5), density: 450 }],
+});
+buoyancy.add(body, {
+  points: boxPoints({ x: 0.5, y: 0.5, z: 0.5 }), // 8 points
+  volume: 1, // m³
+});
+
+buoyancy.install(scheduler); // le pas fixe, avant 'physics'
+physics.install(scheduler);
+```
+
+À chaque pas fixe, chaque point d'un corps représente une part égale de
+son volume. Sous la surface, il pousse le corps vers le haut du poids de
+l'eau qu'il déplace (ρ g V, eau de mer : 1025 kg/m³), en ce point : une
+caisse à moitié dans l'eau reçoit la moitié de sa poussée, et un corps
+penché par une vague est plus poussé de son côté bas, ce qui le redresse.
+L'eau **freine** aussi chaque point mouillé contre sa vitesse (`drag`, par
+seconde), ce qui amortit le pilonnement et la rotation.
+
+Une caisse en bois (450 kg/m³) flotte avec un peu moins de la moitié dans
+l'eau. La barque est une enveloppe convexe (son collider, depuis les points
+de sa coque) avec quinze points le long de son fond :
+
+```ts
+const boat = createBoat(); // @fdw/demo-scenes
+physics.add(node, {
+  type: 'dynamic',
+  colliders: [{ shape: Shapes.convex(boat.hull), density: 110 }],
+  angularDamping: 0.4,
+});
+buoyancy.add(body, { points: boat.floats, volume: boat.volume, drag: 0.8 });
+```
+
+Les points comptent plus que la forme : répartissez-les là où est la
+coque, plus bas pour un bateau qui doit s'enfoncer. Les corps endormis sur
+l'eau sont réveillés : les vagues bougent sous eux.
+
+## La côte
+
+Le terrain est celui de la [tessellation](/fdw-engine/fr/tutorials/tessellation/) :
+des hauteurs de 0 à 1 (une plage, des collines, un cap, le fond marin qui
+descend), une `PatchSurface` pour le GPU, un heightfield pour la physique.
+La mer est à 12 m (`level`). L'`OceanRenderer` dessine d'abord la côte,
+avec sa profondeur : à travers l'eau, le sable se voit sur les hauts-fonds
+et se fond dans la couleur de la mer à mesure qu'elle s'approfondit, et
+l'écume court le long du rivage, là où l'eau est mince.
+
+```ts
+ocean.update(camera.position, time);
+terrain.surface.update(camera, surface);
+oceanRenderer.render({
+  ocean,
+  source: scene, // les caisses, la barque, la lumière
+  items: [terrain.surface],
+  camera,
+  surface,
+  time,
+});
+```
+
+## La suite
+
+- [Le guide de l'océan](/fdw-engine/fr/guides/ocean/) : l'API, les coûts,
+  les limites (pas de vue sous l'eau, pas encore de sillages).
+- [La physique](/fdw-engine/fr/guides/physics/) : les corps, les colliders,
+  le pas fixe.

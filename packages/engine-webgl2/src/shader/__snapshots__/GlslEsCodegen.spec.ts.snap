@@ -51,9 +51,10 @@ uniform uint c_component;
 flat out highp uvec4 c_value;
 
 void main() {
-  // The thread of the instance, in the grid of the dispatch.
+  // The thread of the vertex, in the grid of the dispatch.
   uvec3 c_threads = c_numWorkgroups * uvec3(64u, 1u, 1u);
-  uint c_thread = uint(gl_InstanceID);
+  uint c_thread = uint(gl_VertexID) / 1u;
+  uint c_part = uint(gl_VertexID) % 1u;
   uvec3 c_globalId = uvec3(c_thread % c_threads.x, (c_thread / c_threads.x) % c_threads.y, c_thread / (c_threads.x * c_threads.y));
   uvec3 c_localId = c_globalId % uvec3(64u, 1u, 1u);
   uvec3 c_workgroupId = c_globalId / uvec3(64u, 1u, 1u);

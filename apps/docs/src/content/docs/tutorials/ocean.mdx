@@ -1,0 +1,161 @@
+---
+title: The sea and its waves
+description: An animated sea on every backend — the ocean spectrum of Tessendorf computed by FFTs on the GPU, or sums of Gerstner waves, on a grid of rings that follows the camera, lit by the sky and the sun.
+sidebar:
+  order: 37
+---
+
+import Example from '../../../components/Example.astro';
+
+`@fdw/engine-ocean` draws an open sea. Its waves come from one of two
+sources:
+
+- **An ocean spectrum** (Tessendorf): thousands of waves of every length and
+  direction, of amplitudes given by an oceanographic spectrum (JONSWAP or
+  Phillips), summed by inverse FFTs on the GPU at each frame;
+- **Gerstner waves**: a few trains of parallel crests, summed in the vertex
+  shader.
+
+The same `Ocean` draws both, and gives the height of the water to the CPU
+(see [Floating objects](/fdw-engine/tutorials/floating-objects/)).
+
+<Example name="ocean" />
+
+## The waves of a spectrum
+
+```ts
+import { OceanSpectrum } from '@fdw/engine-ocean';
+
+const spectrum = new OceanSpectrum(backend, {
+  windSpeed: 10, // m/s, 10 m above the sea
+  windDirection: Math.PI / 2, // blowing toward +z
+});
+```
+
+The options describe the sea, not the waves:
+
+| Option           | Default            | What it does                                                                       |
+| ---------------- | ------------------ | ---------------------------------------------------------------------------------- |
+| `model`          | `'jonswap'`        | `jonswap`: a sea built by the wind over a fetch; `phillips`: a fully developed sea |
+| `windSpeed`      | 8                  | The speed of the wind, in m/s: the higher, the longer and higher the waves         |
+| `windDirection`  | 0                  | Where the wind blows to, in radians from +x toward +z                              |
+| `fetch`          | 100 km             | JONSWAP: how far the wind has blown over the sea                                   |
+| `spread`         | 8                  | How much the crests keep to the direction of the wind                              |
+| `choppiness`     | 1                  | The horizontal motion of the water: sharper crests, wider troughs                  |
+| `cascades`       | `[233, 37.7, 6.3]` | The sides of the tiles, in meters                                                  |
+| `resolution`     | 128                | The points along a side of a tile (a power of 2)                                   |
+| `period`, `seed` | 200 s, 1           | The animation loops over the period; the seed gives another sea                    |
+
+On the CPU, once: each wave vector **k** of a tile gets a random complex
+amplitude, of variance given by the spectrum. On the GPU, at each frame
+(`update(time)`): the amplitudes are turned by e^(iωt), ω = √(g|k|) (deep
+water waves: the long ones run faster), then **eight fields** come out of
+inverse FFTs: the height, the horizontal motion (x and z), and their
+derivatives. They are packed two by two in complex numbers (a + ib), four
+complex FFTs instead of eight.
+
+**The cascades.** One tile repeats every 233 m, which shows from above.
+Three tiles of sizes that do not divide one another each keep a band of
+wave lengths: the first one the swell, the last one the ripples. Their sum
+does not repeat.
+
+**On every backend.** The FFTs are compute graphs: a spectrum, the 2 × 7
+stages of butterflies along the rows then the columns, a last pass for the
+fields. WebGPU and Vulkan run them as compute shaders; WebGL2 runs the
+same graphs by rendering to textures ([Compute](/fdw-engine/guides/compute/#on-webgl2)),
+without a change to the code. The fields stay on the GPU, in two storage
+buffers read by the material of the sea.
+
+## Gerstner waves
+
+```ts
+import { GerstnerWaves } from '@fdw/engine-ocean';
+
+const gerstner = new GerstnerWaves([
+  { direction: 1.5, wavelength: 40, amplitude: 0.6, steepness: 0.7 },
+  { direction: 1.9, wavelength: 23, amplitude: 0.32, steepness: 0.6 },
+  // …
+]);
+```
+
+Each point of the surface turns on a circle: the crests sharpen, the
+troughs widen. `steepness`, from 0 (a sine) to 1, sets how much. A few
+waves, computed in the vertex shader from their constants and their
+phases (uniforms updated each frame, exact at any time): no compute pass,
+no FFT, and an exact height on the CPU. Good for a calm sea, a lake, a
+stylized look; the spectrum looks like the open sea.
+
+## The ocean
+
+```ts
+import { createSky, Ocean } from '@fdw/engine-ocean';
+
+const sky = createSky(backend, { sun });
+const ocean = new Ocean({ waves: spectrum, environment: sky, level: 0 });
+ocean.setSun(light); // the direction and color of a DirectionalLight
+```
+
+`Ocean` is a render item: a **grid of rings around the camera**, each with
+cells twice as large as the one inside it, then a flat skirt to the
+horizon (20 km at least). `update(cameraPosition, time)` moves it under the camera by
+steps of its coarsest cell: its vertices stay on the same points of the
+world, and the waves do not swim under them. Where two rings meet, the
+vertices of the finer one fall on those of the coarser one: no cracks.
+
+The material moves the vertices by the waves, each fading out with the
+distance before the vertices get too far apart for it (`fade`, 2 lengths
+by default). The pixels then read the derivatives of the waves: the
+normal, and the **jacobian** of the motion, below 1 where the crests
+squeeze the water, where the foam forms. The waves too small for a pixel
+fade out, and make the water rougher by the variance of their slopes:
+the far sea turns into a soft sheen instead of shimmering.
+
+## The light of the water
+
+- **The reflection** of the environment (a cube texture: the sky of
+  `createSky`, or yours), weighted by the Fresnel term of water: 2 %
+  looking down, all of it at grazing angles. The rougher the water, the
+  blurrier the reflection (a higher level of the texture).
+- **The sun**: a GGX highlight, the glitter of the waves.
+- **What is seen through the water**: the scene behind it, bent by the
+  waves, absorbed along the depth of water (the red first), and the light
+  scattered by the water itself (`scatterColor`).
+- **The sun through the crests**: lighter, greener crests toward the sun.
+- **The foam**, where the jacobian falls below `foamThreshold`, and along
+  the shores, broken by a noise.
+
+`ocean.setLook({ … })` changes them at any time: `scatterColor`,
+`absorption`, `subsurfaceColor`, `foamColor`, `roughness`, `foamThreshold`,
+`foamAmount`, `shoreFoam`, `refraction`, `environmentIntensity`.
+
+## Drawing it
+
+```ts
+const renderer = new Renderer(backend);
+const oceanRenderer = new OceanRenderer(renderer, { toneMapping: 'neutral' });
+
+onFrame((time) => {
+  ocean.update(camera.position, time);
+  oceanRenderer.render({ ocean, source: scene, camera, surface, time });
+});
+```
+
+To see what is under the water, the sea is drawn after the rest:
+
+1. the scene (`source`, `items`), with its view depth;
+2. the sky where nothing was drawn, copied for the water;
+3. the sea, tested against the depth of the scene, reading the copy
+   and the depth: the depth of water at each pixel;
+4. the tone mapping, to the surface.
+
+`addPasses(graph, options)` adds the first three to a render graph of
+yours and returns the image, in linear colors. Without what is behind
+(`refraction: false` on the `Ocean`), the sea is opaque and draws as any
+item, with `renderer.render`.
+
+## Next
+
+- [Floating objects](/fdw-engine/tutorials/floating-objects/): crates and a
+  boat on the waves, the physics asking the height of the water.
+- [The ocean guide](/fdw-engine/guides/ocean/): the API, the costs, the
+  limits.

@@ -46,6 +46,8 @@ const examples: Record<string, string> = {
   pipes: 'tutorials/parametric-surfaces/',
   'saving-scenes': 'tutorials/saving-scenes/',
   'custom-importer': 'tutorials/writing-an-importer/',
+  ocean: 'tutorials/ocean/',
+  coast: 'tutorials/floating-objects/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -65,6 +67,7 @@ const timeouts: Record<string, number> = {
   tps: 120_000,
   'levels-of-detail': 60_000,
   'saving-scenes': 60_000,
+  coast: 60_000,
 };
 
 for (const [name, page] of Object.entries(examples)) {

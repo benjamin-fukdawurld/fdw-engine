@@ -680,7 +680,9 @@ export class RapierWorld implements PhysicsWorld {
     this.raw.timestep = dt;
     this.raw.step(this._queue);
     for (const body of this._forced) {
+      // A force at a point adds a torque too, kept apart.
       body.raw.resetForces(false);
+      body.raw.resetTorques(false);
     }
     this._forced.clear();
     const events: ContactEvent[] = [];

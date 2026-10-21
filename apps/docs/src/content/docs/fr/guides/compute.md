@@ -161,8 +161,8 @@ capacités indiquent `compute: true`, `storageBuffers: true` et
   place le point sur le texel de l'élément, ou hors de la vue quand `when`
   est faux ; le fragment shader en écrit les bits. Les éléments plus petits
   qu'un texel (`f32`, `vec2`) sont écrits par des dessins masqués, un par
-  partie du texel. Les builtins viennent de l'instance dessinée et du nombre
-  de workgroups.
+  partie du texel. Les builtins viennent du sommet dessiné (un seul dessin
+  de tous les points, sans instanciation) et du nombre de workgroups.
 - **Les deux copies** d'un buffer sont mises à jour l'une depuis l'autre
   sur le GPU, par des pixel buffers, seulement quand un usage le demande :
   la texture avant un dispatch ou un dessin qui la lit, le buffer avant une

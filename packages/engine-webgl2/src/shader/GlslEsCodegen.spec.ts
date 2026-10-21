@@ -731,9 +731,7 @@ describe('GlslEsCodegen', () => {
     it('writes the elements of a texel or more in one draw', () => {
       const [vector] = scale(BuiltinTypes.vec4f).draws;
       expect(vector.masks).toEqual([[true, true, true, true]]);
-      expect(vector.vertex).toContain(
-        'uint c_texel = c_index * 1u + uint(gl_VertexID);',
-      );
+      expect(vector.vertex).toContain('uint c_texel = c_index * 1u + c_part;');
       const [pair] = scale(BuiltinTypes.vec2f).draws;
       expect(pair.masks).toEqual([
         [true, true, false, false],
@@ -761,7 +759,7 @@ describe('GlslEsCodegen', () => {
       ).draws;
       expect(draw.texels).toBe(4);
       expect(draw.vertex).toMatch(
-        /c_value = floatBitsToUint\(.*\[gl_VertexID\]\);/,
+        /c_value = floatBitsToUint\(.*\[int\(c_part\)\]\);/,
       );
     });
 

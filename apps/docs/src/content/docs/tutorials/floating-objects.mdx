@@ -1,0 +1,118 @@
+---
+title: Floating objects
+description: Crates and a boat carried by the waves — the height of the water given to the physics, analytic for Gerstner waves, read back from the GPU a frame late for the ocean spectrum, and the forces of Archimedes at points of the bodies.
+sidebar:
+  order: 38
+---
+
+import Example from '../../../components/Example.astro';
+
+The waves of [the sea](/fdw-engine/tutorials/ocean/) are drawn on the GPU;
+the physics runs on the CPU. To float, a body needs **the height of the
+water** under each of its points. The `Ocean` gives it, and `Buoyancy`
+turns it into forces.
+
+<Example name="coast" />
+
+Drag to turn around, the wheel to zoom, WASD to move; **G** switches
+between the ocean spectrum and Gerstner waves, **Space** drops a crate,
+**R** starts again.
+
+## The height of the water
+
+```ts
+const height = ocean.heightAt(x, z);
+```
+
+The waves move the water sideways as well as up: the water above (x, z)
+comes from another point of the still surface, x0, moved by dx(x0) to x.
+`heightAt` finds it by a few fixed point iterations (x0 = x − dx(x0)),
+then reads its height. `sampleAt(x, z)` also gives the normal and the
+jacobian there.
+
+Where the heights come from depends on the waves:
+
+- **Gerstner waves** are evaluated exactly on the CPU, at the time of the
+  frame: the same formula as the vertex shader.
+- **The ocean spectrum** lives on the GPU. After each `update`, its
+  displacement buffer is **read back** (`buffer.read()`), without waiting:
+  the physics uses the heights of the frame before, one frame late, a few
+  millimeters off. Until the first read arrives, the CPU computes the same
+  FFTs itself (`evaluateSpectrum`, also the path of a server without GPU:
+  `readback: false`).
+
+## Archimedes, point by point
+
+```ts
+import { boxPoints, Buoyancy } from '@fdw/engine-ocean';
+
+const buoyancy = new Buoyancy(ocean); // anything with heightAt(x, z)
+
+const body = physics.add(node, {
+  type: 'dynamic',
+  colliders: [{ shape: Shapes.box(0.5), density: 450 }],
+});
+buoyancy.add(body, {
+  points: boxPoints({ x: 0.5, y: 0.5, z: 0.5 }), // 8 points
+  volume: 1, // m³
+});
+
+buoyancy.install(scheduler); // the fixed step, before 'physics'
+physics.install(scheduler);
+```
+
+At each fixed step, each point of a body stands for an equal share of its
+volume. Below the surface, it pushes the body up by the weight of the
+water it displaces (ρ g V, sea water: 1025 kg/m³), at the point: a crate
+half under water gets half of its push, and a body tilted by a wave gets
+more push on its low side, which rights it. The water also **drags** each
+wet point against its velocity (`drag`, per second), which damps the
+bobbing and the spinning.
+
+A crate of wood (450 kg/m³) floats with a little less than half of it
+under water. The boat is a convex hull (its collider, from the points of
+its shell) with fifteen points along its bottom:
+
+```ts
+const boat = createBoat(); // @fdw/demo-scenes
+physics.add(node, {
+  type: 'dynamic',
+  colliders: [{ shape: Shapes.convex(boat.hull), density: 110 }],
+  angularDamping: 0.4,
+});
+buoyancy.add(body, { points: boat.floats, volume: boat.volume, drag: 0.8 });
+```
+
+The points matter more than the shape: spread them where the hull is,
+lower for a boat that must sit deep. Sleeping bodies on the water are
+woken up: the waves move under them.
+
+## The coast
+
+The terrain is that of the [tessellation](/fdw-engine/tutorials/tessellation/):
+heights from 0 to 1 (a beach, hills, a headland, the sea floor going down),
+a `PatchSurface` for the GPU, a heightfield for the physics. The sea is at
+12 m (`level`). The `OceanRenderer` draws the coast first, with its
+depth: through the water, the sand shows in the shallows and fades into
+the color of the sea as it gets deeper, and foam runs along the shore,
+where the water is thin.
+
+```ts
+ocean.update(camera.position, time);
+terrain.surface.update(camera, surface);
+oceanRenderer.render({
+  ocean,
+  source: scene, // the crates, the boat, the light
+  items: [terrain.surface],
+  camera,
+  surface,
+  time,
+});
+```
+
+## Next
+
+- [The ocean guide](/fdw-engine/guides/ocean/): the API, the costs, the
+  limits (no view under the water, no wakes yet).
+- [Physics](/fdw-engine/guides/physics/): the bodies, the colliders, the
+  fixed step.

@@ -21,6 +21,7 @@
     "@fdw/engine-input": "0.0.1",
     "@fdw/engine-input-web": "0.0.1",
     "@fdw/engine-noise": "0.0.1",
+    "@fdw/engine-ocean": "0.0.1",
     "@fdw/engine-obj": "0.0.1",
     "@fdw/engine-occlusion": "0.0.1",
     "@fdw/engine-physics": "0.0.1",

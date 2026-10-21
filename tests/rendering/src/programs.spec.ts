@@ -185,6 +185,7 @@ describe.skipIf(skipGlsl)(
       }
       expect(failures).toEqual([]);
       expect(validated).toBeGreaterThan(30);
-    });
+      // One glslangValidator run per program (per draw of a compute one).
+    }, 30_000);
   },
 );

@@ -1,0 +1,168 @@
+---
+title: La mer et ses vagues
+description: Une mer animée sur tous les backends — le spectre océanique de Tessendorf calculé par FFT sur le GPU, ou des sommes de vagues de Gerstner, sur une grille d'anneaux qui suit la caméra, éclairée par le ciel et le soleil.
+sidebar:
+  order: 37
+---
+
+import Example from '../../../../components/Example.astro';
+
+`@fdw/engine-ocean` dessine une pleine mer. Ses vagues viennent de l'une de
+deux sources :
+
+- **Un spectre océanique** (Tessendorf) : des milliers de vagues de toutes
+  longueurs et directions, d'amplitudes données par un spectre
+  océanographique (JONSWAP ou Phillips), sommées par des FFT inverses sur le
+  GPU à chaque image ;
+- **Des vagues de Gerstner** : quelques trains de crêtes parallèles, sommés
+  dans le vertex shader.
+
+Le même `Ocean` dessine les deux, et donne la hauteur de l'eau au CPU (voir
+[Des objets qui flottent](/fdw-engine/fr/tutorials/floating-objects/)).
+
+<Example name="ocean" />
+
+## Les vagues d'un spectre
+
+```ts
+import { OceanSpectrum } from '@fdw/engine-ocean';
+
+const spectrum = new OceanSpectrum(backend, {
+  windSpeed: 10, // m/s, à 10 m au-dessus de la mer
+  windDirection: Math.PI / 2, // vers +z
+});
+```
+
+Les options décrivent la mer, pas les vagues :
+
+| Option           | Défaut             | Ce qu'elle fait                                                                             |
+| ---------------- | ------------------ | ------------------------------------------------------------------------------------------- |
+| `model`          | `'jonswap'`        | `jonswap` : une mer formée par le vent sur un fetch ; `phillips` : une mer pleinement levée |
+| `windSpeed`      | 8                  | La vitesse du vent, en m/s : plus elle est grande, plus les vagues sont longues et hautes   |
+| `windDirection`  | 0                  | Vers où souffle le vent, en radians de +x vers +z                                           |
+| `fetch`          | 100 km             | JONSWAP : la distance sur laquelle le vent a soufflé sur la mer                             |
+| `spread`         | 8                  | À quel point les crêtes suivent la direction du vent                                        |
+| `choppiness`     | 1                  | Le mouvement horizontal de l'eau : des crêtes plus vives, des creux plus larges             |
+| `cascades`       | `[233, 37.7, 6.3]` | Les côtés des tuiles, en mètres                                                             |
+| `resolution`     | 128                | Les points sur un côté d'une tuile (une puissance de 2)                                     |
+| `period`, `seed` | 200 s, 1           | L'animation boucle sur la période ; la graine donne une autre mer                           |
+
+Sur le CPU, une fois : chaque vecteur d'onde **k** d'une tuile reçoit une
+amplitude complexe aléatoire, de variance donnée par le spectre. Sur le
+GPU, à chaque image (`update(time)`) : les amplitudes tournent de e^(iωt),
+ω = √(g|k|) (des vagues d'eau profonde : les longues vont plus vite), puis
+**huit champs** sortent de FFT inverses : la hauteur, le mouvement
+horizontal (x et z) et leurs dérivées. Ils sont rangés deux par deux dans
+des nombres complexes (a + ib) : quatre FFT complexes au lieu de huit.
+
+**Les cascades.** Une tuile se répète tous les 233 m, ce qui se voit de
+haut. Trois tuiles de tailles qui ne se divisent pas gardent chacune une
+bande de longueurs d'onde : la première la houle, la dernière les rides.
+Leur somme ne se répète pas.
+
+**Sur tous les backends.** Les FFT sont des compute graphs : un spectre, les
+2 × 7 étapes de papillons sur les lignes puis les colonnes, une dernière
+passe pour les champs. WebGPU et Vulkan les exécutent en compute shaders ;
+WebGL2 exécute les mêmes graphes par rendu dans des textures
+([Compute](/fdw-engine/fr/guides/compute/#en-webgl2)), sans rien changer au
+code. Les champs restent sur le GPU, dans deux storage buffers lus par le
+matériau de la mer.
+
+## Les vagues de Gerstner
+
+```ts
+import { GerstnerWaves } from '@fdw/engine-ocean';
+
+const gerstner = new GerstnerWaves([
+  { direction: 1.5, wavelength: 40, amplitude: 0.6, steepness: 0.7 },
+  { direction: 1.9, wavelength: 23, amplitude: 0.32, steepness: 0.6 },
+  // …
+]);
+```
+
+Chaque point de la surface tourne sur un cercle : les crêtes s'affûtent,
+les creux s'élargissent. `steepness`, de 0 (une sinusoïde) à 1, règle
+combien. Quelques vagues, calculées dans le vertex shader depuis leurs
+constantes et leurs phases (des uniforms mis à jour à chaque image, exacts
+à toute heure) : ni passe de calcul ni FFT, et une hauteur exacte sur le
+CPU. Bien pour une mer calme, un lac, un rendu stylisé ; le spectre a l'air
+du large.
+
+## L'océan
+
+```ts
+import { createSky, Ocean } from '@fdw/engine-ocean';
+
+const sky = createSky(backend, { sun });
+const ocean = new Ocean({ waves: spectrum, environment: sky, level: 0 });
+ocean.setSun(light); // la direction et la couleur d'une DirectionalLight
+```
+
+`Ocean` est un élément de rendu : une **grille d'anneaux autour de la
+caméra**, chacun aux cellules deux fois plus grandes que celui qu'il
+entoure, puis une jupe plate jusqu'à l'horizon (20 km au moins).
+`update(cameraPosition, time)` la déplace sous la caméra par pas de sa plus
+grande cellule : ses sommets restent sur les mêmes points du monde, et les
+vagues ne glissent pas sous eux. Là où deux anneaux se rencontrent, les
+sommets du plus fin tombent sur ceux du plus grossier : pas de fissure.
+
+Le matériau déplace les sommets selon les vagues, chacune s'effaçant avec
+la distance avant que les sommets ne soient trop espacés pour elle
+(`fade`, 2 longueurs par défaut). Les pixels lisent ensuite les dérivées
+des vagues : la normale, et le **jacobien** du mouvement, sous 1 là où les
+crêtes compriment l'eau, là où l'écume se forme. Les vagues trop petites
+pour un pixel s'effacent, et rendent l'eau plus rugueuse de la variance de
+leurs pentes : la mer lointaine devient un reflet doux au lieu de
+scintiller.
+
+## La lumière de l'eau
+
+- **La réflexion** de l'environnement (une texture cube : le ciel de
+  `createSky`, ou le vôtre), pondérée par le terme de Fresnel de l'eau :
+  2 % à la verticale, tout en incidence rasante. Plus l'eau est rugueuse,
+  plus la réflexion est floue (un niveau plus haut de la texture).
+- **Le soleil** : un reflet GGX, le scintillement des vagues.
+- **Ce qu'on voit à travers l'eau** : la scène derrière, déviée par les
+  vagues, absorbée selon la profondeur d'eau (le rouge d'abord), et la
+  lumière diffusée par l'eau elle-même (`scatterColor`).
+- **Le soleil à travers les crêtes** : des crêtes plus claires, plus vertes,
+  face au soleil.
+- **L'écume**, là où le jacobien passe sous `foamThreshold`, et le long des
+  rivages, morcelée par un bruit.
+
+`ocean.setLook({ … })` les change à tout moment : `scatterColor`,
+`absorption`, `subsurfaceColor`, `foamColor`, `roughness`, `foamThreshold`,
+`foamAmount`, `shoreFoam`, `refraction`, `environmentIntensity`.
+
+## La dessiner
+
+```ts
+const renderer = new Renderer(backend);
+const oceanRenderer = new OceanRenderer(renderer, { toneMapping: 'neutral' });
+
+onFrame((time) => {
+  ocean.update(camera.position, time);
+  oceanRenderer.render({ ocean, source: scene, camera, surface, time });
+});
+```
+
+Pour voir sous l'eau, la mer est dessinée après le reste :
+
+1. la scène (`source`, `items`), avec sa profondeur de vue ;
+2. le ciel là où rien n'a été dessiné, copié pour l'eau ;
+3. la mer, testée contre la profondeur de la scène, qui lit la copie et la
+   profondeur : la profondeur d'eau à chaque pixel ;
+4. le tone mapping, vers la surface.
+
+`addPasses(graph, options)` ajoute les trois premières à un render graph à
+vous et rend l'image, en couleurs linéaires. Sans ce qui est derrière
+(`refraction: false` sur l'`Ocean`), la mer est opaque et se dessine comme
+n'importe quel élément, avec `renderer.render`.
+
+## La suite
+
+- [Des objets qui flottent](/fdw-engine/fr/tutorials/floating-objects/) : des
+  caisses et une barque sur les vagues, la physique qui demande la hauteur
+  de l'eau.
+- [Le guide de l'océan](/fdw-engine/fr/guides/ocean/) : l'API, les coûts,
+  les limites.

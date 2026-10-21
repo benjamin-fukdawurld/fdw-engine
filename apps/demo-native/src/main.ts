@@ -13,7 +13,9 @@
 // tessellation; terrain-uniform: every patch at the finest level), physics
 // (the physics playground, on Rapier), tps (the third-person game in the
 // forest; its models from apps/docs/public/models/forest), procedural (the
-// gallery of procedural materials; F switches the filter of the floor).
+// gallery of procedural materials; F switches the filter of the floor),
+// coast (the sea of an ocean spectrum, crates and a boat floating on it; G
+// switches to Gerstner waves; coast-gerstner starts with them).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent).
 // Escape or closing the window quits.
@@ -33,6 +35,8 @@ import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createCity,
   createCityScene,
+  createCoast,
+  createCoastScene,
   createDecor,
   createDecorScene,
   createTerrain,
@@ -80,6 +84,9 @@ const scenes: Record<string, SceneFactory> = {
 // as in the browser.
 const loadedScenes: Record<string, () => Promise<SceneFactory>> = {
   physics: async () => createPhysicsScene(await createRapierPhysics()),
+  coast: async () => createCoastScene(await createRapierPhysics()),
+  'coast-gerstner': async () =>
+    createCoast(await createRapierPhysics(), { waves: 'gerstner' }),
   tps: async () => {
     // The files of the documentation: the models of the forest.
     const store = new ResourceStore();
