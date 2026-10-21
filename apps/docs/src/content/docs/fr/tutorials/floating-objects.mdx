@@ -71,21 +71,44 @@ seconde), ce qui amortit le pilonnement et la rotation.
 
 Une caisse en bois (450 kg/m³) flotte avec un peu moins de la moitié dans
 l'eau. La barque est une enveloppe convexe (son collider, depuis les points
-de sa coque) avec quinze points le long de son fond :
+de sa coque), ses points de flottaison un réseau qui remplit la coque
+jusqu'au plat-bord :
 
 ```ts
 const boat = createBoat(); // @fdw/demo-scenes
-physics.add(node, {
+const body = physics.add(node, {
   type: 'dynamic',
-  colliders: [{ shape: Shapes.convex(boat.hull), density: 110 }],
-  angularDamping: 0.4,
+  colliders: [
+    // Une coque légère : 150 kg.
+    { shape: Shapes.convex(boat.hull), density: 50 },
+    // Les rameurs et leur matériel, bas dans la barque : 300 kg.
+    { shape: Shapes.box(0.3, 0.05, 0.9), position: { y: -0.3 }, density: 2800 },
+  ],
+  angularDamping: 1.5,
 });
-buoyancy.add(body, { points: boat.floats, volume: boat.volume, drag: 0.8 });
+buoyancy.add(body, {
+  points: boat.floats, // un réseau dans la coque
+  volume: boat.volume,
+  depth: boat.depth, // la hauteur d'une cellule du réseau
+  drag: 3,
+});
 ```
 
-Les points comptent plus que la forme : répartissez-les là où est la
-coque, plus bas pour un bateau qui doit s'enfoncer. Les corps endormis sur
-l'eau sont réveillés : les vagues bougent sous eux.
+Trois choses gardent un bateau droit et calme :
+
+- **Des points dans toute la coque**, pas seulement le long du fond :
+  gîté, le bateau enfonce plus de son volume de son côté bas, et l'eau le
+  redresse. Des points le long du seul fond poussent de la même façon quelle
+  que soit la gîte : le bateau chavire dès qu'une vague le couche.
+- **Un centre de masse bas** : une coque seule est légère et son centre
+  haut (ses flancs, son plat-bord). Le poids de l'équipage, bas dans le
+  bateau (un collider de plus, petit et lourd), le ramène sous l'eau.
+- **L'amortissement** : une vraie coque perd son énergie dans les vagues
+  qu'elle fait. `drag` (par seconde, en chaque point mouillé) amortit le
+  pilonnement, `angularDamping` le roulis ; sans eux, le bateau continue de
+  se balancer et saute sur les vagues courtes.
+
+Les corps endormis sur l'eau sont réveillés : les vagues bougent sous eux.
 
 ## La côte
 

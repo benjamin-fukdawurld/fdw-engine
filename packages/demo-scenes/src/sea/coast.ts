@@ -271,15 +271,26 @@ export function createCoast(
         rotation: axisAngle(0, 1, 0, 0.9),
       });
       node.setMesh(boat.mesh, boatMaterial);
+      // A light hull (150 kg), and the weight of the rowers and their gear
+      // low in it (300 kg): the center of mass under the water keeps it
+      // upright. The water damps its rolling and its bobbing.
       const body = physics.add(node, {
         type: 'dynamic',
-        colliders: [{ shape: Shapes.convex(boat.hull), density: 110 }],
-        angularDamping: 0.4,
+        colliders: [
+          { shape: Shapes.convex(boat.hull), density: 50 },
+          {
+            shape: Shapes.box(0.3, 0.05, 0.9),
+            position: { y: -0.3 },
+            density: 2800,
+          },
+        ],
+        angularDamping: 1.5,
       });
       buoyancy.add(body, {
         points: boat.floats,
         volume: boat.volume,
-        drag: 0.8,
+        depth: boat.depth,
+        drag: 3,
       });
       floating.push(node);
     };

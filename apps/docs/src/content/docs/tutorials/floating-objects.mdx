@@ -71,21 +71,44 @@ bobbing and the spinning.
 
 A crate of wood (450 kg/m³) floats with a little less than half of it
 under water. The boat is a convex hull (its collider, from the points of
-its shell) with fifteen points along its bottom:
+its shell), its buoyancy points a lattice filling the hull up to the
+gunwale:
 
 ```ts
 const boat = createBoat(); // @fdw/demo-scenes
-physics.add(node, {
+const body = physics.add(node, {
   type: 'dynamic',
-  colliders: [{ shape: Shapes.convex(boat.hull), density: 110 }],
-  angularDamping: 0.4,
+  colliders: [
+    // A light hull: 150 kg.
+    { shape: Shapes.convex(boat.hull), density: 50 },
+    // The rowers and their gear, low in the boat: 300 kg.
+    { shape: Shapes.box(0.3, 0.05, 0.9), position: { y: -0.3 }, density: 2800 },
+  ],
+  angularDamping: 1.5,
 });
-buoyancy.add(body, { points: boat.floats, volume: boat.volume, drag: 0.8 });
+buoyancy.add(body, {
+  points: boat.floats, // a lattice inside the hull
+  volume: boat.volume,
+  depth: boat.depth, // the height of a cell of the lattice
+  drag: 3,
+});
 ```
 
-The points matter more than the shape: spread them where the hull is,
-lower for a boat that must sit deep. Sleeping bodies on the water are
-woken up: the waves move under them.
+Three things keep a boat upright and calm:
+
+- **Points through the whole hull**, not only along its bottom: heeled,
+  the boat dips more of its volume on its low side, and the water rights
+  it. Points along the bottom alone push the same way whatever the
+  heel: the boat capsizes as soon as a wave rolls it over.
+- **A low center of mass**: a hull alone is light and its center high (its
+  sides, its gunwale). The weight of the crew, low in the boat (an extra
+  collider, heavy and small), brings it under the water.
+- **Damping**: a real hull loses its energy in the waves it makes. `drag`
+  (per second, at each wet point) damps the bobbing, `angularDamping` the
+  rolling; without them, the boat keeps swinging and jumps on the short
+  waves.
+
+Sleeping bodies on the water are woken up: the waves move under them.
 
 ## The coast
 
