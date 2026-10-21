@@ -10,6 +10,8 @@ export interface Boat {
   readonly floats: readonly IVec3[];
   /** The volume of the hull under the gunwale, in m³. */
   readonly volume: number;
+  /** The height of the cell of a point of `floats`: its wet depth. */
+  readonly depth: number;
 }
 
 /**
@@ -147,18 +149,25 @@ export function createBoat({
 
   // The hull alone (not the planks), for its collider.
   const hull = new Float32Array(positions.slice(0, (sections + 1) * row * 3));
-  // The bottom: 5 sections × 3 points, at mid depth.
+  // The water it can push away: the points of a lattice inside the hull,
+  // up to the gunwale, each standing for its cell. Spread over the whole
+  // hull, they give the immersed volume its shape: a heeled boat pushes
+  // more water on its low side, which rights it.
+  const step = { x: 0.2, y: 0.12, z: 0.3 };
   const floats: IVec3[] = [];
-  for (const t of [-0.8, -0.4, 0, 0.4, 0.75]) {
-    for (const side of [-0.55, 0, 0.55]) {
-      floats.push({
-        x: halfWidth(t) * side,
-        y: -keel(t) * 0.45,
-        z: (t * length) / 2,
-      });
+  for (let z = -length / 2 + step.z / 2; z < length / 2; z += step.z) {
+    const t = (2 * z) / length;
+    const top = gunwale(t);
+    const bottom = keel(t);
+    for (let y = -bottom + step.y / 2; y < top; y += step.y) {
+      // The half width of the section at that height.
+      const s = Math.pow((top - y) / (top + bottom), 1 / 0.6);
+      const half = halfWidth(t) * Math.sqrt(Math.max(1 - s * s, 0));
+      for (let x = -half + step.x / 2; x < half; x += step.x) {
+        floats.push({ x, y, z });
+      }
     }
   }
-  // About the volume under the gunwale: a share of the box around it.
-  const volume = length * width * (depth + gunwale(0)) * 0.5;
-  return { mesh, hull, floats, volume };
+  const volume = floats.length * step.x * step.y * step.z;
+  return { mesh, hull, floats, volume, depth: step.y };
 }

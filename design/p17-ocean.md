@@ -64,6 +64,8 @@ Les deux sources donnent, en chaque point (x0, z0) de la surface au repos, son d
 
 `Buoyancy`, sur l'API abstraite de `engine-physics` (aucun moteur en dur) : à chaque pas fixe, avant `physics`, chaque point d'un corps (une part égale du volume) mouillé sur `depth` pousse de ρ g V × son immersion et freine contre la vitesse du point (v + ω × r), en ce point (`applyForce(force, point)`). Les corps endormis sur l'eau sont réveillés.
 
+**La barque** : ses points sont un réseau qui remplit la coque jusqu'au plat-bord (379 points, chacun sa cellule), pas seulement son fond : gîtée, elle enfonce plus de volume de son côté bas, ce qui la redresse ; des points sur le seul fond la laissaient chavirer à la première vague. Une coque légère (150 kg) et le poids de l'équipage bas dans la barque (300 kg, un collider de plus) mettent le centre de masse sous l'eau ; `drag` 3 et `angularDamping` 1,5 tiennent lieu de l'énergie qu'une vraie coque perd dans ses vagues. Sur 25 s du spectre de la côte : une gîte moyenne de 8,5° (93° avant, retournée), 30° au plus.
+
 **Accéléré en chemin** : le calcul émulé de WebGL2 dessinait une instance d'un point par thread, que SwiftShader traite instance par instance : une mise à jour du spectre y prenait 22 s. Un seul dessin non instancié de tous les points (le thread et le texel de son élément depuis `gl_VertexID`) : 0,36 s ([cg-webgl2.md §6.3](cg-webgl2.md#63-le-dispatch)), la suite de rendu inchangée.
 
 **Corrigé en chemin** : `engine-physics-rapier` remettait à zéro les forces après chaque pas, pas les couples, que Rapier garde à part : une force en un point faisait tourner le corps de plus en plus (la barque se retournait). `resetTorques` après `resetForces`, et un test.
