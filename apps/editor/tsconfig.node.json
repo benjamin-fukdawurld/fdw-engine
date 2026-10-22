@@ -2,10 +2,11 @@
   "compilerOptions": {
     "composite": true,
     "target": "es2023",
-    "lib": ["es2023"],
+    "lib": ["es2023", "DOM", "ESNext.Disposable"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["node", "electron-vite/node"],
+    "types": ["node", "electron-vite/node", "@webgpu/types"],
+    "customConditions": ["@fdw-engine/source"],
     "strict": true,
     "noUnusedLocals": true,
     "noImplicitReturns": true,
@@ -13,5 +14,11 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*"]
+  "include": [
+    "electron.vite.config.ts",
+    "src/main/**/*",
+    "src/engine/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*"
+  ]
 }

@@ -30,7 +30,13 @@
         "script": "dev"
       },
       "continuous": true,
-      "dependsOn": ["build-native"]
+      "dependsOn": [
+        "build-native",
+        {
+          "projects": ["engine-native", "engine-vulkan"],
+          "target": "build-native"
+        }
+      ]
     },
     "build": {
       "executor": "nx:run-script",
@@ -38,7 +44,11 @@
         "script": "build"
       },
       "cache": true,
-      "inputs": ["default", "!{projectRoot}/out/**/*"],
+      "inputs": [
+        "default",
+        "{workspaceRoot}/packages/*/src/**/*",
+        "!{projectRoot}/out/**/*"
+      ],
       "outputs": ["{projectRoot}/out"]
     },
     "preview": {
@@ -46,7 +56,14 @@
       "options": {
         "script": "preview"
       },
-      "dependsOn": ["build-native", "build"],
+      "dependsOn": [
+        "build-native",
+        {
+          "projects": ["engine-native", "engine-vulkan"],
+          "target": "build-native"
+        },
+        "build"
+      ],
       "continuous": true
     },
     "typecheck": {
@@ -55,7 +72,11 @@
         "script": "typecheck"
       },
       "cache": true,
-      "inputs": ["default", "!{projectRoot}/out/**/*"]
+      "inputs": [
+        "default",
+        "{workspaceRoot}/packages/*/src/**/*",
+        "!{projectRoot}/out/**/*"
+      ]
     }
   }
 }

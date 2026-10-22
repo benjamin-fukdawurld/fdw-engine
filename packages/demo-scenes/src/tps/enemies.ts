@@ -233,7 +233,7 @@ export class Enemies implements EnemyHost {
       around: 'f32',
     });
     this._query = scene.world.query(this.Enemy);
-    this.behavior = new BehaviorSystem(enemyGraph(), {
+    this.behavior = new BehaviorSystem<EnemyHost>(enemyGraph(), {
       host: this,
       registry: enemyRegistry,
       mode: options.mode ?? 'compile',
