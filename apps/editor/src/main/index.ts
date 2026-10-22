@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
-import { NativeViewport, type ViewportBounds } from './viewport';
+import { EngineProcess } from './engine';
 
 // The native viewport is a child X11 window: under Wayland, Electron runs
 // on XWayland.
@@ -25,27 +25,36 @@ function createWindow(): void {
   // viewport bounds are measured from.
   window.removeMenu();
 
-  let viewport: NativeViewport | undefined;
-  let bounds: ViewportBounds | undefined;
-  const onBounds = (event: Electron.IpcMainEvent, next: ViewportBounds) => {
+  let engine: EngineProcess | undefined;
+  // The page asks for its port once loaded, again after a reload.
+  let connectAsked = false;
+  const onConnect = (event: Electron.IpcMainEvent) => {
     if (event.sender !== window.webContents) return;
-    bounds = next;
-    viewport?.setBounds(next);
+    connectAsked = true;
+    engine?.connect(window);
   };
-  ipcMain.on('viewport:bounds', onBounds);
+  ipcMain.on('engine:connect', onConnect);
 
   window.once('ready-to-show', () => {
     window.show();
     if (process.platform === 'linux') {
-      viewport = new NativeViewport(window);
-      if (bounds) viewport.setBounds(bounds);
+      engine = new EngineProcess(window);
+      if (connectAsked) engine.connect(window);
     }
   });
-  // Before the native window goes, with the child window in it.
-  window.on('close', () => {
-    ipcMain.off('viewport:bounds', onBounds);
-    viewport?.destroy();
-    viewport = undefined;
+  window.on('minimize', () => engine?.setVisible(false));
+  window.on('hide', () => engine?.setVisible(false));
+  window.on('restore', () => engine?.setVisible(true));
+  window.on('show', () => engine?.setVisible(true));
+  // The engine stops before the native window goes, with the child window
+  // in it.
+  window.on('close', (event) => {
+    if (!engine) return;
+    event.preventDefault();
+    ipcMain.off('engine:connect', onConnect);
+    const stopping = engine;
+    engine = undefined;
+    void stopping.quit().then(() => window.destroy());
   });
 
   // electron-vite sets this variable in dev mode to point at its HMR server.

@@ -7,15 +7,11 @@ export interface EditorApi {
     readonly node: string;
   };
   /**
-   * Places the native viewport over an area of the page, in device pixels
-   * from the top left corner of the page. An empty area hides it.
+   * Asks for a port to the engine process: it comes as a message of the
+   * window, `'engine:port'`, with the port in its `ports`. Again after
+   * each page load.
    */
-  setViewportBounds(bounds: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }): void;
+  connectEngine(): void;
 }
 
 declare global {
