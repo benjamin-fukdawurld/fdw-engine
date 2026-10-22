@@ -1,0 +1,61 @@
+{
+  "name": "editor",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/editor/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build-native": {
+      "command": "node scripts/build-native.mjs",
+      "options": {
+        "cwd": "apps/editor"
+      },
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/native/**/*",
+        "{projectRoot}/scripts/**/*",
+        "{workspaceRoot}/tools/native/**/*"
+      ],
+      "outputs": ["{projectRoot}/build/fdw_editor.node"]
+    },
+    "install": {
+      "command": "npm install",
+      "options": {
+        "cwd": "apps/editor"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-script",
+      "options": {
+        "script": "dev"
+      },
+      "continuous": true,
+      "dependsOn": ["build-native"]
+    },
+    "build": {
+      "executor": "nx:run-script",
+      "options": {
+        "script": "build"
+      },
+      "cache": true,
+      "inputs": ["default", "!{projectRoot}/out/**/*"],
+      "outputs": ["{projectRoot}/out"]
+    },
+    "preview": {
+      "executor": "nx:run-script",
+      "options": {
+        "script": "preview"
+      },
+      "dependsOn": ["build-native", "build"],
+      "continuous": true
+    },
+    "typecheck": {
+      "executor": "nx:run-script",
+      "options": {
+        "script": "typecheck"
+      },
+      "cache": true,
+      "inputs": ["default", "!{projectRoot}/out/**/*"]
+    }
+  }
+}
