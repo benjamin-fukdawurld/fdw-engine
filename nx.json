@@ -26,7 +26,8 @@
           "buildDepsName": "build-deps",
           "watchDepsName": "watch-deps"
         }
-      }
+      },
+      "exclude": ["apps/editor/**/*"]
     },
     {
       "plugin": "@nx/eslint/plugin",

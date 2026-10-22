@@ -77,7 +77,8 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "!apps/editor"
   ],
   "nx": {
     "includedScripts": [],
