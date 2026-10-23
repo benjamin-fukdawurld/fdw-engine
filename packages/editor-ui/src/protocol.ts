@@ -32,6 +32,10 @@ export type PageMessage =
 export type EngineMessage =
   | {
       readonly type: 'ready';
+      // The backend running (a value of FDW_BACKEND), and the reason of a
+      // fallback when it is not the one asked for.
+      readonly backend: string;
+      readonly fallback?: string;
       readonly device: string;
       readonly scenes: readonly string[];
       readonly scene: string;

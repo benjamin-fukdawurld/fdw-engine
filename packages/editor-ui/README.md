@@ -28,6 +28,7 @@ The plugins come with their manifest (step 12). The shell is tested with a fake 
 
 - **The protocol** (`@fdw/editor-ui/protocol`): the messages between the page and the engine, the bounds of the viewport, the scene, the inputs. The shell never holds an object of the engine: the engine may run in another process.
 - **`EditorEngine`** (`@fdw/editor-ui/engine`, without React): the engine side of the protocol, independent of where it runs. It receives the messages of the page, shows the scenes in the viewport and sends back what it does. Its platform (`EditorEnginePlatform`) gives it the backend, the viewport, the surface, the scenes and the pace of the frames: the utility process of Electron (`apps/editor/src/engine`) on Vulkan, the page of the web editor to come.
+- **`startBackend`** (`@fdw/editor-ui/engine`): the choice of the backend by `FDW_BACKEND`, the same in every host: the preferred one without the variable (Vulkan, WebGPU), the fallback when the one asked for does not start or is unknown (Dawn, WebGL2), with the reason. The `ready` message gives the backend running and the reason of a fallback, shown in the status bar.
 - **`RemoteViewport`** and **`RemoteInputSource`**: the two ends of the inputs when the engine is out of the page. The viewport sends the bounds of its area in device pixels and the inputs read on it by a `WebInputSource`; the input source replays them in the engine.
 
 ## The components

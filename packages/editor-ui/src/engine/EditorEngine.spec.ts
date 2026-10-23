@@ -30,11 +30,15 @@ function fakeScene(options: { failAt?: number } = {}) {
 // Stopped after each test.
 const editors: EditorEngine[] = [];
 
-function setup(scenes: Record<string, SceneFactory>) {
+function setup(
+  scenes: Record<string, SceneFactory>,
+  options: Partial<EditorEnginePlatform> = {},
+) {
   let bounds: ViewportBounds = { x: 0, y: 0, width: 0, height: 0 };
   const surface = { width: 1, height: 1 } as Surface;
   const platform: EditorEnginePlatform = {
     backend: {} as RenderBackend,
+    backendName: 'fake',
     device: 'Fake GPU',
     viewport: {
       get bounds() {
@@ -53,6 +57,7 @@ function setup(scenes: Record<string, SceneFactory>) {
         async () => factory,
       ]),
     ),
+    ...options,
   };
   const messages: EngineMessage[] = [];
   const editor = new EditorEngine(platform, Object.keys(scenes)[0] ?? '');
@@ -80,9 +85,22 @@ describe('EditorEngine', () => {
     });
     expect(messages[0]).toEqual({
       type: 'ready',
+      backend: 'fake',
       device: 'Fake GPU',
       scenes: ['a', 'b'],
       scene: 'a',
+    });
+  });
+
+  it('tells the page why its backend is a fallback', () => {
+    const { messages } = setup(
+      { a: fakeScene().factory },
+      { backendName: 'dawn', fallback: 'vulkan: No device' },
+    );
+    expect(messages[0]).toMatchObject({
+      type: 'ready',
+      backend: 'dawn',
+      fallback: 'vulkan: No device',
     });
   });
 

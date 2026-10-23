@@ -58,17 +58,44 @@ describe('EditorShell', () => {
   it('shows the device and the stats of the engine', () => {
     const { host, send } = fakeHost();
     render(<EditorShell host={host} />);
-    send({ type: 'ready', device: 'GPU', scenes: ['a', 'b'], scene: 'a' });
+    send({
+      type: 'ready',
+      backend: 'vulkan',
+      device: 'GPU',
+      scenes: ['a', 'b'],
+      scene: 'a',
+    });
     send({ type: 'stats', fps: 60, width: 800, height: 600, info: '' });
-    expect(screen.getByText('GPU · 60 fps · 800 × 600')).toBeTruthy();
+    expect(screen.getByText('vulkan · GPU · 60 fps · 800 × 600')).toBeTruthy();
     send({ type: 'error', message: 'Lost' });
     expect(screen.getByText('Lost')).toBeTruthy();
+  });
+
+  it('shows why the backend is a fallback', () => {
+    const { host, send } = fakeHost();
+    render(<EditorShell host={host} />);
+    send({
+      type: 'ready',
+      backend: 'dawn',
+      fallback: 'vulkan: No device',
+      device: 'GPU',
+      scenes: ['a'],
+      scene: 'a',
+    });
+    expect(screen.getByText('dawn · GPU')).toBeTruthy();
+    expect(screen.getByText('Fallback: vulkan: No device')).toBeTruthy();
   });
 
   it('asks the engine for the scene chosen', () => {
     const { host, posted, send } = fakeHost();
     render(<EditorShell host={host} />);
-    send({ type: 'ready', device: 'GPU', scenes: ['a', 'b'], scene: 'a' });
+    send({
+      type: 'ready',
+      backend: 'vulkan',
+      device: 'GPU',
+      scenes: ['a', 'b'],
+      scene: 'a',
+    });
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'b' } });
     expect(posted).toContainEqual({ type: 'scene', name: 'b' });
   });

@@ -18,6 +18,10 @@ export interface EngineViewport {
 export interface EditorEnginePlatform {
   /** The backend of the rendering engine, ready. */
   readonly backend: RenderBackend;
+  /** Its name, a value of FDW_BACKEND (startBackend). */
+  readonly backendName: string;
+  /** Why it is not the backend asked for. */
+  readonly fallback?: string;
   /** The name of the device, shown in the status bar. */
   readonly device: string;
   readonly viewport: EngineViewport;
@@ -82,8 +86,11 @@ export class EditorEngine {
   connect(channel: EngineChannel): void {
     this.#channel?.close();
     this.#channel = channel;
+    const { backendName, fallback } = this.#platform;
     this.#post({
       type: 'ready',
+      backend: backendName,
+      ...(fallback !== undefined && { fallback }),
       device: this.#platform.device,
       scenes: Object.keys(this.#platform.scenes),
       scene: this.#requested,

@@ -34,13 +34,12 @@ export class ViewportSurface implements Surface {
     return this.swapchain.format;
   }
 
-  // The size of the viewport, in pixels (at least one: it may be hidden).
   get width(): number {
-    return Math.max(this.viewport.bounds.width, 1);
+    return this.viewport.width;
   }
 
   get height(): number {
-    return Math.max(this.viewport.bounds.height, 1);
+    return this.viewport.height;
   }
 
   getCurrentTarget(): VulkanTexture {

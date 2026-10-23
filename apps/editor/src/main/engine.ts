@@ -7,6 +7,7 @@ import {
 import { join } from 'node:path';
 import type { ControlMessage } from '../shared/protocol';
 import enginePath from '../engine/index?modulePath';
+import dawnPath from '../engine/dawn?modulePath';
 
 // From out/main, where the bundle runs.
 const repositoryRoot = join(__dirname, '../../../..');
@@ -38,6 +39,8 @@ export class EngineProcess {
       env: {
         ...process.env,
         FDW_REPOSITORY: repositoryRoot,
+        // Its Node process on Dawn.
+        FDW_DAWN_PROCESS: dawnPath,
         FDW_EDITOR_ADDON: join(__dirname, '../../build/fdw_editor.node'),
         // The addons of the engine, built in their packages.
         FDW_VULKAN_ADDON: join(
@@ -53,7 +56,12 @@ export class EngineProcess {
     this.#exited = new Promise((resolve) =>
       this.#child.once('exit', () => resolve()),
     );
-    this.#post({ type: 'init', parent: windowId(window).toString() });
+    this.#post({
+      type: 'init',
+      parent: windowId(window).toString(),
+      // Vulkan by default, Dawn as a fallback (design/editor-ui.md §4).
+      backend: process.env['FDW_BACKEND'],
+    });
   }
 
   /** Gives a new port to the engine to the page of the window. */

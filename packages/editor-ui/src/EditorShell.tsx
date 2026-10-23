@@ -14,6 +14,8 @@ type Stats = Extract<EngineMessage, { type: 'stats' }>;
 // What the engine tells of itself.
 function useEngine(engine: EngineConnection) {
   const [device, setDevice] = useState('');
+  const [backend, setBackend] = useState('');
+  const [fallback, setFallback] = useState<string>();
   const [scenes, setScenes] = useState<readonly string[]>([]);
   const [scene, setScene] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,6 +27,8 @@ function useEngine(engine: EngineConnection) {
         switch (message.type) {
           case 'ready':
             setDevice(message.device);
+            setBackend(message.backend);
+            setFallback(message.fallback);
             setScenes(message.scenes);
             setScene(message.scene);
             break;
@@ -48,7 +52,17 @@ function useEngine(engine: EngineConnection) {
     setScene(name);
     engine.post({ type: 'scene', name });
   };
-  return { device, scenes, scene, showScene, loading, stats, error };
+  return {
+    device,
+    backend,
+    fallback,
+    scenes,
+    scene,
+    showScene,
+    loading,
+    stats,
+    error,
+  };
 }
 
 /** The layout kept by the host between sessions. */
@@ -85,9 +99,17 @@ export function EditorShell({ host }: { readonly host: EditorHost }) {
   const { Viewport } = host;
   const [layout, setLayout] = useLayout(host.storage);
   const { outlinerOpen } = layout;
-  const { device, scenes, scene, showScene, loading, stats, error } = useEngine(
-    host.engine,
-  );
+  const {
+    device,
+    backend,
+    fallback,
+    scenes,
+    scene,
+    showScene,
+    loading,
+    stats,
+    error,
+  } = useEngine(host.engine);
   return (
     <div
       className={cn(
@@ -135,11 +157,16 @@ export function EditorShell({ host }: { readonly host: EditorHost }) {
           <span className="text-destructive">{error}</span>
         ) : (
           <span>
-            {device || 'Starting the engine…'}
+            {device ? `${backend} · ${device}` : 'Starting the engine…'}
             {stats &&
               ` · ${stats.fps} fps · ${stats.width} × ${stats.height}${
                 stats.info ? ` · ${stats.info}` : ''
               }`}
+          </span>
+        )}
+        {fallback && (
+          <span className="text-amber-500" title={fallback}>
+            Fallback: {fallback}
           </span>
         )}
         <span className="ml-auto text-muted-foreground">{host.about}</span>
