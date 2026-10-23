@@ -1,12 +1,13 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import type { EditorHost, EngineConnection } from './host';
+import { PanelLeftIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Button } from './components/ui/button';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from './components/ui/native-select';
+import type { EditorHost, EngineConnection, HostStorage } from './host';
+import { cn } from './lib/utils';
 import type { EngineMessage } from './protocol';
-
-const panel: CSSProperties = {
-  background: '#26262b',
-  padding: 12,
-  overflow: 'auto',
-};
 
 type Stats = Extract<EngineMessage, { type: 'stats' }>;
 
@@ -50,72 +51,88 @@ function useEngine(engine: EngineConnection) {
   return { device, scenes, scene, showScene, loading, stats, error };
 }
 
+/** The layout kept by the host between sessions. */
+export interface Layout {
+  readonly outlinerOpen: boolean;
+}
+
+const layoutKey = 'layout';
+
+// The layout, read from the storage of the host, written there when changed.
+function useLayout(storage: HostStorage) {
+  const [layout, setLayout] = useState<Layout>({ outlinerOpen: true });
+  useEffect(() => {
+    let current = true;
+    void storage.read(layoutKey).then((saved) => {
+      const open = (saved as Partial<Layout> | undefined)?.outlinerOpen;
+      if (current && typeof open === 'boolean') {
+        setLayout({ outlinerOpen: open });
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [storage]);
+  const changeLayout = (next: Layout) => {
+    setLayout(next);
+    void storage.write(layoutKey, next);
+  };
+  return [layout, changeLayout] as const;
+}
+
 /** The interface of the editor, the same in every host. */
 export function EditorShell({ host }: { readonly host: EditorHost }) {
   const { Viewport } = host;
-  const [outlinerOpen, setOutlinerOpen] = useState(true);
+  const [layout, setLayout] = useLayout(host.storage);
+  const { outlinerOpen } = layout;
   const { device, scenes, scene, showScene, loading, stats, error } = useEngine(
     host.engine,
   );
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateRows: '40px 1fr 24px',
-        gridTemplateColumns: `${outlinerOpen ? 240 : 0}px 1fr 280px`,
-        height: '100vh',
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: 13,
-        color: '#ddd',
-        background: '#1e1e22',
-      }}
+      className={cn(
+        'grid h-screen grid-rows-[36px_1fr_24px] bg-background text-[13px] text-foreground',
+        outlinerOpen
+          ? 'grid-cols-[240px_1fr_280px]'
+          : 'grid-cols-[0px_1fr_280px]',
+      )}
     >
-      <header
-        style={{
-          gridColumn: '1 / -1',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '0 12px',
-          background: '#2d2d33',
-        }}
-      >
-        <strong>FDW Editor</strong>
-        <button onClick={() => setOutlinerOpen((open) => !open)}>
+      <header className="col-span-full flex items-center gap-3 border-b bg-card px-3">
+        <strong className="font-semibold">FDW Editor</strong>
+        <Button
+          variant="ghost"
+          size="xs"
+          aria-pressed={outlinerOpen}
+          onClick={() => setLayout({ ...layout, outlinerOpen: !outlinerOpen })}
+        >
+          <PanelLeftIcon />
           {outlinerOpen ? 'Hide' : 'Show'} outliner
-        </button>
-        <label>
-          Scene{' '}
-          <select
+        </Button>
+        <label className="flex items-center gap-2">
+          Scene
+          <NativeSelect
+            size="xs"
             value={scene}
             disabled={scenes.length === 0}
             onChange={(event) => showScene(event.target.value)}
           >
             {scenes.map((name) => (
-              <option key={name}>{name}</option>
+              <NativeSelectOption key={name}>{name}</NativeSelectOption>
             ))}
-          </select>
+          </NativeSelect>
         </label>
-        {loading && <span>Loading…</span>}
+        {loading && <span className="text-muted-foreground">Loading…</span>}
       </header>
-      <aside style={{ ...panel, padding: outlinerOpen ? 12 : 0 }}>
+      <aside
+        className={cn('overflow-auto border-r bg-card', outlinerOpen && 'p-3')}
+      >
         {outlinerOpen && 'Outliner'}
       </aside>
       <Viewport />
-      <aside style={panel}>Inspector</aside>
-      <footer
-        style={{
-          gridColumn: '1 / -1',
-          display: 'flex',
-          gap: 12,
-          padding: '4px 12px',
-          background: '#2d2d33',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-        }}
-      >
+      <aside className="overflow-auto border-l bg-card p-3">Inspector</aside>
+      <footer className="col-span-full flex items-center gap-3 overflow-hidden whitespace-nowrap border-t bg-card px-3 text-xs">
         {error ? (
-          <span style={{ color: '#f77' }}>{error}</span>
+          <span className="text-destructive">{error}</span>
         ) : (
           <span>
             {device || 'Starting the engine…'}
@@ -125,7 +142,7 @@ export function EditorShell({ host }: { readonly host: EditorHost }) {
               }`}
           </span>
         )}
-        <span style={{ marginLeft: 'auto' }}>{host.about}</span>
+        <span className="ml-auto text-muted-foreground">{host.about}</span>
       </footer>
     </div>
   );

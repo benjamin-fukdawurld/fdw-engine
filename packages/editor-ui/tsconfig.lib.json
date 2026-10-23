@@ -7,7 +7,20 @@
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["src/**/*.spec.ts", "src/**/*.spec.tsx", "src/**/*.test.ts"],
   "references": [
-    { "path": "../engine-input/tsconfig.lib.json" },
-    { "path": "../engine-input-web/tsconfig.lib.json" }
+    {
+      "path": "../demo-scenes/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-audio/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-input/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-input-web/tsconfig.lib.json"
+    }
   ]
 }

@@ -15,6 +15,11 @@ const api: EditorApi = {
     node: process.versions.node,
   },
   connectEngine: () => ipcRenderer.send('engine:connect'),
+  readStorage: (key) => ipcRenderer.invoke('storage:read', key),
+  writeStorage: (key, value) => ipcRenderer.invoke('storage:write', key, value),
+  openFile: (filters) => ipcRenderer.invoke('files:open', filters),
+  saveFile: (name, data, filters) =>
+    ipcRenderer.invoke('files:save', name, data, filters),
 };
 
 contextBridge.exposeInMainWorld('editor', api);

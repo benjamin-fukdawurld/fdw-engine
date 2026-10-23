@@ -1,13 +1,13 @@
-import type { EngineMessage, InputCall } from '@fdw/editor-ui/protocol';
 import {
   createGamepadState,
   GamepadState,
   InputSink,
   InputSource,
 } from '@fdw/engine-input';
+import type { EngineMessage, InputCall } from '../protocol';
 
 /**
- * The inputs of the page, in the engine process: the page reads the DOM
+ * The inputs of the page, on the engine side: the page reads the DOM
  * events of the viewport with a WebInputSource and sends the calls of its
  * sink, replayed here; its gamepads come at each animation frame. The
  * pointer lock and the rumbles go back to the page, which owns the

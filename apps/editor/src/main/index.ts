@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { EngineProcess } from './engine';
+import { allowPopouts, handleHostServices } from './host';
 
 // The native viewport is a child X11 window: under Wayland, Electron runs
 // on XWayland.
@@ -24,6 +25,7 @@ function createWindow(): void {
   // No menu bar: the page starts at the top of the native window, where the
   // viewport bounds are measured from.
   window.removeMenu();
+  allowPopouts(window);
 
   let engine: EngineProcess | undefined;
   // The page asks for its port once loaded, again after a reload.
@@ -67,6 +69,7 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  handleHostServices();
   createWindow();
   // macOS: recreate a window when the dock icon is clicked and none is open.
   app.on('activate', () => {
