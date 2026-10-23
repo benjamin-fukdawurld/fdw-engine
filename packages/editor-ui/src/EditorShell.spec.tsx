@@ -7,7 +7,8 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { useEffect } from 'react';
+// StrictMode, as in the applications: a remount at the first mount.
+import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EditorShell } from './EditorShell';
 import type { EditorHost, EngineConnection } from './host';
@@ -116,7 +117,7 @@ describe('EditorShell', () => {
 
   it('shows the viewport of the host and what it tells of itself', async () => {
     const { host } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     expect(await screen.findByTestId('viewport')).toBeTruthy();
     expect(screen.getByText('Fake host')).toBeTruthy();
     expect(screen.getByText('Starting the engine…')).toBeTruthy();
@@ -124,7 +125,7 @@ describe('EditorShell', () => {
 
   it('lays out the panels around the viewport', async () => {
     const { host } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
     await waitFor(() =>
       expect(tabs()).toEqual(
@@ -141,7 +142,7 @@ describe('EditorShell', () => {
 
   it('shows the device and the stats of the engine', () => {
     const { host, send } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     send(ready);
     send({ type: 'stats', fps: 60, width: 800, height: 600, info: '' });
     expect(screen.getByText('vulkan · GPU · 60 fps · 800 × 600')).toBeTruthy();
@@ -151,7 +152,7 @@ describe('EditorShell', () => {
 
   it('shows why the backend is a fallback', () => {
     const { host, send } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     send({ ...ready, backend: 'dawn', fallback: 'vulkan: No device' });
     expect(screen.getByText('dawn · GPU')).toBeTruthy();
     expect(screen.getByText('Fallback: vulkan: No device')).toBeTruthy();
@@ -159,7 +160,7 @@ describe('EditorShell', () => {
 
   it('writes what the engine does in the console', async () => {
     const { host, send } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
     send(ready);
     send({ type: 'loading', scene: 'b' });
@@ -169,7 +170,7 @@ describe('EditorShell', () => {
 
   it('asks the engine for the scene chosen in the menu', () => {
     const { host, posted, send } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     send(ready);
     chooseInMenu('Scene', 'b');
     expect(posted).toContainEqual({ type: 'scene', name: 'b' });
@@ -177,7 +178,7 @@ describe('EditorShell', () => {
 
   it('hides a dock, and keeps it hidden in the storage of the host', async () => {
     const { host, stored } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
     chooseInMenu('View', 'Left dock');
     const button = screen.getByRole('button', { name: 'Left dock' });
@@ -198,7 +199,9 @@ describe('EditorShell', () => {
 
   it('moves a toolbar to another side, and hides it', async () => {
     const { host } = fakeHost();
-    const { container } = render(<EditorShell host={host} />);
+    const { container } = render(<EditorShell host={host} />, {
+      wrapper: StrictMode,
+    });
     await screen.findByTestId('viewport');
     const side = () =>
       screen
@@ -227,20 +230,23 @@ describe('EditorShell', () => {
 
   it('keeps the viewport mounted behind another tab and with the docks hidden', async () => {
     const { host, viewport } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
+    const mounts = viewport.mounts;
     chooseInMenu('View', 'Welcome');
     await waitFor(() => expect(tabs()).toContain('Welcome'));
     for (const dock of ['Left dock', 'Right dock', 'Bottom dock']) {
       fireEvent.click(screen.getByRole('button', { name: dock }));
     }
     expect(screen.getByTestId('viewport')).toBeTruthy();
-    expect(viewport.mounts).toBe(1);
+    expect(viewport.mounts).toBe(mounts);
   });
 
   it('restores the layout of the host', async () => {
     const first = fakeHost();
-    const { unmount } = render(<EditorShell host={first.host} />);
+    const { unmount } = render(<EditorShell host={first.host} />, {
+      wrapper: StrictMode,
+    });
     await screen.findByTestId('viewport');
     chooseInMenu('View', 'Welcome');
     chooseInMenu('View', 'Console');
@@ -254,7 +260,7 @@ describe('EditorShell', () => {
     unmount();
 
     const second = fakeHost(Object.fromEntries(first.stored));
-    render(<EditorShell host={second.host} />);
+    render(<EditorShell host={second.host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
     await waitFor(() => expect(tabs()).toContain('Welcome'));
     expect(tabs()).not.toContain('Console');
@@ -264,14 +270,14 @@ describe('EditorShell', () => {
 
   it('starts from the default layout when the saved one is not of this version', async () => {
     const { host } = fakeHost({ layout: { outlinerOpen: false } });
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
     await waitFor(() => expect(tabs()).toContain('Outliner'));
   });
 
   it('resets the layout', async () => {
     const { host, stored } = fakeHost();
-    render(<EditorShell host={host} />);
+    render(<EditorShell host={host} />, { wrapper: StrictMode });
     await screen.findByTestId('viewport');
     chooseInMenu('View', 'Outliner');
     chooseInMenu('View', 'Right dock');
@@ -283,7 +289,9 @@ describe('EditorShell', () => {
 
   it('stops listening to the engine once unmounted', () => {
     const { host, listeners } = fakeHost();
-    const { unmount } = render(<EditorShell host={host} />);
+    const { unmount } = render(<EditorShell host={host} />, {
+      wrapper: StrictMode,
+    });
     expect(listeners.size).toBe(1);
     unmount();
     expect(listeners.size).toBe(0);

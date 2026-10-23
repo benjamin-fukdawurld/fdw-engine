@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebEngine } from './engine';
 import { createWebHost } from './host';
@@ -29,7 +30,9 @@ function startEditor(backend: string | undefined) {
       stored.set(key, value);
     },
   };
-  render(<EditorShell host={createWebHost(engine, storage)} />);
+  render(<EditorShell host={createWebHost(engine, storage)} />, {
+    wrapper: StrictMode,
+  });
   return engine;
 }
 

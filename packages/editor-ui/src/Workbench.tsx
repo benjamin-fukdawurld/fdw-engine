@@ -8,7 +8,7 @@ import {
   type GridviewApi,
   type IGridviewPanelProps,
 } from 'dockview-react';
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { areas, docks, type AreaId, type DockId, type Layout } from './layout';
 import { defaultPanels, panels } from './panels';
 
@@ -38,7 +38,10 @@ export interface WorkbenchApi {
 }
 
 interface WorkbenchContextValue {
-  areaReady(area: AreaId, api: DockviewApi): IDisposable;
+  /** Restores the panels of a new area: once. */
+  restoreArea(area: AreaId, api: DockviewApi): void;
+  /** Follows the panels of the area, while it is mounted. */
+  connectArea(area: AreaId, api: DockviewApi): IDisposable;
 }
 
 interface IDisposable {
@@ -56,11 +59,18 @@ const gridSizes: Readonly<Record<DockId, number>> = {
 // An area of the grid, a DockviewReact. Its panels stay mounted behind
 // other tabs and when moved (the `always` renderer): the viewport keeps its
 // canvas and its window.
+// dockview keeps its instance through a remount (StrictMode), and gives it
+// to onReady once: the subscriptions follow the mount, not onReady.
 function AreaView({ params }: IGridviewPanelProps<{ area: AreaId }>) {
   const { area } = params;
   const workbench = useContext(WorkbenchContext);
-  const subscription = useRef<IDisposable>(undefined);
-  useEffect(() => () => subscription.current?.dispose(), []);
+  const [api, setApi] = useState<DockviewApi>();
+  useEffect(() => {
+    if (!api || !workbench) return;
+    const connection = workbench.connectArea(area, api);
+    return () => connection.dispose();
+    // Not on the workbench, new at each render: its callbacks read refs.
+  }, [area, api]);
   if (!workbench) throw new Error('AreaView outside of the Workbench');
   return (
     <DockviewReact
@@ -70,8 +80,8 @@ function AreaView({ params }: IGridviewPanelProps<{ area: AreaId }>) {
       // Floating groups over the viewport only: a dock is too small.
       disableFloatingGroups={area !== 'center'}
       onReady={({ api }) => {
-        subscription.current?.dispose();
-        subscription.current = workbench.areaReady(area, api);
+        workbench.restoreArea(area, api);
+        setApi(api);
       }}
     />
   );
@@ -203,14 +213,15 @@ export function Workbench({
   };
 
   const context: WorkbenchContextValue = {
-    areaReady: (area, api) => {
-      areaApis.current[area] = api;
+    restoreArea: (area, api) =>
       restore(
         api,
         saved?.areas[area],
         () => api.panels.every((panel) => panel.id in panels),
         () => defaultArea(area, api),
-      );
+      ),
+    connectArea: (area, api) => {
+      areaApis.current[area] = api;
       const changed = () => callbacks.current.onChange();
       const panelsChanged = () => {
         callbacks.current.onPanelsChange();
