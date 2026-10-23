@@ -10,6 +10,11 @@ export interface EngineViewport {
   readonly bounds: ViewportBounds;
   /** The bounds of the area of the page, in device pixels. */
   setBounds(bounds: ViewportBounds): void;
+  /**
+   * The parts of the page over the viewport, in device pixels in the
+   * window: left out by a window over the page (Electron).
+   */
+  setHoles?(holes: readonly ViewportBounds[]): void;
   /** Before each frame (the X11 window of Electron kept above Chromium's). */
   pump?(): void;
 }
@@ -110,6 +115,9 @@ export class EditorEngine {
     switch (message.type) {
       case 'bounds':
         this.#platform.viewport.setBounds(message);
+        break;
+      case 'holes':
+        this.#platform.viewport.setHoles?.(message.holes);
         break;
       case 'scene':
         if (message.name !== this.#requested) {

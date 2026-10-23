@@ -13,6 +13,7 @@ interface ViewportAddon {
     width: number,
     height: number,
   ): void;
+  setViewportShape(viewport: unknown, holes: Int32Array): void;
   pumpViewport(viewport: unknown): void;
   presentViewport(
     viewport: unknown,
@@ -50,6 +51,7 @@ export class X11Viewport implements RgbaWindow {
   readonly window: NativeWindowHandle;
   #handle: unknown;
   #bounds: ViewportBounds = { x: 0, y: 0, width: 0, height: 0 };
+  #holes: readonly ViewportBounds[] = [];
 
   constructor(parent: bigint) {
     this.#handle = loadAddon().createViewport(parent);
@@ -76,8 +78,32 @@ export class X11Viewport implements RgbaWindow {
   /** Moves the window; an empty area unmaps it. */
   setBounds(bounds: ViewportBounds): void {
     const { x, y, width, height } = bounds;
+    const resized =
+      width !== this.#bounds.width || height !== this.#bounds.height;
+    const moved = x !== this.#bounds.x || y !== this.#bounds.y;
     this.#bounds = bounds;
     loadAddon().setViewportBounds(this.#handle, x, y, width, height);
+    // The shape is in the coordinates of the window, and has its size.
+    if (this.#holes.length > 0 && (resized || moved)) this.#applyShape();
+  }
+
+  /**
+   * The parts of the page over the viewport (menus, floating panels), in
+   * device pixels in the window: cut out of it, the page shows through.
+   */
+  setHoles(holes: readonly ViewportBounds[]): void {
+    if (holes.length === 0 && this.#holes.length === 0) return;
+    this.#holes = holes;
+    this.#applyShape();
+  }
+
+  #applyShape(): void {
+    const { x, y } = this.#bounds;
+    const values = new Int32Array(this.#holes.length * 4);
+    this.#holes.forEach((hole, i) => {
+      values.set([hole.x - x, hole.y - y, hole.width, hole.height], i * 4);
+    });
+    loadAddon().setViewportShape(this.#handle, values);
   }
 
   /** Keeps the window above those of Chromium: before each frame. */

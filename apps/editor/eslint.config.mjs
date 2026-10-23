@@ -1,3 +1,3 @@
 import baseConfig from '../../eslint.config.mjs';
 
-export default [...baseConfig, { ignores: ['out'] }];
+export default [...baseConfig, { ignores: ['out', 'build'] }];
