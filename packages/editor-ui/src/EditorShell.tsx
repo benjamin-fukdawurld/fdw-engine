@@ -1,176 +1,157 @@
-import { PanelLeftIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Button } from './components/ui/button';
+import { useEffect, useRef, useState } from 'react';
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from './components/ui/native-select';
-import type { EditorHost, EngineConnection, HostStorage } from './host';
-import { cn } from './lib/utils';
-import type { EngineMessage } from './protocol';
+  MenuBar,
+  ShellContext,
+  StatusBar,
+  ToolbarArea,
+  type ShellValue,
+} from './chrome';
+import { EditorContext, useEngine } from './engineState';
+import type { EditorHost, HostStorage } from './host';
+import {
+  defaultChrome,
+  layoutKey,
+  layoutVersion,
+  readLayout,
+  type Chrome,
+  type Layout,
+} from './layout';
+import { panels } from './panels';
+import { Workbench, type WorkbenchApi } from './Workbench';
 
-type Stats = Extract<EngineMessage, { type: 'stats' }>;
+// The writes of the layout wait for the changes to settle (a sash dragged).
+const saveDelay = 300;
 
-// What the engine tells of itself.
-function useEngine(engine: EngineConnection) {
-  const [device, setDevice] = useState('');
-  const [backend, setBackend] = useState('');
-  const [fallback, setFallback] = useState<string>();
-  const [scenes, setScenes] = useState<readonly string[]>([]);
-  const [scene, setScene] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState<Stats>();
-  const [error, setError] = useState('');
-  useEffect(
-    () =>
-      engine.subscribe((message) => {
-        switch (message.type) {
-          case 'ready':
-            setDevice(message.device);
-            setBackend(message.backend);
-            setFallback(message.fallback);
-            setScenes(message.scenes);
-            setScene(message.scene);
-            break;
-          case 'loading':
-            setLoading(true);
-            setError('');
-            break;
-          case 'stats':
-            setStats(message);
-            setLoading(false);
-            break;
-          case 'error':
-            setError(message.message);
-            setLoading(false);
-            break;
-        }
-      }),
-    [engine],
-  );
-  const showScene = (name: string) => {
-    setScene(name);
-    engine.post({ type: 'scene', name });
-  };
-  return {
-    device,
-    backend,
-    fallback,
-    scenes,
-    scene,
-    showScene,
-    loading,
-    stats,
-    error,
-  };
-}
-
-/** The layout kept by the host between sessions. */
-export interface Layout {
-  readonly outlinerOpen: boolean;
-}
-
-const layoutKey = 'layout';
-
-// The layout, read from the storage of the host, written there when changed.
-function useLayout(storage: HostStorage) {
-  const [layout, setLayout] = useState<Layout>({ outlinerOpen: true });
+// The layout read from the storage of the host; null until read.
+function useSavedLayout(storage: HostStorage) {
+  const [saved, setSaved] = useState<{ layout?: Layout } | null>(null);
   useEffect(() => {
     let current = true;
-    void storage.read(layoutKey).then((saved) => {
-      const open = (saved as Partial<Layout> | undefined)?.outlinerOpen;
-      if (current && typeof open === 'boolean') {
-        setLayout({ outlinerOpen: open });
-      }
-    });
+    void storage
+      .read(layoutKey)
+      .catch(() => undefined)
+      .then((value) => {
+        if (current) setSaved({ layout: readLayout(value) });
+      });
     return () => {
       current = false;
     };
   }, [storage]);
-  const changeLayout = (next: Layout) => {
-    setLayout(next);
-    void storage.write(layoutKey, next);
-  };
-  return [layout, changeLayout] as const;
+  return saved;
 }
 
-/** The interface of the editor, the same in every host. */
+/**
+ * The interface of the editor, the same in every host, laid out like a
+ * QMainWindow (design/editor-ui.md §3): the menu bar, the toolbars on the
+ * four sides, the docks around the central area, the status bar. The
+ * layout is kept by the host.
+ */
 export function EditorShell({ host }: { readonly host: EditorHost }) {
-  const { Viewport } = host;
-  const [layout, setLayout] = useLayout(host.storage);
-  const { outlinerOpen } = layout;
-  const {
-    device,
-    backend,
-    fallback,
-    scenes,
-    scene,
-    showScene,
-    loading,
-    stats,
-    error,
-  } = useEngine(host.engine);
+  const engine = useEngine(host.engine);
+  const saved = useSavedLayout(host.storage);
+  const [chrome, setChromeState] = useState<Chrome>(defaultChrome);
+  const [openPanels, setOpenPanels] = useState<readonly string[]>([]);
+  // A new key remounts the workbench, with the default layout.
+  const [generation, setGeneration] = useState(0);
+  const workbench = useRef<WorkbenchApi>(undefined);
+  const chromeRef = useRef(chrome);
+  chromeRef.current = chrome;
+
+  useEffect(() => {
+    if (saved?.layout) setChromeState(saved.layout);
+  }, [saved]);
+
+  // The layout taken at each change, written once the changes settle, and
+  // when the shell goes (its panels may be gone by then).
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pending = useRef<Layout>(undefined);
+  const storage = host.storage;
+  const write = () => {
+    clearTimeout(timer.current);
+    if (pending.current) void storage.write(layoutKey, pending.current);
+    pending.current = undefined;
+  };
+  const save = () => {
+    const { docks, toolbars, statusBar } = chromeRef.current;
+    pending.current = {
+      version: layoutVersion,
+      docks,
+      toolbars,
+      statusBar,
+      areas: {},
+      ...workbench.current?.toJSON(),
+    };
+    clearTimeout(timer.current);
+    timer.current = setTimeout(write, saveDelay);
+  };
+  const writeRef = useRef(write);
+  writeRef.current = write;
+  useEffect(() => () => writeRef.current(), []);
+
+  const shell: ShellValue = {
+    chrome,
+    setChrome: (change) => {
+      chromeRef.current = change(chromeRef.current);
+      setChromeState(chromeRef.current);
+      save();
+    },
+    openPanels,
+    togglePanel: (id, open) => {
+      if (!open) {
+        workbench.current?.closePanel(id);
+        return;
+      }
+      // Its dock shown first.
+      const area = panels[id]?.area;
+      if (area && area !== 'center' && !chrome.docks[area]) {
+        shell.setChrome((current) => ({
+          ...current,
+          docks: { ...current.docks, [area]: true },
+        }));
+      }
+      workbench.current?.openPanel(id);
+    },
+    resetLayout: () => {
+      workbench.current = undefined;
+      chromeRef.current = defaultChrome;
+      setChromeState(defaultChrome);
+      setGeneration((value) => value + 1);
+      save();
+    },
+  };
+
   return (
-    <div
-      className={cn(
-        'grid h-screen grid-rows-[36px_1fr_24px] bg-background text-[13px] text-foreground',
-        outlinerOpen
-          ? 'grid-cols-[240px_1fr_280px]'
-          : 'grid-cols-[0px_1fr_280px]',
-      )}
-    >
-      <header className="col-span-full flex items-center gap-3 border-b bg-card px-3">
-        <strong className="font-semibold">FDW Editor</strong>
-        <Button
-          variant="ghost"
-          size="xs"
-          aria-pressed={outlinerOpen}
-          onClick={() => setLayout({ ...layout, outlinerOpen: !outlinerOpen })}
-        >
-          <PanelLeftIcon />
-          {outlinerOpen ? 'Hide' : 'Show'} outliner
-        </Button>
-        <label className="flex items-center gap-2">
-          Scene
-          <NativeSelect
-            size="xs"
-            value={scene}
-            disabled={scenes.length === 0}
-            onChange={(event) => showScene(event.target.value)}
-          >
-            {scenes.map((name) => (
-              <NativeSelectOption key={name}>{name}</NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
-        {loading && <span className="text-muted-foreground">Loading…</span>}
-      </header>
-      <aside
-        className={cn('overflow-auto border-r bg-card', outlinerOpen && 'p-3')}
-      >
-        {outlinerOpen && 'Outliner'}
-      </aside>
-      <Viewport />
-      <aside className="overflow-auto border-l bg-card p-3">Inspector</aside>
-      <footer className="col-span-full flex items-center gap-3 overflow-hidden whitespace-nowrap border-t bg-card px-3 text-xs">
-        {error ? (
-          <span className="text-destructive">{error}</span>
-        ) : (
-          <span>
-            {device ? `${backend} · ${device}` : 'Starting the engine…'}
-            {stats &&
-              ` · ${stats.fps} fps · ${stats.width} × ${stats.height}${
-                stats.info ? ` · ${stats.info}` : ''
-              }`}
-          </span>
-        )}
-        {fallback && (
-          <span className="text-amber-500" title={fallback}>
-            Fallback: {fallback}
-          </span>
-        )}
-        <span className="ml-auto text-muted-foreground">{host.about}</span>
-      </footer>
-    </div>
+    <EditorContext.Provider value={{ host, engine }}>
+      <ShellContext.Provider value={shell}>
+        <div className="flex h-screen flex-col bg-background text-[13px] text-foreground">
+          <MenuBar />
+          <ToolbarArea side="top" />
+          <div className="flex min-h-0 flex-1">
+            <ToolbarArea side="left" />
+            <main className="min-h-0 min-w-0 flex-1">
+              {saved && (
+                <Workbench
+                  key={generation}
+                  // The saved layout, until reset.
+                  saved={generation === 0 ? saved.layout : undefined}
+                  docksShown={chrome.docks}
+                  onReady={(api) => {
+                    workbench.current = api;
+                    setOpenPanels(api.openPanels());
+                  }}
+                  onChange={save}
+                  onPanelsChange={() =>
+                    setOpenPanels(workbench.current?.openPanels() ?? [])
+                  }
+                />
+              )}
+            </main>
+            <ToolbarArea side="right" />
+          </div>
+          <ToolbarArea side="bottom" />
+          {chrome.statusBar && <StatusBar />}
+        </div>
+      </ShellContext.Provider>
+    </EditorContext.Provider>
   );
 }

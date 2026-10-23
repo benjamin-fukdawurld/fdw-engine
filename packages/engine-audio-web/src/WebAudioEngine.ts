@@ -713,11 +713,15 @@ export function unlockAudio(
 ): () => void {
   const events = ['pointerdown', 'keydown', 'touchend'];
   const unlock = () => {
-    void engine.resume().then(() => {
-      if (engine.state === 'running') {
-        stop();
-      }
-    });
+    void engine.resume().then(
+      () => {
+        if (engine.state === 'running') {
+          stop();
+        }
+      },
+      // Closed meanwhile: nothing left to resume.
+      stop,
+    );
   };
   const stop = () =>
     events.forEach((type) => target.removeEventListener(type, unlock));

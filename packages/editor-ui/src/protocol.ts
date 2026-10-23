@@ -23,6 +23,9 @@ export type InputCall = {
 export type PageMessage =
   // An empty area hides the viewport.
   | ({ readonly type: 'bounds' } & ViewportBounds)
+  // The parts of the page over the viewport (menus, floating panels), in
+  // device pixels in the window: a window over the page leaves them out.
+  | { readonly type: 'holes'; readonly holes: readonly ViewportBounds[] }
   | { readonly type: 'scene'; readonly name: string }
   | ({ readonly type: 'input' } & InputCall)
   // At each animation frame while gamepads are connected (then once empty).

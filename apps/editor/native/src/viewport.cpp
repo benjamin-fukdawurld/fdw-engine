@@ -10,6 +10,7 @@
 //   createViewport(parent: bigint) -> handle   (getNativeWindowHandle())
 //   viewportWindow(handle) -> { system: 'x11', display: bigint, window: bigint }
 //   setViewportBounds(handle, x, y, width, height)   (device pixels)
+//   setViewportShape(handle, holes: Int32Array)   (x, y, width, height each)
 //   pumpViewport(handle)   (each frame: keeps the window above Chromium's)
 //   presentViewport(handle, pixels: Uint8Array, width, height, stride)   (RGBA)
 //   destroyViewport(handle)
@@ -26,6 +27,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
 
 namespace {
 
@@ -177,6 +179,67 @@ napi_value setViewportBounds(napi_env env, napi_callback_info info) {
   }
   // Applied before the next frame: the swapchain takes the new size.
   XSync(viewport->display, False);
+  return nullptr;
+}
+
+// The parts of the page drawn over the viewport (menus, floating panels):
+// rectangles cut out of the window by its bounding region (Shape), through
+// which the page shows. In the coordinates of the window; set again when its
+// size changes. None gives the whole window back.
+napi_value setViewportShape(napi_env env, napi_callback_info info) {
+  napi_value argv[2];
+  Viewport *viewport =
+      getViewport(env, info, 2, argv, "setViewportShape: expected a viewport");
+  if (!viewport) return nullptr;
+  bool isTypedArray = false;
+  napi_typedarray_type type = napi_int8_array;
+  size_t length = 0;
+  void *data = nullptr;
+  napi_is_typedarray(env, argv[1], &isTypedArray);
+  if (isTypedArray) {
+    napi_get_typedarray_info(env, argv[1], &type, &length, &data, nullptr,
+                             nullptr);
+  }
+  if (!isTypedArray || type != napi_int32_array || length % 4 != 0) {
+    napi_throw_type_error(env, nullptr,
+                          "setViewportShape: expected an Int32Array of "
+                          "x, y, width, height");
+    return nullptr;
+  }
+  Display *display = viewport->display;
+  if (length == 0) {
+    XShapeCombineMask(display, viewport->window, ShapeBounding, 0, 0, None,
+                      ShapeSet);
+  } else {
+    Window root;
+    int x, y;
+    unsigned width, height, border, depth;
+    XGetGeometry(display, viewport->window, &root, &x, &y, &width, &height,
+                 &border, &depth);
+    Region shape = XCreateRegion();
+    Region hole = XCreateRegion();
+    XRectangle whole{0, 0, uint16_t(std::min(width, 65535u)),
+                     uint16_t(std::min(height, 65535u))};
+    XUnionRectWithRegion(&whole, shape, shape);
+    const auto *values = static_cast<const int32_t *>(data);
+    for (size_t i = 0; i < length; i += 4) {
+      if (values[i + 2] <= 0 || values[i + 3] <= 0) continue;
+      const auto clamp = [](int32_t value) {
+        return std::clamp(value, -32768, 32767);
+      };
+      XRectangle rectangle{
+          int16_t(clamp(values[i])), int16_t(clamp(values[i + 1])),
+          uint16_t(std::min(values[i + 2], 65535)),
+          uint16_t(std::min(values[i + 3], 65535))};
+      XUnionRectWithRegion(&rectangle, hole, hole);
+    }
+    XSubtractRegion(shape, hole, shape);
+    XShapeCombineRegion(display, viewport->window, ShapeBounding, 0, 0, shape,
+                        ShapeSet);
+    XDestroyRegion(hole);
+    XDestroyRegion(shape);
+  }
+  XFlush(display);
   return nullptr;
 }
 
@@ -365,6 +428,8 @@ napi_value init(napi_env env, napi_value exports) {
        napi_default, nullptr},
       {"setViewportBounds", nullptr, setViewportBounds, nullptr, nullptr,
        nullptr, napi_default, nullptr},
+      {"setViewportShape", nullptr, setViewportShape, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"pumpViewport", nullptr, pumpViewport, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"presentViewport", nullptr, presentViewport, nullptr, nullptr, nullptr,
@@ -372,7 +437,7 @@ napi_value init(napi_env env, napi_value exports) {
       {"destroyViewport", nullptr, destroyViewport, nullptr, nullptr, nullptr,
        napi_default, nullptr},
   };
-  napi_define_properties(env, exports, 6, properties);
+  napi_define_properties(env, exports, std::size(properties), properties);
   return exports;
 }
 

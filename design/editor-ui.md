@@ -70,7 +70,9 @@ Un squelette à zones fixes autour d'une zone centrale libre :
 
 La persistance : le store de l'éditeur garde la visibilité des docks, des toolbars (avec leur côté), de la menu bar et de la status bar ; chaque instance de dockview donne son `toJSON()` ; le tout forme un seul document de layout, enregistré par l'hôte (§2).
 
-**Le viewport natif** (Electron) : la fenêtre X11 enfant est posée au-dessus de la zone ; elle ne peut rien avoir par-dessus. Les menus, les infobulles et les panneaux flottants de dockview qui débordent sur le viewport sont donc cachés par lui. Les pistes, à trancher au premier prototype : réduire la fenêtre enfant par une région de forme (Shape, comme la région d'entrée) aux rectangles libres, ou masquer le viewport (une image figée) le temps d'un menu. La version web n'a pas ce problème.
+**Le viewport natif** (Electron) : la fenêtre X11 enfant est posée au-dessus de la zone ; elle ne peut rien avoir par-dessus. Les menus, les infobulles et les panneaux flottants de dockview qui débordent sur le viewport seraient donc cachés par lui. _Tranché à l'étape 10_ : **une région de forme**. La page envoie au moteur, à chaque frame où ils changent, les rectangles de ce qui passe au-dessus du viewport (les popups de Radix, les groupes flottants, les menus et les cibles de drop de dockview, les éléments marqués `data-over-viewport`) ; l'addon les retire de la région de la fenêtre (Shape, `ShapeBounding`, comme la région d'entrée), et la page se voit à travers. Le viewport figé, écarté : une image à relire et à afficher à chaque menu. La version web n'a pas ce problème.
+
+**Le viewport toujours monté** : les panneaux de dockview ont le rendu `always` (vérifié dans la version 8) : leur contenu vit dans un calque à la racine de l'instance, placé sur leur groupe, et un onglet caché l'est par `visibility: hidden`, sa boîte restant en place. Le viewport lit donc sa visibilité (`checkVisibility`) en plus de ses bornes, à chaque frame : caché, il envoie une zone vide, et le moteur ne dessine plus.
 
 ## 4. Le choix du backend
 
@@ -155,22 +157,22 @@ Le modèle de VS Code : un manifeste déclaratif et du code chargé à la demand
 
 ## 7. Les risques
 
-| Risque                                                                     | Conséquence                                    | Parade                                                                                                                            |
-| -------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Le viewport démonté par un changement d'onglet ou un déplacement de groupe | Le contexte GPU et les ressources perdus (web) | Le panneau toujours monté (rendu « always » de dockview, à confirmer) ; testé dès le premier prototype, au centre et dans un dock |
-| Des menus et des flottants sous le viewport natif                          | Interface cachée (Electron)                    | Région de forme ou viewport figé (§3), tranché au premier prototype                                                               |
-| La taille du canvas désynchronisée de la zone                              | Rendu déformé ou flou                          | `ResizeObserver`, en pixels physiques (déjà fait pour le viewport natif)                                                          |
-| Des re-rendus de React à chaque frame                                      | Éditeur saccadé                                | Panneaux légers ; les valeurs par frame (FPS, transform en cours de drag) écrites dans le DOM directement                         |
-| Un plugin avec sa propre copie de React                                    | Hooks cassés                                   | React fourni par l'hôte, déclaré en peer et en externe                                                                            |
-| Un plugin tiers non fiable dans le renderer                                | Accès à tout ce que la page peut faire         | Selon la réponse à la question ouverte : process séparé ou worker, API limitée, permissions dans le manifeste                     |
-| L'API de plugin qui change                                                 | Plugins cassés à chaque version                | API versionnée (`engine` du manifeste) et petite                                                                                  |
-| Un layout qui référence un plugin absent                                   | Erreur au chargement                           | Un panneau « plugin manquant »                                                                                                    |
-| Les popouts avec Radix                                                     | Menus et infobulles mal placés                 | Container de portal par fenêtre, styles copiés, testé tôt                                                                         |
-| Les deux hôtes qui divergent                                               | Une fonction qui ne marche que dans l'un       | Tout le code commun dans `@fdw/editor-ui` ; les tests du shell avec un hôte factice ; l'éditeur web en CI dans Chromium           |
+| Risque                                                                     | Conséquence                                    | Parade                                                                                                                        |
+| -------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Le viewport démonté par un changement d'onglet ou un déplacement de groupe | Le contexte GPU et les ressources perdus (web) | Le panneau toujours monté (rendu « always » de dockview, confirmé à l'étape 10) ; testé dans Chromium (onglets, docks cachés) |
+| Des menus et des flottants sous le viewport natif                          | Interface cachée (Electron)                    | Une région de forme (§3), tranchée à l'étape 10                                                                               |
+| La taille du canvas désynchronisée de la zone                              | Rendu déformé ou flou                          | `ResizeObserver`, en pixels physiques (déjà fait pour le viewport natif)                                                      |
+| Des re-rendus de React à chaque frame                                      | Éditeur saccadé                                | Panneaux légers ; les valeurs par frame (FPS, transform en cours de drag) écrites dans le DOM directement                     |
+| Un plugin avec sa propre copie de React                                    | Hooks cassés                                   | React fourni par l'hôte, déclaré en peer et en externe                                                                        |
+| Un plugin tiers non fiable dans le renderer                                | Accès à tout ce que la page peut faire         | Selon la réponse à la question ouverte : process séparé ou worker, API limitée, permissions dans le manifeste                 |
+| L'API de plugin qui change                                                 | Plugins cassés à chaque version                | API versionnée (`engine` du manifeste) et petite                                                                              |
+| Un layout qui référence un plugin absent                                   | Erreur au chargement                           | Un panneau « plugin manquant »                                                                                                |
+| Les popouts avec Radix                                                     | Menus et infobulles mal placés                 | Container de portal par fenêtre, styles copiés, testé tôt                                                                     |
+| Les deux hôtes qui divergent                                               | Une fonction qui ne marche que dans l'un       | Tout le code commun dans `@fdw/editor-ui` ; les tests du shell avec un hôte factice ; l'éditeur web en CI dans Chromium       |
 
 ## 8. Les questions ouvertes
 
 - Les plugins tiers seront-ils non fiables (sandbox et permissions dès le départ) ou écrits par des utilisateurs de confiance ?
-- Le drag d'onglets entre instances de dockview est-il possible ? Sinon : accepter la limite, ou passer à une seule instance.
+- Le drag d'onglets entre instances de dockview est-il possible ? Sinon : accepter la limite, ou passer à une seule instance. dockview 8 a des « edge groups » (des docks sur les bords d'une seule instance, repliables) : écartés à l'étape 10 pour garder les instances imbriquées ; la piste reste si la limite gêne.
 - Le layout : par projet, par utilisateur, ou les deux (un layout utilisateur, surchargé par le projet) ?
 - Un plugin qui agit sur le moteur : dans Electron, le moteur est dans un autre processus. Un plugin aura-t-il une partie « moteur », chargée dans le processus du moteur (ou dans la page sur le web), qui parle à sa partie « interface » par le protocole ?

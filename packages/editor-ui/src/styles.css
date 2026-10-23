@@ -1,6 +1,7 @@
 /* The styles of the editor: Tailwind and the theme of shadcn/ui (neutral).
    Imported by the application, whose Vite runs Tailwind. */
 @import 'tailwindcss';
+@import 'dockview-react/dist/styles/dockview.css';
 
 /* The classes of the shell, out of the application. */
 @source './';
@@ -74,6 +75,37 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+}
+
+/* The theme of dockview (Workbench.tsx): the sizes of its dark theme, the
+   colors of shadcn, denser tabs. */
+.dockview-theme-fdw {
+  --dv-tabs-and-actions-container-height: 28px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-group-view-background-color: var(--card);
+  --dv-tabs-and-actions-container-background-color: var(--background);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--background);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--background);
+  --dv-tab-divider-color: var(--border);
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-paneview-active-outline-color: var(--ring);
+  --dv-active-sash-color: var(--ring);
+  --dv-drag-over-background-color: color-mix(
+    in oklab,
+    var(--ring) 35%,
+    transparent
+  );
+  --dv-icon-hover-background-color: var(--accent);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-tabs-container-scrollbar-color: var(--muted-foreground);
+  --dv-scrollbar-background-color: var(--muted);
 }
 
 @layer base {

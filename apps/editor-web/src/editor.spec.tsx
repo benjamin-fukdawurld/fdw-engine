@@ -1,6 +1,13 @@
 import { EditorShell, type HostStorage } from '@fdw/editor-ui';
 import '@fdw/editor-ui/styles.css';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebEngine } from './engine';
 import { createWebHost } from './host';
@@ -50,10 +57,7 @@ describe('the web editor', () => {
       const status = await drawing(backend);
       expect(screen.queryByText(/^Fallback/)).toBeNull();
       const canvas = engine.element.querySelector('canvas');
-      const area = screen.getByTestId('viewport').getBoundingClientRect();
-      const scale = window.devicePixelRatio;
-      expect(canvas?.width).toBe(Math.round(area.width * scale));
-      expect(canvas?.height).toBe(Math.round(area.height * scale));
+      fillsViewport(canvas);
       expect(status).toContain(`${canvas?.width} × ${canvas?.height}`);
     },
     30_000,
@@ -68,6 +72,66 @@ describe('the web editor', () => {
     startEditor('vulkan');
     await drawing('webgl2');
     expect(screen.getByText('Fallback: Unknown backend vulkan')).toBeTruthy();
+  }, 30_000);
+});
+
+// The canvas the size of the area of the viewport, in device pixels.
+function fillsViewport(canvas: HTMLCanvasElement | null) {
+  const area = screen.getByTestId('viewport').getBoundingClientRect();
+  const scale = window.devicePixelRatio;
+  expect(canvas?.width).toBe(Math.round(area.width * scale));
+  expect(canvas?.height).toBe(Math.round(area.height * scale));
+}
+
+describe('the layout of the web editor', () => {
+  afterEach(async () => {
+    cleanup();
+    await Promise.all(engines.map((engine) => engine.stop()));
+    engines.length = 0;
+  });
+
+  it('keeps the canvas through the docks hidden and the tabs changed', async () => {
+    const engine = startEditor('webgpu');
+    await drawing('webgpu');
+    const canvas = engine.element.querySelector('canvas');
+    const width = canvas?.width ?? 0;
+    fillsViewport(canvas);
+
+    // The docks hidden: the viewport grows.
+    fireEvent.click(screen.getByRole('button', { name: 'Left dock' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Right dock' }));
+    await waitFor(() => expect(canvas?.width).toBeGreaterThan(width));
+    fillsViewport(canvas);
+
+    // Behind another tab: hidden, still mounted, with its canvas.
+    const menu = screen.getByRole('menuitem', { name: 'View' });
+    fireEvent.keyDown(menu, { key: 'Enter' });
+    fireEvent.click(
+      within(screen.getByRole('menu')).getByRole('menuitemcheckbox', {
+        name: 'Welcome',
+      }),
+    );
+    const viewport = screen.getByTestId('viewport');
+    await waitFor(() =>
+      expect(viewport.checkVisibility({ visibilityProperty: true })).toBe(
+        false,
+      ),
+    );
+    expect(engine.element.isConnected).toBe(true);
+    expect(engine.element.querySelector('canvas')).toBe(canvas);
+
+    // Back: the same canvas, drawn again, the size of the area.
+    const tab = Array.from(document.querySelectorAll('.dv-tab')).find(
+      (element) => element.textContent === 'Viewport',
+    );
+    fireEvent.pointerDown(tab as Element);
+    fireEvent.click(tab as Element);
+    await waitFor(() =>
+      expect(viewport.checkVisibility({ visibilityProperty: true })).toBe(true),
+    );
+    expect(engine.element.querySelector('canvas')).toBe(canvas);
+    fillsViewport(canvas);
+    await drawing('webgpu');
   }, 30_000);
 });
 

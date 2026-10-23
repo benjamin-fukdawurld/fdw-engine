@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { EngineConnection } from './host';
 import type { InputCall } from './protocol';
 import { useViewportBounds } from './useViewportBounds';
+import { viewportHoles } from './viewportHoles';
 
 // An InputSink sending its calls to the engine, which replays them.
 function remoteSink(engine: EngineConnection): InputSink {
@@ -28,7 +29,9 @@ function remoteSink(engine: EngineConnection): InputSink {
  * its bounds in device pixels sent to the engine, which places its window
  * over it. The element stays empty, but receives the inputs: that window
  * lets them through. Read by a WebInputSource, as a canvas would be, and
- * sent to the engine; the pointer locks to the element.
+ * sent to the engine; the pointer locks to the element. The menus and
+ * floating panels over the area are sent as holes, which the window leaves
+ * out.
  */
 export function RemoteViewport({
   engine,
@@ -53,15 +56,23 @@ export function RemoteViewport({
       }
     });
     // The gamepads are polled: sent at each animation frame while there
-    // are some, once more when the last one goes.
+    // are some, once more when the last one goes. The holes too: the menus
+    // and floating panels over the viewport.
     const states: GamepadState[] = [];
     let count = 0;
+    let holes = '[]';
     let frame = requestAnimationFrame(function poll() {
       const next = source.readGamepads(states);
       if (next > 0 || count > 0) {
         engine.post({ type: 'gamepads', states: states.slice(0, next) });
       }
       count = next;
+      const over = viewportHoles(element);
+      const key = JSON.stringify(over);
+      if (key !== holes) {
+        holes = key;
+        engine.post({ type: 'holes', holes: over });
+      }
       frame = requestAnimationFrame(poll);
     });
     return () => {
