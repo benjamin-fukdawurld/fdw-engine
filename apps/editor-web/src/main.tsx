@@ -1,5 +1,5 @@
 import { EditorShell } from '@fdw/editor-ui';
-import '@fdw/editor-ui/styles.css';
+import './styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WebEngine } from './engine';

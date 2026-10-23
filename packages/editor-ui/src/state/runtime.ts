@@ -1,6 +1,22 @@
 import type { EditorHost, EngineConnection } from '../host';
 import type { Layout } from '../layout';
-import { createContextKeys, type ContextKeys } from './contextKeys';
+import {
+  CommandService,
+  MenuRegistry,
+  type ComponentSpec,
+  type KeybindingSpec,
+  type StatusBarSpec,
+  type ToolbarSpec,
+  type ViewSpec,
+} from '../plugins/contributions';
+import { PluginHost, type PreparedPlugin } from '../plugins/pluginHost';
+import { toolbarLayout } from '../toolbarLayout';
+import { WorkbenchService } from '../workbench';
+import {
+  createContextKeys,
+  type ContextKeys,
+  type ContextKeySource,
+} from './contextKeys';
 import {
   persistEditor,
   startEditor,
@@ -23,6 +39,12 @@ export const IEditorMachine = serviceId<EditorActor>('editor.machine');
 export const IContextKeys = serviceId<ContextKeys>('editor.contextKeys');
 export const IToolRegistry = serviceId<Registry<ToolSpec>>('editor.tools');
 export const IModeRegistry = serviceId<Registry<ModeSpec>>('editor.modes');
+export const ICommandService = serviceId<CommandService>('editor.commands');
+export const IWorkbench = serviceId<WorkbenchService>('editor.workbench');
+export const IPluginHost = serviceId<PluginHost>('editor.plugins');
+export const IViewRegistry = serviceId<Registry<ViewSpec>>('editor.views');
+export const IToolbarRegistry =
+  serviceId<Registry<ToolbarSpec>>('editor.toolbars');
 
 /** The state of the editor kept with the layout. */
 export type EditorState = Pick<
@@ -32,7 +54,8 @@ export type EditorState = Pick<
 
 /**
  * The editor at run time: its services, its stores and its machine
- * (design/editor-state.md). Made by the shell once the layout is read; the
+ * (design/editor-state.md), its plugins and the registries they fill
+ * (design/editor-ui.md §6). Made by the shell once the layout is read; the
  * stores and the machine are also services, for the code out of React.
  */
 export interface EditorRuntime extends IDisposable {
@@ -44,10 +67,18 @@ export interface EditorRuntime extends IDisposable {
   readonly keys: ContextKeys;
   readonly tools: Registry<ToolSpec>;
   readonly modes: Registry<ModeSpec>;
+  readonly plugins: PluginHost;
+  readonly commands: CommandService;
+  readonly views: Registry<ViewSpec>;
+  readonly viewComponents: Registry<ComponentSpec>;
+  readonly menus: MenuRegistry;
+  readonly toolbars: Registry<ToolbarSpec>;
+  readonly statusBar: Registry<StatusBarSpec>;
+  readonly statusComponents: Registry<ComponentSpec>;
+  readonly keybindings: Registry<KeybindingSpec>;
+  readonly workbench: WorkbenchService;
   /** The state to keep: the chrome, the machine, the plugins. */
   persist(): EditorState;
-  /** Shows the scene in the viewport. */
-  showScene(name: string): void;
 }
 
 export interface EditorRuntimeOptions {
@@ -56,12 +87,25 @@ export interface EditorRuntimeOptions {
   readonly engine: EngineStore;
   /** The state kept by `persist`. */
   readonly saved?: Partial<EditorState>;
+  /**
+   * The plugins, registered in this order; those whose code is loaded are
+   * activated before the machine restores (`preparePlugins`).
+   */
+  readonly plugins?: readonly PreparedPlugin[];
 }
+
+// A source of the context keys from something that gives its unsubscription.
+const keySource = (source: {
+  subscribe(listener: () => void): () => void;
+}): ContextKeySource => ({
+  subscribe: (listener) => ({ unsubscribe: source.subscribe(listener) }),
+});
 
 export function createEditorRuntime({
   host,
   engine,
   saved = {},
+  plugins = [],
 }: EditorRuntimeOptions): EditorRuntime {
   const services = new ServiceRegistry();
   services.register(IEditorHost, () => host);
@@ -77,9 +121,17 @@ export function createEditorRuntime({
       ...(saved.plugins && { plugins: saved.plugins }),
     }),
   );
+  // While the plugins loaded at the start activate: the machine is made
+  // after, to restore their tools.
+  let starting = false;
   services.register(
     IEditorMachine,
     (accessor) => {
+      if (starting) {
+        console.warn(
+          '[editor] A plugin reads the machine of the editor (or the context keys) while the plugins activate: the tools kept may not restore. Read it at the call.',
+        );
+      }
       const tools = accessor.get(IToolRegistry);
       const modes = accessor.get(IModeRegistry);
       // Derived from the machine: read at the call, once both are made.
@@ -96,34 +148,118 @@ export function createEditorRuntime({
     },
     { dispose: (actor) => actor.stop() },
   );
+
+  services.register(IViewRegistry, () => new Registry<ViewSpec>('view'));
+  services.register(
+    IToolbarRegistry,
+    () => new Registry<ToolbarSpec>('toolbar'),
+  );
+  const views = services.get(IViewRegistry);
+  const toolbars = services.get(IToolbarRegistry);
+  const editor = services.get(IEditorStore);
+  services.register(IWorkbench, () => new WorkbenchService(editor, views));
+  const workbench = services.get(IWorkbench);
   services.register(IContextKeys, (accessor) => {
     const machine = accessor.get(IEditorMachine);
-    const editor = accessor.get(IEditorStore);
     const engine = accessor.get(IEngineStore);
-    return createContextKeys([machine, editor, engine], () => {
-      const state = machine.getSnapshot();
-      const { selection } = editor.getSnapshot().context;
-      const { backend, fallback } = engine.getSnapshot().context;
-      return {
-        'editor.focusedArea': state.context.focus.area,
-        'editor.focusedView': state.context.focus.view,
-        'editor.windowFocused': state.matches({ window: 'focused' }),
-        'editor.mode': state.context.mode,
-        ...Object.fromEntries(
-          toolSlots.map((slot) => [`tool.${slot}`, state.context.tools[slot]]),
-        ),
-        'scene.hasSelection': selection.length > 0,
-        'engine.ready': backend !== '',
-        'engine.backend': backend || undefined,
-        'engine.fallback': fallback !== undefined,
-      };
-    });
+    return createContextKeys(
+      [machine, editor, engine, keySource(workbench), keySource(toolbars)],
+      () => {
+        const state = machine.getSnapshot();
+        const chrome = editor.getSnapshot().context;
+        const { selection, docks, statusBar } = chrome;
+        const { backend, fallback, scene } = engine.getSnapshot().context;
+        const tools = toolSlots.map((slot) => state.context.tools[slot]);
+        return {
+          'editor.focusedArea': state.context.focus.area,
+          'editor.focusedView': state.context.focus.view,
+          'editor.windowFocused': state.matches({ window: 'focused' }),
+          'editor.mode': state.context.mode,
+          'editor.toolActive': tools.some((tool) => tool !== undefined),
+          ...Object.fromEntries(
+            toolSlots.map((slot, index) => [`tool.${slot}`, tools[index]]),
+          ),
+          'scene.hasSelection': selection.length > 0,
+          'engine.ready': backend !== '',
+          'engine.backend': backend || undefined,
+          'engine.fallback': fallback !== undefined,
+          'engine.scene': scene || undefined,
+          'workbench.dock.left': docks.left,
+          'workbench.dock.right': docks.right,
+          'workbench.dock.bottom': docks.bottom,
+          'workbench.statusBar': statusBar,
+          ...Object.fromEntries(
+            workbench.openViews().map((id) => [`view.${id}.open`, true]),
+          ),
+          ...Object.fromEntries(
+            toolbars.all().map((toolbar) => {
+              const layout = toolbarLayout(chrome, toolbar);
+              return [
+                `toolbar.${toolbar.id}`,
+                layout.visible ? layout.side : 'hidden',
+              ];
+            }),
+          ),
+        };
+      },
+    );
   });
   const tools = services.get(IToolRegistry);
   const modes = services.get(IModeRegistry);
-  const editor = services.get(IEditorStore);
+
+  const keys = () => services.get(IContextKeys);
+  services.register(
+    ICommandService,
+    () =>
+      new CommandService({
+        activate: (event) => pluginHost.activateByEvent(event),
+        matches: (when) => keys().matches(when),
+      }),
+  );
+  const commands = services.get(ICommandService);
+  const viewComponents = new Registry<ComponentSpec>('view component');
+  const menus = new MenuRegistry();
+  const statusBar = new Registry<StatusBarSpec>('status bar item');
+  const statusComponents = new Registry<ComponentSpec>('status bar component');
+  const keybindings = new Registry<KeybindingSpec>('keybinding');
+  services.register(
+    IPluginHost,
+    () =>
+      new PluginHost({
+        services,
+        commands,
+        views,
+        viewComponents,
+        menus,
+        toolbars,
+        statusBar,
+        statusComponents,
+        keybindings,
+        tools,
+        modes,
+        editor,
+        machine: () => services.get(IEditorMachine),
+        keys,
+      }),
+  );
+  const pluginHost = services.get(IPluginHost);
+
+  // The plugins before the machine: those loaded register their tools at
+  // once, and the machine restores them.
+  for (const { plugin, builtin, module } of plugins) {
+    pluginHost.register(plugin, {
+      ...(builtin && { builtin }),
+      ...(module && { module }),
+    });
+  }
+  starting = true;
+  for (const { plugin, module } of plugins) {
+    const { id } = plugin.manifest;
+    if (module && typeof id === 'string') void pluginHost.activate(id);
+  }
+  starting = false;
+
   const machine = services.get(IEditorMachine);
-  const keys = services.get(IContextKeys);
 
   // A tool or a mode unregistered ends.
   const unsubscribe = [
@@ -143,9 +279,19 @@ export function createEditorRuntime({
     engine,
     editor,
     machine,
-    keys,
+    keys: keys(),
     tools,
     modes,
+    plugins: pluginHost,
+    commands,
+    views,
+    viewComponents,
+    menus,
+    toolbars,
+    statusBar,
+    statusComponents,
+    keybindings,
+    workbench,
     persist: () => {
       const { docks, toolbars, statusBar, plugins } =
         editor.getSnapshot().context;
@@ -156,10 +302,6 @@ export function createEditorRuntime({
         plugins,
         machine: persistEditor(machine),
       };
-    },
-    showScene: (name) => {
-      engine.trigger.chooseScene({ scene: name });
-      host.engine.post({ type: 'scene', name });
     },
     dispose: () => {
       unsubscribe.forEach((stop) => stop());

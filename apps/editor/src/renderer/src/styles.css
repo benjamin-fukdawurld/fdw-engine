@@ -1,0 +1,3 @@
+/* The styles of the editor, and the classes of its plugins. */
+@import '@fdw/editor-ui/styles.css';
+@import '@fdw/editor-plugin-sample/styles.css';

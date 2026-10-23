@@ -200,6 +200,8 @@ function MenubarShortcut({
   return (
     <span
       data-slot="menubar-shortcut"
+      // Seen, not read: the name of the item is its title.
+      aria-hidden
       className={cn(
         'text-muted-foreground ml-auto text-xs tracking-widest',
         className,

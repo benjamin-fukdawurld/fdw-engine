@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  MenuBar,
-  ShellContext,
-  StatusBar,
-  ToolbarArea,
-  type ShellValue,
-} from './chrome';
+import { builtinPlugins } from './builtins';
+import { MenuBar, StatusBar, ToolbarArea } from './chrome';
+import { CommandPalette } from './CommandPalette';
 import { EditorContext, useEditor, useEditorStore } from './editorContext';
 import type { EditorHost, HostStorage } from './host';
 import { layoutKey, layoutVersion, readLayout, type Layout } from './layout';
-import { panels } from './panels';
+import {
+  findKeybinding,
+  isEditable,
+  keyOfEvent,
+} from './plugins/contributions';
+import { preparePlugins } from './plugins/pluginHost';
+import { savedEditorEvents } from './state/editorMachine';
 import { connectEngineStore, createEngineStore } from './state/engineStore';
 import { createEditorRuntime, type EditorRuntime } from './state/runtime';
-import { Workbench, type WorkbenchApi } from './Workbench';
+import { Workbench } from './Workbench';
+import type { WorkbenchApi } from './workbench';
 
 // The writes of the layout wait for the changes to settle (a sash dragged).
 const saveDelay = 300;
@@ -36,8 +39,9 @@ function useSavedLayout(storage: HostStorage) {
 }
 
 // The runtime of the editor, made once the layout is read, with the state
-// it keeps; the engine is followed from the start, not to miss its
-// first messages.
+// it keeps and the plugins: those activated at the start, and those of the
+// tools and the mode kept, loaded first. The engine is followed from the
+// start, not to miss its first messages.
 function useEditorRuntime(host: EditorHost) {
   const [engine] = useState(createEngineStore);
   useEffect(() => connectEngineStore(host.engine, engine), [host, engine]);
@@ -48,11 +52,54 @@ function useEditorRuntime(host: EditorHost) {
   }>();
   useEffect(() => {
     if (!saved) return;
-    const created = createEditorRuntime({ host, engine, saved: saved.layout });
-    setRuntime({ runtime: created, layout: saved.layout });
-    return () => created.dispose();
+    let created: EditorRuntime | undefined;
+    let current = true;
+    const plugins = [
+      ...builtinPlugins.map((plugin) => ({ plugin, builtin: true })),
+      ...(host.plugins ?? []).map((plugin) => ({ plugin })),
+    ];
+    void preparePlugins(plugins, [
+      'onStartup',
+      ...savedEditorEvents(saved.layout?.machine),
+    ]).then((prepared) => {
+      if (!current) return;
+      created = createEditorRuntime({
+        host,
+        engine,
+        saved: saved.layout,
+        plugins: prepared,
+      });
+      setRuntime({ runtime: created, layout: saved.layout });
+    });
+    return () => {
+      current = false;
+      created?.dispose();
+    };
   }, [host, engine, saved]);
   return runtime;
+}
+
+// The keybindings of the plugins, on the window: the last one whose clause
+// holds runs its command. Escape closing a menu is left to it.
+function useKeybindings(runtime: EditorRuntime) {
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const key = keyOfEvent(event);
+      if (!key) return;
+      const binding = findKeybinding(
+        runtime.keybindings.all(),
+        key,
+        runtime.keys.matches,
+        isEditable(event.target),
+      );
+      if (!binding || !runtime.commands.enabled(binding.command)) return;
+      event.preventDefault();
+      void runtime.commands.execute(binding.command, ...(binding.args ?? []));
+    };
+    window.addEventListener('keydown', keydown);
+    return () => window.removeEventListener('keydown', keydown);
+  }, [runtime]);
 }
 
 /**
@@ -86,9 +133,8 @@ export function EditorShell({
 
 function Shell({ saved }: { readonly saved?: Layout }) {
   const runtime = useEditor();
-  const { editor, machine } = runtime;
+  const { editor, machine, workbench: views } = runtime;
   const chrome = useEditorStore();
-  const [openPanels, setOpenPanels] = useState<readonly string[]>([]);
   // A new key remounts the workbench, with the default layout.
   const [generation, setGeneration] = useState(0);
   const workbench = useRef<WorkbenchApi>(undefined);
@@ -143,30 +189,30 @@ function Shell({ saved }: { readonly saved?: Layout }) {
     };
   }, [machine]);
 
-  const shell: ShellValue = {
-    openPanels,
-    togglePanel: (id, open) => {
-      if (!open) {
-        workbench.current?.closePanel(id);
-        return;
-      }
-      // Its dock shown first.
-      const area = panels[id]?.area;
-      if (area && area !== 'center' && !chrome.docks[area]) {
-        editor.trigger.setDock({ dock: area, shown: true });
-      }
-      workbench.current?.openPanel(id);
-    },
-    resetLayout: () => {
-      workbench.current = undefined;
-      editor.trigger.resetChrome();
-      setGeneration((value) => value + 1);
-      save();
-    },
+  useKeybindings(runtime);
+
+  const resetLayout = () => {
+    workbench.current = undefined;
+    editor.trigger.resetChrome();
+    setGeneration((value) => value + 1);
+    save();
   };
+  const resetRef = useRef(resetLayout);
+  resetRef.current = resetLayout;
+  // The workbench of the commands: given once laid out (onReady), for as
+  // long as the shell is mounted.
+  const [laidOut, setLaidOut] = useState<WorkbenchApi>();
+  useEffect(() => {
+    if (!laidOut) return;
+    const attachment = views.attach({
+      api: laidOut,
+      resetLayout: () => resetRef.current(),
+    });
+    return () => attachment.dispose();
+  }, [views, laidOut]);
 
   return (
-    <ShellContext.Provider value={shell}>
+    <>
       <div className="flex h-screen flex-col bg-background text-[13px] text-foreground">
         <MenuBar />
         <ToolbarArea side="top" />
@@ -180,11 +226,11 @@ function Shell({ saved }: { readonly saved?: Layout }) {
               docksShown={chrome.docks}
               onReady={(api) => {
                 workbench.current = api;
-                setOpenPanels(api.openPanels());
+                setLaidOut(api);
               }}
               onChange={save}
               onPanelsChange={() =>
-                setOpenPanels(workbench.current?.openPanels() ?? [])
+                views.setOpenViews(workbench.current?.openPanels() ?? [])
               }
               onFocus={(area, view) =>
                 machine.send({ type: 'FOCUS.VIEW', area, view })
@@ -202,6 +248,7 @@ function Shell({ saved }: { readonly saved?: Layout }) {
         <ToolbarArea side="bottom" />
         {chrome.statusBar && <StatusBar />}
       </div>
-    </ShellContext.Provider>
+      <CommandPalette />
+    </>
   );
 }

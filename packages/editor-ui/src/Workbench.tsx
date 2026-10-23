@@ -9,9 +9,13 @@ import {
   type IGridviewPanelProps,
 } from 'dockview-react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { useEditor } from './editorContext';
 import { areas, docks, type AreaId, type DockId, type Layout } from './layout';
-import { defaultPanels, panels } from './panels';
+import type { ViewSpec } from './plugins/contributions';
+import type { Registry } from './state/registry';
 import type { IDisposable } from './state/services';
+import { ViewHost } from './views';
+import type { WorkbenchApi } from './workbench';
 
 /**
  * The theme of dockview: the sizes of its dark theme, the colors of
@@ -23,20 +27,8 @@ export const dockviewTheme: DockviewTheme = {
   colorScheme: 'dark',
 };
 
-const components = Object.fromEntries(
-  Object.entries(panels).map(([id, panel]) => [id, panel.component]),
-);
-
-/** What the shell does with the panels: the menus, the toolbars. */
-export interface WorkbenchApi {
-  /** The sizes of the docks and the panels of each area. */
-  toJSON(): Pick<Layout, 'grid' | 'areas'>;
-  /** The ids of the panels open, in any area. */
-  openPanels(): string[];
-  /** Shows the panel: in its area by default if it is not open. */
-  openPanel(id: string): void;
-  closePanel(id: string): void;
-}
+// Every panel is a view, by its id: a component of its plugin.
+const components = { view: ViewHost };
 
 interface WorkbenchContextValue {
   /** Restores the panels of a new area: once. */
@@ -126,9 +118,16 @@ function defaultGrid(api: GridviewApi): void {
   }
 }
 
-function defaultArea(area: AreaId, api: DockviewApi): void {
-  for (const id of defaultPanels[area]) {
-    api.addPanel({ id, component: id, title: panels[id]?.title });
+// The views of the area open in a new layout, in their order of registration.
+function defaultArea(
+  area: AreaId,
+  api: DockviewApi,
+  views: Registry<ViewSpec>,
+): void {
+  for (const view of views.all()) {
+    if (view.location === area && view.open) {
+      api.addPanel({ id: view.id, component: 'view', title: view.title });
+    }
   }
 }
 
@@ -178,6 +177,7 @@ export function Workbench({
   /** Called when the active panel of an area changes. */
   readonly onActivePanelChange: (area: AreaId, view?: string) => void;
 }) {
+  const { views } = useEditor();
   const grid = useRef<GridviewApi>(undefined);
   const areaApis = useRef<Partial<Record<AreaId, DockviewApi>>>({});
   // The latest callbacks, for the subscriptions made once.
@@ -226,9 +226,14 @@ export function Workbench({
       const open = findPanel(id);
       if (open) open.api.setActive();
       else {
-        const spec = panels[id];
-        const api = spec && areaApis.current[spec.area];
-        api?.addPanel({ id, component: id, title: spec.title });
+        const spec = views.get(id);
+        if (spec) {
+          areaApis.current[spec.location]?.addPanel({
+            id,
+            component: 'view',
+            title: spec.title,
+          });
+        }
       }
       // Its area gets the focus.
       for (const area of areas) {
@@ -245,8 +250,9 @@ export function Workbench({
       restore(
         api,
         saved?.areas[area],
-        () => api.panels.every((panel) => panel.id in panels),
-        () => defaultArea(area, api),
+        // A view of a missing plugin stays, as such (ViewHost).
+        () => true,
+        () => defaultArea(area, api, views),
       ),
     connectArea: (area, api) => {
       areaApis.current[area] = api;

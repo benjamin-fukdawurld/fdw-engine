@@ -21,8 +21,9 @@ An application gives the shell an `EditorHost`:
 | `storage`   | JSON documents kept between sessions (the layout), by key | Files in `userData/storage`                        | IndexedDB                                                 |
 | `popoutUrl` | The empty page the popouts of the panels open             | `popout.html`, the only window the page may open   | `popout.html`, subject to the popup blocker               |
 | `about`     | Shown at the right of the status bar                      | The versions of Electron, Chrome and Node          | The browser and the platform                              |
+| `plugins`   | The plugins of the application, after those of the editor | The sample plugin, a chunk of the bundle           | The sample plugin, a chunk of the bundle                  |
 
-The plugins come with their manifest (step 12). The shell is tested with a fake host (`EditorShell.spec.tsx`, in jsdom), its layout in Chromium with the web host (`apps/editor-web`).
+The shell is tested with a fake host (`fakeHost` of `@fdw/editor-ui/testing`, in jsdom: `EditorShell.spec.tsx`, and the tests of the plugins), its layout in Chromium with the web host (`apps/editor-web`).
 
 ## The layout
 
@@ -39,12 +40,10 @@ Laid out like a QMainWindow ([design/editor-ui.md §3](../../design/editor-ui.md
 ```
 
 - **The workbench** (`Workbench.tsx`) is a `GridviewReact` of [dockview](https://dockview.dev/) with four areas, the central one and the docks, each a `DockviewReact`: tabs, groups split by dragging, floating groups in the central area. A tab moves within its area, not to another one.
-- **The panels** (`panels.tsx`): the viewport and a welcome page in the central area, the outliner, the inspector and the console (the messages of the engine) in the docks. They stay mounted behind another tab and when moved (the `always` renderer): the viewport keeps its canvas or its window, hidden while its tab is.
-- **The menu bar, the toolbars and the status bar** (`chrome.tsx`) are out of dockview. The View menu shows and hides the docks, the panels, the toolbars (on one of the four sides) and the status bar, and resets the layout; the Scene menu chooses the scene.
-- **The layout document** (`layout.ts`), written by the host under the key `layout` once the changes settle: the docks shown, the toolbars and their side, the status bar (the editor store), the sizes of the docks (`toJSON` of the grid) and the panels of each area (`toJSON` of each area), the state of the machine and of the plugins (below). A document of another version, or one dockview does not restore, gives the default layout.
+- **The panels** are the views of the plugins (below), each a panel of the component `view` (`ViewHost`, `views.tsx`) with the id of its view: the viewport and a welcome page in the central area, the outliner, the inspector, the console (the messages of the engine) and the list of the plugins in the docks. They stay mounted behind another tab and when moved (the `always` renderer): the viewport keeps its canvas or its window, hidden while its tab is.
+- **The menu bar, the toolbars and the status bar** (`chrome.tsx`) are out of dockview, filled by the registries of the plugins. The View menu (the workbench plugin) shows and hides the docks, the panels, the toolbars (on one of the four sides) and the status bar, opens the command palette, and resets the layout; the Scene menu (the viewport plugin) chooses the scene.
+- **The layout document** (`layout.ts`, version 2), written by the host under the key `layout` once the changes settle: the docks shown, the toolbars and their side, the status bar (the editor store), the sizes of the docks (`toJSON` of the grid) and the panels of each area (`toJSON` of each area), the state of the machine and of the plugins (below). A document of another version, or one dockview does not restore, gives the default layout. A panel whose plugin is gone stays, and tells so.
 - **The theme of dockview** (`.dockview-theme-fdw` in `src/styles.css`): the sizes of its dark theme, the colors of shadcn.
-
-The panels and the toolbars come from the plugins with the registries (step 12).
 
 ## The state and the services
 
@@ -58,7 +57,64 @@ Following [design/editor-state.md](../../design/editor-state.md) (in French), in
 - **The state kept**: the layout document holds, with the chrome and dockview, the snapshot of the machine (`persistEditor`) and the state of the plugins. XState does not persist an inline child: each tool is persisted on its own, with its id as its source, and restored with the logic of its registry; a tool or a mode no more registered restores as idle, a snapshot that does not restore gives the default state. The selection is not kept yet: it will be with the project (step 13).
 - **In React** (`editorContext.tsx`): `useEditor()` gives the runtime, `useSelector(store or actor, select)` a part of its snapshot, `useEngine()`, `useEditorStore()`, `useEditorMachine(select)`, `useWhen(clause)`. The status bar shows the mode and the tools active.
 
-Tested without React (the services, the registries, the clauses, the keys, the machine and its persistence) and in the shell (the focus, the keys, the state kept). The input routing by the priority of the slots comes with the tools of the viewport (step 13), the keybindings (Escape) with the registries (step 12).
+Tested without React (the services, the registries, the clauses, the keys, the machine and its persistence) and in the shell (the focus, the keys, the state kept). The input routing by the priority of the slots comes with the tools of the viewport (step 13).
+
+## The plugins
+
+Following [design/editor-ui.md §6](../../design/editor-ui.md#6-les-plugins) (in French), in `src/plugins`: the model of VS Code, a manifest and code loaded on demand. The editor has no interface of its own: its panels, its menus, its toolbars and its status bar come from plugins, built in (`src/builtins`) or given by the host (`EditorHost.plugins`).
+
+```ts
+import type { EditorPlugin, PluginManifest } from '@fdw/editor-ui';
+
+const manifest = {
+  id: 'acme.notes',
+  version: '1.0.0',
+  engine: '^1.0.0', // a range of editorApiVersion
+  contributes: {
+    views: [{ id: 'acme.notes', title: 'Notes', location: 'right' }],
+    commands: [
+      { id: 'acme.clear', title: 'Clear', category: 'Notes', icon: 'trash' },
+    ],
+    menus: {
+      menubar: [{ submenu: 'acme.menu', title: 'Notes' }],
+      'acme.menu': [{ command: 'acme.clear' }],
+    },
+    toolbars: [
+      { id: 'acme.bar', title: 'Notes', side: 'left', items: ['acme.clear'] },
+    ],
+    keybindings: [{ command: 'acme.clear', key: 'ctrl+alt+n' }],
+    tools: [{ id: 'acme.pen', title: 'Pen', slot: 'primary', icon: 'pencil' }],
+  },
+} as const satisfies PluginManifest;
+
+export const notesPlugin: EditorPlugin = {
+  manifest,
+  load: () => import('./main'),
+};
+
+// main.tsx
+export function activate(context: PluginContext) {
+  context.views.registerComponent('acme.notes', NotesPanel);
+  context.commands.register('acme.clear', () =>
+    context.state.set({ notes: '' }),
+  );
+  context.tools.register('acme.pen', () => penMachine);
+}
+```
+
+- **The manifest** (`manifest.ts`), checked when the plugin is registered (`readManifest`): its id, its version, the range of the API it is written for (`engine`, against `editorApiVersion`), its contributions. An invalid manifest, or a contribution whose id is taken, makes the plugin `invalid`, without contributions.
+- **The contributions**, declared at once, before the code is loaded: the commands (a title, a category, an icon, an `enablement` and a `toggled` clause; `palette: false` for one that needs arguments); the views (their area, `open` in a new layout, a `when` for the View menu); the menus by id (`menubar`, whose items are submenus; the items sorted by group, then by order, separated by group, each with a `when`); the toolbars (their side and visibility by default, their items, commands); the items of the status bar (a side, a priority; a component of the plugin, or a text that may run a command); the keybindings (`ctrl+shift+p`, `escape`, `f1`; the letters by their place on the keyboard; in a text field only those with ctrl, alt or meta, or escape; the last one registered whose clause holds wins); the tools and the modes, which are commands too (`Tool: Pen`, run again to end it). The icons are names of `editorIcons` (lucide), known without the code of the plugin.
+- **The registries** of the runtime (`runtime.commands`, `views`, `menus`, `toolbars`, `statusBar`, `keybindings`, `tools`, `modes`): the shell only reads them.
+- **The activation** (`PluginHost`, `runtime.plugins`): the code is loaded and `activate(context)` called at the first event that names the plugin: `onView:id` (its panel shown), `onCommand:id` (a command run from a menu, a toolbar, a key or the palette), `onTool:id`, `onMode:id`, implied by its contributions, and `onStartup` in its manifest. The plugins of `onStartup`, and those of the tools and the mode kept in the layout, are loaded before the runtime is made (`preparePlugins`): their `activate` registers their tools before the machine restores. So a plugin reads the machine and the context keys at the call (in a command, a component), not in `activate`: a warning tells it.
+- **The context of a plugin** (`PluginContext`): its manifest; its scope of services (`context.services`, those of the editor and its own); `commands.register` and `execute`, `views.registerComponent`, `statusBar.registerComponent`, `menus.append` (items made by code: one per panel, per scene), `tools.register`, `modes.register`, `keys.set`; `state`, its JSON kept with the layout, and kept when the plugin is gone (`usePluginState` in React). A registration names a contribution of its manifest, else it throws; each one is in `context.subscriptions`.
+- **The deactivation**: `deactivate()` of the plugin, then what it registered, the last first, and its scope; its tool ends. The Plugins panel lists the plugins and their state; one not built in is disabled there (its panel tells so), and enabled again. Not kept yet.
+- **A missing plugin**: a panel of the layout whose view no plugin gives stays, and tells its plugin is missing; its tool or its mode restores as idle; its state is kept.
+- **The command palette** (`CommandPalette.tsx`, cmdk in a dialog of Radix, a hole over the native viewport): Ctrl+Shift+P or F1, the commands enabled, by their category and title, with their key.
+- **In React**: `useItems(registry)`, `useMenu(id)`, `usePluginState(id)`, `useToolSnapshot(slot)` (the state of the tool active in a slot), `CommandButton`.
+
+The plugins are trusted: they run in the page, with what it can do (sandboxed third-party plugins come later, with the import map that gives them React and this package). The sample plugin, a tool and a panel, is [`@fdw/editor-plugin-sample`](../editor-plugin-sample/README.md).
+
+Tested without React (the manifests, the versions, the keys, the menus, the commands, the activation and the deactivation, the restore of a tool) and in the shell (a panel loaded when shown, a command from its menu and its key, a tool from a toolbar and Escape, the palette, a missing plugin, the Plugins panel).
 
 ## The engine side
 

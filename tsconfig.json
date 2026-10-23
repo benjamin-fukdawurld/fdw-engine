@@ -128,6 +128,9 @@
     },
     {
       "path": "./apps/editor-web"
+    },
+    {
+      "path": "./packages/editor-plugin-sample"
     }
   ]
 }
