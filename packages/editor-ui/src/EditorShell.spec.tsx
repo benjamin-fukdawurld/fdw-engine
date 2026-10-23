@@ -12,7 +12,7 @@ import type { EngineMessage, PageMessage } from './protocol';
 
 // A host without engine: the messages of the page are kept, those of the
 // engine sent by the test.
-function fakeHost() {
+function fakeHost(saved: Record<string, unknown> = {}) {
   const posted: PageMessage[] = [];
   const listeners = new Set<(message: EngineMessage) => void>();
   const engine: EngineConnection = {
@@ -22,14 +22,26 @@ function fakeHost() {
       return () => listeners.delete(listener);
     },
   };
+  const stored = new Map<string, unknown>(Object.entries(saved));
   const host: EditorHost = {
     engine,
     Viewport: () => <div data-testid="viewport" />,
+    files: {
+      open: async () => undefined,
+      save: async () => false,
+    },
+    storage: {
+      read: async (key) => stored.get(key),
+      write: async (key, value) => {
+        stored.set(key, value);
+      },
+    },
+    popoutUrl: 'popout.html',
     about: 'Fake host',
   };
   const send = (message: EngineMessage) =>
     act(() => listeners.forEach((listener) => listener(message)));
-  return { host, posted, send, listeners };
+  return { host, posted, send, listeners, stored };
 }
 
 describe('EditorShell', () => {
@@ -59,6 +71,17 @@ describe('EditorShell', () => {
     send({ type: 'ready', device: 'GPU', scenes: ['a', 'b'], scene: 'a' });
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'b' } });
     expect(posted).toContainEqual({ type: 'scene', name: 'b' });
+  });
+
+  it('keeps the layout in the storage of the host', async () => {
+    const { host, stored } = fakeHost({ layout: { outlinerOpen: false } });
+    render(<EditorShell host={host} />);
+    const toggle = await screen.findByRole('button', {
+      name: /show outliner/i,
+    });
+    fireEvent.click(toggle);
+    expect(stored.get('layout')).toEqual({ outlinerOpen: true });
+    expect(screen.getByRole('button', { name: /hide outliner/i })).toBeTruthy();
   });
 
   it('stops listening to the engine once unmounted', () => {

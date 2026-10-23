@@ -2,17 +2,14 @@
 // by the main process (src/main/engine.ts), which runs the engine on Vulkan
 // and presents into the viewport, a child window of the editor window. The
 // main process gives it the XID of that window, then a port to the page
-// at each page load; the page sends the bounds of the viewport, the scene to
-// show and its inputs over it. The main process and its interface never
-// wait for a frame.
-import type { Scene } from '@fdw/demo-scenes';
+// at each page load; the EditorEngine of @fdw/editor-ui does the rest. The
+// main process and its interface never wait for a frame.
+import { EditorEngine, type EditorEnginePlatform } from '@fdw/editor-ui/engine';
 import type { EngineMessage, PageMessage } from '@fdw/editor-ui/protocol';
 import { NativeAudioEngine } from '@fdw/engine-audio-native';
-import type { GamepadState } from '@fdw/engine-input';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import type { MessagePortMain } from 'electron';
 import type { ControlMessage } from '../shared/protocol';
-import { RemoteInputSource } from './RemoteInputSource';
 import { scenes } from './scenes';
 import { ViewportSurface } from './ViewportSurface';
 import { X11Viewport } from './viewport';
@@ -20,187 +17,74 @@ import { X11Viewport } from './viewport';
 // The scene shown first (FDW_SCENE chooses another).
 const defaultScene = process.env['FDW_SCENE'] ?? 'shadows';
 
-// The scene in the viewport.
-interface Shown {
-  readonly name: string;
-  readonly scene: Scene;
-  readonly input: RemoteInputSource;
-  readonly start: number;
-  // Set by the scene (SceneContext.info).
-  info: string;
-}
-
-let running = true;
-let port: MessagePortMain | undefined;
+let quitting = false;
 let viewport: X11Viewport | undefined;
 let engine: VulkanEngine | undefined;
 let surface: ViewportSurface | undefined;
 let audio: NativeAudioEngine | undefined;
-let shown: Shown | undefined;
-// The scene asked for, and the number of the last request: a scene still
-// loading when another is asked for is dropped.
-let requested = defaultScene;
-let requests = 0;
-// Whether the window is minimized or hidden.
+let editor: EditorEngine | undefined;
+// The last port to the page; its messages wait in it until the engine is
+// ready.
+let port: MessagePortMain | undefined;
 let windowVisible = true;
-let gamepads: readonly GamepadState[] = [];
 
-const post = (message: EngineMessage) => port?.postMessage(message);
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-const yieldToNode = () => new Promise<void>((resolve) => setImmediate(resolve));
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
-// Whether the viewport is on screen: frames are only drawn then.
-const onScreen = () =>
-  windowVisible &&
-  viewport !== undefined &&
-  viewport.bounds.width > 0 &&
-  viewport.bounds.height > 0;
-
-function sendReady(): void {
-  if (engine?.device) {
-    post({
-      type: 'ready',
-      device: engine.device.name,
-      scenes: Object.keys(scenes),
-      scene: requested,
-    });
-  }
-}
-
 function connect(next: MessagePortMain): void {
-  port?.close();
-  port = next;
-  port.on('message', ({ data }) => receive(data as PageMessage));
-  port.start();
-  sendReady();
-}
-
-function receive(message: PageMessage): void {
-  switch (message.type) {
-    case 'bounds':
-      viewport?.setBounds(message);
-      break;
-    case 'scene':
-      if (message.name !== requested) {
-        requested = message.name;
-        if (surface) void showScene(message.name);
-      }
-      break;
-    case 'input':
-      shown?.input.receive(message);
-      break;
-    case 'gamepads':
-      gamepads = message.states;
-      shown?.input.setGamepads(gamepads);
-      break;
-  }
-}
-
-function hideScene(): void {
-  if (!shown) return;
-  // The frames in flight still use its resources.
-  engine?.device?.waitIdle();
-  shown.scene.destroy();
-  shown = undefined;
-  // A lock taken by the scene is released.
-  post({ type: 'pointerLock', locked: false });
-}
-
-async function showScene(name: string): Promise<void> {
-  const request = ++requests;
-  const load = scenes[name];
-  if (!load) {
-    post({ type: 'error', message: `No scene named ${name}` });
+  if (!editor) {
+    port?.close();
+    port = next;
     return;
   }
-  post({ type: 'loading', scene: name });
-  try {
-    const factory = await load();
-    const backend = engine?.backend;
-    if (request !== requests || !running || !backend || !surface) return;
-    hideScene();
-    const input = new RemoteInputSource(post);
-    input.setGamepads(gamepads);
-    const context = { info: '' };
-    const scene = factory(backend, surface, {
-      input,
-      audio,
-      info: (text) => {
-        context.info = text;
-      },
-    });
-    shown = Object.assign(context, {
-      name,
-      scene,
-      input,
-      start: performance.now(),
-    });
-  } catch (error) {
-    post({ type: 'error', message: `${name}: ${errorText(error)}` });
-  }
+  const target = editor;
+  port = next;
+  target.connect({
+    post: (message) => next.postMessage(message),
+    close: () => next.close(),
+  });
+  next.on('message', ({ data }) => target.receive(data as PageMessage));
+  next.start();
 }
 
 async function run(parent: bigint): Promise<void> {
-  viewport = new X11Viewport(parent);
-  engine = new VulkanEngine({
+  const window = new X11Viewport(parent);
+  viewport = window;
+  const vulkan = new VulkanEngine({
     application: 'FDW Editor',
     validation: process.env['FDW_VALIDATION'] === '1',
   });
-  await engine.init();
+  engine = vulkan;
+  await vulkan.init();
+  const { backend, device } = vulkan;
+  if (!backend || !device) throw new Error('The Vulkan engine is not ready');
   try {
     audio = new NativeAudioEngine();
   } catch (error) {
     console.warn(`[engine] No audio: ${errorText(error)}`);
   }
-  sendReady();
-
-  // The swapchain needs a window with an area, and the scenes its format.
-  while (running && !onScreen()) {
-    viewport.pump();
-    await sleep(16);
-  }
-  if (!running) return;
-  surface = new ViewportSurface(viewport);
-  await surface.init(engine);
-  void showScene(requested);
-
-  let second = performance.now();
-  let frames = 0;
-  while (running) {
-    viewport.pump();
-    if (shown && onScreen()) {
-      try {
-        shown.scene.frame((performance.now() - shown.start) / 1000);
-        frames++;
-      } catch (error) {
-        post({ type: 'error', message: `${shown.name}: ${errorText(error)}` });
-        hideScene();
-      }
-      // Between two frames: the messages of the page, I/O, promises.
-      await yieldToNode();
-    } else {
-      await sleep(16);
-    }
-    const now = performance.now();
-    if (now - second >= 1000) {
-      post({
-        type: 'stats',
-        fps: Math.round((frames * 1000) / (now - second)),
-        width: surface.width,
-        height: surface.height,
-        info: shown?.info ?? '',
-      });
-      second = now;
-      frames = 0;
-    }
-  }
+  const platform: EditorEnginePlatform = {
+    backend,
+    device: device.name,
+    viewport: window,
+    createSurface: async () => {
+      surface = new ViewportSurface(window);
+      await surface.init(vulkan);
+      return surface;
+    },
+    waitIdle: () => device.waitIdle(),
+    nextFrame: () => new Promise((resolve) => setImmediate(resolve)),
+    scenes,
+    audio,
+  };
+  editor = new EditorEngine(platform, defaultScene);
+  editor.setVisible(windowVisible);
+  if (port) connect(port);
+  if (!quitting) await editor.run();
 }
 
 async function shutdown(): Promise<void> {
-  hideScene();
+  editor?.destroy();
   const messages = engine?.device?.takeMessages() ?? [];
   if (messages.length > 0) {
     console.log(`[engine] Vulkan validation:\n${messages.join('\n')}`);
@@ -220,7 +104,10 @@ process.parentPort.on('message', ({ data, ports }) => {
       void run(BigInt(message.parent))
         .catch((error) => {
           console.error('[engine]', error);
-          post({ type: 'error', message: errorText(error) });
+          port?.postMessage({
+            type: 'error',
+            message: errorText(error),
+          } satisfies EngineMessage);
         })
         .then(shutdown)
         .finally(() => process.exit(0));
@@ -230,9 +117,11 @@ process.parentPort.on('message', ({ data, ports }) => {
       break;
     case 'visible':
       windowVisible = message.visible;
+      editor?.setVisible(message.visible);
       break;
     case 'quit':
-      running = false;
+      quitting = true;
+      editor?.stop();
       if (!started) process.exit(0);
       break;
   }

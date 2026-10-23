@@ -5,6 +5,7 @@
     "lib": ["es2023", "DOM", "ESNext.Disposable"],
     "module": "esnext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "types": ["node", "electron-vite/node", "@webgpu/types"],
     "customConditions": ["@fdw-engine/source"],
     "strict": true,
