@@ -26,7 +26,12 @@ import {
   MenubarSubTrigger,
   MenubarTrigger,
 } from './components/ui/menubar';
-import { useEditor } from './engineState';
+import {
+  useEditor,
+  useEditorMachine,
+  useEditorStore,
+  useEngine,
+} from './editorContext';
 import {
   docks,
   toolbarSides,
@@ -35,13 +40,12 @@ import {
   type ToolbarLayout,
   type ToolbarSide,
 } from './layout';
+import { objectMode, toolSlots } from './state/editorMachine';
 import { cn } from './lib/utils';
 import { panels } from './panels';
 
-/** What the bars change: the chrome, the panels. */
+/** What the bars change of the panels; the chrome is in the editor store. */
 export interface ShellValue {
-  readonly chrome: Chrome;
-  setChrome(change: (chrome: Chrome) => Chrome): void;
   /** The ids of the panels open. */
   readonly openPanels: readonly string[];
   /** Opens the panel, or closes it. */
@@ -76,13 +80,6 @@ const sideTitles: Readonly<Record<ToolbarSide, string>> = {
   bottom: 'Bottom',
 };
 
-function setDock(shell: ShellValue, dock: DockId, shown: boolean): void {
-  shell.setChrome((chrome) => ({
-    ...chrome,
-    docks: { ...chrome.docks, [dock]: shown },
-  }));
-}
-
 /** A toolbar: its layout by default, its items. */
 export interface ToolbarSpec {
   readonly title: string;
@@ -92,10 +89,11 @@ export interface ToolbarSpec {
 
 // The docks, shown and hidden.
 function DocksToolbar() {
-  const shell = useShell();
+  const { editor } = useEditor();
+  const chrome = useEditorStore();
   return docks.map((dock) => {
     const Icon = dockIcons[dock];
-    const shown = shell.chrome.docks[dock];
+    const shown = chrome.docks[dock];
     return (
       <Button
         key={dock}
@@ -105,7 +103,7 @@ function DocksToolbar() {
         title={dockTitles[dock]}
         aria-pressed={shown}
         className={cn(shown && 'bg-accent text-accent-foreground')}
-        onClick={() => setDock(shell, dock, !shown)}
+        onClick={() => editor.trigger.setDock({ dock, shown: !shown })}
       >
         <Icon />
       </Button>
@@ -135,7 +133,7 @@ export function toolbarLayout(chrome: Chrome, id: string): ToolbarLayout {
 
 /** The toolbars of a side, in a row (top, bottom) or a column. */
 export function ToolbarArea({ side }: { readonly side: ToolbarSide }) {
-  const { chrome } = useShell();
+  const chrome = useEditorStore();
   const shown = Object.entries(toolbars).filter(([id]) => {
     const layout = toolbarLayout(chrome, id);
     return layout.visible && layout.side === side;
@@ -177,7 +175,8 @@ export function ToolbarArea({ side }: { readonly side: ToolbarSide }) {
 
 function ViewMenu() {
   const shell = useShell();
-  const { chrome } = shell;
+  const { editor } = useEditor();
+  const chrome = useEditorStore();
   return (
     <MenubarMenu>
       <MenubarTrigger>View</MenubarTrigger>
@@ -186,7 +185,7 @@ function ViewMenu() {
           <MenubarCheckboxItem
             key={dock}
             checked={chrome.docks[dock]}
-            onCheckedChange={(shown) => setDock(shell, dock, shown)}
+            onCheckedChange={(shown) => editor.trigger.setDock({ dock, shown })}
           >
             {dockTitles[dock]}
           </MenubarCheckboxItem>
@@ -209,10 +208,7 @@ function ViewMenu() {
             {Object.entries(toolbars).map(([id, toolbar]) => {
               const layout = toolbarLayout(chrome, id);
               const change = (next: ToolbarLayout) =>
-                shell.setChrome((current) => ({
-                  ...current,
-                  toolbars: { ...current.toolbars, [id]: next },
-                }));
+                editor.trigger.setToolbar({ id, layout: next });
               return (
                 <Fragment key={id}>
                   <MenubarLabel>{toolbar.title}</MenubarLabel>
@@ -240,9 +236,7 @@ function ViewMenu() {
         </MenubarSub>
         <MenubarCheckboxItem
           checked={chrome.statusBar}
-          onCheckedChange={(statusBar) =>
-            shell.setChrome((current) => ({ ...current, statusBar }))
-          }
+          onCheckedChange={(shown) => editor.trigger.setStatusBar({ shown })}
         >
           Status bar
         </MenubarCheckboxItem>
@@ -256,7 +250,8 @@ function ViewMenu() {
 }
 
 function SceneMenu() {
-  const { scenes, scene, showScene } = useEditor().engine;
+  const { showScene } = useEditor();
+  const { scenes, scene } = useEngine();
   return (
     <MenubarMenu>
       <MenubarTrigger disabled={scenes.length === 0}>Scene</MenubarTrigger>
@@ -286,10 +281,27 @@ export function MenuBar() {
   );
 }
 
-/** The status bar: the backend, the device, the frames; the host. */
+// The mode and the tools active, by their titles.
+function EditingStatus() {
+  const { tools, modes } = useEditor();
+  const mode = useEditorMachine((snapshot) => snapshot.context.mode);
+  const active = useEditorMachine((snapshot) => snapshot.context.tools);
+  const toolTitles = toolSlots.flatMap((slot) => {
+    const id = active[slot];
+    return id ? [tools.get(id)?.title ?? id] : [];
+  });
+  return (
+    <span className="text-muted-foreground">
+      {mode === objectMode ? 'Object' : (modes.get(mode)?.title ?? mode)} mode
+      {toolTitles.length > 0 && ` · ${toolTitles.join(', ')}`}
+    </span>
+  );
+}
+
+/** The status bar: the backend, the device, the frames; the mode; the host. */
 export function StatusBar() {
-  const { host, engine } = useEditor();
-  const { device, backend, fallback, loading, stats, error } = engine;
+  const { host } = useEditor();
+  const { device, backend, fallback, loading, stats, error } = useEngine();
   return (
     <footer className="flex h-6 items-center gap-3 overflow-hidden whitespace-nowrap border-t bg-card px-3 text-xs">
       {error ? (
@@ -309,7 +321,9 @@ export function StatusBar() {
           Fallback: {fallback}
         </span>
       )}
-      <span className="ml-auto text-muted-foreground">{host.about}</span>
+      <span className="ml-auto" />
+      <EditingStatus />
+      <span className="text-muted-foreground">{host.about}</span>
     </footer>
   );
 }

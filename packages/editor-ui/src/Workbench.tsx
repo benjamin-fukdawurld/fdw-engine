@@ -11,6 +11,7 @@ import {
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { areas, docks, type AreaId, type DockId, type Layout } from './layout';
 import { defaultPanels, panels } from './panels';
+import type { IDisposable } from './state/services';
 
 /**
  * The theme of dockview: the sizes of its dark theme, the colors of
@@ -42,10 +43,8 @@ interface WorkbenchContextValue {
   restoreArea(area: AreaId, api: DockviewApi): void;
   /** Follows the panels of the area, while it is mounted. */
   connectArea(area: AreaId, api: DockviewApi): IDisposable;
-}
-
-interface IDisposable {
-  dispose(): void;
+  /** The area clicked or focused, and its active panel. */
+  focusArea(area: AreaId, api: DockviewApi): void;
 }
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
@@ -72,18 +71,29 @@ function AreaView({ params }: IGridviewPanelProps<{ area: AreaId }>) {
     // Not on the workbench, new at each render: its callbacks read refs.
   }, [area, api]);
   if (!workbench) throw new Error('AreaView outside of the Workbench');
+  const focus = () => {
+    if (api) workbench.focusArea(area, api);
+  };
   return (
-    <DockviewReact
-      theme={dockviewTheme}
-      components={components}
-      defaultRenderer="always"
-      // Floating groups over the viewport only: a dock is too small.
-      disableFloatingGroups={area !== 'center'}
-      onReady={({ api }) => {
-        workbench.restoreArea(area, api);
-        setApi(api);
-      }}
-    />
+    // The focus of the editor: the area where the pointer goes down, or
+    // the keyboard focus (captured: a panel may stop them).
+    <div
+      className="h-full w-full"
+      onPointerDownCapture={focus}
+      onFocusCapture={focus}
+    >
+      <DockviewReact
+        theme={dockviewTheme}
+        components={components}
+        defaultRenderer="always"
+        // Floating groups over the viewport only: a dock is too small.
+        disableFloatingGroups={area !== 'center'}
+        onReady={({ api }) => {
+          workbench.restoreArea(area, api);
+          setApi(api);
+        }}
+      />
+    </div>
   );
 }
 
@@ -152,6 +162,8 @@ export function Workbench({
   onReady,
   onChange,
   onPanelsChange,
+  onFocus,
+  onActivePanelChange,
 }: {
   /** The layout to restore; the default one if undefined. */
   readonly saved?: Layout;
@@ -161,12 +173,23 @@ export function Workbench({
   readonly onChange: () => void;
   /** Called when panels are opened or closed. */
   readonly onPanelsChange: () => void;
+  /** Called when an area is clicked or focused, with its active panel. */
+  readonly onFocus: (area: AreaId, view?: string) => void;
+  /** Called when the active panel of an area changes. */
+  readonly onActivePanelChange: (area: AreaId, view?: string) => void;
 }) {
   const grid = useRef<GridviewApi>(undefined);
   const areaApis = useRef<Partial<Record<AreaId, DockviewApi>>>({});
   // The latest callbacks, for the subscriptions made once.
-  const callbacks = useRef({ onChange, onPanelsChange, docksShown });
-  callbacks.current = { onChange, onPanelsChange, docksShown };
+  const latest = {
+    onChange,
+    onPanelsChange,
+    onFocus,
+    onActivePanelChange,
+    docksShown,
+  };
+  const callbacks = useRef(latest);
+  callbacks.current = latest;
 
   const showDocks = () => {
     for (const dock of docks) {
@@ -201,13 +224,18 @@ export function Workbench({
       ),
     openPanel: (id) => {
       const open = findPanel(id);
-      if (open) {
-        open.api.setActive();
-        return;
+      if (open) open.api.setActive();
+      else {
+        const spec = panels[id];
+        const api = spec && areaApis.current[spec.area];
+        api?.addPanel({ id, component: id, title: spec.title });
       }
-      const spec = panels[id];
-      const api = spec && areaApis.current[spec.area];
-      api?.addPanel({ id, component: id, title: spec.title });
+      // Its area gets the focus.
+      for (const area of areas) {
+        if (areaApis.current[area]?.getPanel(id)) {
+          callbacks.current.onFocus(area, id);
+        }
+      }
     },
     closePanel: (id) => findPanel(id)?.api.close(),
   };
@@ -231,6 +259,9 @@ export function Workbench({
         api.onDidLayoutChange(changed),
         api.onDidAddPanel(panelsChanged),
         api.onDidRemovePanel(panelsChanged),
+        api.onDidActivePanelChange(({ panel }) =>
+          callbacks.current.onActivePanelChange(area, panel?.id),
+        ),
       ];
       callbacks.current.onPanelsChange();
       return {
@@ -240,6 +271,8 @@ export function Workbench({
         },
       };
     },
+    focusArea: (area, api) =>
+      callbacks.current.onFocus(area, api.activePanel?.id),
   };
 
   return (

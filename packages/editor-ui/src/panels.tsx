@@ -1,6 +1,6 @@
 import type { IDockviewPanelProps } from 'dockview-react';
 import type { FunctionComponent } from 'react';
-import { useEditor } from './engineState';
+import { useEditor, useEngine } from './editorContext';
 import type { AreaId } from './layout';
 import { cn } from './lib/utils';
 
@@ -27,7 +27,7 @@ function Placeholder({ text }: { readonly text: string }) {
 }
 
 function ConsolePanel() {
-  const { log } = useEditor().engine;
+  const { log } = useEngine();
   return (
     <div className="h-full overflow-auto px-3 py-1 font-mono text-xs">
       {log.map((entry) => (

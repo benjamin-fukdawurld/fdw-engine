@@ -40,12 +40,18 @@ export interface Chrome {
 /**
  * The layout document, kept by the host between sessions (design/editor-ui.md
  * §3): the chrome, the sizes of the docks (the toJSON of the GridviewReact)
- * and the panels of each area (that of each DockviewReact).
+ * and the panels of each area (that of each DockviewReact); with them, the
+ * state of the editor (design/editor-state.md §6): that of its machine and
+ * of its plugins.
  */
 export interface Layout extends Chrome {
   readonly version: typeof layoutVersion;
   readonly grid?: SerializedGridviewComponent;
   readonly areas: Partial<Record<AreaId, SerializedDockview>>;
+  /** The machine of the editor (persistEditor), checked when restored. */
+  readonly machine?: unknown;
+  /** The state of each plugin, by its id. */
+  readonly plugins?: Readonly<Record<string, unknown>>;
 }
 
 export const layoutVersion = 1;
@@ -66,7 +72,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /**
  * The layout read from the storage: what is valid of it over the defaults;
  * undefined if it is not a layout of this version (none yet, or an older
- * one). The JSON of dockview is checked by dockview, when restored.
+ * one). The JSON of dockview is checked by dockview, and that of the
+ * machine by the machine, when restored.
  */
 export function readLayout(saved: unknown): Layout | undefined {
   if (!isRecord(saved) || saved['version'] !== layoutVersion) return undefined;
@@ -107,5 +114,7 @@ export function readLayout(saved: unknown): Layout | undefined {
         .filter((area) => isRecord(savedAreas[area]))
         .map((area) => [area, savedAreas[area] as SerializedDockview]),
     ),
+    ...(saved['machine'] !== undefined && { machine: saved['machine'] }),
+    ...(isRecord(saved['plugins']) && { plugins: saved['plugins'] }),
   };
 }

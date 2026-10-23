@@ -57,10 +57,12 @@ export function RemoteViewport({
     });
     // The gamepads are polled: sent at each animation frame while there
     // are some, once more when the last one goes. The holes too: the menus
-    // and floating panels over the viewport.
+    // and floating panels over the viewport: sent at the first frame, for
+    // those another viewport may have left (one unmounted under a menu,
+    // by a reset of the layout).
     const states: GamepadState[] = [];
     let count = 0;
-    let holes = '[]';
+    let holes: string | undefined;
     let frame = requestAnimationFrame(function poll() {
       const next = source.readGamepads(states);
       if (next > 0 || count > 0) {
@@ -77,6 +79,7 @@ export function RemoteViewport({
     });
     return () => {
       cancelAnimationFrame(frame);
+      engine.post({ type: 'holes', holes: [] });
       unsubscribe();
       source.detach();
     };
