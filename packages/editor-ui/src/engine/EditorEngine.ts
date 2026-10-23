@@ -1,7 +1,7 @@
 import type { Scene, SceneFactory } from '@fdw/demo-scenes';
 import type { AudioEngine } from '@fdw/engine-audio';
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
-import type { GamepadState } from '@fdw/engine-input';
+import type { GamepadState, InputSource } from '@fdw/engine-input';
 import type { EngineMessage, PageMessage, ViewportBounds } from '../protocol';
 import { RemoteInputSource } from './RemoteInputSource';
 
@@ -33,6 +33,12 @@ export interface EditorEnginePlatform {
   nextFrame(): Promise<void>;
   readonly scenes: Readonly<Record<string, () => Promise<SceneFactory>>>;
   readonly audio?: AudioEngine;
+  /**
+   * The inputs of the scenes when the engine runs in the page (a
+   * WebInputSource on the viewport); otherwise those the page sends,
+   * replayed (RemoteInputSource).
+   */
+  readonly input?: InputSource;
 }
 
 /** Where the messages of the engine go: a MessagePort to the page. */
@@ -45,7 +51,9 @@ export interface EngineChannel {
 interface Shown {
   readonly name: string;
   readonly scene: Scene;
-  readonly input: RemoteInputSource;
+  readonly input: InputSource;
+  // The inputs of the page, replayed: without the input of the platform.
+  readonly remote?: RemoteInputSource;
   readonly start: number;
   // Set by the scene (SceneContext.info).
   info: string;
@@ -110,11 +118,11 @@ export class EditorEngine {
         }
         break;
       case 'input':
-        this.#shown?.input.receive(message);
+        this.#shown?.remote?.receive(message);
         break;
       case 'gamepads':
         this.#gamepads = message.states;
-        this.#shown?.input.setGamepads(message.states);
+        this.#shown?.remote?.setGamepads(message.states);
         break;
     }
   }
@@ -205,7 +213,7 @@ export class EditorEngine {
     shown.scene.destroy();
     this.#shown = undefined;
     // A lock taken by the scene is released.
-    this.#post({ type: 'pointerLock', locked: false });
+    shown.input.setPointerLock?.(false);
   }
 
   async #showScene(name: string): Promise<void> {
@@ -221,8 +229,13 @@ export class EditorEngine {
       const surface = this.#surface;
       if (request !== this.#requests || !this.#running || !surface) return;
       this.#hideScene();
-      const input = new RemoteInputSource((message) => this.#post(message));
-      input.setGamepads(this.#gamepads);
+      let input = this.#platform.input;
+      let remote: RemoteInputSource | undefined;
+      if (!input) {
+        remote = new RemoteInputSource((message) => this.#post(message));
+        remote.setGamepads(this.#gamepads);
+        input = remote;
+      }
       const context = { info: '' };
       const scene = factory(this.#platform.backend, surface, {
         input,
@@ -235,6 +248,7 @@ export class EditorEngine {
         name,
         scene,
         input,
+        remote,
         start: performance.now(),
       });
     } catch (error) {

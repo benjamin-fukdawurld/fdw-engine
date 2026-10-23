@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/vitest",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "@webgpu/types", "node", "vitest"]
+  },
+  "include": ["vite.config.mts", "src/**/*.spec.ts", "src/**/*.spec.tsx"],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    }
+  ]
+}

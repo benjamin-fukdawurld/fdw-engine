@@ -3,6 +3,7 @@ import { WebInputSource } from '@fdw/engine-input-web';
 import { useEffect, useRef } from 'react';
 import type { EngineConnection } from './host';
 import type { InputCall } from './protocol';
+import { useViewportBounds } from './useViewportBounds';
 
 // An InputSink sending its calls to the engine, which replays them.
 function remoteSink(engine: EngineConnection): InputSink {
@@ -36,33 +37,7 @@ export function RemoteViewport({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = () => {
-      const rect = element.getBoundingClientRect();
-      const scale = window.devicePixelRatio;
-      const x = Math.round(rect.left * scale);
-      const y = Math.round(rect.top * scale);
-      engine.post({
-        type: 'bounds',
-        x,
-        y,
-        width: Math.round(rect.right * scale) - x,
-        height: Math.round(rect.bottom * scale) - y,
-      });
-    };
-    // Its size by the observer; its position moves with the window size
-    // and the zoom (devicePixelRatio), which fire resize.
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    window.addEventListener('resize', update);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', update);
-      engine.post({ type: 'bounds', x: 0, y: 0, width: 0, height: 0 });
-    };
-  }, [engine]);
+  useViewportBounds(ref, engine);
 
   useEffect(() => {
     const element = ref.current;

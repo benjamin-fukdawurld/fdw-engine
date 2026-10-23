@@ -1,0 +1,9 @@
+{
+  "name": "editor-web",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/editor-web/src",
+  "projectType": "application",
+  "// tags": "gpu: its tests render in Chromium, in the native job of the CI",
+  "tags": ["gpu"],
+  "targets": {}
+}

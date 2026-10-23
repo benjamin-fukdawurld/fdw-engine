@@ -2,7 +2,7 @@
 
 The editor, an Electron and React application (P18 of [design/roadmap.md](../../design/roadmap.md), in French). Not part of the root npm workspaces: it has its own `node_modules`, and bundles the sources of the `@fdw/*` packages.
 
-The interface, and the protocol between the page and the engine, are in `@fdw/editor-ui`, shared with the web editor to come; this application is its Electron host.
+The interface, and the protocol between the page and the engine, are in `@fdw/editor-ui`, shared with the web editor ([apps/editor-web](../editor-web/README.md)); this application is its Electron host.
 
 ## The native viewport (Linux X11)
 

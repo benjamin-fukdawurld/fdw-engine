@@ -167,6 +167,30 @@ describe('EditorEngine', () => {
     expect(keyDown).toHaveBeenCalledWith('KeyW', 'w');
   });
 
+  it('gives the scenes the inputs of the platform, without replay', async () => {
+    const a = fakeScene();
+    const b = fakeScene();
+    const input = {
+      attach: vi.fn(),
+      detach: vi.fn(),
+      readGamepads: () => 0,
+      setPointerLock: vi.fn(),
+    };
+    const { editor, messages, show } = setup(
+      { a: a.factory, b: b.factory },
+      { input },
+    );
+    show();
+    await until(() => a.state.frames > 0);
+    expect(a.state.context?.input).toBe(input);
+    editor.receive({ type: 'scene', name: 'b' });
+    await until(() => b.state.frames > 0);
+    expect(b.state.context?.input).toBe(input);
+    // The lock of the scene released on the source itself.
+    expect(input.setPointerLock).toHaveBeenCalledWith(false);
+    expect(messages.some((m) => m.type === 'pointerLock')).toBe(false);
+  });
+
   it('ends its loop on stop, and destroys the scene after', async () => {
     const a = fakeScene();
     const { editor, running, show } = setup({ a: a.factory });
