@@ -1,6 +1,23 @@
 import type { Engine, GpuTextureFormat, Surface } from '@fdw/engine-backend';
 import { WebGpuEngine, WebGpuRenderTarget } from '@fdw/engine-webgpu';
-import type { NativeWindow } from './NativeWindow';
+
+/**
+ * Where a DawnWindowSurface shows its frames: a NativeWindow, or the
+ * viewport of the editor (apps/editor).
+ */
+export interface RgbaWindow {
+  // In pixels, at least one.
+  readonly width: number;
+  readonly height: number;
+  readonly destroyed: boolean;
+  /** Shows height rows of stride bytes, width × 4 bytes of RGBA each. */
+  presentRgba(
+    pixels: Uint8Array,
+    width: number,
+    height: number,
+    stride: number,
+  ): void;
+}
 
 // A buffer receiving the copy of a frame, until it is shown.
 interface Slot {
@@ -21,7 +38,7 @@ export interface DawnWindowSurfaceOptions {
 
 /**
  * A surface showing WebGPU (Dawn, the `webgpu` package in Node) frames in a
- * native window. Dawn in Node cannot present to a window: each frame is
+ * native window (an RgbaWindow). Dawn in Node cannot present to a window: each frame is
  * rendered into a texture, copied into a buffer, read back, then shown by
  * the window. A frame or two of latency, and a copy of the image per frame:
  * for development, tools and tests, not for a final application (see
@@ -39,7 +56,7 @@ export class DawnWindowSurface implements Surface {
   private _shown = 0;
 
   constructor(
-    readonly window: NativeWindow,
+    readonly window: RgbaWindow,
     { framesInFlight = 2 }: DawnWindowSurfaceOptions = {},
   ) {
     this._framesInFlight = framesInFlight;
@@ -117,16 +134,21 @@ export class DawnWindowSurface implements Surface {
     slot.pending = slot.buffer
       .mapAsync(GPUMapMode.READ)
       .then(() => {
-        if (frame > this._shown && !this.window.destroyed) {
-          this._shown = frame;
-          this.window.presentRgba(
-            new Uint8Array(slot.buffer.getMappedRange()),
-            slot.width,
-            slot.height,
-            slot.stride,
-          );
+        // Unmapped even when the frame cannot be shown: the next copy needs
+        // the buffer.
+        try {
+          if (frame > this._shown && !this.window.destroyed) {
+            this._shown = frame;
+            this.window.presentRgba(
+              new Uint8Array(slot.buffer.getMappedRange()),
+              slot.width,
+              slot.height,
+              slot.stride,
+            );
+          }
+        } finally {
+          slot.buffer.unmap();
         }
-        slot.buffer.unmap();
       })
       .catch((error: unknown) => {
         // The mapping is aborted when the buffer or the device is destroyed

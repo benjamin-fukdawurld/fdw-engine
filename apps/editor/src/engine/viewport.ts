@@ -1,3 +1,4 @@
+import type { RgbaWindow } from '@fdw/engine-native';
 import type { NativeWindowHandle } from '@fdw/engine-vulkan';
 import type { ViewportBounds } from '@fdw/editor-ui/protocol';
 
@@ -13,6 +14,13 @@ interface ViewportAddon {
     height: number,
   ): void;
   pumpViewport(viewport: unknown): void;
+  presentViewport(
+    viewport: unknown,
+    pixels: Uint8Array,
+    width: number,
+    height: number,
+    stride: number,
+  ): void;
   destroyViewport(viewport: unknown): void;
 }
 
@@ -34,9 +42,11 @@ function loadAddon(): ViewportAddon {
 /**
  * The child window of the Electron window the engine presents into, placed
  * over the area of the page that React reserves. Transparent to the mouse
- * and keyboard: they reach the page. Linux (X11) only so far.
+ * and keyboard: they reach the page. Vulkan presents into it with a
+ * swapchain; Dawn gives it its frames read back (an RgbaWindow of
+ * DawnWindowSurface). Linux (X11) only so far.
  */
-export class X11Viewport {
+export class X11Viewport implements RgbaWindow {
   readonly window: NativeWindowHandle;
   #handle: unknown;
   #bounds: ViewportBounds = { x: 0, y: 0, width: 0, height: 0 };
@@ -50,6 +60,19 @@ export class X11Viewport {
     return this.#bounds;
   }
 
+  // The size of the area, in pixels (at least one: it may be hidden).
+  get width(): number {
+    return Math.max(this.#bounds.width, 1);
+  }
+
+  get height(): number {
+    return Math.max(this.#bounds.height, 1);
+  }
+
+  get destroyed(): boolean {
+    return this.#handle === undefined;
+  }
+
   /** Moves the window; an empty area unmaps it. */
   setBounds(bounds: ViewportBounds): void {
     const { x, y, width, height } = bounds;
@@ -60,6 +83,16 @@ export class X11Viewport {
   /** Keeps the window above those of Chromium: before each frame. */
   pump(): void {
     loadAddon().pumpViewport(this.#handle);
+  }
+
+  /** Copies a frame into the window (XShmPutImage): Dawn. */
+  presentRgba(
+    pixels: Uint8Array,
+    width: number,
+    height: number,
+    stride: number,
+  ): void {
+    loadAddon().presentViewport(this.#handle, pixels, width, height, stride);
   }
 
   /** After the swapchain on the window. */

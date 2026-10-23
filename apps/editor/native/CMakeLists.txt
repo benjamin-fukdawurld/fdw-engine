@@ -1,6 +1,7 @@
 # Native part of the editor (P18): fdw_editor.node, the native viewport. A
 # child X11 window placed in the Electron window; the engine presents into it
-# with its own Vulkan addon (@fdw/engine-vulkan).
+# with its own Vulkan addon (@fdw/engine-vulkan), or copies the frames of Dawn
+# into it (MIT-SHM).
 
 cmake_minimum_required(VERSION 3.24)
 project(fdw_editor LANGUAGES CXX)
@@ -19,7 +20,7 @@ if(NOT UNIX OR APPLE)
 endif()
 find_package(X11 REQUIRED)
 if(NOT X11_Xext_FOUND)
-  message(FATAL_ERROR "libXext (the Shape extension) was not found")
+  message(FATAL_ERROR "libXext (the Shape and MIT-SHM extensions) was not found")
 endif()
 
 add_library(fdw_editor_node MODULE src/viewport.cpp)

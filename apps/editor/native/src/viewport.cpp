@@ -1,7 +1,8 @@
 // The native viewport of the editor (P18, Linux X11): a child X11 window
 // placed in the Electron window over the area React reserves. The engine
-// presents into it with its own swapchain (@fdw/engine-vulkan): this addon
-// only owns the window. It runs in the engine process (a utility process of
+// presents into it with its own swapchain (@fdw/engine-vulkan), or, on Dawn,
+// gives its frames read back to presentViewport, which copies them into the
+// window (XShmPutImage). It runs in the engine process (a utility process of
 // Electron), on its JS thread, with an X connection of its own: the parent
 // window is known by its XID, which X11 shares between processes.
 //
@@ -10,25 +11,57 @@
 //   viewportWindow(handle) -> { system: 'x11', display: bigint, window: bigint }
 //   setViewportBounds(handle, x, y, width, height)   (device pixels)
 //   pumpViewport(handle)   (each frame: keeps the window above Chromium's)
+//   presentViewport(handle, pixels: Uint8Array, width, height, stride)   (RGBA)
 //   destroyViewport(handle)
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/extensions/XShm.h>
 #include <X11/extensions/shape.h>
 #include <node_api.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
+#include <cstdlib>
 
 namespace {
+
+// The image presentViewport copies the frames into: in a shared memory
+// segment (MIT-SHM) when the X server has it, else in the client memory,
+// sent whole by XPutImage.
+struct Image {
+  XImage *image = nullptr;
+  XShmSegmentInfo shm{};
+  bool shared = false;
+};
 
 struct Viewport {
   Display *display = nullptr;
   Window window = 0;
   bool mapped = false;
+  GC gc = nullptr;
+  Image image;
 };
+
+void destroyImage(Display *display, Image &image) {
+  if (!image.image) return;
+  if (image.shared) {
+    XShmDetach(display, &image.shm);
+    XSync(display, False);
+    shmdt(image.shm.shmaddr);
+    image.image->data = nullptr;
+  }
+  XDestroyImage(image.image);
+  image = Image{};
+}
 
 void destroy(Viewport *viewport) {
   if (viewport->display) {
+    destroyImage(viewport->display, viewport->image);
+    if (viewport->gc) XFreeGC(viewport->display, viewport->gc);
     if (viewport->window) XDestroyWindow(viewport->display, viewport->window);
     XCloseDisplay(viewport->display);
   }
@@ -172,6 +205,141 @@ napi_value pumpViewport(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+// Whether XShmAttach failed: the server cannot reach the segment (a remote
+// display).
+bool attachFailed = false;
+
+int onAttachError(Display *, XErrorEvent *) {
+  attachFailed = true;
+  return 0;
+}
+
+// An image of the window's visual and size, in a shared segment if it can.
+bool createImage(Viewport *viewport, unsigned width, unsigned height) {
+  Display *display = viewport->display;
+  XWindowAttributes attributes;
+  XGetWindowAttributes(display, viewport->window, &attributes);
+  Image &image = viewport->image;
+  if (XShmQueryExtension(display)) {
+    image.image =
+        XShmCreateImage(display, attributes.visual, unsigned(attributes.depth),
+                        ZPixmap, nullptr, &image.shm, width, height);
+  }
+  if (image.image) {
+    const size_t size = size_t(image.image->bytes_per_line) * height;
+    image.shm.shmid = shmget(IPC_PRIVATE, size, IPC_CREAT | 0600);
+    void *address =
+        image.shm.shmid < 0 ? nullptr : shmat(image.shm.shmid, nullptr, 0);
+    if (address && address != reinterpret_cast<void *>(-1)) {
+      image.shm.shmaddr = image.image->data = static_cast<char *>(address);
+      image.shm.readOnly = False;
+      attachFailed = false;
+      XErrorHandler previous = XSetErrorHandler(onAttachError);
+      XShmAttach(display, &image.shm);
+      XSync(display, False);
+      XSetErrorHandler(previous);
+      image.shared = !attachFailed;
+      if (!image.shared) shmdt(address);
+    }
+    // Removed once detached by both sides.
+    if (image.shm.shmid >= 0) shmctl(image.shm.shmid, IPC_RMID, nullptr);
+    if (!image.shared) {
+      image.image->data = nullptr;
+      XDestroyImage(image.image);
+      image = Image{};
+    }
+  }
+  if (!image.image) {
+    image.image =
+        XCreateImage(display, attributes.visual, unsigned(attributes.depth),
+                     ZPixmap, 0, nullptr, width, height, 32, 0);
+    if (!image.image) return false;
+    image.image->data = static_cast<char *>(
+        std::malloc(size_t(image.image->bytes_per_line) * height));
+    if (!image.image->data) {
+      XDestroyImage(image.image);
+      image = Image{};
+      return false;
+    }
+  }
+  if (image.image->bits_per_pixel != 32) {
+    destroyImage(display, image);
+    return false;
+  }
+  return true;
+}
+
+// A frame of Dawn, read back, copied into the window: each RGBA pixel
+// converted to the visual of the window (BGRX on most), alpha opaque.
+napi_value presentViewport(napi_env env, napi_callback_info info) {
+  napi_value argv[5];
+  Viewport *viewport =
+      getViewport(env, info, 5, argv, "presentViewport: expected a viewport");
+  if (!viewport) return nullptr;
+  bool isTypedArray = false;
+  napi_typedarray_type type = napi_int8_array;
+  size_t length = 0;
+  void *data = nullptr;
+  napi_is_typedarray(env, argv[1], &isTypedArray);
+  if (isTypedArray) {
+    napi_get_typedarray_info(env, argv[1], &type, &length, &data, nullptr,
+                             nullptr);
+  }
+  int32_t size[3];
+  for (int i = 0; i < 3; ++i) {
+    if (napi_get_value_int32(env, argv[i + 2], &size[i]) != napi_ok) {
+      return throwError(env, "presentViewport: expected numbers");
+    }
+  }
+  const int32_t width = size[0], height = size[1], stride = size[2];
+  if (!isTypedArray || type != napi_uint8_array || width <= 0 || height <= 0 ||
+      stride < width * 4 ||
+      length < size_t(stride) * size_t(height - 1) + size_t(width) * 4) {
+    napi_throw_range_error(env, nullptr,
+                           "presentViewport: expected a Uint8Array of height "
+                           "rows of stride bytes, of at least width × 4 bytes");
+    return nullptr;
+  }
+
+  Display *display = viewport->display;
+  Image &image = viewport->image;
+  if (image.image &&
+      (image.image->width != width || image.image->height != height)) {
+    destroyImage(display, image);
+  }
+  if (!image.image && !createImage(viewport, unsigned(width), unsigned(height)))
+    return throwError(env, "presentViewport: no 32-bit image for the window");
+  if (!viewport->gc)
+    viewport->gc = XCreateGC(display, viewport->window, 0, nullptr);
+
+  XImage *target = image.image;
+  const auto shift = [](unsigned long mask) { return std::countr_zero(mask); };
+  const int red = shift(target->red_mask), green = shift(target->green_mask),
+            blue = shift(target->blue_mask);
+  const uint32_t alpha =
+      ~uint32_t(target->red_mask | target->green_mask | target->blue_mask);
+  const auto *source = static_cast<const uint8_t *>(data);
+  for (int32_t y = 0; y < height; ++y) {
+    const uint8_t *from = source + size_t(y) * size_t(stride);
+    auto *to = reinterpret_cast<uint32_t *>(
+        target->data + size_t(y) * size_t(target->bytes_per_line));
+    for (int32_t x = 0; x < width; ++x, from += 4) {
+      to[x] = uint32_t(from[0]) << red | uint32_t(from[1]) << green |
+              uint32_t(from[2]) << blue | alpha;
+    }
+  }
+  if (image.shared) {
+    XShmPutImage(display, viewport->window, viewport->gc, target, 0, 0, 0, 0,
+                 unsigned(width), unsigned(height), False);
+  } else {
+    XPutImage(display, viewport->window, viewport->gc, target, 0, 0, 0, 0,
+              unsigned(width), unsigned(height));
+  }
+  // The server has read the segment before the next frame is copied into it.
+  XSync(display, False);
+  return nullptr;
+}
+
 // After the swapchain on the window is destroyed.
 napi_value destroyViewport(napi_env env, napi_callback_info info) {
   size_t argc = 1;
@@ -199,10 +367,12 @@ napi_value init(napi_env env, napi_value exports) {
        nullptr, napi_default, nullptr},
       {"pumpViewport", nullptr, pumpViewport, nullptr, nullptr, nullptr,
        napi_default, nullptr},
+      {"presentViewport", nullptr, presentViewport, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"destroyViewport", nullptr, destroyViewport, nullptr, nullptr, nullptr,
        napi_default, nullptr},
   };
-  napi_define_properties(env, exports, 5, properties);
+  napi_define_properties(env, exports, 6, properties);
   return exports;
 }
 
