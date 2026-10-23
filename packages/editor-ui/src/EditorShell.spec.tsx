@@ -10,10 +10,12 @@ import {
 // StrictMode, as in the applications: a remount at the first mount.
 import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { createMachine } from 'xstate';
 import { EditorShell } from './EditorShell';
 import type { EditorHost, EngineConnection } from './host';
 import type { Layout } from './layout';
 import type { EngineMessage, PageMessage } from './protocol';
+import type { EditorRuntime } from './state/runtime';
 
 // jsdom has no ResizeObserver, which dockview watches its element with: the
 // layout itself is tested in Chromium (apps/editor-web).
@@ -106,6 +108,18 @@ async function storedLayout(
   return stored.get('layout') as Layout;
 }
 
+// Renders the shell; the runtime once made.
+async function renderShell(host: EditorHost) {
+  let runtime: EditorRuntime | undefined;
+  const view = render(
+    <EditorShell host={host} onRuntime={(made) => (runtime = made)} />,
+    { wrapper: StrictMode },
+  );
+  await screen.findByTestId('viewport');
+  if (!runtime) throw new Error('No runtime');
+  return { ...view, runtime };
+}
+
 // The title of the tabs of dockview.
 const tabs = () =>
   Array.from(document.querySelectorAll('.dv-tab')).map(
@@ -140,21 +154,23 @@ describe('EditorShell', () => {
     expect(screen.getByRole('toolbar', { name: 'Docks' })).toBeTruthy();
   });
 
-  it('shows the device and the stats of the engine', () => {
+  it('shows the device and the stats of the engine, sent before the layout is read', async () => {
     const { host, send } = fakeHost();
     render(<EditorShell host={host} />, { wrapper: StrictMode });
     send(ready);
     send({ type: 'stats', fps: 60, width: 800, height: 600, info: '' });
-    expect(screen.getByText('vulkan · GPU · 60 fps · 800 × 600')).toBeTruthy();
+    expect(
+      await screen.findByText('vulkan · GPU · 60 fps · 800 × 600'),
+    ).toBeTruthy();
     send({ type: 'error', message: 'Lost' });
     expect(screen.getAllByText('Lost')).toBeTruthy();
   });
 
-  it('shows why the backend is a fallback', () => {
+  it('shows why the backend is a fallback', async () => {
     const { host, send } = fakeHost();
     render(<EditorShell host={host} />, { wrapper: StrictMode });
     send({ ...ready, backend: 'dawn', fallback: 'vulkan: No device' });
-    expect(screen.getByText('dawn · GPU')).toBeTruthy();
+    expect(await screen.findByText('dawn · GPU')).toBeTruthy();
     expect(screen.getByText('Fallback: vulkan: No device')).toBeTruthy();
   });
 
@@ -168,9 +184,10 @@ describe('EditorShell', () => {
     expect(screen.getByText('Loading b')).toBeTruthy();
   });
 
-  it('asks the engine for the scene chosen in the menu', () => {
+  it('asks the engine for the scene chosen in the menu', async () => {
     const { host, posted, send } = fakeHost();
     render(<EditorShell host={host} />, { wrapper: StrictMode });
+    await screen.findByTestId('viewport');
     send(ready);
     chooseInMenu('Scene', 'b');
     expect(posted).toContainEqual({ type: 'scene', name: 'b' });
@@ -285,6 +302,67 @@ describe('EditorShell', () => {
     chooseInMenu('View', 'Reset layout');
     await waitFor(() => expect(tabs()).toContain('Outliner'));
     await storedLayout(stored, (saved) => saved?.docks.right === true);
+  });
+
+  it('follows the focus of the areas', async () => {
+    const { runtime } = await renderShell(fakeHost().host);
+    const focus = () => runtime.machine.getSnapshot().context.focus;
+    fireEvent.pointerDown(screen.getByText('Nothing selected.'));
+    expect(focus()).toEqual({ area: 'right', view: 'inspector' });
+    fireEvent.focus(screen.getByTestId('viewport'));
+    expect(focus()).toEqual({ area: 'center', view: 'viewport' });
+    // Opened, a panel gets the focus.
+    chooseInMenu('View', 'Welcome');
+    expect(focus()).toEqual({ area: 'center', view: 'welcome' });
+  });
+
+  it('derives the context keys from the engine and the editor', async () => {
+    const { host, send } = fakeHost();
+    const { runtime } = await renderShell(host);
+    expect(runtime.keys.matches('engine.ready')).toBe(false);
+    send(ready);
+    expect(runtime.keys.values()).toMatchObject({
+      'engine.ready': true,
+      'engine.backend': 'vulkan',
+      'editor.mode': 'object',
+      'scene.hasSelection': false,
+    });
+    expect(
+      runtime.keys.matches('engine.backend == vulkan && !scene.hasSelection'),
+    ).toBe(true);
+    act(() => runtime.editor.trigger.select({ ids: ['cube'] }));
+    expect(runtime.keys.matches('scene.hasSelection')).toBe(true);
+  });
+
+  it('shows the mode and the tools, and keeps them with the layout', async () => {
+    const { host, stored } = fakeHost();
+    const { runtime, unmount } = await renderShell(host);
+    expect(screen.getByText('Object mode')).toBeTruthy();
+    act(() => {
+      runtime.tools.register({
+        id: 'acme.move',
+        title: 'Move',
+        slot: 'primary',
+        create: () => createMachine({}),
+      });
+      runtime.machine.send({ type: 'TOOL.ACTIVATE', tool: 'acme.move' });
+    });
+    expect(screen.getByText('Object mode · Move')).toBeTruthy();
+    const layout = await storedLayout(stored, (saved) =>
+      JSON.stringify(saved?.machine).includes('acme.move'),
+    );
+    unmount();
+
+    // Restored without the tool: idle.
+    const second = fakeHost({ layout });
+    await renderShell(second.host);
+    expect(screen.getByText('Object mode')).toBeTruthy();
+  });
+
+  it('disposes its runtime once unmounted', async () => {
+    const { runtime, unmount } = await renderShell(fakeHost().host);
+    unmount();
+    expect(runtime.machine.getSnapshot().status).toBe('stopped');
   });
 
   it('stops listening to the engine once unmounted', () => {

@@ -17,7 +17,13 @@ Contraintes :
 | L'état non sérialisable   | **Un registre de services maison**, sur le modèle de VS Code (§5)                                                               | InversifyJS, tsyringe, TypeDI, awilix : ni portée par plugin, ni nettoyage à la désactivation, ni identifiants typés comme on les veut ; le registre fait une centaine de lignes |
 | Les mutations du document | **Les commandes de P15** (`engine-editing`), seul chemin d'écriture                                                             | Des écritures directes dans le store : ni journal, ni annuler et refaire                                                                                                         |
 
-À vérifier dans la version installée avant d'écrire le code : comment XState fournit les implémentations d'une machine à part de sa définition, invoque des acteurs enfants et persiste leurs snapshots ; ce que `@xstate/store` offre pour l'annulation (ou s'il suffit de la confier aux commandes).
+_Vérifié à l'étape 11_ (XState 5.33, `@xstate/store` 4.3) :
+
+- **Les implémentations** : `setup()` déclare les gardes et les actions nommées (avec leurs paramètres typés), `machine.provide()` les remplace par celles du runtime ; `provide` copie les implémentations, il n'y a donc pas de registre vivant derrière la machine.
+- **Les acteurs enfants** : `invoke.src` est un nom ou une logique, jamais calculé à partir de l'événement. Un outil est donc créé par une action (`enqueueActions` et `spawnChild`), avec la logique prise dans le registre ; pour qu'XState accepte un identifiant d'enfant avec une logique en ligne, le setup déclare `actors` comme un `Record<string, AnyActorLogic>` vide.
+- **La persistance** : XState ne persiste pas un enfant en ligne (une erreur dans sa version de développement) et ne restaure que les enfants dont la source est un nom de ses `actors`, sans erreur pour les autres. Le runtime persiste donc chaque enfant lui-même, avec l'identifiant de l'outil comme source, et le restaure avec la logique du registre : un outil absent se replie sur `idle` (§6).
+- **Les transitions des régions parallèles** : une transition `reenter` posée sur une région (et non sur ses états) a pour domaine le premier ancêtre composé, au-dessus des états parallèles : elle sort de toutes les régions et y rentre. Les transitions des emplacements et du mode sont donc sur leurs états.
+- **`@xstate/store`** : un store par événements (`trigger`), observable (`subscribe`, `select`), sans React (`useSyncExternalStore` suffit) ; il a une extension d'annulation (`@xstate/store/undo`, par événements ou par snapshots), que le document n'utilisera pas : l'annulation reste aux commandes de P15.
 
 ## 2. Les trois niveaux
 
@@ -132,7 +138,7 @@ Les valeurs qui changent à chaque frame (le transform en cours de drag, le FPS)
 
 ## 9. Les questions ouvertes
 
-- Combien d'emplacements d'outils au départ ? Un plugin peut-il en demander un nouveau ?
+- ~~Combien d'emplacements d'outils au départ ?~~ _Deux à l'étape 11_ : `primary` (les outils de transformation, de sélection), puis `secondary` (l'accrochage, les aides), dans cet ordre de priorité. Un plugin peut-il en demander un nouveau ? Non pour l'instant : la machine est fixe.
 - Annuler et refaire : les commandes de P15 seules, ou des patches sur le document ?
 - L'état des plugins : dans le layout, dans le projet, ou selon son type ?
 - La projection du document dans l'interface : un message par changement, ou des différences groupées par frame ?
