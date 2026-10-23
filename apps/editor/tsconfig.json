@@ -1,7 +1,44 @@
 {
   "files": [],
   "references": [
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.web.json" }
+    {
+      "path": "../../packages/engine-audio-native"
+    },
+    {
+      "path": "../../packages/engine-resources-native"
+    },
+    {
+      "path": "../../packages/engine-resources"
+    },
+    {
+      "path": "../../packages/engine-physics-rapier"
+    },
+    {
+      "path": "../../packages/engine-gltf"
+    },
+    {
+      "path": "../../packages/engine-assets"
+    },
+    {
+      "path": "../../packages/demo-scenes"
+    },
+    {
+      "path": "../../packages/editor-ui"
+    },
+    {
+      "path": "../../packages/engine-native"
+    },
+    {
+      "path": "../../packages/engine-vulkan"
+    },
+    {
+      "path": "../../packages/engine-backend"
+    },
+    {
+      "path": "./tsconfig.node.json"
+    },
+    {
+      "path": "./tsconfig.web.json"
+    }
   ]
 }
