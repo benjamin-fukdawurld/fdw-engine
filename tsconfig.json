@@ -122,6 +122,9 @@
     },
     {
       "path": "./packages/engine-audio-native"
+    },
+    {
+      "path": "./packages/editor-ui"
     }
   ]
 }

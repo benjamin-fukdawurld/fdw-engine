@@ -1,7 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import type { EngineMessage } from '../../shared/protocol';
-import { engine } from './engine';
-import { Viewport } from './Viewport';
+import type { EditorHost, EngineConnection } from './host';
+import type { EngineMessage } from './protocol';
 
 const panel: CSSProperties = {
   background: '#26262b',
@@ -12,7 +11,7 @@ const panel: CSSProperties = {
 type Stats = Extract<EngineMessage, { type: 'stats' }>;
 
 // What the engine tells of itself.
-function useEngine() {
+function useEngine(engine: EngineConnection) {
   const [device, setDevice] = useState('');
   const [scenes, setScenes] = useState<readonly string[]>([]);
   const [scene, setScene] = useState('');
@@ -42,7 +41,7 @@ function useEngine() {
             break;
         }
       }),
-    [],
+    [engine],
   );
   const showScene = (name: string) => {
     setScene(name);
@@ -51,11 +50,13 @@ function useEngine() {
   return { device, scenes, scene, showScene, loading, stats, error };
 }
 
-export function App() {
-  const { platform, versions } = window.editor;
+/** The interface of the editor, the same in every host. */
+export function EditorShell({ host }: { readonly host: EditorHost }) {
+  const { Viewport } = host;
   const [outlinerOpen, setOutlinerOpen] = useState(true);
-  const { device, scenes, scene, showScene, loading, stats, error } =
-    useEngine();
+  const { device, scenes, scene, showScene, loading, stats, error } = useEngine(
+    host.engine,
+  );
   return (
     <div
       style={{
@@ -124,10 +125,7 @@ export function App() {
               }`}
           </span>
         )}
-        <span style={{ marginLeft: 'auto' }}>
-          Electron {versions.electron} · Chrome {versions.chrome} · Node{' '}
-          {versions.node} · {platform}
-        </span>
+        <span style={{ marginLeft: 'auto' }}>{host.about}</span>
       </footer>
     </div>
   );

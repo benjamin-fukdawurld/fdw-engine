@@ -1,33 +1,39 @@
 import type { GamepadState, InputSink } from '@fdw/engine-input';
 import { WebInputSource } from '@fdw/engine-input-web';
 import { useEffect, useRef } from 'react';
-import type { InputCall } from '../../shared/protocol';
-import { engine } from './engine';
+import type { EngineConnection } from './host';
+import type { InputCall } from './protocol';
 
 // An InputSink sending its calls to the engine, which replays them.
-const forward =
-  <K extends keyof InputSink>(method: K) =>
-  (...args: Parameters<InputSink[K]>) =>
-    engine.post({ type: 'input', ...({ method, args } as InputCall) });
-
-const sink: InputSink = {
-  keyDown: forward('keyDown'),
-  keyUp: forward('keyUp'),
-  pointerMove: forward('pointerMove'),
-  pointerLock: forward('pointerLock'),
-  pointerButton: forward('pointerButton'),
-  wheel: forward('wheel'),
-  blur: forward('blur'),
-};
+function remoteSink(engine: EngineConnection): InputSink {
+  const forward =
+    <K extends keyof InputSink>(method: K) =>
+    (...args: Parameters<InputSink[K]>) =>
+      engine.post({ type: 'input', ...({ method, args } as InputCall) });
+  return {
+    keyDown: forward('keyDown'),
+    keyUp: forward('keyUp'),
+    pointerMove: forward('pointerMove'),
+    pointerLock: forward('pointerLock'),
+    pointerButton: forward('pointerButton'),
+    wheel: forward('wheel'),
+    blur: forward('blur'),
+  };
+}
 
 /**
- * The area of the page where the engine shows its viewport: measured, and
+ * The viewport of an engine out of the page (the utility process of
+ * Electron): the area where the engine shows its view, measured, and
  * its bounds in device pixels sent to the engine, which places its window
  * over it. The element stays empty, but receives the inputs: that window
  * lets them through. Read by a WebInputSource, as a canvas would be, and
  * sent to the engine; the pointer locks to the element.
  */
-export function Viewport() {
+export function RemoteViewport({
+  engine,
+}: {
+  readonly engine: EngineConnection;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,13 +62,13 @@ export function Viewport() {
       window.removeEventListener('resize', update);
       engine.post({ type: 'bounds', x: 0, y: 0, width: 0, height: 0 });
     };
-  }, []);
+  }, [engine]);
 
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
     const source = new WebInputSource(element);
-    source.attach(sink);
+    source.attach(remoteSink(engine));
     const unsubscribe = engine.subscribe((message) => {
       if (message.type === 'pointerLock') {
         source.setPointerLock(message.locked);
@@ -88,7 +94,7 @@ export function Viewport() {
       unsubscribe();
       source.detach();
     };
-  }, []);
+  }, [engine]);
 
   return (
     <div

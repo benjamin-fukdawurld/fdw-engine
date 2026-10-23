@@ -1,0 +1,7 @@
+{
+  "name": "editor-ui",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/editor-ui/src",
+  "projectType": "library",
+  "tags": []
+}
