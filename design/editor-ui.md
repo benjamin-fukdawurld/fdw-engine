@@ -38,7 +38,7 @@ apps/editor-web         Vite : une page, le moteur dans la page, un canvas
 | ----------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Le moteur               | Un processus utilitaire, joint par le `MessagePort` actuel                      | Dans la page, joint par un `MessageChannel` : le même protocole ; dans un worker plus tard     |
 | Le viewport             | La zone réservée par React, mesurée, une fenêtre X11 enfant au-dessus (fait)    | Un `<canvas>` dans la même zone, à la taille de la zone                                        |
-| Les entrées             | `WebInputSource` sur l'élément de la page, rejoué dans le moteur (fait)         | `WebInputSource` sur le canvas, sans relais                                                    |
+| Les entrées             | `WebInputSource` sur l'élément de la page, rejoué dans le moteur (fait)         | `WebInputSource` sur l'élément du canvas, sans relais (fait)                                   |
 | Les fichiers du projet  | `engine-resources-native` dans le processus du moteur, les dialogues d'Electron | `engine-resources-web` ; File System Access API (Chromium), sinon import et export de fichiers |
 | La persistance (layout) | Un fichier JSON dans `userData`, et dans le projet                              | IndexedDB, et dans le projet                                                                   |
 | Les popouts             | `window.open` autorisé par `setWindowOpenHandler`                               | `window.open`, soumis au bloqueur de fenêtres                                                  |

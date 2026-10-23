@@ -51,7 +51,7 @@ export interface HostStorage {
 
 /**
  * What an application gives the shell: the Electron editor (apps/editor) or
- * the web one. The plugins come with their manifest (step 12 of P18).
+ * the web one (apps/editor-web). The plugins come with their manifest (step 12 of P18).
  */
 export interface EditorHost {
   readonly engine: EngineConnection;
