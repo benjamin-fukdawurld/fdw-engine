@@ -33,7 +33,7 @@ Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne le
 | P15   | Sélection, gizmos, commandes                        | Déplacer, tourner, mettre à l'échelle des objets ; annuler, refaire | Moyenne     |
 | P16   | Scènes et niveaux : import et export modulaires     | Le niveau du TPS enregistré, rechargé, échangé en glTF              | Grande      |
 | P17   | La mer et les vagues                                | Une mer animée, des objets qui flottent                             | Grande      |
-| P18   | L'application Electron                              | La base de l'éditeur : React, un viewport en rendu natif            | Grande      |
+| P18   | L'éditeur : Electron et web                         | La base de l'éditeur : React, dock panels, plugins ; natif et web   | Grande      |
 | P19   | L'éditeur de graphs                                 | Matériaux, animations, comportements édités et débogués à la souris | Grande      |
 | P20   | L'éditeur de jeu                                    | **Un petit jeu fait dans l'éditeur**                                | Très grande |
 | P21   | Les fluides                                         | De l'eau et de la fumée simulées                                    | Grande      |
@@ -289,9 +289,23 @@ Une mer animée sur les trois backends, éclairée de façon physique, et qui in
 
 Démo : une côte, une mer qui s'agite, des caisses et une barque qui flottent ; les tutoriels (EN et FR).
 
-### P18. L'application Electron
+### P18. L'éditeur : Electron et web
 
-La base de l'éditeur : une application de bureau en Electron et React. **Le moteur garde son rendu natif** (l'addon de `engine-native` : Vulkan, ou Dawn) dans une surface native posée dans la zone centrale de la fenêtre ; la WebView ne sert qu'à l'interface (panneaux, menus, inspecteur). Le rendu 3D ne passe pas par un `<canvas>` WebGL ou WebGPU. Le rendu web reste possible en option, comme dans la doc.
+_En cours_ (23 octobre 2026) : les étapes 1 à 3 et 7 sont faites, la 4 en partie ; **la prochaine est la 8** (le choix du backend sur le bureau). Le détail est dans [apps/editor/README.md](../apps/editor/README.md) et [packages/editor-ui/README.md](../packages/editor-ui/README.md).
+
+- **Le viewport natif (étapes 1 à 3, 4 en partie)** : le moteur tourne dans un processus utilitaire d'Electron (`apps/editor/src/engine`), qui reçoit le XID de la fenêtre : l'addon de l'éditeur y crée une fenêtre X11 enfant, transparente aux entrées, et `engine-vulkan` présente dedans avec sa propre swapchain (FIFO), sans copie. La page et le moteur se parlent par un `MessagePort` donné aux deux à chaque chargement : les bornes de la zone en pixels physiques, la scène, les entrées. Les entrées sont lues sur l'élément de la page par `WebInputSource`, puis rejouées dans le moteur (`RemoteInputSource`). Toutes les scènes de `demo-native` se choisissent à chaud : physique, mer, le jeu à la troisième personne avec ses modèles et ses sons. Elles tournent à 60 images par seconde (synchronisation verticale, RTX 2060), sans message de la couche de validation.
+- **L'interface partagée (étape 7)** : le package `@fdw/editor-ui` contient le shell (`EditorShell`), le protocole du moteur (`@fdw/editor-ui/protocol`), le viewport d'un moteur hors de la page (`RemoteViewport`) et les composants shadcn/ui sur Tailwind 4 (thème sombre, taille `xs` pour les barres ; selects natifs, dont la liste passe au-dessus du viewport natif). L'interface `EditorHost` donne le moteur, le viewport, les fichiers (`open`, `save`), la persistance (des documents JSON par clé) et la page des popouts ; son implémentation Electron passe par le processus principal (dialogues, `userData/storage`, `setWindowOpenHandler` limité à `popout.html`). Le shell y garde son layout. Le côté moteur est `EditorEngine` (`@fdw/editor-ui/engine`, sans React) : le processus utilitaire ne fait plus que lui donner sa plateforme (Vulkan, la fenêtre X11, la surface, le rythme des frames), que la version web donnera à l'étape 9. Testés : le shell avec un hôte factice, `EditorEngine` avec une plateforme factice. Les plugins de l'hôte sont repoussés à l'étape 12, avec leur manifeste.
+
+Reste à faire : les étapes 8 à 13, puis finir l'étape 4 et les étapes 5 et 6, Wayland natif, la suite (« Ensuite ») et la démo.
+
+**Revu le 23 octobre 2026** : l'éditeur aura aussi une version web, avec la même interface ; le backend se choisit par une variable d'environnement. Le socle de l'interface (étapes 7 à 13) suit les designs [editor-ui.md](editor-ui.md) et [editor-state.md](editor-state.md).
+
+La base de l'éditeur, en React, sur deux hôtes qui partagent la même interface (`@fdw/editor-ui`) :
+
+- **L'application de bureau** (Electron, `apps/editor`) : **le moteur garde son rendu natif** (Vulkan, ou Dawn en repli) dans une surface native posée dans la zone centrale de la fenêtre ; la WebView ne sert qu'à l'interface (panneaux, menus, inspecteur).
+- **La version web** (`apps/editor-web`) : le moteur dans la page, rendu dans un `<canvas>` (WebGPU, ou WebGL2 en repli).
+
+Le backend est choisi par `FDW_BACKEND` : `vulkan` ou `dawn` sur le bureau, `webgpu` ou `webgl2` sur le web ; sans la variable, Vulkan et WebGPU ; si le backend ne démarre pas, Dawn et WebGL2 ([editor-ui.md §4](editor-ui.md#4-le-choix-du-backend)).
 
 **Le contrat du viewport** : React réserve une zone de la page et la mesure (`ResizeObserver`) ; la couche native y place sa surface, gère le DPI, et recrée la swapchain et les cibles de rendu quand la taille change. Selon le système :
 
@@ -302,7 +316,7 @@ La base de l'éditeur : une application de bureau en Electron et React. **Le mot
 | Windows        | Une fenêtre `WS_CHILD` dans le `HWND` d'Electron, une surface Vulkan Win32                           | Après la validation du contrat                              |
 | macOS          | Une `NSView` avec un `CAMetalLayer` dans la vue d'Electron (MoltenVK, ou Dawn sur Metal)             | Electron le permet ; après la validation du contrat         |
 
-**Les étapes :**
+**Les étapes du viewport natif :**
 
 1. **Un prototype Linux** : Electron, React et un addon C++ qui crée une surface native dans la zone centrale de la fenêtre et y affiche une scène Vulkan minimale.
 2. **Le viewport dans la zone HTML** : la surface placée dans la zone réservée par React, avec des panneaux latéraux. C'est le principal risque technique.
@@ -310,6 +324,18 @@ La base de l'éditeur : une application de bureau en Electron et React. **Le mot
 4. **Les interactions** : la souris, le clavier, le focus, la capture de la souris pour la navigation 3D, le redimensionnement, la minimisation et la restauration de la fenêtre. À trancher : la surface native transparente aux entrées (une région d'entrée vide sous X11, `HTTRANSPARENT` sous Windows, `hitTest:` qui rend `nil` sous macOS), les événements arrivant alors à l'élément de la page, où `engine-input-web` et le verrouillage du pointeur de Chromium servent tels quels ; ou la surface qui reçoit les entrées, lues par `engine-input-native`, au prix du focus partagé avec la WebView.
 5. **Les performances** : le coût CPU et GPU mesuré ; un chemin de rendu direct, sans transfert systématique des pixels par la mémoire du CPU.
 6. **Les autres plateformes** : une fois le contrat du viewport validé, Windows et macOS, indispensables même si le développement commence sous Linux.
+
+**Le socle de l'éditeur** (designs : [editor-ui.md](editor-ui.md), [editor-state.md](editor-state.md)). Chaque étape tourne dans les deux hôtes dès qu'il existe, avec ses tests :
+
+7. **L'interface partagée** (_faite_ ; les plugins de l'hôte passent à l'étape 12) : le package `@fdw/editor-ui` (React, Tailwind, shadcn/ui), le shell actuel et le protocole du moteur (`shared/protocol.ts`) déplacés dedans ; l'interface `EditorHost` (moteur, viewport, fichiers, persistance, popouts, plugins) et son implémentation Electron. Le côté moteur (`src/engine`) devient un module qui ne dépend pas du processus utilitaire. L'éditeur de bureau marche comme avant.
+8. **Le choix du backend sur le bureau** : `FDW_BACKEND` lu par le processus principal, transmis au moteur ; Vulkan par défaut, Dawn en repli, présenté par copie dans la fenêtre enfant (`XShmPutImage` dans l'addon de l'éditeur) ; le backend actif et la raison d'un repli dans le message `ready`, affichés dans la status bar.
+9. **L'éditeur web** : `apps/editor-web` (Vite), son `EditorHost` : le moteur dans la page derrière un `MessageChannel` (le même protocole), un canvas dans la zone du viewport ; `FDW_BACKEND` lu par Vite, WebGPU par défaut, WebGL2 en repli à l'exécution ; les scènes de la démo choisies comme dans l'éditeur de bureau. En CI dans Chromium (WebGPU par SwiftShader, WebGL2).
+10. **Le squelette façon QMainWindow** : un `GridviewReact` avec la zone centrale (`DockviewReact`), les docks, la menu bar, la status bar et les toolbars sur les quatre côtés ; le layout enregistré et restauré par l'hôte. Vérifiés tôt : le viewport toujours monté (onglets, groupes, docks repliés), les menus et les flottants au-dessus du viewport natif (région de forme ou viewport figé), le thème de dockview sur celui de shadcn.
+11. **L'état et les services** : le registre de services (identifiants typés, portées, `dispose()`) ; les stores de l'éditeur (`@xstate/store`) ; la machine du cœur (focus, mode, emplacements d'outils) ; les context keys et l'évaluateur de `when`. D'abord, vérifier les API de la version installée de XState.
+12. **Les plugins** : le manifeste, les registres (commandes, vues, menus, toolbars, status bar, raccourcis), l'activation paresseuse, `activate(ctx)` ; la palette de commandes. Les panneaux de l'éditeur deviennent des plugins built-in : le viewport, l'arbre de la scène, l'inspecteur, la console. Un plugin d'exemple qui ajoute un panneau et un outil (une sous-machine dans un emplacement) ; un layout et un snapshot qui le référencent, rechargés sans lui.
+13. **Le lien avec P15 et P16** : ouvrir et enregistrer un niveau (P16) par l'hôte ; la sélection, les gizmos, annuler et refaire de P15, par les commandes ; l'arbre de la scène et l'inspecteur alimentés par la projection du document que le moteur envoie.
+
+Les étapes 7 à 9 passent avant la suite de l'étape 4 et les étapes 5 et 6 : elles posent l'architecture que le reste de l'éditeur suppose. Les questions ouvertes des deux designs (plugins tiers fiables ou non, layout par projet ou par utilisateur, partie « moteur » des plugins) sont à trancher avant l'étape 12.
 
 **Les points de vigilance :**
 
@@ -319,9 +345,9 @@ La base de l'éditeur : une application de bureau en Electron et React. **Le mot
 - **Pas d'interface transparente sur la 3D** au départ (pas de panneaux en `backdrop-filter: blur` par-dessus le rendu) : des panneaux classiques autour du viewport simplifient la composition et les performances. Les menus et les infobulles qui débordent sur la zone du viewport sont à vérifier.
 - **Le processus du moteur** : la surface enfant dépend du handle de la fenêtre, connu du processus principal ; le moteur ne doit pas bloquer son thread d'interface (un thread à lui dans le processus principal, ou un processus utilitaire qui reçoit le handle, ce que permettent X11 et Win32 mais pas une `NSView`).
 
-**Ensuite** : l'accès aux fichiers d'un projet par `engine-resources-native`, le rechargement à chaud, un système de panneaux agençables en React, des composants partagés avec la doc pour que chaque panneau ait aussi son exemple vivant ; la distribution, Linux d'abord, l'addon précompilé pour Electron rejoignant P11.
+**Ensuite** : le rechargement à chaud, les popouts, les plugins tiers (sandbox et permissions selon la réponse du design), le moteur web dans un worker (`OffscreenCanvas`), des composants partagés avec la doc pour que chaque panneau ait aussi son exemple vivant ; la distribution, Linux d'abord, l'addon précompilé pour Electron rejoignant P11, la version web publiée avec la doc.
 
-Démo : l'application ouvre un niveau de P16 dans son viewport natif, entre ses panneaux, et le montre avec les outils de P15.
+Démo : l'éditeur, sur le bureau (Vulkan) et dans le navigateur (WebGPU), ouvre un niveau de P16 dans son viewport, entre ses panneaux, et le montre avec les outils de P15 ; un plugin d'exemple y ajoute un panneau et un outil.
 
 ### P19. L'éditeur de graphs
 
