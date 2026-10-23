@@ -5,16 +5,13 @@
 // at each page load; the page sends the bounds of the viewport, the scene to
 // show and its inputs over it. The main process and its interface never
 // wait for a frame.
-import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import type { Scene } from '@fdw/demo-scenes';
+import type { EngineMessage, PageMessage } from '@fdw/editor-ui/protocol';
+import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import type { GamepadState } from '@fdw/engine-input';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import type { MessagePortMain } from 'electron';
-import type {
-  ControlMessage,
-  EngineMessage,
-  PageMessage,
-} from '../shared/protocol';
+import type { ControlMessage } from '../shared/protocol';
 import { RemoteInputSource } from './RemoteInputSource';
 import { scenes } from './scenes';
 import { ViewportSurface } from './ViewportSurface';

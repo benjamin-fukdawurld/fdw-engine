@@ -1,10 +1,10 @@
+import type { EngineMessage, InputCall } from '@fdw/editor-ui/protocol';
 import {
   createGamepadState,
   GamepadState,
   InputSink,
   InputSource,
 } from '@fdw/engine-input';
-import type { EngineMessage, InputCall } from '../shared/protocol';
 
 /**
  * The inputs of the page, in the engine process: the page reads the DOM

@@ -1,9 +1,10 @@
+import { EditorShell } from '@fdw/editor-ui';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
+import { host } from './host';
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <App />
+    <EditorShell host={host} />
   </StrictMode>,
 );

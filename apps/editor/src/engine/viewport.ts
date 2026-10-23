@@ -1,5 +1,5 @@
 import type { NativeWindowHandle } from '@fdw/engine-vulkan';
-import type { ViewportBounds } from '../shared/protocol';
+import type { ViewportBounds } from '@fdw/editor-ui/protocol';
 
 // The addon of native/ (built by scripts/build-native.mjs).
 interface ViewportAddon {

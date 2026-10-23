@@ -1,4 +1,8 @@
-import type { EngineMessage, PageMessage } from '../../shared/protocol';
+import type {
+  EngineConnection,
+  EngineMessage,
+  PageMessage,
+} from '@fdw/editor-ui';
 
 type Listener = (message: EngineMessage) => void;
 
@@ -7,7 +11,7 @@ type Listener = (message: EngineMessage) => void;
  * process gives it. The bounds and the scene sent before the port comes
  * wait for it; the inputs are dropped.
  */
-class EngineConnection {
+class PortConnection implements EngineConnection {
   #port?: MessagePort;
   #pending: PageMessage[] = [];
   readonly #listeners = new Set<Listener>();
@@ -44,4 +48,4 @@ class EngineConnection {
   }
 }
 
-export const engine = new EngineConnection();
+export const engine = new PortConnection();

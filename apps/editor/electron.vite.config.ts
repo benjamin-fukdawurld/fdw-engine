@@ -14,5 +14,7 @@ export default defineConfig({
   preload: {},
   renderer: {
     plugins: [react()],
+    // @fdw/editor-ui would otherwise import the React of the repository.
+    resolve: { dedupe: ['react', 'react-dom'] },
   },
 });
