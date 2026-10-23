@@ -349,6 +349,8 @@ Les étapes 7 à 9 passent avant la suite de l'étape 4 et les étapes 5 et 6 : 
 
 **Ensuite** : le rechargement à chaud, les popouts, les plugins tiers (sandbox et permissions selon la réponse du design), le moteur web dans un worker (`OffscreenCanvas`), des composants partagés avec la doc pour que chaque panneau ait aussi son exemple vivant ; la distribution, Linux d'abord, l'addon précompilé pour Electron rejoignant P11, la version web publiée avec la doc.
 
+**La documentation de l'éditeur** : une section à elle dans la doc (EN et FR), une fois l'éditeur assez mûr (au plus tôt après l'étape 13) : le lancer sur le bureau et sur le web, le choix du backend, l'interface, l'écriture d'un plugin, avec des tutoriels et des exemples vivants (l'éditeur web dans la page).
+
 Démo : l'éditeur, sur le bureau (Vulkan) et dans le navigateur (WebGPU), ouvre un niveau de P16 dans son viewport, entre ses panneaux, et le montre avec les outils de P15 ; un plugin d'exemple y ajoute un panneau et un outil.
 
 ### P19. L'éditeur de graphs
