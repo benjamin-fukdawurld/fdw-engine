@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { EditorPlugin } from './plugins/pluginHost';
 import type { EngineMessage, PageMessage } from './protocol';
 
 /**
@@ -51,7 +52,7 @@ export interface HostStorage {
 
 /**
  * What an application gives the shell: the Electron editor (apps/editor) or
- * the web one (apps/editor-web). The plugins come with their manifest (step 12 of P18).
+ * the web one (apps/editor-web).
  */
 export interface EditorHost {
   readonly engine: EngineConnection;
@@ -66,4 +67,10 @@ export interface EditorHost {
   readonly popoutUrl: string;
   /** Shown at the right of the status bar: the platform, the versions. */
   readonly about: string;
+  /**
+   * The plugins of the application, after those of the editor: their
+   * manifests read at the start, their code loaded at their first
+   * activation event.
+   */
+  readonly plugins?: readonly EditorPlugin[];
 }

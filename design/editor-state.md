@@ -115,7 +115,8 @@ Les valeurs qui changent à chaque frame (le transform en cours de drag, le FPS)
 - **Jamais sauvegardé** : le registre, recréé au démarrage ; les plugins réenregistrent leurs services à l'activation.
 - **Un plugin absent** : un snapshot qui référence un outil ou un mode d'un plugin désinstallé ou désactivé se replie sur `idle`, comme le panneau « plugin manquant » du layout.
 - **Une référence perdue** : la sélection et la vue active sont des identifiants ; un objet ou une vue disparus sont ignorés à la restauration.
-- **L'état des plugins** : un espace nommé par plugin (`ctx.state`), sérialisable, sauvegardé avec le layout ou le projet.
+- **L'état des plugins** : un espace nommé par plugin (`ctx.state`), sérialisable, sauvegardé avec le layout ou le projet ; gardé quand le plugin est absent.
+- **Un plugin présent mais pas encore actif** (étape 12) : le code des plugins des outils et du mode du snapshot est chargé avant le runtime, et leur `activate` enregistre leurs outils avant que la machine ne se restaure ; un outil retrouve ainsi son état (son contexte, persisté par le runtime).
 
 ## 7. Les liens avec le reste
 
@@ -140,5 +141,5 @@ Les valeurs qui changent à chaque frame (le transform en cours de drag, le FPS)
 
 - ~~Combien d'emplacements d'outils au départ ?~~ _Deux à l'étape 11_ : `primary` (les outils de transformation, de sélection), puis `secondary` (l'accrochage, les aides), dans cet ordre de priorité. Un plugin peut-il en demander un nouveau ? Non pour l'instant : la machine est fixe.
 - Annuler et refaire : les commandes de P15 seules, ou des patches sur le document ?
-- L'état des plugins : dans le layout, dans le projet, ou selon son type ?
+- L'état des plugins : dans le layout, dans le projet, ou selon son type ? _Dans le layout à l'étape 12_ ; le projet viendra avec l'étape 13.
 - La projection du document dans l'interface : un message par changement, ou des différences groupées par frame ?

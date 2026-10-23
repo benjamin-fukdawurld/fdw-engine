@@ -1,4 +1,5 @@
 import type { EditorHost, HostStorage } from '@fdw/editor-ui';
+import { samplePlugin } from '@fdw/editor-plugin-sample';
 import { CanvasViewport } from './CanvasViewport';
 import type { WebEngine } from './engine';
 import { webFiles } from './files';
@@ -14,7 +15,8 @@ function browser(): string {
 /**
  * The host of the web editor: the engine in the page, its canvas in the
  * viewport; the storage in IndexedDB, the files through the File System
- * Access API.
+ * Access API; the sample plugin, its code in a chunk loaded at its first
+ * event.
  */
 export function createWebHost(
   engine: WebEngine,
@@ -27,5 +29,6 @@ export function createWebHost(
     storage,
     popoutUrl: new URL('popout.html', document.baseURI).href,
     about: `Web · ${browser()} · ${navigator.platform}`,
+    plugins: [samplePlugin],
   };
 }

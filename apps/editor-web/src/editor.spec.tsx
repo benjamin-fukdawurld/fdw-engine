@@ -1,5 +1,5 @@
 import { EditorShell, type HostStorage } from '@fdw/editor-ui';
-import '@fdw/editor-ui/styles.css';
+import './styles.css';
 import {
   cleanup,
   fireEvent,
@@ -135,6 +135,42 @@ describe('the layout of the web editor', () => {
     expect(engine.element.querySelector('canvas')).toBe(canvas);
     fillsViewport(canvas);
     await drawing('webgpu');
+  }, 30_000);
+});
+
+describe('the plugins of the web editor', () => {
+  afterEach(async () => {
+    cleanup();
+    await Promise.all(engines.map((engine) => engine.stop()));
+    engines.length = 0;
+  });
+
+  it('runs the tool of the sample plugin from the palette, its code loaded then', async () => {
+    startEditor('webgl2');
+    await drawing('webgl2');
+    fireEvent.keyDown(window, {
+      key: 'P',
+      code: 'KeyP',
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    const palette = await screen.findByRole('dialog');
+    fireEvent.click(
+      within(palette).getByRole('option', { name: 'Tool: Mark' }),
+    );
+    expect(await screen.findByText('Object mode · Mark')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'm', code: 'KeyM' });
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Marks' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(
+      within(screen.getByRole('menu')).getByRole('menuitem', {
+        name: 'Show the marks',
+      }),
+    );
+    expect(await screen.findByText('Marking: 1 mark.')).toBeTruthy();
+    // The viewport still drawn, beside the toolbar of the plugin.
+    await drawing('webgl2');
   }, 30_000);
 });
 

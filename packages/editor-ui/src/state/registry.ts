@@ -7,9 +7,9 @@ export interface RegistryChange<T> {
 }
 
 /**
- * Items contributed by id (the tools, the modes; the views and the
- * commands at step 12 of P18). An id is registered once; the registration
- * gives back its removal.
+ * Items contributed by id: the tools, the modes, the commands, the views,
+ * the toolbars. An id is registered once; the registration gives back its
+ * removal.
  */
 export class Registry<T extends { readonly id: string }> {
   readonly #items = new Map<string, T>();

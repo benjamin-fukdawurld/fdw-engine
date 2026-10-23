@@ -1,26 +1,15 @@
-import {
-  PanelBottomIcon,
-  PanelLeftIcon,
-  PanelRightIcon,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  createContext,
-  Fragment,
-  useContext,
-  type FunctionComponent,
-} from 'react';
+import { Fragment, useSyncExternalStore } from 'react';
 import { Button } from './components/ui/button';
 import {
   Menubar,
   MenubarCheckboxItem,
   MenubarContent,
   MenubarItem,
-  MenubarLabel,
   MenubarMenu,
   MenubarRadioGroup,
   MenubarRadioItem,
   MenubarSeparator,
+  MenubarShortcut,
   MenubarSub,
   MenubarSubContent,
   MenubarSubTrigger,
@@ -28,115 +17,197 @@ import {
 } from './components/ui/menubar';
 import {
   useEditor,
-  useEditorMachine,
   useEditorStore,
-  useEngine,
+  useItems,
+  useMenu,
+  useWhen,
 } from './editorContext';
-import {
-  docks,
-  toolbarSides,
-  type Chrome,
-  type DockId,
-  type ToolbarLayout,
-  type ToolbarSide,
-} from './layout';
-import { objectMode, toolSlots } from './state/editorMachine';
+import type { ToolbarSide } from './layout';
 import { cn } from './lib/utils';
-import { panels } from './panels';
+import { keybindingLabel, menuGroups } from './plugins/contributions';
+import { editorIcons } from './plugins/icons';
+import type {
+  MenuCommandItem,
+  MenuItem,
+  MenuSubmenuItem,
+  ToolbarItem,
+} from './plugins/manifest';
+import type { ContextKeys } from './state/contextKeys';
+import type { EditorRuntime } from './state/runtime';
+import { toolbarLayout } from './toolbarLayout';
 
-/** What the bars change of the panels; the chrome is in the editor store. */
-export interface ShellValue {
-  /** The ids of the panels open. */
-  readonly openPanels: readonly string[];
-  /** Opens the panel, or closes it. */
-  togglePanel(id: string, open: boolean): void;
-  resetLayout(): void;
+// Whether the context keys satisfy the clause, for a list of them.
+function useMatcher(): ContextKeys['matches'] {
+  const { keys } = useEditor();
+  // Rendered again when a key changes.
+  useSyncExternalStore(keys.subscribe, keys.values);
+  return keys.matches;
 }
 
-export const ShellContext = createContext<ShellValue | null>(null);
-
-function useShell(): ShellValue {
-  const value = useContext(ShellContext);
-  if (!value) throw new Error('useShell outside of the EditorShell');
-  return value;
+/** The icon of a manifest, by its name; nothing if unknown. */
+export function ContributedIcon({ name }: { readonly name?: string }) {
+  const Icon = name ? editorIcons[name] : undefined;
+  return Icon ? <Icon /> : null;
 }
 
-const dockTitles: Readonly<Record<DockId, string>> = {
-  left: 'Left dock',
-  right: 'Right dock',
-  bottom: 'Bottom dock',
-};
-
-const dockIcons: Readonly<Record<DockId, LucideIcon>> = {
-  left: PanelLeftIcon,
-  right: PanelRightIcon,
-  bottom: PanelBottomIcon,
-};
-
-const sideTitles: Readonly<Record<ToolbarSide, string>> = {
-  top: 'Top',
-  left: 'Left',
-  right: 'Right',
-  bottom: 'Bottom',
-};
-
-/** A toolbar: its layout by default, its items. */
-export interface ToolbarSpec {
-  readonly title: string;
-  readonly layout: ToolbarLayout;
-  readonly component: FunctionComponent;
+function execute(
+  runtime: EditorRuntime,
+  command: string,
+  args: readonly unknown[] = [],
+) {
+  void runtime.commands.execute(command, ...args);
 }
 
-// The docks, shown and hidden.
-function DocksToolbar() {
-  const { editor } = useEditor();
-  const chrome = useEditorStore();
-  return docks.map((dock) => {
-    const Icon = dockIcons[dock];
-    const shown = chrome.docks[dock];
+// A command of a menu: an item, a checkbox when toggled, or a radio item.
+function CommandMenuItem({ item }: { readonly item: MenuCommandItem }) {
+  const runtime = useEditor();
+  const spec = runtime.commands.specs.get(item.command);
+  const enabled = useWhen(spec?.enablement) && spec !== undefined;
+  const toggled = item.toggled ?? spec?.toggled;
+  const checked = useWhen(toggled ?? 'false');
+  const bindings = useItems(runtime.keybindings);
+  const title = item.title ?? spec?.title ?? item.command;
+  const select = () => execute(runtime, item.command, item.args);
+  const shortcut = !item.args && keybindingLabel(bindings, item.command);
+  const content = (
+    <>
+      {title}
+      {shortcut && <MenubarShortcut>{shortcut}</MenubarShortcut>}
+    </>
+  );
+  if (toggled === undefined) {
     return (
-      <Button
-        key={dock}
-        variant="ghost"
-        size="icon-xs"
-        aria-label={dockTitles[dock]}
-        title={dockTitles[dock]}
-        aria-pressed={shown}
-        className={cn(shown && 'bg-accent text-accent-foreground')}
-        onClick={() => editor.trigger.setDock({ dock, shown: !shown })}
-      >
-        <Icon />
-      </Button>
+      <MenubarItem inset disabled={!enabled} onSelect={select}>
+        {content}
+      </MenubarItem>
     );
-  });
-}
-
-/**
- * The toolbars, by id. They come from the plugins with the registries
- * (step 12 of P18).
- */
-export const toolbars: Readonly<Record<string, ToolbarSpec>> = {
-  docks: {
-    title: 'Docks',
-    layout: { side: 'top', visible: true },
-    component: DocksToolbar,
-  },
-};
-
-/** The layout of a toolbar: the one saved, or its default. */
-export function toolbarLayout(chrome: Chrome, id: string): ToolbarLayout {
+  }
+  if (item.radio) {
+    return (
+      <MenubarRadioGroup value={checked ? 'on' : ''}>
+        <MenubarRadioItem value="on" disabled={!enabled} onSelect={select}>
+          {content}
+        </MenubarRadioItem>
+      </MenubarRadioGroup>
+    );
+  }
   return (
-    chrome.toolbars[id] ??
-    toolbars[id]?.layout ?? { side: 'top', visible: false }
+    <MenubarCheckboxItem
+      checked={checked}
+      disabled={!enabled}
+      onSelect={select}
+    >
+      {content}
+    </MenubarCheckboxItem>
   );
 }
+
+function SubmenuItem({ item }: { readonly item: MenuSubmenuItem }) {
+  return (
+    <MenubarSub>
+      <MenubarSubTrigger inset>{item.title}</MenubarSubTrigger>
+      <MenubarSubContent>
+        <MenuItems menu={item.submenu} />
+      </MenubarSubContent>
+    </MenubarSub>
+  );
+}
+
+// The items of a menu shown, by groups between separators.
+function MenuItems({ menu }: { readonly menu: string }) {
+  const matches = useMatcher();
+  const groups = menuGroups(useMenu(menu).filter((item) => matches(item.when)));
+  return groups.map((group, index) => (
+    <Fragment key={index}>
+      {index > 0 && <MenubarSeparator />}
+      {group.map((item, itemIndex) =>
+        'submenu' in item ? (
+          <SubmenuItem key={itemIndex} item={item} />
+        ) : (
+          <CommandMenuItem key={itemIndex} item={item} />
+        ),
+      )}
+    </Fragment>
+  ));
+}
+
+// A menu of the menu bar, disabled while it has no item.
+function BarMenu({ item }: { readonly item: MenuSubmenuItem }) {
+  const matches = useMatcher();
+  const items = useMenu(item.submenu).filter((entry) => matches(entry.when));
+  return (
+    <MenubarMenu>
+      <MenubarTrigger disabled={items.length === 0}>
+        {item.title}
+      </MenubarTrigger>
+      <MenubarContent>
+        <MenuItems menu={item.submenu} />
+      </MenubarContent>
+    </MenubarMenu>
+  );
+}
+
+/** The menu bar: the submenus of the menu `menubar`. */
+export function MenuBar() {
+  const matches = useMatcher();
+  const menus = useMenu('menubar').filter(
+    (item: MenuItem): item is MenuSubmenuItem =>
+      'submenu' in item && matches(item.when),
+  );
+  return (
+    <header className="flex items-center gap-2 border-b bg-card px-2">
+      <strong className="px-1 text-xs font-semibold">FDW Editor</strong>
+      <Menubar>
+        {menus.map((item) => (
+          <BarMenu key={item.submenu} item={item} />
+        ))}
+      </Menubar>
+    </header>
+  );
+}
+
+/** A command as a button of a toolbar: its icon, or its title without one. */
+export function CommandButton({
+  command,
+  args,
+}: {
+  readonly command: string;
+  readonly args?: readonly unknown[];
+}) {
+  const runtime = useEditor();
+  const spec = runtime.commands.specs.get(command);
+  const enabled = useWhen(spec?.enablement) && spec !== undefined;
+  const pressed = useWhen(spec?.toggled ?? 'false');
+  const bindings = useItems(runtime.keybindings);
+  const title = spec?.title ?? command;
+  const shortcut = !args && keybindingLabel(bindings, command);
+  const Icon = spec?.icon ? editorIcons[spec.icon] : undefined;
+  return (
+    <Button
+      variant="ghost"
+      size={Icon ? 'icon-xs' : 'xs'}
+      aria-label={title}
+      title={shortcut ? `${title} (${shortcut})` : title}
+      disabled={!enabled}
+      {...(spec?.toggled !== undefined && { 'aria-pressed': pressed })}
+      className={cn(pressed && 'bg-accent text-accent-foreground')}
+      onClick={() => execute(runtime, command, args)}
+    >
+      {Icon ? <Icon /> : title}
+    </Button>
+  );
+}
+
+const itemOf = (item: ToolbarItem) =>
+  typeof item === 'string' ? { command: item } : item;
 
 /** The toolbars of a side, in a row (top, bottom) or a column. */
 export function ToolbarArea({ side }: { readonly side: ToolbarSide }) {
   const chrome = useEditorStore();
-  const shown = Object.entries(toolbars).filter(([id]) => {
-    const layout = toolbarLayout(chrome, id);
-    return layout.visible && layout.side === side;
+  const matches = useMatcher();
+  const shown = useItems(useEditor().toolbars).filter((toolbar) => {
+    const layout = toolbarLayout(chrome, toolbar);
+    return layout.visible && layout.side === side && matches(toolbar.when);
   });
   if (shown.length === 0) return null;
   const vertical = side === 'left' || side === 'right';
@@ -154,8 +225,8 @@ export function ToolbarArea({ side }: { readonly side: ToolbarSide }) {
       )}
       data-side={side}
     >
-      {shown.map(([id, toolbar], index) => (
-        <Fragment key={id}>
+      {shown.map((toolbar, index) => (
+        <Fragment key={toolbar.id}>
           {index > 0 && (
             <div className={cn('bg-border', vertical ? 'h-px' : 'w-px')} />
           )}
@@ -165,7 +236,16 @@ export function ToolbarArea({ side }: { readonly side: ToolbarSide }) {
             aria-orientation={vertical ? 'vertical' : 'horizontal'}
             className={cn('flex gap-0.5', vertical ? 'flex-col' : 'flex-row')}
           >
-            <toolbar.component />
+            {toolbar.items
+              .map(itemOf)
+              .filter((item) => matches(item.when))
+              .map((item, itemIndex) => (
+                <CommandButton
+                  key={itemIndex}
+                  command={item.command}
+                  {...(item.args && { args: item.args })}
+                />
+              ))}
           </div>
         </Fragment>
       ))}
@@ -173,157 +253,52 @@ export function ToolbarArea({ side }: { readonly side: ToolbarSide }) {
   );
 }
 
-function ViewMenu() {
-  const shell = useShell();
-  const { editor } = useEditor();
-  const chrome = useEditorStore();
+// An item of the status bar: its component once its plugin is active, or
+// its text, a button if it runs a command.
+function StatusBarItem({ id }: { readonly id: string }) {
+  const runtime = useEditor();
+  const spec = runtime.statusBar.get(id);
+  const component = useItems(runtime.statusComponents).find(
+    (item) => item.id === id,
+  );
+  if (component) return <component.component />;
+  if (!spec?.text) return null;
+  if (!spec.command) {
+    return <span className="text-muted-foreground">{spec.text}</span>;
+  }
+  const { command } = spec;
   return (
-    <MenubarMenu>
-      <MenubarTrigger>View</MenubarTrigger>
-      <MenubarContent>
-        {docks.map((dock) => (
-          <MenubarCheckboxItem
-            key={dock}
-            checked={chrome.docks[dock]}
-            onCheckedChange={(shown) => editor.trigger.setDock({ dock, shown })}
-          >
-            {dockTitles[dock]}
-          </MenubarCheckboxItem>
-        ))}
-        <MenubarSeparator />
-        <MenubarLabel>Panels</MenubarLabel>
-        {Object.entries(panels).map(([id, panel]) => (
-          <MenubarCheckboxItem
-            key={id}
-            checked={shell.openPanels.includes(id)}
-            onCheckedChange={(open) => shell.togglePanel(id, open)}
-          >
-            {panel.title}
-          </MenubarCheckboxItem>
-        ))}
-        <MenubarSeparator />
-        <MenubarSub>
-          <MenubarSubTrigger inset>Toolbars</MenubarSubTrigger>
-          <MenubarSubContent>
-            {Object.entries(toolbars).map(([id, toolbar]) => {
-              const layout = toolbarLayout(chrome, id);
-              const change = (next: ToolbarLayout) =>
-                editor.trigger.setToolbar({ id, layout: next });
-              return (
-                <Fragment key={id}>
-                  <MenubarLabel>{toolbar.title}</MenubarLabel>
-                  <MenubarRadioGroup
-                    value={layout.visible ? layout.side : 'hidden'}
-                    onValueChange={(value) =>
-                      change(
-                        value === 'hidden'
-                          ? { ...layout, visible: false }
-                          : { side: value as ToolbarSide, visible: true },
-                      )
-                    }
-                  >
-                    {toolbarSides.map((side) => (
-                      <MenubarRadioItem key={side} value={side}>
-                        {sideTitles[side]}
-                      </MenubarRadioItem>
-                    ))}
-                    <MenubarRadioItem value="hidden">Hidden</MenubarRadioItem>
-                  </MenubarRadioGroup>
-                </Fragment>
-              );
-            })}
-          </MenubarSubContent>
-        </MenubarSub>
-        <MenubarCheckboxItem
-          checked={chrome.statusBar}
-          onCheckedChange={(shown) => editor.trigger.setStatusBar({ shown })}
-        >
-          Status bar
-        </MenubarCheckboxItem>
-        <MenubarSeparator />
-        <MenubarItem inset onSelect={() => shell.resetLayout()}>
-          Reset layout
-        </MenubarItem>
-      </MenubarContent>
-    </MenubarMenu>
+    <button
+      type="button"
+      className="text-muted-foreground hover:text-foreground"
+      onClick={() => execute(runtime, command)}
+    >
+      {spec.text}
+    </button>
   );
 }
 
-function SceneMenu() {
-  const { showScene } = useEditor();
-  const { scenes, scene } = useEngine();
-  return (
-    <MenubarMenu>
-      <MenubarTrigger disabled={scenes.length === 0}>Scene</MenubarTrigger>
-      <MenubarContent>
-        <MenubarRadioGroup value={scene} onValueChange={showScene}>
-          {scenes.map((name) => (
-            <MenubarRadioItem key={name} value={name}>
-              {name}
-            </MenubarRadioItem>
-          ))}
-        </MenubarRadioGroup>
-      </MenubarContent>
-    </MenubarMenu>
-  );
-}
-
-/** The menu bar: the menus of the editor, then those of the plugins (step 12). */
-export function MenuBar() {
-  return (
-    <header className="flex items-center gap-2 border-b bg-card px-2">
-      <strong className="px-1 text-xs font-semibold">FDW Editor</strong>
-      <Menubar>
-        <ViewMenu />
-        <SceneMenu />
-      </Menubar>
-    </header>
-  );
-}
-
-// The mode and the tools active, by their titles.
-function EditingStatus() {
-  const { tools, modes } = useEditor();
-  const mode = useEditorMachine((snapshot) => snapshot.context.mode);
-  const active = useEditorMachine((snapshot) => snapshot.context.tools);
-  const toolTitles = toolSlots.flatMap((slot) => {
-    const id = active[slot];
-    return id ? [tools.get(id)?.title ?? id] : [];
-  });
-  return (
-    <span className="text-muted-foreground">
-      {mode === objectMode ? 'Object' : (modes.get(mode)?.title ?? mode)} mode
-      {toolTitles.length > 0 && ` · ${toolTitles.join(', ')}`}
-    </span>
-  );
-}
-
-/** The status bar: the backend, the device, the frames; the mode; the host. */
+/** The status bar: the items of the plugins, on the left and on the right. */
 export function StatusBar() {
-  const { host } = useEditor();
-  const { device, backend, fallback, loading, stats, error } = useEngine();
+  const matches = useMatcher();
+  const items = useItems(useEditor().statusBar).filter((item) =>
+    matches(item.when),
+  );
+  const side = (alignment: 'left' | 'right') =>
+    items
+      .filter((item) => (item.alignment ?? 'left') === alignment)
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   return (
     <footer className="flex h-6 items-center gap-3 overflow-hidden whitespace-nowrap border-t bg-card px-3 text-xs">
-      {error ? (
-        <span className="text-destructive">{error}</span>
-      ) : (
-        <span>
-          {device ? `${backend} · ${device}` : 'Starting the engine…'}
-          {stats &&
-            ` · ${stats.fps} fps · ${stats.width} × ${stats.height}${
-              stats.info ? ` · ${stats.info}` : ''
-            }`}
-        </span>
-      )}
-      {loading && <span className="text-muted-foreground">Loading…</span>}
-      {fallback && (
-        <span className="text-amber-500" title={fallback}>
-          Fallback: {fallback}
-        </span>
-      )}
+      {side('left').map((item) => (
+        <StatusBarItem key={item.id} id={item.id} />
+      ))}
       <span className="ml-auto" />
-      <EditingStatus />
-      <span className="text-muted-foreground">{host.about}</span>
+      {side('right')
+        .reverse()
+        .map((item) => (
+          <StatusBarItem key={item.id} id={item.id} />
+        ))}
     </footer>
   );
 }

@@ -26,6 +26,9 @@
       "path": "../../packages/editor-ui"
     },
     {
+      "path": "../../packages/editor-plugin-sample"
+    },
+    {
       "path": "../../packages/engine-native"
     },
     {

@@ -54,12 +54,13 @@ export interface Layout extends Chrome {
   readonly plugins?: Readonly<Record<string, unknown>>;
 }
 
-export const layoutVersion = 1;
+// 2: the panels of the plugins (step 12 of P18), all of the component `view`.
+export const layoutVersion = 2;
 
 /** Its key in the storage of the host. */
 export const layoutKey = 'layout';
 
-// The toolbars missing here have the layout they declare (toolbars.tsx).
+// The toolbars missing here have the layout they declare (toolbarLayout).
 export const defaultChrome: Chrome = {
   docks: { left: true, right: true, bottom: true },
   toolbars: {},

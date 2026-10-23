@@ -7,6 +7,7 @@ import {
   stopChild,
   type Actor,
   type AnyActorLogic,
+  type AnyActorRef,
   type Snapshot,
 } from 'xstate';
 import type { AreaId } from '../layout';
@@ -273,6 +274,16 @@ export const editorMachine = editorSetup.createMachine({
 
 export type EditorActor = Actor<typeof editorMachine>;
 
+/** The actor of the tool active in the slot; undefined if it is idle. */
+export function toolActor(
+  actor: EditorActor,
+  slot: SlotId,
+): AnyActorRef | undefined {
+  const children: Record<string, AnyActorRef | undefined> =
+    actor.getSnapshot().children;
+  return children[toolChild(slot)];
+}
+
 /** What the core asks of the registries. */
 export interface EditorResolver {
   tool(id: string): ToolSpec | undefined;
@@ -354,6 +365,26 @@ export function persistEditor(actor: EditorActor): unknown {
     children: {},
   }) as Record<string, unknown>;
   return toJson({ ...root, children });
+}
+
+/**
+ * The events of the plugins that a state kept by `persistEditor` needs:
+ * those of its tools and of its mode (`onTool:id`, `onMode:id`), for their
+ * plugins to register them before the machine restores.
+ */
+export function savedEditorEvents(saved: unknown): string[] {
+  if (!isRecord(saved) || !isRecord(saved['context'])) return [];
+  const { tools, mode } = saved['context'];
+  return [
+    ...(isRecord(tools)
+      ? Object.values(tools).flatMap((id) =>
+          typeof id === 'string' ? [`onTool:${id}`] : [],
+        )
+      : []),
+    ...(typeof mode === 'string' && mode !== objectMode
+      ? [`onMode:${mode}`]
+      : []),
+  ];
 }
 
 // The persisted snapshot, with the logic of its children back from the

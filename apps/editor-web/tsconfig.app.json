@@ -11,40 +11,43 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.spec.tsx"],
   "references": [
     {
-      "path": "../../packages/editor-ui/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/demo-scenes/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-assets/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-audio-web/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-backend/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-gltf/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-input-web/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-physics-rapier/tsconfig.lib.json"
+      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-resources/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
+      "path": "../../packages/engine-physics-rapier/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-gltf/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-assets/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/editor-plugin-sample/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-input-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-audio-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/demo-scenes/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-webgpu/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-webgl2/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-webgpu/tsconfig.lib.json"
+      "path": "../../packages/engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/editor-ui/tsconfig.lib.json"
     }
   ]
 }

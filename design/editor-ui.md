@@ -118,7 +118,7 @@ Le modèle de VS Code : un manifeste déclaratif et du code chargé à la demand
         "id": "acme.materials",
         "title": "Matériaux",
         "icon": "palette",
-        "location": "sidebar.left",
+        "location": "left",
         "when": "scene.hasSelection"
       }
     ],
@@ -139,7 +139,7 @@ Le modèle de VS Code : un manifeste déclaratif et du code chargé à la demand
 
 **Les points d'extension :**
 
-- **views** : un panneau, son emplacement par défaut (`sidebar.left`, `sidebar.right`, `bottom`, `editor`), son icône.
+- **views** : un panneau, son emplacement par défaut (`left`, `right`, `bottom`, `center` : les zones du squelette), son icône.
 - **commands** : le cœur du système ; menus, toolbars, raccourcis et palette ne référencent que des identifiants de commandes.
 - **menus, toolbars** (avec un côté), **status bar, keybindings** : déclaratifs, avec une clause `when` sur les context keys (sélection, mode, type de l'objet actif, backend).
 - **inspectors, editors** : un composant pour un type d'objet ou de ressource du moteur.
@@ -155,6 +155,19 @@ Le modèle de VS Code : un manifeste déclaratif et du code chargé à la demand
 - **L'API** : `activate(ctx)` reçoit `ctx.commands.register`, `ctx.views.registerComponent`, `ctx.services`, `ctx.state`, `ctx.subscriptions` ; chaque enregistrement rend un `dispose()`.
 - **Les dépendances partagées** : React, shadcn et le design system sont fournis par l'hôte (`@fdw/editor-ui`, en externe par une import map), pour qu'un plugin n'embarque pas sa propre copie de React.
 
+_Fait à l'étape 12_ (le détail est dans [packages/editor-ui/README.md](../packages/editor-ui/README.md#the-plugins)) :
+
+- **Le manifeste** est vérifié à l'enregistrement (`readManifest`) ; `engine` est une plage de la version de l'API (`editorApiVersion`, `1.0.0`). Un manifeste invalide, ou une contribution dont l'identifiant est pris, rend le plugin `invalid`, sans contributions. Les points d'extension faits : `commands` (`enablement`, `toggled`, `palette`), `views`, `menus`, `toolbars`, `statusBar`, `keybindings`, `tools`, `modes`. `inspectors`, `editors` et `settings` attendent ce qu'ils décrivent (l'inspecteur à l'étape 13).
+- **Les menus** : des menus par identifiant, `menubar` pour la menu bar, dont les éléments sont des sous-menus ; les éléments triés par groupe puis par ordre, séparés par groupe, chacun avec son `when`. Les éléments faits d'un registre (un par panneau, par scène, par côté de toolbar) sont ajoutés par le code du plugin (`ctx.menus.append`).
+- **Les outils et les modes** sont aussi des commandes (`Tool: Mark`), qui activent leur plugin puis l'outil ; relancée, la commande le termine.
+- **Les événements d'activation** : `onView:`, `onCommand:`, `onTool:`, `onMode:` sont déduits des contributions (comme VS Code depuis la 1.74) ; le manifeste n'ajoute que `onStartup`. Le code des plugins de `onStartup`, et de ceux des outils et du mode du snapshot gardé, est chargé avant le runtime : leur `activate` enregistre leurs outils avant que la machine ne se restaure. Un plugin lit donc la machine et les context keys à l'appel, pas dans `activate` (un avertissement le dit).
+- **Les icônes** d'un manifeste sont des noms (`editorIcons`, de lucide) : connues sans le code du plugin, une toolbar s'affiche avant son activation.
+- **Les raccourcis** : les lettres et les chiffres par leur place sur le clavier (`code`), le reste par son nom ; dans un champ de texte, seulement ceux avec ctrl, alt ou meta, et Échap ; le dernier enregistré dont la clause tient l'emporte. Échap (`editor.cancel`) termine les outils, laissé aux menus qui le traitent.
+- **La palette** : cmdk (le `Command` de shadcn) dans un dialogue de Radix, Ctrl+Shift+P ou F1 ; son contenu est un trou du viewport natif, sans voile sombre (il ne voilerait pas le viewport natif).
+- **Les built-in** : `fdw.workbench` (le menu View, les docks, la status bar, la palette, l'accueil, la liste des plugins), `fdw.viewport` (le viewport, le menu Scene), `fdw.outliner`, `fdw.inspector`, `fdw.console`.
+- **Le plugin d'exemple** : `@fdw/editor-plugin-sample`, écrit comme un tiers (il n'importe que `@fdw/editor-ui`) : un outil dans l'emplacement `primary` (une machine qui compte des marques), un panneau, un menu, une toolbar, un élément de la status bar, deux raccourcis. Son code est un chunk à part, chargé au premier événement. Un layout et un snapshot qui le référencent se rechargent avec lui (l'outil actif, avec ses marques) et sans lui (le panneau « plugin manquant », l'outil sur `idle`, son état gardé).
+- **Les plugins de l'application** sont, pour l'instant, dans son bundle (`EditorHost.plugins`) : le chargement depuis le disque ou une URL vient avec les plugins tiers et l'import map.
+
 ## 7. Les risques
 
 | Risque                                                                     | Conséquence                                    | Parade                                                                                                                        |
@@ -166,13 +179,13 @@ Le modèle de VS Code : un manifeste déclaratif et du code chargé à la demand
 | Un plugin avec sa propre copie de React                                    | Hooks cassés                                   | React fourni par l'hôte, déclaré en peer et en externe                                                                        |
 | Un plugin tiers non fiable dans le renderer                                | Accès à tout ce que la page peut faire         | Selon la réponse à la question ouverte : process séparé ou worker, API limitée, permissions dans le manifeste                 |
 | L'API de plugin qui change                                                 | Plugins cassés à chaque version                | API versionnée (`engine` du manifeste) et petite                                                                              |
-| Un layout qui référence un plugin absent                                   | Erreur au chargement                           | Un panneau « plugin manquant »                                                                                                |
+| Un layout qui référence un plugin absent                                   | Erreur au chargement                           | Un panneau « plugin manquant » (fait à l'étape 12)                                                                            |
 | Les popouts avec Radix                                                     | Menus et infobulles mal placés                 | Container de portal par fenêtre, styles copiés, testé tôt                                                                     |
 | Les deux hôtes qui divergent                                               | Une fonction qui ne marche que dans l'un       | Tout le code commun dans `@fdw/editor-ui` ; les tests du shell avec un hôte factice ; l'éditeur web en CI dans Chromium       |
 
 ## 8. Les questions ouvertes
 
-- Les plugins tiers seront-ils non fiables (sandbox et permissions dès le départ) ou écrits par des utilisateurs de confiance ?
+- ~~Les plugins tiers seront-ils non fiables (sandbox et permissions dès le départ) ou écrits par des utilisateurs de confiance ?~~ _De confiance à l'étape 12_ : ils tournent dans la page, avec ce qu'elle peut faire. Le sandbox et les permissions viendront avec les plugins tiers (« Ensuite » de P18), l'API restant petite pour le permettre.
 - Le drag d'onglets entre instances de dockview est-il possible ? Sinon : accepter la limite, ou passer à une seule instance. dockview 8 a des « edge groups » (des docks sur les bords d'une seule instance, repliables) : écartés à l'étape 10 pour garder les instances imbriquées ; la piste reste si la limite gêne.
-- Le layout : par projet, par utilisateur, ou les deux (un layout utilisateur, surchargé par le projet) ?
-- Un plugin qui agit sur le moteur : dans Electron, le moteur est dans un autre processus. Un plugin aura-t-il une partie « moteur », chargée dans le processus du moteur (ou dans la page sur le web), qui parle à sa partie « interface » par le protocole ?
+- Le layout : par projet, par utilisateur, ou les deux (un layout utilisateur, surchargé par le projet) ? _Par utilisateur à l'étape 12_ (le stockage de l'hôte) ; la surcharge par le projet se tranchera avec l'ouverture d'un niveau (étape 13).
+- Un plugin qui agit sur le moteur : dans Electron, le moteur est dans un autre processus. Un plugin aura-t-il une partie « moteur », chargée dans le processus du moteur (ou dans la page sur le web), qui parle à sa partie « interface » par le protocole ? _Pas à l'étape 12_ : un plugin parle au moteur par la connexion (`IEngineConnection`) et le protocole, et modifie le document par les commandes (étape 13). La partie « moteur » se décidera avec les outils du viewport et les gizmos.

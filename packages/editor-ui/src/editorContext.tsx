@@ -4,7 +4,12 @@ import {
   useContext,
   useSyncExternalStore,
 } from 'react';
-import type { EditorActor } from './state/editorMachine';
+import type { MenuItem } from './plugins/manifest';
+import {
+  toolActor,
+  type EditorActor,
+  type SlotId,
+} from './state/editorMachine';
 import type { EditorStoreContext } from './state/editorStore';
 import type { EngineStoreContext } from './state/engineStore';
 import type { EditorRuntime } from './state/runtime';
@@ -64,4 +69,69 @@ export function useEditorMachine<S>(
 export function useWhen(when: string | undefined): boolean {
   const { keys } = useEditor();
   return useSyncExternalStore(keys.subscribe, () => keys.matches(when));
+}
+
+/** What a registry gives: its items, and their changes. */
+interface ItemSource<T> {
+  all(): readonly T[];
+  subscribe(listener: () => void): () => void;
+}
+
+/** The items of a registry (the views, the toolbars), rendered again when it changes. */
+export function useItems<T>(registry: ItemSource<T>): readonly T[] {
+  const subscribe = useCallback(
+    (listener: () => void) => registry.subscribe(listener),
+    [registry],
+  );
+  return useSyncExternalStore(subscribe, () => registry.all());
+}
+
+/** The items of a menu, sorted. */
+export function useMenu(menu: string): readonly MenuItem[] {
+  const { menus } = useEditor();
+  const subscribe = useCallback(
+    (listener: () => void) => menus.subscribe(listener),
+    [menus],
+  );
+  return useSyncExternalStore(subscribe, () => menus.items(menu));
+}
+
+/** The state of a plugin (its `ctx.state`), as JSON. */
+export function usePluginState(plugin: string): unknown {
+  return useSelector(
+    useEditor().editor,
+    (snapshot) => snapshot.context.plugins[plugin],
+  );
+}
+
+/**
+ * The snapshot of the tool active in the slot; undefined while it is idle.
+ * Rendered again when the tool changes, or its state.
+ */
+export function useToolSnapshot(slot: SlotId): unknown {
+  const { machine } = useEditor();
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      let child = toolActor(machine, slot);
+      let childSubscription = child?.subscribe(listener);
+      // The child changes with the tool: followed again at each change.
+      const subscription = machine.subscribe(() => {
+        const next = toolActor(machine, slot);
+        if (next !== child) {
+          childSubscription?.unsubscribe();
+          child = next;
+          childSubscription = child?.subscribe(listener);
+        }
+        listener();
+      });
+      return () => {
+        subscription.unsubscribe();
+        childSubscription?.unsubscribe();
+      };
+    },
+    [machine, slot],
+  );
+  return useSyncExternalStore(subscribe, () =>
+    toolActor(machine, slot)?.getSnapshot(),
+  );
 }
