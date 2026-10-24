@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 // The Node-API addon (native/src/node_window.c), built by scripts/build.mjs.
 
@@ -228,7 +229,7 @@ export function loadAddon(): NativeAddon {
     const require = createRequire(import.meta.url);
     const path =
       process.env['FDW_NATIVE_ADDON'] ??
-      new URL('../build/fdw_native.node', import.meta.url).pathname;
+      fileURLToPath(new URL('../build/fdw_native.node', import.meta.url));
     try {
       addon = require(path) as NativeAddon;
     } catch (error) {

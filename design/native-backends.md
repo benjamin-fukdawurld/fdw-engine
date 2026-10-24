@@ -238,7 +238,7 @@ _N1 fait._
   - `runLoop` (la boucle hors navigateur, avec un `throttle`) ;
   - `DawnWindowSurface` (présentation par copie : texture, `copyTextureToBuffer`, `mapAsync`, affichage par la fenêtre, au plus deux images en vol) ;
   - `createDawnEngine`.
-- **Construction** : `nx run engine-native:build-native` (`scripts/build.mjs`), en cache Nx, et dépendance des tests. Node-API ayant une ABI stable, les en-têtes de n'importe quelle installation de Node conviennent : le script les cherche à côté du Node courant puis dans le `PATH`.
+- **Construction** : `nx run engine-native:build-native` (`scripts/build.mjs`), en cache Nx, et dépendance des tests. Node-API ayant une ABI stable, les en-têtes de n'importe quelle version conviennent : ceux du paquet `node-api-headers`, dont le fichier `.def` donne aussi, sous Windows, la bibliothèque d'import de `node.exe`.
 - **Démos** : les scènes PBR et ombres sont sorties des routes React dans **`@fdw/demo-scenes`** (une scène se construit à partir d'un `RenderBackend` et d'une `Surface`). La démo web et **`apps/demo-native`** (`nx run demo-native:start -- shadows`, exécutée par jiti) les partagent.
 - **Mesures** : sur la machine de développement (RTX 2060 Super, écran à 60 Hz), la démo native suit la cadence de l'écran en régime établi (900 images en 15,6 s, démarrage compris).
 - **Tests** : la logique des fenêtres et de la boucle avec un faux addon ; une vraie fenêtre SDL3 cachée quand un écran est disponible ; l'image affichée par `DawnWindowSurface` égale à celle de la surface hors écran, le nombre d'images en vol borné, le suivi de la taille de la fenêtre.
