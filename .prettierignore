@@ -2,7 +2,9 @@
 /dist
 /coverage
 /.nx/cache
-/.nx/workspace-data# CMake builds of the native addons
+/.nx/workspace-data
+
+# CMake builds of the native addons
 /packages/*/build
 /apps/docs/dist
 /apps/docs/.astro

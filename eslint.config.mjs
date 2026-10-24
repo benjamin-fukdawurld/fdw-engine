@@ -1,4 +1,5 @@
 import nx from '@nx/eslint-plugin';
+import localRules from './tools/eslint/no-case-collision.mjs';
 
 export default [
   ...nx.configs['flat/base'],
@@ -40,7 +41,9 @@ export default [
       '**/*.cjs',
       '**/*.mjs',
     ],
-    // Override or add rules here
-    rules: {},
+    plugins: { local: localRules },
+    rules: {
+      'local/no-case-collision': 'error',
+    },
   },
 ];
