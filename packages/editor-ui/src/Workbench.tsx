@@ -15,7 +15,7 @@ import type { ViewSpec } from './plugins/contributions';
 import type { Registry } from './state/registry';
 import type { IDisposable } from './state/services';
 import { ViewHost } from './views';
-import type { WorkbenchApi } from './workbench';
+import type { WorkbenchApi } from './workbenchService';
 
 /**
  * The theme of dockview: the sizes of its dark theme, the colors of

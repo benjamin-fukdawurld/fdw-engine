@@ -13,7 +13,7 @@ export * from './state/levelStore';
 export * from './state/runtime';
 export * from './layout';
 export * from './toolbarLayout';
-export * from './workbench';
+export * from './workbenchService';
 export * from './plugins/manifest';
 export * from './plugins/contributions';
 export * from './plugins/pluginHost';
