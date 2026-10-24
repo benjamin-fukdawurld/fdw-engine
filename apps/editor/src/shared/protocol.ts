@@ -30,6 +30,14 @@ export type DawnControlMessage =
     }
   // A new page: the engine tells it again that it is ready.
   | { readonly type: 'connect' }
-  | { readonly type: 'page'; readonly message: PageMessage }
+  | { readonly type: 'page'; readonly message: Wire<PageMessage> }
   | { readonly type: 'visible'; readonly visible: boolean }
   | { readonly type: 'quit' };
+
+/**
+ * A message over the IPC of Node, as JSON (the V8 serializers of Electron
+ * and Node differ): the bytes of a level (`data`) in base64.
+ */
+export type Wire<M> = M extends { readonly data: Uint8Array }
+  ? Omit<M, 'data'> & { readonly data: string }
+  : M;

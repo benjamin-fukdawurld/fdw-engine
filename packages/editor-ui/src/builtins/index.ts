@@ -1,7 +1,10 @@
 import type { EditorPlugin } from '../plugins/pluginHost';
+import { levelPlugin } from './level';
 import { consolePlugin, inspectorPlugin, outlinerPlugin } from './panels';
 import { viewportPlugin } from './viewport';
 import { workbenchPlugin } from './workbench';
+
+export { levelFileName, levelFilters, viewportTool } from './level';
 
 /**
  * The plugins of the editor, always there: its panels and its chrome are
@@ -10,6 +13,7 @@ import { workbenchPlugin } from './workbench';
 export const builtinPlugins: readonly EditorPlugin[] = [
   viewportPlugin,
   workbenchPlugin,
+  levelPlugin,
   outlinerPlugin,
   inspectorPlugin,
   consolePlugin,

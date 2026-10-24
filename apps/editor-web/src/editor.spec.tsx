@@ -174,6 +174,90 @@ describe('the plugins of the web editor', () => {
   }, 30_000);
 });
 
+describe('the level in the web editor', () => {
+  afterEach(async () => {
+    cleanup();
+    await Promise.all(engines.map((engine) => engine.stop()));
+    engines.length = 0;
+  });
+
+  // A pointer event on the canvas, at a fraction of its size.
+  function point(
+    canvas: HTMLCanvasElement,
+    type: string,
+    x: number,
+    y: number,
+    buttons = 0,
+  ) {
+    const area = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(
+      new PointerEvent(type, {
+        clientX: area.left + area.width * x,
+        clientY: area.top + area.height * y,
+        button: 0,
+        buttons,
+        pointerId: 1,
+        bubbles: true,
+      }),
+    );
+  }
+
+  const selectedRows = () =>
+    within(screen.getByRole('tree', { name: 'Level' }))
+      .queryAllByRole('treeitem')
+      .filter((row) => row.getAttribute('aria-selected') === 'true');
+
+  it('selects in the viewport and in the tree, deletes, undoes', async () => {
+    const engine = new WebEngine({ backend: 'webgpu', scene: 'level', scenes });
+    engines.push(engine);
+    render(
+      <EditorShell
+        host={createWebHost(engine, {
+          read: async () => undefined,
+          write: async () => undefined,
+        })}
+      />,
+      { wrapper: StrictMode },
+    );
+    await drawing('webgpu');
+    expect(await screen.findByText('cube 1')).toBeTruthy();
+
+    // A rectangle over the whole view: the tools of the engine pick.
+    const canvas = engine.element.querySelector('canvas') as HTMLCanvasElement;
+    point(canvas, 'pointermove', 0.02, 0.02);
+    point(canvas, 'pointerdown', 0.02, 0.02, 1);
+    for (const t of [0.2, 0.5, 0.8, 0.98])
+      point(canvas, 'pointermove', t, t, 1);
+    await waitFor(() =>
+      expect(screen.queryAllByTestId('selection-rectangle')).toHaveLength(4),
+    );
+    point(canvas, 'pointerup', 0.98, 0.98);
+    await waitFor(() => expect(selectedRows().length).toBeGreaterThan(4), {
+      timeout: 5000,
+    });
+    expect(screen.queryAllByTestId('selection-rectangle')).toHaveLength(0);
+
+    // The tree selects one, the inspector shows it.
+    fireEvent.click(screen.getByText('cube 2'));
+    await waitFor(() =>
+      expect(selectedRows().map((row) => row.textContent)).toEqual(['cube 2']),
+    );
+    await waitFor(() =>
+      expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(
+        'cube 2',
+      ),
+    );
+
+    // Deleted from the keyboard, back with Ctrl+Z.
+    fireEvent.keyDown(window, { key: 'Delete', code: 'Delete' });
+    await waitFor(() => expect(screen.queryByText('cube 2')).toBeNull());
+    expect(screen.getByText(/Delete cube 2/)).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true });
+    expect(await screen.findByText('cube 2')).toBeTruthy();
+    await drawing('webgpu');
+  }, 30_000);
+});
+
 describe('indexedDbStorage', () => {
   it('keeps JSON documents by key', async () => {
     const name = `fdw-editor-test-${Math.random()}`;

@@ -11,7 +11,12 @@ import { startBackend } from '@fdw/editor-ui/engine';
 import type { EngineMessage, PageMessage } from '@fdw/editor-ui/protocol';
 import { fork, type ChildProcess } from 'node:child_process';
 import type { MessagePortMain } from 'electron';
-import type { ControlMessage, DawnControlMessage } from '../shared/protocol';
+import type {
+  ControlMessage,
+  DawnControlMessage,
+  Wire,
+} from '../shared/protocol';
+import { fromWire, toWire } from './wire';
 import { startVulkan } from './backends';
 import { EngineSession, type PageLink } from './session';
 import { X11Viewport } from './viewport';
@@ -53,7 +58,7 @@ class DawnProcess {
       this.#child.once('error', () => resolve());
     });
     this.#child.on('message', (message) =>
-      this.#port?.postMessage(message as EngineMessage),
+      this.#port?.postMessage(fromWire(message as Wire<EngineMessage>)),
     );
     this.#child.once('error', (error) => {
       console.error('[engine] No Dawn process:', error);
@@ -70,7 +75,7 @@ class DawnProcess {
     this.#port = port;
     this.#send({ type: 'connect' });
     port.on('message', ({ data }) =>
-      this.#send({ type: 'page', message: data as PageMessage }),
+      this.#send({ type: 'page', message: toWire(data as PageMessage) }),
     );
     port.start();
   }

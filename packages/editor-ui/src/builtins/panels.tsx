@@ -3,7 +3,8 @@ import { useEngine } from '../editorContext';
 import { cn } from '../lib/utils';
 import type { PluginManifest, ViewContribution } from '../plugins/manifest';
 import type { EditorPlugin } from '../plugins/pluginHost';
-import { PanelMessage } from '../views';
+import { InspectorPanel } from './inspector';
+import { OutlinerPanel } from './outliner';
 
 function ConsolePanel() {
   const { log } = useEngine();
@@ -51,18 +52,18 @@ function panelPlugin(
   };
 }
 
-/** The tree of the scene; fed by the projection of the document at step 13. */
+/** The tree of the level: the projection the engine sends. */
 export const outlinerPlugin = panelPlugin(
   {
     id: 'fdw.outliner',
     title: 'Outliner',
-    description: 'The tree of the scene.',
+    description: 'The tree of the level.',
   },
   { id: 'outliner', title: 'Outliner', icon: 'list-tree', location: 'left' },
-  () => <PanelMessage text="The scene, with P15 and P16." />,
+  OutlinerPanel,
 );
 
-/** The properties of the selection; at step 13. */
+/** The properties of the active node of the level. */
 export const inspectorPlugin = panelPlugin(
   {
     id: 'fdw.inspector',
@@ -70,7 +71,7 @@ export const inspectorPlugin = panelPlugin(
     description: 'The properties of the selection.',
   },
   { id: 'inspector', title: 'Inspector', icon: 'sliders', location: 'right' },
-  () => <PanelMessage text="Nothing selected." />,
+  InspectorPanel,
 );
 
 /** The messages of the engine. */

@@ -87,9 +87,63 @@ describe('EditorEngine', () => {
       type: 'ready',
       backend: 'fake',
       device: 'Fake GPU',
-      scenes: ['a', 'b'],
+      scenes: ['level', 'a', 'b'],
       scene: 'a',
     });
+  });
+
+  it('tells the page its level, and runs its commands', async () => {
+    const { editor, messages } = setup({ a: fakeScene().factory });
+    const level = messages.find((message) => message.type === 'level');
+    expect(level).toMatchObject({ name: 'level.scene.json', dirty: false });
+    const tree = messages.find((message) => message.type === 'level.nodes');
+    const cube =
+      tree?.type === 'level.nodes'
+        ? tree.nodes.find((node) => node.name === 'cube 1')?.id
+        : undefined;
+    expect(cube).toBeDefined();
+    editor.receive({
+      type: 'level.command',
+      command: 'select',
+      ids: [cube ?? ''],
+    });
+    expect(messages.at(-2)).toEqual({ type: 'level.selection', ids: [cube] });
+    editor.receive({ type: 'level.command', command: 'delete' });
+    await until(() =>
+      messages.some(
+        (message) =>
+          message.type === 'level.nodes' &&
+          message.removed.includes(cube ?? ''),
+      ),
+    );
+    expect(messages).toContainEqual({
+      type: 'level.history',
+      undo: 'Delete cube 1',
+    });
+
+    // Saved: the file of the level, then no more changes.
+    editor.receive({
+      type: 'level.save',
+      format: 'fdw-scene',
+      name: 'a.scene.json',
+    });
+    await until(() =>
+      messages.some((message) => message.type === 'level.file'),
+    );
+    editor.receive({ type: 'level.saved', name: 'a.scene.json' });
+    expect(messages.at(-1)).toMatchObject({
+      type: 'level',
+      name: 'a.scene.json',
+      dirty: false,
+    });
+
+    // A new level: the sample one, whole.
+    messages.length = 0;
+    editor.receive({ type: 'level.new' });
+    await until(() => messages.some((message) => message.type === 'level'));
+    expect(messages).toContainEqual(
+      expect.objectContaining({ type: 'level.nodes', reset: true }),
+    );
   });
 
   it('tells the page why its backend is a fallback', () => {

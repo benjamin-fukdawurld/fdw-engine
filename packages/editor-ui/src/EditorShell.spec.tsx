@@ -206,7 +206,8 @@ describe('EditorShell', () => {
     ).toBe('vertical');
     placeToolbar('Docks', 'Hidden');
     expect(side()).toBeUndefined();
-    expect(container.querySelector('[data-side]')).toBeNull();
+    expect(screen.queryByRole('toolbar', { name: 'Docks' })).toBeNull();
+    expect(container.querySelector('[data-side=right]')).toBeNull();
   });
 
   it('keeps the viewport mounted behind another tab and with the docks hidden', async () => {
@@ -334,7 +335,8 @@ describe('EditorShell', () => {
     const { unmount } = render(<EditorShell host={host} />, {
       wrapper: StrictMode,
     });
-    expect(listeners.size).toBe(1);
+    // The state of the engine, and the projection of its level.
+    expect(listeners.size).toBe(2);
     unmount();
     expect(listeners.size).toBe(0);
   });

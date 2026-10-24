@@ -11,16 +11,46 @@
       "path": "../demo-scenes/tsconfig.lib.json"
     },
     {
+      "path": "../engine-assets/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-audio/tsconfig.lib.json"
     },
     {
       "path": "../engine-backend/tsconfig.lib.json"
     },
     {
-      "path": "../engine-input/tsconfig.lib.json"
+      "path": "../engine-camera/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-editing/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-geometry/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-gltf/tsconfig.lib.json"
     },
     {
       "path": "../engine-input-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-input/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-resources/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-scene-io/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-scene/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-shader/tsconfig.lib.json"
     }
   ]
 }

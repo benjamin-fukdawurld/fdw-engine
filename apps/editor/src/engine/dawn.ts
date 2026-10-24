@@ -7,11 +7,12 @@
 // over the IPC of Node.
 import type { EngineMessage, PageMessage } from '@fdw/editor-ui/protocol';
 import type { DawnControlMessage } from '../shared/protocol';
+import { fromWire, toWire } from './wire';
 import { startDawn } from './backends';
 import { EngineSession, type PageLink } from './session';
 import { X11Viewport } from './viewport';
 
-const send = (message: EngineMessage) => process.send?.(message);
+const send = (message: EngineMessage) => process.send?.(toWire(message));
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
@@ -77,8 +78,8 @@ process.on('message', (data) => {
       session.connect(page());
       break;
     case 'page':
-      if (receive) receive(message.message);
-      else queue.push(message.message);
+      if (receive) receive(fromWire<PageMessage>(message.message));
+      else queue.push(fromWire<PageMessage>(message.message));
       break;
     case 'visible':
       session.setVisible(message.visible);

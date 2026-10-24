@@ -91,6 +91,8 @@ export function createEngineStore() {
             );
           case 'stats':
             return { ...context, stats: message, loading: false };
+          case 'log':
+            return write(context, message.level, message.text);
           case 'error':
             return write(
               { ...context, error: message.message, loading: false },

@@ -11,8 +11,10 @@ import type {
   PageMessage,
   ViewportBounds,
 } from '@fdw/editor-ui/protocol';
+import { bitmapCodec } from '@fdw/engine-assets';
 import { unlockAudio, WebAudioEngine } from '@fdw/engine-audio-web';
 import { WebInputSource } from '@fdw/engine-input-web';
+import { createImageBitmapDecoder } from '@fdw/engine-resources-web';
 import { startWebGl2, startWebGpu, type Renderer } from './backends';
 
 export interface WebEngineOptions {
@@ -138,6 +140,7 @@ export class WebEngine {
           waitIdle: () => undefined,
           nextFrame: animationFrame,
           scenes: options.scenes,
+          imageCodecs: [bitmapCodec(createImageBitmapDecoder())],
           audio,
           input: new WebInputSource(this.element),
         },
