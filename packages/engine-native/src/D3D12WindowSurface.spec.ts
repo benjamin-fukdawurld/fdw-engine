@@ -8,8 +8,9 @@ import { NativeWindow } from './NativeWindow';
 import { D3D12WindowSurface } from './D3D12WindowSurface';
 
 // A DXGI swapchain on a hidden window: needs the two addons (Windows).
+// A suite of its own: the Linux CI requires 'window', not 'd3d12'.
 const ready = canRun(
-  'window',
+  'd3d12',
   existsSync(new URL('../build/fdw_native.node', import.meta.url)) &&
     existsSync(addonPath()),
   'needs the two addons (Windows)',
