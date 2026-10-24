@@ -20,7 +20,8 @@
       "outputs": ["{projectRoot}/build/fdw_editor.node"]
     },
     "install": {
-      "command": "npm install",
+      "// command": "npm install, then the binary of Electron: its postinstall does not run under the npm of the CI (scripts not approved)",
+      "command": "npm install && node node_modules/electron/install.js",
       "options": {
         "cwd": "apps/editor"
       }
@@ -77,7 +78,8 @@
         "default",
         "{workspaceRoot}/packages/*/src/**/*",
         "!{projectRoot}/out/**/*"
-      ]
+      ],
+      "dependsOn": ["install"]
     },
     "test": {
       "command": "xvfb-run -a -s '-screen 0 1600x1000x24' npx playwright test",
