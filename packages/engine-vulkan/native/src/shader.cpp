@@ -10,6 +10,13 @@
 
 #include <dxc/dxcapi.h>
 
+#if defined(_WIN32)
+// Elsewhere, dxcapi.h defines CComPtr; on Windows it is ATL's, an optional
+// part of Visual Studio: WRL's, from the Windows SDK, instead.
+#include <wrl/client.h>
+template <typename T> using CComPtr = Microsoft::WRL::ComPtr<T>;
+#endif
+
 #include <cstdlib>
 #include <cstring>
 #include <string>

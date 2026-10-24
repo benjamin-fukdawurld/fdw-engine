@@ -15,10 +15,10 @@ SDL3, audio sur miniaudio) et `engine-vulkan` (le backend Vulkan). Chacun a un r
 - CMake 3.24 ou ultérieur, et un compilateur C/C++20 (GCC ou Clang).
 - Sous Linux, les paquets de développement dont SDL3 a besoin pour ses
   backends vidéo : X11 et/ou Wayland, comme pour tout build de SDL.
-- Les **en-têtes Node-API**, issus de n’importe quelle installation de
-  Node : le script les cherche à côté du Node en cours d’exécution, puis
-  dans le `PATH`. Définissez `NODE_API_INCLUDE_DIR` s’ils se trouvent
-  ailleurs.
+- Rien pour les **en-têtes Node-API** : ils viennent de la dépendance de
+  développement `node-api-headers`, avec le fichier `.def` dont CMake tire
+  la bibliothèque d’import de `node.exe` sous Windows.
+  `NODE_API_INCLUDE_DIR` les remplace.
 - Pour Vulkan, le **SDK Vulkan**, 1.3 ou ultérieur.
 
 SDL3 et miniaudio sont téléchargés par CMake (`FetchContent`) lors du

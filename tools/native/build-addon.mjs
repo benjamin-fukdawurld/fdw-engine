@@ -2,41 +2,20 @@
 // into its build/ directory. Shared by the native packages
 // (engine-native, engine-vulkan).
 import { execFileSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 
-// The Node-API headers. Node-API is ABI stable: the headers of any Node
-// installation build an addon loadable by every version. Looked for in
-// NODE_API_INCLUDE_DIR, next to the running Node, then next to the Node
-// binaries of the PATH (the running one can come without headers, as the
-// `node` package of node_modules, which Nx uses).
+// The Node-API headers and, for the Windows import library of node.exe,
+// node_api.def: those of node-api-headers. Node-API is ABI stable: any
+// headers build an addon loadable by every Node version.
+// NODE_API_INCLUDE_DIR overrides the headers.
 export function findNodeApi() {
-  const binaries = [
-    process.execPath,
-    ...(process.env.PATH ?? '')
-      .split(delimiter)
-      .map((dir) =>
-        join(dir, process.platform === 'win32' ? 'node.exe' : 'node'),
-      )
-      .filter((path) => existsSync(path)),
-  ];
-  const candidates = [
-    process.env.NODE_API_INCLUDE_DIR,
-    ...binaries.flatMap((binary) =>
-      [binary, realpathSync(binary)].map((path) =>
-        resolve(dirname(path), '..', 'include', 'node'),
-      ),
-    ),
-  ].filter(Boolean);
-  const found = candidates.find((dir) => existsSync(join(dir, 'node_api.h')));
-  if (!found) {
-    throw new Error(
-      `node_api.h not found (looked in ${candidates.join(
-        ', ',
-      )}): set NODE_API_INCLUDE_DIR`,
-    );
-  }
-  return found;
+  const { include_dir, def_paths } = createRequire(import.meta.url)(
+    'node-api-headers',
+  );
+  return {
+    includeDir: process.env.NODE_API_INCLUDE_DIR || include_dir,
+    def: def_paths.node_api_def,
+  };
 }
 
 /**
@@ -45,6 +24,7 @@ export function findNodeApi() {
  */
 export function buildAddon(root, extraArguments = []) {
   const buildType = process.argv.includes('--debug') ? 'Debug' : 'Release';
+  const nodeApi = findNodeApi();
   const run = (...args) =>
     execFileSync('cmake', args, { cwd: root, stdio: 'inherit' });
   run(
@@ -53,7 +33,8 @@ export function buildAddon(root, extraArguments = []) {
     '-B',
     'build',
     `-DCMAKE_BUILD_TYPE=${buildType}`,
-    `-DNODE_API_INCLUDE_DIR=${findNodeApi()}`,
+    `-DNODE_API_INCLUDE_DIR=${nodeApi.includeDir}`,
+    `-DNODE_API_DEF=${nodeApi.def}`,
     ...extraArguments,
   );
   run('--build', 'build', '--config', buildType, '--parallel');

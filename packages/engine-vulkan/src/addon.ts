@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 // The Node-API addon (native/src/node_vulkan.c), built by scripts/build.mjs.
 
@@ -283,7 +284,7 @@ let addon: VulkanAddon | undefined;
 /** The path of the addon: build/fdw_vulkan.node, or FDW_VULKAN_ADDON. */
 export const addonPath = (): string =>
   process.env['FDW_VULKAN_ADDON'] ??
-  new URL('../build/fdw_vulkan.node', import.meta.url).pathname;
+  fileURLToPath(new URL('../build/fdw_vulkan.node', import.meta.url));
 
 /** Loads the addon. */
 export function loadVulkanAddon(): VulkanAddon {
