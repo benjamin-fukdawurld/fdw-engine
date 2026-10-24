@@ -10,7 +10,13 @@
       "options": {
         "cwd": "apps/docs"
       },
-      "continuous": true
+      "continuous": true,
+      "dependsOn": [
+        {
+          "projects": ["editor-web"],
+          "target": "build-docs"
+        }
+      ]
     },
     "build": {
       "command": "astro build",
@@ -19,7 +25,13 @@
       },
       "cache": true,
       "inputs": ["default", "^production"],
-      "outputs": ["{projectRoot}/dist"]
+      "outputs": ["{projectRoot}/dist"],
+      "dependsOn": [
+        {
+          "projects": ["editor-web"],
+          "target": "build-docs"
+        }
+      ]
     },
     "preview": {
       "command": "astro preview",

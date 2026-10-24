@@ -24,3 +24,29 @@
 .fdw-example-status[data-error] {
   color: var(--sl-color-red-high);
 }
+
+/* The web editor, live, in a frame (Editor.astro). */
+.fdw-editor {
+  margin-block: 1.5rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--sl-color-black);
+}
+
+/* Wider than the text, where the screen leaves room (the pages of the
+   editor have no table of contents on the right). */
+@media (min-width: 72rem) {
+  .fdw-editor {
+    width: min(
+      64rem,
+      calc(100vw - var(--sl-sidebar-width) - 2 * var(--sl-content-pad-x))
+    );
+  }
+}
+
+.fdw-editor iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+}

@@ -97,6 +97,11 @@ export class EngineSession {
           createSurface: async () => backend.value.surface,
           waitIdle: () => backend.value.waitIdle(),
           nextFrame: () => backend.value.nextFrame(),
+          // The swapchain waits for the display in the frame.
+          cpuTime: () => {
+            const { user, system } = process.cpuUsage();
+            return (user + system) / 1000;
+          },
           scenes,
           imageCodecs: [pixelCodec(createStbImageDecoder())],
           audio,

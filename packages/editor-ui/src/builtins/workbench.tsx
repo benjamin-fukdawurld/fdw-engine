@@ -197,6 +197,14 @@ function PluginsPanel() {
   );
 }
 
+// The CPU and GPU times of a frame, in milliseconds.
+function frameTimes(stats: { cpu: number; gpu?: number }): string {
+  const cpu = `CPU ${stats.cpu.toFixed(1)} ms`;
+  return stats.gpu === undefined
+    ? cpu
+    : `${cpu}, GPU ${stats.gpu.toFixed(1)} ms`;
+}
+
 // The backend, the device, the frames.
 function EngineStatus() {
   const { device, backend, fallback, loading, stats, error } = useEngine();
@@ -208,9 +216,9 @@ function EngineStatus() {
         <span>
           {device ? `${backend} · ${device}` : 'Starting the engine…'}
           {stats &&
-            ` · ${stats.fps} fps · ${stats.width} × ${stats.height}${
-              stats.info ? ` · ${stats.info}` : ''
-            }`}
+            ` · ${stats.fps} fps (${frameTimes(stats)}) · ${stats.width} × ${
+              stats.height
+            }${stats.info ? ` · ${stats.info}` : ''}`}
         </span>
       )}
       {loading && <span className="text-muted-foreground">Loading…</span>}

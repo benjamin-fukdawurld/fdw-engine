@@ -49,6 +49,13 @@ export interface EditorEnginePlatform {
   waitIdle(): void;
   /** Between two frames: lets the messages, the I/O and the promises run. */
   nextFrame(): Promise<void>;
+  /**
+   * The CPU time used by the process so far, in milliseconds, where the
+   * frames wait for the display inside the scene (a swapchain acquiring
+   * its image): the duration of a frame would count the wait. Otherwise
+   * the statistics count the duration of the frames.
+   */
+  cpuTime?(): number;
   readonly scenes: Readonly<Record<string, () => Promise<SceneFactory>>>;
   /** The decoders of the images of the levels opened (glTF). */
   readonly imageCodecs?: readonly ImageCodec[];
@@ -231,13 +238,21 @@ export class EditorEngine {
 
     let second = performance.now();
     let frames = 0;
+    // The time spent in the frames of the scene, this second.
+    let busy = 0;
     while (this.#running) {
       platform.viewport.pump?.();
       this.#levelFiles?.store.update();
       const shown = this.#shown;
       if (shown && this.#onScreen()) {
         try {
-          shown.scene.frame((performance.now() - shown.start) / 1000);
+          const begin = performance.now();
+          const used = platform.cpuTime?.();
+          shown.scene.frame((begin - shown.start) / 1000);
+          busy +=
+            used === undefined
+              ? performance.now() - begin
+              : (platform.cpuTime?.() ?? used) - used;
           frames++;
         } catch (error) {
           this.#post({
@@ -255,12 +270,16 @@ export class EditorEngine {
         this.#post({
           type: 'stats',
           fps: Math.round((frames * 1000) / (now - second)),
+          cpu: frames > 0 ? busy / frames : 0,
+          gpu:
+            this.#shown?.name === levelScene ? this.#view?.gpuTime : undefined,
           width: surface.width,
           height: surface.height,
           info: this.#shown?.info ?? '',
         });
         second = now;
         frames = 0;
+        busy = 0;
       }
     }
   }

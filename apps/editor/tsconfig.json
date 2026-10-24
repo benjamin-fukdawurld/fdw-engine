@@ -29,6 +29,9 @@
       "path": "../../packages/editor-plugin-sample"
     },
     {
+      "path": "../../packages/editor-plugin-isolate"
+    },
+    {
       "path": "../../packages/engine-native"
     },
     {

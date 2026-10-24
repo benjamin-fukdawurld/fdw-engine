@@ -1,0 +1,380 @@
+---
+title: Writing a plugin
+description: 'Add commands, a panel, keys and an item of the status bar to the editor, with a plugin that isolates the selection of the level.'
+tableOfContents: false
+sidebar:
+  order: 3
+---
+
+import { Code } from '@astrojs/starlight/components';
+import Editor from '../../../components/Editor.astro';
+import manifestSource from '../../../../../../packages/editor-plugin-isolate/src/manifest.ts?raw';
+import mainSource from '../../../../../../packages/editor-plugin-isolate/src/main.tsx?raw';
+import indexSource from '../../../../../../packages/editor-plugin-isolate/src/index.ts?raw';
+
+Everything the editor shows comes from plugins: the viewport, the
+outliner, the inspector, the File and Edit menus are plugins built into
+it. A host adds its own the same way. This tutorial writes one, **Isolate**:
+
+- a command that **hides everything but the selection**, another that
+  shows everything again, in the Edit menu, with the keys **I** and
+  **Shift+I**;
+- a **Statistics** panel, which counts the nodes of the level by kind;
+- an item of the **status bar**, while the selection is isolated.
+
+It runs in the editor below. Select an object or two, then press **I** (or
+**Edit → Isolate the selection**); **Shift+I** shows everything again. The
+Statistics panel is a tab of the right dock, next to the Inspector.
+
+<Editor height={640} />
+
+The plugin is the package `@fdw/editor-plugin-isolate`; its whole code is
+at the end of the page.
+
+## 1. The manifest
+
+A plugin is first a **manifest**: what it adds to the editor, declared
+without code. The editor reads it at the start, and shows the commands,
+the panel, the menus and the keys at once; the code is only loaded when
+one of them is used.
+
+```ts title="manifest.ts"
+export const isolateId = 'fdw.isolate';
+
+export const isolateCommand = `${isolateId}.isolate`;
+export const showAllCommand = `${isolateId}.showAll`;
+export const statisticsView = `${isolateId}.statistics`;
+
+/** The context key the plugin sets while the selection is isolated. */
+export const isolatedKey = 'isolate.active';
+
+const levelShown = 'engine.scene == level';
+
+export const manifest = {
+  id: isolateId,
+  title: 'Isolate',
+  version: '1.0.0',
+  engine: '^1.0.0',
+  contributes: {
+    commands: [
+      {
+        id: isolateCommand,
+        title: 'Isolate the selection',
+        category: 'Isolate',
+        icon: 'focus',
+        enablement: `scene.hasSelection && !${isolatedKey}`,
+      },
+      {
+        id: showAllCommand,
+        title: 'Show everything',
+        category: 'Isolate',
+        icon: 'eye',
+        enablement: isolatedKey,
+      },
+    ],
+    views: [
+      {
+        id: statisticsView,
+        title: 'Statistics',
+        icon: 'list-tree',
+        location: 'right',
+        open: true,
+      },
+    ],
+    menus: {
+      'menubar.edit': [
+        { command: isolateCommand, group: '3_view' },
+        { command: showAllCommand, group: '3_view' },
+      ],
+    },
+    statusBar: [{ id: `${isolateId}.status`, alignment: 'left', priority: 40 }],
+    keybindings: [
+      { command: isolateCommand, key: 'i', when: levelShown },
+      { command: showAllCommand, key: 'shift+i', when: levelShown },
+    ],
+  },
+} as const satisfies PluginManifest;
+```
+
+- **`id`** prefixes every contribution: two plugins cannot take the same
+  ids. **`engine`** is the range of versions of the API of the editor the
+  plugin is written for; a plugin for another range is refused, as is a
+  manifest that is not valid (the Plugins panel tells why).
+- **The commands** have a title and a category, shown in the menus and in
+  the command palette (`Isolate: Isolate the selection`), and an icon
+  among those of the editor (`editorIcons`, from lucide), known before the
+  code is loaded.
+- **`enablement`** is a `when` clause, as in VS Code: the command is
+  disabled while it is false, in the menus, the palette and for its keys.
+  It reads **context keys**: `scene.hasSelection` is the editor's,
+  `isolate.active` the plugin's (below).
+- **The menus** are named: `menubar.edit` is the Edit menu of the level
+  plugin. The items are sorted by group, and the groups separated.
+- **The view** is a panel of the right dock, open in the default layout
+  (`open`); the View menu shows it otherwise.
+- **The keys** hold while their clause does: here, while the viewport shows
+  the level.
+
+## 2. The plugin and its code
+
+The plugin is its manifest, and a function that loads its code. With an
+`import()`, the bundler makes a chunk of its own, loaded at the first
+event that needs it: a command run, a tool activated, its panel shown —
+here at the start, since its panel is in the default layout. A plugin
+without an open panel costs nothing until used.
+
+```ts title="index.ts"
+export const isolatePlugin: EditorPlugin = {
+  manifest,
+  load: () => import('./main'),
+};
+```
+
+The code exports `activate`, called once loaded, with the **context of the
+plugin**: its services, and the registrations, each checked against the
+manifest (registering a command it does not declare throws).
+
+```tsx title="main.tsx"
+export function activate(context: PluginContext): void {
+  const { services } = context;
+  const level = () => services.get(ILevelStore).getSnapshot().context;
+  const engine = () => services.get(IEngineConnection);
+  // …
+}
+```
+
+`activate` is called before the editor is wholly made: it registers, and
+reads the services only when its commands run.
+
+## 3. Reading the level
+
+The level lives in the engine, which may run in another process: the
+page never holds it. It holds its **projection**, kept up to date from the
+messages of the engine: the service `ILevelStore`, a store of
+`@xstate/store`. Its context has the tree by ids (`nodes`, `root`), the
+selection (the active node last), the properties of the active node, the
+labels of the next undo and redo.
+
+The nodes to hide are those under the root that hold none of the
+selection — a leg selected keeps its table:
+
+```tsx title="main.tsx"
+export function nodesToHide(level: LevelStoreContext): string[] {
+  const parents = levelParents(level.nodes);
+  const kept = new Set<string>();
+  for (const id of level.selection) {
+    let top = id;
+    let parent = parents.get(top);
+    while (parent !== undefined && parent !== level.root) {
+      top = parent;
+      parent = parents.get(top);
+    }
+    kept.add(top);
+  }
+  const root = level.nodes[level.root];
+  return (root?.children ?? []).filter(
+    (id) => !kept.has(id) && level.nodes[id]?.visible,
+  );
+}
+```
+
+A function of the projection only: tested without the editor.
+
+## 4. Changing the level
+
+The page changes the level **by commands** only, sent to the engine
+(`IEngineConnection`): `level.command`, with the command of the
+[editing](/fdw-engine/guides/editing/) tools to run. Each one is a step of
+the history of the level: Ctrl+Z undoes it.
+
+```tsx title="main.tsx"
+const setVisible = (ids: readonly string[], visible: boolean) => {
+  for (const id of ids) {
+    engine().post({
+      type: 'level.command',
+      command: 'edit',
+      id,
+      property: 'visible',
+      value: visible,
+    });
+  }
+};
+```
+
+The other commands: `undo`, `redo`, `delete` (the selection), `add` (an
+empty node, a cube, a sphere, a light), `edit` (the name, the visibility,
+the transform, the fields of a component), `reparent`, `select`, `frame`.
+The engine answers with the changes of the projection; the outliner and
+the Statistics panel follow.
+
+## 5. The commands and a context key
+
+The handlers of the two commands. The first sets the context key
+`isolate.active`, until it is disposed by the second: the clauses of the
+manifest read it, so the editor enables the right command, without the
+plugin telling the menus.
+
+```tsx title="main.tsx"
+let hidden: string[] = [];
+let isolated: IDisposable | undefined;
+
+context.commands.register(isolateCommand, () => {
+  if (isolated || level().selection.length === 0) return;
+  hidden = nodesToHide(level());
+  setVisible(hidden, false);
+  isolated = context.keys.set(isolatedKey, true);
+});
+context.commands.register(showAllCommand, () => {
+  // Those removed meanwhile are left.
+  const { nodes } = level();
+  setVisible(
+    hidden.filter((id) => nodes[id]),
+    true,
+  );
+  hidden = [];
+  isolated?.dispose();
+  isolated = undefined;
+});
+```
+
+A command runs from its menu, its key, the palette, or from code:
+`context.commands.execute(id)`.
+
+## 6. The panel
+
+A view is a React component, registered for the view of the manifest. The
+hooks of `@fdw/editor-ui` give it the editor: `useEditor()` the runtime
+(its stores, its services), `useSelector(store, select)` a part of a store,
+rendered again when it changes, `useWhen(clause)` a clause.
+
+```tsx title="main.tsx"
+function useStatistics(): LevelStatistics {
+  const level = useSelector(useEditor().level, (snapshot) => snapshot.context);
+  return useMemo(() => levelStatistics(level), [level]);
+}
+
+function StatisticsPanel({ context }: { readonly context: PluginContext }) {
+  const statistics = useStatistics();
+  const isolated = useWhen(isolatedKey);
+  // … a table of the counts, and a button:
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      onClick={() =>
+        void context.commands.execute(
+          isolated ? showAllCommand : isolateCommand,
+        )
+      }
+    >
+      {isolated ? 'Show everything' : 'Isolate the selection'}
+    </Button>
+  );
+}
+
+context.views.registerComponent(statisticsView, () => (
+  <StatisticsPanel context={context} />
+));
+```
+
+The components of the editor (`Button`, `Input`…) are those of
+[shadcn/ui](https://ui.shadcn.com/), on Tailwind: the classes of the
+plugin are given to the Tailwind of the application by its stylesheet
+(below).
+
+## 7. The status bar
+
+An item of the status bar is a component too, for the item of the
+manifest; it renders nothing while the selection is not isolated:
+
+```tsx title="main.tsx"
+function IsolateStatus() {
+  const { nodes, hidden } = useStatistics();
+  const isolated = useWhen(isolatedKey);
+  if (!isolated) return null;
+  return (
+    <span className="text-amber-500">
+      Isolated: {nodes - hidden} of {nodes} nodes shown
+    </span>
+  );
+}
+
+context.statusBar.registerComponent(`${isolateId}.status`, IsolateStatus);
+```
+
+A node under a hidden parent counts as hidden (`levelStatistics`, at the
+end of the page).
+
+## 8. Giving it to the editor
+
+A host gives its plugins to the shell, after those of the editor:
+
+```tsx
+import { isolatePlugin } from '@fdw/editor-plugin-isolate';
+
+const host: EditorHost = { /* … */ plugins: [samplePlugin, isolatePlugin] };
+```
+
+And its stylesheet, the classes of the plugin to Tailwind:
+
+```css title="styles.css"
+@import '@fdw/editor-ui/styles.css';
+@import '@fdw/editor-plugin-isolate/styles.css'; /* @source './'; */
+```
+
+Both editors, desktop and web, have it. When the plugin is deactivated (the
+Plugins panel of the View menu), what it registered goes, the last first:
+its commands, its panel, its context key.
+
+## 9. Testing it
+
+`@fdw/editor-ui/testing` gives a host without engine: `fakeHost` keeps the
+messages of the page (`posted`), and sends those of the engine (`send`).
+The test sends the level, runs the command, and reads what the page asked
+the engine:
+
+```tsx title="isolate.spec.tsx"
+const fake = fakeHost({}, [isolatePlugin]);
+render(<EditorShell host={fake.host} onRuntime={(made) => (runtime = made)} />);
+await screen.findByTestId('viewport');
+fake.send({
+  type: 'level',
+  name: 'test.scene.json',
+  root: 'root',
+  dirty: false,
+});
+fake.send({ type: 'level.nodes', reset: true, nodes, removed: [] });
+fake.send({ type: 'level.selection', ids: ['cube1'] });
+
+await runtime.commands.execute(isolateCommand);
+expect(edits(fake.posted)).toEqual([
+  ['cube2', false],
+  ['lamp', false],
+  ['table', false],
+]);
+expect(runtime.keys.values()[isolatedKey]).toBe(true);
+```
+
+```sh
+npx nx test editor-plugin-isolate
+```
+
+## Going further
+
+- **A tool**: a plugin may give a tool, a machine of XState in a slot of
+  the editor (`primary` or `secondary`): Escape ends it, and its state is
+  kept with the layout. The sample plugin, `@fdw/editor-plugin-sample`,
+  has one that places marks.
+- **Its state**: `context.state` keeps a JSON value with the layout, even
+  while the plugin is missing (`usePluginState` in React). The ids of the
+  nodes are those of a session of the engine: the plugin above keeps them
+  in memory only.
+- **Its own services**: `context.services` is a scope of its own, where it
+  registers what other plugins may use.
+- The plugins run in the page, with what it can do: they are trusted.
+
+## The whole plugin
+
+<Code code={manifestSource} lang="ts" title="manifest.ts" />
+<Code code={indexSource} lang="ts" title="index.ts" />
+<Code code={mainSource} lang="tsx" title="main.tsx" />

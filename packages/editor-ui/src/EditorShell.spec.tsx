@@ -130,9 +130,23 @@ describe('EditorShell', () => {
     const { host, send } = fakeHost();
     render(<EditorShell host={host} />, { wrapper: StrictMode });
     send(ready);
-    send({ type: 'stats', fps: 60, width: 800, height: 600, info: '' });
+    send({
+      type: 'stats',
+      fps: 60,
+      cpu: 1.24,
+      gpu: 0.5,
+      width: 800,
+      height: 600,
+      info: '',
+    });
     expect(
-      await screen.findByText('vulkan · GPU · 60 fps · 800 × 600'),
+      await screen.findByText(
+        'vulkan · GPU · 60 fps (CPU 1.2 ms, GPU 0.5 ms) · 800 × 600',
+      ),
+    ).toBeTruthy();
+    send({ type: 'stats', fps: 60, cpu: 2, width: 800, height: 600, info: '' });
+    expect(
+      await screen.findByText('vulkan · GPU · 60 fps (CPU 2.0 ms) · 800 × 600'),
     ).toBeTruthy();
     send({ type: 'error', message: 'Lost' });
     expect(screen.getAllByText('Lost')).toBeTruthy();

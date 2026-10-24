@@ -1,0 +1,148 @@
+---
+title: Editing a level
+description: 'The interface of the editor, step by step: its layout, selecting and transforming objects, the outliner and the inspector, undo, saving the level.'
+tableOfContents: false
+sidebar:
+  order: 2
+---
+
+import Editor from '../../../components/Editor.astro';
+
+This tutorial goes through the editor with the level it opens first: a
+ground, cubes, spheres, a table and the sun. Everything happens in the
+editor below; nothing is kept when the page is left, so try freely.
+
+<Editor height={640} />
+
+## 1. The layout
+
+The editor is laid out like the main window of a desktop application:
+
+```
+┌─────────────────────────── menu bar ───────────────────────────┐
+├────────────────────────── toolbars, top ───────────────────────┤
+│ toolbars │ left dock │   central area   │ right dock │ toolbars │
+│          │           ├──────────────────┤            │          │
+│          │           │   bottom dock    │            │          │
+├───────────────────────── toolbars, bottom ─────────────────────┤
+└────────────────────────── status bar ──────────────────────────┘
+```
+
+- **The central area** holds the viewport. Its tab can be split or moved
+  in the area, and a group can float above it.
+- **The docks** hold the panels: the **Outliner** (the tree of the level)
+  on the left, the **Inspector** on the right, the **Console** (the
+  messages of the engine) at the bottom; next to the Inspector, the
+  Statistics of the plugin of [Writing a plugin](/fdw-engine/editor/writing-a-plugin/)
+  (the Marks menu is that of the sample plugin). Drag a tab to reorder it, or to
+  split its dock. The buttons at the left of the top toolbar show and hide
+  the docks; the **View** menu shows the panels, the toolbars, and resets
+  the layout.
+- **The status bar** tells the backend and the device, the frames per
+  second with the CPU and GPU time of a frame, the size of the viewport,
+  the name of the level (`•` once changed), the mode and the tools active.
+- **The command palette** (**Ctrl+Shift+P** or **F1**) lists every
+  command enabled, with its key: type a few letters of its name.
+
+The editor keeps its layout between sessions (the desktop one in its user
+data, the web one in IndexedDB); not in the pages of this site, which start
+from the default one.
+
+## 2. Moving around
+
+The camera turns around a point of the level:
+
+| Input                  | What it does                            |
+| ---------------------- | --------------------------------------- |
+| Right button, dragged  | Turns around the point                  |
+| Middle button, dragged | Pans                                    |
+| Wheel                  | Zooms                                   |
+| **F**                  | Frames the selection (**Edit → Frame**) |
+
+A drag goes on outside of the viewport: the pointer stays captured until
+the button is released.
+
+## 3. Selecting
+
+The **main button** belongs to the tool of the editor (below). With any of
+them:
+
+- a **click** selects the object under the pointer, a click in the void
+  clears the selection; **Shift** adds to it, **Ctrl** toggles, **Alt**
+  removes;
+- a **drag** from the void draws a rectangle: the objects inside are
+  selected;
+- in the **Outliner**, a click selects too (Shift, Ctrl as well), a double
+  click frames, the eye hides and shows.
+
+A click in the viewport selects a whole object under the root: the table,
+not one of its legs. To reach a leg, open the table in the Outliner and
+click the leg there.
+
+The selected objects are outlined, the one under the pointer too, more
+faintly. The **active** object is the last selected: the Inspector shows
+it.
+
+## 4. Moving, turning, scaling
+
+The tools are in the top toolbar and in the **Edit** menu:
+
+| Key   | Tool   | The gizmo                                        |
+| ----- | ------ | ------------------------------------------------ |
+| **Q** | Select | None: the main button selects only               |
+| **W** | Move   | Arrows along the axes, squares for the planes    |
+| **E** | Rotate | Rings around the axes                            |
+| **R** | Scale  | Handles along the axes, the center for all three |
+
+Select the blue cube, press **W**, and drag its red arrow: the cube moves
+along X. Each drag is one step of the history. Three toggles change the
+gizmo:
+
+- **X**: the axes of the world, or those of the object;
+- **C**: the pivot, at the center of the selection, or at the origin of
+  each object;
+- the magnet: snapping, by half a meter, 15 degrees, a quarter of scale.
+
+## 5. The Inspector
+
+The Inspector edits the active object: its name, its visibility, its
+position, rotation (in degrees) and scale, and the numbers of its
+components. A field is applied by **Enter**, or by leaving it; the
+consecutive changes of one field make one step of the history.
+
+## 6. Adding, removing, reorganizing
+
+- **Edit → Add** adds an empty node, a cube, a sphere or a point light at
+  the center of the level, selected: move it with **W**.
+- **Delete** removes the selection.
+- In the Outliner, drag an object onto another to put it under it: it
+  moves with its new parent.
+
+## 7. Undoing
+
+Every change is a command of the history: **Ctrl+Z** undoes, **Ctrl+Y**
+(or **Ctrl+Shift+Z**) redoes. The **Edit** menu tells the next step of
+each. Selecting is not in the history, as in most editors.
+
+## 8. Saving and opening
+
+The **File** menu:
+
+- **Save** (**Ctrl+S**) writes the level as a scene of the engine
+  (`.scene.json`, its buffers in it), the format of
+  [saving scenes](/fdw-engine/tutorials/saving-scenes/);
+- **Export as glTF** writes a `.glb`, for the other tools;
+- **Open** (**Ctrl+O**) reads a scene of the engine or a glTF file
+  (`.glb`, or `.gltf` with its buffers in it);
+- **New** goes back to the sample level.
+
+In the browser, Chromium opens a dialog to choose where to write; the other
+browsers download the file. On the desktop, the dialogs are those of the
+system.
+
+## 9. The other scenes
+
+The **Scene** menu shows the demo scenes in the viewport instead of the
+level: physics, the ocean, the game in the forest… They run with the
+inputs of the game: click the viewport, then play. **Scene → level** comes
+back to the level, as it was left.

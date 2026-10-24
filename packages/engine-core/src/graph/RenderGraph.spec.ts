@@ -320,6 +320,41 @@ describe('RenderGraphRunner', () => {
     expect(created).toEqual([16]);
   });
 
+  it('reads the measures at each frame, for a timer that waits to be read', () => {
+    // As on Vulkan: two sets of queries, freed once read; a frame without
+    // a free set is not measured.
+    const { backend, log } = fakeBackend();
+    const pending: number[] = [];
+    let latest: number | undefined;
+    let current = 0;
+    Object.assign(backend, {
+      createPassTimer: (capacity: number) => ({
+        capacity,
+        resolve: (_encoder: unknown, frame: number) => {
+          current = frame;
+          if (pending.length < 2) pending.push(frame);
+        },
+        read: () => {
+          while (pending.length > 0 && (pending[0] ?? 0) <= current - 2) {
+            latest = pending.shift();
+          }
+          return latest === undefined
+            ? undefined
+            : { frame: latest, durations: Float64Array.from([1.5, 0.25]) };
+        },
+        destroy: () => undefined,
+      }),
+    });
+    const runner = new RenderGraphRunner(backend, { timing: true });
+    // Read once, long after the first frames: still a recent one.
+    for (let frame = 0; frame < 20; frame++) runner.execute(twoPasses(log));
+    expect([...runner.passTimes]).toEqual([
+      ['render', 1.5],
+      ['present', 0.25],
+    ]);
+    expect(latest).toBeGreaterThan(10);
+  });
+
   it('creates the transient resources with the union of their usages', () => {
     const { backend, log } = fakeBackend();
     new RenderGraphRunner(backend).execute(twoPasses(log));

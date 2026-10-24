@@ -155,6 +155,14 @@ export class RenderGraphRunner {
    * empty at first, and where the backend cannot measure.
    */
   get passTimes(): ReadonlyMap<string, number> {
+    this.readTimes();
+    return this._passTimes;
+  }
+
+  // The measures arrived, read at each frame too: a timer takes new ones
+  // once the previous are read (Vulkan), and the names of the passes of a
+  // frame are only kept a few frames.
+  private readTimes(): void {
     const times = this._timer?.read();
     const names = times && this._timedPasses.get(times.frame);
     if (times && names) {
@@ -168,7 +176,6 @@ export class RenderGraphRunner {
       });
       this._passTimes = result;
     }
-    return this._passTimes;
   }
 
   /**
@@ -192,6 +199,7 @@ export class RenderGraphRunner {
     }
 
     const encoder = this.backend.createCommandEncoder();
+    this.readTimes();
     const timer = this.timer(graph);
     const timed: string[] | undefined = timer ? [] : undefined;
     for (let position = 0; position < compiled.order.length; position++) {

@@ -3,7 +3,8 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "apps/editor/src",
   "projectType": "application",
-  "tags": [],
+  "// tags": "gpu: its tests run Electron on Vulkan, in the native job of the CI",
+  "tags": ["gpu"],
   "targets": {
     "build-native": {
       "command": "node scripts/build-native.mjs",
@@ -76,6 +77,21 @@
         "default",
         "{workspaceRoot}/packages/*/src/**/*",
         "!{projectRoot}/out/**/*"
+      ]
+    },
+    "test": {
+      "command": "xvfb-run -a -s '-screen 0 1600x1000x24' npx playwright test",
+      "options": {
+        "cwd": "apps/editor"
+      },
+      "dependsOn": [
+        "install",
+        "build-native",
+        {
+          "projects": ["engine-native", "engine-vulkan"],
+          "target": "build-native"
+        },
+        "build"
       ]
     }
   }

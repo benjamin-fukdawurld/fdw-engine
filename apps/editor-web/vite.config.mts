@@ -40,6 +40,8 @@ function forestModels(): Plugin {
       });
     },
     closeBundle() {
+      // The documentation serves them already (FDW_MODELS).
+      if (process.env['FDW_MODELS']) return;
       cpSync(forest, resolve(import.meta.dirname, 'dist/models/forest'), {
         recursive: true,
       });

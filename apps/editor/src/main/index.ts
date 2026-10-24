@@ -8,6 +8,9 @@ import { allowPopouts, handleHostServices } from './host';
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform', 'x11');
 }
+// The tests give the editor a user data of its own: its layout, its storage.
+const userData = process.env['FDW_USER_DATA'];
+if (userData) app.setPath('userData', userData);
 
 function createWindow(): void {
   const window = new BrowserWindow({

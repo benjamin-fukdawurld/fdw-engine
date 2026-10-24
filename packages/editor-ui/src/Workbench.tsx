@@ -118,15 +118,24 @@ function defaultGrid(api: GridviewApi): void {
   }
 }
 
-// The views of the area open in a new layout, in their order of registration.
+// The views of the area open in a new layout, in their order of
+// registration: the first one active (those of the editor before those of
+// the host).
 function defaultArea(
   area: AreaId,
   api: DockviewApi,
   views: Registry<ViewSpec>,
 ): void {
+  let first = true;
   for (const view of views.all()) {
     if (view.location === area && view.open) {
-      api.addPanel({ id: view.id, component: 'view', title: view.title });
+      api.addPanel({
+        id: view.id,
+        component: 'view',
+        title: view.title,
+        inactive: !first,
+      });
+      first = false;
     }
   }
 }

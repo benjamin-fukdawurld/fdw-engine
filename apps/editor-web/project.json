@@ -5,5 +5,19 @@
   "projectType": "application",
   "// tags": "gpu: its tests render in Chromium, in the native job of the CI",
   "tags": ["gpu"],
-  "targets": {}
+  "targets": {
+    "build-docs": {
+      "// command": "The editor in the site of the documentation, under /fdw-engine/editor-app/: its pages show it (apps/docs)",
+      "command": "vite build --base /fdw-engine/editor-app/ --outDir ../docs/public/editor-app --emptyOutDir",
+      "options": {
+        "cwd": "apps/editor-web",
+        "env": {
+          "FDW_MODELS": "/fdw-engine/models/"
+        }
+      },
+      "cache": true,
+      "inputs": ["production", "^production"],
+      "outputs": ["{workspaceRoot}/apps/docs/public/editor-app"]
+    }
+  }
 }

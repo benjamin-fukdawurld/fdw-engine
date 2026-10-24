@@ -164,6 +164,11 @@ export type EngineMessage =
   | {
       readonly type: 'stats';
       readonly fps: number;
+      // The mean CPU time of a frame of the scene, in milliseconds (that of
+      // the process in Electron: EditorEnginePlatform.cpuTime); the GPU
+      // time of its passes, where the scene measures it (the level).
+      readonly cpu: number;
+      readonly gpu?: number;
       readonly width: number;
       readonly height: number;
       readonly info: string;
