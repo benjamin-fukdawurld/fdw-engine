@@ -93,6 +93,45 @@ export async function compileHlsl(
   }
 }
 
+/**
+ * Compiles the entry points of an HLSL module generated for Direct3D 12 to
+ * DXIL with DXC: the disassembly of each stage, which describes the layout
+ * of its cbuffers and structured buffers.
+ */
+export async function compileDxil(
+  sources: ShaderSources,
+): Promise<Map<SpirvStage, string>> {
+  if (sources.kind !== 'single-module') {
+    throw new Error('HLSL is a single module');
+  }
+  const dxc = tool('dxc');
+  const dir = await mkdtemp(join(tmpdir(), 'fdw-dxil-'));
+  try {
+    const input = join(dir, 'program.hlsl');
+    await writeFile(input, sources.code);
+    const result = new Map<SpirvStage, string>();
+    for (const [stage, entryPoint] of Object.entries(sources.entryPoints) as [
+      SpirvStage,
+      string | undefined,
+    ][]) {
+      if (!entryPoint) {
+        continue;
+      }
+      const output = join(dir, `${stage}.txt`);
+      await runTool(dxc, [
+        ...dxcArguments(stage, entryPoint, 'd3d12'),
+        input,
+        '-Fc',
+        output,
+      ]);
+      result.set(stage, await readFile(output, 'utf8'));
+    }
+    return result;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 // Runs a tool on a SPIR-V module written to a temporary file.
 async function withModule<T>(
   spirv: Uint8Array,

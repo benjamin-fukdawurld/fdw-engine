@@ -28,6 +28,9 @@
       "path": "./packages/engine-vulkan"
     },
     {
+      "path": "./packages/engine-d3d12"
+    },
+    {
       "path": "./packages/engine-core"
     },
     {

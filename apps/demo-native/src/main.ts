@@ -2,9 +2,11 @@
 // design/native-backends.md):
 // - WebGPU on Dawn, presented by copy (default);
 // - Vulkan, presented by a swapchain (--vulkan), with the validation layer
-//   when the Vulkan SDK is set up (--validation).
+//   when the Vulkan SDK is set up (--validation);
+// - Direct3D 12 on Windows, presented by a DXGI swapchain (--d3d12), with
+//   the debug layer when the Graphics Tools are installed (--validation).
 //
-// nx run demo-native:start [-- <scene>] [--vulkan] [--validation]
+// nx run demo-native:start [-- <scene>] [--vulkan | --d3d12] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden] [--no-audio]
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
 // fps (the first person shooter; P pauses),
@@ -21,8 +23,10 @@
 // Escape or closing the window quits.
 import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import type { Engine, Surface } from '@fdw/engine-backend';
+import { D3D12Engine } from '@fdw/engine-d3d12';
 import {
   createDawnEngine,
+  D3D12WindowSurface,
   DawnWindowSurface,
   NativeWindow,
   NativeWindowEvent,
@@ -116,6 +120,7 @@ const name =
 // Stops after this many frames (tests, profiling).
 const maxFrames = Number(option('--frames') ?? Infinity);
 const vulkan = args.includes('--vulkan');
+const d3d12 = args.includes('--d3d12');
 const vsync = !args.includes('--no-vsync');
 
 // The engine, the window and its surface for the chosen backend.
@@ -141,6 +146,22 @@ if (vulkan) {
   });
   // The swapchain sets the pace: no throttle.
   surface = new VulkanWindowSurface(window, { vsync });
+} else if (d3d12) {
+  const d3d12Engine = new D3D12Engine({
+    validation: args.includes('--validation'),
+    application: 'FdwEngine demo',
+  });
+  await d3d12Engine.init();
+  engine = d3d12Engine;
+  title = `FdwEngine: ${name} (Direct3D 12, ${d3d12Engine.device?.name})`;
+  window = new NativeWindow({
+    title,
+    width: 1280,
+    height: 720,
+    hidden: args.includes('--hidden'),
+  });
+  // The swapchain sets the pace: no throttle.
+  surface = new D3D12WindowSurface(window, { vsync });
 } else {
   engine = await createDawnEngine();
   title = `FdwEngine: ${name} (WebGPU, Dawn)`;
@@ -212,6 +233,12 @@ if (engine instanceof VulkanEngine) {
   const messages = engine.device?.takeMessages() ?? [];
   if (messages.length > 0) {
     console.log(`Vulkan validation:\n${messages.join('\n')}`);
+  }
+}
+if (engine instanceof D3D12Engine) {
+  const messages = engine.device?.takeMessages() ?? [];
+  if (messages.length > 0) {
+    console.log(`Direct3D 12 debug layer:\n${messages.join('\n')}`);
   }
 }
 scene.destroy();

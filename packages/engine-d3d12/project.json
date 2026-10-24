@@ -1,0 +1,43 @@
+{
+  "name": "engine-d3d12",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-d3d12/src",
+  "projectType": "library",
+  "tags": ["gpu"],
+  "targets": {
+    "test": {
+      "inputs": [
+        "default",
+        "^production",
+        {
+          "json": "{workspaceRoot}/tsconfig.json",
+          "fields": ["compilerOptions"]
+        },
+        {
+          "externalDependencies": ["vitest"]
+        },
+        {
+          "env": "CI"
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.js",
+          "transitive": true
+        }
+      ],
+      "dependsOn": ["build-native"]
+    },
+    "build-native": {
+      "command": "node scripts/build.mjs",
+      "options": {
+        "cwd": "packages/engine-d3d12"
+      },
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/native/**/*",
+        "{projectRoot}/scripts/**/*",
+        "{workspaceRoot}/tools/native/**/*"
+      ],
+      "outputs": ["{projectRoot}/build/fdw_d3d12.node"]
+    }
+  }
+}

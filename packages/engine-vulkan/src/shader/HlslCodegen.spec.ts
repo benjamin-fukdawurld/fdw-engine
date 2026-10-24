@@ -12,6 +12,7 @@ import {
 } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import {
+  compileDxil,
   compileHlsl,
   findTool,
   reflectUniformBlocks,
@@ -20,10 +21,11 @@ import {
 import { HlslCodegen, hlslType } from './HlslCodegen';
 
 const codegen = new HlslCodegen();
+const d3d12 = new HlslCodegen({ target: 'd3d12' });
 
-const emit = (program: CompiledProgram) => {
+const emit = (program: CompiledProgram, generator = codegen) => {
   const layout = std140LayoutStrategy.resolve(program.layout);
-  const sources = codegen.emit(program.module, layout);
+  const sources = generator.emit(program.module, layout);
   if (sources.kind !== 'single-module') {
     throw new Error('expected a single module');
   }
@@ -402,6 +404,59 @@ describe.skipIf(!sdk)('HlslCodegen with DXC', () => {
       for (const spirv of modules.values()) {
         await validateSpirv(spirv);
         await expectLayout(spirv, layout);
+      }
+    });
+  }
+});
+
+describe('HlslCodegen for Direct3D 12', () => {
+  it('binds the resources to registers, the group as the space', () => {
+    const { code } = emit(texturedPhong(), d3d12);
+    expect(code).not.toContain('vk::');
+    expect(code).toContain('Texture2D<float4> t_map : register(t');
+    expect(code).toContain('SamplerState s_mapSampler : register(s');
+    expect(code).toMatch(
+      /cbuffer cb_materialUniforms : register\(b\d+, space\d+\)/,
+    );
+    expect(code).toMatch(
+      /float3 materialUniforms_u_tint : packoffset\(c\d+(\.[yzw])?\);/,
+    );
+  });
+
+  it('adds the first instance of the draw, and reads the workgroups from constants', () => {
+    const raw = emit(rawStages(), d3d12).code;
+    expect(raw).toContain('cbuffer FdwDraw : register(b0, space100)');
+    expect(raw).toContain('(instanceIndex + fdw_firstInstance)');
+    const kernel = emit(scaleKernel(), d3d12).code;
+    expect(kernel).toContain('cbuffer FdwDispatch : register(b0, space100)');
+    expect(kernel).toContain('RWStructuredBuffer<float> b_output : register(u');
+  });
+});
+
+// The offsets of the members of a cbuffer, in the disassembly of DXC.
+const dxilOffset = (disassembly: string, member: string) =>
+  Number(
+    new RegExp(`\\b${member};\\s*; Offset:\\s*(\\d+)`).exec(disassembly)?.[1],
+  );
+
+describe.skipIf(!sdk)('HlslCodegen for Direct3D 12 with DXC', () => {
+  for (const [name, program] of programs) {
+    it(`compiles ${name} to DXIL with the offsets of the layout`, async () => {
+      const { sources, layout } = emit(program(), d3d12);
+      const modules = await compileDxil(sources);
+      expect([...modules.keys()]).toEqual(Object.keys(sources.entryPoints));
+      const disassembly = [...modules.values()].join('\n');
+      for (const group of layout.groups) {
+        for (const { resource, block } of group.bindings) {
+          for (const member of block?.members ?? []) {
+            const identifier = `${resource.name}_u_${member.name}`;
+            if (disassembly.includes(`${identifier};`)) {
+              expect(dxilOffset(disassembly, identifier), identifier).toBe(
+                member.offset,
+              );
+            }
+          }
+        }
       }
     });
   }

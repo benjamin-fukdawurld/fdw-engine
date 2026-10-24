@@ -15,12 +15,27 @@ import {
   typeToString,
 } from '@fdw/engine-shader';
 
-// HLSL (Shader Model 6, HLSL 2021) for Vulkan, compiled to SPIR-V by DXC:
-// `dxc -spirv -HV 2021 -fvk-use-gl-layout` (see dxcArguments). The
-// bindings are Vulkan descriptor sets and bindings ([[vk::binding]]), the
-// uniform block members have the offsets of the physical layout
-// ([[vk::offset]]). Matrices are column-major, as in the rest of the engine:
-// `mul(m, v)` is the product of the matrix by a column vector.
+// HLSL (Shader Model 6, HLSL 2021), for two targets:
+// - Vulkan, compiled to SPIR-V by DXC: `dxc -spirv -HV 2021
+//   -fvk-use-gl-layout` (see dxcArguments). The bindings are Vulkan
+//   descriptor sets and bindings ([[vk::binding]]), the uniform block
+//   members have the offsets of the physical layout ([[vk::offset]]).
+// - Direct3D 12, compiled to DXIL: the bindings are registers, the group
+//   being the register space. The offsets of the physical layout (std140,
+//   std430) are kept: uniform blocks are cbuffers whose members are placed
+//   with packoffset, structured buffers have explicit padding.
+// Matrices are column-major, as in the rest of the engine: `mul(m, v)` is
+// the product of the matrix by a column vector.
+
+/** The API the HLSL is compiled for. */
+export type HlslTarget = 'vulkan' | 'd3d12';
+
+/**
+ * Direct3D 12: the register space of the constants the backend sets for
+ * each draw or dispatch (root constants at b0): the first instance of a
+ * draw, the number of workgroups of a dispatch.
+ */
+export const D3D12ConstantsSpace = 100;
 
 const scalarNames: Record<string, string> = {
   f32: 'float',
@@ -188,9 +203,28 @@ const instancesIdentifier = (table: string) => `${table}Instances`;
 // The key of the object table in the identifiers of the resources.
 const ObjectTableKey = '#object-table';
 
+// The resources of a program, as the code names them.
+interface Resources {
+  readonly target: HlslTarget;
+  // The identifiers of the resources, by binding name.
+  readonly names: Map<string, string>;
+  // Direct3D 12: the uniform blocks, cbuffers whose members are globals.
+  readonly blocks: Set<string>;
+  // Direct3D 12: the structured buffers whose elements are wrapped in a
+  // padded structure, read through `.value`.
+  readonly wrapped: Set<string>;
+  // Direct3D 12: the members of the object rows stored with padded columns
+  // (a mat3 as a float4x3), and the cast that reads them.
+  readonly rowCasts: Map<string, string>;
+}
+
+// Direct3D 12: a member of a uniform block, a global of its cbuffer.
+const blockMember = (block: string, member: string) =>
+  `${block}_${memberIdentifier(member)}`;
+
 // The identifier of the object table of the layout.
-function objectTable(resources: ReadonlyMap<string, string>): string {
-  const table = resources.get(ObjectTableKey);
+function objectTable(resources: Resources): string {
+  const table = resources.names.get(ObjectTableKey);
   if (!table) {
     throw new Error('The layout has no object table');
   }
@@ -227,12 +261,34 @@ const builtinParameters = {
 } as const;
 
 // HLSL has no system value for the number of workgroups: on Vulkan, the
-// SPIR-V builtin is declared directly (NumWorkgroups is BuiltIn 24).
+// SPIR-V builtin is declared directly (NumWorkgroups is BuiltIn 24); on
+// Direct3D 12, the backend sets it as root constants.
 const numWorkgroups = {
   name: 'gl_NumWorkGroups',
-  declaration:
-    '[[vk::ext_builtin_input(24)]] static const uint3 gl_NumWorkGroups;',
+  declaration: {
+    vulkan:
+      '[[vk::ext_builtin_input(24)]] static const uint3 gl_NumWorkGroups;',
+    d3d12: `cbuffer FdwDispatch : register(b0, space${D3D12ConstantsSpace}) {
+  uint3 gl_NumWorkGroups;
+};`,
+  },
 };
+
+// Direct3D 12: SV_InstanceID starts at 0 whatever the first instance of the
+// draw, which the backend sets as a root constant.
+const firstInstance = {
+  name: 'fdw_firstInstance',
+  declaration: `cbuffer FdwDraw : register(b0, space${D3D12ConstantsSpace}) {
+  uint fdw_firstInstance;
+};`,
+};
+
+// The instance index, the first instance of the draw included (as
+// InstanceIndex of Vulkan, instance_index of WGSL).
+const instanceIndex = (target: HlslTarget) =>
+  target === 'd3d12'
+    ? `(${builtinParameters['instance-index'].name} + ${firstInstance.name})`
+    : builtinParameters['instance-index'].name;
 
 interface BodyState {
   readonly lines: string[];
@@ -246,10 +302,7 @@ const valueName = (instruction: IrInstruction) =>
     instruction.name ? `_${identifier(instruction.name)}` : ''
   }`;
 
-function emitBody(
-  entryPoint: IrEntryPoint,
-  resources: ReadonlyMap<string, string>,
-): BodyState {
+function emitBody(entryPoint: IrEntryPoint, resources: Resources): BodyState {
   const state: BodyState = {
     lines: [],
     expressions: new Map(),
@@ -262,7 +315,7 @@ function emitBody(
 
 function emitInstructions(
   body: readonly IrInstruction[],
-  resources: ReadonlyMap<string, string>,
+  resources: Resources,
   state: BodyState,
   indent: string,
 ): void {
@@ -322,7 +375,9 @@ function emitInstructions(
         continue;
       }
       case 'index':
-        expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]`;
+        expression = `${arg(instruction, 0)}[${arg(instruction, 1)}]${
+          resources.wrapped.has(arg(instruction, 0)) ? '.value' : ''
+        }`;
         break;
       case 'array-length': {
         // Structured buffers give their length through out parameters.
@@ -350,11 +405,14 @@ function emitInstructions(
           expression = 'input.clipPosition';
         } else if (op.builtin === 'object-index') {
           // SV_InstanceID is the InstanceIndex of Vulkan: it includes the
-          // first instance of the draw.
+          // first instance of the draw (added on Direct3D 12).
           builtins.add('instance-index');
-          expression = `${instancesIdentifier(objectTable(resources))}[${
-            builtinParameters['instance-index'].name
-          }]`;
+          expression = `${instancesIdentifier(
+            objectTable(resources),
+          )}[${instanceIndex(resources.target)}]`;
+        } else if (op.builtin === 'instance-index') {
+          builtins.add(op.builtin);
+          expression = instanceIndex(resources.target);
         } else if (op.builtin === 'num-workgroups') {
           builtins.add(op.builtin);
           expression = numWorkgroups.name;
@@ -364,13 +422,15 @@ function emitInstructions(
         }
         break;
       case 'load-resource': {
-        const binding = resources.get(op.binding);
+        const binding = resources.names.get(op.binding);
         if (!binding) {
           throw new Error(`Binding "${op.binding}" is not in the layout`);
         }
-        expression = op.member
-          ? `${binding}.${memberIdentifier(op.member)}`
-          : binding;
+        expression = !op.member
+          ? binding
+          : resources.blocks.has(binding)
+            ? blockMember(binding, op.member)
+            : `${binding}.${memberIdentifier(op.member)}`;
         break;
       }
       case 'binary': {
@@ -453,12 +513,15 @@ function emitInstructions(
       case 'convert':
         expression = `((${hlslType(type)})${arg(instruction, 0)})`;
         break;
-      case 'load-object':
-        expression = `${objectTable(resources)}[${arg(
+      case 'load-object': {
+        const member = `${objectTable(resources)}[${arg(
           instruction,
           0,
         )}].${memberIdentifier(op.member)}`;
+        const cast = resources.rowCasts.get(op.member);
+        expression = cast ? `((${cast})${member})` : member;
         break;
+      }
       case 'swizzle':
         expression = `${arg(instruction, 0)}.${op.components}`;
         break;
@@ -479,41 +542,111 @@ function emitInstructions(
   }
 }
 
-// Declares the resources of the layout; returns their identifiers in the
-// code, by binding name.
+// Where a resource is bound: before the declaration on Vulkan (a
+// descriptor set and a binding), after its name on Direct3D 12 (a register
+// of the class of the resource, the group as its space).
+interface Location {
+  readonly binding: number;
+  readonly group: number;
+}
+
+function bound(
+  target: HlslTarget,
+  declaration: string,
+  { binding, group }: Location,
+  registerClass: 'b' | 't' | 's' | 'u',
+): string {
+  return target === 'vulkan'
+    ? `[[vk::binding(${binding}, ${group})]] ${declaration};`
+    : `${declaration} : register(${registerClass}${binding}, space${group});`;
+}
+
+// Declares the resources of the layout; returns how the code names them.
 function declareResources(
   layout: PhysicalProgramLayout,
   sections: string[],
-): Map<string, string> {
-  const resources = new Map<string, string>();
+  target: HlslTarget,
+): Resources {
+  const resources: Resources = {
+    target,
+    names: new Map(),
+    blocks: new Set(),
+    wrapped: new Set(),
+    rowCasts: new Map(),
+  };
   for (const group of layout.groups) {
     for (const physical of group.bindings) {
       const { resource } = physical;
-      const location = `[[vk::binding(${physical.binding}, ${group.index})]]`;
+      const location = { binding: physical.binding, group: group.index };
       const name = resourceIdentifier(resource);
-      resources.set(resource.name, name);
+      resources.names.set(resource.name, name);
       if (resource.kind === 'object-table') {
-        resources.set(ObjectTableKey, name);
-        sections.push(
-          declareObjectTable(physical, location, name, group.index),
-        );
+        resources.names.set(ObjectTableKey, name);
+        sections.push(declareObjectTable(physical, location, name, resources));
         continue;
       }
-      sections.push(declareResource(physical, location, name));
+      sections.push(declareResource(physical, location, name, resources));
     }
   }
   return resources;
 }
 
+// Direct3D 12: the place of a member in a cbuffer, from its offset (in
+// registers of 16 bytes, then components).
+const packOffset = (offset: number) =>
+  `packoffset(c${Math.floor(offset / 16)}${
+    ['', '.y', '.z', '.w'][(offset % 16) / 4]
+  })`;
+
+// Direct3D 12: the size of a type in a structured buffer, where nothing is
+// padded (a float3 takes 12 bytes, a column-major float3x3 36).
+function tightSize(type: ShaderType): number {
+  switch (type.kind) {
+    case 'scalar':
+      return 4;
+    case 'vector':
+      return 4 * type.size;
+    case 'matrix':
+      return 4 * type.rows * type.columns;
+    case 'array':
+      return tightSize(type.element) * (type.length ?? 0);
+    default:
+      throw new Error(`${typeToString(type)} cannot be in a structured buffer`);
+  }
+}
+
+// Direct3D 12: `count` bytes of padding in a structure.
+const padding = (count: number, index: number) =>
+  count > 0 ? [`  uint _padding${index}[${count / 4}];`] : [];
+
 function declareResource(
-  { resource, block }: PhysicalBinding,
-  location: string,
+  { resource, block, storage }: PhysicalBinding,
+  location: Location,
   name: string,
+  resources: Resources,
 ): string {
+  const { target } = resources;
   switch (resource.kind) {
     case 'uniform-block': {
       if (!block) {
         throw new Error(`Uniform block "${resource.name}" has no layout`);
+      }
+      if (target === 'd3d12') {
+        // A cbuffer, its members at the offsets of the layout (std140 puts
+        // arrays and matrices at the start of a register, as packoffset
+        // needs).
+        resources.blocks.add(name);
+        return [
+          `cbuffer cb_${name} : register(b${location.binding}, space${location.group}) {`,
+          ...block.members.map(
+            (member) =>
+              `  ${declaration(
+                member.type,
+                blockMember(name, member.name),
+              )} : ${packOffset(member.offset)};`,
+          ),
+          '};',
+        ].join('\n');
       }
       const struct = structName(resource.name);
       return [
@@ -526,33 +659,110 @@ function declareResource(
             )};`,
         ),
         '};',
-        `${location} ConstantBuffer<${struct}> ${name};`,
+        bound(target, `ConstantBuffer<${struct}> ${name}`, location, 'b'),
       ].join('\n');
     }
     case 'texture':
-      return `${location} ${hlslType(resource.type)} ${name};`;
+      return bound(target, `${hlslType(resource.type)} ${name}`, location, 't');
     case 'sampler':
-      return `${location} ${
-        resource.comparison ? 'SamplerComparisonState' : 'SamplerState'
-      } ${name};`;
-    case 'storage-buffer':
-      return `${location} ${
-        resource.access === 'read-write'
-          ? 'RWStructuredBuffer'
-          : 'StructuredBuffer'
-      }<${hlslType(resource.type.element)}> ${name};`;
+      return bound(
+        target,
+        `${
+          resource.comparison ? 'SamplerComparisonState' : 'SamplerState'
+        } ${name}`,
+        location,
+        's',
+      );
+    case 'storage-buffer': {
+      const readWrite = resource.access === 'read-write';
+      const kind = readWrite ? 'RWStructuredBuffer' : 'StructuredBuffer';
+      const element = resource.type.element;
+      const sections: string[] = [];
+      let elementType = hlslType(element);
+      // Direct3D 12: the elements are tightly packed; those taking more in
+      // the std430 layout (a vec3 takes 16 bytes) are wrapped in a padded
+      // structure.
+      const stride = storage?.elementStride ?? 0;
+      if (target === 'd3d12' && stride > tightSize(element)) {
+        if (element.kind !== 'scalar' && element.kind !== 'vector') {
+          throw new Error(
+            `${typeToString(element)} elements are not supported in Direct3D 12 storage buffers`,
+          );
+        }
+        elementType = `${structName(name)}Element`;
+        resources.wrapped.add(name);
+        sections.push(
+          [
+            `struct ${elementType} {`,
+            `  ${hlslType(element)} value;`,
+            ...padding(stride - tightSize(element), 0),
+            '};',
+          ].join('\n'),
+        );
+      }
+      sections.push(
+        bound(
+          target,
+          `${kind}<${elementType}> ${name}`,
+          location,
+          readWrite ? 'u' : 't',
+        ),
+      );
+      return sections.join('\n');
+    }
     case 'object-table':
       throw new Error('An object table is declared by declareObjectTable');
   }
 }
 
+// The members of a row of an object table. Vulkan keeps the offsets of the
+// layout ([[vk::offset]]); Direct3D 12 packs structured buffers tightly, so
+// padding goes before the members, a mat3 is stored as a float4x3 (columns
+// of 16 bytes, read through a cast) and the row is padded to its size.
+function rowMembers(
+  row: NonNullable<PhysicalBinding['objectRow']>,
+  resources: Resources,
+): string[] {
+  if (resources.target === 'vulkan') {
+    return row.members.map(
+      (member) =>
+        `  [[vk::offset(${member.offset})]] ${declaration(
+          member.type,
+          memberIdentifier(member.name),
+        )};`,
+    );
+  }
+  const lines: string[] = [];
+  let offset = 0;
+  for (const member of row.members) {
+    lines.push(...padding(member.offset - offset, lines.length));
+    const { type } = member;
+    const identifier = memberIdentifier(member.name);
+    if (type.kind === 'matrix' && type.rows !== 4) {
+      lines.push(`  float4x${type.columns} ${identifier};`);
+      resources.rowCasts.set(member.name, hlslType(type));
+      offset = member.offset + 16 * type.columns;
+      continue;
+    }
+    if (type.kind === 'array' && tightSize(type) !== member.size) {
+      throw new Error(
+        `${typeToString(type)} members are not supported in Direct3D 12 object tables`,
+      );
+    }
+    lines.push(`  ${declaration(type, identifier)};`);
+    offset = member.offset + tightSize(type);
+  }
+  lines.push(...padding(row.size - offset, lines.length));
+  return lines;
+}
+
 // An object table: the rows, then the row of each instance at the next
 // binding, as structured buffers (storage buffers in SPIR-V).
 function declareObjectTable(
-  { resource, binding, objectRow }: PhysicalBinding,
-  location: string,
+  { resource, objectRow }: PhysicalBinding,
+  location: Location,
   name: string,
-  group: number,
+  resources: Resources,
 ): string {
   if (!objectRow) {
     throw new Error(`Object table "${resource.name}" has no row layout`);
@@ -560,32 +770,41 @@ function declareObjectTable(
   const struct = `${structName(resource.name)}Row`;
   return [
     `struct ${struct} {`,
-    ...objectRow.members.map(
-      (member) =>
-        `  [[vk::offset(${member.offset})]] ${declaration(
-          member.type,
-          memberIdentifier(member.name),
-        )};`,
-    ),
+    ...rowMembers(objectRow, resources),
     '};',
-    `${location} StructuredBuffer<${struct}> ${name};`,
-    `[[vk::binding(${
-      binding + 1
-    }, ${group})]] StructuredBuffer<uint> ${instancesIdentifier(name)};`,
+    bound(
+      resources.target,
+      `StructuredBuffer<${struct}> ${name}`,
+      location,
+      't',
+    ),
+    bound(
+      resources.target,
+      `StructuredBuffer<uint> ${instancesIdentifier(name)}`,
+      { binding: location.binding + 1, group: location.group },
+      't',
+    ),
   ].join('\n');
 }
 
 // A member of the input or output struct of a stage.
-function stageVariable(variable: IrStageVariable, semantic: string): string {
+function stageVariable(
+  variable: IrStageVariable,
+  semantic: string,
+  target: HlslTarget,
+): string {
   if (variable.builtin === 'position') {
     return `  ${hlslType(variable.type)} ${variable.name} : SV_Position;`;
   }
   // Integers are not interpolated (the struct serves both stages).
   const interpolation =
     variable.interpolation === 'flat' ? 'nointerpolation ' : '';
-  return `  [[vk::location(${variable.location})]] ${interpolation}${hlslType(
-    variable.type,
-  )} ${variable.name} : ${semantic}${variable.location};`;
+  // Direct3D 12 matches the stages and the vertex attributes by semantic.
+  const location =
+    target === 'vulkan' ? `[[vk::location(${variable.location})]] ` : '';
+  return `  ${location}${interpolation}${hlslType(variable.type)} ${
+    variable.name
+  } : ${semantic}${variable.location};`;
 }
 
 const builtinDeclarations = (builtins: ReadonlySet<string>) =>
@@ -600,19 +819,19 @@ const builtinDeclarations = (builtins: ReadonlySet<string>) =>
 // A compute stage: the body, then the writes, in order.
 function emitCompute(
   compute: IrEntryPoint,
-  resources: ReadonlyMap<string, string>,
+  resources: Resources,
   sections: string[],
 ): void {
   const body = emitBody(compute, resources);
   const [x, y, z] = compute.workgroupSize ?? [1, 1, 1];
   const writes = (compute.writes ?? []).flatMap((write) => {
-    const target = resources.get(write.resource);
+    const target = resources.names.get(write.resource);
     if (!target) {
       throw new Error(`Binding "${write.resource}" is not in the layout`);
     }
-    const statement = `${target}[${body.expressions.get(
-      write.index,
-    )}] = ${body.expressions.get(write.value)};`;
+    const statement = `${target}[${body.expressions.get(write.index)}]${
+      resources.wrapped.has(target) ? '.value' : ''
+    } = ${body.expressions.get(write.value)};`;
     return write.condition === undefined
       ? [`  ${statement}`]
       : [
@@ -622,7 +841,7 @@ function emitCompute(
         ];
   });
   if (body.builtins.has('num-workgroups')) {
-    sections.push(numWorkgroups.declaration);
+    sections.push(numWorkgroups.declaration[resources.target]);
   }
   sections.push(
     [
@@ -636,21 +855,23 @@ function emitCompute(
 }
 
 /**
- * The DXC arguments compiling a stage of the generated HLSL to SPIR-V for
- * Vulkan 1.3: HLSL 2021, layouts of the GLSL family (the offsets are
- * explicit anyway).
+ * The DXC arguments compiling a stage of the generated HLSL: to SPIR-V for
+ * Vulkan 1.3 (HLSL 2021, layouts of the GLSL family: the offsets are
+ * explicit anyway), or to DXIL for Direct3D 12.
  */
 export function dxcArguments(
   stage: 'vertex' | 'fragment' | 'compute',
   entryPoint: string,
+  target: HlslTarget = 'vulkan',
 ): string[] {
   const profiles = { vertex: 'vs_6_0', fragment: 'ps_6_0', compute: 'cs_6_0' };
   return [
-    '-spirv',
+    ...(target === 'vulkan' ? ['-spirv'] : []),
     '-HV',
     '2021',
-    '-fspv-target-env=vulkan1.3',
-    '-fvk-use-gl-layout',
+    ...(target === 'vulkan'
+      ? ['-fspv-target-env=vulkan1.3', '-fvk-use-gl-layout']
+      : []),
     '-T',
     profiles[stage],
     '-E',
@@ -658,12 +879,23 @@ export function dxcArguments(
   ];
 }
 
+export interface HlslCodegenOptions {
+  // Vulkan by default.
+  readonly target?: HlslTarget;
+}
+
 // Generates an HLSL module with a vs_main and a ps_main entry point, or a
 // cs_main one for a compute stage.
 export class HlslCodegen implements ShaderCodegen {
   readonly language = 'hlsl' as const;
+  readonly target: HlslTarget;
+
+  constructor({ target = 'vulkan' }: HlslCodegenOptions = {}) {
+    this.target = target;
+  }
 
   emit(module: ShaderModuleIR, layout: PhysicalProgramLayout): ShaderSources {
+    const target = this.target;
     const sections: string[] = [
       [
         `// Generated from graph "${module.name}". Do not edit.`,
@@ -671,7 +903,7 @@ export class HlslCodegen implements ShaderCodegen {
         '#pragma pack_matrix(column_major)',
       ].join('\n'),
     ];
-    const resources = declareResources(layout, sections);
+    const resources = declareResources(layout, sections, target);
 
     const compute = module.entryPoints.find(
       (entryPoint) => entryPoint.stage === 'compute',
@@ -700,7 +932,9 @@ export class HlslCodegen implements ShaderCodegen {
       sections.push(
         [
           'struct VertexInput {',
-          ...vertex.inputs.map((input) => stageVariable(input, 'ATTRIBUTE')),
+          ...vertex.inputs.map((input) =>
+            stageVariable(input, 'ATTRIBUTE', target),
+          ),
           '};',
         ].join('\n'),
       );
@@ -708,12 +942,22 @@ export class HlslCodegen implements ShaderCodegen {
     sections.push(
       [
         'struct Varyings {',
-        ...vertex.outputs.map((output) => stageVariable(output, 'VARYING')),
+        ...vertex.outputs.map((output) =>
+          stageVariable(output, 'VARYING', target),
+        ),
         '};',
       ].join('\n'),
     );
 
     const vertexBody = emitBody(vertex, resources);
+    const fragmentBody = emitBody(fragment, resources);
+    if (
+      target === 'd3d12' &&
+      (vertexBody.builtins.has('instance-index') ||
+        fragmentBody.builtins.has('instance-index'))
+    ) {
+      sections.push(firstInstance.declaration);
+    }
     const vertexParameters = [
       ...(vertex.inputs.length > 0 ? ['VertexInput input'] : []),
       ...builtinDeclarations(vertexBody.builtins),
@@ -734,7 +978,6 @@ export class HlslCodegen implements ShaderCodegen {
       ].join('\n'),
     );
 
-    const fragmentBody = emitBody(fragment, resources);
     const fragmentParameters = [
       'Varyings input',
       ...builtinDeclarations(fragmentBody.builtins),
