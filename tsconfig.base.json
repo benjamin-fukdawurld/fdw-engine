@@ -29,6 +29,7 @@
       "@fdw/engine-native": ["packages/engine-native/src/index.ts"],
       "@fdw/demo-scenes": ["packages/demo-scenes/src/index.ts"],
       "@fdw/engine-vulkan": ["packages/engine-vulkan/src/index.ts"],
+      "@fdw/engine-d3d12": ["packages/engine-d3d12/src/index.ts"],
       "@fdw/engine-geometry": ["packages/engine-geometry/src/index.ts"],
       "@fdw/engine-scene": ["packages/engine-scene/src/index.ts"],
       "@fdw/engine-occlusion": ["packages/engine-occlusion/src/index.ts"],

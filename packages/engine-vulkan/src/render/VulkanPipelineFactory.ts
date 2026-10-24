@@ -24,7 +24,7 @@ import {
 } from '../addon';
 import { VulkanBuffer } from '../gpu/VulkanBuffer';
 import { VulkanSampler, VulkanTexture } from '../gpu/VulkanTexture';
-import { dxcArguments, HlslCodegen } from '../shader/HlslCodegen';
+import { dxcArguments, HlslCodegen, HlslTarget } from '../shader/HlslCodegen';
 import { VulkanObjectTable } from './VulkanObjectTable';
 
 const bindingKind = (resource: LogicalBinding): number => {
@@ -104,13 +104,22 @@ function resourceId(entry: GpuBindGroupEntry): number {
   );
 }
 
+export interface VulkanPipelineFactoryOptions {
+  // The API of the native library: Vulkan (default), or Direct3D 12, whose
+  // library has the same API (@fdw/engine-d3d12).
+  readonly target?: HlslTarget;
+}
+
 /**
  * Programs, layouts and pipelines: HLSL generated from the programs,
- * compiled to SPIR-V by the DXC library of the native side; the layouts of
- * the GLSL family (std140 uniform blocks, groups as descriptor sets).
+ * compiled by the DXC library of the native side (to SPIR-V for Vulkan, to
+ * DXIL for Direct3D 12); the layouts of the GLSL family (std140 uniform
+ * blocks, std430 storage buffers), groups as descriptor sets (Vulkan) or
+ * register spaces (Direct3D 12).
  */
 export class VulkanPipelineFactory implements GpuPipelineFactory {
-  readonly codegen = new HlslCodegen();
+  readonly codegen: HlslCodegen;
+  readonly target: HlslTarget;
   readonly layoutStrategy = std140LayoutStrategy;
   private readonly _layouts = new Map<string, PhysicalProgramLayout>();
   private readonly _groupLayouts = new Map<string, VulkanBindGroupLayout>();
@@ -124,7 +133,11 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
   constructor(
     private readonly _addon: VulkanAddon,
     private readonly _context: ContextHandle,
-  ) {}
+    { target = 'vulkan' }: VulkanPipelineFactoryOptions = {},
+  ) {
+    this.target = target;
+    this.codegen = new HlslCodegen({ target });
+  }
 
   resolveLayout(program: CompiledProgram): PhysicalProgramLayout {
     let layout = this._layouts.get(program.programKey);
@@ -203,7 +216,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       shader = this._addon.createShader(
         this._context,
         sources.code,
-        dxcArguments('compute', entryPoint),
+        dxcArguments('compute', entryPoint, this.target),
         `${program.name} (compute)`,
       );
       this._computeShaders.set(program.programKey, shader);
@@ -229,14 +242,26 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
   }
 
   createBindGroupLayout(group: PhysicalBindGroup): VulkanBindGroupLayout {
+    // Direct3D 12 views storage buffers as structured buffers: the size of
+    // their elements.
+    const stride = (value: number | undefined) =>
+      this.target === 'd3d12' && value ? { stride: value } : {};
     // An object table: the rows, then the row of each instance.
-    const bindings = group.bindings.flatMap(({ binding, resource }) =>
-      resource.kind === 'object-table'
-        ? [0, 1].map((offset) => ({
-            binding: binding + offset,
-            kind: BindingKinds.storageRead,
-          }))
-        : [{ binding, kind: bindingKind(resource) }],
+    const bindings = group.bindings.flatMap(
+      ({ binding, resource, storage, objectRow }) =>
+        resource.kind === 'object-table'
+          ? [objectRow?.size, 4].map((size, offset) => ({
+              binding: binding + offset,
+              kind: BindingKinds.storageRead,
+              ...stride(size),
+            }))
+          : [
+              {
+                binding,
+                kind: bindingKind(resource),
+                ...stride(storage?.elementStride),
+              },
+            ],
     );
     const key = JSON.stringify(bindings);
     let layout = this._groupLayouts.get(key);
@@ -312,7 +337,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
         this._addon.createShader(
           this._context,
           sources.code,
-          dxcArguments(stage, entryPoint),
+          dxcArguments(stage, entryPoint, this.target),
           `${program.name} (${stage})`,
         );
       shaders = {

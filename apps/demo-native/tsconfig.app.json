@@ -27,6 +27,9 @@
       "path": "../../packages/engine-vulkan/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-d3d12/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-shader/tsconfig.lib.json"
     },
     {

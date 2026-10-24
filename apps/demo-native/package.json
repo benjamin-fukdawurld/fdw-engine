@@ -8,6 +8,7 @@
     "@fdw/engine-assets": "0.0.1",
     "@fdw/engine-audio-native": "0.0.1",
     "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-d3d12": "0.0.1",
     "@fdw/engine-core": "0.0.1",
     "@fdw/engine-gltf": "0.0.1",
     "@fdw/engine-input": "0.0.1",

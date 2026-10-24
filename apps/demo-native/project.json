@@ -9,7 +9,7 @@
       "command": "node --import jiti/register apps/demo-native/src/main.ts",
       "dependsOn": [
         {
-          "projects": ["engine-native", "engine-vulkan"],
+          "projects": ["engine-native", "engine-vulkan", "engine-d3d12"],
           "target": "build-native"
         }
       ]

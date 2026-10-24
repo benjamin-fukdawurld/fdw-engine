@@ -1,0 +1,20 @@
+{
+  "name": "@fdw/engine-d3d12",
+  "version": "0.0.1",
+  "dependencies": {
+    "@fdw/engine-backend": "0.0.1",
+    "@fdw/engine-shader": "0.0.1",
+    "@fdw/engine-vulkan": "0.0.1",
+    "tslib": "^2.3.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw-engine/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}
