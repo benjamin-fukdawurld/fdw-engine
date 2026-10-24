@@ -37,6 +37,8 @@ _Vérifié à l'étape 11_ (XState 5.33, `@xstate/store` 4.3) :
 
 **L'interface ne tient jamais le moteur**, seulement une connexion ([editor-ui.md §2](editor-ui.md#2-deux-hôtes-une-interface)) : dans Electron, le moteur est dans un autre processus. Le document vit côté moteur ; l'interface en garde une projection (l'arbre de la scène, les propriétés de la sélection) mise à jour par les messages du moteur, et le modifie en lui envoyant des commandes.
 
+_Fait à l'étape 13_ (le détail est dans [packages/editor-ui/README.md](../packages/editor-ui/README.md#the-level)) : le document est un niveau de P16 (`LevelDocument`, côté moteur : la `Scene`, son `History`, sa `Selection`), montré par la scène `level` du viewport (`LevelView` : picker, gizmo, contour, caméra en orbite). La projection est un store de plus, `createLevelStore`, jamais gardé : l'arbre entier à l'ouverture, puis les différences groupées par lot de `SceneEvents` (une commande, un pas de drag) ; la sélection (ses identifiants recopiés dans le store de l'éditeur), les propriétés du nœud actif, l'historique. Un nœud est désigné par `entité:génération`, jamais réutilisé. Les commandes de la page (`level.command`) sont celles de P15, seules à écrire. La sélection n'est pas gardée : ses identifiants sont ceux d'une session du moteur ; le projet de P20 la gardera.
+
 ## 3. La machine de l'éditeur
 
 Une machine XState est une définition statique : on n'y ajoute pas d'états pendant qu'elle tourne. La machine du cœur reste donc **fixe et minimale**, et offre des emplacements où se branchent des sous-machines fournies par les plugins.
@@ -87,6 +89,8 @@ Certains outils sont actifs ensemble (par exemple un gizmo de transformation et 
 - Les emplacements sont définis par le cœur.
 
 **Le routage des entrées** : la souris et le clavier vont aux outils actifs dans l'ordre de priorité des emplacements ; le premier qui consomme l'événement l'arrête. Un outil en cours de drag capture le routage jusqu'à la validation ou l'annulation (Échap). Les context keys exposent l'outil de chaque emplacement (`tool.primary`) pour les clauses `when`.
+
+_Fait à l'étape 13, sous une première forme_ : le bouton principal du viewport va à l'outil de l'emplacement `primary`. Sans outil, il sélectionne (clic, rectangle) ; Move, Rotate et Scale (des outils du plugin `fdw.level`, des machines vides : le moteur fait le travail) y mettent le gizmo ; l'outil d'un autre plugin le prend, et les outils du moteur ne le reçoivent plus (`level.tool`). Un drag commencé garde le bouton jusqu'au relâchement ; Échap termine l'outil et annule le drag. Les autres boutons et la molette vont à la caméra. Le clavier reste à la page : ses raccourcis sont des commandes, jamais lus par le moteur. L'emplacement `secondary` n'a pas encore d'outil du viewport (l'accrochage est un réglage du gizmo).
 
 ## 5. Le registre de services
 
@@ -140,6 +144,6 @@ Les valeurs qui changent à chaque frame (le transform en cours de drag, le FPS)
 ## 9. Les questions ouvertes
 
 - ~~Combien d'emplacements d'outils au départ ?~~ _Deux à l'étape 11_ : `primary` (les outils de transformation, de sélection), puis `secondary` (l'accrochage, les aides), dans cet ordre de priorité. Un plugin peut-il en demander un nouveau ? Non pour l'instant : la machine est fixe.
-- Annuler et refaire : les commandes de P15 seules, ou des patches sur le document ?
-- L'état des plugins : dans le layout, dans le projet, ou selon son type ? _Dans le layout à l'étape 12_ ; le projet viendra avec l'étape 13.
-- La projection du document dans l'interface : un message par changement, ou des différences groupées par frame ?
+- ~~Annuler et refaire : les commandes de P15 seules, ou des patches sur le document ?~~ _Les commandes de P15 seules à l'étape 13_ : l'historique est celui du niveau, côté moteur ; la page n'en voit que les libellés.
+- L'état des plugins : dans le layout, dans le projet, ou selon son type ? _Dans le layout aux étapes 12 et 13_ (les réglages du gizmo aussi) ; le projet viendra avec P20 : l'étape 13 ouvre des fichiers de niveau, pas encore un projet.
+- ~~La projection du document dans l'interface : un message par changement, ou des différences groupées par frame ?~~ _Des différences groupées par lot de `SceneEvents` à l'étape 13_ : un lot par commande ou par pas de drag, après le code qui l'a fait ; l'arbre entier à l'ouverture.

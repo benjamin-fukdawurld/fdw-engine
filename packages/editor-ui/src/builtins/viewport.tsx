@@ -1,4 +1,4 @@
-import { useEditor } from '../editorContext';
+import { useEditor, useSelector } from '../editorContext';
 import type { PluginManifest } from '../plugins/manifest';
 import type { EditorPlugin, PluginContext } from '../plugins/pluginHost';
 import type { IDisposable } from '../state/services';
@@ -9,7 +9,8 @@ const manifest = {
   title: 'Viewport',
   version: '1.0.0',
   engine: '^1.0.0',
-  description: 'The view of the engine, and the Scene menu.',
+  description:
+    'The view of the engine, and the Scene menu: the level, the demo scenes.',
   activationEvents: ['onStartup'],
   contributes: {
     commands: [
@@ -31,11 +32,45 @@ const manifest = {
   },
 } as const satisfies PluginManifest;
 
+// The rectangle of a selection dragged in the level: four lines over the
+// view, each a hole of a native viewport (Electron), through which the page
+// shows.
+function SelectionRectangle() {
+  const { level } = useEditor();
+  const rectangle = useSelector(
+    level,
+    (snapshot) => snapshot.context.rectangle,
+  );
+  if (!rectangle) return null;
+  // From the device pixels of the viewport to the pixels of the page.
+  const scale = 1 / window.devicePixelRatio;
+  const left = rectangle.x * scale;
+  const top = rectangle.y * scale;
+  const width = Math.max(1, rectangle.width * scale);
+  const height = Math.max(1, rectangle.height * scale);
+  const lines = [
+    { left, top, width, height: 1 },
+    { left, top: top + height - 1, width, height: 1 },
+    { left, top, width: 1, height },
+    { left: left + width - 1, top, width: 1, height },
+  ];
+  return lines.map((style, index) => (
+    <div
+      key={index}
+      data-over-viewport
+      data-testid="selection-rectangle"
+      className="pointer-events-none absolute bg-sky-400"
+      style={style}
+    />
+  ));
+}
+
 function ViewportPanel() {
   const { Viewport } = useEditor().host;
   return (
-    <div className="h-full w-full bg-black">
+    <div className="relative h-full w-full bg-black">
       <Viewport />
+      <SelectionRectangle />
     </div>
   );
 }

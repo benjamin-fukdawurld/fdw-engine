@@ -6,10 +6,18 @@ import type {
 
 type Listener = (message: EngineMessage) => void;
 
+// What the page tells the engine before the port comes: kept for it.
+const kept = new Set<PageMessage['type']>([
+  'bounds',
+  'scene',
+  'level.tool',
+  'level.gizmo',
+]);
+
 /**
  * The connection of the page to the engine process, over the port the main
- * process gives it. The bounds and the scene sent before the port comes
- * wait for it; the inputs are dropped.
+ * process gives it. The bounds, the scene, the tool and the gizmo sent
+ * before the port comes wait for it; the inputs are dropped.
  */
 class PortConnection implements EngineConnection {
   #port?: MessagePort;
@@ -36,7 +44,7 @@ class PortConnection implements EngineConnection {
   post(message: PageMessage): void {
     if (this.#port) {
       this.#port.postMessage(message);
-    } else if (message.type === 'bounds' || message.type === 'scene') {
+    } else if (kept.has(message.type)) {
       this.#pending.push(message);
     }
   }

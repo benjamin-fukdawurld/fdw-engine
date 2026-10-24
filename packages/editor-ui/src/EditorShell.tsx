@@ -13,6 +13,7 @@ import {
 import { preparePlugins } from './plugins/pluginHost';
 import { savedEditorEvents } from './state/editorMachine';
 import { connectEngineStore, createEngineStore } from './state/engineStore';
+import { connectLevelStore, createLevelStore } from './state/levelStore';
 import { createEditorRuntime, type EditorRuntime } from './state/runtime';
 import { Workbench } from './Workbench';
 import type { WorkbenchApi } from './workbench';
@@ -44,7 +45,9 @@ function useSavedLayout(storage: HostStorage) {
 // start, not to miss its first messages.
 function useEditorRuntime(host: EditorHost) {
   const [engine] = useState(createEngineStore);
+  const [level] = useState(createLevelStore);
   useEffect(() => connectEngineStore(host.engine, engine), [host, engine]);
+  useEffect(() => connectLevelStore(host.engine, level), [host, level]);
   const saved = useSavedLayout(host.storage);
   const [runtime, setRuntime] = useState<{
     runtime: EditorRuntime;
@@ -66,6 +69,7 @@ function useEditorRuntime(host: EditorHost) {
       created = createEditorRuntime({
         host,
         engine,
+        level,
         saved: saved.layout,
         plugins: prepared,
       });
@@ -75,7 +79,7 @@ function useEditorRuntime(host: EditorHost) {
       current = false;
       created?.dispose();
     };
-  }, [host, engine, saved]);
+  }, [host, engine, level, saved]);
   return runtime;
 }
 

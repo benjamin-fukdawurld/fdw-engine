@@ -91,6 +91,12 @@ export default defineConfig(() => ({
         launchOptions: {
           args: [
             '--enable-unsafe-webgpu',
+            // WebGPU on SwiftShader by Vulkan, as the tests of the
+            // documentation: on the default adapter, the readbacks of the
+            // picking never resolve.
+            '--enable-features=Vulkan',
+            '--use-vulkan=swiftshader',
+            '--use-webgpu-adapter=swiftshader',
             '--use-angle=swiftshader',
             '--enable-unsafe-swiftshader',
           ],

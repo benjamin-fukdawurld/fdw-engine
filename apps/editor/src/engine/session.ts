@@ -1,13 +1,19 @@
 import type { StartedBackend } from '@fdw/editor-ui/engine';
 import { EditorEngine, type EngineChannel } from '@fdw/editor-ui/engine';
-import type { EngineMessage, PageMessage } from '@fdw/editor-ui/protocol';
+import {
+  levelScene,
+  type EngineMessage,
+  type PageMessage,
+} from '@fdw/editor-ui/protocol';
+import { pixelCodec } from '@fdw/engine-assets';
 import { NativeAudioEngine } from '@fdw/engine-audio-native';
+import { createStbImageDecoder } from '@fdw/engine-resources-native';
 import type { Renderer } from './backends';
 import { scenes } from './scenes';
 import type { X11Viewport } from './viewport';
 
-// The scene shown first (FDW_SCENE chooses another).
-const defaultScene = process.env['FDW_SCENE'] ?? 'shadows';
+// The scene shown first: the level (FDW_SCENE chooses another).
+const defaultScene = process.env['FDW_SCENE'] ?? levelScene;
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -92,6 +98,7 @@ export class EngineSession {
           waitIdle: () => backend.value.waitIdle(),
           nextFrame: () => backend.value.nextFrame(),
           scenes,
+          imageCodecs: [pixelCodec(createStbImageDecoder())],
           audio,
         },
         defaultScene,

@@ -1,8 +1,21 @@
 import type { Scene, SceneFactory } from '@fdw/demo-scenes';
+import { installAssets, type ImageCodec } from '@fdw/engine-assets';
 import type { AudioEngine } from '@fdw/engine-audio';
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
+import { installGltf, installGltfScenes } from '@fdw/engine-gltf';
 import type { GamepadState, InputSource } from '@fdw/engine-input';
-import type { EngineMessage, PageMessage, ViewportBounds } from '../protocol';
+import { MemorySource, ResourceStore } from '@fdw/engine-resources';
+import { installSceneIo } from '@fdw/engine-scene-io';
+import {
+  levelScene,
+  type EngineMessage,
+  type GizmoSettings,
+  type PageMessage,
+  type ViewportBounds,
+  type ViewportTool,
+} from '../protocol';
+import { LevelDocument, type LevelFiles } from './level/LevelDocument';
+import { LevelView } from './level/LevelView';
 import { RemoteInputSource } from './RemoteInputSource';
 
 /** The view of the engine in the page: a child window, a canvas. */
@@ -37,6 +50,8 @@ export interface EditorEnginePlatform {
   /** Between two frames: lets the messages, the I/O and the promises run. */
   nextFrame(): Promise<void>;
   readonly scenes: Readonly<Record<string, () => Promise<SceneFactory>>>;
+  /** The decoders of the images of the levels opened (glTF). */
+  readonly imageCodecs?: readonly ImageCodec[];
   readonly audio?: AudioEngine;
   /**
    * The inputs of the scenes when the engine runs in the page (a
@@ -64,6 +79,9 @@ interface Shown {
   info: string;
 }
 
+/** Where the files of the levels opened are, in the store of the levels. */
+export const levelScheme = 'level';
+
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 const errorText = (error: unknown) =>
@@ -75,6 +93,10 @@ const errorText = (error: unknown) =>
  * of the page (bounds, scene, inputs), shows the scenes in the viewport and
  * sends back what it does; the platform gives it the backend, the viewport
  * and the surface. The page may reconnect (a reload): a new channel.
+ *
+ * It holds the level being edited (LevelDocument), shown as the scene
+ * `level` (LevelView): the page opens, saves and changes it by messages,
+ * and gets its projection back.
  */
 export class EditorEngine {
   readonly #platform: EditorEnginePlatform;
@@ -89,6 +111,14 @@ export class EditorEngine {
   // Whether the window is minimized or hidden.
   #visible = true;
   #gamepads: readonly GamepadState[] = [];
+  #levelFiles?: LevelFiles;
+  #document?: LevelDocument;
+  #view?: LevelView;
+  // The tool and the gizmo of the page, for the views to come.
+  #tool: ViewportTool = 'select';
+  #gizmo: GizmoSettings = { space: 'world', pivot: 'center', snapping: false };
+  // The level files opened or saved one after the other.
+  #levelQueue: Promise<void> = Promise.resolve();
 
   constructor(platform: EditorEnginePlatform, scene: string) {
     this.#platform = platform;
@@ -105,9 +135,10 @@ export class EditorEngine {
       backend: backendName,
       ...(fallback !== undefined && { fallback }),
       device: this.#platform.device,
-      scenes: Object.keys(this.#platform.scenes),
+      scenes: [levelScene, ...Object.keys(this.#platform.scenes)],
       scene: this.#requested,
     });
+    this.#level().connect(this.#postLevel);
   }
 
   /** A message of the page. */
@@ -132,6 +163,47 @@ export class EditorEngine {
         this.#gamepads = message.states;
         this.#shown?.remote?.setGamepads(message.states);
         break;
+      case 'level.new':
+        this.#queueLevel(async () =>
+          this.#replaceLevel(LevelDocument.create(this.#files())),
+        );
+        break;
+      case 'level.open': {
+        const { name, data } = message;
+        this.#queueLevel(async () =>
+          this.#replaceLevel(
+            await LevelDocument.open(this.#files(), name, data, this.#warn),
+          ),
+        );
+        break;
+      }
+      case 'level.save': {
+        const { format, name } = message;
+        const document = this.#level();
+        this.#queueLevel(async () => {
+          const data = await document.save(format, name, this.#warn);
+          this.#post({ type: 'level.file', name, format, data });
+        });
+        break;
+      }
+      case 'level.saved':
+        this.#document?.saved(message.name);
+        break;
+      case 'level.command':
+        if (message.command === 'frame') this.#view?.frameSelection();
+        else this.#level().run(message);
+        break;
+      case 'level.tool':
+        this.#tool = message.tool;
+        this.#view?.setTool(message.tool);
+        break;
+      case 'level.gizmo': {
+        const { space, pivot, snapping } = message;
+        const gizmo = { space, pivot, snapping };
+        this.#gizmo = gizmo;
+        this.#view?.setGizmo(gizmo);
+        break;
+      }
     }
   }
 
@@ -161,6 +233,7 @@ export class EditorEngine {
     let frames = 0;
     while (this.#running) {
       platform.viewport.pump?.();
+      this.#levelFiles?.store.update();
       const shown = this.#shown;
       if (shown && this.#onScreen()) {
         try {
@@ -201,10 +274,87 @@ export class EditorEngine {
   destroy(): void {
     this.#running = false;
     this.#hideScene();
+    this.#document?.dispose();
+    this.#document = undefined;
+    this.#levelFiles?.store.dispose();
   }
 
   #post(message: EngineMessage): void {
     this.#channel?.post(message);
+  }
+
+  // To the channel of the moment: the page may reconnect.
+  readonly #postLevel = (message: EngineMessage) => this.#post(message);
+
+  // What the level could not read or write, in the console of the page.
+  readonly #warn = (text: string) =>
+    this.#post({ type: 'log', level: 'error', text });
+
+  // The store of the levels: the files opened in memory, the loaders of
+  // the scenes of the engine and of glTF.
+  #files(): LevelFiles {
+    if (!this.#levelFiles) {
+      const store = new ResourceStore();
+      installAssets(store, {
+        backend: this.#platform.backend,
+        codecs: [...(this.#platform.imageCodecs ?? [])],
+      });
+      installGltf(store);
+      installGltfScenes(store);
+      installSceneIo(store);
+      const source = new MemorySource();
+      store.mount(levelScheme, source);
+      this.#levelFiles = { store, source, scheme: levelScheme };
+    }
+    return this.#levelFiles;
+  }
+
+  // The level edited: the sample one until another is opened.
+  #level(): LevelDocument {
+    this.#document ??= LevelDocument.create(this.#files());
+    return this.#document;
+  }
+
+  // One after the other: a level saved is the one of the moment.
+  #queueLevel(task: () => Promise<void>): void {
+    this.#levelQueue = this.#levelQueue.then(task).catch((error: unknown) => {
+      this.#post({ type: 'error', message: `Level: ${errorText(error)}` });
+    });
+  }
+
+  // Another level: shown in the viewport, the previous one destroyed after
+  // its view.
+  #replaceLevel(document: LevelDocument): void {
+    const previous = this.#document;
+    this.#document = document;
+    document.connect(this.#postLevel);
+    this.#requested = levelScene;
+    if (this.#shown?.name === levelScene) this.#hideScene();
+    if (this.#surface && this.#running) void this.#showScene(levelScene);
+    previous?.dispose();
+  }
+
+  // The scene of a name: the level, or one of the platform.
+  async #factory(name: string): Promise<SceneFactory | undefined> {
+    if (name !== levelScene) return this.#platform.scenes[name]?.();
+    return (backend, surface, context) => {
+      const view = new LevelView(this.#level(), {
+        backend,
+        surface,
+        input: context?.input as InputSource,
+        post: this.#postLevel,
+        tool: this.#tool,
+        gizmo: this.#gizmo,
+      });
+      this.#view = view;
+      return {
+        frame: (time) => view.frame(time),
+        destroy: () => {
+          if (this.#view === view) this.#view = undefined;
+          view.destroy();
+        },
+      };
+    };
   }
 
   // Whether the viewport is on screen: frames are only drawn then.
@@ -226,16 +376,16 @@ export class EditorEngine {
 
   async #showScene(name: string): Promise<void> {
     const request = ++this.#requests;
-    const load = this.#platform.scenes[name];
-    if (!load) {
+    if (name !== levelScene && !this.#platform.scenes[name]) {
       this.#post({ type: 'error', message: `No scene named ${name}` });
       return;
     }
     this.#post({ type: 'loading', scene: name });
     try {
-      const factory = await load();
+      const factory = await this.#factory(name);
       const surface = this.#surface;
-      if (request !== this.#requests || !this.#running || !surface) return;
+      if (request !== this.#requests || !this.#running || !surface || !factory)
+        return;
       this.#hideScene();
       let input = this.#platform.input;
       let remote: RemoteInputSource | undefined;

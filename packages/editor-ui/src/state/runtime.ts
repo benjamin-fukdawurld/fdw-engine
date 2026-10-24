@@ -27,6 +27,7 @@ import {
 } from './editorMachine';
 import { createEditorStore, type EditorStore } from './editorStore';
 import type { EngineStore } from './engineStore';
+import { createLevelStore, type LevelStore } from './levelStore';
 import { Registry } from './registry';
 import { serviceId, ServiceRegistry, type IDisposable } from './services';
 
@@ -34,6 +35,7 @@ export const IEditorHost = serviceId<EditorHost>('editor.host');
 export const IEngineConnection =
   serviceId<EngineConnection>('engine.connection');
 export const IEngineStore = serviceId<EngineStore>('engine.store');
+export const ILevelStore = serviceId<LevelStore>('level.store');
 export const IEditorStore = serviceId<EditorStore>('editor.store');
 export const IEditorMachine = serviceId<EditorActor>('editor.machine');
 export const IContextKeys = serviceId<ContextKeys>('editor.contextKeys');
@@ -62,6 +64,8 @@ export interface EditorRuntime extends IDisposable {
   readonly host: EditorHost;
   readonly services: ServiceRegistry;
   readonly engine: EngineStore;
+  /** The projection of the level the engine edits. */
+  readonly level: LevelStore;
   readonly editor: EditorStore;
   readonly machine: EditorActor;
   readonly keys: ContextKeys;
@@ -85,6 +89,8 @@ export interface EditorRuntimeOptions {
   readonly host: EditorHost;
   /** The state of the engine, followed before the layout is read. */
   readonly engine: EngineStore;
+  /** The projection of its level, followed as well. */
+  readonly level?: LevelStore;
   /** The state kept by `persist`. */
   readonly saved?: Partial<EditorState>;
   /**
@@ -104,6 +110,7 @@ const keySource = (source: {
 export function createEditorRuntime({
   host,
   engine,
+  level = createLevelStore(),
   saved = {},
   plugins = [],
 }: EditorRuntimeOptions): EditorRuntime {
@@ -111,6 +118,7 @@ export function createEditorRuntime({
   services.register(IEditorHost, () => host);
   services.register(IEngineConnection, () => host.engine);
   services.register(IEngineStore, () => engine);
+  services.register(ILevelStore, () => level);
   services.register(IToolRegistry, () => new Registry<ToolSpec>('tool'));
   services.register(IModeRegistry, () => new Registry<ModeSpec>('mode'));
   services.register(IEditorStore, () =>
@@ -163,12 +171,20 @@ export function createEditorRuntime({
     const machine = accessor.get(IEditorMachine);
     const engine = accessor.get(IEngineStore);
     return createContextKeys(
-      [machine, editor, engine, keySource(workbench), keySource(toolbars)],
+      [
+        machine,
+        editor,
+        engine,
+        level,
+        keySource(workbench),
+        keySource(toolbars),
+      ],
       () => {
         const state = machine.getSnapshot();
         const chrome = editor.getSnapshot().context;
         const { selection, docks, statusBar } = chrome;
         const { backend, fallback, scene } = engine.getSnapshot().context;
+        const document = level.getSnapshot().context;
         const tools = toolSlots.map((slot) => state.context.tools[slot]);
         return {
           'editor.focusedArea': state.context.focus.area,
@@ -184,6 +200,10 @@ export function createEditorRuntime({
           'engine.backend': backend || undefined,
           'engine.fallback': fallback !== undefined,
           'engine.scene': scene || undefined,
+          'level.open': document.name !== '',
+          'level.dirty': document.dirty,
+          'level.canUndo': document.undo !== undefined,
+          'level.canRedo': document.redo !== undefined,
           'workbench.dock.left': docks.left,
           'workbench.dock.right': docks.right,
           'workbench.dock.bottom': docks.bottom,
@@ -261,8 +281,19 @@ export function createEditorRuntime({
 
   const machine = services.get(IEditorMachine);
 
+  // The selection of the level, by ids, in the store of the editor.
+  const select = () => {
+    const { selection } = level.getSnapshot().context;
+    if (selection !== editor.getSnapshot().context.selection) {
+      editor.trigger.select({ ids: selection });
+    }
+  };
+  select();
+  const selection = level.subscribe(select);
+
   // A tool or a mode unregistered ends.
   const unsubscribe = [
+    () => selection.unsubscribe(),
     tools.subscribe(({ kind, item }) => {
       if (kind === 'remove')
         machine.send({ type: 'TOOL.REMOVED', tool: item.id });
@@ -277,6 +308,7 @@ export function createEditorRuntime({
     host,
     services,
     engine,
+    level,
     editor,
     machine,
     keys: keys(),
