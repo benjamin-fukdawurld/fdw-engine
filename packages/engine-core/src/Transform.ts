@@ -5,7 +5,7 @@ import type {
   IVec3,
   TransformSnapshot,
 } from '@fdw/engine-backend';
-import { TransformLayout, TransformPool } from './transform/TransformPool';
+import { TransformLayout, TransformPool } from './TransformPool';
 
 const { stride } = TransformLayout;
 

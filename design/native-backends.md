@@ -25,7 +25,7 @@ Faire tourner le moteur hors du navigateur, dans une fenêtre native : d'abord e
 - **Étape 1, WebGPU natif** : `dawn.node` (le package `webgpu`) dans une fenêtre SDL2. `dawn.node` ne sait pas présenter dans une fenêtre : la première version **recopie** chaque image dans la fenêtre. C'est assez pour sortir `Surface` du navigateur, valider la boucle de rendu et les événements, et lancer les scènes de la démo dans une fenêtre.
 - **Étape 2, HLSL** : un générateur `HlslCodegen` (TypeScript) et ses layouts, validés par DXC (HLSL → SPIR-V) et `spirv-val`, sans encore de backend qui les exécute.
 - **Étape 3, Vulkan** : un addon C++ qui implémente une API proche de notre API abstraite (buffers, textures, pipelines à partir du SPIR-V, groupes de ressources, passes, barrières), et une couche TypeScript qui en fait un `RenderBackend`. La suite de rendu partagée passe sur Vulkan, et la démo s'affiche dans une fenêtre sans copie.
-- **Ensuite, si besoin** : présentation sans copie pour Dawn, Direct3D 12 avec le même HLSL.
+- **Ensuite, si besoin** : présentation sans copie pour Dawn. **Direct3D 12 avec le même HLSL** est fait (N5, §10).
 
 ## 2. Le problème
 
@@ -238,7 +238,7 @@ _N1 fait._
   - `runLoop` (la boucle hors navigateur, avec un `throttle`) ;
   - `DawnWindowSurface` (présentation par copie : texture, `copyTextureToBuffer`, `mapAsync`, affichage par la fenêtre, au plus deux images en vol) ;
   - `createDawnEngine`.
-- **Construction** : `nx run engine-native:build-native` (`scripts/build.mjs`), en cache Nx, et dépendance des tests. Node-API ayant une ABI stable, les en-têtes de n'importe quelle installation de Node conviennent : le script les cherche à côté du Node courant puis dans le `PATH`.
+- **Construction** : `nx run engine-native:build-native` (`scripts/build.mjs`), en cache Nx, et dépendance des tests. Node-API ayant une ABI stable, les en-têtes de n'importe quelle version conviennent : ceux du paquet `node-api-headers`, dont le fichier `.def` donne aussi, sous Windows, la bibliothèque d'import de `node.exe`.
 - **Démos** : les scènes PBR et ombres sont sorties des routes React dans **`@fdw/demo-scenes`** (une scène se construit à partir d'un `RenderBackend` et d'une `Surface`). La démo web et **`apps/demo-native`** (`nx run demo-native:start -- shadows`, exécutée par jiti) les partagent.
 - **Mesures** : sur la machine de développement (RTX 2060 Super, écran à 60 Hz), la démo native suit la cadence de l'écran en régime établi (900 images en 15,6 s, démarrage compris).
 - **Tests** : la logique des fenêtres et de la boucle avec un faux addon ; une vraie fenêtre SDL3 cachée quand un écran est disponible ; l'image affichée par `DawnWindowSurface` égale à celle de la surface hors écran, le nombre d'images en vol borné, le suivi de la taille de la fenêtre.
@@ -284,6 +284,21 @@ _N4 fait._ **La démo native tourne sur Vulkan, présentée par une swapchain, s
 - **La swapchain** (`VulkanSwapchain`, `VulkanWindowSurface`) : format 8 bits écrit tel quel (`bgra8unorm` ou `rgba8unorm`, le moteur encode les couleurs), FIFO avec la synchronisation verticale, mailbox ou immédiat sans elle ; recréée quand la taille de la fenêtre change ou qu'elle est périmée ; au plus deux frames en vol (attente sur le timeline semaphore). Les images sont des textures ordinaires du suivi : à l'acquisition, leur layout devient « non défini » et leur première utilisation attend le sémaphore d'acquisition, que la soumission suivante attend ; la présentation les fait passer au layout de présentation. Les transitions initiales des ressources importées, notées au [backlog](backlog.md#2-render-graph), sont ainsi couvertes par le suivi.
 - **Mesures** (RTX 2060 SUPER, scène des ombres en 1280 × 720 avec MSAA 4×) : 60 fps avec la synchronisation verticale ; sans elle, environ 1 900 fps sur Vulkan contre 590 sur Dawn avec la recopie.
 - **Tests** : une swapchain sur une fenêtre cachée (effacement relu avant présentation, frames du `Renderer` avec MSAA), validation active.
+
+_N5, Direct3D 12, fait._ **La suite de rendu partagée passe sur Direct3D 12, couche de debug active, sans aucun message, et la démo native s'y affiche** (`nx run demo-native:start -- shadows --d3d12`), toutes ses scènes comprises. Sur la machine de développement Windows : une NVIDIA RTX 5070 Ti Laptop.
+
+- **`@fdw/engine-d3d12`** : la bibliothèque `fdw_d3d12` (C++20, API C de `include/fdw/d3d12.h`) a l'API de la bibliothèque Vulkan (préfixe `fdw_dx_`) : mêmes objets, mêmes identifiants, même flux de commandes. La couche TypeScript réutilise donc celle de `@fdw/engine-vulkan` (buffers, textures, encodeur, table d'objets, mesure des passes, `VulkanPipelineFactory` avec `target: 'd3d12'`) ; le package n'ajoute que le device, le moteur, le backend, la swapchain et la surface hors écran. `D3D12WindowSurface` est dans `@fdw/engine-native`.
+- **Le HLSL pour Direct3D 12** (`HlslCodegen` avec `target: 'd3d12'`) :
+  - registres (`b`, `t`, `s`, `u`), le groupe comme espace de registres ;
+  - les blocs d'uniforms deviennent des `cbuffer` dont les membres gardent les offsets std140 par `packoffset` (std140 place tableaux et matrices au début d'un registre, comme `packoffset` le demande) ;
+  - les buffers structurés de DXIL sont serrés : rembourrage explicite pour suivre std430 (un `vec3` dans une structure de 16 octets, la `mat3` d'une ligne de la table d'objets en `float4x3` lue par un cast) ;
+  - `SV_InstanceID` part de 0 quelle que soit la première instance, et HLSL n'a pas de valeur système pour le nombre de workgroups : les deux viennent de constantes racines (`b0`, espace 100), posées à chaque draw et dispatch ; les dispatchs indirects les reçoivent par une command signature (constantes puis dispatch), leurs arguments recopiés deux fois dans un buffer de travail ;
+  - DXC compile en DXIL, signé par `dxil.dll` chargé à côté de `dxcompiler.dll` (ceux du Windows SDK de préférence). Les tests du générateur vérifient les offsets des `cbuffer` dans le désassemblage de DXC.
+- **Le suivi des ressources (option A)**, avec les barrières de transition de Direct3D 12 : chaque texture garde son état, chaque buffer son état dans la command list en cours (les buffers reviennent à l'état commun entre deux exécutions, chaque command list est donc exécutée seule) ; barrières groupées par passe comme sur Vulkan, états de lecture combinés, barrière UAV entre deux utilisations d'un storage buffer écrit.
+- **Ressources** : ressources « committed » ; écritures par des blocs de mémoire d'upload réutilisés une fois le GPU passé ; groupes en tables de descripteurs dans des heaps visibles des shaders, tables de samplers partagées entre les groupes aux mêmes samplers (le heap de samplers est limité à 2048) ; pas de blit : chaque niveau de détail est dessiné depuis le précédent ; résolution MSAA par `ResolveSubresource` à la fin de la passe.
+- **Swapchain** : DXGI en flip model (`FLIP_DISCARD`), `bgra8unorm`, trois images, au plus deux frames en vol, tearing sans synchronisation verticale quand l'écran le permet ; redimensionnée par `ResizeBuffers`.
+- **Correction en route** : attendre la fin du GPU doit signaler la fence à nouveau, après les présentations mises en file après la soumission de leur frame ; sinon, la libération de la swapchain plante avec la couche de debug.
+- **Limites** : pas d'ETC2 ni d'ASTC (Direct3D n'en a pas) ; cibles entières non résolues (pas de `ResolveSubresource` pour elles) ; mêmes simplifications que Vulkan (pas de cache de pipelines, relectures attendues par sondage).
 
 ## 11. Stratégie de test
 

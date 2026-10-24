@@ -17,6 +17,9 @@
       "path": "../engine-vulkan/tsconfig.lib.json"
     },
     {
+      "path": "../engine-d3d12/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-webgpu/tsconfig.lib.json"
     },
     {

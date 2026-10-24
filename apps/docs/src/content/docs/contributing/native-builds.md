@@ -15,9 +15,9 @@ by CMake into `build/`, by the shared script `tools/native/build-addon.mjs`.
 - CMake 3.24 or later, and a C/C++20 compiler (GCC or Clang).
 - On Linux, the development packages SDL3 needs for its video backends:
   X11 and/or Wayland, as for any SDL build.
-- The **Node-API headers**, from any Node installation: the script looks
-  next to the running Node, then in the `PATH`. Set `NODE_API_INCLUDE_DIR`
-  if they are elsewhere.
+- Nothing for the **Node-API headers**: they come from the `node-api-headers`
+  dev dependency, with the `.def` file from which CMake makes the import
+  library of `node.exe` on Windows. `NODE_API_INCLUDE_DIR` overrides them.
 - For Vulkan, the **Vulkan SDK**, 1.3 or later.
 
 SDL3 and miniaudio are downloaded by CMake (`FetchContent`) on the first

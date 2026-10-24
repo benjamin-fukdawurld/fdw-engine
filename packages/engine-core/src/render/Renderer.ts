@@ -42,7 +42,7 @@ import {
 } from '@fdw/engine-shader';
 import type { Camera } from '../Camera';
 import { Transform } from '../Transform';
-import { ObjectBlockSize, TransformLayout } from '../transform/TransformPool';
+import { ObjectBlockSize, TransformLayout } from '../TransformPool';
 import { RenderGraph, TextureHandle, TextureSize } from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';

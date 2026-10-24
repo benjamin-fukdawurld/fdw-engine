@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Transform } from './Transform';
-import { TransformLayout, TransformPool } from './transform/TransformPool';
+import { TransformLayout, TransformPool } from './TransformPool';
 
 describe('Transform', () => {
   it('reads and writes its values in a block of its pool', () => {

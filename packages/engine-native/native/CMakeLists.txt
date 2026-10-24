@@ -16,11 +16,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-# Node-API headers: given by scripts/build.mjs (those of the running Node).
-set(NODE_API_INCLUDE_DIR "" CACHE PATH "Directory of node_api.h")
-if(NOT NODE_API_INCLUDE_DIR)
-  message(FATAL_ERROR "NODE_API_INCLUDE_DIR is not set: build with scripts/build.mjs")
-endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/native/NodeApi.cmake)
 
 include(FetchContent)
 
@@ -78,17 +74,7 @@ endif()
 
 add_library(fdw_native MODULE src/node_window.c src/node_image.c
                               src/node_audio.c)
-target_include_directories(fdw_native PRIVATE ${NODE_API_INCLUDE_DIR})
+fdw_node_addon(fdw_native)
 target_compile_definitions(fdw_native PRIVATE NAPI_VERSION=8
                                               NODE_GYP_MODULE_NAME=fdw_native)
 target_link_libraries(fdw_native PRIVATE fdw_window fdw_image fdw_audio)
-set_target_properties(fdw_native PROPERTIES PREFIX "" SUFFIX ".node")
-if(APPLE)
-  # Node-API symbols are resolved by the Node process.
-  target_link_options(fdw_native PRIVATE -undefined dynamic_lookup)
-endif()
-if(WIN32)
-  # Windows links against the import library of node.exe: to add with the
-  # Windows port (node-api-headers provides its .def file).
-  message(WARNING "The Windows build of the addon is not set up yet")
-endif()

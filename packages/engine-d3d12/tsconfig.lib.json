@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-d3d12",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../engine-shader/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-vulkan/tsconfig.lib.json"
+    }
+  ]
+}

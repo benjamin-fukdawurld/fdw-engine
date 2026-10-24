@@ -29,7 +29,7 @@
       ],
       "dependsOn": [
         {
-          "projects": ["engine-vulkan"],
+          "projects": ["engine-vulkan", "engine-d3d12"],
           "target": "build-native"
         }
       ]

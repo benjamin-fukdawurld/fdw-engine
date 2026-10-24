@@ -427,7 +427,7 @@ _Repoussée (18 octobre 2026)_ : Linux suffit tant que rien n'est distribué. El
 - **Wayland natif** pour l'éditeur : une sous-surface (`wl_subsurface`) de celle d'Electron, à la place de XWayland.
 - **Binaires précompilés** des addons, pour installer sans CMake ni compilateur ; une application en un seul exécutable.
 - **Le démarrage** : un cache de pipelines persisté, la précompilation des programmes (phase 7 du material graph).
-- **N5** : Dawn sans copie, Direct3D 12.
+- **N5** : Direct3D 12 — _fait_ (24 octobre 2026) : `@fdw/engine-d3d12`, le même `HlslCodegen` compilé en DXIL, la suite de rendu partagée et la démo native sur Direct3D 12 ([native-backends.md](native-backends.md), §10). Reste Dawn sans copie, si besoin.
 
 ### P13. Le modeleur CAO
 

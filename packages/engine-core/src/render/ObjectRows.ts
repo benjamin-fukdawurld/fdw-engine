@@ -3,7 +3,7 @@ import type {
   ObjectTableDescriptor,
   RenderBackend,
 } from '@fdw/engine-backend';
-import { ObjectBlockSize } from '../transform/TransformPool';
+import { ObjectBlockSize } from '../TransformPool';
 
 // A row: the world matrix, then the normal matrix as three columns of
 // vec4 (objectRowLayout), as the blocks of a TransformPool. The w of the
