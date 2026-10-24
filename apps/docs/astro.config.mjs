@@ -6,7 +6,11 @@ import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import starlightTypeDoc, { typeDocSidebarGroup } from 'starlight-typedoc';
 
-const root = fileURLToPath(new URL('../..', import.meta.url));
+// With / as separator on Windows too: TypeDoc reads its entry points as globs.
+const root = fileURLToPath(new URL('../..', import.meta.url)).replaceAll(
+  '\\',
+  '/',
+);
 
 // The packages of the API reference.
 const packages = [
