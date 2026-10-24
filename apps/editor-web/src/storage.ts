@@ -53,3 +53,22 @@ export function indexedDbStorage(name = 'fdw-editor'): HostStorage {
     },
   };
 }
+
+/**
+ * A storage that keeps nothing between page loads: the editors of the
+ * documentation start from the default layout at each visit.
+ */
+export function memoryStorage(): HostStorage {
+  const documents = new Map<string, string>();
+  return {
+    async read(key) {
+      checkKey(key);
+      const text = documents.get(key);
+      return text === undefined ? undefined : (JSON.parse(text) as unknown);
+    },
+    async write(key, value) {
+      checkKey(key);
+      documents.set(key, JSON.stringify(value));
+    },
+  };
+}

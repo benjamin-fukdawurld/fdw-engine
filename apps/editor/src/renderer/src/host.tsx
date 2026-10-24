@@ -1,3 +1,4 @@
+import { isolatePlugin } from '@fdw/editor-plugin-isolate';
 import { samplePlugin } from '@fdw/editor-plugin-sample';
 import { RemoteViewport, type EditorHost } from '@fdw/editor-ui';
 import { engine } from './engine';
@@ -7,7 +8,8 @@ const { platform, versions } = window.editor;
 /**
  * The host of the Electron editor: the engine in a utility process, the
  * storage and the files through the main process (src/main/host.ts); the
- * sample plugin, its code in a chunk loaded at its first event.
+ * sample plugin and that of the tutorial of the documentation (isolate),
+ * their code in chunks loaded at their first event.
  */
 export const host: EditorHost = {
   engine,
@@ -26,5 +28,5 @@ export const host: EditorHost = {
   },
   popoutUrl: new URL('popout.html', location.href).href,
   about: `Electron ${versions.electron} · Chrome ${versions.chrome} · Node ${versions.node} · ${platform}`,
-  plugins: [samplePlugin],
+  plugins: [samplePlugin, isolatePlugin],
 };

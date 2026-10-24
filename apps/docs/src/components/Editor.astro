@@ -1,0 +1,57 @@
+---
+// The web editor, live, in a frame: the one of apps/editor-web, built into
+// the site under /editor-app/ (editor-web:build-docs), its engine on WebGPU or
+// WebGL2 as the live examples (?backend=webgl2 forces it). Nothing is kept
+// from a visit to the next (?embed): the default layout each time.
+interface Props {
+  // The scene shown first: the level by default.
+  scene?: string;
+  // The height of the frame, in pixels. Default 600.
+  height?: number;
+}
+
+const { scene, height = 600 } = Astro.props;
+// The pages in French say it in French.
+const fr = Astro.currentLocale === 'fr';
+const title = fr ? "L'éditeur de FdwEngine" : 'The FdwEngine editor';
+const open = fr
+  ? "Ouvrir l'éditeur dans une page à lui"
+  : 'Open the editor in a page of its own';
+const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/editor-app/`;
+const query = new URLSearchParams({ embed: '' });
+if (scene) query.set('scene', scene);
+---
+
+<div class="fdw-editor" data-editor>
+  <iframe
+    title={title}
+    data-src={`${base}?${query}`}
+    style={`height: ${height}px`}
+    allow="fullscreen"></iframe>
+  <p class="fdw-example-status">
+    <a href={base} target="_blank">{open}</a>
+  </p>
+</div>
+
+<script>
+  // The backend of the page given to the frame; loaded once near the
+  // screen.
+  const forced = new URLSearchParams(window.location.search).get('backend');
+  const frames = document.querySelectorAll<HTMLIFrameElement>(
+    '[data-editor] iframe'
+  );
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const frame = entry.target as HTMLIFrameElement;
+        if (!entry.isIntersecting || frame.src) continue;
+        const url = new URL(frame.dataset['src'] ?? '', window.location.href);
+        if (forced) url.searchParams.set('backend', forced);
+        frame.src = url.href;
+        observer.unobserve(frame);
+      }
+    },
+    { rootMargin: '200px' }
+  );
+  frames.forEach((frame) => observer.observe(frame));
+</script>

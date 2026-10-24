@@ -120,6 +120,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'game' } }],
         },
         {
+          label: 'The editor',
+          translations: { fr: "L'éditeur" },
+          items: [{ autogenerate: { directory: 'editor' } }],
+        },
+        {
           label: 'Guides',
           translations: { fr: 'Guides' },
           items: [{ autogenerate: { directory: 'guides' } }],

@@ -153,7 +153,8 @@ export class LevelView implements ShownScene {
     });
     this.#viewport = new Viewport(this.#camera);
     this.#renderer = new Renderer(backend);
-    this.#runner = new RenderGraphRunner(backend);
+    // Its passes measured on the GPU, for the statistics (gpuTime).
+    this.#runner = new RenderGraphRunner(backend, { timing: true });
     // A click selects the node under the root: a group, a model, whole;
     // the tree selects the nodes inside.
     this.#picker = Picker.forScene(backend, scene, (node) => {
@@ -289,6 +290,18 @@ export class LevelView implements ShownScene {
     }
     this.#runner.execute(graph);
     surface.present();
+  }
+
+  /**
+   * The GPU time of the passes of a recent frame, in milliseconds; none
+   * before the first measures, or where the backend cannot measure.
+   */
+  get gpuTime(): number | undefined {
+    const times = this.#runner.passTimes;
+    if (times.size === 0) return undefined;
+    let total = 0;
+    times.forEach((duration) => (total += duration));
+    return total;
   }
 
   destroy(): void {

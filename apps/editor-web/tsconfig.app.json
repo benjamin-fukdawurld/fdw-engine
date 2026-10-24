@@ -29,6 +29,9 @@
       "path": "../../packages/editor-plugin-sample/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/editor-plugin-isolate/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-input-web/tsconfig.lib.json"
     },
     {

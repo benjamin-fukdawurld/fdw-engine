@@ -9,7 +9,11 @@ import { OutlinerPanel } from './outliner';
 function ConsolePanel() {
   const { log } = useEngine();
   return (
-    <div className="h-full overflow-auto px-3 py-1 font-mono text-xs">
+    <div
+      role="log"
+      aria-label="Console"
+      className="h-full overflow-auto px-3 py-1 font-mono text-xs"
+    >
       {log.map((entry) => (
         <div
           key={entry.id}

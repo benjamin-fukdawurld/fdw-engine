@@ -1,0 +1,151 @@
+---
+title: Éditer un niveau
+description: "L'interface de l'éditeur, pas à pas : son layout, sélectionner et transformer des objets, l'outliner et l'inspecteur, annuler, enregistrer le niveau."
+tableOfContents: false
+sidebar:
+  order: 2
+---
+
+import Editor from '../../../../components/Editor.astro';
+
+Ce tutoriel parcourt l'éditeur avec le niveau qu'il ouvre d'abord : un
+sol, des cubes, des sphères, une table et le soleil. Tout se passe dans
+l'éditeur ci-dessous ; rien n'est gardé quand on quitte la page, essayez
+sans crainte.
+
+<Editor height={640} />
+
+## 1. Le layout
+
+L'éditeur est disposé comme la fenêtre principale d'une application de
+bureau :
+
+```
+┌────────────────────────── barre de menus ──────────────────────────┐
+├──────────────────────────── toolbars, haut ────────────────────────┤
+│ toolbars │ dock gauche │   zone centrale   │ dock droit │ toolbars  │
+│          │             ├───────────────────┤            │           │
+│          │             │     dock bas      │            │           │
+├──────────────────────────── toolbars, bas ─────────────────────────┤
+└──────────────────────────── status bar ────────────────────────────┘
+```
+
+- **La zone centrale** contient le viewport. Son onglet peut être divisé
+  ou déplacé dans la zone, et un groupe peut flotter au-dessus.
+- **Les docks** contiennent les panneaux : l'**Outliner** (l'arbre du
+  niveau) à gauche, l'**Inspector** à droite, la **Console** (les messages
+  du moteur) en bas ; à côté de l'Inspector, les Statistics du plugin
+  d'[Écrire un plugin](/fdw-engine/fr/editor/writing-a-plugin/) (le menu
+  Marks est celui du plugin d'exemple). Faites glisser un onglet pour le
+  réordonner, ou pour diviser son dock. Les boutons à gauche de la toolbar
+  du haut montrent et cachent les docks ; le menu **View** montre les
+  panneaux, les toolbars, et rétablit le layout.
+- **La status bar** donne le backend et le périphérique, les images par
+  seconde avec le temps CPU et GPU d'une image, la taille du viewport, le
+  nom du niveau (`•` une fois modifié), le mode et les outils actifs.
+- **La palette de commandes** (**Ctrl+Shift+P** ou **F1**) liste toutes
+  les commandes disponibles, avec leur touche : tapez quelques lettres de
+  leur nom.
+
+L'éditeur garde son layout d'une session à l'autre (celui du bureau dans
+ses données d'utilisateur, celui du web dans IndexedDB) ; pas dans les
+pages de ce site, qui partent du layout par défaut.
+
+## 2. Se déplacer
+
+La caméra tourne autour d'un point du niveau :
+
+| Entrée                   | Effet                                 |
+| ------------------------ | ------------------------------------- |
+| Bouton droit, glissé     | Tourne autour du point                |
+| Bouton du milieu, glissé | Déplace la vue                        |
+| Molette                  | Zoome                                 |
+| **F**                    | Cadre la sélection (**Edit → Frame**) |
+
+Un glissé continue hors du viewport : le pointeur reste capturé jusqu'au
+relâchement du bouton.
+
+## 3. Sélectionner
+
+Le **bouton principal** appartient à l'outil de l'éditeur (plus bas).
+Avec chacun d'eux :
+
+- un **clic** sélectionne l'objet sous le pointeur, un clic dans le vide
+  vide la sélection ; **Maj** y ajoute, **Ctrl** bascule, **Alt** retire ;
+- un **glissé** depuis le vide trace un rectangle : les objets dedans
+  sont sélectionnés ;
+- dans l'**Outliner**, un clic sélectionne aussi (Maj et Ctrl de même), un
+  double clic cadre, l'œil cache et montre.
+
+Un clic dans le viewport sélectionne un objet entier sous la racine : la
+table, pas un de ses pieds. Pour atteindre un pied, ouvrez la table dans
+l'Outliner et cliquez-y le pied.
+
+Les objets sélectionnés sont entourés, celui sous le pointeur aussi, plus
+discrètement. L'objet **actif** est le dernier sélectionné : l'Inspector
+le montre.
+
+## 4. Déplacer, tourner, mettre à l'échelle
+
+Les outils sont dans la toolbar du haut et dans le menu **Edit** :
+
+| Touche | Outil  | Le gizmo                                                |
+| ------ | ------ | ------------------------------------------------------- |
+| **Q**  | Select | Aucun : le bouton principal ne fait que sélectionner    |
+| **W**  | Move   | Des flèches le long des axes, des carrés pour les plans |
+| **E**  | Rotate | Des anneaux autour des axes                             |
+| **R**  | Scale  | Des poignées le long des axes, le centre pour les trois |
+
+Sélectionnez le cube bleu, appuyez sur **W**, et faites glisser sa flèche
+rouge : le cube se déplace le long de X. Chaque glissé est une étape de
+l'historique. Trois bascules changent le gizmo :
+
+- **X** : les axes du monde, ou ceux de l'objet ;
+- **C** : le pivot, au centre de la sélection, ou à l'origine de chaque
+  objet ;
+- l'aimant : le magnétisme, par demi-mètre, 15 degrés, un quart d'échelle.
+
+## 5. L'Inspector
+
+L'Inspector édite l'objet actif : son nom, sa visibilité, sa position, sa
+rotation (en degrés) et son échelle, et les nombres de ses composants. Un
+champ est appliqué par **Entrée**, ou en le quittant ; les changements
+successifs d'un même champ font une seule étape de l'historique.
+
+## 6. Ajouter, retirer, réorganiser
+
+- **Edit → Add** ajoute un nœud vide, un cube, une sphère ou une lumière
+  ponctuelle au centre du niveau, sélectionné : déplacez-le avec **W**.
+- **Suppr** retire la sélection.
+- Dans l'Outliner, faites glisser un objet sur un autre pour le mettre
+  dessous : il suit alors son nouveau parent.
+
+## 7. Annuler
+
+Chaque changement est une commande de l'historique : **Ctrl+Z** annule,
+**Ctrl+Y** (ou **Ctrl+Maj+Z**) rétablit. Le menu **Edit** donne la
+prochaine étape de chacun. Sélectionner n'est pas dans l'historique,
+comme dans la plupart des éditeurs.
+
+## 8. Enregistrer et ouvrir
+
+Le menu **File** :
+
+- **Save** (**Ctrl+S**) écrit le niveau en scène du moteur
+  (`.scene.json`, ses buffers dedans), le format
+  d'[enregistrer des scènes](/fdw-engine/fr/tutorials/saving-scenes/) ;
+- **Export as glTF** écrit un `.glb`, pour les autres outils ;
+- **Open** (**Ctrl+O**) lit une scène du moteur ou un fichier glTF
+  (`.glb`, ou `.gltf` avec ses buffers dedans) ;
+- **New** revient au niveau d'exemple.
+
+Dans le navigateur, Chromium ouvre un dialogue pour choisir où écrire ;
+les autres navigateurs téléchargent le fichier. Sur le bureau, les
+dialogues sont ceux du système.
+
+## 9. Les autres scènes
+
+Le menu **Scene** montre les scènes de démo dans le viewport à la place
+du niveau : la physique, la mer, le jeu dans la forêt… Elles tournent
+avec les entrées du jeu : cliquez dans le viewport, puis jouez.
+**Scene → level** revient au niveau, tel qu'il a été laissé.

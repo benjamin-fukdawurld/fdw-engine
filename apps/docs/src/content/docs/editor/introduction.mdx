@@ -1,0 +1,124 @@
+---
+title: The editor
+description: 'The editor of FdwEngine, on the desktop with Electron and in the browser: running it, choosing its backend, what it is made of.'
+tableOfContents: false
+sidebar:
+  order: 1
+---
+
+import Editor from '../../../components/Editor.astro';
+
+The editor edits the levels of the engine: it opens a scene, shows it in a
+3D viewport between its panels, and changes it with the tools of
+[editing](/fdw-engine/guides/editing/) (selection, gizmos, undo). It runs
+in two hosts that share the same interface:
+
+- **on the desktop**, an Electron application: the engine renders natively,
+  on Vulkan, into a window placed in the area of the viewport;
+- **in the browser**, a web page: the engine runs in the page and renders
+  into a canvas, on WebGPU or WebGL2.
+
+Here is the web one, live. Click the viewport, then drag with the **right
+button** to turn the camera, the **wheel** to zoom; a click selects an
+object, **W**, **E** and **R** choose the tool that moves, turns or scales
+it.
+
+<Editor />
+
+The next pages use it: [Editing a level](/fdw-engine/editor/editing-a-level/)
+goes through its interface, [Writing a plugin](/fdw-engine/editor/writing-a-plugin/)
+adds a command and a panel to it, and [The native viewport](/fdw-engine/editor/native-viewport/)
+tells how the desktop editor puts the engine in its window, and what it
+costs.
+
+## Running it
+
+**In the browser**, from the root of the repository:
+
+```sh
+npx nx run editor-web:dev     # http://localhost:4300
+```
+
+The same editor is also built into this site: [open it in a page of its
+own](/fdw-engine/editor-app/). Its layout is kept in IndexedDB; the files of
+the levels are opened and saved through the File System Access API
+(Chromium), else by an import and a download.
+
+**On the desktop** (Linux, X11 or XWayland), with the
+[native addons](/fdw-engine/getting-started/native/) built, the Vulkan SDK,
+libX11 and libXext:
+
+```sh
+source <vulkan-sdk>/setup-env.sh
+npx nx run editor:dev         # builds the addons, then starts Electron
+```
+
+The editor of the desktop has its own `node_modules` (`apps/editor`, out
+of the npm workspaces): `npx nx run editor:install` installs them the
+first time. From a terminal of VS Code, unset `ELECTRON_RUN_AS_NODE`,
+which makes Electron start as Node.
+
+## The backend
+
+The variable `FDW_BACKEND` chooses the backend, read when the editor
+starts (by Vite for the web one). Without it, the first of each host;
+when the one asked for does not start, or is unknown, the other, and the
+status bar tells why.
+
+| Host    | `FDW_BACKEND`      | Fallback | How the frames reach the screen                                       |
+| ------- | ------------------ | -------- | --------------------------------------------------------------------- |
+| Desktop | `vulkan` (default) | `dawn`   | A swapchain on the window of the viewport, without copy               |
+| Desktop | `dawn`             |          | A Node process of its own; each frame read back, copied in the window |
+| Web     | `webgpu` (default) | `webgl2` | The canvas of the viewport                                            |
+| Web     | `webgl2`           |          | The canvas of the viewport                                            |
+
+```sh
+FDW_BACKEND=dawn npx nx run editor:dev
+FDW_BACKEND=webgl2 npx nx run editor-web:dev
+```
+
+On the desktop, Dawn runs in a Node process of its own, which must be
+Node 24: `FDW_NODE` gives its path, else the `node` of the `PATH`.
+`FDW_SCENE` chooses the scene shown first: the level by default, or one of
+the demo scenes of the Scene menu (`tps`, `physics`, `ocean`…).
+
+## What it is made of
+
+```
+@fdw/editor-ui             the interface: the shell, its plugins, the protocol
+  EditorShell (React)        menus, toolbars, docks, status bar, palette
+  EditorEngine               the engine side: scenes, level, viewport
+apps/editor                the desktop host: Electron, the engine in a process
+apps/editor-web            the web host: Vite, the engine in the page
+@fdw/editor-plugin-sample  a plugin written as a third party would
+```
+
+- **The shell** (`EditorShell`) is the whole interface, in React. It has no
+  panel of its own: the viewport, the outliner, the inspector, the console,
+  the menus of the level are **plugins**, built in; a host adds its own.
+- **The engine is never in the hands of the interface.** The page and the
+  engine talk by messages (`@fdw/editor-ui/protocol`): the bounds of the
+  viewport, the inputs, the commands on the level one way; the state of
+  the engine and the projection of the level the other. On the desktop
+  the engine runs in a utility process of Electron, and never blocks the
+  interface; on the web it runs in the page, behind a `MessageChannel`.
+- **A host** gives the shell an `EditorHost`: the connection to the engine,
+  the component of the viewport, the files, the storage of the layout, its
+  plugins. The README of `@fdw/editor-ui` lists them for both hosts.
+
+```tsx
+import { EditorShell, type EditorHost } from '@fdw/editor-ui';
+import '@fdw/editor-ui/styles.css';
+
+const host: EditorHost = {
+  engine, // an EngineConnection: post() and subscribe()
+  Viewport: () => <CanvasViewport engine={webEngine} />,
+  files, // open() and save() of the files of the user
+  storage, // read() and write() of JSON documents by key
+  popoutUrl: 'popout.html',
+  about: 'My editor',
+  plugins: [myPlugin],
+};
+
+createRoot(root).render(<EditorShell host={host} />);
+```

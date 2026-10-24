@@ -88,6 +88,7 @@ export function RemoteViewport({
   return (
     <div
       ref={ref}
+      data-testid="viewport"
       // Focusable, to receive the keys once clicked.
       tabIndex={0}
       onPointerDown={(event) => {

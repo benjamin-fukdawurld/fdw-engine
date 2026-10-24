@@ -1,0 +1,22 @@
+{
+  "name": "@fdw/editor-plugin-isolate",
+  "version": "0.0.1",
+  "dependencies": {
+    "@fdw/editor-ui": "0.0.1",
+    "tslib": "^2.3.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@fdw-engine/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css"
+  }
+}

@@ -52,7 +52,8 @@ export const scenes: Record<string, () => Promise<SceneFactory>> = {
   tps: async () => {
     // The models of the forest, served by the application (vite.config.mts).
     const store = new ResourceStore();
-    const base = `${import.meta.env.BASE_URL}models/`;
+    const base =
+      import.meta.env.FDW_MODELS || `${import.meta.env.BASE_URL}models/`;
     store.mount('http', new HttpSource({ base }), { default: true });
     installAssets(store, { codecs: [bitmapCodec(createImageBitmapDecoder())] });
     installGltf(store);
