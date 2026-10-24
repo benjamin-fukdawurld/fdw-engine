@@ -4139,6 +4139,7 @@ export function describeRenderer(
         });
       }
 
+      // Long to compile on software Vulkan (CI): all these octaves in one pipeline.
       it('adds up the octaves as the CPU, unrolled or in a fold loop', async () => {
         if (backend.capabilities?.compute === false) {
           return;
@@ -4253,7 +4254,7 @@ export function describeRenderer(
             ).toBeLessThan(5e-5);
           });
         }
-      });
+      }, 30_000);
 
       // The pixels of the frame, from the top left.
       const framePixels = async () => {
