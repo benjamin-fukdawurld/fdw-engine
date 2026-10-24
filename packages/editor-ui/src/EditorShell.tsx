@@ -16,7 +16,7 @@ import { connectEngineStore, createEngineStore } from './state/engineStore';
 import { connectLevelStore, createLevelStore } from './state/levelStore';
 import { createEditorRuntime, type EditorRuntime } from './state/runtime';
 import { Workbench } from './Workbench';
-import type { WorkbenchApi } from './workbench';
+import type { WorkbenchApi } from './workbenchService';
 
 // The writes of the layout wait for the changes to settle (a sash dragged).
 const saveDelay = 300;

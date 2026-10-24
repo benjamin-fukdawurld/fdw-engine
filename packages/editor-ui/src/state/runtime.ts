@@ -11,7 +11,7 @@ import {
 } from '../plugins/contributions';
 import { PluginHost, type PreparedPlugin } from '../plugins/pluginHost';
 import { toolbarLayout } from '../toolbarLayout';
-import { WorkbenchService } from '../workbench';
+import { WorkbenchService } from '../workbenchService';
 import {
   createContextKeys,
   type ContextKeys,
