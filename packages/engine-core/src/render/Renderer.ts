@@ -60,6 +60,7 @@ import {
   WorldTransform,
 } from './RenderSource';
 import { castsShadow, ShadowCameras, ShadowTile } from './shadows';
+import { RayTracingOptions, rayShadowsOf, TracedScene } from './rays';
 
 export interface RenderOptions {
   // What to draw: a source queried for each view (a scene graph), a list
@@ -98,6 +99,10 @@ export interface RenderOptions {
   // of the fog. The background (clearColor) is not fogged: a sky drawn as
   // a mesh fades into it.
   readonly fog?: FogOptions;
+  // Rays traced in the materials, against a traced scene (a RayScene of
+  // @fdw/engine-raytracing): the shadows of the lights, instead of the
+  // shadow maps. On the backends with the rayQuery capability.
+  readonly rays?: RayTracingOptions;
 }
 
 /** The fog of a view: see RenderOptions.fog. */
@@ -247,6 +252,9 @@ export interface FullscreenPassOptions {
   // models called by the material then darken the light by the shadows,
   // as in the scene passes. Without it, the lights cast none.
   readonly shadows?: TextureHandle;
+  // The scene the material traces rays against (ray.trace, the hit
+  // functions): a RayScene of @fdw/engine-raytracing, updated before.
+  readonly rays?: TracedScene;
 }
 
 // The bytes a pixel of color targets takes, as WebGPU counts them for its
@@ -343,6 +351,9 @@ interface UniformGroup {
 interface FrameView extends UniformGroup {
   readonly name: string;
   shadowMap?: GpuAttachmentTarget;
+  // The traced scene bound, and its version.
+  rays?: TracedScene;
+  raysVersion?: number;
 }
 
 // The world matrix of an item, from its Transform or given by its source,
@@ -380,6 +391,8 @@ interface PassVariant {
   readonly linear: boolean;
   // The lit materials read the shadow atlas.
   readonly shadows: boolean;
+  // Shadows traced by rays: the rays per light (0 or absent: none).
+  readonly rayShadows?: number;
   // The colors are seen through the fog of the frame.
   readonly fog?: boolean;
   // No color: the shadow maps.
@@ -544,10 +557,13 @@ const pushColor = (out: number[], value: Readonly<IVec3>) =>
 // arrays of the frame uniforms (see lightMembers in engine-shader): one vec4
 // (or mat4) per light and property. `shadows` are the tiles of the lights
 // casting shadows.
+// With `rayOffset`, the shadows are traced by rays: the lights casting
+// shadows get (1, 0, rayOffset, softness) (see light.shadowRay).
 function writeLightValues(
   values: Record<string, UniformValue>,
   lights: readonly BaseLight[],
   shadows: readonly ShadowTile[] = [],
+  rayOffset?: number,
 ): Record<string, UniformValue> {
   const positions: number[] = [];
   const ambients: number[] = [];
@@ -602,7 +618,11 @@ function writeLightValues(
     pushColor(ambients, light.ambient);
     pushColor(diffuses, light.diffuse);
     pushColor(speculars, light.specular);
-    pushAll(lightShadows, shadow?.shadow ?? zero4);
+    if (rayOffset !== undefined && castsShadow(light)) {
+      lightShadows.push(1, 0, rayOffset, light.shadow.softness ?? 0);
+    } else {
+      pushAll(lightShadows, shadow?.shadow ?? zero4);
+    }
     pushAll(shadowRects, shadow?.rect ?? zero4);
     pushAll(shadowMatrices, shadow?.matrix ?? identity);
     count++;
@@ -838,6 +858,19 @@ export class Renderer {
     this._shadowCameras = new ShadowCameras(backend.cameraMath);
   }
 
+  /** The node types the materials are compiled with (the standard ones by default). */
+  get registry(): NodeRegistry | undefined {
+    return this._registry;
+  }
+
+  /**
+   * Executes a render graph built with the passes of the renderer (and
+   * others): what render() does after building the graph of the frame.
+   */
+  executeGraph(graph: RenderGraph): void {
+    this._runner.execute(graph);
+  }
+
   // Resolves when the pipelines being created asynchronously are ready.
   async whenReady(): Promise<void> {
     await Promise.all(
@@ -875,9 +908,8 @@ export class Renderer {
         format: 'rgba16float',
         linear: true,
       });
-      this.addFullscreenPass(graph, 'tone mapping', {
-        material: this.toneMappingMaterial(),
-        inputs: { hdr: scene.color },
+      this.addToneMappingPass(graph, {
+        hdr: scene.color,
         target,
         format: surface.format,
       });
@@ -939,8 +971,15 @@ export class Renderer {
       inputs = {},
       occlusion,
       fog,
+      rays,
     }: ScenePassesOptions,
   ): ScenePasses {
+    const rayShadows = rayShadowsOf(rays);
+    if (rays && !this.backend.capabilities?.rayQuery) {
+      throw new Error(
+        `"${name}": the backend traces no rays (rayQuery capability)`,
+      );
+    }
     const outputs = this.sceneOutputs(
       name,
       target,
@@ -1022,8 +1061,9 @@ export class Renderer {
     }
     const casters =
       shadows && !receivers.isEmpty() ? used.filter(castsShadow) : [];
+    // Traced shadows need no shadow map.
     const shadowPass =
-      casters.length > 0 && this._shadowAtlasSize > 0
+      casters.length > 0 && this._shadowAtlasSize > 0 && !rayShadows
         ? this.addShadowPass(
             graph,
             `${name} shadows`,
@@ -1058,6 +1098,7 @@ export class Renderer {
             faces === 'back' && cullMode === 'back' ? 'front' : cullMode,
           linear,
           shadows: shadowPass !== undefined,
+          ...(rayShadows && shadows ? { rayShadows: rayShadows.samples } : {}),
           ...(fogged ? { fog: true } : {}),
           depthOnly: false,
           samples,
@@ -1122,7 +1163,9 @@ export class Renderer {
       },
       used,
       shadowPass?.tiles,
+      shadows ? rayShadows?.offset : undefined,
     );
+    this.bindRays(view, rays?.scene);
     const first = opaqueEntries[0] ?? transparentEntries[0];
     if (first) {
       this.writeView(view, first.layout, this._frameValues);
@@ -1398,6 +1441,7 @@ export class Renderer {
       blend = false,
       targets,
       shadows,
+      rays,
     }: FullscreenPassOptions,
   ):
     | TextureHandle
@@ -1415,6 +1459,7 @@ export class Renderer {
     // The frame values of the last scene: its camera, its lights, the
     // exposure…
     this.writeView(view, prepared.layout, this._frameValues);
+    this.bindRays(view, rays);
     const written = graph.addRasterPass(name, (pass) => {
       const read = Object.entries(inputs).map(
         ([input, handle]) => [input, pass.read(handle, 'sampled')] as const,
@@ -1763,6 +1808,18 @@ export class Renderer {
     }
   }
 
+  // The traced scene read by the programs of a view, in this frame.
+  private bindRays(view: FrameView, scene: TracedScene | undefined): void {
+    if (
+      scene &&
+      (view.rays !== scene || view.raysVersion !== scene.version)
+    ) {
+      view.rays = scene;
+      view.raysVersion = scene.version;
+      this.retireGroups(view.bindGroups);
+    }
+  }
+
   // Destroys bind groups at the next frame (their descriptor sets on
   // Vulkan): those of this frame may be recorded already.
   private retireGroups(groups: Map<string, GpuBindGroup>): void {
@@ -1806,6 +1863,9 @@ export class Renderer {
           ? { toneMapping: 'none', outputEncoding: 'linear' }
           : this._output),
       ...(variant?.shadows ? { shadows: true } : {}),
+      ...(variant?.rayShadows
+        ? { rayShadows: true, rayShadowSamples: variant.rayShadows }
+        : {}),
       ...(variant?.fog && !variant.depthOnly ? { fog: true } : {}),
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
@@ -1989,7 +2049,7 @@ export class Renderer {
         variant.shadows
       }|${variant.fog ?? false}|${variant.depthOnly}|${variant.samples}|${
         variant.outputsKey ?? ''
-      }`;
+      }|${variant.rayShadows ?? 0}`;
       this._passKeys.set(variant, passKey);
     }
     const cached = byPass.get(passKey);
@@ -2131,6 +2191,37 @@ export class Renderer {
 
   // The material of the tone mapping pass of the HDR path: exposure, tone
   // mapping and encoding, as chosen by the output options.
+  /**
+   * Adds the tone mapping and the encoding of the renderer (its `output`)
+   * to a graph: a full screen pass from linear colors (an HDR texture) to
+   * the target. `exposure` multiplies the colors before (that of the last
+   * scene passes by default).
+   */
+  addToneMappingPass(
+    graph: RenderGraph,
+    {
+      hdr,
+      target,
+      format,
+      exposure,
+    }: {
+      readonly hdr: TextureHandle;
+      readonly target: TextureHandle;
+      readonly format: GpuTextureFormat;
+      readonly exposure?: number;
+    },
+  ): TextureHandle {
+    if (exposure !== undefined) {
+      this._frameValues = { ...this._frameValues, exposure };
+    }
+    return this.addFullscreenPass(graph, 'tone mapping', {
+      material: this.toneMappingMaterial(),
+      inputs: { hdr },
+      target,
+      format,
+    });
+  }
+
   private toneMappingMaterial(): Material {
     if (!this._toneMapping) {
       const { toneMapping, outputEncoding } = this._output;
@@ -2400,7 +2491,10 @@ export class Renderer {
   // The frame and object groups: their uniform buffer and, for the frame of
   // the programs reading the shadows, the shadow atlas and its sampler.
   private sharedBindGroup(
-    state: UniformGroup & { shadowMap?: GpuAttachmentTarget },
+    state: UniformGroup & {
+      shadowMap?: GpuAttachmentTarget;
+      rays?: TracedScene;
+    },
     group: PhysicalBindGroup,
   ): GpuBindGroup {
     const layout = this.bindGroupLayout(group);
@@ -2414,6 +2508,16 @@ export class Renderer {
           }
           if (resource.kind === 'sampler') {
             return { binding, resource: this.shadowSampler() };
+          }
+          if (resource.name !== 'shadowMap') {
+            // The traced scene and the buffers of its hits.
+            const traced = state.rays?.resource(resource.name);
+            if (!traced) {
+              throw new Error(
+                `"${resource.name}" is read without a traced scene in the frame (rays)`,
+              );
+            }
+            return { binding, resource: traced };
           }
           if (!state.shadowMap) {
             throw new Error(

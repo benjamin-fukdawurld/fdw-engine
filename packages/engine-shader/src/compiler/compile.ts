@@ -48,6 +48,7 @@ import {
   surfaceOutputType,
 } from './lowering';
 import { analyzeLoops } from './loops';
+import { HitAttributes, lowerHitInputs, lowerHitSurface } from './hit';
 import { expandMacros } from './macros';
 import { optimize, structuralParams } from './optimize';
 import { planStages } from './stages';
@@ -125,6 +126,13 @@ export interface CompileOptions {
    * application… Ignored by the graphs without output.surface.
    */
   readonly outputs?: readonly SurfaceOutput[];
+  /**
+   * What the program computes: the stages that draw the graph ('raster',
+   * the default), or, for a material (output.surface), its surface at the
+   * points hit by rays ('hit'): a compute program writing the surfaces of
+   * the rays (see HitResources and RaySurfaceVec4s).
+   */
+  readonly target?: 'raster' | 'hit';
   /**
    * Whether a surface writes its color, at location 0 (default true).
    * Without it, the shading model is left out: the surface only writes its
@@ -806,7 +814,8 @@ export function compile(
   }
 
   const diagnostics: Diagnostic[] = [];
-  const compute = isCompute(validation);
+  const hitTarget = options.target === 'hit';
+  const compute = isCompute(validation) || hitTarget;
   if (compute && !capabilities.compute) {
     fail([
       {
@@ -842,8 +851,8 @@ export function compile(
       const semantic = name.slice('hasAttribute.'.length);
       if (computedAttributes.has(semantic)) {
         value = true;
-      } else if (options.vertexAttributes) {
-        value = options.vertexAttributes.includes(semantic);
+      } else if (options.vertexAttributes || hitTarget) {
+        value = (options.vertexAttributes ?? HitAttributes).includes(semantic);
       }
     }
     if (value !== undefined) {
@@ -869,20 +878,31 @@ export function compile(
       ]),
     ]);
   }
-  lowerSurface(
-    working,
-    registry,
-    diagnostics,
-    feature,
-    hasSurface ? outputs : [],
-    options.color ?? true,
-  );
+  let hit: string | undefined;
+  if (hitTarget) {
+    variantKey['target'] = 'hit';
+    hit = lowerHitSurface(working, registry, diagnostics, feature);
+  } else {
+    lowerSurface(
+      working,
+      registry,
+      diagnostics,
+      feature,
+      hasSurface ? outputs : [],
+      options.color ?? true,
+    );
+  }
   lowerFullscreen(working, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);
   }
 
   expandMacros({ graph: working, registry, feature, diagnostics });
+  if (hit !== undefined) {
+    lowerHitInputs(working, hit, diagnostics);
+    // The functions of the hits it added.
+    expandMacros({ graph: working, registry, feature, diagnostics });
+  }
   lowerComputedAttributes(working, diagnostics);
   if (diagnostics.length > 0) {
     fail(diagnostics);

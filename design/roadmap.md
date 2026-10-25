@@ -409,7 +409,9 @@ Démo : un bassin où l'on jette des objets, de la fumée qui contourne un obsta
 
 ### P10. Ray tracing
 
-_Repoussée (18 octobre 2026) après l'éditeur de jeu (P20)_ : sans outil pour faire des scènes, elle n'aurait que les démos à montrer. Les contraintes du §6 restent tenues d'ici là.
+_Faite_ (25 octobre 2026), avec ses tutoriels « Les ombres par rayons », « Les reflets et l'occlusion ambiante par rayons » et « Le path tracing » et son guide « Le ray tracing » (EN et FR, trois exemples vivants) : le design, les choix et les mesures sont dans [p10-raytracing.md](p10-raytracing.md). Les structures d'accélération dans l'API abstraite (`createBottomLevel`, `createTopLevel`, `buildTopLevel`), **matérielles en Vulkan** (`VK_KHR_acceleration_structure`, `VK_KHR_ray_query`, sur le GPU comme sur lavapipe) et **logicielles en WebGPU** (un BVH à SAH construit sur le CPU, parcouru en WGSL) ; le nœud `ray.trace` et les fonctions des impacts (`ray.hit*`) dans les graphs, la cible « impact » du compilateur (la surface d'un matériau aux points touchés). Le package `@fdw/engine-raytracing` : la scène tracée (`RayScene`), **l'hybride** (les ombres tracées dans les matériaux, dures ou douces ; l'occlusion ambiante `RayOcclusion` ; les reflets `RayReflections`, les surfaces touchées éclairées avec leurs propres matériaux) et **le path tracer** (`PathTracer`, en vagues de passes de calcul, l'accumulation et un filtre à trous). Démos : le FPS (ses dalles polies) et le TPS en quatre rendus, du menu ou de `--rays` en natif. Reportés : l'alpha testé pendant la traversée, les BLAS des meshes déformés sur le GPU, les pipelines de ray tracing et DXR, le débruitage temporel, l'aperçu dans l'éditeur.
+
+Le plan d'origine (_repoussée le 18 octobre 2026 après l'éditeur de jeu, P20_) :
 
 L'éditeur reste en rastérisation ; les jeux et le rendu final peuvent passer au ray tracing, **au choix de l'utilisateur** : une option du rendu, désactivable, la rastérisation restant toujours disponible.
 

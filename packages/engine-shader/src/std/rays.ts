@@ -5,7 +5,7 @@ import type {
   NodeDefinition,
 } from '../graph/NodeDefinition';
 import type { NodeRegistry } from '../graph/NodeRegistry';
-import { RayInstanceVec4s, RayVertexVec4s } from '../compiler/layout';
+import { RayInstanceVec4s } from '../compiler/layout';
 import { BuiltinTypes } from '../types/ShaderType';
 import * as functions from './functions';
 
@@ -75,12 +75,21 @@ export function createRayFunctions(
   };
   const u32 = (f: GraphBuilder, value: number) =>
     f.constant(BuiltinTypes.u32, value);
+  // The instance hit; the first one for a miss, so that what is read of
+  // a miss stays in the buffers (the backends without robust buffer
+  // accesses would read anywhere).
+  const instanceOf = (f: GraphBuilder, hit: PortHandle) =>
+    f.call(functions.select, {
+      ifFalse: hit.swizzle('x'),
+      ifTrue: u32(f, 0),
+      condition: f.call(equal, { a: hit.swizzle('x'), b: u32(f, RayMiss) }),
+    });
   // The vec4 k of the record of the instance hit.
   const instanceVec = (f: GraphBuilder, hit: PortHandle, k: number) =>
     f.call(index, {
       array: f.call('input.engine', {}, { params: { value: 'rayInstances' } }),
       index: f.call(add, {
-        a: f.call(mul, { a: hit.swizzle('x'), b: u32(f, RayInstanceVec4s) }),
+        a: f.call(mul, { a: instanceOf(f, hit), b: u32(f, RayInstanceVec4s) }),
         b: u32(f, k),
       }),
     });
@@ -129,31 +138,25 @@ export function createRayFunctions(
     },
     'weights',
   );
+  const geometry = (f: GraphBuilder) =>
+    f.call('input.engine', {}, { params: { value: 'rayGeometry' } });
   const vertices = define(
     'ray.hitVertices',
-    'The vertices of the triangle hit: indices in the rayVertices buffer.',
+    'The vertices of the triangle hit: the vec4 of their records in the rayGeometry buffer.',
     (f, hit) => {
       const triangle = f.call(bitAnd, {
         a: hit.swizzle('y'),
         b: u32(f, 0x7fffffff),
       });
-      const first = f.call(add, {
-        a: instanceWord(f, hit, 'x'),
-        b: f.call(mul, { a: triangle, b: u32(f, 3) }),
+      const record = f.call(index, {
+        array: geometry(f),
+        index: f.call(add, { a: instanceWord(f, hit, 'x'), b: triangle }),
       });
-      const indices = f.call('input.engine', {}, {
-        params: { value: 'rayIndices' },
-      });
-      const corner = (k: number) =>
-        f.call(index, {
-          array: indices,
-          index: f.call(add, { a: first, b: u32(f, k) }),
-        });
-      return f.call(functions.uvec3, {
-        x: corner(0),
-        y: corner(1),
-        z: corner(2),
-      });
+      return f.call(
+        bitcast,
+        { value: record.swizzle('xyz') },
+        { params: { to: BuiltinTypes.vec3u } },
+      );
     },
     'indices',
   );
@@ -161,19 +164,11 @@ export function createRayFunctions(
   const interpolate = (f: GraphBuilder, hit: PortHandle, k: number) => {
     const weights = f.call(barycentrics, { hit });
     const corners = f.call(vertices, { hit });
-    const data = f.call('input.engine', {}, {
-      params: { value: 'rayVertices' },
-    });
+    const data = geometry(f);
     const vertex = (component: string) =>
       f.call(index, {
         array: data,
-        index: f.call(add, {
-          a: f.call(mul, {
-            a: corners.swizzle(component),
-            b: u32(f, RayVertexVec4s),
-          }),
-          b: u32(f, k),
-        }),
+        index: f.call(add, { a: corners.swizzle(component), b: u32(f, k) }),
       });
     return f.call(add, {
       a: f.call(add, {
@@ -275,18 +270,9 @@ export function createRayFunctions(
     'The normal of the triangle hit, in the world (normalized, on its front side).',
     (f, hit) => {
       const corners = f.call(vertices, { hit });
-      const data = f.call('input.engine', {}, {
-        params: { value: 'rayVertices' },
-      });
+      const data = geometry(f);
       const position = (component: string) =>
-        f
-          .call(index, {
-            array: data,
-            index: f.call(mul, {
-              a: corners.swizzle(component),
-              b: u32(f, RayVertexVec4s),
-            }),
-          })
+        f.call(index, { array: data, index: corners.swizzle(component) })
           .swizzle('xyz');
       const p0 = position('x');
       const local = f.call(functions.cross, {

@@ -19,17 +19,19 @@ import {
 // built on the CPU, in storage buffers, traversed by the code the WGSL
 // generator adds to the programs that trace rays (softwareRays.ts).
 //
-// The bottom levels of all the meshes share two buffers of the backend:
-// their nodes, and their triangles. The top level of a scene has its own
+// The bottom levels of all the meshes share a buffer of the backend, of
+// vec4: their nodes (4 vec4 each) and their triangles (3 vec4 each), the
+// references of the nodes being offsets in vec4. The top level of a scene
+// has its own
 // buffer: a header (vec4 of u32: the reference and count of its root, the
 // vec4 where its instances start, their number), its nodes, then for each
 // instance, in the order of its leaves, 4 vec4: the rows of its world to
 // object matrix, then (as u32) the root of its bottom level (reference and
 // count, see BvhRef), its mask, and its index in the update.
 
-/** Bytes of a node and of a triangle in the buffers. */
-const NodeBytes = BvhNodeFloats * 4;
-const TriangleBytes = TriangleFloats * 4;
+/** vec4 of a node and of a triangle in the pool. */
+const NodeVec4s = BvhNodeFloats / 4;
+const TriangleVec4s = TriangleFloats / 4;
 /** vec4 per instance record of the top level. */
 export const InstanceVec4s = 4;
 
@@ -144,23 +146,20 @@ class UnitPool {
   }
 }
 
-/** The buffers shared by the bottom levels of a device. */
+/** The buffer shared by the bottom levels of a device, in vec4. */
 export class SoftwareBvhPools {
-  readonly nodes: UnitPool;
-  readonly triangles: UnitPool;
+  readonly pool: UnitPool;
 
   constructor(device: GPUDevice) {
-    this.nodes = new UnitPool(device, NodeBytes, 4096, 'bvh nodes');
-    this.triangles = new UnitPool(device, TriangleBytes, 8192, 'bvh triangles');
+    this.pool = new UnitPool(device, 16, 1 << 16, 'bottom levels');
   }
 
   get generation(): number {
-    return this.nodes.generation + this.triangles.generation;
+    return this.pool.generation;
   }
 
   destroy(): void {
-    this.nodes.destroy();
-    this.triangles.destroy();
+    this.pool.destroy();
   }
 }
 
@@ -185,29 +184,35 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
     this.triangleCount = bvh.triangleCount;
     this.bounds = bvh.bounds;
     this._nodeCount = bvh.nodeCount;
+    const pool = pools.pool;
     this._nodeStart =
-      bvh.nodeCount > 0 ? pools.nodes.allocate(bvh.nodeCount) : 0;
+      bvh.nodeCount > 0 ? pool.allocate(bvh.nodeCount * NodeVec4s) : 0;
     this._triangleStart =
-      bvh.triangleCount > 0 ? pools.triangles.allocate(bvh.triangleCount) : 0;
-    // The references made absolute: nodes and triangles of the pools.
+      bvh.triangleCount > 0
+        ? pool.allocate(bvh.triangleCount * TriangleVec4s)
+        : 0;
+    // The references made offsets in the pool: of a node, or of the first
+    // triangle of a leaf.
+    const absolute = (ref: number, count: number) =>
+      count === 0
+        ? this._nodeStart + ref * NodeVec4s
+        : this._triangleStart + ref * TriangleVec4s;
     const refs = bvh.nodeRefs;
     for (let node = 0; node < bvh.nodeCount; node++) {
       for (const offset of [3, 11]) {
         const at = node * BvhNodeFloats + offset;
-        refs[at] += refs[at + 4] === 0 ? this._nodeStart : this._triangleStart;
+        refs[at] = absolute(refs[at], refs[at + 4]);
       }
     }
     this.root = {
-      ref:
-        bvh.root.ref +
-        (bvh.root.count === 0 ? this._nodeStart : this._triangleStart),
+      ref: absolute(bvh.root.ref, bvh.root.count),
       count: bvh.root.count,
     };
     if (bvh.nodeCount > 0) {
-      pools.nodes.write(this._nodeStart, bvh.nodes);
+      pool.write(this._nodeStart, bvh.nodes);
     }
     if (bvh.triangleCount > 0) {
-      pools.triangles.write(this._triangleStart, bvh.triangles);
+      pool.write(this._triangleStart, bvh.triangles);
     }
   }
 
@@ -222,8 +227,11 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
     this._destroyed = true;
     // Rewritten only by later queue writes: the commands submitted before
     // still read it.
-    this.pools.nodes.release(this._nodeStart, this._nodeCount);
-    this.pools.triangles.release(this._triangleStart, this.triangleCount);
+    this.pools.pool.release(this._nodeStart, this._nodeCount * NodeVec4s);
+    this.pools.pool.release(
+      this._triangleStart,
+      this.triangleCount * TriangleVec4s,
+    );
   }
 }
 
@@ -254,9 +262,9 @@ export class SoftwareTopLevel implements GpuTopLevel {
     return this._generation + this.pools.generation;
   }
 
-  /** The buffers of the binding: the top level, the nodes, the triangles. */
-  get buffers(): readonly [GPUBuffer, GPUBuffer, GPUBuffer] {
-    return [this._buffer, this.pools.nodes.buffer, this.pools.triangles.buffer];
+  /** The buffers of the binding: the top level, the bottom levels. */
+  get buffers(): readonly [GPUBuffer, GPUBuffer] {
+    return [this._buffer, this.pools.pool.buffer];
   }
 
   // The vec4 of a top level of n instances, at most: the header, n - 1

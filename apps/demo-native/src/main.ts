@@ -8,6 +8,7 @@
 //
 // nx run demo-native:start [-- <scene>] [--vulkan | --d3d12] [--validation]
 //   [--no-vsync] [--frames <count>] [--hidden] [--no-audio]
+//   [--rays shadows|reflections|path]
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
 // fps (the first person shooter; P pauses),
 // city (the occlusion culling; city-no-occlusion to compare), decor (the
@@ -22,9 +23,11 @@
 // it), smoke (smoke and fire around a ball; F switches to a chimney), splash
 // (a tank of water made of particles: a dam that breaks, crates in it).
 // The sounds play on the default device, through miniaudio (--no-audio:
-// silent).
+// silent). --rays draws the scenes that offer it (fps, tps) with rays, on
+// Vulkan: the shadows traced, the reflections too, or the path tracer.
 // Escape or closing the window quits.
 import { NativeAudioEngine } from '@fdw/engine-audio-native';
+import type { RayMode } from '@fdw/demo-scenes';
 import type { Engine, Surface } from '@fdw/engine-backend';
 import { D3D12Engine } from '@fdw/engine-d3d12';
 import {
@@ -200,6 +203,7 @@ const scene = factory(backend, surface, {
   info: (text) => {
     info = text;
   },
+  ...(option('--rays') ? { rays: option('--rays') as RayMode } : {}),
 });
 
 const start = performance.now();

@@ -1,0 +1,82 @@
+---
+title: Le path tracing
+description: Toute l'image par rayons — depuis la caméra, rebond après rebond, la lumière des lumières, des surfaces émissives et du ciel recueillie ; les images additionnées, le bruit filtré.
+sidebar:
+  order: 44
+---
+
+import Example from '../../../../components/Example.astro';
+
+La rastérisation éclaire chaque point par les seules lumières, plus une
+lumière ambiante uniforme. Pourtant la lumière rebondit : le mur rouge
+teinte le sol, le plafond éclairé par le sol éclaire la pièce. Un **path
+tracer** suit la lumière à rebours : depuis la caméra, à travers chaque
+pixel, en rebondissant sur les surfaces jusqu'à trouver une lumière.
+
+<Example name="path-tracing" />
+
+L'image commence granuleuse et s'éclaircit à mesure que les images
+s'additionnent. Cliquez sur le canevas pour comparer avec la rastérisation
+de la même scène.
+
+## Le path tracer
+
+```ts
+import { PathTracer, RayScene } from '@fdw/engine-raytracing';
+
+const tracer = new PathTracer(renderer, new RayScene(backend), {
+  bounces: 4,
+  sky: { zenith, horizon, ground }, // ce que voient les rayons perdus
+});
+
+onFrame((time) => {
+  tracer.scene.update({ items });
+  tracer.render({ camera, surface, lights: [light], time });
+});
+```
+
+La même scène, les mêmes matériaux que la rastérisation : un matériau
+compilé pour les points touchés par les rayons donne les paramètres de la
+BSDF du modèle `pbr` (couleur de base, métal, rugosité, normale,
+émission) ; les matériaux `unlit` sont des sources de lumière (leur couleur
+est leur émission).
+
+## Une image
+
+Tous les pixels à la fois, en vagues de passes de calcul :
+
+1. **Les rayons de la caméra**, à travers un point au hasard de chaque
+   pixel (l'anticrénelage vient avec les images).
+2. Pour chaque rebond : **tracer** les rayons (l'impact le plus proche) ;
+   **les surfaces** touchées, un dispatch par matériau de la scène ; puis
+   **le rebond** : l'émission de la surface, la lumière d'une lumière tirée
+   au hasard (un rayon d'ombre vers elle), et la direction suivante, tirée
+   selon la BSDF (un lobe diffus ou spéculaire, le poids du chemin ajusté
+   par la densité). Après deux rebonds, les chemins qui portent peu de
+   lumière s'arrêtent au hasard (la roulette russe). Les pixels masqués et
+   mélangés laissent passer le rayon.
+3. **L'accumulation** : l'image ajoutée à la somme des précédentes, tant
+   que la caméra, la scène, les matériaux et les lumières restent les
+   mêmes ; la moyenne est l'image.
+4. **Le filtre** : tant que les images sont peu nombreuses, un filtre à
+   trous lisse le bruit entre les pixels qui partagent une surface
+   (normales et profondeurs proches), en divisant par l'albédo pour que les
+   textures restent nettes.
+
+## Le bruit
+
+Un chemin trouve la lumière par hasard : là où la lumière est difficile à
+atteindre, les premières images sont granuleuses.
+
+- **Les lumières** (`lights`) sont atteintes exprès, par un rayon d'ombre :
+  elles font peu de bruit. Une surface émissive n'est trouvée qu'en
+  rebondissant dessus : petite et brillante, elle fait des lucioles.
+  Éclairez une lampe avec une lumière à sa place (l'exemple met une lumière
+  ponctuelle sous son panneau).
+- `maxRadiance` (8) écrête les échantillons les plus brillants : moins de
+  bruit, un peu moins de lumière.
+- Plus d'images : la moyenne converge, à peu près comme la racine carrée de
+  leur nombre.
+
+Quand la caméra bouge, le recueil recommence ; le path tracer convient à
+une vue fixe, un aperçu, une image, plus qu'à un jeu.

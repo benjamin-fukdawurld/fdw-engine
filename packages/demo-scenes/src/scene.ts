@@ -1,3 +1,4 @@
+import type { RayMode } from './rays';
 import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import type { Camera } from '@fdw/engine-core';
 import type { AudioEngine } from '@fdw/engine-audio';
@@ -26,6 +27,9 @@ export interface SceneContext {
   readonly audio?: AudioEngine;
   // Shows a line of information (statistics): an overlay, a window title.
   readonly info?: (text: string) => void;
+  // How the scenes that offer it draw at first: rasterized (the default),
+  // or with rays, where the backend traces them (see RayView).
+  readonly rays?: RayMode;
 }
 
 export type SceneFactory = (

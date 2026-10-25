@@ -338,42 +338,52 @@ export const engineResources: Readonly<Record<string, LogicalBinding>> = {
     type: arrayType(BuiltinTypes.vec4f),
     access: 'read',
   },
-  rayIndices: {
+  rayGeometry: {
     kind: 'storage-buffer',
-    name: 'rayIndices',
-    type: arrayType(BuiltinTypes.u32),
-    access: 'read',
-  },
-  rayVertices: {
-    kind: 'storage-buffer',
-    name: 'rayVertices',
+    name: 'rayGeometry',
     type: arrayType(BuiltinTypes.vec4f),
     access: 'read',
   },
 };
 
 /**
- * The data of the scene traced by rays, in the storage buffers of the
- * 'frame' slot read by the functions of the hits (ray.hitPosition…), the
- * same on every backend:
+ * The data of the scene traced by rays, in two storage buffers of vec4 of
+ * the 'frame' slot read by the functions of the hits (ray.hitPosition…),
+ * the same on every backend (two buffers: with the two of a structure in
+ * software, and those of a pass, a program stays within the 8 storage
+ * buffers WebGPU guarantees):
  *
  * - rayInstances, RayInstanceVec4s vec4 per instance of the acceleration
  *   structure: the object to world matrix by rows (3 vec4: x, y, z of a
  *   point p are dot(row, vec4(p, 1))), the columns of the normal matrix
- *   (3 vec4), then the bits of four u32: the first index of its mesh in
- *   rayIndices, its material (the index of its material in the traced
- *   scene), the identifier of its object, its flags (RayInstanceFlags);
- *   then a vec4 of the application (0 by default).
- * - rayIndices: the vertices of the triangles, 3 per triangle, indices of
- *   rayVertices.
- * - rayVertices, RayVertexVec4s vec4 per vertex: the position (object
- *   space) and u, the normal and v, the tangent (xyz, w the handedness).
+ *   (3 vec4), then the bits of four u32: the vec4 of the first triangle of
+ *   its mesh in rayGeometry, its material (the index of its material in
+ *   the traced scene), the identifier of its object, its flags
+ *   (RayInstanceFlags); then a vec4 of the application (0 by default).
+ * - rayGeometry: the triangles of the meshes, a vec4 each (the bits of
+ *   the u32 offsets of the records of its three vertices, then 0), and the
+ *   records of their vertices, RayVertexVec4s vec4 each: the position
+ *   (object space) and u, the normal and v, the tangent (xyz, w the
+ *   handedness).
  *
  * @group Program layout
  */
 export const RayInstanceVec4s = 8;
 /** @see RayInstanceVec4s */
 export const RayVertexVec4s = 3;
+
+/**
+ * The bits of the masks of the instances of the traced scene: the rays of
+ * the camera and of the reflections see the visible ones; the shadow rays
+ * the shadow casters only (transparent materials and items with
+ * castShadow false are not).
+ *
+ * @group Program layout
+ */
+export const RayMasks = {
+  visible: 1,
+  shadow: 2,
+} as const;
 
 /**
  * The flags of an instance of the traced scene (the w of its 7th vec4).

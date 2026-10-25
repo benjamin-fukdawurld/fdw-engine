@@ -58,6 +58,7 @@
       "@fdw/engine-noise": ["packages/engine-noise/src/index.ts"],
       "@fdw/engine-ocean": ["packages/engine-ocean/src/index.ts"],
       "@fdw/engine-fluids": ["packages/engine-fluids/src/index.ts"],
+      "@fdw/engine-raytracing": ["packages/engine-raytracing/src/index.ts"],
       "@fdw/engine-editing": ["packages/engine-editing/src/index.ts"],
       "@fdw/engine-scene-io": ["packages/engine-scene-io/src/index.ts"],
       "@fdw/engine-skinning": ["packages/engine-skinning/src/index.ts"],

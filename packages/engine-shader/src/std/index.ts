@@ -320,6 +320,8 @@ export const stdRays = {
 } as const;
 
 export { RayMiss } from './rays';
+export { Ops } from './ops';
+export type { Value } from './ops';
 
 export { call, engineValue, swizzle } from './macros';
 export type { MacroInputs } from './macros';

@@ -80,7 +80,7 @@ export async function compileHlsl(
       }
       const output = join(dir, `${stage}.spv`);
       await runTool(dxc, [
-        ...dxcArguments(stage, entryPoint),
+        ...dxcArguments(stage, entryPoint, 'vulkan', sources.code),
         input,
         '-Fo',
         output,
@@ -119,7 +119,7 @@ export async function compileDxil(
       }
       const output = join(dir, `${stage}.txt`);
       await runTool(dxc, [
-        ...dxcArguments(stage, entryPoint, 'd3d12'),
+        ...dxcArguments(stage, entryPoint, 'd3d12', sources.code),
         input,
         '-Fc',
         output,

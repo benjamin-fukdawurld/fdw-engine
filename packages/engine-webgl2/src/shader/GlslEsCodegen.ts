@@ -296,6 +296,25 @@ function emitInstructions(
       case 'array-length':
         expression = `${arg(instruction, 0)}Length()`;
         break;
+      case 'bitcast': {
+        // From and to the scalar kind of the argument and of the result.
+        const from = typeOf(instruction.args[0]);
+        const scalarOf = (t: ShaderType) =>
+          t.kind === 'scalar' || t.kind === 'vector' ? t.scalar : 'f32';
+        const to = scalarOf(type);
+        const source = scalarOf(from);
+        expression =
+          source === to
+            ? arg(instruction, 0)
+            : source === 'f32'
+              ? `${to === 'u32' ? 'floatBitsToUint' : 'floatBitsToInt'}(${arg(instruction, 0)})`
+              : to === 'f32'
+                ? `${source === 'u32' ? 'uintBitsToFloat' : 'intBitsToFloat'}(${arg(instruction, 0)})`
+                : `${glslType(type)}(${arg(instruction, 0)})`;
+        break;
+      }
+      case 'ray-query':
+        throw new Error('WebGL2 traces no rays (rayQuery capability)');
       case 'constant':
         expression = literal(type, op.value);
         break;
@@ -822,6 +841,9 @@ export class GlslEsCodegen implements ShaderCodegen {
             write.resource,
           )}Length()${
             write.condition !== undefined ? ` && ${value(write.condition)}` : ''
+          }${
+            // The threads out of the guard write nothing.
+            compute.active ? ` && ${value(compute.active.value)}` : ''
           };`,
           ...placement,
           `  c_value = ${texel};`,

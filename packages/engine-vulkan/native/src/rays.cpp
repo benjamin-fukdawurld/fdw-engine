@@ -380,11 +380,9 @@ int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
     target.instanceCustomIndex = 0;
     target.mask = instance.mask & 0xff;
     target.instanceShaderBindingTableRecordOffset = 0;
-    // Both faces, opaque: the hits report the face they saw. The triangles
-    // of the engine are counterclockwise from their front, as in the
-    // rasterization, the opposite of the default of the ray tracing.
-    target.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR |
-                   VK_GEOMETRY_INSTANCE_TRIANGLE_FLIP_FACING_BIT_KHR;
+    // Both faces: the hits report the face they saw (counterclockwise from
+    // the front, as in the rasterization).
+    target.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     target.accelerationStructureReference = bottom->second->address;
   }
   int replaced = 0;

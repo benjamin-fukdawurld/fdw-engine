@@ -9,8 +9,8 @@
 /** The identifiers of the buffers of an acceleration structure binding. */
 export interface AccelerationStructureBuffers {
   readonly top: string;
-  readonly nodes: string;
-  readonly triangles: string;
+  // The nodes and the triangles of the bottom levels: vec4 offsets.
+  readonly bottom: string;
 }
 
 /** The name of the function tracing rays against a binding. */
@@ -27,7 +27,7 @@ const StackSize = 48;
  */
 export function softwareRayFunctions(
   binding: string,
-  { top, nodes, triangles }: AccelerationStructureBuffers,
+  { top, bottom }: AccelerationStructureBuffers,
 ): string {
   const p = `fdw_${binding}`;
   return `// The rays of "${binding}": a BVH traversed in software.
@@ -49,14 +49,14 @@ fn ${p}_inverse(direction: vec3<f32>) -> vec3<f32> {
   return 1.0 / safe;
 }
 
-// Tests the triangles [first, first + count) of the pool: a closer hit
+// Tests the count triangles from the vec4 first of the pool: a closer hit
 // updates tBest and best. Returns whether one was found.
 fn ${p}_triangles(origin: vec3<f32>, direction: vec3<f32>, tMin: f32, first: u32, count: u32, instance: u32, tBest: ptr<function, f32>, best: ptr<function, vec4<u32>>) -> bool {
   var found = false;
-  for (var i = first; i < first + count; i = i + 1u) {
-    let v0 = ${triangles}[i * 3u];
-    let e1 = ${triangles}[i * 3u + 1u].xyz;
-    let e2 = ${triangles}[i * 3u + 2u].xyz;
+  for (var i = first; i < first + count * 3u; i = i + 3u) {
+    let v0 = ${bottom}[i];
+    let e1 = ${bottom}[i + 1u].xyz;
+    let e2 = ${bottom}[i + 2u].xyz;
     let p = cross(direction, e2);
     let det = dot(e1, p);
     if (det == 0.0) {
@@ -89,10 +89,10 @@ fn ${p}_bottom(origin: vec3<f32>, direction: vec3<f32>, tMin: f32, root: vec2<u3
   var size = 0u;
   var node = root.x;
   loop {
-    let a0 = ${nodes}[node * 4u];
-    let a1 = ${nodes}[node * 4u + 1u];
-    let b0 = ${nodes}[node * 4u + 2u];
-    let b1 = ${nodes}[node * 4u + 3u];
+    let a0 = ${bottom}[node];
+    let a1 = ${bottom}[node + 1u];
+    let b0 = ${bottom}[node + 2u];
+    let b1 = ${bottom}[node + 3u];
     var tLeft = ${p}_box(a0.xyz, a1.xyz, origin, inverse, tMin, *tBest);
     var tRight = ${p}_box(b0.xyz, b1.xyz, origin, inverse, tMin, *tBest);
     let leftCount = bitcast<u32>(a1.w);

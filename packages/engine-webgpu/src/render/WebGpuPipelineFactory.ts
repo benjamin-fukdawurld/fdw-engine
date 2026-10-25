@@ -55,7 +55,7 @@ export class WebGpuBindGroup implements GpuBindGroup {
 function layoutEntries(binding: PhysicalBinding): GPUBindGroupLayoutEntry[] {
   if (binding.resource.kind === 'acceleration-structure') {
     // The buffers of the BVH (see SoftwareTopLevel).
-    return [0, 1, 2].map((offset) => ({
+    return [0, 1].map((offset) => ({
       binding: binding.binding + offset,
       visibility:
         GPUShaderStage.VERTEX |
@@ -109,7 +109,7 @@ function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
       throw new Error('An object table has two entries: see layoutEntries');
     case 'acceleration-structure':
       throw new Error(
-        'An acceleration structure has three entries: see layoutEntries',
+        'An acceleration structure has two entries: see layoutEntries',
       );
     case 'storage-buffer':
       return resource.access === 'read-write'

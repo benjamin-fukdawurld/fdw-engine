@@ -27,6 +27,7 @@
     "@fdw/engine-ocean": "0.0.1",
     "@fdw/engine-physics": "0.0.1",
     "@fdw/engine-physics-rapier": "0.0.1",
+    "@fdw/engine-raytracing": "0.0.1",
     "@fdw/engine-resources": "0.0.1",
     "@fdw/engine-resources-web": "0.0.1",
     "@fdw/engine-scene": "0.0.1",

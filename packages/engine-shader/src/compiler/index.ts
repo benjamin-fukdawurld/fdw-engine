@@ -4,3 +4,4 @@ export * from './compile';
 export { hashString } from './hash';
 export type { SurfaceOutput } from './lowering';
 export { surfaceOutputType } from './lowering';
+export { HitAttributes, HitResources, RaySurfaceVec4s } from './hit';

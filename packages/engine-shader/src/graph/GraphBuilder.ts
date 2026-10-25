@@ -541,8 +541,7 @@ export class GraphBuilder {
       | 'fog.height'
       | 'scene'
       | 'rayInstances'
-      | 'rayIndices'
-      | 'rayVertices',
+      | 'rayGeometry',
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }

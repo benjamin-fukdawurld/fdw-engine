@@ -54,6 +54,9 @@ const examples: Record<string, string> = {
   smoke: 'tutorials/smoke/',
   liquid: 'tutorials/liquid/',
   splash: 'tutorials/liquid/',
+  'ray-shadows': 'tutorials/ray-traced-shadows/',
+  'ray-reflections': 'tutorials/ray-reflections/',
+  'path-tracing': 'tutorials/path-tracing/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -75,6 +78,10 @@ const framesOf: Record<string, number> = {
   smoke: 60,
   liquid: 20,
   splash: 20,
+  // The path tracer: frames gathered.
+  'path-tracing': 30,
+  // The rays of the reflections, slow on SwiftShader: the same image.
+  'ray-reflections': 3,
 };
 // Longer for the examples loading many files.
 const timeouts: Record<string, number> = {
@@ -88,6 +95,10 @@ const timeouts: Record<string, number> = {
   smoke: 240_000,
   liquid: 120_000,
   splash: 120_000,
+  // The rays traversed in WGSL, on SwiftShader.
+  'ray-shadows': 120_000,
+  'ray-reflections': 300_000,
+  'path-tracing': 240_000,
 };
 
 for (const [name, page] of Object.entries(examples)) {

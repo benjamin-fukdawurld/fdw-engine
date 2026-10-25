@@ -1,0 +1,78 @@
+---
+title: Path tracing
+description: The whole image by rays — from the camera, bounce after bounce, the light of the lights, of the emissive surfaces and of the sky gathered; the frames added up, the noise filtered.
+sidebar:
+  order: 44
+---
+
+import Example from '../../../components/Example.astro';
+
+The rasterization lights each point from the lights alone, plus a flat
+ambient light. Light bounces, though: the red wall tints the floor, the
+ceiling lit by the floor lights the room. A **path tracer** follows the
+light backwards: from the camera, through each pixel, bouncing off the
+surfaces until it finds a light.
+
+<Example name="path-tracing" />
+
+The image starts grainy and clears up as the frames add up. Click the
+canvas to compare with the rasterization of the same scene.
+
+## The path tracer
+
+```ts
+import { PathTracer, RayScene } from '@fdw/engine-raytracing';
+
+const tracer = new PathTracer(renderer, new RayScene(backend), {
+  bounces: 4,
+  sky: { zenith, horizon, ground }, // what the rays lost see
+});
+
+onFrame((time) => {
+  tracer.scene.update({ items });
+  tracer.render({ camera, surface, lights: [light], time });
+});
+```
+
+Same scene, same materials as the rasterization: a material compiled for
+the points hit by rays gives the parameters of the BSDF of the `pbr`
+model (base color, metalness, roughness, normal, emission); `unlit`
+materials are light sources (their color is their emission).
+
+## A frame
+
+All the pixels at once, in waves of compute passes:
+
+1. **The rays of the camera**, through a random point of each pixel (the
+   antialiasing comes with the frames).
+2. For each bounce: **trace** the rays (the closest hit); **the surfaces**
+   hit, one dispatch per material of the scene; then **the bounce**: the
+   emission of the surface, the light of one light chosen at random (a
+   shadow ray towards it), and the next direction, sampled from the BSDF
+   (a diffuse or a specular lobe, the weight of the path adjusted by the
+   density). After two bounces, the paths that carry little light end at
+   random (the Russian roulette). The masked and blended pixels let the
+   ray go through.
+3. **The accumulation**: the frame added to the sum of those before, while
+   the camera, the scene, the materials and the lights stay; the average
+   is the image.
+4. **The filter**: while the frames are few, an à-trous filter smooths the
+   noise across the pixels that share a surface (close normals and
+   depths), dividing by the albedo so that the textures stay sharp.
+
+## The noise
+
+A path finds the light by chance: where the light is hard to reach, the
+first frames are grainy.
+
+- **Lights** (`lights`) are reached on purpose, by a shadow ray: they make
+  little noise. An emissive surface is only found by bouncing into it: a
+  small and bright one makes fireflies. Light a lamp with a light where it
+  is (the example puts a point light under its panel).
+- `maxRadiance` (8) clamps the brightest samples: less noise, a little
+  less light.
+- More frames: the average converges, about the square root of their
+  number.
+
+When the camera moves, the gathering starts again; the path tracer suits a
+still view, a preview, a picture, more than a game.

@@ -10,9 +10,9 @@ import { LogicalBinding, ShaderType, typeToString } from '@fdw/engine-shader';
 
 /**
  * The binding numbers of an acceleration structure: the top level, the
- * nodes and the triangles of the bottom levels (see SoftwareTopLevel).
+ * bottom levels (see SoftwareTopLevel).
  */
-export const AccelerationStructureBindings = 3;
+export const AccelerationStructureBindings = 2;
 
 const roundUp = (value: number, align: number) =>
   Math.ceil(value / align) * align;
@@ -194,7 +194,7 @@ function writeUniform(
 // storage arrays are aligned like in the storage address space: a vec3 takes
 // 16 bytes, but scalars and vec2 are not rounded up to 16 as in uniforms.
 // An object table takes two binding numbers (rows, instances), an
-// acceleration structure three (its BVH in storage buffers, see
+// acceleration structure two (its BVH in storage buffers, see
 // SoftwareTopLevel).
 export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
   resolve(layout): PhysicalProgramLayout {

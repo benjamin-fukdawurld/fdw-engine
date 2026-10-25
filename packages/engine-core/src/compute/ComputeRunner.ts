@@ -21,6 +21,10 @@ export interface ComputeDispatch {
   readonly workgroups:
     | readonly [number, number?, number?]
     | { readonly buffer: GpuBuffer; readonly offset?: number };
+  // The dispatches of a submission binding the same resources share their
+  // uniform values; those of different owners do not (the steps of a loop,
+  // the materials of a graph, each with its own uniforms).
+  readonly owner?: object;
 }
 
 export interface ComputeRunnerOptions {
@@ -81,7 +85,7 @@ export class ComputeRunner {
   record(
     pass: GpuComputePassEncoder,
     program: CompiledProgram,
-    { values = {}, workgroups }: ComputeDispatch,
+    { values = {}, workgroups, owner }: ComputeDispatch,
   ): void {
     const { pipelines } = this.backend;
     let pipeline = this._pipelines.get(program.programKey);
@@ -91,7 +95,10 @@ export class ComputeRunner {
     }
     pass.setPipeline(pipeline);
     for (const group of pipelines.resolveLayout(program).groups) {
-      pass.setBindGroup(group.index, this.bindGroup(program, group, values));
+      pass.setBindGroup(
+        group.index,
+        this.bindGroup(program, group, values, owner),
+      );
     }
     if (Array.isArray(workgroups)) {
       const [x, y = 1, z = 1] = workgroups as readonly number[];
@@ -127,9 +134,12 @@ export class ComputeRunner {
     program: CompiledProgram,
     group: PhysicalBindGroup,
     values: Readonly<Record<string, MaterialValue>>,
+    owner?: object,
   ): GpuBindGroup {
     const resources: GpuBindGroupEntry['resource'][] = [];
-    let key = `${program.programKey}:${group.index}`;
+    let key = `${program.programKey}:${group.index}${
+      owner ? `@${this.id(owner)}` : ''
+    }`;
     for (const binding of group.bindings) {
       if (binding.block) {
         continue;
@@ -142,7 +152,13 @@ export class ComputeRunner {
       }
       const resource = value as GpuBindGroupEntry['resource'];
       resources.push(resource);
-      key += `:${this.id(resource)}`;
+      // A structure whose memory was replaced binds anew.
+      const version = (resource as { version?: unknown }).version;
+      key += `:${this.id(resource)}${
+        typeof version === 'number' && 'instanceCount' in resource
+          ? `v${version}`
+          : ''
+      }`;
     }
 
     let cached = this._groups.get(key);

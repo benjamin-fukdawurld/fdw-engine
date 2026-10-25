@@ -73,6 +73,9 @@
       "path": "../../packages/engine-fluids/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-raytracing/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-editing/tsconfig.lib.json"
     },
     {

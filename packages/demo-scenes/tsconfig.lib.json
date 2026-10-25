@@ -7,6 +7,9 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
+      "path": "../engine-raytracing/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-tessellation/tsconfig.lib.json"
     },
     {
