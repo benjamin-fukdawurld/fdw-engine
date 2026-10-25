@@ -10,6 +10,7 @@
     "@fdw/engine-behavior": "0.0.1",
     "@fdw/engine-camera": "0.0.1",
     "@fdw/engine-core": "0.0.1",
+    "@fdw/engine-fluids": "0.0.1",
     "@fdw/engine-geometry": "0.0.1",
     "@fdw/engine-graph-editing": "0.0.1",
     "@fdw/engine-input": "0.0.1",

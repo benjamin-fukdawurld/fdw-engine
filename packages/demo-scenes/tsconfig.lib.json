@@ -46,6 +46,9 @@
       "path": "../engine-geometry/tsconfig.lib.json"
     },
     {
+      "path": "../engine-fluids/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-core/tsconfig.lib.json"
     },
     {

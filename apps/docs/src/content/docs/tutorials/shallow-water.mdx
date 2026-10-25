@@ -1,0 +1,198 @@
+---
+title: Water on a ground
+description: Ponds, streams and ripples — water simulated on the GPU as a field of heights over a ground, its columns exchanging water through virtual pipes, drawn with the material of the sea, carrying what floats on it.
+sidebar:
+  order: 39
+---
+
+import Example from '../../../components/Example.astro';
+
+`@fdw/engine-fluids` simulates fluids on the GPU, in compute graphs, on
+every backend. It has three methods, each for its kind of fluid:
+
+- **a field of heights** (this tutorial): the water of a pond, a river, a
+  pool, over a ground of any shape;
+- **a grid of cells**: [smoke and fire](/fdw-engine/tutorials/smoke/);
+- **particles**: [water that splashes](/fdw-engine/tutorials/liquid/).
+
+The field of heights is the cheapest: one value of water per column, a few
+thousand columns. It cannot make water fall over itself (a breaking wave, a
+waterfall), but it fills basins, runs down slopes, overflows, and carries
+ripples.
+
+<Example name="shallow-water" />
+
+Click to drop water; the spring on the island runs down into the pool.
+
+## A field of heights
+
+```ts
+import { ShallowWater } from '@fdw/engine-fluids';
+
+const water = new ShallowWater(backend, {
+  resolution: [128, 128], // cells along x and z
+  cell: 0.125, // m
+  origin: { x: -8, z: -8 }, // the corner of the grid
+  ground: (x, z) => groundAt(x, z), // or a Float32Array, or a number
+  level: 1.2, // the water at the start, where the ground is lower
+  maxDepth: 1.5,
+});
+
+// Each frame:
+water.update(dt);
+```
+
+Each cell is a column of water standing on its ground. Its state is in two
+storage buffers of `vec4`:
+
+- **the cells**: the depth of water, the occupancy (the bodies in the
+  column, see below), the velocity of the water (x and z);
+- **the fluxes**: the water leaving toward each of the four neighbors, in
+  m³/s.
+
+| Option       | Default       | What it does                                                                  |
+| ------------ | ------------- | ----------------------------------------------------------------------------- |
+| `resolution` | —             | The cells along x and z                                                       |
+| `cell`       | 0.25          | The side of a cell, in meters                                                 |
+| `origin`     | centered on 0 | The corner of the grid in the world                                           |
+| `ground`     | 0             | The height of the ground: per cell, a function of the position, or one height |
+| `level`      | none          | Fills the cells up to this height at the start (and at `reset()`)             |
+| `edges`      | `'closed'`    | `closed`: walls around the grid; `open`: the water leaves by the edges        |
+| `damping`    | 0.2           | How fast the waves fade, per second                                           |
+| `maxDepth`   | 2             | The deepest water expected: the steps are short enough for its waves          |
+| `stiffness`  | 6             | How much of the water a body pushes aside: k / (k + 1)                        |
+| `readback`   | `true`        | Reads the water back for the physics, a frame late                            |
+
+## Pipes between the cells
+
+The water moves through **virtual pipes** between neighboring cells
+(O'Brien and Hodgins, Mei et al.). Each step is two dispatches:
+
+1. **The fluxes.** The surface of a cell is H = ground + depth (+ the
+   bodies). The flux toward a neighbor grows with the difference of their
+   surfaces, dt · g · cell · (H − H<sub>neighbor</sub>), and never goes
+   negative. Then all the fluxes of a cell are scaled down so that it gives
+   no more water than it has: a cell can dry, never go below zero.
+2. **The depths.** Each cell gains what its neighbors send it and loses
+   what it sends: d += dt · (in − out) / cell². The velocity of the water
+   comes from the fluxes through the cell.
+
+Nothing is created nor lost: the water of the grid is the same from a step
+to the next (a test checks it), but for the sources and the open edges.
+
+**The steps.** The waves of shallow water run at √(g d): over 1.5 m of
+water, 3.8 m/s. A step must not let them cross more than a cell:
+`update(dt)` splits the frame into as many steps as `maxStep` (half the
+time a wave takes to cross a cell at `maxDepth`) asks. With cells of
+12.5 cm on 1.5 m of water, that is 2 steps a frame at 60 Hz.
+
+The GPU and the CPU run the same steps (`stepShallowWater`): the rendering
+tests check that they agree, on every backend.
+
+## Sources and splashes
+
+```ts
+// A spring: 0.15 m³/s over a disc of 40 cm.
+const spring = water.addSource({ x: -2.5, z: -2, radius: 0.4, rate: 0.15 });
+// A drain: a negative rate.
+water.addSource({ x: 3.5, z: -3.5, radius: 0.5, rate: -0.26 });
+spring.remove();
+
+// 150 liters dropped at once: a splash, ripples.
+water.splash(x, z, 0.4, 0.15);
+```
+
+A source pours its rate over the cells whose centers are in its disc, the
+same depth in each: the volume is exact whatever the size of the cells.
+
+## Drawing the water
+
+```ts
+import { WaterSurface } from '@fdw/engine-fluids';
+import { createSky, OceanRenderer } from '@fdw/engine-ocean';
+
+const sky = createSky(backend);
+const surface = new WaterSurface(water, { environment: sky }).setSun(light);
+const oceanRenderer = new OceanRenderer(new Renderer(backend));
+
+// Each frame, after water.update(dt):
+oceanRenderer.render({
+  ocean: surface,
+  items: [terrain],
+  camera,
+  surface: canvas,
+});
+```
+
+After its steps, `update` writes a third buffer for the rendering: the
+height of the surface, its slopes and the speed of the water in each cell.
+The `WaterSurface` is a grid over the cells, moved up to the water by the
+**material of the sea** of [the ocean](/fdw-engine/tutorials/ocean/): the
+same reflection of the sky, the same sun, the same ground seen through the
+water and absorbed with its depth. The `OceanRenderer` draws any such
+`WaterItem` over the scene drawn first.
+
+- **The shores**: the dry cells are discarded (the material is masked), the
+  edge of the water halfway between a wet center and a dry one; their
+  vertices go a little under the ground, so that the water cuts the terrain
+  instead of flickering on it.
+- **The foam**: where the water runs fast (from `foamSpeed`, 2 m/s), the
+  material sees squeezed waves, and foams. The stream of the basin below is
+  white where it runs down the hill.
+- **The look**: fresh water by default (`freshWaterLook`), clearer than the
+  sea; `setLook` takes any uniform of `WaterLook`.
+
+## What floats on it
+
+<Example name="basin" />
+
+Drag to turn around, the wheel to zoom, WASD to move; **Space** drops a
+crate, **B** a ball, **E** a splash, **F** stops or starts the spring,
+**R** starts again.
+
+Bodies and water act on each other, both ways:
+
+```ts
+import { FluidBodies } from '@fdw/engine-fluids';
+import { Buoyancy } from '@fdw/engine-ocean';
+
+// The water feels the bodies: their shapes in a storage buffer.
+const bodies = new FluidBodies(backend);
+bodies.add(crate); // a body of @fdw/engine-physics: its box collider
+
+// The bodies feel the water: Archimedes, and the current.
+const buoyancy = new Buoyancy(water, { density: 1000 });
+buoyancy.add(crate, {
+  points: boxPoints(half),
+  volume: 8 * half.x * half.y * half.z,
+});
+buoyancy.install(scheduler);
+
+// Each frame:
+bodies.update(); // where the bodies are, how they move
+water.update(dt, bodies);
+```
+
+**The bodies push the water.** `FluidBodies` writes the spheres and boxes
+of the bodies (their colliders, or a shape given to `add`) into a storage
+buffer, six `vec4` each, that the graphs of all the fluids read. Here, each
+column measures the part of each body under its water: that **occupancy**
+raises the surface of the column, and the fluxes push the water away
+toward the neighbors. A crate dropped in the pond makes a wave; a floating
+one pushes aside the water it displaces. Not all of it: a column whose
+surface would follow the body exactly has no stable state (it rings like a
+U-tube); `stiffness` (6) pushes 6 / 7 of it aside, stably.
+
+**The water carries the bodies.** `heightAt(x, z)` and `velocityAt(x, z)`
+read the cells back from the GPU, one frame late. The `Buoyancy` of the
+ocean takes anything with `heightAt`; with `velocityAt`, the water also
+drags each wet point **toward its velocity**: a crate in the stream goes
+down with it.
+
+## Next
+
+- [Smoke and fire](/fdw-engine/tutorials/smoke/): a grid of cells.
+- [A liquid of particles](/fdw-engine/tutorials/liquid/): water that
+  splashes.
+- [The fluids guide](/fdw-engine/guides/fluids/): the API, the costs, the
+  limits.

@@ -1,0 +1,158 @@
+---
+title: Un liquide de particules
+description: De l'eau qui éclabousse — un liquide de particules sur le GPU (position-based fluids), ses voisins trouvés par un tri sur le GPU, dessiné en espace écran comme une surface, poussé par les corps et qui les porte.
+sidebar:
+  order: 41
+---
+
+import Example from '../../../../components/Example.astro';
+
+Un [champ de hauteurs](/fdw-engine/fr/tutorials/shallow-water/) ne peut
+pas éclabousser : il a une hauteur d'eau par colonne. Pour de l'eau qui
+tombe, se brise et éclabousse, `ParticleFluid` simule **des milliers de
+particules** sur le GPU, chacune un petit volume d'eau qui garde ses
+distances avec ses voisines.
+
+<Example name="liquid" />
+
+Cliquez pour rompre le barrage à nouveau.
+
+## Les particules
+
+```ts
+import { ParticleFluid } from '@fdw/engine-fluids';
+
+const liquid = new ParticleFluid(backend, {
+  count: 16384, // une puissance de deux : le plus qu'il en tient
+  radius: 0.02, // m : au repos, les particules sont à 2 rayons l'une de l'autre
+  bounds: { min: [-1.2, 0, -0.5], max: [1.2, 1.5, 0.5] },
+});
+liquid.addBlock([-1.2, 0, -0.5], [-0.3, 0.9, 0.5]); // 12 100 particules
+
+// À chaque image :
+liquid.update(dt);
+```
+
+La boîte `bounds` retient les particules (ses parois). `add(positions,
+velocity)` ajoute des particules n'importe où (un filet versé),
+`clear()` les retire toutes.
+
+| Option       | Défaut | Ce qu'elle fait                                         |
+| ------------ | ------ | ------------------------------------------------------- |
+| `count`      | 16384  | Les particules qu'il peut tenir (une puissance de deux) |
+| `radius`     | 0,05   | Le rayon d'une particule, en mètres                     |
+| `bounds`     | —      | La boîte des particules                                 |
+| `substeps`   | 2      | Les pas d'une image                                     |
+| `iterations` | 4      | Les itérations des contraintes d'un pas                 |
+| `viscosity`  | 0,02   | Combien chaque particule suit ses voisines (XSPH)       |
+| `tensile`    | 0,03   | La pression artificielle contre les grumeaux            |
+| `maxSpeed`   | 8      | La vitesse la plus grande d'une particule, en m/s       |
+
+## Un pas
+
+Le solveur est **basé sur les positions** (Macklin et Müller, _Position
+Based Fluids_) : au lieu de pressions et de forces, qui demandent des pas
+minuscules pour rester stables, il déplace les particules jusqu'à ce que la
+densité soit la même partout.
+
+1. **La prédiction** : chaque particule tombe pendant dt, depuis sa
+   vitesse.
+2. **Le tri** : la clé de chaque particule est sa cellule (des cellules de
+   4 rayons, la portée d'une particule) ; un **tri bitonique** sur le GPU
+   range les particules par clé. Puis le début et la fin de chaque cellule
+   dans la liste triée : les voisines d'une particule sont celles des 27
+   cellules autour d'elle, contiguës en mémoire. Un tri bitonique n'a pas
+   besoin d'atomiques (que n'ont pas les compute graphs, ni WebGL2) :
+   chacune de ses étapes est un dispatch où chaque élément garde le plus
+   petit ou le plus grand de lui-même et de son partenaire. Pour 16 384
+   particules : 105 dispatchs.
+3. **Les contraintes** (4 itérations) : la densité de chaque particule (le
+   noyau sommé sur ses voisines), son écart à la densité au repos, et
+   comment la particule et ses voisines doivent bouger pour l'annuler ;
+   puis les déplacements. Un peu de pression artificielle (`tensile`)
+   empêche les particules de s'agglutiner en surface. Les parois et les
+   corps repoussent les particules.
+4. **Les vitesses** : du mouvement du pas, lissées par une viscosité
+   (chaque particule tirée vers la moyenne de ses voisines).
+
+Le CPU fait le même pas (`stepParticles`), dans le même ordre : les tests de
+rendu vérifient que les deux s'accordent sur tous les backends.
+
+**La stabilité.** Une éclaboussure contre une paroi tasse des particules
+entre la paroi et l'eau qui arrive. Trop peu d'itérations, ou trop de
+pression artificielle, et elles explosent : 4 itérations et un `tensile` de
+0,03 gardent calme un barrage qui se rompt dans une cuve de 2,4 m, à 2 pas de
+1/120 s par image.
+
+## Dessiner un liquide
+
+```ts
+import { ParticleFluidRenderer } from '@fdw/engine-fluids';
+
+const liquidRenderer = new ParticleFluidRenderer(renderer, {
+  environment: sky,
+}).setSun(light);
+
+// À chaque image, après liquid.update(dt) :
+liquidRenderer.render({ liquid, items, lights: [light], camera, surface });
+```
+
+Des particules dessinées en sphères ont l'air de billes. Le renderer
+dessine une surface **en espace écran** (van der Laan, Green et Sainz) :
+
+1. **La profondeur du liquide** : chaque particule un carré tourné vers la
+   caméra, ses pixels hors du cercle écartés, la profondeur de l'avant de sa
+   sphère écrite par pixel ; testée contre la profondeur de la scène ;
+2. **Le lissage** : un filtre bilatéral de cette profondeur, en travers puis
+   en hauteur, trois fois ; il moyenne les voisins à une profondeur proche
+   sur environ une particule à l'écran : les sphères se fondent en une
+   surface, les bords restent ;
+3. **La lumière** : les normales depuis les profondeurs autour, puis l'eau
+   de la mer : le ciel reflété selon Fresnel, le soleil, la scène derrière
+   déviée et absorbée selon l'épaisseur de liquide (la profondeur de la
+   scène, moins celle du liquide).
+
+L'aspect est celui de l'eau de la mer (`WaterLook`) : l'exemple la teinte
+de bleu-vert avec une `absorption` plus forte.
+
+## Des corps dans le liquide
+
+<Example name="splash" />
+
+Faites glisser pour tourner, la molette pour zoomer ; **Espace** lâche une
+caisse, **P** verse de l'eau, **R** rompt de nouveau le barrage.
+
+```ts
+const bodies = new FluidBodies(backend);
+bodies.add(crate);
+const buoyancy = new Buoyancy(liquid, { density: 1000 });
+buoyancy.add(crate, { points: boxPoints(half), volume });
+
+// À chaque image :
+bodies.update();
+liquid.update(dt, bodies);
+```
+
+**Les corps poussent les particules** : à chaque pas, une particule dans un
+corps (une sphère ou une boîte de `FluidBodies`) en est sortie ; sa vitesse
+suit du déplacement. La pagaie du premier exemple balaie l'eau de cette
+façon.
+
+**Le liquide porte les corps.** Après chaque mise à jour, un dispatch par
+colonne de cellules trouve la surface du liquide au-dessus (depuis le haut,
+la première cellule qui a quelques particules, et la plus haute d'entre
+elles) et sa vitesse ; relues une image plus tard, ce sont `heightAt` et
+`velocityAt` pour la `Buoyancy` de l'océan : les caisses flottent, portées
+par le courant.
+
+## En WebGL2
+
+WebGL2 n'a pas de compute shaders : les compute graphs y tournent en
+dessins dans des textures ([le guide du calcul](/fdw-engine/fr/guides/compute/)).
+Les 120 dispatchs d'un pas de particules y coûtent bien plus : les exemples
+utilisent 4 096 particules de 3 cm en WebGL2, 16 384 de 2 cm en WebGPU.
+
+## La suite
+
+- [Le guide des fluides](/fdw-engine/fr/guides/fluids/) : quelle méthode pour
+  quel fluide, les coûts, les limites.

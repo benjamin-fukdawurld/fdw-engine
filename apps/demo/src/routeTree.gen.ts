@@ -18,6 +18,8 @@ import { Route as TpsRouteRouteImport } from './routes/tps/route'
 import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
 import { Route as TerrainRouteRouteImport } from './routes/terrain/route'
 import { Route as SsrRouteRouteImport } from './routes/ssr/route'
+import { Route as SplashRouteRouteImport } from './routes/splash/route'
+import { Route as SmokeRouteRouteImport } from './routes/smoke/route'
 import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
 import { Route as PhysicsRouteRouteImport } from './routes/physics/route'
 import { Route as PbrRouteRouteImport } from './routes/pbr/route'
@@ -35,6 +37,7 @@ import { Route as ColoredTriangleRouteRouteImport } from './routes/colored-trian
 import { Route as CoastRouteRouteImport } from './routes/coast/route'
 import { Route as CityRouteRouteImport } from './routes/city/route'
 import { Route as CameraRouteRouteImport } from './routes/camera/route'
+import { Route as BasinRouteRouteImport } from './routes/basin/route'
 import { Route as IndexRouteImport } from './routes/index'
 
 const UniformRouteRoute = UniformRouteRouteImport.update({
@@ -80,6 +83,16 @@ const TerrainRouteRoute = TerrainRouteRouteImport.update({
 const SsrRouteRoute = SsrRouteRouteImport.update({
   id: '/ssr',
   path: '/ssr',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SplashRouteRoute = SplashRouteRouteImport.update({
+  id: '/splash',
+  path: '/splash',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SmokeRouteRoute = SmokeRouteRouteImport.update({
+  id: '/smoke',
+  path: '/smoke',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShadowsRouteRoute = ShadowsRouteRouteImport.update({
@@ -168,6 +181,11 @@ const CameraRouteRoute = CameraRouteRouteImport.update({
   path: '/camera',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BasinRouteRoute = BasinRouteRouteImport.update({
+  id: '/basin',
+  path: '/basin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -176,6 +194,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/basin': typeof BasinRouteRoute
   '/camera': typeof CameraRouteRoute
   '/city': typeof CityRouteRoute
   '/coast': typeof CoastRouteRoute
@@ -193,6 +212,8 @@ export interface FileRoutesByFullPath {
   '/pbr': typeof PbrRouteRoute
   '/physics': typeof PhysicsRouteRoute
   '/shadows': typeof ShadowsRouteRoute
+  '/smoke': typeof SmokeRouteRoute
+  '/splash': typeof SplashRouteRoute
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
@@ -205,6 +226,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/basin': typeof BasinRouteRoute
   '/camera': typeof CameraRouteRoute
   '/city': typeof CityRouteRoute
   '/coast': typeof CoastRouteRoute
@@ -222,6 +244,8 @@ export interface FileRoutesByTo {
   '/pbr': typeof PbrRouteRoute
   '/physics': typeof PhysicsRouteRoute
   '/shadows': typeof ShadowsRouteRoute
+  '/smoke': typeof SmokeRouteRoute
+  '/splash': typeof SplashRouteRoute
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
@@ -235,6 +259,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/basin': typeof BasinRouteRoute
   '/camera': typeof CameraRouteRoute
   '/city': typeof CityRouteRoute
   '/coast': typeof CoastRouteRoute
@@ -252,6 +277,8 @@ export interface FileRoutesById {
   '/pbr': typeof PbrRouteRoute
   '/physics': typeof PhysicsRouteRoute
   '/shadows': typeof ShadowsRouteRoute
+  '/smoke': typeof SmokeRouteRoute
+  '/splash': typeof SplashRouteRoute
   '/ssr': typeof SsrRouteRoute
   '/terrain': typeof TerrainRouteRoute
   '/textured-triangle': typeof TexturedTriangleRouteRoute
@@ -266,6 +293,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/basin'
     | '/camera'
     | '/city'
     | '/coast'
@@ -283,6 +311,8 @@ export interface FileRouteTypes {
     | '/pbr'
     | '/physics'
     | '/shadows'
+    | '/smoke'
+    | '/splash'
     | '/ssr'
     | '/terrain'
     | '/textured-triangle'
@@ -295,6 +325,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/basin'
     | '/camera'
     | '/city'
     | '/coast'
@@ -312,6 +343,8 @@ export interface FileRouteTypes {
     | '/pbr'
     | '/physics'
     | '/shadows'
+    | '/smoke'
+    | '/splash'
     | '/ssr'
     | '/terrain'
     | '/textured-triangle'
@@ -324,6 +357,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/basin'
     | '/camera'
     | '/city'
     | '/coast'
@@ -341,6 +375,8 @@ export interface FileRouteTypes {
     | '/pbr'
     | '/physics'
     | '/shadows'
+    | '/smoke'
+    | '/splash'
     | '/ssr'
     | '/terrain'
     | '/textured-triangle'
@@ -354,6 +390,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BasinRouteRoute: typeof BasinRouteRoute
   CameraRouteRoute: typeof CameraRouteRoute
   CityRouteRoute: typeof CityRouteRoute
   CoastRouteRoute: typeof CoastRouteRoute
@@ -371,6 +408,8 @@ export interface RootRouteChildren {
   PbrRouteRoute: typeof PbrRouteRoute
   PhysicsRouteRoute: typeof PhysicsRouteRoute
   ShadowsRouteRoute: typeof ShadowsRouteRoute
+  SmokeRouteRoute: typeof SmokeRouteRoute
+  SplashRouteRoute: typeof SplashRouteRoute
   SsrRouteRoute: typeof SsrRouteRoute
   TerrainRouteRoute: typeof TerrainRouteRoute
   TexturedTriangleRouteRoute: typeof TexturedTriangleRouteRoute
@@ -445,6 +484,20 @@ declare module '@tanstack/react-router' {
       path: '/ssr'
       fullPath: '/ssr'
       preLoaderRoute: typeof SsrRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/splash': {
+      id: '/splash'
+      path: '/splash'
+      fullPath: '/splash'
+      preLoaderRoute: typeof SplashRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/smoke': {
+      id: '/smoke'
+      path: '/smoke'
+      fullPath: '/smoke'
+      preLoaderRoute: typeof SmokeRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shadows': {
@@ -566,6 +619,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CameraRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/basin': {
+      id: '/basin'
+      path: '/basin'
+      fullPath: '/basin'
+      preLoaderRoute: typeof BasinRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -578,6 +638,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BasinRouteRoute: BasinRouteRoute,
   CameraRouteRoute: CameraRouteRoute,
   CityRouteRoute: CityRouteRoute,
   CoastRouteRoute: CoastRouteRoute,
@@ -595,6 +656,8 @@ const rootRouteChildren: RootRouteChildren = {
   PbrRouteRoute: PbrRouteRoute,
   PhysicsRouteRoute: PhysicsRouteRoute,
   ShadowsRouteRoute: ShadowsRouteRoute,
+  SmokeRouteRoute: SmokeRouteRoute,
+  SplashRouteRoute: SplashRouteRoute,
   SsrRouteRoute: SsrRouteRoute,
   TerrainRouteRoute: TerrainRouteRoute,
   TexturedTriangleRouteRoute: TexturedTriangleRouteRoute,

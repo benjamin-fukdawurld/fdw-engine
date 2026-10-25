@@ -1,0 +1,7 @@
+{
+  "name": "engine-fluids",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/engine-fluids/src",
+  "projectType": "library",
+  "tags": []
+}

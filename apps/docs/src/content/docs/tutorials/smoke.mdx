@@ -1,0 +1,197 @@
+---
+title: Smoke and fire
+description: Smoke, fire and the air that carries them, simulated on the GPU in a grid of cells (stable fluids), around obstacles, in a plane or in a volume, drawn by a march through the grid.
+sidebar:
+  order: 40
+---
+
+import Example from '../../../components/Example.astro';
+
+Smoke is a gas carried by the air: to draw it, one simulates **the air**,
+its velocity in each cell of a grid, and carries the smoke and the heat
+along. `SmokeGrid` does it on the GPU, in compute graphs, on every
+backend, after Stam's _stable fluids_: a step stays stable whatever its
+length.
+
+<Example name="smoke-2d" />
+
+Move the pointer over the canvas: the disc follows it and pushes the smoke.
+
+## A grid of cells
+
+```ts
+import { SmokeGrid } from '@fdw/engine-fluids';
+
+const smoke = new SmokeGrid(backend, {
+  resolution: [128, 192, 1], // one cell deep: a plane
+  cell: 0.02, // m
+  origin: { x: -1.28, y: 0, z: -0.01 }, // the lowest corner
+});
+smoke.addEmitter({
+  x: 0,
+  y: 0.25,
+  z: 0,
+  radius: 0.18,
+  density: 4,
+  temperature: 6,
+});
+
+// Each frame:
+smoke.update(dt);
+```
+
+The grid is **staggered** (a MAC grid, Harlow and Welch): the velocity
+across each face of the cells, the rest at their centers. The pressure that
+keeps the air from compressing then balances exactly with the flow through
+the faces, without the checkerboard a grid of centers leaves (which, among
+other things, kept the smoke from going around an obstacle).
+
+| Option         | Default                     | What it does                                                    |
+| -------------- | --------------------------- | --------------------------------------------------------------- |
+| `resolution`   | —                           | The cells along x, y, z; z = 1 for a plane                      |
+| `cell`         | 0.1                         | The side of a cell, in meters                                   |
+| `origin`       | centered, on y = 0          | The lowest corner of the grid in the world                      |
+| `open`         | all the faces but the floor | Where the smoke leaves the box (`'+y'`, `'-x'`…); others: walls |
+| `buoyancy`     | 1                           | How hard the heat lifts the air, per degree                     |
+| `weight`       | 0.05                        | How hard the smoke weighs                                       |
+| `vorticity`    | 2                           | The confinement of the swirls                                   |
+| `cooling`      | 0.8                         | How fast the heat goes, per second                              |
+| `densityDecay` | 0.05                        | How fast the smoke thins, per second                            |
+| `iterations`   | 20                          | The steps of the pressure solve                                 |
+| `extinction`   | 8                           | How much a meter of thick smoke dims the light                  |
+
+## A step
+
+`update(dt)` submits a frame in a single submission, a pass per dispatch:
+
+1. **The obstacles**: the cells in a body (see below) take its velocity.
+2. **The advection**: each face traces the velocity back over dt (a
+   midpoint step) and takes the velocity it finds there, read between the
+   faces around it; each cell does the same for the smoke and the heat.
+   Then the forces: the heat lifts (`buoyancy` × temperature), the smoke
+   weighs; the emitters pour, the smoke thins, the heat goes.
+3. **The vorticity**: the curl of the velocity, then the **confinement**,
+   a force that turns the air around the swirls that the advection blurs
+   away (Fedkiw et al.): the volutes of the smoke.
+4. **The pressure**: the divergence of each cell (the air coming in, minus
+   the air going out), then `iterations` steps of Jacobi: the pressure that
+   would cancel it. The walls and the obstacles let nothing through; the
+   open faces let the air out.
+5. **The projection**: each face loses the difference of pressure across
+   it. The air no longer compresses.
+
+The CPU runs the same frame (`stepSmoke`): the rendering tests check that
+both agree, in 3D and in a plane, on every backend.
+
+## Emitters
+
+```ts
+// A fire: smoke and heat, flickering.
+smoke.addEmitter({
+  x: 0,
+  y: 0.3,
+  z: 0,
+  radius: 0.32,
+  density: 4,
+  temperature: 6,
+  turbulence: 0.85,
+});
+// A chimney: cold smoke, blown sideways.
+smoke.addEmitter({
+  x: -0.7,
+  y: 0.6,
+  z: 0,
+  radius: 0.22,
+  density: 4,
+  temperature: 0.8,
+  velocity: { x: 1.6, y: 1.2, z: 0 },
+});
+```
+
+An emitter is a sphere, full in its inner half and fading to its surface.
+It pours `density` per second, heats up to `temperature` (above the air: 0
+is the ambient air), and with `velocity`, blows. `turbulence` makes it
+flicker: a noise rising through it takes up to that share of its smoke and
+heat, the tongues of a flame.
+
+## Obstacles
+
+```ts
+const bodies = new FluidBodies(backend);
+bodies.add(ball); // a body of the physics
+// Or a shape moved by the application:
+bodies.addShape({
+  shape: { type: 'sphere', radius: 0.22 },
+  position,
+  rotation,
+  center,
+  velocity,
+  angularVelocity,
+});
+bodies.update();
+smoke.update(dt, bodies);
+```
+
+The cells whose centers are in a body are solid, and move with it: the air
+does not cross the faces next to them, but slides along. A ball moving
+through the smoke drags it.
+
+## In a plane
+
+A grid of one cell along z is a plane: the same code in 2D, cheap enough
+for fine grids. `smokePlaneGraph(smoke.layout)` draws it on a quad, as a
+transparent material:
+
+```ts
+const material = new Material({
+  graph: smokePlaneGraph(smoke.layout),
+  renderState: { alphaMode: 'blend' },
+  values: { smokeShade: smoke.shade },
+});
+```
+
+## In a volume
+
+<Example name="smoke" />
+
+Click to switch between the fire and the chimney.
+
+```ts
+import { SmokeRenderer } from '@fdw/engine-fluids';
+
+const smokeRenderer = new SmokeRenderer(renderer);
+smokeRenderer.setSun(smoke, light);
+
+// Each frame:
+smoke.update(dt, bodies);
+smokeRenderer.render({ smoke, items, lights: [light], camera, surface });
+```
+
+The `SmokeRenderer` draws the scene first, in linear colors, with its view
+depth; then a full screen pass **marches through the grid** for each pixel:
+along the ray of the camera, from where it enters the box of the grid to
+where it leaves it or meets the scene (an obstacle inside the smoke cuts
+it), at `steps` steps (64). Each step:
+
+- reads the **shade** of the grid between the eight cells around: the
+  density, the light of the sun that reached the cell, the temperature;
+- dims what is behind by the smoke of the step (Beer-Lambert);
+- adds the light the smoke scatters toward the camera: the sun (a
+  Henyey-Greenstein phase, forward) and the sky;
+- adds the light of the fire: hot cells glow, deep red, then orange
+  (`fireColor`, `fireThreshold`).
+
+**The light in the smoke** is computed once per cell, after each update:
+a march from each cell toward the sun (`lightSteps`, 24 cells) sums the
+smoke on the way. The march of the pixels reads it: 8 reads per step
+instead of a march toward the sun at each one.
+
+The steps start at a different place for each pixel (a noise): a fine grain
+instead of bands. `addPass(graph, { smoke, color, depth })` adds the march
+to a render graph of one's own, after other passes (the water of the
+ocean, for instance).
+
+## Next
+
+- [A liquid of particles](/fdw-engine/tutorials/liquid/).
+- [The fluids guide](/fdw-engine/guides/fluids/): the costs, the limits.

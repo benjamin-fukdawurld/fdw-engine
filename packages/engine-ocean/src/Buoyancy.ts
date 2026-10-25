@@ -6,6 +6,12 @@ import type { Scheduler } from '@fdw/engine-scene';
 export interface WaterHeight {
   /** The height of the water above a point of the world (x, z). */
   heightAt(x: number, z: number): number;
+  /**
+   * The velocity of the water at (x, z), in m/s (x and z): the current of
+   * a river, the flow of a basin. The water drags the bodies against it;
+   * still without it.
+   */
+  velocityAt?(x: number, z: number, out: { x: number; z: number }): void;
 }
 
 /** How a body floats (see {@link Buoyancy.add}). */
@@ -71,6 +77,7 @@ export class Buoyancy {
   readonly density: number;
   readonly gravity: number;
   private readonly _floaters = new Map<PhysicsBody, FloaterState>();
+  private readonly _flow = { x: 0, z: 0 };
 
   constructor(water: WaterHeight, options: BuoyancyOptions = {}) {
     this.water = water;
@@ -139,6 +146,7 @@ export class Buoyancy {
       const count = floater.points.length;
       const lift = (this.density * this.gravity * floater.volume) / count;
       const drag = (floater.drag * body.mass) / count;
+      const flow = this.water.velocityAt ? this._flow : undefined;
       let wet = 0;
       for (const local of floater.points) {
         rotate(rotation, local, point);
@@ -156,9 +164,15 @@ export class Buoyancy {
         }
         wet += share;
         // The velocity of the point: v + ω × r.
-        const vx = velocity.x + spin.y * rz - spin.z * ry;
+        let vx = velocity.x + spin.y * rz - spin.z * ry;
         const vy = velocity.y + spin.z * rx - spin.x * rz;
-        const vz = velocity.z + spin.x * ry - spin.y * rx;
+        let vz = velocity.z + spin.x * ry - spin.y * rx;
+        if (flow) {
+          // Against the water, which carries the body along.
+          this.water.velocityAt?.(point.x, point.z, flow);
+          vx -= flow.x;
+          vz -= flow.z;
+        }
         force.x = -drag * share * vx;
         force.y = lift * share - drag * share * vy;
         force.z = -drag * share * vz;
