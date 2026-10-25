@@ -47,6 +47,12 @@ export interface WaveShader {
   ): WaveDerivatives;
   /** The values of the material: set once, and after each update. */
   values(): Readonly<Record<string, MaterialValue>>;
+  /**
+   * Where there is water at the still point `xz`, in the fragment stage:
+   * from 0 (dry) to 1. The pixels under 0.5 are discarded: the material
+   * needs the `mask` alpha mode. Water everywhere without it.
+   */
+  coverage?(g: GraphBuilder, xz: PortHandle): PortHandle;
 }
 
 const vec4Array = arrayType(BuiltinTypes.vec4f);

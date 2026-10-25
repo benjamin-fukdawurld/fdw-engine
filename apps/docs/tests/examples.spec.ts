@@ -48,6 +48,12 @@ const examples: Record<string, string> = {
   'custom-importer': 'tutorials/writing-an-importer/',
   ocean: 'tutorials/ocean/',
   coast: 'tutorials/floating-objects/',
+  'shallow-water': 'tutorials/shallow-water/',
+  basin: 'tutorials/shallow-water/',
+  'smoke-2d': 'tutorials/smoke/',
+  smoke: 'tutorials/smoke/',
+  liquid: 'tutorials/liquid/',
+  splash: 'tutorials/liquid/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -61,6 +67,14 @@ const frames = 10;
 const framesOf: Record<string, number> = {
   'occlusion-culling': 40,
   tps: 2,
+  // The fluids: their steps of 1/60 s a frame while the clock is stopped,
+  // the water and the smoke set in motion.
+  'shallow-water': 20,
+  basin: 20,
+  'smoke-2d': 90,
+  smoke: 60,
+  liquid: 20,
+  splash: 20,
 };
 // Longer for the examples loading many files.
 const timeouts: Record<string, number> = {
@@ -68,6 +82,11 @@ const timeouts: Record<string, number> = {
   'levels-of-detail': 60_000,
   'saving-scenes': 60_000,
   coast: 60_000,
+  basin: 120_000,
+  'smoke-2d': 120_000,
+  smoke: 240_000,
+  liquid: 120_000,
+  splash: 120_000,
 };
 
 for (const [name, page] of Object.entries(examples)) {

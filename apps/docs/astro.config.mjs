@@ -30,6 +30,7 @@ const packages = [
   'engine-behavior',
   'engine-noise',
   'engine-ocean',
+  'engine-fluids',
   'engine-physics',
   'engine-physics-rapier',
   'engine-audio',

@@ -17,7 +17,10 @@
 // forest; its models from apps/docs/public/models/forest), procedural (the
 // gallery of procedural materials; F switches the filter of the floor),
 // coast (the sea of an ocean spectrum, crates and a boat floating on it; G
-// switches to Gerstner waves; coast-gerstner starts with them).
+// switches to Gerstner waves; coast-gerstner starts with them), basin (a
+// pond fed by a stream, its water a field of heights, crates floating on
+// it), smoke (smoke and fire around a ball; F switches to a chimney), splash
+// (a tank of water made of particles: a dam that breaks, crates in it).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent).
 // Escape or closing the window quits.
@@ -39,6 +42,7 @@ import { VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createCity,
   createCityScene,
+  createBasinScene,
   createCoast,
   createCoastScene,
   createDecor,
@@ -54,6 +58,8 @@ import {
   createPhysicsScene,
   createProceduralGallery,
   createShadowsScene,
+  createSmokeScene,
+  createSplashScene,
   createTpsScene,
   TpsLevelPath,
   SceneFactory,
@@ -83,6 +89,7 @@ const scenes: Record<string, SceneFactory> = {
   terrain: createTerrainScene,
   'terrain-uniform': createTerrain({ minLevel: 6 }),
   procedural: createProceduralGallery,
+  smoke: createSmokeScene(),
 };
 // The scenes loading something first: Rapier, the same WebAssembly module
 // as in the browser.
@@ -91,6 +98,8 @@ const loadedScenes: Record<string, () => Promise<SceneFactory>> = {
   coast: async () => createCoastScene(await createRapierPhysics()),
   'coast-gerstner': async () =>
     createCoast(await createRapierPhysics(), { waves: 'gerstner' }),
+  basin: async () => createBasinScene(await createRapierPhysics()),
+  splash: async () => createSplashScene(await createRapierPhysics()),
   tps: async () => {
     // The files of the documentation: the models of the forest.
     const store = new ResourceStore();

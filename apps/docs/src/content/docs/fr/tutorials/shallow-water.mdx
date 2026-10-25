@@ -1,0 +1,202 @@
+---
+title: L'eau sur un sol
+description: Des mares, des ruisseaux et des rides — de l'eau simulée sur le GPU en champ de hauteurs sur un sol, ses colonnes échangeant l'eau par des tuyaux virtuels, dessinée avec le matériau de la mer, qui porte ce qui flotte.
+sidebar:
+  order: 39
+---
+
+import Example from '../../../../components/Example.astro';
+
+`@fdw/engine-fluids` simule des fluides sur le GPU, en compute graphs, sur
+tous les backends. Il a trois méthodes, chacune pour sa sorte de fluide :
+
+- **un champ de hauteurs** (ce tutoriel) : l'eau d'une mare, d'une rivière,
+  d'un bassin, sur un sol de n'importe quelle forme ;
+- **une grille de cellules** : [la fumée et le feu](/fdw-engine/fr/tutorials/smoke/) ;
+- **des particules** : [l'eau qui éclabousse](/fdw-engine/fr/tutorials/liquid/).
+
+Le champ de hauteurs est le moins cher : une valeur d'eau par colonne,
+quelques milliers de colonnes. Il ne fait pas d'eau qui retombe sur
+elle-même (une vague qui déferle, une cascade), mais il remplit les
+bassins, descend les pentes, déborde, et porte des rides.
+
+<Example name="shallow-water" />
+
+Cliquez pour lâcher de l'eau ; la source sur l'île coule dans le bassin.
+
+## Un champ de hauteurs
+
+```ts
+import { ShallowWater } from '@fdw/engine-fluids';
+
+const water = new ShallowWater(backend, {
+  resolution: [128, 128], // cellules selon x et z
+  cell: 0.125, // m
+  origin: { x: -8, z: -8 }, // le coin de la grille
+  ground: (x, z) => groundAt(x, z), // ou un Float32Array, ou un nombre
+  level: 1.2, // l'eau au départ, là où le sol est plus bas
+  maxDepth: 1.5,
+});
+
+// À chaque image :
+water.update(dt);
+```
+
+Chaque cellule est une colonne d'eau posée sur son sol. Son état est dans
+deux storage buffers de `vec4` :
+
+- **les cellules** : la profondeur d'eau, l'occupation (les corps dans la
+  colonne, voir plus bas), la vitesse de l'eau (x et z) ;
+- **les flux** : l'eau qui part vers chacune des quatre voisines, en m³/s.
+
+| Option       | Défaut        | Ce qu'elle fait                                                                |
+| ------------ | ------------- | ------------------------------------------------------------------------------ |
+| `resolution` | —             | Les cellules selon x et z                                                      |
+| `cell`       | 0,25          | Le côté d'une cellule, en mètres                                               |
+| `origin`     | centrée sur 0 | Le coin de la grille dans le monde                                             |
+| `ground`     | 0             | La hauteur du sol : par cellule, fonction de la position, ou une hauteur       |
+| `level`      | aucune        | Remplit les cellules jusqu'à cette hauteur au départ (et à `reset()`)          |
+| `edges`      | `'closed'`    | `closed` : des murs autour de la grille ; `open` : l'eau s'en va par les bords |
+| `damping`    | 0,2           | La vitesse à laquelle les vagues s'éteignent, par seconde                      |
+| `maxDepth`   | 2             | L'eau la plus profonde attendue : les pas sont assez courts pour ses vagues    |
+| `stiffness`  | 6             | La part de l'eau qu'un corps écarte : k / (k + 1)                              |
+| `readback`   | `true`        | Relit l'eau pour la physique, une image plus tard                              |
+
+## Des tuyaux entre les cellules
+
+L'eau passe par des **tuyaux virtuels** entre cellules voisines (O'Brien et
+Hodgins, Mei et al.). Chaque pas est fait de deux dispatchs :
+
+1. **Les flux.** La surface d'une cellule est H = sol + profondeur (+ les
+   corps). Le flux vers une voisine croît avec l'écart de leurs surfaces,
+   dt · g · cell · (H − H<sub>voisine</sub>), et ne devient jamais négatif.
+   Puis tous les flux d'une cellule sont réduits pour qu'elle ne donne pas
+   plus d'eau qu'elle n'en a : une cellule peut s'assécher, jamais passer
+   sous zéro.
+2. **Les profondeurs.** Chaque cellule gagne ce que ses voisines lui
+   envoient et perd ce qu'elle envoie : d += dt · (entrée − sortie) /
+   cell². La vitesse de l'eau vient des flux qui traversent la cellule.
+
+Rien n'est créé ni perdu : l'eau de la grille est la même d'un pas à
+l'autre (un test le vérifie), sauf les sources et les bords ouverts.
+
+**Les pas.** Les vagues d'eau peu profonde vont à √(g d) : sur 1,5 m d'eau,
+3,8 m/s. Un pas ne doit pas leur laisser franchir plus d'une cellule :
+`update(dt)` découpe l'image en autant de pas que `maxStep` (la moitié du
+temps que met une vague à traverser une cellule à `maxDepth`) le demande.
+Avec des cellules de 12,5 cm sur 1,5 m d'eau, 2 pas par image à 60 Hz.
+
+Le GPU et le CPU font les mêmes pas (`stepShallowWater`) : les tests de
+rendu vérifient qu'ils s'accordent, sur tous les backends.
+
+## Des sources et des éclaboussures
+
+```ts
+// Une source : 0,15 m³/s sur un disque de 40 cm.
+const spring = water.addSource({ x: -2.5, z: -2, radius: 0.4, rate: 0.15 });
+// Un siphon : un débit négatif.
+water.addSource({ x: 3.5, z: -3.5, radius: 0.5, rate: -0.26 });
+spring.remove();
+
+// 150 litres lâchés d'un coup : une éclaboussure, des rides.
+water.splash(x, z, 0.4, 0.15);
+```
+
+Une source verse son débit sur les cellules dont le centre est dans son
+disque, la même hauteur dans chacune : le volume est exact quelle que soit
+la taille des cellules.
+
+## Dessiner l'eau
+
+```ts
+import { WaterSurface } from '@fdw/engine-fluids';
+import { createSky, OceanRenderer } from '@fdw/engine-ocean';
+
+const sky = createSky(backend);
+const surface = new WaterSurface(water, { environment: sky }).setSun(light);
+const oceanRenderer = new OceanRenderer(new Renderer(backend));
+
+// À chaque image, après water.update(dt) :
+oceanRenderer.render({
+  ocean: surface,
+  items: [terrain],
+  camera,
+  surface: canvas,
+});
+```
+
+Après ses pas, `update` écrit un troisième buffer pour le rendu : la
+hauteur de la surface, ses pentes et la vitesse de l'eau de chaque
+cellule. La `WaterSurface` est une grille au-dessus des cellules, montée
+jusqu'à l'eau par le **matériau de la mer** de
+[l'océan](/fdw-engine/fr/tutorials/ocean/) : le même reflet du ciel, le même
+soleil, le même fond vu à travers l'eau et absorbé selon sa profondeur.
+L'`OceanRenderer` dessine tout `WaterItem` de ce genre par-dessus la scène
+dessinée d'abord.
+
+- **Les rives** : les cellules sèches sont écartées (le matériau est
+  masqué), le bord de l'eau à mi-chemin entre un centre mouillé et un centre
+  sec ; leurs sommets passent un peu sous le sol, pour que l'eau coupe le
+  terrain au lieu d'y scintiller.
+- **L'écume** : là où l'eau court vite (à partir de `foamSpeed`, 2 m/s), le
+  matériau voit des vagues pincées, et écume. Le ruisseau du bassin plus bas
+  est blanc là où il descend la colline.
+- **L'aspect** : de l'eau douce par défaut (`freshWaterLook`), plus claire
+  que la mer ; `setLook` prend tout uniform de `WaterLook`.
+
+## Ce qui flotte dessus
+
+<Example name="basin" />
+
+Faites glisser pour tourner, la molette pour zoomer, ZQSD (WASD) pour se
+déplacer ; **Espace** lâche une caisse, **B** une balle, **E** une
+éclaboussure, **F** arrête ou relance la source, **R** recommence.
+
+Les corps et l'eau agissent l'un sur l'autre, dans les deux sens :
+
+```ts
+import { FluidBodies } from '@fdw/engine-fluids';
+import { Buoyancy } from '@fdw/engine-ocean';
+
+// L'eau sent les corps : leurs formes dans un storage buffer.
+const bodies = new FluidBodies(backend);
+bodies.add(crate); // un corps de @fdw/engine-physics : son collider de boîte
+
+// Les corps sentent l'eau : Archimède, et le courant.
+const buoyancy = new Buoyancy(water, { density: 1000 });
+buoyancy.add(crate, {
+  points: boxPoints(half),
+  volume: 8 * half.x * half.y * half.z,
+});
+buoyancy.install(scheduler);
+
+// À chaque image :
+bodies.update(); // où sont les corps, comment ils bougent
+water.update(dt, bodies);
+```
+
+**Les corps poussent l'eau.** `FluidBodies` écrit les sphères et les boîtes
+des corps (leurs colliders, ou une forme donnée à `add`) dans un storage
+buffer, six `vec4` chacune, que lisent les graphs de tous les fluides. Ici,
+chaque colonne mesure la part de chaque corps sous son eau : cette
+**occupation** élève la surface de la colonne, et les flux poussent l'eau
+vers les voisines. Une caisse lâchée dans la mare fait une vague ; une
+caisse qui flotte écarte l'eau qu'elle déplace. Pas toute : une colonne
+dont la surface suivrait exactement le corps n'a pas d'état stable (elle
+oscille comme un tube en U) ; `stiffness` (6) en écarte les 6 / 7, de façon
+stable.
+
+**L'eau porte les corps.** `heightAt(x, z)` et `velocityAt(x, z)` relisent
+les cellules du GPU, une image plus tard. La `Buoyancy` de l'océan prend
+tout ce qui a un `heightAt` ; avec `velocityAt`, l'eau entraîne aussi chaque
+point mouillé **vers sa vitesse** : une caisse dans le ruisseau descend
+avec lui.
+
+## La suite
+
+- [La fumée et le feu](/fdw-engine/fr/tutorials/smoke/) : une grille de
+  cellules.
+- [Un liquide de particules](/fdw-engine/fr/tutorials/liquid/) : l'eau qui
+  éclabousse.
+- [Le guide des fluides](/fdw-engine/fr/guides/fluids/) : l'API, les coûts,
+  les limites.

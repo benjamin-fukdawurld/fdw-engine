@@ -1,0 +1,151 @@
+---
+title: A liquid of particles
+description: Water that splashes — a liquid of particles on the GPU (position-based fluids), its neighbors found by a sort on the GPU, drawn in screen space as a surface, pushed by the bodies and carrying them.
+sidebar:
+  order: 41
+---
+
+import Example from '../../../components/Example.astro';
+
+A [field of heights](/fdw-engine/tutorials/shallow-water/) cannot splash:
+it has one height of water per column. For water that falls, breaks and
+splashes, `ParticleFluid` simulates **thousands of particles** on the GPU,
+each a small volume of water that keeps its distance from its neighbors.
+
+<Example name="liquid" />
+
+Click to break the dam again.
+
+## Particles
+
+```ts
+import { ParticleFluid } from '@fdw/engine-fluids';
+
+const liquid = new ParticleFluid(backend, {
+  count: 16384, // a power of two: the most it holds
+  radius: 0.02, // m: at rest, the particles are 2 radii apart
+  bounds: { min: [-1.2, 0, -0.5], max: [1.2, 1.5, 0.5] },
+});
+liquid.addBlock([-1.2, 0, -0.5], [-0.3, 0.9, 0.5]); // 12 100 particles
+
+// Each frame:
+liquid.update(dt);
+```
+
+The box `bounds` holds the particles (its walls). `add(positions,
+velocity)` adds particles anywhere (a stream poured in), `clear()` removes
+them all.
+
+| Option       | Default | What it does                                        |
+| ------------ | ------- | --------------------------------------------------- |
+| `count`      | 16384   | The particles it can hold (a power of two)          |
+| `radius`     | 0.05    | The radius of a particle, in meters                 |
+| `bounds`     | —       | The box of the particles                            |
+| `substeps`   | 2       | The steps of a frame                                |
+| `iterations` | 4       | The iterations of the constraints of a step         |
+| `viscosity`  | 0.02    | How much each particle follows its neighbors (XSPH) |
+| `tensile`    | 0.03    | The artificial pressure against clumping            |
+| `maxSpeed`   | 8       | The fastest a particle goes, in m/s                 |
+
+## A step
+
+The solver is **position-based** (Macklin and Müller, _Position Based
+Fluids_): instead of pressures and forces, which need tiny steps to stay
+stable, it moves the particles until the density is the same everywhere.
+
+1. **The prediction**: each particle falls for dt, from its velocity.
+2. **The sort**: the key of each particle is its cell (cells of 4 radii,
+   the reach of a particle); a **bitonic sort** on the GPU orders the
+   particles by key. Then the start and the end of each cell in the sorted
+   list: the neighbors of a particle are those of the 27 cells around it,
+   contiguous in memory. A bitonic sort needs no atomics (which the
+   compute graphs do not have, nor WebGL2): each of its stages is a
+   dispatch where each element keeps the smaller or the larger of itself
+   and its partner. For 16 384 particles: 105 dispatches.
+3. **The constraints** (4 iterations): the density of each particle (the
+   kernel summed over its neighbors), how far it is from the density at
+   rest, and how the particle and its neighbors must move to cancel it;
+   then the moves. A little artificial pressure (`tensile`) keeps the
+   particles from clumping at the surface. The walls and the bodies push
+   the particles out.
+4. **The velocities**: from the motion of the step, smoothed by a
+   viscosity (each particle drawn toward the mean of its neighbors).
+
+The CPU runs the same step (`stepParticles`), in the same order: the
+rendering tests check that both agree on every backend.
+
+**Stability.** A splash against a wall packs particles between the wall
+and the water that comes. Too few iterations, or too much artificial
+pressure, and they blow apart: 4 iterations and a `tensile` of 0.03 keep a
+dam that breaks in a tank of 2.4 m calm, at 2 steps of 1/120 s a frame.
+
+## Drawing a liquid
+
+```ts
+import { ParticleFluidRenderer } from '@fdw/engine-fluids';
+
+const liquidRenderer = new ParticleFluidRenderer(renderer, {
+  environment: sky,
+}).setSun(light);
+
+// Each frame, after liquid.update(dt):
+liquidRenderer.render({ liquid, items, lights: [light], camera, surface });
+```
+
+Particles drawn as spheres look like beads. The renderer draws a surface
+**in screen space** (van der Laan, Green and Sainz):
+
+1. **The depth of the liquid**: each particle a square turned to the
+   camera, its pixels out of the circle discarded, the depth of the front
+   of its sphere written by pixel; tested against the depth of the scene;
+2. **The smoothing**: a bilateral filter of that depth, across then down,
+   three times; it averages the neighbors at a similar depth over about a
+   particle on the screen: the spheres melt into a surface, the edges stay;
+3. **The light**: the normals from the depths around, then the water of the
+   sea: the sky reflected by Fresnel, the sun, the scene behind bent and
+   absorbed along the thickness of liquid (the depth of the scene, minus
+   the depth of the liquid).
+
+The look is that of the water of the sea (`WaterLook`): the example tints
+it blue-green with a stronger `absorption`.
+
+## Bodies in the liquid
+
+<Example name="splash" />
+
+Drag to turn around, the wheel to zoom; **Space** drops a crate, **P**
+pours water in, **R** breaks the dam again.
+
+```ts
+const bodies = new FluidBodies(backend);
+bodies.add(crate);
+const buoyancy = new Buoyancy(liquid, { density: 1000 });
+buoyancy.add(crate, { points: boxPoints(half), volume });
+
+// Each frame:
+bodies.update();
+liquid.update(dt, bodies);
+```
+
+**The bodies push the particles**: in each step, a particle inside a body
+(a sphere or a box of `FluidBodies`) is moved out of it; its velocity
+follows from the move. The paddle of the first example sweeps the water
+that way.
+
+**The liquid carries the bodies.** After each update, a dispatch per column
+of cells finds the surface of the liquid above it (from the top, the first
+cell with a few particles, and the highest of them) and its velocity; read
+back a frame late, they are `heightAt` and `velocityAt` for the `Buoyancy`
+of the ocean: the crates float, carried by the flow.
+
+## In WebGL2
+
+WebGL2 has no compute shaders: the compute graphs run as draws into
+textures ([the compute guide](/fdw-engine/guides/compute/)). The 120
+dispatches of a step of particles cost much more there: the examples use
+4 096 particles of 3 cm in WebGL2, 16 384 of 2 cm in WebGPU.
+
+## Next
+
+- [The fluids guide](/fdw-engine/guides/fluids/): which method for which
+  fluid, the costs, the limits.

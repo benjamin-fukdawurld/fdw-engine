@@ -1,0 +1,202 @@
+---
+title: La fumée et le feu
+description: De la fumée, du feu et l'air qui les porte, simulés sur le GPU dans une grille de cellules (stable fluids), autour d'obstacles, dans un plan ou dans un volume, dessinés par une marche à travers la grille.
+sidebar:
+  order: 40
+---
+
+import Example from '../../../../components/Example.astro';
+
+La fumée est un gaz porté par l'air : pour la dessiner, on simule **l'air**,
+sa vitesse dans chaque cellule d'une grille, et on emporte avec lui la fumée
+et la chaleur. `SmokeGrid` le fait sur le GPU, en compute graphs, sur tous
+les backends, d'après les _stable fluids_ de Stam : un pas reste stable
+quelle que soit sa durée.
+
+<Example name="smoke-2d" />
+
+Déplacez le pointeur sur le canevas : le disque le suit et pousse la fumée.
+
+## Une grille de cellules
+
+```ts
+import { SmokeGrid } from '@fdw/engine-fluids';
+
+const smoke = new SmokeGrid(backend, {
+  resolution: [128, 192, 1], // une cellule d'épaisseur : un plan
+  cell: 0.02, // m
+  origin: { x: -1.28, y: 0, z: -0.01 }, // le coin le plus bas
+});
+smoke.addEmitter({
+  x: 0,
+  y: 0.25,
+  z: 0,
+  radius: 0.18,
+  density: 4,
+  temperature: 6,
+});
+
+// À chaque image :
+smoke.update(dt);
+```
+
+La grille est **décalée** (une grille MAC, Harlow et Welch) : la vitesse à
+travers chaque face des cellules, le reste en leurs centres. La pression qui
+empêche l'air de se comprimer s'équilibre alors exactement avec le débit à
+travers les faces, sans le damier que laisse une grille de centres (qui,
+entre autres, empêchait la fumée de contourner un obstacle).
+
+| Option         | Défaut                       | Ce qu'elle fait                                                           |
+| -------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `resolution`   | —                            | Les cellules selon x, y, z ; z = 1 pour un plan                           |
+| `cell`         | 0,1                          | Le côté d'une cellule, en mètres                                          |
+| `origin`       | centrée, sur y = 0           | Le coin le plus bas de la grille dans le monde                            |
+| `open`         | toutes les faces sauf le sol | Par où la fumée quitte la boîte (`'+y'`, `'-x'`…) ; les autres : des murs |
+| `buoyancy`     | 1                            | La force avec laquelle la chaleur soulève l'air, par degré                |
+| `weight`       | 0,05                         | Le poids de la fumée                                                      |
+| `vorticity`    | 2                            | Le confinement des tourbillons                                            |
+| `cooling`      | 0,8                          | La vitesse à laquelle la chaleur part, par seconde                        |
+| `densityDecay` | 0,05                         | La vitesse à laquelle la fumée s'éclaircit, par seconde                   |
+| `iterations`   | 20                           | Les pas de la résolution de la pression                                   |
+| `extinction`   | 8                            | Combien un mètre de fumée épaisse atténue la lumière                      |
+
+## Un pas
+
+`update(dt)` soumet une image en une seule soumission, une passe par
+dispatch :
+
+1. **Les obstacles** : les cellules dans un corps (voir plus bas) prennent
+   sa vitesse.
+2. **L'advection** : chaque face remonte la vitesse sur dt (un pas au point
+   milieu) et prend la vitesse qu'elle trouve là, lue entre les faces
+   autour ; chaque cellule fait de même pour la fumée et la chaleur. Puis
+   les forces : la chaleur soulève (`buoyancy` × température), la fumée
+   pèse ; les émetteurs versent, la fumée s'éclaircit, la chaleur part.
+3. **La vorticité** : le rotationnel de la vitesse, puis le
+   **confinement**, une force qui fait tourner l'air autour des tourbillons
+   que l'advection efface (Fedkiw et al.) : les volutes de la fumée.
+4. **La pression** : la divergence de chaque cellule (l'air qui entre moins
+   l'air qui sort), puis `iterations` pas de Jacobi : la pression qui
+   l'annulerait. Les murs et les obstacles ne laissent rien passer ; les
+   faces ouvertes laissent sortir l'air.
+5. **La projection** : chaque face perd l'écart de pression de part et
+   d'autre. L'air ne se comprime plus.
+
+Le CPU fait la même image (`stepSmoke`) : les tests de rendu vérifient que
+les deux s'accordent, en 3D et dans un plan, sur tous les backends.
+
+## Les émetteurs
+
+```ts
+// Un feu : de la fumée et de la chaleur, qui vacillent.
+smoke.addEmitter({
+  x: 0,
+  y: 0.3,
+  z: 0,
+  radius: 0.32,
+  density: 4,
+  temperature: 6,
+  turbulence: 0.85,
+});
+// Une cheminée : de la fumée froide, soufflée de côté.
+smoke.addEmitter({
+  x: -0.7,
+  y: 0.6,
+  z: 0,
+  radius: 0.22,
+  density: 4,
+  temperature: 0.8,
+  velocity: { x: 1.6, y: 1.2, z: 0 },
+});
+```
+
+Un émetteur est une sphère, pleine dans sa moitié intérieure et qui
+s'estompe jusqu'à sa surface. Il verse `density` par seconde, chauffe
+jusqu'à `temperature` (au-dessus de l'air : 0 est l'air ambiant), et avec
+`velocity`, souffle. `turbulence` le fait vaciller : un bruit qui monte à
+travers lui retire jusqu'à cette part de sa fumée et de sa chaleur, les
+langues d'une flamme.
+
+## Les obstacles
+
+```ts
+const bodies = new FluidBodies(backend);
+bodies.add(ball); // un corps de la physique
+// Ou une forme bougée par l'application :
+bodies.addShape({
+  shape: { type: 'sphere', radius: 0.22 },
+  position,
+  rotation,
+  center,
+  velocity,
+  angularVelocity,
+});
+bodies.update();
+smoke.update(dt, bodies);
+```
+
+Les cellules dont le centre est dans un corps sont solides, et bougent avec
+lui : l'air ne traverse pas les faces voisines, mais glisse le long. Une
+balle qui traverse la fumée l'entraîne.
+
+## Dans un plan
+
+Une grille d'une cellule selon z est un plan : le même code en 2D, assez peu
+cher pour des grilles fines. `smokePlaneGraph(smoke.layout)` la dessine sur
+un quad, en matériau transparent :
+
+```ts
+const material = new Material({
+  graph: smokePlaneGraph(smoke.layout),
+  renderState: { alphaMode: 'blend' },
+  values: { smokeShade: smoke.shade },
+});
+```
+
+## Dans un volume
+
+<Example name="smoke" />
+
+Cliquez pour passer du feu à la cheminée.
+
+```ts
+import { SmokeRenderer } from '@fdw/engine-fluids';
+
+const smokeRenderer = new SmokeRenderer(renderer);
+smokeRenderer.setSun(smoke, light);
+
+// À chaque image :
+smoke.update(dt, bodies);
+smokeRenderer.render({ smoke, items, lights: [light], camera, surface });
+```
+
+Le `SmokeRenderer` dessine d'abord la scène, en couleurs linéaires, avec sa
+profondeur de vue ; puis une passe plein écran **marche à travers la
+grille** pour chaque pixel : le long du rayon de la caméra, d'où il entre
+dans la boîte de la grille jusqu'où il en sort ou rencontre la scène (un
+obstacle dans la fumée la coupe), en `steps` pas (64). À chaque pas :
+
+- elle lit le **shade** de la grille entre les huit cellules autour : la
+  densité, la lumière du soleil arrivée jusqu'à la cellule, la
+  température ;
+- elle atténue ce qui est derrière par la fumée du pas (Beer-Lambert) ;
+- elle ajoute la lumière que la fumée diffuse vers la caméra : le soleil
+  (une fonction de phase de Henyey-Greenstein, vers l'avant) et le ciel ;
+- elle ajoute la lumière du feu : les cellules chaudes rougeoient, rouge
+  sombre, puis orange (`fireColor`, `fireThreshold`).
+
+**La lumière dans la fumée** est calculée une fois par cellule, après
+chaque mise à jour : une marche de chaque cellule vers le soleil
+(`lightSteps`, 24 cellules) somme la fumée en chemin. La marche des pixels
+la lit : 8 lectures par pas au lieu d'une marche vers le soleil à chacun.
+
+Les pas commencent à un endroit différent pour chaque pixel (un bruit) :
+un grain fin au lieu de bandes. `addPass(graph, { smoke, color, depth })`
+ajoute la marche à un render graph à soi, après d'autres passes (l'eau de
+l'océan, par exemple).
+
+## La suite
+
+- [Un liquide de particules](/fdw-engine/fr/tutorials/liquid/).
+- [Le guide des fluides](/fdw-engine/fr/guides/fluids/) : les coûts, les
+  limites.

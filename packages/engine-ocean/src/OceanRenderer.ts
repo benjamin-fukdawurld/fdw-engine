@@ -5,10 +5,24 @@ import {
   RenderGraphRunner,
   Renderer,
 } from '@fdw/engine-core';
-import type { ScenePassesOptions, TextureHandle } from '@fdw/engine-core';
+import type {
+  ScenePassesOptions,
+  TextureHandle,
+  WorldRenderItem,
+} from '@fdw/engine-core';
 import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
 import type { ToneMapping } from '@fdw/engine-shader';
-import type { Ocean } from './Ocean';
+
+/**
+ * Water the {@link OceanRenderer} draws: an `Ocean`, or any render item
+ * on the material of `oceanGraph` (the water of a basin, in
+ * `@fdw/engine-fluids`).
+ */
+export interface WaterItem extends WorldRenderItem {
+  readonly material: Material;
+  /** Whether its material reads what is behind it (`OceanOptions.refraction`). */
+  readonly refraction: boolean;
+}
 
 /** What the passes of an {@link OceanRenderer} draw. */
 export type OceanPassesOptions = Omit<
@@ -24,8 +38,8 @@ export type OceanPassesOptions = Omit<
   | 'samples'
   | 'name'
 > & {
-  /** The sea, updated for the frame. */
-  readonly ocean: Ocean;
+  /** The sea (or any {@link WaterItem}), updated for the frame. */
+  readonly ocean: WaterItem;
 };
 
 const toneMappingFunctions: Record<string, string> = {
@@ -56,7 +70,7 @@ export class OceanRenderer {
   readonly renderer: Renderer;
   private readonly _runner: RenderGraphRunner;
   private readonly _toneMapping: Material;
-  private readonly _backgrounds = new WeakMap<Ocean, Material>();
+  private readonly _backgrounds = new WeakMap<WaterItem, Material>();
 
   constructor(
     renderer: Renderer,
@@ -164,7 +178,7 @@ export class OceanRenderer {
   }
 
   // The sky behind the scene, and the copy of the image for the water.
-  private background(ocean: Ocean): Material {
+  private background(ocean: WaterItem): Material {
     let material = this._backgrounds.get(ocean);
     if (material) {
       return material;

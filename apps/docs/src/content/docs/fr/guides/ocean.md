@@ -116,6 +116,12 @@ Elle rend l'image, en couleurs linéaires ; `render` ajoute le tone mapping
 (`neutral` par défaut) et présente. Le backend doit rendre en rgba16float
 (tous le font ; WebGL2 par `EXT_color_buffer_float`).
 
+`ocean` est tout `WaterItem` : un item de rendu sur le matériau
+d'`oceanGraph`, avec sa `refraction`. La `WaterSurface` de
+`@fdw/engine-fluids` (l'eau d'un champ de hauteurs) en est un : son
+`WaveShader` ajoute une `coverage`, les pixels sous 0,5 écartés (un
+matériau masqué), là où le sol est sec.
+
 ## La physique
 
 `ocean.heightAt(x, z)` est la hauteur de l'eau au-dessus d'un point du
@@ -129,7 +135,10 @@ depth, drag })`, `install(scheduler)` (le pas fixe, avant `physics`).
 Chaque point représente volume / nombre ; mouillé sur `depth` (la racine
 cubique de sa part par défaut), il pousse vers le haut de ρ g V × son
 immersion, et freine contre la vitesse du point (v + ω × r) de `drag` ×
-masse / nombre. `boxPoints` répartit les points d'une boîte.
+masse / nombre. `boxPoints` répartit les points d'une boîte. Quand l'eau
+a un `velocityAt(x, z, out)` (les [fluides](/fdw-engine/fr/guides/fluids/)
+en ont), le freinage se fait contre la vitesse de l'eau : un courant
+emporte les corps.
 
 ## Les coûts
 

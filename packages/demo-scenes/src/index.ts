@@ -13,3 +13,4 @@ export * from './audio';
 export * from './tps';
 export * from './procedural';
 export * from './sea';
+export * from './fluids';

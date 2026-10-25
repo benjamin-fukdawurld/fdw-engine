@@ -75,7 +75,9 @@ const result = new Float32Array(await output.read());
 ```
 
 - `values`: the resources by name — uniform values, textures, samplers,
-  storage buffers.
+  storage buffers. The uniforms without a value stay at 0, whatever the
+  `default` of their graph: give them all (the fluids take the defaults
+  from their graphs, `compileFluid`).
 - `workgroups`: `[x, y?, z?]`, or `{ buffer, offset }`, a buffer holding the
   three counts as `u32` — an **indirect** dispatch, its size computed by the
   GPU. The buffer needs the `indirect` usage.
@@ -176,4 +178,7 @@ What changes:
   (`defaultSkinningMode`), but can be asked to compute.
 
 The [GPU particles tutorial](/fdw-engine/tutorials/gpu-particles/) runs a
-simulation on the three backends.
+simulation on the three backends. The [fluids](/fdw-engine/guides/fluids/)
+run larger ones: loops over neighbors whose counts come from a buffer (two
+nested folds), a bitonic sort of particles without atomics, a hundred
+dispatches a frame.

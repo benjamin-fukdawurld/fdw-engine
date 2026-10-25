@@ -314,6 +314,11 @@ export function oceanGraph(
   if (behind && edge) {
     color = o.mix(behind, color, edge);
   }
-  g.surface({ positionOffset: displacement, baseColor: color });
+  const coverage = shader.coverage?.(g, xz);
+  g.surface({
+    positionOffset: displacement,
+    baseColor: color,
+    ...(coverage ? { alpha: coverage } : {}),
+  });
   return g.build();
 }

@@ -111,6 +111,11 @@ It returns the image, in linear colors; `render` adds the tone mapping
 (`neutral` by default) and presents. The backend must render to
 rgba16float (all of them do; WebGL2 through `EXT_color_buffer_float`).
 
+`ocean` is any `WaterItem`: a render item on the material of `oceanGraph`
+with its `refraction`. The `WaterSurface` of `@fdw/engine-fluids` (the water
+of a field of heights) is one: its `WaveShader` adds a `coverage`, the
+pixels under 0.5 discarded (a masked material), where the ground is dry.
+
 ## The physics
 
 `ocean.heightAt(x, z)` is the height of the water above a point of the
@@ -124,7 +129,9 @@ depth, drag })`, `install(scheduler)` (the fixed step, before `physics`).
 Each point stands for volume / count; wet over `depth` (the cube root of its
 share by default), it pushes up by ρ g V × how wet it is, and drags against
 the velocity of the point (v + ω × r) by `drag` × mass / count. `boxPoints`
-spreads the points of a box.
+spreads the points of a box. When the water has a `velocityAt(x, z, out)`
+(the [fluids](/fdw-engine/guides/fluids/) do), the drag is against the
+velocity of the water: a current carries the bodies.
 
 ## Costs
 

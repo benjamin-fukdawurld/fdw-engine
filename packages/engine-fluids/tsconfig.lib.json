@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-fluids",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"],
+  "references": [
+    {
+      "path": "../engine-shader/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-physics/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-ocean/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-noise/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-geometry/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    }
+  ]
+}

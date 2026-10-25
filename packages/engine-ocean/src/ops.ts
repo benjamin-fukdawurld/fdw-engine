@@ -47,6 +47,15 @@ export class Ops {
     this.g.call(std.select, { ifFalse, ifTrue, condition });
   less = (a: Value, b: Value) => this.g.call(std.less, { a, b });
   greater = (a: Value, b: Value) => this.g.call(std.greater, { a, b });
+  lessEqual = (a: Value, b: Value) => this.g.call(std.lessEqual, { a, b });
+  greaterEqual = (a: Value, b: Value) =>
+    this.g.call(std.greaterEqual, { a, b });
+  equal = (a: Value, b: Value) => this.g.call(std.equal, { a, b });
+  notEqual = (a: Value, b: Value) => this.g.call(std.notEqual, { a, b });
+  remainder = (a: Value, b: Value) => this.g.call(std.remainder, { a, b });
+  or = (a: Value, b: Value) => this.g.call(std.bitOr, { a, b });
+  xor = (a: Value, b: Value) => this.g.call(std.bitXor, { a, b });
+  shiftRight = (a: Value, b: Value) => this.g.call(std.shiftRight, { a, b });
   and = (a: Value, b: Value) => this.g.call(std.bitAnd, { a, b });
   fwidth = (x: Value) => this.g.call(std.fwidth, { x });
   perFragment = (value: Value) => this.g.call(std.perFragment, { value });

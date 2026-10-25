@@ -8,6 +8,9 @@
   "include": ["vitest.config.mts", "src/**/*.ts"],
   "references": [
     {
+      "path": "../../packages/engine-fluids"
+    },
+    {
       "path": "../../packages/engine-ocean"
     },
     {
@@ -38,19 +41,19 @@
       "path": "../../packages/engine-vulkan"
     },
     {
-      "path": "../../packages/engine-d3d12"
-    },
-    {
       "path": "../../packages/engine-webgpu"
-    },
-    {
-      "path": "../../packages/engine-backend"
     },
     {
       "path": "../../packages/engine-shader"
     },
     {
       "path": "../../packages/engine-core"
+    },
+    {
+      "path": "../../packages/engine-backend"
+    },
+    {
+      "path": "../../packages/engine-d3d12"
     }
   ]
 }

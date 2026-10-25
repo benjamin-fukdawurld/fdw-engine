@@ -106,6 +106,9 @@
       "path": "./packages/engine-ocean"
     },
     {
+      "path": "./packages/engine-fluids"
+    },
+    {
       "path": "./packages/engine-editing"
     },
     {

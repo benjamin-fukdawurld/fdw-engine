@@ -72,6 +72,20 @@ import {
   OceanRenderer,
   OceanSpectrum,
 } from '@fdw/engine-ocean';
+import {
+  FluidBodies,
+  ParticleFluid,
+  ParticleFluidRenderer,
+  ShallowWater,
+  shadeSmoke,
+  SmokeGrid,
+  SmokeRenderer,
+  stepParticles,
+  stepShallowWater,
+  stepSmoke,
+  WaterSurface,
+} from '@fdw/engine-fluids';
+import type { FluidBody } from '@fdw/engine-fluids';
 
 // Rendering tests shared by every backend: the same graphs, meshes and
 // expected pixels, rendered through the whole engine on a real GPU API.
@@ -4474,6 +4488,404 @@ export function describeRenderer(
         expect(deep[2], `deep ${deep}`).toBeGreaterThan(deep[0]);
         oceanRenderer.destroy();
         ocean.destroy();
+        sky.destroy();
+      });
+    });
+
+    describe('fluids', () => {
+      // Each value of the GPU within `tolerance` of the largest of the CPU.
+      const expectClose = (
+        name: string,
+        gpu: Float32Array,
+        cpu: Float32Array,
+        tolerance = 1e-3,
+      ) => {
+        expect(gpu.length).toBe(cpu.length);
+        let largest = 0;
+        let error = 0;
+        for (let i = 0; i < cpu.length; i++) {
+          largest = Math.max(largest, Math.abs(cpu[i]));
+          error = Math.max(error, Math.abs(gpu[i] - cpu[i]));
+        }
+        expect(largest, name).toBeGreaterThan(0);
+        expect(error, `${name}: ${error} of ${largest}`).toBeLessThan(
+          largest * tolerance,
+        );
+      };
+      const still = { x: 0, y: 0, z: 0 };
+      const tiltedBox: FluidBody = {
+        shape: { type: 'box', halfExtents: { x: 0.15, y: 0.1, z: 0.2 } },
+        position: { x: 0.1, y: 0.5, z: 0 },
+        rotation: { x: 0, y: 0.2, z: 0, w: Math.sqrt(0.96) },
+        center: { x: 0.1, y: 0.5, z: 0 },
+        velocity: { x: 0.5, y: 0, z: 0 },
+        angularVelocity: { x: 0, y: 1, z: 0 },
+      };
+
+      it('steps the shallow water of the CPU', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        const water = new ShallowWater(backend, {
+          resolution: [20, 12],
+          cell: 0.25,
+          ground: (x, z) => 0.2 + 0.3 * Math.sin(x) * Math.cos(z * 1.3),
+          level: 0.45,
+          edges: 'open',
+          readback: false,
+        });
+        const bodies = new FluidBodies(backend);
+        bodies.addShape({
+          ...tiltedBox,
+          position: { x: 0.3, y: 0.5, z: -0.2 },
+        });
+        bodies.update();
+        water.addSource({ x: 1.5, z: 0.5, radius: 0.3, rate: 0.02 });
+        water.splash(-1, 0.5, 0.4, 0.05);
+        const state = water.cpuState();
+        const dt = water.maxStep * 0.9;
+        const parameters = {
+          gravity: water.gravity,
+          damping: water.damping,
+          stiffness: water.stiffness,
+        };
+        // The splash pours its volume during the first step.
+        stepShallowWater(state, dt, parameters, bodies.bodies, [
+          ...water.sources,
+          { x: -1, z: 0.5, radius: 0.4, rate: 0.05 / dt },
+        ]);
+        water.update(dt, bodies);
+        for (let s = 0; s < 6; s++) {
+          stepShallowWater(state, dt, parameters, bodies.bodies, water.sources);
+          water.update(dt, bodies);
+        }
+        expectClose(
+          'cells',
+          new Float32Array(await water.cells.read()),
+          state.cells,
+        );
+        bodies.destroy();
+        water.destroy();
+      });
+
+      for (const nz of [6, 1]) {
+        it(`steps the smoke of the CPU, ${nz === 1 ? 'in a plane' : 'in a volume'}`, async () => {
+          if (backend.capabilities?.compute === false) {
+            return;
+          }
+          const smoke = new SmokeGrid(backend, {
+            resolution: [8, 10, nz],
+            cell: 0.1,
+            iterations: 10,
+            open: ['+y', '-x'],
+          });
+          smoke.addEmitter({
+            x: 0,
+            y: 0.2,
+            z: 0,
+            radius: 0.2,
+            density: 3,
+            temperature: 4,
+            turbulence: 0.6,
+          });
+          smoke.addEmitter({
+            x: -0.2,
+            y: 0.5,
+            z: 0,
+            radius: 0.15,
+            density: 1,
+            temperature: 0,
+            velocity: { x: 1, y: 0.5, z: 0.2 },
+          });
+          const bodies = new FluidBodies(backend);
+          bodies.addShape({ ...tiltedBox, position: { x: 0.1, y: 0.7, z: 0 } });
+          bodies.update();
+          const state = smoke.cpuState();
+          for (let s = 0; s < 3; s++) {
+            smoke.update(1 / 30, bodies);
+            stepSmoke(
+              state,
+              1 / 30,
+              smoke.parameters,
+              bodies.bodies,
+              smoke.emitters,
+              smoke.time,
+            );
+          }
+          expectClose(
+            'velocity',
+            new Float32Array(await smoke.velocity.read()),
+            state.velocity,
+          );
+          expectClose(
+            'scalars',
+            new Float32Array(await smoke.scalars.read()),
+            state.scalars,
+          );
+          expectClose(
+            'pressure',
+            new Float32Array(await smoke.pressure.read()),
+            state.pressure,
+          );
+          const shade = shadeSmoke(
+            state,
+            { x: 0.4, y: 0.8, z: 0.3 },
+            smoke.extinction,
+            smoke.lightSteps,
+          );
+          expectClose(
+            'shade',
+            new Float32Array(await smoke.shade.read()),
+            shade,
+          );
+          bodies.destroy();
+          smoke.destroy();
+        });
+      }
+
+      it('steps the particles of the CPU, sorted by cell', async () => {
+        if (backend.capabilities?.compute === false) {
+          return;
+        }
+        const liquid = new ParticleFluid(backend, {
+          count: 512,
+          radius: 0.05,
+          bounds: { min: [-0.5, 0, -0.3], max: [0.5, 1, 0.3] },
+          substeps: 1,
+          readback: false,
+        });
+        const block = new Float32Array(180 * 4);
+        for (let i = 0; i < 180; i++) {
+          // A shuffled block: the sort has work.
+          const n = (i * 97) % 180;
+          block.set(
+            [
+              -0.45 + (n % 5) * 0.1 + (n % 7) * 0.002,
+              0.05 + Math.floor(n / 30) * 0.1,
+              -0.25 + (Math.floor(n / 5) % 6) * 0.1,
+              0,
+            ],
+            i * 4,
+          );
+        }
+        liquid.add(block, [0.3, 0, 0]);
+        const bodies = new FluidBodies(backend);
+        bodies.addShape({
+          shape: { type: 'sphere', radius: 0.15 },
+          position: { x: -0.25, y: 0.3, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          center: { x: -0.25, y: 0.3, z: 0 },
+          velocity: still,
+          angularVelocity: still,
+        });
+        bodies.update();
+        const state = await liquid.read();
+        for (let s = 0; s < 2; s++) {
+          liquid.update(1 / 60, bodies);
+          stepParticles(state, 1 / 60, liquid.parameters, bodies.bodies);
+        }
+        const gpu = await liquid.read();
+        expectClose('positions', gpu.positions, state.positions);
+        expectClose('velocities', gpu.velocities, state.velocities, 2e-3);
+        bodies.destroy();
+        liquid.destroy();
+      });
+
+      it('shows the bottom through the shallow water of a basin', async () => {
+        const formats = backend.capabilities?.renderableFormats ?? [];
+        if (
+          backend.capabilities?.compute === false ||
+          !formats.includes('rgba16float')
+        ) {
+          return;
+        }
+        const sky = createSky(backend, { size: 8 });
+        // Shallow on the left (0.15 m), deep on the right (6 m).
+        const water = new ShallowWater(backend, {
+          resolution: [16, 16],
+          cell: 1,
+          ground: (x) => (x < 0 ? -0.15 : -6),
+          level: 0,
+          maxDepth: 6,
+          readback: false,
+        });
+        const surfaceItem = new WaterSurface(water, { environment: sky });
+        const g = new GraphBuilder('bottom');
+        g.surface({ baseColor: [0.8, 0.1, 0.1] });
+        const bottom = new Material({ graph: g.build() });
+        const flat = { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
+        const box = (x: number, top: number) => ({
+          mesh: quad(),
+          material: bottom,
+          transform: new Transform({
+            position: { x, y: top, z: 0 },
+            rotation: flat,
+            scale: { x: 20, y: 20, z: 1 },
+          }),
+        });
+        const above = new Camera({
+          position: { x: 0, y: 10, z: 0 },
+          rotation: flat,
+          projection: {
+            type: 'perspective',
+            fov: 60,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        const oceanRenderer = new OceanRenderer(renderer, {
+          toneMapping: 'none',
+          encoding: 'linear',
+        });
+        oceanRenderer.render({
+          ocean: surfaceItem,
+          items: [box(-10, -0.15), box(10, -6)],
+          camera: above,
+          surface,
+        });
+        const pixels = await fixture.readPixels();
+        const pixel = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        const shallow = pixel(16, 32);
+        const deep = pixel(48, 32);
+        expect(shallow[0], `shallow ${shallow}`).toBeGreaterThan(80);
+        expect(deep[0], `deep ${deep}`).toBeLessThan(shallow[0] / 3);
+        oceanRenderer.destroy();
+        surfaceItem.destroy();
+        water.destroy();
+        sky.destroy();
+      });
+
+      it('draws smoke over the scene, dimming what is behind', async () => {
+        const formats = backend.capabilities?.renderableFormats ?? [];
+        if (
+          backend.capabilities?.compute === false ||
+          !formats.includes('rgba16float')
+        ) {
+          return;
+        }
+        // Smoke in the left half of the view.
+        const smoke = new SmokeGrid(backend, {
+          resolution: [8, 16, 4],
+          cell: 0.125,
+          origin: { x: -1, y: -1, z: -0.25 },
+          open: [],
+          iterations: 4,
+        });
+        smoke.addEmitter({
+          x: -0.5,
+          y: 0,
+          z: 0,
+          radius: 1.2,
+          density: 40,
+          temperature: 0,
+        });
+        for (let s = 0; s < 2; s++) {
+          smoke.update(1 / 30);
+        }
+        const g = new GraphBuilder('back');
+        g.surface({ baseColor: [0.8, 0.1, 0.1] });
+        const back = {
+          mesh: quad(),
+          material: new Material({ graph: g.build() }),
+          transform: new Transform({
+            position: { x: 0, y: 0, z: -2 },
+            scale: { x: 4, y: 4, z: 1 },
+          }),
+        };
+        const front = new Camera({
+          position: { x: 0, y: 0, z: 5 },
+          projection: {
+            type: 'perspective',
+            fov: 30,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        const smokeRenderer = new SmokeRenderer(renderer, {
+          toneMapping: 'none',
+          encoding: 'linear',
+        });
+        smokeRenderer.render({ smoke, items: [back], camera: front, surface });
+        const pixels = await fixture.readPixels();
+        const pixel = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        const clear = pixel(52, 32);
+        const smoky = pixel(18, 32);
+        expect(clear[0], `clear ${clear}`).toBeGreaterThan(180);
+        expect(smoky[0], `smoky ${smoky}`).toBeLessThan(clear[0] * 0.7);
+        // Gray: the red of the back is hidden.
+        expect(Math.abs(smoky[1] - smoky[0]), `smoky ${smoky}`).toBeLessThan(
+          80,
+        );
+        smokeRenderer.destroy();
+        smoke.destroy();
+      });
+
+      it('draws a liquid of particles where they are', async () => {
+        const formats = backend.capabilities?.renderableFormats ?? [];
+        if (
+          backend.capabilities?.compute === false ||
+          !formats.includes('rgba16float')
+        ) {
+          return;
+        }
+        const sky = createSky(backend, { size: 8 });
+        const liquid = new ParticleFluid(backend, {
+          count: 1024,
+          radius: 0.05,
+          bounds: { min: [-1, -1, -0.5], max: [1, 1, 0.5] },
+          readback: false,
+        });
+        // A block in the left half of the view.
+        liquid.addBlock([-0.9, -0.6, -0.2], [-0.1, 0.6, 0.2]);
+        const g = new GraphBuilder('back');
+        g.surface({ baseColor: [0.8, 0.1, 0.1] });
+        const back = {
+          mesh: quad(),
+          material: new Material({ graph: g.build() }),
+          transform: new Transform({
+            position: { x: 0, y: 0, z: -2 },
+            scale: { x: 6, y: 6, z: 1 },
+          }),
+        };
+        const front = new Camera({
+          position: { x: 0, y: 0, z: 4 },
+          projection: {
+            type: 'perspective',
+            fov: 40,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        const liquidRenderer = new ParticleFluidRenderer(renderer, {
+          environment: sky,
+          toneMapping: 'none',
+          encoding: 'linear',
+          look: { absorption: [2, 0.5, 0.3] },
+        });
+        liquidRenderer.render({
+          liquid,
+          items: [back],
+          camera: front,
+          surface,
+        });
+        const pixels = await fixture.readPixels();
+        const pixel = (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        const clear = pixel(52, 32);
+        const wet = pixel(20, 32);
+        expect(clear[0], `clear ${clear}`).toBeGreaterThan(180);
+        // The red of the back absorbed by the water.
+        expect(wet[0], `wet ${wet}`).toBeLessThan(clear[0] * 0.6);
+        liquidRenderer.destroy();
+        liquid.destroy();
         sky.destroy();
       });
     });

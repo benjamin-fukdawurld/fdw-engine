@@ -102,6 +102,18 @@ function RouteComponent() {
                 <a className="text-sm text-center" href="/physics">
                   Physics
                 </a>
+                <a className="text-sm text-center" href="/coast">
+                  Coast
+                </a>
+                <a className="text-sm text-center" href="/basin">
+                  Basin
+                </a>
+                <a className="text-sm text-center" href="/smoke">
+                  Smoke
+                </a>
+                <a className="text-sm text-center" href="/splash">
+                  Splash
+                </a>
               </div>
             )}
           </li>

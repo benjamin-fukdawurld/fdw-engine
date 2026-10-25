@@ -78,7 +78,9 @@ const result = new Float32Array(await output.read());
 ```
 
 - `values` : les ressources par nom — valeurs d'uniforms, textures,
-  samplers, storage buffers.
+  samplers, storage buffers. Les uniforms sans valeur restent à 0, quel que
+  soit le `default` de leur graphe : donnez-les tous (les fluides prennent
+  les défauts dans leurs graphes, `compileFluid`).
 - `workgroups` : `[x, y?, z?]`, ou `{ buffer, offset }`, un buffer contenant
   les trois nombres en `u32` — un dispatch **indirect**, dont la taille est
   calculée par le GPU. Le buffer doit avoir l'usage `indirect`.
@@ -185,4 +187,8 @@ Ce qui change :
   demandé en calcul.
 
 Le [tutoriel Particules sur le GPU](/fdw-engine/fr/tutorials/gpu-particles/)
-exécute une simulation sur les trois backends.
+exécute une simulation sur les trois backends. Les
+[fluides](/fdw-engine/fr/guides/fluids/) en exécutent de plus grandes : des
+boucles sur des voisins dont le nombre vient d'un buffer (deux `fold`
+imbriqués), un tri bitonique de particules sans atomiques, une centaine de
+dispatchs par image.

@@ -262,7 +262,7 @@ describe('clipmap grid', () => {
 describe('buoyancy', () => {
   // A body of the physics, without an engine: the forces applied.
   const body = (y: number) => {
-    const forces: { y: number; point: { y: number } }[] = [];
+    const forces: { x: number; y: number; point: { y: number } }[] = [];
     const world = { bodies: [] as PhysicsBody[] };
     const fake = {
       world,
@@ -273,8 +273,8 @@ describe('buoyancy', () => {
       mass: 500,
       sleeping: false,
       wakeUp: () => undefined,
-      applyForce: (force: { y: number }, point: { y: number }) =>
-        forces.push({ y: force.y, point: { y: point.y } }),
+      applyForce: (force: { x: number; y: number }, point: { y: number }) =>
+        forces.push({ x: force.x, y: force.y, point: { y: point.y } }),
     } as unknown as PhysicsBody;
     world.bodies.push(fake);
     return { fake, forces, world };
@@ -303,6 +303,26 @@ describe('buoyancy', () => {
     dry.world.bodies.length = 0;
     buoyancy.step();
     expect(buoyancy.floaterOf(dry.fake)).toBeUndefined();
+  });
+
+  it('drags the bodies along with the current of the water', () => {
+    const buoyancy = new Buoyancy({
+      heightAt: () => 0,
+      velocityAt: (_x, _z, out) => {
+        out.x = 2;
+        out.z = 0;
+      },
+    });
+    const still = body(0);
+    buoyancy.add(still.fake, {
+      points: boxPoints({ x: 0.5, y: 0.5, z: 0.5 }),
+      volume: 1,
+      drag: 1,
+    });
+    buoyancy.step();
+    // The water at 2 m/s pulls the body still in it forward.
+    const push = still.forces.reduce((sum, force) => sum + force.x, 0);
+    expect(push).toBeCloseTo(500 * 1 * 2 * 0.5, 6);
   });
 });
 
