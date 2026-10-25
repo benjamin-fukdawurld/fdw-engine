@@ -48,6 +48,22 @@ export interface StateMachineStatus {
 }
 
 /**
+ * What the nodes and the state machines of an {@link Animator} do in the
+ * pose of its last update: {@link Animator.inspect}.
+ *
+ * @group Animator
+ */
+export interface AnimatorInspection {
+  /** The nodes that make a pose, by id: their weight, their phase (0 to 1). */
+  readonly nodes: Readonly<
+    Record<string, { readonly weight: number; readonly phase: number }>
+  >;
+  /** The state machines, by node id. */
+  readonly machines: Readonly<Record<string, StateMachineStatus>>;
+  readonly parameters: Readonly<Record<string, number | boolean>>;
+}
+
+/**
  * The options of an {@link Animator}.
  *
  * @group Animator
@@ -77,6 +93,8 @@ abstract class RuntimeNode {
   protected readonly out: Pose;
   private _advanced = -1;
   private _evaluated = -1;
+  // The weight of the node in the pose, at its last advance.
+  private _share = 0;
 
   constructor(protected readonly ctx: Context) {
     this.out = new Pose(ctx.skeleton.count);
@@ -98,6 +116,7 @@ abstract class RuntimeNode {
   advance(dt: number, weight: number, emit: boolean): void {
     if (this._advanced !== this.ctx.frame) {
       this._advanced = this.ctx.frame;
+      this._share = weight;
       this.doAdvance(dt, weight, emit);
     }
   }
@@ -106,8 +125,14 @@ abstract class RuntimeNode {
   setPhase(phase: number, weight: number, emit: boolean): void {
     if (this._advanced !== this.ctx.frame) {
       this._advanced = this.ctx.frame;
+      this._share = weight;
       this.doSetPhase(phase, weight, emit);
     }
+  }
+
+  // Its weight in the pose of the frame: 0 when it did not play.
+  share(): number {
+    return this._advanced === this.ctx.frame ? this._share : 0;
   }
 
   evaluate(): Pose {
@@ -617,6 +642,20 @@ class Parameters {
     return this._values.get(name) as number | boolean;
   }
 
+  // The values of the parameters of another graph, those of the same name
+  // and type.
+  keep(other: Parameters): void {
+    for (const [name, type] of this._types) {
+      if (other._types.get(name) === type) {
+        this._values.set(name, other._values.get(name) as number | boolean);
+      }
+    }
+  }
+
+  values(): Record<string, number | boolean> {
+    return Object.fromEntries(this._values);
+  }
+
   set(name: string, value: number | boolean): void {
     const type = this.type(name);
     if ((type === 'number') !== (typeof value === 'number')) {
@@ -654,32 +693,20 @@ export class Animator {
   readonly skeleton: Skeleton;
   private readonly _events: FiredEvent[] = [];
   private readonly _listeners = new Set<(event: FiredEvent) => void>();
-  private readonly _parameters: Parameters;
-  private readonly _root: RuntimeNode;
-  private readonly _machines = new Map<string, StateMachineNode>();
+  private readonly _options: AnimatorOptions;
+  private _graph: AnimationGraphData;
+  private _parameters: Parameters;
+  private _root: RuntimeNode;
+  private _machines = new Map<string, StateMachineNode>();
+  // The nodes that make a pose, by id.
+  private _runtimes = new Map<string, RuntimeNode>();
   private readonly _ctx: Context;
 
   /** @throws {@link GraphError} when the graph is invalid, Error when a clip or a mask is missing. */
   constructor(graph: AnimationGraphData, options: AnimatorOptions) {
-    const validation = validateAnimationGraph(
-      graph,
-      options.registry ?? createAnimationRegistry(),
-    );
-    if (!validation.valid) {
-      throw new GraphError(validation.diagnostics);
-    }
     this.skeleton = options.skeleton;
     this.pose = options.skeleton.rest.clone();
-    this._parameters = new Parameters(graph);
-    const clips = new Map<string, AnimationClip>(
-      Array.isArray(options.clips)
-        ? (options.clips as readonly AnimationClip[]).map((clip) => [
-            clip.name,
-            clip,
-          ])
-        : Object.entries(options.clips),
-    );
-    const additives = new Map<AnimationClip, AnimationClip>();
+    this._options = options;
     const events = this._events;
     const listeners = this._listeners;
     this._ctx = {
@@ -691,6 +718,81 @@ export class Animator {
         listeners.forEach((listener) => listener(fired));
       },
     };
+    const built = this.build(graph);
+    this._graph = graph;
+    this._parameters = built.parameters;
+    this._root = built.root;
+    this._machines = built.machines;
+    this._runtimes = built.runtimes;
+  }
+
+  /** The graph played. */
+  get graph(): AnimationGraphData {
+    return this._graph;
+  }
+
+  /**
+   * Plays another graph from now on: an edited graph, live. The parameters
+   * the new graph declares with the same type keep their values; its state
+   * machines start in their initial states, its clips at 0.
+   *
+   * @throws {@link GraphError} when the graph is invalid, Error when a clip
+   * or a mask is missing: the animator goes on with its graph.
+   */
+  setGraph(graph: AnimationGraphData): this {
+    const built = this.build(graph);
+    built.parameters.keep(this._parameters);
+    this._graph = graph;
+    this._parameters = built.parameters;
+    this._root = built.root;
+    this._machines = built.machines;
+    this._runtimes = built.runtimes;
+    return this;
+  }
+
+  /**
+   * What each node of the graph does in the pose of the last update: its
+   * weight (0 when it did not play), and where it is in its cycle; the
+   * states of the state machines, by node id; the values of the
+   * parameters. For an editor.
+   */
+  inspect(): AnimatorInspection {
+    const nodes: Record<string, { weight: number; phase: number }> = {};
+    for (const [id, runtime] of this._runtimes) {
+      nodes[id] = { weight: runtime.share(), phase: runtime.phase() };
+    }
+    const machines: Record<string, StateMachineStatus> = {};
+    for (const [id, machine] of this._machines) {
+      if (this._runtimes.get(id) === machine) machines[id] = machine.status();
+    }
+    return { nodes, machines, parameters: this._parameters.values() };
+  }
+
+  private build(graph: AnimationGraphData): {
+    parameters: Parameters;
+    root: RuntimeNode;
+    machines: Map<string, StateMachineNode>;
+    runtimes: Map<string, RuntimeNode>;
+  } {
+    const options = this._options;
+    const validation = validateAnimationGraph(
+      graph,
+      options.registry ?? createAnimationRegistry(),
+    );
+    if (!validation.valid) {
+      throw new GraphError(validation.diagnostics);
+    }
+    const parameters = new Parameters(graph);
+    const machines = new Map<string, StateMachineNode>();
+    const clips = new Map<string, AnimationClip>(
+      Array.isArray(options.clips)
+        ? (options.clips as readonly AnimationClip[]).map((clip) => [
+            clip.name,
+            clip,
+          ])
+        : Object.entries(options.clips),
+    );
+    const additives = new Map<AnimationClip, AnimationClip>();
 
     const { nodes, incoming } = validation;
     const runtimes = new Map<string, RuntimeNode>();
@@ -700,7 +802,7 @@ export class Animator {
       const from = source(id, port);
       if (from !== undefined) {
         const name = nodes.get(from)?.params['name'] as string;
-        return () => this._parameters.get(name) as number;
+        return () => parameters.get(name) as number;
       }
       const resolved = nodes.get(id);
       const value =
@@ -795,11 +897,11 @@ export class Animator {
             initial === undefined
               ? 0
               : states.findIndex((state) => state.name === initial),
-            this._parameters,
+            parameters,
           );
-          this._machines.set(id, machine);
+          machines.set(id, machine);
           if (resolved.node.label !== undefined) {
-            this._machines.set(resolved.node.label, machine);
+            machines.set(resolved.node.label, machine);
           }
           runtime = machine;
           break;
@@ -815,7 +917,8 @@ export class Animator {
     const output = [...nodes.values()].find(
       (resolved) => resolved.node.type === 'anim.output',
     );
-    this._root = build(source(output?.node.id as string, 'pose') as string);
+    const root = build(source(output?.node.id as string, 'pose') as string);
+    return { parameters, root, machines, runtimes };
   }
 
   /** The events reached by the last update, in order. */

@@ -8,6 +8,7 @@ import {
   Renderer,
   type FogOptions,
 } from '@fdw/engine-core';
+import { animatorsTarget, type GraphTarget } from '@fdw/engine-graph-editing';
 import { FakeInputSource, Input } from '@fdw/engine-input';
 import { OcclusionCulling } from '@fdw/engine-occlusion';
 import { ScenePhysics, Shapes, type PhysicsEngine } from '@fdw/engine-physics';
@@ -583,8 +584,23 @@ export function createTpsScene(
       });
 
     let last = 0;
+    // The graphs of the game, once loaded: the mind and the animations of
+    // the enemies, the animation of the hero.
+    let graphs: readonly GraphTarget[] | undefined;
     return {
       ready,
+      get graphs() {
+        if (!game) return [];
+        const { hero, enemies } = game;
+        graphs ??= [
+          animatorsTarget('tps/hero', 'hero animation', {
+            graph: () => hero.actor.animator.graph,
+            animators: () => [{ name: 'hero', animator: hero.actor.animator }],
+          }),
+          ...enemies.graphs,
+        ];
+        return graphs;
+      },
       frame: (time) => {
         store.update();
         scheduler.update(Math.min(time - last, 0.1));

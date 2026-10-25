@@ -66,6 +66,43 @@ export interface EditorEnginePlatform {
    * replayed (RemoteInputSource).
    */
   readonly input?: InputSource;
+  /** The parts of the plugins that run with the engine. */
+  readonly extensions?: readonly EngineExtensionFactory[];
+}
+
+/** What the engine gives the part of a plugin that runs with it. */
+export interface EngineExtensionContext {
+  readonly backend: RenderBackend;
+  /** Sends a message to the plugin, in the page; `data`: bytes. */
+  post(message: unknown, data?: Uint8Array<ArrayBuffer>): void;
+}
+
+/**
+ * The part of a plugin that runs with the engine (design/editor-ui.md §8,
+ * P19): it receives the messages the plugin sends it (`extension`
+ * messages, by its id), sees the scene shown, works before each frame.
+ */
+export interface EngineExtension {
+  /** A message of the plugin. */
+  receive?(message: unknown, data?: Uint8Array<ArrayBuffer>): void;
+  /** The scene shown, once made; undefined when it goes. */
+  scene?(scene: Scene | undefined, name: string | undefined): void;
+  /** Before each frame, at a time in seconds (the clock of the engine). */
+  frame?(time: number): void;
+  /**
+   * Whether the scene waits (a debugger stopped its game): its frames are
+   * not drawn meanwhile.
+   */
+  readonly holdsScene?: boolean;
+  /** The engine ends. */
+  dispose?(): void;
+}
+
+/** A part of a plugin for the engine: made once the engine has its backend. */
+export interface EngineExtensionFactory {
+  /** The id its messages are sent under: that of its plugin. */
+  readonly id: string;
+  create(context: EngineExtensionContext): EngineExtension;
 }
 
 /** Where the messages of the engine go: a MessagePort to the page. */
@@ -126,10 +163,27 @@ export class EditorEngine {
   #gizmo: GizmoSettings = { space: 'world', pivot: 'center', snapping: false };
   // The level files opened or saved one after the other.
   #levelQueue: Promise<void> = Promise.resolve();
+  readonly #extensions = new Map<string, EngineExtension>();
 
   constructor(platform: EditorEnginePlatform, scene: string) {
     this.#platform = platform;
     this.#requested = scene;
+    for (const factory of platform.extensions ?? []) {
+      const { id } = factory;
+      this.#extensions.set(
+        id,
+        factory.create({
+          backend: platform.backend,
+          post: (message, data) =>
+            this.#post({
+              type: 'extension',
+              extension: id,
+              message,
+              ...(data && { data }),
+            }),
+        }),
+      );
+    }
   }
 
   /** Sends the messages to a new page; the previous channel is closed. */
@@ -211,6 +265,18 @@ export class EditorEngine {
         this.#view?.setGizmo(gizmo);
         break;
       }
+      case 'extension': {
+        const extension = this.#extensions.get(message.extension);
+        try {
+          extension?.receive?.(message.message, message.data);
+        } catch (error) {
+          this.#post({
+            type: 'error',
+            message: `${message.extension}: ${errorText(error)}`,
+          });
+        }
+        break;
+      }
     }
   }
 
@@ -243,8 +309,9 @@ export class EditorEngine {
     while (this.#running) {
       platform.viewport.pump?.();
       this.#levelFiles?.store.update();
+      const held = this.#runExtensions();
       const shown = this.#shown;
-      if (shown && this.#onScreen()) {
+      if (shown && this.#onScreen() && !held) {
         try {
           const begin = performance.now();
           const used = platform.cpuTime?.();
@@ -293,6 +360,8 @@ export class EditorEngine {
   destroy(): void {
     this.#running = false;
     this.#hideScene();
+    for (const extension of this.#extensions.values()) extension.dispose?.();
+    this.#extensions.clear();
     this.#document?.dispose();
     this.#document = undefined;
     this.#levelFiles?.store.dispose();
@@ -300,6 +369,33 @@ export class EditorEngine {
 
   #post(message: EngineMessage): void {
     this.#channel?.post(message);
+  }
+
+  // The work of the extensions before a frame; whether one holds the
+  // scene.
+  #runExtensions(): boolean {
+    let held = false;
+    const time = performance.now() / 1000;
+    for (const [id, extension] of this.#extensions) {
+      try {
+        extension.frame?.(time);
+        held ||= extension.holdsScene === true;
+      } catch (error) {
+        this.#post({ type: 'error', message: `${id}: ${errorText(error)}` });
+      }
+    }
+    return held;
+  }
+
+  // Tells the extensions the scene shown.
+  #sceneChanged(scene: Scene | undefined, name: string | undefined): void {
+    for (const [id, extension] of this.#extensions) {
+      try {
+        extension.scene?.(scene, name);
+      } catch (error) {
+        this.#post({ type: 'error', message: `${id}: ${errorText(error)}` });
+      }
+    }
   }
 
   // To the channel of the moment: the page may reconnect.
@@ -367,6 +463,10 @@ export class EditorEngine {
       });
       this.#view = view;
       return {
+        // The materials of the level, for the editors of graphs.
+        get graphs() {
+          return view.graphs;
+        },
         frame: (time) => view.frame(time),
         destroy: () => {
           if (this.#view === view) this.#view = undefined;
@@ -387,6 +487,7 @@ export class EditorEngine {
     if (!shown) return;
     // The frames in flight still use its resources.
     this.#platform.waitIdle();
+    this.#sceneChanged(undefined, undefined);
     shown.scene.destroy();
     this.#shown = undefined;
     // A lock taken by the scene is released.
@@ -428,6 +529,7 @@ export class EditorEngine {
         remote,
         start: performance.now(),
       });
+      this.#sceneChanged(scene, name);
     } catch (error) {
       this.#post({ type: 'error', message: `${name}: ${errorText(error)}` });
     }

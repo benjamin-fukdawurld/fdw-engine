@@ -2,7 +2,9 @@ import type { IVec3, RenderBackend } from '@fdw/engine-backend';
 import {
   AnimationGraphBuilder,
   type AnimationClip,
+  type AnimationGraphData,
 } from '@fdw/engine-animation';
+import { animatorsTarget, type GraphTarget } from '@fdw/engine-graph-editing';
 import type { Model } from '@fdw/engine-assets';
 import type { RenderGraph } from '@fdw/engine-core';
 import type { PhysicsCollider, ScenePhysics } from '@fdw/engine-physics';
@@ -214,11 +216,9 @@ export class Enemies implements EnemyHost {
   target: Target | undefined;
   private readonly _query;
   private readonly _agents = new Map<number, Agent>();
-  private readonly _graphs = new Map<
-    string,
-    ReturnType<typeof animationGraph>
-  >();
+  private readonly _graphs = new Map<string, AnimationGraphData>();
   private readonly _bodies = new Set<PhysicsCollider>();
+  private _targets?: readonly GraphTarget[];
 
   constructor(
     readonly backend: RenderBackend,
@@ -238,6 +238,46 @@ export class Enemies implements EnemyHost {
       registry: enemyRegistry,
       mode: options.mode ?? 'compile',
     });
+  }
+
+  /**
+   * The graphs an editor may change while the game runs: the mind of the
+   * enemies, and the animation graph of each kind (those spawned later play
+   * the graph edited).
+   */
+  get graphs(): readonly GraphTarget[] {
+    this._targets ??= [
+      {
+        kind: 'behavior',
+        id: 'tps/enemies',
+        name: 'Enemies',
+        system: this.behavior as BehaviorSystem<unknown>,
+        registry: enemyRegistry,
+        entityName: (entity) =>
+          `${this._agents.get(entity)?.kind.name ?? 'enemy'} ${entity}`,
+      },
+      ...Object.values(EnemyKinds).map((kind) =>
+        animatorsTarget(`tps/${kind.name}`, `${kind.name} animation`, {
+          graph: () => this.animationGraphOf(kind),
+          animators: () =>
+            [...this._agents]
+              .filter(([, agent]) => agent.kind === kind)
+              .map(([entity, agent]) => ({
+                name: `${kind.name} ${entity}`,
+                animator: agent.actor.animator,
+              })),
+          onApply: (graph) => this._graphs.set(kind.name, graph),
+        }),
+      ),
+    ];
+    return this._targets;
+  }
+
+  // The animation graph of a kind, made at its first use.
+  private animationGraphOf(kind: EnemyKind) {
+    let graph = this._graphs.get(kind.name);
+    if (!graph) this._graphs.set(kind.name, (graph = animationGraph(kind)));
+    return graph;
   }
 
   /** How many are alive (not falling). */
@@ -281,8 +321,7 @@ export class Enemies implements EnemyHost {
 
   /** A new enemy at a place on the ground, facing the hero. */
   spawn(kind: EnemyKind, at: IVec3, facing: IVec3): number {
-    let graph = this._graphs.get(kind.name);
-    if (!graph) this._graphs.set(kind.name, (graph = animationGraph(kind)));
+    const graph = this.animationGraphOf(kind);
     const actor = new Actor(this.backend, this.scene, this.physics, at, {
       model: this.models[kind.name],
       scale: kind.scale,

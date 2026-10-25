@@ -96,6 +96,12 @@ export interface BehaviorNodeType<
   H = any, // eslint-disable-line @typescript-eslint/no-explicit-any
 > extends NodeType<BehaviorPortType> {
   readonly kind: BehaviorNodeKind;
+  /**
+   * The function or the macro a `call.<name>` node calls, or the one whose
+   * ports `fn.inputs` and `fn.outputs` are: laid in the graph before it
+   * runs, without implementation of their own.
+   */
+  readonly function?: string;
   /** `event` nodes: the name of the event they handle. */
   readonly event?: (params: Readonly<Record<string, unknown>>) => string;
   /**

@@ -100,10 +100,11 @@ export interface BehaviorInstallOptions {
  * @group Execution
  */
 export class BehaviorSystem<H = unknown> {
-  readonly program: BehaviorProgram;
-  private readonly _instances = new Map<number, BehaviorInstance<H>>();
+  private _program: BehaviorProgram;
+  private readonly _registry: Registry<BehaviorNodeType> | undefined;
+  private _instances = new Map<number, BehaviorInstance<H>>();
   private readonly _host: InstanceHost<H>;
-  private readonly _interpreter: Interpreter<H>;
+  private _interpreter: Interpreter<H>;
   private _compiled: CompiledBehavior<H> | undefined;
   private _executor: BehaviorExecutor<H>;
   private _mode: BehaviorMode;
@@ -118,7 +119,8 @@ export class BehaviorSystem<H = unknown> {
   private _modeBeforeDebug: BehaviorMode = 'compile';
 
   constructor(graph: BehaviorGraphData, options: BehaviorSystemOptions<H>) {
-    this.program = prepareBehavior(graph, options.registry);
+    this._registry = options.registry;
+    this._program = prepareBehavior(graph, options.registry);
     const log =
       options.log ??
       ((text: string, instance: BehaviorInstance<H>) =>
@@ -136,9 +138,63 @@ export class BehaviorSystem<H = unknown> {
     this.mode = options.mode ?? 'compile';
   }
 
+  /** The graph run, validated and resolved. */
+  get program(): BehaviorProgram {
+    return this._program;
+  }
+
   /** The graph run. */
   get graph(): BehaviorGraphData {
-    return this.program.graph;
+    return this._program.graph;
+  }
+
+  /**
+   * Runs another graph from now on: an edited graph, live. Each instance
+   * keeps its entity, its clock, the events it waits to handle, and the
+   * values of its variables the new graph declares with the same type (the
+   * others take their default); its nodes start again (counters, delays
+   * waiting, a `flow.doOnce` done). Paused by the debugger, the graph
+   * resumes; the breakpoints on nodes of the new graph stay.
+   *
+   * @throws {@link GraphError} when the graph has errors: the system goes
+   * on with its graph.
+   */
+  setGraph(graph: BehaviorGraphData): void {
+    const program = prepareBehavior(graph, this._registry);
+    const interpreter = new Interpreter<H>(program);
+    interpreter.hooks = this._interpreter.hooks;
+    const previous = this._instances;
+    this._debugger?.replaced(previous.values(), program);
+    this._program = program;
+    this._interpreter = interpreter;
+    this._compiled = undefined;
+    this._instances = new Map();
+    this._waiting.clear();
+    this._list = undefined;
+    for (const [entity, old] of previous) {
+      const kept: Record<string, BehaviorValue> = {};
+      for (const variable of program.variables) {
+        const before = old.program.variables.find(
+          (v) => v.name === variable.name,
+        );
+        if (before?.type === variable.type) {
+          kept[variable.name] = old.variables[variable.name];
+        }
+      }
+      const instance = new BehaviorInstance(program, entity, this._host, kept);
+      instance.time = old.time;
+      instance.started = old.started;
+      instance.queue.push(...old.queue);
+      if (this._debugger) instance.trace = [];
+      this._instances.set(entity, instance);
+      if (instance.queue.length > 0) this._waiting.add(instance);
+      old.stopped = true;
+    }
+    if (this._debugger) {
+      this._executor = interpreter;
+    } else {
+      this.mode = this._mode;
+    }
   }
 
   /**

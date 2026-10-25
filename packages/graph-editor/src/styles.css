@@ -1,0 +1,15 @@
+/* The classes of the editor of graphs, for the Tailwind of the
+   application: imported by its stylesheet, after that of @fdw/editor-ui. */
+@source './';
+
+/* The wires of the flow that just ran: their dashes move along them. */
+@keyframes fdw-graph-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+.fdw-graph-flow {
+  stroke-dasharray: 6 10;
+  animation: fdw-graph-flow 0.6s linear infinite;
+}

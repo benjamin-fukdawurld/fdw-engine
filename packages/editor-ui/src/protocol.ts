@@ -146,7 +146,20 @@ export type PageMessage =
   | { readonly type: 'level.saved'; readonly name: string }
   | ({ readonly type: 'level.command' } & LevelCommand)
   | { readonly type: 'level.tool'; readonly tool: ViewportTool }
-  | ({ readonly type: 'level.gizmo' } & GizmoSettings);
+  | ({ readonly type: 'level.gizmo' } & GizmoSettings)
+  | ExtensionMessage;
+
+/**
+ * A message between a plugin and its part in the engine (an
+ * EngineExtension, by its id), both ways: JSON, and bytes in `data` (the
+ * relays encode them).
+ */
+export interface ExtensionMessage {
+  readonly type: 'extension';
+  readonly extension: string;
+  readonly message: unknown;
+  readonly data?: Uint8Array<ArrayBuffer>;
+}
 
 /** From the engine to the page. */
 export type EngineMessage =
@@ -225,4 +238,5 @@ export type EngineMessage =
       readonly name: string;
       readonly format: LevelFormat;
       readonly data: Uint8Array<ArrayBuffer>;
-    };
+    }
+  | ExtensionMessage;

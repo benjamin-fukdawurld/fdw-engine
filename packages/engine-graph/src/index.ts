@@ -5,3 +5,5 @@ export * from './params';
 export * from './structure';
 export * from './document';
 export * from './validate';
+export * from './layout';
+export * from './edit';

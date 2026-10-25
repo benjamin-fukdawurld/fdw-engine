@@ -17,6 +17,7 @@ import {
   casesOf,
   createBehaviorRegistry,
 } from './nodes';
+import { expandFunctions } from './functions';
 import { validateBehaviorGraph } from './validate';
 
 /**
@@ -81,6 +82,10 @@ export interface ProgramNode {
  */
 export interface BehaviorProgram {
   readonly graph: BehaviorGraphData;
+  /**
+   * The nodes, its functions laid in it: those of a call `c` of a function
+   * have the ids `c/<node>`.
+   */
   readonly nodes: readonly ProgramNode[];
   /** The index of each node, by id. */
   readonly byId: ReadonlyMap<NodeId, number>;
@@ -102,13 +107,20 @@ export function prepareBehavior(
   graph: BehaviorGraphData,
   registry: Registry<BehaviorNodeType> = createBehaviorRegistry(),
 ): BehaviorProgram {
-  const validation = validateBehaviorGraph(graph, registry);
+  const checked = validateBehaviorGraph(graph, registry);
+  if (!checked.valid) {
+    throw new GraphError(checked.diagnostics);
+  }
+  // The functions laid in the graph: the executors never see them.
+  const flat = expandFunctions(graph);
+  const validation =
+    flat === graph ? checked : validateBehaviorGraph(flat, registry);
   if (!validation.valid) {
     throw new GraphError(validation.diagnostics);
   }
   // The nodes in the order of the graph: the handlers of an event run in
   // that order.
-  const resolved = graph.nodes.map(
+  const resolved = flat.nodes.map(
     (node) =>
       validation.nodes.get(node.id) as NonNullable<
         ReturnType<typeof validation.nodes.get>
@@ -200,7 +212,7 @@ export function prepareBehavior(
     byId,
     handlers,
     variables: graph.variables ?? [],
-    warnings: validation.diagnostics,
+    warnings: checked.diagnostics,
   };
 }
 

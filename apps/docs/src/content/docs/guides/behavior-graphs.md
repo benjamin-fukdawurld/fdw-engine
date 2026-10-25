@@ -227,11 +227,47 @@ While it is stopped, the system does not run and the events sent to it
 wait; the rest of the game goes on unless the application pauses it in
 `onPause`.
 
+## Functions and macros
+
+A graph may call graphs of its own, declared in its document
+(`functions`), built with the builder:
+
+```ts
+g.function('heal', { inputs: { amount: 'number' } }, (f) => {
+  const start = f.inputs();
+  const set = f.set(
+    start.exec('exec'),
+    'health',
+    f.add(f.get('health'), start.value('amount')),
+  );
+  f.outputs(set.then);
+});
+g.call(hit.then, 'heal', { amount: 5 });
+```
+
+- A **function** has one entry (`exec`, an output of its `fn.inputs` node)
+  and one exit (`then`, an input of its `fn.outputs` node), and cannot wait
+  (no `flow.delay`). A **macro** (`kind: 'macro'`) has the entries and the
+  exits of its signature (ports of type `exec`), and may wait; without
+  them, it is computed on demand, as a pure node.
+- Both read and set the variables of the graph; neither handles events.
+- Before the graph runs, each call (a `call.<name>` node) is replaced by
+  the nodes of the body (`expandFunctions`), with the ids `<call>/<node>`:
+  the interpreter, the compiler and the debugger see a graph without
+  calls. A breakpoint in a body is one per call. A function cannot call
+  itself, even through another.
+- `validateBehaviorGraph` checks the bodies (their diagnostics have the
+  `scope` of their function), `validateBehaviorFunction` one body alone.
+
+## Editing while it runs
+
+`system.setGraph(graph)` runs another graph from now on: the instances
+keep their entity, their clock, their events and the variables of the
+same name and type; their nodes start afresh. The editor of graphs does it
+at each change ([Debugging a behavior](/fdw-engine/editor/debugging-a-behavior/)).
+
 ## Limits
 
 - The nodes of the flow are those of the executors: an application adds
   actions and pure nodes, not new kinds of flow.
-- No graph calls another (functions, macros), and no event reaches all
-  the instances at once: send it to each.
-- No editor yet: the graphs are built in code or written as JSON. The
-  states of the nodes and the trace are what the graph editor will show (P19).
+- No event reaches all the instances at once: send it to each.

@@ -3,6 +3,7 @@ import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import { OrbitActions, OrbitOperator } from '@fdw/engine-camera';
 import {
   Camera,
+  type Material,
   RenderGraph,
   RenderGraphRunner,
   Renderer,
@@ -26,6 +27,10 @@ import {
   type InputSink,
   type InputSource,
 } from '@fdw/engine-input';
+import type {
+  GraphTarget,
+  MaterialGraphTarget,
+} from '@fdw/engine-graph-editing';
 import type { Node } from '@fdw/engine-scene';
 import type {
   EngineMessage,
@@ -133,6 +138,51 @@ export class LevelView implements ShownScene {
   #rectangle?: string;
   #previous?: number;
   readonly #stop: (() => void)[] = [];
+  // The materials of the level for the editors of graphs, by the material
+  // they draw now.
+  #materials = new Map<Material, MaterialGraphTarget>();
+
+  /**
+   * The materials of the level, each a graph an editor may change: the
+   * nodes drawn with it are drawn with the material edited (not saved with
+   * the level yet: P20).
+   */
+  get graphs(): readonly GraphTarget[] {
+    const { scene } = this.#document;
+    const renderers = scene.MeshRenderer;
+    const drawn: Material[] = [];
+    for (const entity of scene.world.query(renderers).entities) {
+      const material = renderers.material[entity] as Material;
+      if (!drawn.includes(material)) drawn.push(material);
+    }
+    const targets = new Map<Material, MaterialGraphTarget>();
+    drawn.forEach((material, index) => {
+      let target = this.#materials.get(material);
+      if (!target) {
+        let current = material;
+        target = {
+          kind: 'material',
+          id: `level/material${index + 1}`,
+          name: material.label ?? `Material ${index + 1}`,
+          material: () => current,
+          setMaterial: (next) => {
+            for (const entity of scene.world.query(renderers).entities) {
+              if (renderers.material[entity] === current) {
+                renderers.material[entity] = next;
+                scene.rendererChanged(entity);
+              }
+            }
+            this.#materials.delete(current);
+            current = next;
+            this.#materials.set(next, target as MaterialGraphTarget);
+          },
+        };
+      }
+      targets.set(material, target);
+    });
+    this.#materials = targets;
+    return [...targets.values()];
+  }
 
   constructor(document: LevelDocument, options: LevelViewOptions) {
     const { backend, surface } = options;

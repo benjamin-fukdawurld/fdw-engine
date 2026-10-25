@@ -235,13 +235,51 @@ Pendant qu'il est arrêté, le système ne s'exécute pas et les événements
 qu'on lui envoie attendent ; le reste du jeu continue, sauf si
 l'application le met en pause dans `onPause`.
 
+## Fonctions et macros
+
+Un graph peut appeler des graphs à lui, déclarés dans son document
+(`functions`), construits par le builder :
+
+```ts
+g.function('heal', { inputs: { amount: 'number' } }, (f) => {
+  const start = f.inputs();
+  const set = f.set(
+    start.exec('exec'),
+    'health',
+    f.add(f.get('health'), start.value('amount')),
+  );
+  f.outputs(set.then);
+});
+g.call(hit.then, 'heal', { amount: 5 });
+```
+
+- Une **fonction** a une entrée (`exec`, une sortie de son nœud
+  `fn.inputs`) et une sortie (`then`, une entrée de son nœud `fn.outputs`),
+  et ne peut pas attendre (pas de `flow.delay`). Une **macro**
+  (`kind: 'macro'`) a les entrées et les sorties de sa signature (des ports
+  de type `exec`), et peut attendre ; sans elles, elle se calcule à la
+  demande, comme un nœud pur.
+- Les deux lisent et changent les variables du graph ; aucune ne traite
+  d'événement.
+- Avant que le graph s'exécute, chaque appel (un nœud `call.<nom>`) est
+  remplacé par les nœuds du corps (`expandFunctions`), d'ids
+  `<appel>/<nœud>` : l'interpréteur, le compilateur et le débogueur voient
+  un graph sans appel. Un point d'arrêt dans un corps en est un par appel.
+  Une fonction ne peut pas s'appeler, même par une autre.
+- `validateBehaviorGraph` vérifie les corps (leurs diagnostics ont le
+  `scope` de leur fonction), `validateBehaviorFunction` un corps seul.
+
+## Éditer pendant l'exécution
+
+`system.setGraph(graph)` exécute un autre graph à partir de maintenant :
+les instances gardent leur entité, leur horloge, leurs événements et les
+variables de même nom et de même type ; leurs nœuds repartent de zéro.
+L'éditeur de graphs le fait à chaque modification
+([Déboguer un comportement](/fdw-engine/fr/editor/debugging-a-behavior/)).
+
 ## Limites
 
 - Les nœuds du flux sont ceux des exécuteurs : une application ajoute des
   actions et des nœuds purs, pas de nouvelles sortes de flux.
-- Un graph n'en appelle pas un autre (fonctions, macros), et aucun
-  événement n'atteint toutes les instances à la fois : on l'envoie à
+- Aucun événement n'atteint toutes les instances à la fois : on l'envoie à
   chacune.
-- Pas encore d'éditeur : les graphs se construisent en code ou s'écrivent
-  en JSON. Les états des nœuds et la trace sont ce qu'un éditeur montrera
-  (P19).

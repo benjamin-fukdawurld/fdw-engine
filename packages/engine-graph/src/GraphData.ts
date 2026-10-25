@@ -1,3 +1,5 @@
+import type { GraphLayout } from './layout';
+
 /**
  * Id of a node, unique in its graph.
  *
@@ -68,6 +70,8 @@ export interface GraphDocument<
   readonly nodes: readonly N[];
   /** The connections between the nodes. */
   readonly edges: readonly E[];
+  /** Where an editor shows the nodes, its notes and groups. */
+  readonly layout?: GraphLayout;
 }
 
 /**

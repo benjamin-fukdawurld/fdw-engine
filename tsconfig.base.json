@@ -50,6 +50,9 @@
       "@fdw/engine-gltf": ["packages/engine-gltf/src/index.ts"],
       "@fdw/engine-ktx2": ["packages/engine-ktx2/src/index.ts"],
       "@fdw/engine-graph": ["packages/engine-graph/src/index.ts"],
+      "@fdw/engine-graph-editing": [
+        "packages/engine-graph-editing/src/index.ts"
+      ],
       "@fdw/engine-animation": ["packages/engine-animation/src/index.ts"],
       "@fdw/engine-behavior": ["packages/engine-behavior/src/index.ts"],
       "@fdw/engine-noise": ["packages/engine-noise/src/index.ts"],

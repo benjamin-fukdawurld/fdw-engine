@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/editor-plugin-animation-graph",
+    "types": []
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.spec.tsx", "src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../engine-animation/tsconfig.lib.json"
+    },
+    {
+      "path": "../graph-editor/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-graph-editing/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-graph/tsconfig.lib.json"
+    },
+    {
+      "path": "../editor-ui/tsconfig.lib.json"
+    }
+  ]
+}

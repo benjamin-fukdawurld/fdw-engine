@@ -36,8 +36,11 @@ export type DawnControlMessage =
 
 /**
  * A message over the IPC of Node, as JSON (the V8 serializers of Electron
- * and Node differ): the bytes of a level (`data`) in base64.
+ * and Node differ): the bytes of a level or of an extension (`data`) in
+ * base64.
  */
 export type Wire<M> = M extends { readonly data: Uint8Array }
   ? Omit<M, 'data'> & { readonly data: string }
-  : M;
+  : M extends { readonly data?: Uint8Array }
+    ? Omit<M, 'data'> & { readonly data?: string }
+    : M;

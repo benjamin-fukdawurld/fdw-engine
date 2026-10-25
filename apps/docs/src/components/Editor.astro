@@ -6,11 +6,15 @@
 interface Props {
   // The scene shown first: the level by default.
   scene?: string;
+  // A panel shown at the start: an editor of graphs.
+  view?: string;
+  // The docks shown (left, right, bottom): all of them by default.
+  docks?: string[];
   // The height of the frame, in pixels. Default 600.
   height?: number;
 }
 
-const { scene, height = 600 } = Astro.props;
+const { scene, view, docks, height = 600 } = Astro.props;
 // The pages in French say it in French.
 const fr = Astro.currentLocale === 'fr';
 const title = fr ? "L'éditeur de FdwEngine" : 'The FdwEngine editor';
@@ -20,6 +24,8 @@ const open = fr
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/editor-app/`;
 const query = new URLSearchParams({ embed: '' });
 if (scene) query.set('scene', scene);
+if (view) query.set('view', view);
+if (docks) query.set('docks', docks.join(','));
 ---
 
 <div class="fdw-editor" data-editor>

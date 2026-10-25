@@ -2,7 +2,7 @@
 title: The native viewport
 description: 'How the desktop editor shows the engine in its window, on Vulkan and without copy, how the inputs reach it, and what it costs.'
 sidebar:
-  order: 4
+  order: 7
 ---
 
 The desktop editor is an Electron application, but its 3D view is not a

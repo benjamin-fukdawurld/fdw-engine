@@ -59,7 +59,9 @@ describe('readManifest', () => {
       version: '1',
       contributes: {
         commands: [{ id: 'acme.run' }, { id: 'acme.run', title: 'Again' }],
-        views: [{ id: 'acme.view', title: 'View', location: 'top' }],
+        views: [
+          { id: 'acme.view', title: 'View', location: 'top', split: 'left' },
+        ],
         toolbars: [{ id: 'acme.bar', title: 'Bar' }],
         tools: [{ id: 'acme.tool', title: 'Tool', slot: 'third' }],
       },
@@ -71,6 +73,7 @@ describe('readManifest', () => {
       'manifest.contributes.commands[0].title is not a string',
       'manifest.contributes.commands[1]: the command acme.run twice',
       'manifest.contributes.views[0].location is not one of center, left, right, bottom',
+      'manifest.contributes.views[0].split is not one of right, below',
       'manifest.contributes.toolbars[0].items is not an array',
       'manifest.contributes.tools[0].slot is not one of primary, secondary',
     ]);

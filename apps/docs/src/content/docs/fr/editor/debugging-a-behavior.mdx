@@ -1,0 +1,106 @@
+---
+title: Déboguer un comportement
+description: "L'esprit des ennemis du jeu à la troisième personne, modifié et débogué pendant qu'il tourne : points d'arrêt, pas à pas, les états des nœuds, les variables ; fonctions et macros."
+tableOfContents: false
+sidebar:
+  order: 6
+---
+
+import Editor from '../../../../components/Editor.astro';
+
+Les ennemis du [jeu à la troisième personne](/fdw-engine/fr/game/tps/)
+décident par un [graph de comportement](/fdw-engine/fr/guides/behavior-graphs/) :
+à chaque pas fixe, selon leur `state` (apparition, poursuite, attaque,
+récupération, blessé, mort), ils s'approchent, frappent, reculent. Le
+panneau **Behavior graph** édite ce graph pendant que le jeu tourne, et
+le débogue à la souris.
+
+L'éditeur ci-dessous fait tourner le jeu, le panneau à côté (**View →
+Behavior graph**, ou **Graphs: Edit the behaviors**). Cliquez dans le
+viewport pour jouer (**WASD** pour se déplacer, le bouton gauche pour
+frapper) ; les ennemis arrivent après quelques secondes. Rien n'est gardé
+quand on quitte la page.
+
+<Editor scene="tps" docks={[]} view="fdw.behaviorGraph.editor" height={720} />
+
+## 1. Le graph qui tourne
+
+**Enemies** est le graph du `BehaviorSystem` du jeu, **live** : un
+changement sans erreur tourne aussitôt. Le système garde chaque ennemi,
+son horloge, les événements qu'il attend, et les valeurs de ses variables
+que le nouveau graph déclare encore ; ses nœuds repartent de zéro.
+Essayez :
+
+1. Appuyez sur **Ctrl+F** au-dessus du canevas et trouvez `reach` : le
+   nœud qui lit la portée des coups, dans la condition de l'attaque.
+2. Sélectionnez le nœud `add` qui le suit, et dans l'onglet **Node**
+   réglez son entrée `b` à `3` : les ennemis frappent de trois mètres plus
+   loin, aussitôt.
+3. **Ctrl+Z** le remet.
+
+Un fil dont les types ne vont pas ensemble est refusé (un nombre dans un
+booléen, le flot dans une valeur) ; une erreur (une variable qui n'existe
+pas) est listée dans l'onglet **Problems**, et le jeu garde le dernier
+graph sans erreur.
+
+## 2. Le débogueur
+
+Dans l'onglet **Debugger**, **Debug** ouvre le débogueur : le système
+interprète désormais son graph (il tourne sinon compilé en JavaScript),
+et le canevas montre, pour l'instance suivie (un ennemi, choisi dans la
+liste) :
+
+- sur chaque nœud, combien de fois il a tourné (`3×`) et les dernières
+  valeurs de ses sorties, en jaune à côté d'elles ;
+- les nœuds et les fils du flot qui a tourné pendant le dernier pas, leurs
+  tirets en mouvement ;
+- les variables de l'instance, dans l'onglet : son état, sa santé, son
+  temps de recharge.
+
+Ensuite, le panneau ayant le focus :
+
+| Touche     | Commande (menu Debug)                  |
+| ---------- | -------------------------------------- |
+| **F9**     | Un point d'arrêt sur le nœud           |
+| **F5**     | Continuer, jusqu'au suivant            |
+| **F10**    | Pas à pas : tourner le nœud, s'arrêter |
+| **Maj+F5** | Arrêter le débogage                    |
+
+Sélectionnez le nœud `attack` (le `Set state` qui entre dans l'attaque)
+et appuyez sur **F9** : un point rouge. Quand un ennemi va attaquer, le
+graph s'arrête avant le nœud, et **le jeu attend** : le viewport ne
+dessine plus, le nœud a un anneau jaune, l'onglet dit où et pourquoi.
+**F10** tourne un nœud et s'arrête avant le suivant, dans cette chaîne ou
+la suivante ; **F5** continue jusqu'au point d'arrêt suivant. **Stop**
+ferme le débogueur : les points d'arrêt s'en vont, le système tourne de
+nouveau compilé.
+
+## 3. Variables, fonctions et macros
+
+- **Variables** : celles du graph, une par instance (nom, type, valeur
+  par défaut). Les nœuds **Get** et **Set** de chacune sont dans la
+  recherche (**Espace**).
+- **Functions** : un graph appelé par un autre. **Create** en crée une et
+  montre son corps : un nœud **Inputs** (l'entrée `exec` et ses entrées)
+  et un nœud **Outputs** (la sortie `then` et ses sorties), dont la
+  signature en dessous règle les ports. Une **fonction** tourne aussitôt
+  et ne peut pas attendre ; une **macro** a les entrées et sorties de sa
+  signature (ports `exec`), peut attendre (`flow.delay`), et sans eux est
+  calculée à la demande, comme un nœud pur. Les deux lisent et règlent
+  les variables du graph.
+- Leurs appels sont dans la recherche, par leur nom ; un double clic sur
+  un appel montre son corps. Avant que le graph tourne, chaque appel est
+  remplacé par les nœuds du corps (`call/node`) : le débogueur s'arrête
+  dans un corps à chacun de ses appels, et montre les états de l'appel où
+  il s'est arrêté.
+
+## 4. Fichiers
+
+**Save** écrit le graph en `.behavior.json`, avec ses positions, notes et
+groupes ; **Open** en lit un. Un graph ouvert depuis un fichier n'est pas
+live : il est édité et vérifié avec les types de nœuds du jeu (ceux de la
+scène, quand elle fait tourner un graph de comportement), et chargé par
+le jeu plus tard (`BehaviorGraphType`).
+
+Les animations du même jeu s'éditent de la même façon :
+[Animer dans l'éditeur](/fdw-engine/fr/editor/animating-in-the-editor/).

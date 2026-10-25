@@ -710,3 +710,215 @@ describe('BehaviorDebugger', () => {
     expect(debug.breakpoints.size).toBe(0);
   });
 });
+
+describe('functions and macros', () => {
+  // A function adding to a counter and giving the new value; a macro that
+  // goes out by "big" or "small"; a pure macro doubling a number.
+  const withFunctions = () => {
+    const g = builder();
+    g.variable('count', 'number');
+    g.function(
+      'bump',
+      {
+        inputs: { by: { type: 'number', default: 1 } },
+        outputs: { total: 'number' },
+      },
+      (f) => {
+        const start = f.inputs();
+        const set = f.set(
+          start.exec('exec'),
+          'count',
+          f.add(f.get('count'), start.value('by')),
+        );
+        f.outputs(set.then, { total: set.value() });
+      },
+    );
+    g.function(
+      'size',
+      {
+        kind: 'macro',
+        inputs: { in: 'exec', value: 'number' },
+        outputs: { big: 'exec', small: 'exec' },
+      },
+      (f) => {
+        const start = f.inputs();
+        const check = f.branch(
+          start.exec('in'),
+          f.compare(start.value('value'), '>=', 3),
+        );
+        f.outputs({ big: check.exec('true'), small: check.exec('false') });
+      },
+    );
+    g.function(
+      'double',
+      { kind: 'macro', inputs: { x: 'number' }, outputs: { y: 'number' } },
+      (f) => {
+        const start = f.inputs();
+        f.outputs(undefined, { y: f.mul(start.value('x'), 2) });
+      },
+    );
+    const update = g.onUpdate({ id: 'update' });
+    const bump = g.call(update.then, 'bump', { by: 2 }, { id: 'bump' });
+    const size = g.call({ in: bump.then }, 'size', {
+      value: bump.value('total'),
+    });
+    const doubled = g.call(undefined, 'double', { x: bump.value('total') });
+    recordNode(g, size.exec('big'), 'big ', doubled.value('y'));
+    recordNode(g, size.exec('small'), 'small ', doubled.value('y'));
+    return g.build();
+  };
+
+  it('declares their call nodes and validates their bodies', () => {
+    const graph = withFunctions();
+    expect(graph.functions?.map((fn) => fn.name)).toEqual([
+      'bump',
+      'size',
+      'double',
+    ]);
+    expect(messages(graph)).toEqual([]);
+    expect(parseBehaviorGraph(serializeBehaviorGraph(graph))).toEqual(graph);
+    // A delay in a function, an event in a body, a recursion.
+    const bump = graph.functions?.[0] as NonNullable<
+      BehaviorGraphData['functions']
+    >[number];
+    const broken: BehaviorGraphData = {
+      ...graph,
+      functions: [
+        {
+          ...bump,
+          nodes: [
+            ...bump.nodes,
+            { id: 'wait', type: 'flow.delay', params: {} },
+            { id: 'again', type: 'call.bump', params: {} },
+            { id: 'tick', type: 'event.update', params: {} },
+          ],
+          edges: [...bump.edges, edge('wait', 'then', 'again', 'exec')],
+        },
+        ...(graph.functions ?? []).slice(1),
+      ],
+    };
+    expect(messages(broken)).toEqual(
+      expect.arrayContaining([
+        'error: bump: #wait: a function cannot wait: make it a macro',
+        'error: bump: #tick: a function does not handle events: call it from them',
+        'warning: bump: #wait: never runs: its exec input is not connected',
+      ]),
+    );
+    const recursive: BehaviorGraphData = {
+      ...graph,
+      functions: [
+        {
+          ...bump,
+          nodes: [
+            ...bump.nodes,
+            { id: 'again', type: 'call.bump', params: {} },
+          ],
+        },
+        ...(graph.functions ?? []).slice(1),
+      ],
+    };
+    expect(messages(recursive)).toContain(
+      'error: Function "bump" calls itself: bump → bump',
+    );
+  });
+
+  it.each<BehaviorMode>(['interpret', 'compile'])(
+    'runs their bodies laid in the graph (%s)',
+    (mode) => {
+      const { system, host } = run(withFunctions(), mode);
+      system.attach(1);
+      system.run(0.1);
+      system.run(0.1);
+      expect(host.calls).toEqual(['small 4', 'big 8']);
+      expect(system.instance(1)?.get('count')).toBe(4);
+      // The nodes of a call: `<call>/<node>`.
+      expect(system.program.byId.has('bump/n2')).toBe(true);
+      expect(system.program.byId.has('bump')).toBe(false);
+    },
+  );
+
+  it('debugs the nodes of a body, by their call', () => {
+    const { system } = run(withFunctions(), 'compile');
+    system.attach(1);
+    const debug = system.debug();
+    const set = [...system.program.byId.keys()].find(
+      (id) =>
+        id.startsWith('bump/') &&
+        system.program.nodes[system.program.byId.get(id) as number].type.id ===
+          'var.set',
+    ) as string;
+    debug.addBreakpoint(set);
+    system.run(0.1);
+    expect(debug.paused?.node).toBe(set);
+    expect(debug.trace(1)).toEqual(['update']);
+    debug.continue();
+    expect(debug.state(1, set)?.outputs).toEqual({ value: 2 });
+  });
+});
+
+describe('BehaviorSystem.setGraph', () => {
+  const graph = (step: number, extra?: 'flag') => {
+    const g = builder();
+    g.variable('count', 'number');
+    if (extra) g.variable(extra, 'boolean', true);
+    const update = g.onUpdate({ id: 'update' });
+    const set = g.set(update.then, 'count', g.add(g.get('count'), step), {
+      id: 'count',
+    });
+    recordNode(g, set.then, `+${step} `, set.value(), 'say');
+    return g.build();
+  };
+
+  it.each<BehaviorMode>(['interpret', 'compile'])(
+    'runs the new graph, the variables and clocks kept (%s)',
+    (mode) => {
+      const { system, host } = run(graph(1), mode);
+      system.attach(1);
+      system.attach(2, { count: 10 });
+      system.run(0.5);
+      system.setGraph(graph(5, 'flag'));
+      expect(system.mode).toBe(mode);
+      system.run(0.5);
+      expect(host.calls).toEqual(['+1 1', '+1 11', '+5 6', '+5 16']);
+      expect(system.instance(1)?.get('flag')).toBe(true);
+      expect(system.instance(2)?.time).toBe(1);
+    },
+  );
+
+  it('keeps the graph that runs when the new one has errors', () => {
+    const { system, host } = run(graph(1), 'compile');
+    system.attach(1);
+    const broken = { ...graph(2), variables: [] };
+    expect(() => system.setGraph(broken)).toThrow(GraphError);
+    system.run(0.1);
+    expect(host.calls).toEqual(['+1 1']);
+  });
+
+  it('ends a pause, and keeps the breakpoints of nodes still there', () => {
+    const { system, host } = run(graph(1), 'compile');
+    system.attach(1);
+    const debug = system.debug();
+    debug.addBreakpoint('say');
+    debug.addBreakpoint('count');
+    system.run(0.1);
+    expect(debug.paused?.node).toBe('count');
+    const next = graph(3);
+    system.setGraph({
+      ...next,
+      nodes: next.nodes.map((node) =>
+        node.id === 'count' ? { ...node, id: 'add' } : node,
+      ),
+      edges: next.edges.map((e) => ({
+        from: e.from.node === 'count' ? { ...e.from, node: 'add' } : e.from,
+        to: e.to.node === 'count' ? { ...e.to, node: 'add' } : e.to,
+      })),
+    });
+    expect(debug.paused).toBeUndefined();
+    expect([...debug.breakpoints]).toEqual(['say']);
+    expect(system.mode).toBe('interpret');
+    system.run(0.1);
+    expect(debug.paused?.node).toBe('say');
+    debug.continue();
+    expect(host.calls).toEqual(['+3 3']);
+  });
+});

@@ -142,6 +142,16 @@ export function parseDocument<G extends GraphDocument>(
     }
   });
 
+  const layout = data['layout'];
+  if (
+    layout !== undefined &&
+    (!isRecord(layout) ||
+      (layout['nodes'] !== undefined && !isRecord(layout['nodes'])) ||
+      (layout['notes'] !== undefined && !Array.isArray(layout['notes'])) ||
+      (layout['groups'] !== undefined && !Array.isArray(layout['groups'])))
+  ) {
+    throw new Error('Malformed "layout"');
+  }
   format.document?.(data);
   return data as unknown as G;
 }

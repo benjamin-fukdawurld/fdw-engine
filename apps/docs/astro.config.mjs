@@ -44,6 +44,7 @@ const packages = [
   'engine-ktx2',
   'engine-shader',
   'engine-graph',
+  'engine-graph-editing',
   'engine-backend',
   'engine-webgpu',
   'engine-webgl2',

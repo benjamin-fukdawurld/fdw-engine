@@ -6,6 +6,10 @@ import {
   RenderItem,
   Transform,
 } from '@fdw/engine-core';
+import {
+  type GraphTarget,
+  itemsMaterialTarget,
+} from '@fdw/engine-graph-editing';
 import { ActionMap, FakeInputSource, Input } from '@fdw/engine-input';
 import {
   axisAngle,
@@ -36,6 +40,8 @@ export interface Gallery {
   readonly names: readonly string[];
   /** Whether the checkerboard of the floor is filtered. */
   filtered: boolean;
+  /** The material of each object, for the editor of graphs. */
+  readonly graphs: readonly GraphTarget[];
   destroy(): void;
 }
 
@@ -150,6 +156,9 @@ export async function buildGallery(renderer: Renderer): Promise<Gallery> {
     items,
     light,
     names: objects.map(([name]) => name),
+    graphs: objects.map(([name, item]) =>
+      itemsMaterialTarget(`procedural/${name}`, name, [item]),
+    ),
     get filtered() {
       return filtered;
     },
@@ -216,6 +225,10 @@ export const createProceduralGallery: SceneFactory = (
     }
   });
   return {
+    // Their materials, once baked.
+    get graphs() {
+      return gallery?.graphs ?? [];
+    },
     frame: (time) => {
       input.update();
       galleryCamera(camera, time);

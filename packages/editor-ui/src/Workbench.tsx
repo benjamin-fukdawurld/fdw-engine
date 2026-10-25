@@ -237,10 +237,16 @@ export function Workbench({
       else {
         const spec = views.get(id);
         if (spec) {
-          areaApis.current[spec.location]?.addPanel({
+          const api = areaApis.current[spec.location];
+          api?.addPanel({
             id,
             component: 'view',
             title: spec.title,
+            // Beside the panels there, in a group of its own.
+            ...(spec.split &&
+              api.panels.length > 0 && {
+                position: { direction: spec.split },
+              }),
           });
         }
       }

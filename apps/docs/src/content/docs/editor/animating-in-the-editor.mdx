@@ -1,0 +1,74 @@
+---
+title: Animating in the editor
+description: 'The animation graph of the hero of the third-person game: its state machine edited in a view of its own, the states and the weights of the nodes while it plays, the parameters forced.'
+tableOfContents: false
+sidebar:
+  order: 5
+---
+
+import Editor from '../../../components/Editor.astro';
+
+A character is animated by an [animation graph](/fdw-engine/guides/animation/):
+clips, blends, layers, and state machines driven by parameters (the speed,
+on the ground, a jump). The **Animation graph** panel edits the graphs of
+the scene while they play: that of the hero of the
+[third-person game](/fdw-engine/game/tps/), and those of the orcs and of the
+demon.
+
+The editor below runs the game, the panel beside it (**View → Animation
+graph**). Click the viewport to play, move with **WASD**, run with
+**Shift**, jump with **Space**.
+
+<Editor scene="tps" docks={[]} view="fdw.animationGraph.editor" height={720} />
+
+## 1. What plays
+
+The list of the bar has the animation graphs of the scene: **hero
+animation**, then those of the kinds of enemies (each enemy spawned plays
+the graph of its kind, those spawned later the graph edited). While the
+game runs, the canvas shows, for the animator followed:
+
+- on each node its **weight** in the pose, a bar under its title and a
+  badge (`62%`); a node that does not play is dimmed;
+- on a state machine its **state**, and the state it fades to (`idle →
+run`).
+
+The **Play** tab chooses the animator followed (an orc among the others),
+lists the **parameters** with their values, and forces them: a number, a
+boolean, a trigger fired. The game sets its parameters at each frame: a
+value forced holds until it does (stop moving the hero to see a speed
+forced take effect).
+
+## 2. The state machine
+
+A double click on a **state machine** node opens it in a view of its own:
+
+- the **states** are boxes, the initial one marked, the state playing in
+  green, the one it fades to in amber with the progress of the fade;
+- the **transitions** are arrows: the one in progress in amber; a click
+  selects one, **Delete** removes it;
+- a drag from the blue dot of a state to another makes a transition;
+  **Any state** is the source of the transitions from any state (`*`).
+
+The **State machine** tab edits it: the states (renamed with their
+transitions and their input, added, removed, the initial one) and each
+transition: its states, its fade in seconds, its exit time (in cycles of
+the state), its trigger, its conditions on the parameters (`speed > 1.2`).
+Each change is a command of the history (**Ctrl+Z**), and runs at once in
+the animators: their parameters keep their values, their machines start
+again in their initial states.
+
+The states are inputs of the node: a state added needs a pose, connected
+in the graph (a clip, a blend), else the graph has an error and the
+animators keep the last graph without one. A graph that names a clip the
+character does not have is not played either; the panel says why
+(**Not running: …**).
+
+## 3. The graph
+
+Outside of the machine, the graph is edited as the
+[materials](/fdw-engine/editor/editing-a-material/): **Space** adds a clip,
+a blend, a blend space, a layer, a parameter; the wires carry poses,
+numbers and booleans; the **Node** tab sets the clip of a node, its speed,
+its loop, the points of a blend space. **Save** writes a
+`.animation.json`, a resource of the engine (`AnimationGraphType`).

@@ -34,3 +34,8 @@ system.install(scheduler); // the fixed step
 system.emit(entity, 'hit', { damage: 30 });
 system.debug().addBreakpoint(check.id); // interpreted while debugged
 ```
+
+Since P19:
+
+- **Functions and macros** (`functions.ts`): graphs called by the graph (`functions` in the document; `g.function(name, signature, body)` and `g.call(from, name, inputs)` in the builder). A function has one entry and one exit and cannot wait; a macro has the entries and exits of its signature and may wait. Their calls (`call.<name>`) are laid in the graph before it runs (`expandFunctions`: the nodes of a call `c` are `c/<node>`): the interpreter, the compiler and the debugger run them unchanged. `validateBehaviorGraph` checks their bodies (diagnostics scoped by function), their signatures, the recursions; `validateBehaviorFunction` one body alone.
+- **`BehaviorSystem.setGraph(graph)`**: another graph from now on (an edit, live): the instances keep their entity, their clock, their events, the variables of the same name and type; a pause ends, the breakpoints of the nodes still there stay. A graph with errors throws and changes nothing.

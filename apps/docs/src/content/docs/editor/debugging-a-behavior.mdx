@@ -1,0 +1,98 @@
+---
+title: Debugging a behavior
+description: 'The mind of the enemies of the third-person game, changed and debugged while it runs: breakpoints, steps, the states of the nodes, the variables; functions and macros.'
+tableOfContents: false
+sidebar:
+  order: 6
+---
+
+import Editor from '../../../components/Editor.astro';
+
+The enemies of the [third-person game](/fdw-engine/game/tps/) decide by a
+[behavior graph](/fdw-engine/guides/behavior-graphs/): at each fixed step,
+by their `state` (spawn, chase, attack, recover, hurt, dead), they come
+near, strike, step back. The **Behavior graph** panel edits that graph
+while the game runs, and debugs it with the mouse.
+
+The editor below runs the game, the panel beside it (**View → Behavior
+graph**, or **Graphs: Edit the behaviors**). Click the viewport to play
+(**WASD** to move, the left button to strike); the enemies come after a few
+seconds. Nothing is kept when the page is left.
+
+<Editor scene="tps" docks={[]} view="fdw.behaviorGraph.editor" height={720} />
+
+## 1. The graph that runs
+
+**Enemies** is the graph of the `BehaviorSystem` of the game, **live**: a
+change without error runs at once. The system keeps each enemy, its
+clock, the events it waits for, and the values of its variables the new
+graph still declares; its nodes start afresh. Try it:
+
+1. Press **Ctrl+F** over the canvas and find `reach`: the node that reads
+   the reach of the blows, in the condition of the attack.
+2. Select the `add` node after it, and in the **Node** tab set its `b`
+   input to `3`: the enemies strike from three meters further, at once.
+3. **Ctrl+Z** puts it back.
+
+A wire whose types do not fit is refused (a number into a boolean, the
+flow into a value); an error (a variable that does not exist) is listed in
+the **Problems** tab, and the game keeps the last graph without error.
+
+## 2. The debugger
+
+In the **Debugger** tab, **Debug** opens the debugger: the system
+interprets its graph from then on (it runs compiled to JavaScript
+otherwise), and the canvas shows, for the instance followed (an enemy,
+chosen in the list):
+
+- on each node, how many times it ran (`3×`) and the last values of its
+  outputs, in yellow next to them;
+- the nodes and the wires of the flow that ran during the last step,
+  their dashes moving;
+- the variables of the instance, in the tab: its state, its health, its
+  cooldown.
+
+Then, the panel having the focus:
+
+| Key          | Command (Debug menu)           |
+| ------------ | ------------------------------ |
+| **F9**       | A breakpoint on the node       |
+| **F5**       | Continue, to the next one      |
+| **F10**      | Step: run the node, stop again |
+| **Shift+F5** | Stop debugging                 |
+
+Select the `attack` node (the `Set state` that enters the attack) and press
+**F9**: a red dot. When an enemy is about to attack, the graph stops before
+the node, and **the game waits**: the viewport no longer draws, the node
+has a yellow ring, the tab says where and why. **F10** runs one node and
+stops before the next, in this chain or the next one; **F5** goes on to the
+next breakpoint. **Stop** closes the debugger: the breakpoints go, the
+system runs compiled again.
+
+## 3. Variables, functions and macros
+
+- **Variables**: those of the graph, one per instance (name, type,
+  default). The **Get** and **Set** nodes of each are in the search
+  (**Space**).
+- **Functions**: a graph called by another. **Create** makes one and shows
+  its body: an **Inputs** node (the entry `exec` and its inputs) and an
+  **Outputs** node (the exit `then` and its outputs), whose ports the
+  signature below sets. A **function** runs at once and cannot wait; a
+  **macro** has the entries and exits of its signature (`exec` ports), may
+  wait (`flow.delay`), and without them is computed on demand, as a pure
+  node. Both read and set the variables of the graph.
+- Their calls are in the search, by their name; a double click on a call
+  shows its body. Before the graph runs, each call is replaced by the nodes
+  of the body (`call/node`): the debugger stops in a body at each of its
+  calls, and shows the states of the call stopped in.
+
+## 4. Files
+
+**Save** writes the graph as a `.behavior.json`, with its positions, notes
+and groups; **Open** reads one. A graph opened from a file is not live: it
+is edited and checked with the node types of the game (those of the scene,
+when it runs a behavior graph), and loaded by the game later
+(`BehaviorGraphType`).
+
+The animations of the same game are edited the same way:
+[Animating in the editor](/fdw-engine/editor/animating-in-the-editor/).
