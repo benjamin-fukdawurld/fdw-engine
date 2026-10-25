@@ -142,7 +142,7 @@ void main() {
   vec4 v6_color = v5 * v3_tint; // #n6
   vec3 v7 = v6_color.rgb;
   float v8 = v6_color.a;
-  vec4 v9 = vec4(v7, v8); // #c9
+  vec4 v9 = vec4(v7, v8); // #c7
   o_color = v9;
 }
 "

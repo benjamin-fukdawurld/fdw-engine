@@ -51,7 +51,8 @@
         "{workspaceRoot}/packages/*/src/**/*",
         "!{projectRoot}/out/**/*"
       ],
-      "outputs": ["{projectRoot}/out"]
+      "outputs": ["{projectRoot}/out"],
+      "dependsOn": ["install", "^build"]
     },
     "preview": {
       "executor": "nx:run-script",

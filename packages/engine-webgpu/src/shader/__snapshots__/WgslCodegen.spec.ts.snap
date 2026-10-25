@@ -86,7 +86,7 @@ fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
   let v6_color: vec4<f32> = v5 * v3_tint; // #n6
   let v7: vec3<f32> = v6_color.rgb;
   let v8: f32 = v6_color.a;
-  let v9: vec4<f32> = vec4<f32>(v7, v8); // #c9
+  let v9: vec4<f32> = vec4<f32>(v7, v8); // #c7
   return v9;
 }
 "
