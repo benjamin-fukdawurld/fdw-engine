@@ -8,6 +8,7 @@ import type {
   GpuCommandEncoder,
   GpuRenderPassEncoder,
   GpuRenderPipeline,
+  GpuTopLevel,
   IndexFormat,
   PassTiming,
   RenderPassDescriptor,
@@ -21,6 +22,7 @@ import {
   WebGpuRenderPipeline,
 } from './WebGpuPipelineFactory';
 import { WebGpuPassTimer } from './WebGpuPassTimer';
+import { SoftwareTopLevel } from './SoftwareAccelerationStructures';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
 
 function unwrap<T>(
@@ -209,6 +211,14 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
         : {}),
     });
     return new WebGpuRenderPassEncoder(pass);
+  }
+
+  // The software structures are built by their update, on the CPU, and
+  // written by the queue before the commands submitted after it.
+  buildTopLevel(top: GpuTopLevel): void {
+    if (!(top instanceof SoftwareTopLevel)) {
+      throw new Error('The top level was not created by the WebGPU backend');
+    }
   }
 
   beginComputePass(label?: string, timing?: PassTiming): GpuComputePassEncoder {

@@ -62,7 +62,10 @@ export const compute: NodeDefinition = {
   params: {
     workgroupSize: { kind: 'constant', default: [64, 1, 1] },
   },
-  inputs: () => [],
+  // When connected, the threads where it is false skip the rest of their
+  // work and write nothing (the hits of other materials, the pixels out of
+  // the image).
+  inputs: () => [{ name: 'active', type: BuiltinTypes.bool, optional: true }],
   outputs: () => [],
   stage: () => 'compute',
 };

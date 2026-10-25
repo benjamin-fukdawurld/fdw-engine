@@ -407,6 +407,17 @@ function translateNode(
     case 'array-length':
       output('result', type, { kind: 'array-length' }, args);
       return;
+    case 'bitcast':
+      output('result', type, { kind: 'bitcast' }, args);
+      return;
+    case 'ray-query':
+      output(
+        'result',
+        type,
+        { kind: 'ray-query', mode: params['mode'] === 'any' ? 'any' : 'closest' },
+        args,
+      );
+      return;
     case 'less':
     case 'less-equal':
     case 'greater':
@@ -661,6 +672,30 @@ export function generateComputeIr({
   const writes: IrWrite[] = [];
   let workgroupSize: [number, number, number] = [64, 1, 1];
 
+  // The guard of the threads first: what it depends on, then its value.
+  const output = [...nodes.values()].find(
+    ({ node }) => node.type === 'output.compute',
+  );
+  const guard = output && graph.inputSource(output.node, 'active');
+  const translated = new Set<NodeId>();
+  let active: IrEntryPoint['active'];
+  if (output && guard && 'ref' in guard) {
+    const needed = ancestors(graph, guard.ref.node);
+    for (const id of order) {
+      if (needed.has(id) && !context.loopBodies.has(id)) {
+        translate(context, builder, id, {});
+        translated.add(id);
+      }
+    }
+    const port = output.inputs.find((input) => input.name === 'active');
+    const value = builder.input(
+      output.node,
+      port as PortSchema,
+      BuiltinTypes.bool,
+    ) as ValueId;
+    active = { value, after: builder.body.length };
+  }
+
   for (const id of order) {
     const resolved = nodes.get(id) as ResolvedNode;
     const { node, inputs, params } = resolved;
@@ -670,7 +705,7 @@ export function generateComputeIr({
     }
     if (node.type !== 'write.storage') {
       // Loop bodies are translated with their loop.end.
-      if (!context.loopBodies.has(id)) {
+      if (!context.loopBodies.has(id) && !translated.has(id)) {
         translate(context, builder, id, {});
       }
       continue;
@@ -705,9 +740,27 @@ export function generateComputeIr({
         results: {},
         workgroupSize,
         writes,
+        ...(active ? { active } : {}),
       },
     ],
   };
+}
+
+// A node and the nodes it depends on.
+function ancestors(graph: WorkingGraph, id: NodeId): Set<NodeId> {
+  const found = new Set<NodeId>();
+  const pending = [id];
+  while (pending.length > 0) {
+    const next = pending.pop() as NodeId;
+    if (found.has(next)) {
+      continue;
+    }
+    found.add(next);
+    for (const edge of graph.incoming(next)) {
+      pending.push(edge.from.node);
+    }
+  }
+  return found;
 }
 
 const clipPosition: IrStageVariable = {

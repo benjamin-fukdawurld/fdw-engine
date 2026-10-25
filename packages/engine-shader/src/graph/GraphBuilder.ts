@@ -538,7 +538,11 @@ export class GraphBuilder {
       | 'shadow.cascadeSplits'
       | 'shadow.cascadeOffsets'
       | 'fog.color'
-      | 'fog.height',
+      | 'fog.height'
+      | 'scene'
+      | 'rayInstances'
+      | 'rayIndices'
+      | 'rayVertices',
   ): PortHandle {
     return this.call('input.engine', {}, { params: { value } });
   }
@@ -723,11 +727,57 @@ export class GraphBuilder {
    * (64 × 1 × 1 by default).
    */
   compute(
-    options: { workgroupSize?: readonly [number, number, number] } = {},
+    options: {
+      workgroupSize?: readonly [number, number, number];
+      active?: PortHandle;
+    } = {},
   ): void {
     this.node('output.compute', {
       params: withDefined({ workgroupSize: options.workgroupSize }),
+      ...(options.active ? { inputs: { active: options.active } } : {}),
     });
+  }
+
+  /**
+   * Traces a ray in the scene (`ray.trace`, on the backends with the
+   * rayQuery capability): the hit, read with the `ray.hit*` functions
+   * (`stdRays`).
+   *
+   * @example A shadow: whether something is between a point and the sun
+   * ```ts
+   * const hit = g.traceRay({ origin, direction: toSun, mode: 'any' });
+   * const lit = g.call(std.select, {
+   *   ifFalse: 1, ifTrue: 0, condition: g.call(stdRays.hit, { hit }),
+   * });
+   * ```
+   */
+  traceRay({
+    origin,
+    direction,
+    tMin,
+    tMax,
+    mask,
+    mode = 'closest',
+  }: {
+    origin: PortHandle | ConstantValue;
+    direction: PortHandle | ConstantValue;
+    tMin?: PortHandle | number;
+    tMax?: PortHandle | number;
+    mask?: PortHandle | number;
+    mode?: 'closest' | 'any';
+  }): PortHandle {
+    return this.call(
+      'ray.trace',
+      {
+        scene: this.engine('scene'),
+        origin,
+        direction,
+        ...(tMin === undefined ? {} : { tMin }),
+        ...(tMax === undefined ? {} : { tMax }),
+        ...(mask === undefined ? {} : { mask }),
+      },
+      { params: { mode } },
+    );
   }
 
   /**

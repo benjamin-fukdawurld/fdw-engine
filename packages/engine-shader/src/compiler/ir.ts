@@ -155,6 +155,22 @@ export type IrOp =
   /** The number of elements of a runtime-sized array (a storage buffer). */
   | { readonly kind: 'array-length' }
   /**
+   * The bits of a 32 bits scalar or vector (args[0]) seen as another
+   * scalar kind (the type of the instruction): f32 ↔ u32 ↔ i32.
+   */
+  | { readonly kind: 'bitcast' }
+  /**
+   * Traces a ray in an acceleration structure: args are the structure, the
+   * origin and direction (vec3<f32>), tMin and tMax (f32, in units of the
+   * length of the direction) and the mask (u32: the instances sharing a bit
+   * with it are seen). `closest` finds the nearest hit, `any` stops at the
+   * first one found (shadows, occlusion). The hit, a vec4<u32>: x the
+   * instance (0xffffffff without hit), y the triangle in its mesh, with
+   * bit 31 set when seen from the back, z and w the bits of the barycentric
+   * coordinates u and v (f32: the weights of the second and third vertex).
+   */
+  | { readonly kind: 'ray-query'; readonly mode: 'closest' | 'any' }
+  /**
    * The only loop of the IR: the sum, for index from 0 to count - 1 (args[0],
    * a u32), of the value `result` computed by `body` from `index`. The body
    * is straight code too; it can read the values defined before the loop,
@@ -268,6 +284,12 @@ export interface IrEntryPoint {
   readonly workgroupSize?: readonly [number, number, number];
   /** Compute stage: the writes, made in order after the body. */
   readonly writes?: readonly IrWrite[];
+  /**
+   * Compute stage: the threads where `value` (a bool) is false skip the
+   * rest of the body and write nothing. The first `after` instructions of
+   * the body compute it; the code generators test it right after them.
+   */
+  readonly active?: { readonly value: ValueId; readonly after: number };
 }
 
 /**

@@ -13,6 +13,12 @@ import type {
 import type { CompiledProgram, CompilerCapabilities } from '@fdw/engine-shader';
 import type { GpuTextureFormat } from '../gpu';
 import type {
+  BottomLevelDescriptor,
+  GpuBottomLevel,
+  GpuTopLevel,
+  TopLevelDescriptor,
+} from './accelerationStructures';
+import type {
   ComputePipelineDescriptor,
   GpuComputePipeline,
   GpuBindGroup,
@@ -112,5 +118,9 @@ export interface RenderBackend {
   // A timer of `capacity` passes; absent, or undefined, where the GPU cannot
   // measure (see GpuPassTimer).
   createPassTimer?(capacity: number): GpuPassTimer | undefined;
+  // The acceleration structures of the rays, on the backends with the
+  // rayQuery capability (see GpuTopLevel).
+  createBottomLevel?(descriptor: BottomLevelDescriptor): GpuBottomLevel;
+  createTopLevel?(descriptor?: TopLevelDescriptor): GpuTopLevel;
   submit(commands: readonly GpuCommandBuffer[]): void;
 }

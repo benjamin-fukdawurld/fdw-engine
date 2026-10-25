@@ -192,6 +192,10 @@ export type IntrinsicOp =
   // array[index], and the number of elements of a runtime-sized array.
   | 'index'
   | 'array-length'
+  // The bits of a 32 bits value seen as another scalar kind.
+  | 'bitcast'
+  // Traces a ray in an acceleration structure (ray.trace).
+  | 'ray-query'
   // Integers: bitwise operators, shifts and remainder, component-wise.
   | 'bit-and'
   | 'bit-or'

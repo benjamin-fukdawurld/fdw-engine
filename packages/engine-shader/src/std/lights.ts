@@ -1,8 +1,10 @@
 import type {
   FunctionDefinition,
+  MacroContext,
   MacroDefinition,
   NodeDefinition,
 } from '../graph/NodeDefinition';
+import type { ValueSource } from '../graph/MaterialGraphData';
 import { BuiltinTypes } from '../types/ShaderType';
 import { generic } from '../types/PortType';
 import { lightMembers } from '../compiler/layout';
@@ -79,20 +81,72 @@ export const shadow: MacroDefinition = {
     { name: 'normal', type: BuiltinTypes.vec3f },
   ],
   outputs: () => [{ name: 'visibility', type: BuiltinTypes.f32 }],
-  expand: (context) =>
-    context.feature('shadows')
-      ? {
-          visibility: context.add(
-            'light.shadowMap',
-            {},
-            {
-              position: context.input('position'),
-              normal: context.input('normal'),
-            },
-          )(),
-        }
-      : { visibility: { value: 1 } },
+  expand: (context) => {
+    const at = {
+      position: context.input('position'),
+      normal: context.input('normal'),
+    };
+    if (context.feature('rayShadows')) {
+      return { visibility: rayVisibility(context, at) };
+    }
+    return context.feature('shadows')
+      ? { visibility: context.add('light.shadowMap', {}, at)() }
+      : { visibility: { value: 1 } };
+  },
 };
+
+// The visibility by rays: rayShadowSamples rays (1 by default), on a
+// spiral of the disk of the light (a Vogel disk) turned by a noise per
+// pixel, averaged.
+function rayVisibility(
+  context: MacroContext,
+  at: { position?: ValueSource; normal?: ValueSource },
+): ValueSource {
+  const samples = Math.max(
+    1,
+    Math.round(Number(context.feature('rayShadowSamples') ?? 1)),
+  );
+  if (samples === 1) {
+    return context.add('light.shadowRay', {}, at)();
+  }
+  // Interleaved gradient noise (Jimenez 2014), in [0, 1).
+  const pixel = context.add('input.builtin', { builtin: 'frag-coord' })();
+  const along = context.add(
+    'std.dot',
+    {},
+    { a: { ...pixel, swizzle: 'xy' } as ValueSource, b: [0.06711056, 0.00583715] },
+  )();
+  const noise = context.add(
+    'std.fract',
+    {},
+    {
+      x: context.add(
+        'std.mul',
+        {},
+        { a: context.add('std.fract', {}, { x: along })(), b: 52.9829189 },
+      )(),
+    },
+  )();
+  let sum: ValueSource | undefined;
+  const golden = 0.6180339887;
+  for (let k = 0; k < samples; k++) {
+    const turn = context.add(
+      'std.fract',
+      {},
+      { x: context.add('std.add', {}, { a: noise, b: k * golden })() },
+    )();
+    const sample = context.add(
+      'std.vec2',
+      {},
+      { x: turn, y: (k + 0.5) / samples },
+    )();
+    const visibility = context.add('light.shadowRay', {}, { ...at, sample })();
+    sum = sum
+      ? context.add('std.add', {}, { a: sum, b: visibility })()
+      : visibility;
+  }
+  return context.add('std.mul', {}, { a: sum, b: 1 / samples })();
+}
 
 export const lightDefinitions: readonly NodeDefinition[] = [
   current,

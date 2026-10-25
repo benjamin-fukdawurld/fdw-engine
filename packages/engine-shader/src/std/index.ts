@@ -15,6 +15,8 @@ import { createMappingFunctions } from './mapping';
 import { createNoiseFunctions } from './noise';
 import { createPatternFunctions } from './patterns';
 import * as outputs from './outputs';
+import * as rays from './rays';
+import { createRayFunctions } from './rays';
 import * as subgraphs from './subgraphs';
 
 export { ShadingModelNames } from './outputs';
@@ -106,9 +108,11 @@ export const std = {
   uvec4: functions.uvec4,
   extend: functions.extend,
   mat3: functions.mat3,
+  mat4: functions.mat4,
   transform: functions.transform,
   transform3: functions.transform3,
   convert: functions.convert,
+  bitcast: functions.bitcast,
 } as const;
 
 /**
@@ -288,6 +292,35 @@ export const stdMacros = {
   displacement: macros.displacement,
 } as const;
 
+/**
+ * Rays traced in the scene, by short name: `ray.trace` (the node), and the
+ * functions of its hit (by id): g.call(stdRays.hitPosition, { hit }).
+ *
+ * @group Standard library
+ */
+export const stdRays = {
+  trace: rays.trace,
+  hit: 'ray.hit',
+  hitFrontFacing: 'ray.hitFrontFacing',
+  hitBarycentrics: 'ray.hitBarycentrics',
+  hitVertices: 'ray.hitVertices',
+  hitPosition: 'ray.hitPosition',
+  hitLocalPosition: 'ray.hitLocalPosition',
+  hitNormal: 'ray.hitNormal',
+  hitLocalNormal: 'ray.hitLocalNormal',
+  hitGeometricNormal: 'ray.hitGeometricNormal',
+  hitUv: 'ray.hitUv',
+  hitLocalTangent: 'ray.hitLocalTangent',
+  hitWorld: 'ray.hitWorld',
+  hitNormalMatrix: 'ray.hitNormalMatrix',
+  hitMaterial: 'ray.hitMaterial',
+  hitObject: 'ray.hitObject',
+  hitFlags: 'ray.hitFlags',
+  hitData: 'ray.hitData',
+} as const;
+
+export { RayMiss } from './rays';
+
 export { call, engineValue, swizzle } from './macros';
 export type { MacroInputs } from './macros';
 
@@ -304,6 +337,7 @@ const baseDefinitions: readonly NodeDefinition[] = [
   ...Object.values(stdOutputs),
   ...lights.lightDefinitions,
   ...loops.loopDefinitions,
+  ...rays.rayDefinitions,
   ...fractal.fractalDefinitions,
   ...mapping.mappingDefinitions,
   ...subgraphs.subgraphDefinitions,
@@ -334,6 +368,8 @@ export function standardNodeDefinitions(): readonly NodeDefinition[] {
     try {
       const base = new NodeRegistry(baseDefinitions);
       shadingModels = [
+        // Before the shading models: the shadows by rays use them.
+        ...createRayFunctions(base),
         ...createColorFunctions(base),
         ...createCameraFunctions(base),
         ...createShadingModels(base),

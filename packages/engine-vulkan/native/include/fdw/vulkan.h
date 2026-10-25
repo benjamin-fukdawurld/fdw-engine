@@ -231,6 +231,9 @@ typedef enum fdw_vk_binding_kind {
   FDW_VK_BINDING_SAMPLER = 2,
   FDW_VK_BINDING_STORAGE_READ = 3,
   FDW_VK_BINDING_STORAGE_READ_WRITE = 4,
+  // A top level acceleration structure (fdw_vk_top_level), read by ray
+  // queries.
+  FDW_VK_BINDING_ACCELERATION_STRUCTURE = 5,
 } fdw_vk_binding_kind;
 
 typedef struct fdw_vk_layout_binding {
@@ -247,7 +250,8 @@ FDW_VK_API uint32_t fdw_vk_group_layout_id(const fdw_vk_group_layout *layout);
 
 typedef struct fdw_vk_group_entry {
   uint32_t binding;
-  // The id of a buffer, a texture or a sampler, as the layout says.
+  // The id of a buffer, a texture, a sampler or a top level, as the layout
+  // says.
   uint32_t object;
 } fdw_vk_group_entry;
 
@@ -405,6 +409,54 @@ FDW_VK_API int fdw_vk_query_pool_read(fdw_vk_context *context,
                                       fdw_vk_query_pool *pool, uint32_t first,
                                       uint32_t count, double *nanoseconds);
 
+// --- Acceleration structures -------------------------------------------------------
+
+// Ray queries (VK_KHR_ray_query, VK_KHR_acceleration_structure), where the
+// device has them: enabled with the context. 1 or 0.
+FDW_VK_API int32_t fdw_vk_ray_query_supported(const fdw_vk_context *context);
+
+typedef struct fdw_vk_bottom_level fdw_vk_bottom_level;
+typedef struct fdw_vk_top_level fdw_vk_top_level;
+
+// The acceleration structure of a triangle mesh: positions (xyz per vertex,
+// `vertex_count` of them) and indices (3 per triangle). Built in the order
+// of the queue, before the commands submitted next. NULL on error.
+FDW_VK_API fdw_vk_bottom_level *
+fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
+                           uint32_t vertex_count, const uint32_t *indices,
+                           uint32_t index_count, const char *label);
+// Destroyed once the GPU no longer uses it.
+FDW_VK_API void fdw_vk_bottom_level_destroy(fdw_vk_context *context,
+                                            fdw_vk_bottom_level *bottom);
+FDW_VK_API uint32_t fdw_vk_bottom_level_id(const fdw_vk_bottom_level *bottom);
+
+// An instance of a top level structure.
+typedef struct fdw_vk_instance {
+  // Object to world: the 3 rows of a 3 × 4 matrix.
+  float transform[12];
+  // The id of its bottom level.
+  uint32_t bottom_level;
+  // 8 bits: the rays sharing a bit with it see it.
+  uint32_t mask;
+} fdw_vk_instance;
+
+// The acceleration structure of a scene, for `capacity` instances (it grows
+// when updated with more). NULL on error.
+FDW_VK_API fdw_vk_top_level *fdw_vk_top_level_create(fdw_vk_context *context,
+                                                     uint32_t capacity,
+                                                     const char *label);
+// Sets the instances of the next build (FDW_VK_CMD_BUILD_TOP_LEVEL), in the
+// order of the queue. Returns 1 when the structure was replaced by a larger
+// one (the groups holding it must be made again), 0 otherwise, -1 on error.
+FDW_VK_API int fdw_vk_top_level_update(fdw_vk_context *context,
+                                       fdw_vk_top_level *top,
+                                       const fdw_vk_instance *instances,
+                                       uint32_t count);
+// Destroyed once the GPU no longer uses it.
+FDW_VK_API void fdw_vk_top_level_destroy(fdw_vk_context *context,
+                                         fdw_vk_top_level *top);
+FDW_VK_API uint32_t fdw_vk_top_level_id(const fdw_vk_top_level *top);
+
 // --- Commands --------------------------------------------------------------------
 
 // The commands of a submission: 32-bit words, each command an opcode then
@@ -450,6 +502,9 @@ enum {
   // Outside of the passes. texture: computes its levels after the first
   // one, each blitted from the previous one.
   FDW_VK_CMD_GENERATE_MIPMAPS = 18,
+  // Outside of the passes. top level: builds it from its last update; the
+  // passes after it trace rays against it.
+  FDW_VK_CMD_BUILD_TOP_LEVEL = 19,
 };
 
 // Records the commands into a command buffer, with the barriers the

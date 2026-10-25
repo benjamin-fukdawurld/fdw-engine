@@ -12,6 +12,11 @@
       "@fdw-engine/source": "./src/index.ts",
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./testing": {
+      "@fdw-engine/source": "./src/testing/index.ts",
+      "types": "./src/testing/index.ts",
+      "default": "./src/testing/index.ts"
     }
   }
 }

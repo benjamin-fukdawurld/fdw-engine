@@ -2,6 +2,7 @@ import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { createDawnFixture, dawn } from './dawnFixture';
+import { describeRays } from './rays';
 import { describeRenderer } from './suite';
 import { canRun } from '@fdw/engine-backend/testing';
 
@@ -12,6 +13,7 @@ const createFixture = () => createDawnFixture();
 const ready = canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load');
 
 describeRenderer('Renderer on WebGPU (Dawn)', createFixture, { skip: !ready });
+describeRays('Rays on WebGPU (Dawn)', createFixture, { skip: !ready });
 
 describe.skipIf(!ready)('WebGPU validation (Dawn)', () => {
   it('reports no validation error', async () => {

@@ -13,7 +13,8 @@ bool writes(VkAccessFlags2 access) {
       VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
       VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
       VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT |
-      VK_ACCESS_2_MEMORY_WRITE_BIT;
+      VK_ACCESS_2_MEMORY_WRITE_BIT |
+      VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
   return (access & writeBits) != 0;
 }
 
@@ -29,7 +30,7 @@ ptrdiff_t pending(const std::vector<T *> &resources, const T *resource) {
 } // namespace
 
 void Barriers::place() {
-  if (images.empty() && bufferBarriers.empty()) {
+  if (images.empty() && bufferBarriers.empty() && memory.empty()) {
     return;
   }
   for (size_t i = 0; i < images.size(); i++) {
@@ -43,12 +44,16 @@ void Barriers::place() {
   dependency.bufferMemoryBarrierCount =
       static_cast<uint32_t>(bufferBarriers.size());
   dependency.pBufferMemoryBarriers = bufferBarriers.data();
+  dependency.memoryBarrierCount = static_cast<uint32_t>(memory.size());
+  dependency.pMemoryBarriers = memory.data();
   vkCmdPipelineBarrier2(commands, &dependency);
   images.clear();
   textures.clear();
   discards.clear();
   bufferBarriers.clear();
   buffers.clear();
+  memory.clear();
+  tops.clear();
 }
 
 void useTexture(Barriers &barriers, fdw_vk_texture *texture,
@@ -127,6 +132,33 @@ void useBuffer(Barriers &barriers, fdw_vk_buffer *buffer,
     barriers.buffers.push_back(buffer);
   }
   buffer->last = {stages, access};
+}
+
+void useTopLevel(Barriers &barriers, fdw_vk_top_level *top,
+                 VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
+  const ptrdiff_t index = pending(barriers.tops, top);
+  if (index >= 0) {
+    barriers.memory[index].dstStageMask |= stages;
+    barriers.memory[index].dstAccessMask |= access;
+    top->last.stages |= stages;
+    top->last.access |= access;
+    return;
+  }
+  if (!writes(top->last.access) && !writes(access)) {
+    top->last.stages |= stages;
+    top->last.access |= access;
+    return;
+  }
+  if (top->last.stages != VK_PIPELINE_STAGE_2_NONE) {
+    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = top->last.stages;
+    barrier.srcAccessMask = top->last.access;
+    barrier.dstStageMask = stages;
+    barrier.dstAccessMask = access;
+    barriers.memory.push_back(barrier);
+    barriers.tops.push_back(top);
+  }
+  top->last = {stages, access};
 }
 
 void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,

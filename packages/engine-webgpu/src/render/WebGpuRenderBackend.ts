@@ -1,8 +1,12 @@
 import type {
   BackendCapabilities,
+  BottomLevelDescriptor,
+  GpuBottomLevel,
   GpuCommandBuffer,
   GpuCommandEncoder,
   GpuPassTimer,
+  GpuTopLevel,
+  TopLevelDescriptor,
   ObjectTableDescriptor,
   RenderBackend,
   RenderTargetDescriptor,
@@ -19,6 +23,7 @@ import {
   WebGpuCommandEncoder,
 } from './WebGpuCommandEncoder';
 import { WebGpuObjectTable } from './WebGpuObjectTable';
+import { SoftwareAccelerationStructures } from './SoftwareAccelerationStructures';
 import { WebGpuPassTimer } from './WebGpuPassTimer';
 import { WebGpuPipelineFactory } from './WebGpuPipelineFactory';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
@@ -31,6 +36,7 @@ export class WebGpuRenderBackend implements RenderBackend {
   readonly transformMath = transformMath;
   readonly depthFormat = 'depth24plus';
   readonly capabilities: BackendCapabilities;
+  private _accelerationStructures?: SoftwareAccelerationStructures;
 
   constructor(readonly device: GPUDevice) {
     this.capabilities = {
@@ -44,6 +50,8 @@ export class WebGpuRenderBackend implements RenderBackend {
       maxColorAttachmentBytesPerSample:
         device.limits.maxColorAttachmentBytesPerSample,
       independentBlend: true,
+      // Rays traced by the code of the backend (softwareRays.ts).
+      rayQuery: true,
     };
     this.buffers = new BufferFactory(device);
     this.textures = new TextureFactory(device);
@@ -83,6 +91,23 @@ export class WebGpuRenderBackend implements RenderBackend {
 
   createObjectTable(descriptor: ObjectTableDescriptor): WebGpuObjectTable {
     return new WebGpuObjectTable(this.device, descriptor);
+  }
+
+  // The acceleration structures of the rays: BVHs built on the CPU and
+  // traversed in WGSL (SoftwareAccelerationStructures).
+  createBottomLevel(descriptor: BottomLevelDescriptor): GpuBottomLevel {
+    return this.accelerationStructures.createBottomLevel(descriptor);
+  }
+
+  createTopLevel(descriptor?: TopLevelDescriptor): GpuTopLevel {
+    return this.accelerationStructures.createTopLevel(descriptor);
+  }
+
+  private get accelerationStructures(): SoftwareAccelerationStructures {
+    this._accelerationStructures ??= new SoftwareAccelerationStructures(
+      this.device,
+    );
+    return this._accelerationStructures;
   }
 
   // Where the device has the timestamp-query feature (WebGpuEngine asks for

@@ -442,6 +442,19 @@ export const mat3 = intrinsic(
   BuiltinTypes.mat3f,
 );
 
+/** A 4 × 4 matrix from its columns. */
+export const mat4 = intrinsic(
+  'mat4',
+  'construct',
+  [
+    port('c0', BuiltinTypes.vec4f),
+    port('c1', BuiltinTypes.vec4f),
+    port('c2', BuiltinTypes.vec4f),
+    port('c3', BuiltinTypes.vec4f),
+  ],
+  BuiltinTypes.mat4f,
+);
+
 export const transform = intrinsic(
   'transform',
   'mul',
@@ -462,6 +475,21 @@ export const convert: FunctionDefinition = {
   description:
     'Explicit conversion between scalar kinds (f32 ↔ i32 ↔ u32), component-wise for vectors.',
   implementation: { kind: 'intrinsic', op: 'convert' },
+  params: { to: { kind: 'type', required: true } },
+  inputs: () => [port('value', numeric)],
+  outputs: (params) => [{ name: 'result', type: params['to'] as ShaderType }],
+};
+
+/**
+ * The bits of a 32 bits scalar or vector seen as another scalar kind
+ * (f32 ↔ u32 ↔ i32): `to` is the type of the result, of the same size.
+ */
+export const bitcast: FunctionDefinition = {
+  id: 'std.bitcast',
+  category: 'function',
+  description:
+    'The bits of a 32 bits value seen as another scalar kind (f32 ↔ u32 ↔ i32).',
+  implementation: { kind: 'intrinsic', op: 'bitcast' },
   params: { to: { kind: 'type', required: true } },
   inputs: () => [port('value', numeric)],
   outputs: (params) => [{ name: 'result', type: params['to'] as ShaderType }],
@@ -525,7 +553,9 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   uvec4,
   extend,
   mat3,
+  mat4,
   transform,
   transform3,
   convert,
+  bitcast,
 ];

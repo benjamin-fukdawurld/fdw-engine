@@ -8,6 +8,12 @@ import {
 } from '@fdw/engine-backend';
 import { LogicalBinding, ShaderType, typeToString } from '@fdw/engine-shader';
 
+/**
+ * The binding numbers of an acceleration structure: the top level, the
+ * nodes and the triangles of the bottom levels (see SoftwareTopLevel).
+ */
+export const AccelerationStructureBindings = 3;
+
 const roundUp = (value: number, align: number) =>
   Math.ceil(value / align) * align;
 
@@ -187,33 +193,45 @@ function writeUniform(
 // blocks laid out with the rules of the uniform address space. Elements of
 // storage arrays are aligned like in the storage address space: a vec3 takes
 // 16 bytes, but scalars and vec2 are not rounded up to 16 as in uniforms.
+// An object table takes two binding numbers (rows, instances), an
+// acceleration structure three (its BVH in storage buffers, see
+// SoftwareTopLevel).
 export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
   resolve(layout): PhysicalProgramLayout {
     return {
-      groups: layout.groups.map((group, index) => ({
-        index,
-        slot: group.slot,
-        bindings: group.bindings.map((resource, binding) =>
-          resource.kind === 'uniform-block'
-            ? { binding, resource, block: uniformBlock(resource) }
-            : resource.kind === 'object-table'
-              ? // Two bindings (rows, instances): alone in its group.
-                {
-                  binding,
-                  resource,
-                  objectRow: objectRowLayout(resource.members),
-                }
-              : resource.kind === 'storage-buffer'
+      groups: layout.groups.map((group, index) => {
+        let next = 0;
+        return {
+          index,
+          slot: group.slot,
+          bindings: group.bindings.map((resource) => {
+            const binding = next;
+            next +=
+              resource.kind === 'object-table'
+                ? 2
+                : resource.kind === 'acceleration-structure'
+                  ? AccelerationStructureBindings
+                  : 1;
+            return resource.kind === 'uniform-block'
+              ? { binding, resource, block: uniformBlock(resource) }
+              : resource.kind === 'object-table'
                 ? {
                     binding,
                     resource,
-                    storage: {
-                      elementStride: storageStride(resource.type.element),
-                    },
+                    objectRow: objectRowLayout(resource.members),
                   }
-                : { binding, resource },
-        ),
-      })),
+                : resource.kind === 'storage-buffer'
+                  ? {
+                      binding,
+                      resource,
+                      storage: {
+                        elementStride: storageStride(resource.type.element),
+                      },
+                    }
+                  : { binding, resource };
+          }),
+        };
+      }),
     };
   },
   writeUniform,
