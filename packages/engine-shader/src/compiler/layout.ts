@@ -44,6 +44,15 @@ export type LogicalBinding =
     }
   | {
       /**
+       * The acceleration structure of a scene, traced by ray.trace: a
+       * structure of the GPU, or the buffers of a BVH where the backend
+       * traces rays itself (see the rayQuery capability).
+       */
+      readonly kind: 'acceleration-structure';
+      readonly name: string;
+    }
+  | {
+      /**
        * The table of the objects drawn: a row per object (the members), and
        * the row of each instance drawn. An instance reads the row
        * instances[firstInstance + instance] (see input.object). Each backend
@@ -320,7 +329,63 @@ export const engineResources: Readonly<Record<string, LogicalBinding>> = {
     type: BuiltinTypes.depthTexture2d,
   },
   shadowSampler: { kind: 'sampler', name: 'shadowSampler', comparison: true },
+  // The scene traced by rays, and what the functions of the hits read (see
+  // rayInstanceMembers).
+  scene: { kind: 'acceleration-structure', name: 'scene' },
+  rayInstances: {
+    kind: 'storage-buffer',
+    name: 'rayInstances',
+    type: arrayType(BuiltinTypes.vec4f),
+    access: 'read',
+  },
+  rayIndices: {
+    kind: 'storage-buffer',
+    name: 'rayIndices',
+    type: arrayType(BuiltinTypes.u32),
+    access: 'read',
+  },
+  rayVertices: {
+    kind: 'storage-buffer',
+    name: 'rayVertices',
+    type: arrayType(BuiltinTypes.vec4f),
+    access: 'read',
+  },
 };
+
+/**
+ * The data of the scene traced by rays, in the storage buffers of the
+ * 'frame' slot read by the functions of the hits (ray.hitPosition…), the
+ * same on every backend:
+ *
+ * - rayInstances, RayInstanceVec4s vec4 per instance of the acceleration
+ *   structure: the object to world matrix by rows (3 vec4: x, y, z of a
+ *   point p are dot(row, vec4(p, 1))), the columns of the normal matrix
+ *   (3 vec4), then the bits of four u32: the first index of its mesh in
+ *   rayIndices, its material (the index of its material in the traced
+ *   scene), the identifier of its object, its flags (RayInstanceFlags);
+ *   then a vec4 of the application (0 by default).
+ * - rayIndices: the vertices of the triangles, 3 per triangle, indices of
+ *   rayVertices.
+ * - rayVertices, RayVertexVec4s vec4 per vertex: the position (object
+ *   space) and u, the normal and v, the tangent (xyz, w the handedness).
+ *
+ * @group Program layout
+ */
+export const RayInstanceVec4s = 8;
+/** @see RayInstanceVec4s */
+export const RayVertexVec4s = 3;
+
+/**
+ * The flags of an instance of the traced scene (the w of its 7th vec4).
+ *
+ * @group Program layout
+ */
+export const RayInstanceFlags = {
+  /** Its material is seen from both sides. */
+  doubleSided: 1,
+  /** Its material is transparent or masked: see its alpha. */
+  alpha: 2,
+} as const;
 
 /**
  * The slots in group order: the built-in slots, then the custom ones sorted

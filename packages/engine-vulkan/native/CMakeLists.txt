@@ -31,6 +31,7 @@ add_library(fdw_vulkan STATIC
   src/pipeline.cpp
   src/swapchain.cpp
   src/queries.cpp
+  src/rays.cpp
   src/vma.cpp
   "${SDK_INCLUDE}/volk/volk.c"
 )

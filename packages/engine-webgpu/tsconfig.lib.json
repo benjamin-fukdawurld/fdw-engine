@@ -12,6 +12,9 @@
     },
     {
       "path": "../engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-geometry/tsconfig.lib.json"
     }
   ]
 }

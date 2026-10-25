@@ -132,6 +132,35 @@ struct fdw_vk_pipeline {
   std::vector<bool> usedSets;
 };
 
+struct fdw_vk_bottom_level {
+  uint32_t id = 0;
+  VkAccelerationStructureKHR structure = VK_NULL_HANDLE;
+  VkBuffer storage = VK_NULL_HANDLE;
+  VmaAllocation allocation = nullptr;
+  // Its address, for the instances of the top levels.
+  VkDeviceAddress address = 0;
+  uint32_t triangleCount = 0;
+};
+
+struct fdw_vk_top_level {
+  uint32_t id = 0;
+  VkAccelerationStructureKHR structure = VK_NULL_HANDLE;
+  VkBuffer storage = VK_NULL_HANDLE;
+  VmaAllocation allocation = nullptr;
+  // The instances (VkAccelerationStructureInstanceKHR), written by the
+  // updates in the order of the queue, read by the builds.
+  fdw_vk_buffer *instances = nullptr;
+  // The scratch memory of the builds.
+  VkBuffer scratch = VK_NULL_HANDLE;
+  VmaAllocation scratchAllocation = nullptr;
+  VkDeviceAddress scratchAddress = 0;
+  uint32_t capacity = 0;
+  // The instances of the last update.
+  uint32_t count = 0;
+  // The last use of the structure (and of its scratch memory).
+  fdw::Access last;
+};
+
 struct fdw_vk_query_pool {
   uint32_t id = 0;
   VkQueryPool pool = VK_NULL_HANDLE;
@@ -150,6 +179,10 @@ struct fdw_vk_context {
   // The highest anisotropy of the samplers: 1 without the samplerAnisotropy
   // feature.
   float maxAnisotropy = 1;
+  // Ray queries and acceleration structures (with the addresses of the
+  // buffers), and the alignment of the scratch memory of the builds.
+  bool rayQuery = false;
+  uint32_t scratchAlignment = 256;
   // The color attachments of a render pass (at most 8), and whether their
   // blend states can differ.
   uint32_t maxColorAttachments = 4;
@@ -186,6 +219,8 @@ struct fdw_vk_context {
   std::map<uint32_t, fdw_vk_group *> groups;
   std::map<uint32_t, fdw_vk_pipeline *> pipelines;
   std::map<uint32_t, fdw_vk_query_pool *> queryPools;
+  std::map<uint32_t, fdw_vk_bottom_level *> bottomLevels;
+  std::map<uint32_t, fdw_vk_top_level *> topLevels;
   std::set<fdw_vk_shader *> shaders;
   // The descriptor pools: a new one when the last is full.
   std::vector<VkDescriptorPool> descriptorPools;
@@ -270,6 +305,9 @@ struct Barriers {
   std::vector<bool> discards;
   std::vector<VkBufferMemoryBarrier2> bufferBarriers;
   std::vector<fdw_vk_buffer *> buffers;
+  // Global barriers: the acceleration structures, with their top levels.
+  std::vector<VkMemoryBarrier2> memory;
+  std::vector<fdw_vk_top_level *> tops;
 };
 
 // Makes the next use of a texture wait for the previous one, changing its
@@ -288,6 +326,23 @@ void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,
                 VkAccessFlags2 access, bool discard = false);
 void useBuffer(VkCommandBuffer commands, fdw_vk_buffer *buffer,
                VkPipelineStageFlags2 stages, VkAccessFlags2 access);
+
+// The same for a top level acceleration structure: a memory barrier when
+// needed.
+void useTopLevel(Barriers &barriers, fdw_vk_top_level *top,
+                 VkPipelineStageFlags2 stages, VkAccessFlags2 access);
+
+// A buffer of the context (registered: written and destroyed as the
+// others), with the given Vulkan usages besides the transfers.
+fdw_vk_buffer *createBuffer(fdw_vk_context *context, uint64_t size,
+                            VkBufferUsageFlags usage, const char *label);
+// The device address of a buffer (bufferDeviceAddress).
+VkDeviceAddress bufferAddress(fdw_vk_context *context, VkBuffer buffer);
+// Records the build of a top level from its last update.
+int buildTopLevel(fdw_vk_context *context, VkCommandBuffer commands,
+                  fdw_vk_top_level *top);
+// Frees the acceleration structures of a context being destroyed.
+void destroyAccelerationStructures(fdw_vk_context *context);
 
 // Records the computation of the levels of a texture after the first one,
 // each blitted from the previous one, in every layer.

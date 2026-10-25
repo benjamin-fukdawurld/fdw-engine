@@ -9,9 +9,7 @@ using namespace fdw;
 namespace {
 
 VkBufferUsageFlags bufferUsage(uint32_t usage) {
-  // Every buffer can be written and read back.
-  VkBufferUsageFlags flags =
-      VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  VkBufferUsageFlags flags = 0;
   if (usage & FDW_VK_BUFFER_UNIFORM) {
     flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
   }
@@ -41,16 +39,22 @@ int checkRange(const fdw_vk_buffer *buffer, uint64_t offset, uint64_t size) {
 
 } // namespace
 
-extern "C" {
+namespace fdw {
 
-uint32_t fdw_vk_buffer_id(const fdw_vk_buffer *buffer) { return buffer->id; }
+VkDeviceAddress bufferAddress(fdw_vk_context *context, VkBuffer buffer) {
+  VkBufferDeviceAddressInfo info{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
+  info.buffer = buffer;
+  return vkGetBufferDeviceAddress(context->device, &info);
+}
 
-fdw_vk_buffer *fdw_vk_buffer_create(fdw_vk_context *context, uint64_t size,
-                                    uint32_t usage, const char *label) {
+fdw_vk_buffer *createBuffer(fdw_vk_context *context, uint64_t size,
+                            VkBufferUsageFlags usage, const char *label) {
   VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   // Vulkan forbids empty buffers.
   info.size = size > 0 ? size : 4;
-  info.usage = bufferUsage(usage);
+  // Every buffer can be written and read back.
+  info.usage = usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+               VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   VmaAllocationCreateInfo allocation{};
   allocation.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
   auto *buffer = new fdw_vk_buffer();
@@ -75,6 +79,17 @@ fdw_vk_buffer *fdw_vk_buffer_create(fdw_vk_context *context, uint64_t size,
   buffer->id = context->nextId++;
   context->buffers[buffer->id] = buffer;
   return buffer;
+}
+
+} // namespace fdw
+
+extern "C" {
+
+uint32_t fdw_vk_buffer_id(const fdw_vk_buffer *buffer) { return buffer->id; }
+
+fdw_vk_buffer *fdw_vk_buffer_create(fdw_vk_context *context, uint64_t size,
+                                    uint32_t usage, const char *label) {
+  return createBuffer(context, size, bufferUsage(usage), label);
 }
 
 void fdw_vk_buffer_destroy(fdw_vk_context *context, fdw_vk_buffer *buffer) {

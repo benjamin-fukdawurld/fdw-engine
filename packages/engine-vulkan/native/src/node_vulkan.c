@@ -235,12 +235,15 @@ typedef enum object_kind {
   GROUP,
   PIPELINE,
   SWAPCHAIN,
-  QUERY_POOL
+  QUERY_POOL,
+  BOTTOM_LEVEL,
+  TOP_LEVEL
 } object_kind;
 
-static const char *kind_names[] = {"buffer",       "texture", "sampler",
-                                   "shader",       "group layout", "group",
-                                   "pipeline",     "swapchain", "query pool"};
+static const char *kind_names[] = {
+    "buffer",       "texture",      "sampler",   "shader",
+    "group layout", "group",        "pipeline",  "swapchain",
+    "query pool",   "bottom level", "top level"};
 
 static void finalize_object(napi_env env, void *data, void *hint) {
   (void)hint;
@@ -333,6 +336,12 @@ static napi_value destroy_object(napi_env env, napi_callback_info info,
     case QUERY_POOL:
       fdw_vk_query_pool_destroy(handle->owner->context, handle->object);
       break;
+    case BOTTOM_LEVEL:
+      fdw_vk_bottom_level_destroy(handle->owner->context, handle->object);
+      break;
+    case TOP_LEVEL:
+      fdw_vk_top_level_destroy(handle->owner->context, handle->object);
+      break;
     }
   }
   handle->object = NULL;
@@ -362,6 +371,10 @@ static napi_value object_id(napi_env env, napi_callback_info info,
     return number(env, fdw_vk_pipeline_id(handle->object));
   case QUERY_POOL:
     return number(env, fdw_vk_query_pool_id(handle->object));
+  case BOTTOM_LEVEL:
+    return number(env, fdw_vk_bottom_level_id(handle->object));
+  case TOP_LEVEL:
+    return number(env, fdw_vk_top_level_id(handle->object));
   case SHADER:
   case SWAPCHAIN:
     break;
@@ -1195,6 +1208,103 @@ static napi_value js_present(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
+// --- Acceleration structures -------------------------------------------------------
+
+static napi_value js_ray_query_supported(napi_env env,
+                                         napi_callback_info info) {
+  ARGS(1);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  napi_value result;
+  CHECK(napi_get_boolean(env, fdw_vk_ray_query_supported(context) == 1,
+                         &result));
+  return result;
+}
+
+// createBottomLevel(context, positions: Float32Array, indices: Uint32Array,
+// label)
+static napi_value js_create_bottom_level(napi_env env,
+                                         napi_callback_info info) {
+  ARGS(4);
+  context_handle *owner = owner_arg(env, argv[0]);
+  void *positions = NULL;
+  void *indices = NULL;
+  size_t positionBytes = 0;
+  size_t indexBytes = 0;
+  if (!owner || bytes_arg(env, argv[1], &positions, &positionBytes) != 0 ||
+      bytes_arg(env, argv[2], &indices, &indexBytes) != 0) {
+    return NULL;
+  }
+  char *label = string_arg(env, argv[3]);
+  fdw_vk_bottom_level *bottom = fdw_vk_bottom_level_create(
+      owner->context, (const float *)positions,
+      (uint32_t)(positionBytes / 12), (const uint32_t *)indices,
+      (uint32_t)(indexBytes / 4), label);
+  free(label);
+  if (!bottom) {
+    return throw_last_error(env);
+  }
+  return wrap_object(env, argv[0], owner, BOTTOM_LEVEL, bottom);
+}
+
+static napi_value js_destroy_bottom_level(napi_env env,
+                                          napi_callback_info info) {
+  return destroy_object(env, info, BOTTOM_LEVEL);
+}
+
+static napi_value js_bottom_level_id(napi_env env, napi_callback_info info) {
+  return object_id(env, info, BOTTOM_LEVEL);
+}
+
+// createTopLevel(context, capacity, label)
+static napi_value js_create_top_level(napi_env env, napi_callback_info info) {
+  ARGS(3);
+  context_handle *owner = owner_arg(env, argv[0]);
+  if (!owner) {
+    return NULL;
+  }
+  char *label = string_arg(env, argv[2]);
+  fdw_vk_top_level *top = fdw_vk_top_level_create(
+      owner->context, (uint32_t)number_arg(env, argv[1]), label);
+  free(label);
+  if (!top) {
+    return throw_last_error(env);
+  }
+  return wrap_object(env, argv[0], owner, TOP_LEVEL, top);
+}
+
+// updateTopLevel(top, instances): the instances as fdw_vk_instance (14
+// words each: 12 floats, 2 u32), in a typed array. Whether the structure
+// was replaced.
+static napi_value js_update_top_level(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  object_handle *handle = object_arg(env, argv[0], TOP_LEVEL);
+  void *data = NULL;
+  size_t length = 0;
+  if (!handle || bytes_arg(env, argv[1], &data, &length) != 0) {
+    return NULL;
+  }
+  const int replaced = fdw_vk_top_level_update(
+      handle->owner->context, handle->object, (const fdw_vk_instance *)data,
+      (uint32_t)(length / sizeof(fdw_vk_instance)));
+  if (replaced < 0) {
+    return throw_last_error(env);
+  }
+  napi_value result;
+  CHECK(napi_get_boolean(env, replaced == 1, &result));
+  return result;
+}
+
+static napi_value js_destroy_top_level(napi_env env, napi_callback_info info) {
+  return destroy_object(env, info, TOP_LEVEL);
+}
+
+static napi_value js_top_level_id(napi_env env, napi_callback_info info) {
+  return object_id(env, info, TOP_LEVEL);
+}
+
 // --- Commands --------------------------------------------------------------------
 
 // submit(context, words: Uint32Array)
@@ -1267,6 +1377,14 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("present", js_present),
       EXPORT("destroyPipeline", js_destroy_pipeline),
       EXPORT("pipelineId", js_pipeline_id),
+      EXPORT("rayQuerySupported", js_ray_query_supported),
+      EXPORT("createBottomLevel", js_create_bottom_level),
+      EXPORT("destroyBottomLevel", js_destroy_bottom_level),
+      EXPORT("bottomLevelId", js_bottom_level_id),
+      EXPORT("createTopLevel", js_create_top_level),
+      EXPORT("updateTopLevel", js_update_top_level),
+      EXPORT("destroyTopLevel", js_destroy_top_level),
+      EXPORT("topLevelId", js_top_level_id),
   };
   if (napi_define_properties(env, exports,
                              sizeof(properties) / sizeof(properties[0]),

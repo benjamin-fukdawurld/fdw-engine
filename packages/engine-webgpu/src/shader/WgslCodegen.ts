@@ -4,6 +4,10 @@ import type {
   ShaderSources,
 } from '@fdw/engine-backend';
 import {
+  softwareRayFunctions,
+  traceFunctionName,
+} from './softwareRays';
+import {
   ConstantValue,
   IrEntryPoint,
   IrInstruction,
@@ -110,7 +114,10 @@ function literal(type: ShaderType, value: ConstantValue): string {
 // to a let, so they are used inline. Arrays of uniform blocks are used
 // inline too, indexed in place rather than copied.
 const isInline = (type: ShaderType) =>
-  type.kind === 'texture' || type.kind === 'sampler' || type.kind === 'array';
+  type.kind === 'texture' ||
+  type.kind === 'sampler' ||
+  type.kind === 'array' ||
+  type.kind === 'acceleration-structure';
 
 const identifier = (text: string) =>
   text.replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
@@ -136,8 +143,17 @@ function resourceIdentifier(resource: LogicalBinding): string {
       return `b_${resource.name}`;
     case 'object-table':
       return resource.name;
+    case 'acceleration-structure':
+      return `as_${resource.name}`;
   }
 }
+
+// The buffers of an acceleration structure (see softwareRayFunctions).
+const accelerationBuffers = (name: string) => ({
+  top: `${name}_top`,
+  nodes: `${name}_nodes`,
+  triangles: `${name}_triangles`,
+});
 
 // The second buffer of an object table: the row of each instance.
 const instancesIdentifier = (table: string) => `${table}Instances`;
@@ -202,7 +218,19 @@ function emitBody(
     expressions: new Map(),
     builtins: new Set(),
   };
-  emitInstructions(entryPoint.body, resources, state, '  ');
+  const { active } = entryPoint;
+  if (active) {
+    // The threads out of the guard stop once it is known.
+    emitInstructions(entryPoint.body.slice(0, active.after), resources, state, '  ');
+    state.lines.push(
+      `  if (!(${state.expressions.get(active.value)})) {`,
+      '    return;',
+      '  }',
+    );
+    emitInstructions(entryPoint.body.slice(active.after), resources, state, '  ');
+  } else {
+    emitInstructions(entryPoint.body, resources, state, '  ');
+  }
   return state;
 }
 
@@ -268,6 +296,22 @@ function emitInstructions(
         // Storage arrays are used inline: their expression is the variable.
         expression = `arrayLength(&${arg(instruction, 0)})`;
         break;
+      case 'bitcast':
+        expression = `bitcast<${wgslType(type)}>(${arg(instruction, 0)})`;
+        break;
+      case 'ray-query': {
+        // The expression of the structure is its identifier: as_<name>.
+        const binding = arg(instruction, 0).replace(/^as_/, '');
+        const [, origin, direction, tMin, tMax, mask] = instruction.args.map(
+          (id) => expressions.get(id) as string,
+        );
+        expression = `${traceFunctionName(
+          binding,
+        )}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask}, ${
+          op.mode === 'any'
+        })`;
+        break;
+      }
       case 'constant':
         expression = literal(type, op.value);
         break;
@@ -422,6 +466,20 @@ function declareResources(
               binding + 1
             }) var<storage, read> ${instancesIdentifier(name)}: array<u32>;`,
           ].join('\n'),
+        );
+      } else if (resource.kind === 'acceleration-structure') {
+        // Three storage buffers, then the functions tracing rays in them.
+        const buffers = accelerationBuffers(name);
+        sections.push(
+          [buffers.top, buffers.nodes, buffers.triangles]
+            .map(
+              (buffer, offset) =>
+                `@group(${group.index}) @binding(${
+                  binding + offset
+                }) var<storage, read> ${buffer}: array<vec4<f32>>;`,
+            )
+            .join('\n'),
+          softwareRayFunctions(resource.name, buffers),
         );
       } else if (resource.kind === 'texture') {
         sections.push(`${location} var ${name}: ${wgslType(resource.type)};`);

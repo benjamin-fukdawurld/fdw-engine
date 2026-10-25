@@ -77,6 +77,11 @@ export interface CompilerCapabilities {
    * binding), instead of a uniform block per object. Default false.
    */
   readonly objectTable?: boolean;
+  /**
+   * Rays traced in the shaders (ray.trace), in every stage: by the GPU
+   * (ray queries) or by code of the backend. Default false.
+   */
+  readonly rayQuery?: boolean;
 }
 
 /**
@@ -196,6 +201,7 @@ function isSupportedType(type: ShaderType): boolean {
       return type.scalar !== 'f16';
     case 'texture':
     case 'sampler':
+    case 'acceleration-structure':
       return true;
     case 'array':
       return isSupportedType(type.element);
@@ -337,6 +343,30 @@ function checkSupport(
       if (!isSupportedType(type)) {
         error(
           `port "${port}": ${typeToString(type)} values are not supported yet`,
+        );
+      }
+    }
+
+    if (definition.id === 'ray.trace' && !capabilities.rayQuery) {
+      error('ray.trace: the backend traces no rays (rayQuery capability)');
+    }
+    if (node.type === 'std.bitcast') {
+      const from = types?.inputs['value'];
+      const to = params['to'] as ShaderType;
+      const shape = (type: ShaderType | undefined) =>
+        type?.kind === 'scalar'
+          ? 1
+          : type?.kind === 'vector' && type.scalar !== 'bool'
+            ? type.size
+            : 0;
+      const bits32 = (type: ShaderType | undefined) =>
+        (type?.kind === 'scalar' || type?.kind === 'vector') &&
+        ['f32', 'u32', 'i32'].includes(type.scalar);
+      if (!bits32(from) || !bits32(to) || shape(from) !== shape(to)) {
+        error(
+          `std.bitcast: from ${from ? typeToString(from) : '?'} to ${typeToString(
+            to,
+          )}, scalars or vectors of f32, u32 or i32 of the same size`,
         );
       }
     }

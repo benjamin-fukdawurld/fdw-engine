@@ -351,6 +351,101 @@ function shadowMap(registry: NodeRegistry): FunctionDefinition {
   });
 }
 
+// The visibility of the light being summed at a point, by a ray traced
+// towards it (see the light.shadow macro, with the rayShadows feature): 0
+// when something is in the way. The ray leaves from the point moved along
+// the normal turned towards the light (shadow.z, in world units), and stops
+// at the light (point and spot) or goes on (directional). Its end is moved
+// on a disk of radius shadow.w across it (the size of the light, or the
+// tangent of its angular radius for a directional one), at `sample` (in
+// [0, 1)²): averaged over several samples, the penumbra. Lights without
+// shadows (shadow.x = 0) are not traced against.
+function shadowRay(registry: NodeRegistry): FunctionDefinition {
+  const f = new GraphBuilder('shadowRay', registry);
+  const position = f.functionInput('position', vec3);
+  const normal = f.functionInput('normal', vec3);
+  const sample = f.functionInput('sample', BuiltinTypes.vec2f, {
+    default: [0, 0],
+  });
+  const { add, sub, mul, select, dot, cross, normalize, greater } = functions;
+  const light = f.node(lights.current);
+  const params = light['shadow'];
+  const lightPosition = light['position'];
+  const toLight = f.call(sub, {
+    a: lightPosition.swizzle('xyz'),
+    b: f.call(mul, { a: position, b: lightPosition.swizzle('w') }),
+  });
+  const l = f.call(normalize, { x: toLight });
+  // A frame across the direction to the light, and the point of the disk.
+  const side = f.call(normalize, {
+    x: f.call(cross, {
+      a: l,
+      b: f.call(select, {
+        ifFalse: [0, 1, 0],
+        ifTrue: [1, 0, 0],
+        condition: f.call(greater, {
+          a: f.call(functions.abs, { x: l.swizzle('y') }),
+          b: 0.9,
+        }),
+      }),
+    }),
+  });
+  const up = f.call(cross, { a: l, b: side });
+  const angle = f.call(mul, { a: sample.swizzle('x'), b: 2 * Math.PI });
+  const radius = f.call(mul, {
+    a: f.call(functions.sqrt, { x: sample.swizzle('y') }),
+    b: params.swizzle('w'),
+  });
+  const offset = f.call(add, {
+    a: f.call(mul, {
+      a: side,
+      b: f.call(mul, { a: f.call(functions.cos, { x: angle }), b: radius }),
+    }),
+    b: f.call(mul, {
+      a: up,
+      b: f.call(mul, { a: f.call(functions.sin, { x: angle }), b: radius }),
+    }),
+  });
+  // The normal on the side of the light, against the acne.
+  const facing = f.call(select, {
+    ifFalse: f.call(mul, { a: normal, b: -1 }),
+    ifTrue: normal,
+    condition: f.call(greater, { a: f.call(dot, { a: normal, b: l }), b: 0 }),
+  });
+  const origin = f.call(add, {
+    a: position,
+    b: f.call(mul, { a: facing, b: params.swizzle('z') }),
+  });
+  // Towards the end of the ray: t = 1 at the light, for a point or a spot.
+  const direction = f.call(sub, {
+    a: f.call(add, { a: toLight, b: offset }),
+    b: f.call(sub, { a: origin, b: position }),
+  });
+  const pointLike = f.call(greater, { a: lightPosition.swizzle('w'), b: 0.5 });
+  const hit = f.traceRay({
+    origin,
+    direction,
+    tMax: f.call(select, { ifFalse: 1e30, ifTrue: 0.999, condition: pointLike }),
+    mode: 'any',
+  });
+  const blocked = f.call('ray.hit', { hit });
+  const casts = f.call(greater, { a: params.swizzle('x'), b: 0.5 });
+  f.functionOutput(
+    'visibility',
+    f.call(select, {
+      ifFalse: 1,
+      ifTrue: f.call(select, { ifFalse: 1, ifTrue: 0, condition: blocked }),
+      condition: casts,
+    }),
+  );
+  return defineFunction(f.build(), {
+    id: 'light.shadowRay',
+    description:
+      'The visibility of the light being summed, by a ray traced towards it.',
+    registry,
+  });
+}
+
 // Unlit: the base color, with its alpha.
 function unlit(registry: NodeRegistry): FunctionDefinition {
   const f = new GraphBuilder('unlit', registry);
@@ -577,5 +672,11 @@ function pbr(registry: NodeRegistry): FunctionDefinition {
 export function createShadingModels(
   registry: NodeRegistry,
 ): FunctionDefinition[] {
-  return [shadowMap(registry), unlit(registry), phong(registry), pbr(registry)];
+  return [
+    shadowMap(registry),
+    shadowRay(registry),
+    unlit(registry),
+    phong(registry),
+    pbr(registry),
+  ];
 }

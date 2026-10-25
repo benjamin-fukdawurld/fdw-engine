@@ -149,6 +149,16 @@ export type SamplerType = {
 };
 
 /**
+ * The acceleration structure of a scene: what rays are traced against
+ * (`ray.trace`). A handle, as textures: read from the 'scene' engine value.
+ *
+ * @group Shader types
+ */
+export type AccelerationStructureType = {
+  readonly kind: 'acceleration-structure';
+};
+
+/**
  * A logical shader type: what a shader manipulates, independently of any
  * shading language or memory layout.
  *
@@ -165,7 +175,8 @@ export type ShaderType =
   | ArrayType
   | StructType
   | TextureType
-  | SamplerType;
+  | SamplerType
+  | AccelerationStructureType;
 
 /**
  * Creates a scalar type.
@@ -284,6 +295,9 @@ export const BuiltinTypes = {
   depthTexture2d: texture('2d', 'depth'),
   sampler: sampler(false),
   comparisonSampler: sampler(true),
+  accelerationStructure: {
+    kind: 'acceleration-structure',
+  } as AccelerationStructureType,
 } as const;
 
 /**
@@ -355,6 +369,8 @@ export function typeEquals(a: ShaderType, b: ShaderType): boolean {
     }
     case 'sampler':
       return a.comparison === (b as SamplerType).comparison;
+    case 'acceleration-structure':
+      return true;
   }
 }
 
@@ -383,5 +399,7 @@ export function typeToString(type: ShaderType): string {
       }>`;
     case 'sampler':
       return type.comparison ? 'sampler_comparison' : 'sampler';
+    case 'acceleration-structure':
+      return 'acceleration_structure';
   }
 }

@@ -18,6 +18,7 @@ import { Sampler } from '../gpu/Sampler';
 import { Texture } from '../gpu/Texture';
 import { WgslCodegen } from '../shader/WgslCodegen';
 import { wgslLayoutStrategy } from '../shader/wgslLayoutStrategy';
+import { SoftwareTopLevel } from './SoftwareAccelerationStructures';
 import { WebGpuObjectTable } from './WebGpuObjectTable';
 
 export class WebGpuRenderPipeline implements GpuRenderPipeline {
@@ -52,6 +53,17 @@ export class WebGpuBindGroup implements GpuBindGroup {
 // The entries of a binding: one, or two for an object table (the rows, then
 // the row of each instance).
 function layoutEntries(binding: PhysicalBinding): GPUBindGroupLayoutEntry[] {
+  if (binding.resource.kind === 'acceleration-structure') {
+    // The buffers of the BVH (see SoftwareTopLevel).
+    return [0, 1, 2].map((offset) => ({
+      binding: binding.binding + offset,
+      visibility:
+        GPUShaderStage.VERTEX |
+        GPUShaderStage.FRAGMENT |
+        GPUShaderStage.COMPUTE,
+      buffer: { type: 'read-only-storage' },
+    }));
+  }
   if (binding.resource.kind === 'object-table') {
     const visibility = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
     return [0, 1].map((offset) => ({
@@ -95,6 +107,10 @@ function layoutEntry(binding: PhysicalBinding): GPUBindGroupLayoutEntry {
       };
     case 'object-table':
       throw new Error('An object table has two entries: see layoutEntries');
+    case 'acceleration-structure':
+      throw new Error(
+        'An acceleration structure has three entries: see layoutEntries',
+      );
     case 'storage-buffer':
       return resource.access === 'read-write'
         ? {
@@ -178,7 +194,12 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
       this.device.createBindGroup({
         layout: layout.layout,
         entries: entries.flatMap((entry): GPUBindGroupEntry[] =>
-          entry.resource instanceof WebGpuObjectTable
+          entry.resource instanceof SoftwareTopLevel
+            ? entry.resource.buffers.map((buffer, offset) => ({
+                binding: entry.binding + offset,
+                resource: { buffer },
+              }))
+            : entry.resource instanceof WebGpuObjectTable
             ? [
                 {
                   binding: entry.binding,

@@ -5,7 +5,9 @@
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 namespace fdw {
 
@@ -388,7 +390,59 @@ int createDevice(fdw_vk_context *context) {
         std::min(properties.limits.maxColorAttachments, 8u);
   }
 
+  // Ray queries, where the device has them (and unless FDW_VK_NO_RAY_QUERY
+  // is set, to test what does without): their extensions, the
+  // acceleration structures, and the addresses of the buffers they are
+  // built from.
+  VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+  VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructure{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+      &rayQuery};
+  const char *rayExtensions[] = {
+      VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+      VK_KHR_RAY_QUERY_EXTENSION_NAME,
+      VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+  };
+  bool rays = !std::getenv("FDW_VK_NO_RAY_QUERY");
+  for (const char *name : rayExtensions) {
+    rays = rays && hasDeviceExtension(context->physicalDevice, name);
+  }
+  if (rays) {
+    VkPhysicalDeviceVulkan12Features available12{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        &accelerationStructure};
+    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                    &available12};
+    vkGetPhysicalDeviceFeatures2(context->physicalDevice, &query);
+    rays = available12.bufferDeviceAddress &&
+           accelerationStructure.accelerationStructure && rayQuery.rayQuery;
+  }
+  if (rays) {
+    // Only what is used.
+    accelerationStructure = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+        &rayQuery};
+    accelerationStructure.accelerationStructure = VK_TRUE;
+    rayQuery = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+    rayQuery.rayQuery = VK_TRUE;
+    features13.pNext = &accelerationStructure;
+    features12.bufferDeviceAddress = VK_TRUE;
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR properties{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+    VkPhysicalDeviceProperties2 all{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                    &properties};
+    vkGetPhysicalDeviceProperties2(context->physicalDevice, &all);
+    context->scratchAlignment =
+        std::max(properties.minAccelerationStructureScratchOffsetAlignment, 1u);
+    context->rayQuery = true;
+  }
+
   std::vector<const char *> extensions;
+  if (rays) {
+    extensions.insert(extensions.end(), std::begin(rayExtensions),
+                      std::end(rayExtensions));
+  }
   if (hasDeviceExtension(context->physicalDevice,
                          VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
     extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -425,6 +479,9 @@ int createDevice(fdw_vk_context *context) {
   allocator.device = context->device;
   allocator.instance = context->instance;
   allocator.pVulkanFunctions = &functions;
+  if (context->rayQuery) {
+    allocator.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+  }
   result = vmaCreateAllocator(&allocator, &context->allocator);
   if (result != VK_SUCCESS) {
     return fail("vmaCreateAllocator", result);
@@ -501,6 +558,7 @@ void fdw_vk_context_destroy(fdw_vk_context *context) {
     context->reads.clear();
     destroySwapchains(context);
     destroyPipelines(context);
+    destroyAccelerationStructures(context);
     for (auto &[id, buffer] : context->buffers) {
       vmaDestroyBuffer(context->allocator, buffer->buffer, buffer->allocation);
       delete buffer;

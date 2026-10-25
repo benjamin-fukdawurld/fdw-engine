@@ -161,6 +161,16 @@ int useGroup(Replay &replay, Barriers &barriers, const fdw_vk_group *group,
              VkPipelineStageFlags2 stages) {
   fdw_vk_context *context = replay.context;
   for (const auto &[kind, id] : group->resources) {
+    if (kind == FDW_VK_BINDING_ACCELERATION_STRUCTURE) {
+      const auto top = context->topLevels.find(id);
+      if (top == context->topLevels.end()) {
+        return fail("A group uses the destroyed top level " +
+                    std::to_string(id));
+      }
+      useTopLevel(barriers, top->second, stages,
+                  VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+      continue;
+    }
     if (kind == FDW_VK_BINDING_TEXTURE) {
       const auto texture = context->textures.find(id);
       if (texture == context->textures.end()) {
@@ -642,6 +652,17 @@ int replayCommands(Replay &replay) {
     case FDW_VK_CMD_COPY_TEXTURE:
       status = copyTexture(replay);
       break;
+    case FDW_VK_CMD_BUILD_TOP_LEVEL: {
+      if (replay.inRenderPass || replay.inComputePass) {
+        return fail("Top levels are built outside of the passes");
+      }
+      fdw_vk_top_level *top = find(replay.context->topLevels,
+                                   replay.reader.word(), "top level", &status);
+      if (top) {
+        status = buildTopLevel(replay.context, replay.commands, top);
+      }
+      break;
+    }
     case FDW_VK_CMD_GENERATE_MIPMAPS: {
       if (replay.inRenderPass || replay.inComputePass) {
         return fail("Mipmaps are computed outside of the passes");

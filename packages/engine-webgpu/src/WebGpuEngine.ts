@@ -53,10 +53,19 @@ export class WebGpuEngine extends EventTarget implements Engine {
       // Timestamps, to measure the passes, and the compressed formats,
       // where the adapter has them.
       const features = ['timestamp-query', ...Object.keys(CompressionFeatures)];
+      // The storage buffers of the adapter: the programs tracing rays bind
+      // the buffers of the scene besides their own, and large BVHs.
+      const { limits } = adapter;
       this.device = await adapter.requestDevice({
         requiredFeatures: features.filter((feature) =>
           adapter.features.has(feature),
         ) as GPUFeatureName[],
+        requiredLimits: {
+          maxStorageBuffersPerShaderStage:
+            limits.maxStorageBuffersPerShaderStage,
+          maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
+          maxBufferSize: limits.maxBufferSize,
+        },
       });
       this.backend = new WebGpuRenderBackend(this.device);
       this.backend.textures.defaultMaxAnisotropy = this._maxAnisotropy;

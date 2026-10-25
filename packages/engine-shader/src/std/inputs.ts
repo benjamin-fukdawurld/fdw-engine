@@ -1,4 +1,5 @@
 import {
+  arrayType,
   ShaderType,
   BuiltinTypes,
   texture,
@@ -161,6 +162,12 @@ const engineValues: Record<string, ShaderType> = {
   // The shadow atlas of the lights, read by the light.shadow macro.
   shadowMap: BuiltinTypes.depthTexture2d,
   shadowSampler: BuiltinTypes.comparisonSampler,
+  // The scene traced by rays (ray.trace), and the data of its hits, read
+  // by the ray.hit* functions (see RayInstanceVec4s).
+  scene: BuiltinTypes.accelerationStructure,
+  rayInstances: arrayType(BuiltinTypes.vec4f),
+  rayIndices: arrayType(BuiltinTypes.u32),
+  rayVertices: arrayType(BuiltinTypes.vec4f),
 };
 
 // The members of a row of the object table (objectTableMembers).

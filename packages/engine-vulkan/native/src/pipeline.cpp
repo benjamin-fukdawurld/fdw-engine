@@ -20,22 +20,27 @@ VkDescriptorType descriptorType(fdw_vk_binding_kind kind) {
   case FDW_VK_BINDING_STORAGE_READ:
   case FDW_VK_BINDING_STORAGE_READ_WRITE:
     return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  case FDW_VK_BINDING_ACCELERATION_STRUCTURE:
+    return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
   }
   return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }
 
 // A descriptor pool with room for many groups, freeable one by one.
 VkDescriptorPool createPool(fdw_vk_context *context) {
+  // The acceleration structures last, where the device has them.
   const VkDescriptorPoolSize sizes[] = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1024},
       {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024},
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1024},
-      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1024},
+      {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 256},
   };
   VkDescriptorPoolCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
   info.maxSets = 1024;
-  info.poolSizeCount = sizeof(sizes) / sizeof(sizes[0]);
+  info.poolSizeCount =
+      sizeof(sizes) / sizeof(sizes[0]) - (context->rayQuery ? 0 : 1);
   info.pPoolSizes = sizes;
   VkDescriptorPool pool = VK_NULL_HANDLE;
   const VkResult result =
@@ -323,6 +328,7 @@ fdw_vk_group *fdw_vk_group_create(fdw_vk_context *context,
   // The descriptors, one per entry; the infos must outlive the update.
   std::vector<VkDescriptorBufferInfo> buffers(count);
   std::vector<VkDescriptorImageInfo> images(count);
+  std::vector<VkWriteDescriptorSetAccelerationStructureKHR> structures(count);
   std::vector<VkWriteDescriptorSet> writes;
   for (uint32_t i = 0; i < count; i++) {
     const fdw_vk_group_entry &entry = entries[i];
@@ -361,6 +367,17 @@ fdw_vk_group *fdw_vk_group_create(fdw_vk_context *context,
         images[i] = {VK_NULL_HANDLE, texture->second->view,
                      VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL};
         write.pImageInfo = &images[i];
+      }
+      break;
+    }
+    case FDW_VK_BINDING_ACCELERATION_STRUCTURE: {
+      const auto top = context->topLevels.find(entry.object);
+      if ((found = top != context->topLevels.end())) {
+        structures[i] = {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
+        structures[i].accelerationStructureCount = 1;
+        structures[i].pAccelerationStructures = &top->second->structure;
+        write.pNext = &structures[i];
       }
       break;
     }

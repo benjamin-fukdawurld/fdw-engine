@@ -7,6 +7,7 @@ import type {
   GpuTextureFormat,
 } from '../gpu';
 import type { IndexFormat, MeshDescription } from '../mesh';
+import type { GpuTopLevel } from './accelerationStructures';
 
 // Abstract rendering API, modelled on WebGPU: it maps almost directly onto
 // Vulkan, Metal and Direct3D 12, and can be emulated on WebGL.
@@ -129,7 +130,12 @@ export interface GpuBindGroup {
 
 export interface GpuBindGroupEntry {
   readonly binding: number;
-  readonly resource: GpuBuffer | GpuTexture | GpuSampler | GpuObjectTable;
+  readonly resource:
+    | GpuBuffer
+    | GpuTexture
+    | GpuSampler
+    | GpuObjectTable
+    | GpuTopLevel;
 }
 
 /**
@@ -311,5 +317,12 @@ export interface GpuCommandEncoder {
   transition?(transitions: readonly ResourceTransition[]): void;
   // Throws on backends without compute stages (capability 'compute').
   beginComputePass(label?: string, timing?: PassTiming): GpuComputePassEncoder;
+  /**
+   * Builds a top level structure from its last update, outside of the
+   * passes, before those that trace rays against it (the backend makes
+   * the build visible to them). On the backends with the rayQuery
+   * capability.
+   */
+  buildTopLevel?(top: GpuTopLevel): void;
   finish(): GpuCommandBuffer;
 }
