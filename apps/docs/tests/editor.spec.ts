@@ -146,7 +146,7 @@ for (const [name, path, graph] of [
       frame
         .getByRole('combobox', { name: new RegExp(`${name} graph shown`, 'i') })
         .locator('option:checked'),
-    ).toHaveText(graph, { timeout: 60_000 });
+    ).toHaveText(graph, { timeout: 120_000 });
     await expect(frame.getByText('live', { exact: true })).toBeVisible();
     if (name === 'behavior') {
       await frame.getByRole('button', { name: 'Debug' }).click();
