@@ -14,3 +14,4 @@ export * from './tps';
 export * from './procedural';
 export * from './sea';
 export * from './fluids';
+export * from './rays';

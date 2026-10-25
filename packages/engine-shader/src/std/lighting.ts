@@ -7,6 +7,7 @@ import type { NodeRegistry } from '../graph/NodeRegistry';
 import { BuiltinTypes, ShaderType, typeEquals } from '../types/ShaderType';
 import * as functions from './functions';
 import * as lights from './lights';
+import { RayMasks } from '../compiler/layout';
 
 /**
  * Makes a shading model from a function graph: the node type
@@ -426,6 +427,7 @@ function shadowRay(registry: NodeRegistry): FunctionDefinition {
     origin,
     direction,
     tMax: f.call(select, { ifFalse: 1e30, ifTrue: 0.999, condition: pointLike }),
+    mask: RayMasks.shadow,
     mode: 'any',
   });
   const blocked = f.call('ray.hit', { hit });

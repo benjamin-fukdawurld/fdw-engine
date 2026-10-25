@@ -2,6 +2,7 @@ import type { Mat4 } from '@fdw/engine-backend';
 import type { Aabb, Frustum } from '@fdw/engine-geometry';
 import type { BaseLight } from '../light';
 import type { Transform } from '../Transform';
+import { TransformLayout } from '../TransformPool';
 import type { Material } from './Material';
 import type { Mesh } from './Mesh';
 
@@ -73,3 +74,18 @@ export interface RenderSource {
 
 /** Every layer: the default mask of the views. */
 export const AllLayers = 0xffffffff;
+
+/**
+ * The world matrix of an item (column-major): that of its world, or of its
+ * Transform (computed if it changed). A view of the memory of the
+ * transform: copy it to keep it.
+ */
+export function worldMatrixOf(item: Renderable): ArrayLike<number> {
+  if ('world' in item) {
+    return item.world.matrix;
+  }
+  const { pool, index } = item.transform;
+  pool.update(index);
+  const offset = index * TransformLayout.stride + TransformLayout.world;
+  return pool.data.subarray(offset, offset + 16);
+}

@@ -1,0 +1,114 @@
+---
+title: Reflections and ambient occlusion by rays
+description: Rays leaving from the pixels of a G-buffer — mirror reflections where the surfaces are smooth, shaded with the materials they hit, and ambient occlusion — added to the rasterized image.
+sidebar:
+  order: 43
+---
+
+import Example from '../../../components/Example.astro';
+
+Reflections in screen space only see what is on screen; ambient occlusion
+in screen space only guesses from the depths. Rays see the whole scene: the
+back of the balls in the floor, what is behind the camera, the underside of
+a table.
+
+<Example name="ray-reflections" />
+
+Click the canvas: the image with both, the reflections alone, the occlusion
+alone, the rasterized image.
+
+## A G-buffer
+
+The rays leave from the pixels: the scene passes write, besides the image,
+the point, the normal and the base color of each one:
+
+```ts
+import { reflectionOutputs } from '@fdw/engine-raytracing';
+
+const passes = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights: [sun],
+  target: graph.createTexture('hdr', { format: 'rgba16float' }),
+  format: 'rgba16float',
+  linear: true, // the reflections add light: linear colors
+  samples: 1,
+  outputs: reflectionOutputs(),
+  rays: { scene, shadows: true },
+});
+```
+
+`reflectionOutputs()` packs what the reflections read into three targets
+(with the color, 32 bytes per pixel: the most WebGPU allows): the point,
+the normal with the roughness in w, the base color with the metalness in w.
+
+## Reflections
+
+```ts
+import { RayReflections } from '@fdw/engine-raytracing';
+
+const reflections = new RayReflections(renderer, scene, { maxRoughness: 0.4 });
+
+const image = reflections.addPasses(graph, {
+  camera,
+  lights: [sun],
+  color: passes.color,
+  position: passes.outputs.position,
+  normal: passes.outputs.normal,
+  baseColor: passes.outputs.baseColor,
+});
+```
+
+For each pixel smoother than `maxRoughness`, the view direction mirrored by
+the normal is traced. What it hits is **shaded with its own material**: the
+compiler compiles each surface a second time, for the points hit by rays
+(the attributes interpolated there, the textures at their first level);
+then every light lights it, with a shadow ray each, plus the ambient light.
+The rays that hit nothing see the sky. The light reflected is added to the
+image by the Fresnel term of the surface (stronger at grazing angles and on
+metals), faded out as the roughness grows.
+
+The passes are compute passes: one to cast the rays, one to trace them, one
+per material of the scene for the surfaces, one to light them; then a full
+screen pass adds them.
+
+## Ambient occlusion
+
+```ts
+import { RayOcclusion } from '@fdw/engine-raytracing';
+
+const occlusion = new RayOcclusion(renderer, scene, { radius: 0.8, samples: 6 });
+const open = occlusion.addPasses(graph, {
+  position: passes.outputs.position,
+  normal: passes.outputs.normal,
+});
+```
+
+From each pixel, `samples` rays in the half sphere of its normal, up to
+`radius` meters: the share that leaves without hitting anything is how
+open the point is (1: open, 0: hidden). The rays are traced in a full
+screen pass — a fragment shader traces rays too, with
+`addFullscreenPass(…, { rays: scene })` — then blurred along the surfaces
+(the neighbors of close normals and positions). The example darkens the
+image by it:
+
+```ts
+const darkened = renderer.addFullscreenPass(graph, 'darken', {
+  material: darken, // color × mix(1, open, strength)
+  inputs: { color: image, occlusion: open },
+  target: graph.createTexture('darkened', { format: 'rgba16float' }),
+  format: 'rgba16float',
+});
+```
+
+Then the tone mapping of the renderer, and the image is shown:
+
+```ts
+renderer.addToneMappingPass(graph, {
+  hdr: darkened,
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+});
+renderer.executeGraph(graph);
+surface.present();
+```

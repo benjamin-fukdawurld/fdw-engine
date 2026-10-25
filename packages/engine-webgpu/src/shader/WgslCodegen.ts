@@ -151,8 +151,7 @@ function resourceIdentifier(resource: LogicalBinding): string {
 // The buffers of an acceleration structure (see softwareRayFunctions).
 const accelerationBuffers = (name: string) => ({
   top: `${name}_top`,
-  nodes: `${name}_nodes`,
-  triangles: `${name}_triangles`,
+  bottom: `${name}_bottom`,
 });
 
 // The second buffer of an object table: the row of each instance.
@@ -468,10 +467,10 @@ function declareResources(
           ].join('\n'),
         );
       } else if (resource.kind === 'acceleration-structure') {
-        // Three storage buffers, then the functions tracing rays in them.
+        // Two storage buffers, then the functions tracing rays in them.
         const buffers = accelerationBuffers(name);
         sections.push(
-          [buffers.top, buffers.nodes, buffers.triangles]
+          [buffers.top, buffers.bottom]
             .map(
               (buffer, offset) =>
                 `@group(${group.index}) @binding(${

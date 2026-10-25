@@ -26,6 +26,7 @@ import { VulkanBuffer } from '../gpu/VulkanBuffer';
 import { VulkanSampler, VulkanTexture } from '../gpu/VulkanTexture';
 import { dxcArguments, HlslCodegen, HlslTarget } from '../shader/HlslCodegen';
 import { VulkanObjectTable } from './VulkanObjectTable';
+import { VulkanTopLevel } from './VulkanAccelerationStructures';
 
 const bindingKind = (resource: LogicalBinding): number => {
   switch (resource.kind) {
@@ -42,6 +43,8 @@ const bindingKind = (resource: LogicalBinding): number => {
     case 'object-table':
       // Two bindings: see the layout of the group.
       return BindingKinds.storageRead;
+    case 'acceleration-structure':
+      return BindingKinds.accelerationStructure;
   }
 };
 
@@ -95,7 +98,8 @@ function resourceId(entry: GpuBindGroupEntry): number {
   if (
     resource instanceof VulkanBuffer ||
     resource instanceof VulkanTexture ||
-    resource instanceof VulkanSampler
+    resource instanceof VulkanSampler ||
+    resource instanceof VulkanTopLevel
   ) {
     return resource.id;
   }
@@ -216,7 +220,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       shader = this._addon.createShader(
         this._context,
         sources.code,
-        dxcArguments('compute', entryPoint, this.target),
+        dxcArguments('compute', entryPoint, this.target, sources.code),
         `${program.name} (compute)`,
       );
       this._computeShaders.set(program.programKey, shader);
@@ -337,7 +341,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
         this._addon.createShader(
           this._context,
           sources.code,
-          dxcArguments(stage, entryPoint, this.target),
+          dxcArguments(stage, entryPoint, this.target, sources.code),
           `${program.name} (${stage})`,
         );
       shaders = {

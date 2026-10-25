@@ -31,6 +31,13 @@ export interface ShadowOptions {
    * with them); `bounds` is then ignored.
    */
   readonly cascades?: ShadowCascades;
+  /**
+   * With shadows traced by rays (RenderOptions.rays): the size of the
+   * light, for soft shadows with several rays per pixel. The radius of a
+   * spot light, in world units; for a directional light, the tangent of
+   * its angular radius (the sun: 0.0047). Default 0: hard shadows.
+   */
+  readonly softness?: number;
 }
 
 /** How the shadow cascades of a directional light cut the view. */

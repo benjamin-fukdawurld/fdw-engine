@@ -1,0 +1,88 @@
+---
+title: Shadows by rays
+description: Shadows traced by rays from the materials towards the lights, hard or soft, instead of shadow maps — on Vulkan in hardware, on WebGPU in software.
+sidebar:
+  order: 42
+---
+
+import Example from '../../../components/Example.astro';
+
+A shadow map sees the scene from the light, in texels: far away or for thin
+shapes, its shadows blur, float or leak. A **ray** is exact: from the point
+being lit, towards the light; if it hits something on the way, the point is
+in shadow.
+
+<Example name="ray-shadows" />
+
+Click the canvas: the shadow maps, then hard shadows by rays, then soft
+ones. Look at the thin lattice and at the long shadows of the columns.
+
+## The traced scene
+
+Rays need the whole scene at once, in **acceleration structures**: a
+bounding volume hierarchy per mesh, and one over their instances.
+`RayScene` builds and keeps them:
+
+```ts
+import { RayScene } from '@fdw/engine-raytracing';
+
+// Where the backend traces rays: Vulkan (in hardware), WebGPU (in
+// software, a BVH traversed in WGSL). Not WebGL2.
+const scene = backend.capabilities?.rayQuery
+  ? new RayScene(backend)
+  : undefined;
+
+// Each frame: the items (or a source: a scene graph) as they are now.
+scene?.update({ items });
+```
+
+The structure of a mesh is built once, at its first update; the instances
+are rewritten each time: an item moved moves its shadow at the next frame.
+
+## Tracing the shadows
+
+```ts
+renderer.render({
+  items,
+  camera,
+  surface,
+  lights: [sun],
+  rays: { scene, shadows: true },
+});
+```
+
+The renderer compiles the materials with shadows by rays: in the loop over
+the lights of their shading model, `light.shadow` traces a ray towards each
+light that casts shadows (`castShadow`), from the point moved a little
+along its normal (`offset`, 2 cm by default). No shadow map is drawn.
+
+Directional and spot lights cast shadows, as with the shadow maps. The
+transparent items and those with `castShadow: false` are not in the way
+of the shadow rays.
+
+## Soft shadows
+
+A real light has a size: the sun is half a degree wide, and the edge of a
+shadow fades over a distance that grows with the distance to what casts it.
+Give the light its size, and several rays per pixel:
+
+```ts
+// A sun of half a degree: the tangent of its angular radius. A spot: its
+// radius, in meters.
+sun.shadow = { softness: 0.03 };
+renderer.render({ …, rays: { scene, shadows: { samples: 8 } } });
+```
+
+The rays leave on a spiral across the disk of the light, turned from pixel
+to pixel: with 8 rays, the penumbra is smooth up close and a little grainy
+in large ones. Each ray costs: the samples multiply the cost of the
+shadows.
+
+## On each backend
+
+On **Vulkan**, the GPU traverses its own structures (`VK_KHR_ray_query`):
+traced shadows cost little more than shadow maps. On **WebGPU**, there is
+no ray tracing API: the backend builds the BVH on the CPU, and the programs
+traverse it in WGSL, a stack of nodes per ray — fine for scenes of a few
+hundred thousand triangles, slower beyond. **WebGL2** has neither: keep the
+shadow maps there, as the example does.

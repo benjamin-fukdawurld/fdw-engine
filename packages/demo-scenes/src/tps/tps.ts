@@ -25,6 +25,7 @@ import { buildForest, type Forest, type ForestOptions } from './forest';
 import { defineRock, loadTpsLevel } from './level';
 import { Hero, type HeroIntent } from './hero';
 import { TpsSounds } from './sounds';
+import { RayView } from '../rays';
 
 /** A wave of enemies: how many of each kind. */
 export interface Wave {
@@ -135,6 +136,9 @@ export function createTpsScene(
     });
     const occlusion = new OcclusionCulling();
     const scheduler = new Scheduler();
+    // Rasterized, or with rays (where the backend traces them): the menu.
+    const rayView = new RayView(renderer, backend);
+  rayView.mode = context.rays ?? 'raster';
     const operator = new ThirdPersonOperator(camera, actions, {
       distance: 4.2,
       height: 1.55,
@@ -216,6 +220,14 @@ export function createTpsScene(
           operator.pointerSpeed = sensitivities[sensitivity].speed;
         },
       },
+      ...(rayView.available
+        ? [
+            {
+              label: () => `Rendering: ${rayView.mode}`,
+              choose: () => rayView.cycle(),
+            },
+          ]
+        : []),
     ];
     scheduler.paused = true;
 
@@ -522,7 +534,7 @@ export function createTpsScene(
         if (game) {
           const { forest, hero, enemies } = game;
           forest.terrain.surface.update(camera, surface);
-          renderer.render({
+          rayView.render({
             source: scene,
             items: [forest.terrain.surface],
             camera,
@@ -621,6 +633,7 @@ export function createTpsScene(
         if (rockHandle) rockHandle.release();
         else void baking.then((rock) => rock.destroy());
         input.dispose();
+        rayView.destroy();
         renderer.destroy();
       },
     };

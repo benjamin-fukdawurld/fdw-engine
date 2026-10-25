@@ -14,6 +14,8 @@ export type GroupHandle = { readonly __group: unique symbol };
 export type PipelineHandle = { readonly __pipeline: unique symbol };
 export type SwapchainHandle = { readonly __swapchain: unique symbol };
 export type QueryPoolHandle = { readonly __queryPool: unique symbol };
+export type BottomLevelHandle = { readonly __bottomLevel: unique symbol };
+export type TopLevelHandle = { readonly __topLevel: unique symbol };
 
 /**
  * A native window, as NativeWindow.nativeHandle of @fdw/engine-native gives
@@ -32,6 +34,7 @@ export const BindingKinds = {
   sampler: 2,
   storageRead: 3,
   storageReadWrite: 4,
+  accelerationStructure: 5,
 } as const;
 
 /** A render pipeline, as createRenderPipeline takes it. */
@@ -235,6 +238,30 @@ export interface VulkanAddon {
   ): { index: number; recreated: boolean; width: number; height: number };
   present(swapchain: SwapchainHandle): void;
   pipelineId(pipeline: PipelineHandle): number;
+
+  // Ray queries and acceleration structures, where the device has them.
+  rayQuerySupported(context: ContextHandle): boolean;
+  // The structure of a mesh (xyz per vertex, 3 indices per triangle),
+  // built in the order of the queue.
+  createBottomLevel(
+    context: ContextHandle,
+    positions: Float32Array,
+    indices: Uint32Array,
+    label?: string,
+  ): BottomLevelHandle;
+  destroyBottomLevel(bottom: BottomLevelHandle): void;
+  bottomLevelId(bottom: BottomLevelHandle): number;
+  createTopLevel(
+    context: ContextHandle,
+    capacity: number,
+    label?: string,
+  ): TopLevelHandle;
+  // The instances: 14 words each (the 3 rows of the object to world
+  // matrix, the id of the bottom level, the mask). Whether the structure
+  // was replaced by a larger one.
+  updateTopLevel(top: TopLevelHandle, instances: Uint32Array): boolean;
+  destroyTopLevel(top: TopLevelHandle): void;
+  topLevelId(top: TopLevelHandle): number;
 }
 
 // The usages of createBuffer (include/fdw/vulkan.h).
@@ -278,6 +305,7 @@ export const Commands = {
   resetQueries: 16,
   writeTimestamp: 17,
   generateMipmaps: 18,
+  buildTopLevel: 19,
 } as const;
 
 let addon: VulkanAddon | undefined;

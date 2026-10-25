@@ -1,0 +1,94 @@
+---
+title: Les ombres par rayons
+description: Des ombres tracées par des rayons depuis les matériaux vers les lumières, dures ou douces, à la place des shadow maps — sur Vulkan en matériel, sur WebGPU en logiciel.
+sidebar:
+  order: 42
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une shadow map voit la scène depuis la lumière, en texels : au loin ou pour
+des formes fines, ses ombres s'estompent, flottent ou fuient. Un **rayon**
+est exact : du point éclairé, vers la lumière ; s'il touche quelque chose
+en chemin, le point est dans l'ombre.
+
+<Example name="ray-shadows" />
+
+Cliquez sur le canevas : les shadow maps, puis des ombres dures par rayons,
+puis des ombres douces. Regardez le treillis fin et les longues ombres des
+colonnes.
+
+## La scène tracée
+
+Les rayons ont besoin de toute la scène à la fois, dans des **structures
+d'accélération** : une hiérarchie de volumes englobants par mesh, et une
+au-dessus de leurs instances. `RayScene` les construit et les garde :
+
+```ts
+import { RayScene } from '@fdw/engine-raytracing';
+
+// Là où le backend trace des rayons : Vulkan (en matériel), WebGPU (en
+// logiciel, un BVH parcouru en WGSL). Pas WebGL2.
+const scene = backend.capabilities?.rayQuery
+  ? new RayScene(backend)
+  : undefined;
+
+// À chaque image : les items (ou une source : un graphe de scène) tels
+// qu'ils sont maintenant.
+scene?.update({ items });
+```
+
+La structure d'un mesh est construite une fois, à sa première mise à jour ;
+les instances sont réécrites à chaque fois : un item déplacé déplace son
+ombre à l'image suivante.
+
+## Tracer les ombres
+
+```ts
+renderer.render({
+  items,
+  camera,
+  surface,
+  lights: [sun],
+  rays: { scene, shadows: true },
+});
+```
+
+Le renderer compile les matériaux avec des ombres par rayons : dans la
+boucle sur les lumières de leur modèle d'éclairage, `light.shadow` trace un
+rayon vers chaque lumière qui projette des ombres (`castShadow`), depuis le
+point décalé un peu le long de sa normale (`offset`, 2 cm par défaut).
+Aucune shadow map n'est dessinée.
+
+Les lumières directionnelles et les spots projettent des ombres, comme avec
+les shadow maps. Les items transparents et ceux à `castShadow: false`
+n'arrêtent pas les rayons d'ombre.
+
+## Les ombres douces
+
+Une vraie lumière a une taille : le soleil fait un demi-degré, et le bord
+d'une ombre s'estompe sur une distance qui grandit avec la distance à ce
+qui la projette. Donnez à la lumière sa taille, et plusieurs rayons par
+pixel :
+
+```ts
+// Un soleil d'un demi-degré : la tangente de son rayon angulaire. Un spot :
+// son rayon, en mètres.
+sun.shadow = { softness: 0.03 };
+renderer.render({ …, rays: { scene, shadows: { samples: 8 } } });
+```
+
+Les rayons partent sur une spirale à travers le disque de la lumière,
+tournée d'un pixel à l'autre : avec 8 rayons, la pénombre est lisse de près
+et un peu granuleuse quand elle est large. Chaque rayon coûte : les
+échantillons multiplient le coût des ombres.
+
+## Sur chaque backend
+
+Sur **Vulkan**, le GPU parcourt ses propres structures (`VK_KHR_ray_query`) :
+les ombres tracées coûtent à peine plus que les shadow maps. Sur
+**WebGPU**, il n'y a pas d'API de ray tracing : le backend construit le BVH
+sur le CPU, et les programmes le parcourent en WGSL, une pile de nœuds par
+rayon — bien pour des scènes de quelques centaines de milliers de
+triangles, plus lent au-delà. **WebGL2** n'a ni l'un ni l'autre : gardez-y
+les shadow maps, comme le fait l'exemple.

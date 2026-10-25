@@ -166,8 +166,7 @@ const engineValues: Record<string, ShaderType> = {
   // by the ray.hit* functions (see RayInstanceVec4s).
   scene: BuiltinTypes.accelerationStructure,
   rayInstances: arrayType(BuiltinTypes.vec4f),
-  rayIndices: arrayType(BuiltinTypes.u32),
-  rayVertices: arrayType(BuiltinTypes.vec4f),
+  rayGeometry: arrayType(BuiltinTypes.vec4f),
 };
 
 // The members of a row of the object table (objectTableMembers).

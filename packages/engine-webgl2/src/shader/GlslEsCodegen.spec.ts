@@ -763,6 +763,33 @@ describe('GlslEsCodegen', () => {
       );
     });
 
+    it('writes nothing out of the guard, and casts bits', () => {
+      const g = new GraphBuilder('guarded');
+      const index = g.builtin('global-invocation-id').swizzle('x');
+      const output = g.storage('output', arrayType(BuiltinTypes.u32), {
+        access: 'read-write',
+      });
+      g.write(output, {
+        index,
+        value: g.call(
+          std.bitcast,
+          { value: g.uniform('value', BuiltinTypes.f32) },
+          { params: { to: BuiltinTypes.u32 } },
+        ),
+      });
+      g.compute({
+        workgroupSize: [64, 1, 1],
+        active: g.call(std.less, { a: index, b: g.uniform('count', BuiltinTypes.u32) }),
+      });
+      const program = compile(g.build());
+      const [draw] = codegen.emitCompute(
+        program.module,
+        std140LayoutStrategy.resolve(program.layout),
+      ).draws;
+      expect(draw.vertex).toContain('floatBitsToUint(');
+      expect(draw.vertex).toMatch(/bool c_written = .*Length\(\) && v\d+/);
+    });
+
     it('refuses compute stages in emit', () => {
       const g = new GraphBuilder('empty');
       const output = g.storage('output', arrayType(BuiltinTypes.f32), {

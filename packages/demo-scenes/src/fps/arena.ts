@@ -36,9 +36,10 @@ export function buildArena(scene: Scene, { seed = 3 } = {}): Arena {
   const half = 20;
   const level = scene.root.add({ name: 'arena', static: true });
 
-  // The floor: tiles of two shades, 2 m wide.
+  // The floor: tiles of two shades, 2 m wide, the dark ones polished (they
+  // reflect the arena with the traced reflections).
   const tiles = [
-    surfaceMaterial([0.32, 0.33, 0.36], 0.85),
+    surfaceMaterial([0.32, 0.33, 0.36], 0.2),
     surfaceMaterial([0.38, 0.39, 0.42], 0.75),
   ];
   const tile = 2;

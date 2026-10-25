@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GraphError } from '../graph/Diagnostic';
 import { GraphBuilder } from '../graph/GraphBuilder';
-import { std, stdRays } from '../std';
+import { std, stdMacros, stdRays } from '../std';
 import { arrayType, BuiltinTypes } from '../types/ShaderType';
 import { compile } from './compile';
 import { forEachInstruction, IrEntryPoint, IrInstruction } from './ir';
@@ -91,8 +91,7 @@ describe('ray.trace', () => {
     expect(frame?.bindings.map((binding) => binding.name)).toEqual([
       'frameUniforms',
       'rayInstances',
-      'rayIndices',
-      'rayVertices',
+      'rayGeometry',
     ]);
     expect(
       instructions(program.module.entryPoints[0]).filter(
@@ -185,5 +184,86 @@ describe('shadows by rays', () => {
       features: { rayShadows: true, rayShadowSamples: 4 },
     });
     expect(queries(program)).toHaveLength(4);
+  });
+});
+
+describe('the hit target', () => {
+  const textured = () => {
+    const g = new GraphBuilder('textured');
+    const uv = g.attribute('uv', BuiltinTypes.vec2f);
+    const texel = g.call(std.textureSample, {
+      texture: g.texture('map'),
+      sampler: g.sampler('mapSampler'),
+      uv,
+    });
+    g.surface({
+      shadingModel: 'pbr',
+      baseColor: g.call(std.mul, {
+        a: texel.swizzle('rgb'),
+        b: g.uniform('tint', BuiltinTypes.vec3f),
+      }),
+      roughness: g.call(std.fwidth, { x: uv.swizzle('x') }),
+      metallic: 0.5,
+    });
+    return g.build();
+  };
+
+  it('compiles the surface of a material to the shading of the hits', () => {
+    const program = compile(textured(), { target: 'hit' });
+    const [compute] = program.module.entryPoints;
+    expect(program.module.entryPoints).toHaveLength(1);
+    expect(compute.stage).toBe('compute');
+    expect(compute.writes).toHaveLength(5);
+    expect(compute.writes?.every((write) => write.resource === 'raySurfaces')).toBe(true);
+    expect(compute.active).toBeDefined();
+    const ops = instructions(compute).map((instruction) => instruction.op.kind);
+    expect(ops).toContain('sample-level');
+    expect(ops).not.toContain('sample');
+    expect(program.variantKey['target']).toBe('hit');
+    const slots = Object.fromEntries(
+      program.layout.groups.map((group) => [
+        group.slot,
+        group.bindings.map((binding) => binding.name),
+      ]),
+    );
+    expect(slots['rays']).toEqual(['raysUniforms', 'rayHits', 'raySurfaces']);
+    expect(slots['material']).toEqual(['materialUniforms', 'map', 'mapSampler']);
+    expect(slots['frame']).toEqual([
+      'frameUniforms',
+      'rayInstances',
+      'rayGeometry',
+    ]);
+  });
+
+  it('reads the tangents of the hits for the normal maps, and the cutoff of the masked materials', () => {
+    const g = new GraphBuilder('bumpy');
+    const normal = g.call(std.textureSample, {
+      texture: g.texture('normalMap'),
+      sampler: g.sampler('normalSampler'),
+      uv: g.attribute('uv', BuiltinTypes.vec2f),
+    });
+    g.surface({
+      shadingModel: 'phong',
+      normal: g.node(stdMacros.normalMapping, { inputs: { sample: normal.swizzle('xyz') } })['normal'],
+    });
+    const program = compile(g.build(), {
+      target: 'hit',
+      features: { alphaMode: 'mask' },
+    });
+    const material = program.layout.groups.find((group) => group.slot === 'material');
+    const block = material?.bindings[0];
+    expect(block?.kind === 'uniform-block' && block.members.map((m) => m.name)).toContain(
+      'alphaCutoff',
+    );
+  });
+
+  it('refuses what has no value at a hit', () => {
+    const g = new GraphBuilder('instanced');
+    g.surface({
+      baseColor: g.call(std.vec3, {
+        x: g.call(std.convert, { value: g.builtin('vertex-index') }, { params: { to: BuiltinTypes.f32 } }),
+      }),
+    });
+    expect(() => compile(g.build(), { target: 'hit' })).toThrow(/vertex-index/);
   });
 });

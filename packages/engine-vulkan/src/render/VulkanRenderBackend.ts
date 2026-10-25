@@ -9,7 +9,15 @@ import {
   wgpuMatrixPrimitives,
   GpuPassTimer,
   ObjectTableDescriptor,
+  BottomLevelDescriptor,
+  TopLevelDescriptor,
 } from '@fdw/engine-backend';
+import {
+  createBottomLevel,
+  createTopLevel,
+  VulkanBottomLevel,
+  VulkanTopLevel,
+} from './VulkanAccelerationStructures';
 import { loadVulkanAddon } from '../addon';
 import { VulkanTexture, VulkanTextureFactory } from '../gpu/VulkanTexture';
 import type { VulkanDevice } from '../VulkanDevice';
@@ -53,6 +61,8 @@ export class VulkanRenderBackend implements RenderBackend {
         device.context,
       ),
       independentBlend: loadVulkanAddon().independentBlend(device.context),
+      // Ray queries in every stage, where the GPU has them.
+      rayQuery: loadVulkanAddon().rayQuerySupported(device.context),
     };
     this.pipelines = new VulkanPipelineFactory(
       loadVulkanAddon(),
@@ -81,6 +91,19 @@ export class VulkanRenderBackend implements RenderBackend {
 
   createObjectTable(descriptor: ObjectTableDescriptor): VulkanObjectTable {
     return new VulkanObjectTable(this.buffers, descriptor);
+  }
+
+  // The acceleration structures of the GPU, where it has ray queries.
+  createBottomLevel(descriptor: BottomLevelDescriptor): VulkanBottomLevel {
+    return createBottomLevel(
+      loadVulkanAddon(),
+      this.device.context,
+      descriptor,
+    );
+  }
+
+  createTopLevel(descriptor?: TopLevelDescriptor): VulkanTopLevel {
+    return createTopLevel(loadVulkanAddon(), this.device.context, descriptor);
   }
 
   // Where the queue writes timestamps.

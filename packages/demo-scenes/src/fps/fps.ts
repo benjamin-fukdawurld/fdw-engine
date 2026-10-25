@@ -6,6 +6,7 @@ import { buildArena } from './arena';
 import { fpsControls } from './controls';
 import { FpsGame } from './game';
 import { FpsSounds } from './sounds';
+import { RayView } from '../rays';
 
 // The speeds of the pointer the menu offers, in radians per height of the
 // surface.
@@ -55,6 +56,9 @@ export const createFpsScene: SceneFactory = (
     output: { toneMapping: 'neutral', encoding: 'srgb' },
   });
   const scheduler = new Scheduler();
+  // Rasterized, or with rays (where the backend traces them): the menu.
+  const view = new RayView(renderer, backend);
+  view.mode = context.rays ?? 'raster';
 
   // The menu: open at the start, at a pause, at the end of a game.
   let started = false;
@@ -112,6 +116,14 @@ export const createFpsScene: SceneFactory = (
         player.fly.invertY = !player.fly.invertY;
       },
     },
+    ...(view.available
+      ? [
+          {
+            label: () => `Rendering: ${view.mode}`,
+            choose: () => view.cycle(),
+          },
+        ]
+      : []),
     {
       label: () => `Sensitivity: ${sensitivities[sensitivity].name}`,
       choose: () => {
@@ -214,7 +226,7 @@ export const createFpsScene: SceneFactory = (
   scheduler.add(
     'render',
     () => {
-      renderer.render({
+      view.render({
         source: scene,
         camera,
         surface,
@@ -252,6 +264,7 @@ export const createFpsScene: SceneFactory = (
     destroy: () => {
       sounds?.destroy();
       input.dispose();
+      view.destroy();
       renderer.destroy();
     },
   };

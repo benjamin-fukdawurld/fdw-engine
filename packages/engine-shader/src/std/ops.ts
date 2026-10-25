@@ -39,6 +39,42 @@ export class Ops {
   select = (ifFalse: Value, ifTrue: Value, condition: Value) =>
     this.f.call(functions.select, { ifFalse, ifTrue, condition });
   less = (a: Value, b: Value) => this.f.call(functions.less, { a, b });
+  lessEqual = (a: Value, b: Value) =>
+    this.f.call(functions.lessEqual, { a, b });
+  greater = (a: Value, b: Value) => this.f.call(functions.greater, { a, b });
+  greaterEqual = (a: Value, b: Value) =>
+    this.f.call(functions.greaterEqual, { a, b });
+  equal = (a: Value, b: Value) => this.f.call(functions.equal, { a, b });
+  notEqual = (a: Value, b: Value) => this.f.call(functions.notEqual, { a, b });
+  /** Both booleans true (a select: the IR has no boolean operators). */
+  and = (a: Value, b: Value) => this.select(false, b, a);
+  /** Either boolean true. */
+  or = (a: Value, b: Value) => this.select(b, true, a);
+  not = (a: Value) => this.select(true, false, a);
+  sin = (x: Value) => this.f.call(functions.sin, { x });
+  cos = (x: Value) => this.f.call(functions.cos, { x });
+  cross = (a: Value, b: Value) => this.f.call(functions.cross, { a, b });
+  normalize = (x: Value) => this.f.call(functions.normalize, { x });
+  reflect = (incident: Value, normal: Value) =>
+    this.f.call(functions.reflect, { incident, normal });
+  transform = (matrix: Value, vector: Value) =>
+    this.f.call(functions.transform, { matrix, vector });
+  extend = (xyz: Value, w: Value = 1) =>
+    this.f.call(functions.extend, { xyz, w });
+  /** array[index], of a storage buffer. */
+  index = (array: Value, index: Value) =>
+    this.f.call(functions.index, { array, index });
+  bitAnd = (a: Value, b: Value) => this.f.call(functions.bitAnd, { a, b });
+  bitOr = (a: Value, b: Value) => this.f.call(functions.bitOr, { a, b });
+  shl = (value: Value, amount: Value) =>
+    this.f.call(functions.shiftLeft, { value, amount });
+  bitcast = (value: Value, to: ShaderType) =>
+    this.f.call(functions.bitcast, { value }, { params: { to } });
+  /** The same value in the three components of a vec3. */
+  splat3 = (x: Value) => this.vec3(x, x, x);
+  /** The sum of values, from the first. */
+  sum = (values: readonly Value[]) =>
+    values.reduce((a, b) => this.add(a, b)) as PortHandle;
   dpdx = (x: Value) => this.f.call(functions.dpdx, { x });
   dpdy = (x: Value) => this.f.call(functions.dpdy, { x });
   xor = (a: Value, b: Value) => this.f.call(functions.bitXor, { a, b });

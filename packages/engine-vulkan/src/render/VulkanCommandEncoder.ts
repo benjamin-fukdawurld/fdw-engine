@@ -11,7 +11,9 @@ import type {
   IndexFormat,
   PassTiming,
   RenderPassDescriptor,
+  GpuTopLevel,
 } from '@fdw/engine-backend';
+import { VulkanTopLevel } from './VulkanAccelerationStructures';
 import { Commands } from '../addon';
 import { VulkanBuffer } from '../gpu/VulkanBuffer';
 import { VulkanTexture } from '../gpu/VulkanTexture';
@@ -271,6 +273,13 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
     if (levels.mipLevelCount > 1) {
       this._writer.word(Commands.generateMipmaps).word(levels.id);
     }
+  }
+
+  // Built by the GPU from its last update, before the commands after it.
+  buildTopLevel(top: GpuTopLevel): void {
+    this._writer
+      .word(Commands.buildTopLevel)
+      .word(unwrap(top, VulkanTopLevel, 'The top level').id);
   }
 
   finish(): GpuCommandBuffer {

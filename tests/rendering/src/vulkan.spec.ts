@@ -4,6 +4,7 @@ import {
   VulkanEngine,
   VulkanOffscreenSurface,
 } from '@fdw/engine-vulkan';
+import { describeRays } from './rays';
 import { describeRenderer, RenderingFixture, size } from './suite';
 import { canRun } from '@fdw/engine-backend/testing';
 
@@ -52,4 +53,8 @@ describeRenderer('Renderer on Vulkan', createFixture, {
     existsSync(addonPath()),
     'the Vulkan addon is not built (VULKAN_SDK)',
   ),
+});
+
+describeRays('Rays on Vulkan', createFixture, {
+  skip: !existsSync(addonPath()),
 });

@@ -169,7 +169,10 @@ const intrinsicNames: Record<string, string> = {
 // Textures, samplers, arrays and buffers are used inline: HLSL cannot copy
 // them into a local (textures, samplers), or would copy them (arrays).
 const isInline = (type: ShaderType) =>
-  type.kind === 'texture' || type.kind === 'sampler' || type.kind === 'array';
+  type.kind === 'texture' ||
+  type.kind === 'sampler' ||
+  type.kind === 'array' ||
+  type.kind === 'acceleration-structure';
 
 const identifier = (text: string) =>
   text.replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
@@ -194,7 +197,41 @@ function resourceIdentifier(resource: LogicalBinding): string {
       return `b_${resource.name}`;
     case 'object-table':
       return resource.name;
+    case 'acceleration-structure':
+      return `as_${resource.name}`;
   }
+}
+
+// The function tracing rays against a structure (see rayFunctions).
+const traceFunction = (structure: string, mode: 'closest' | 'any') =>
+  `fdw_trace_${mode}_${structure}`;
+
+// Ray queries against a structure: the hit of the ray-query instruction of
+// the IR (instance, triangle with bit 31 for the back faces, barycentrics).
+function rayFunctions(structure: string): string {
+  return (['closest', 'any'] as const)
+    .map(
+      (mode) => `uint4 ${traceFunction(structure, mode)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
+  RayDesc ray;
+  ray.Origin = origin;
+  ray.Direction = direction;
+  ray.TMin = tMin;
+  ray.TMax = tMax;
+  RayQuery<RAY_FLAG_FORCE_OPAQUE${
+    mode === 'any' ? ' | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH' : ''
+  }> query;
+  query.TraceRayInline(${structure}, RAY_FLAG_NONE, mask & 0xffu, ray);
+  while (query.Proceed()) {
+  }
+  if (query.CommittedStatus() != COMMITTED_TRIANGLE_HIT) {
+    return uint4(0xffffffffu, 0u, 0u, 0u);
+  }
+  const float2 uv = query.CommittedTriangleBarycentrics();
+  const uint back = query.CommittedTriangleFrontFace() ? 0u : 0x80000000u;
+  return uint4(query.CommittedInstanceIndex(), query.CommittedPrimitiveIndex() | back, asuint(uv.x), asuint(uv.y));
+}`,
+    )
+    .join('\n\n');
 }
 
 // The second buffer of an object table: the row of each instance.
@@ -309,7 +346,19 @@ function emitBody(entryPoint: IrEntryPoint, resources: Resources): BodyState {
     types: new Map(),
     builtins: new Set(),
   };
-  emitInstructions(entryPoint.body, resources, state, '  ');
+  const { active } = entryPoint;
+  if (active) {
+    // The threads out of the guard stop once it is known.
+    emitInstructions(entryPoint.body.slice(0, active.after), resources, state, '  ');
+    state.lines.push(
+      `  if (!(${state.expressions.get(active.value)})) {`,
+      '    return;',
+      '  }',
+    );
+    emitInstructions(entryPoint.body.slice(active.after), resources, state, '  ');
+  } else {
+    emitInstructions(entryPoint.body, resources, state, '  ');
+  }
   return state;
 }
 
@@ -379,6 +428,23 @@ function emitInstructions(
           resources.wrapped.has(arg(instruction, 0)) ? '.value' : ''
         }`;
         break;
+      case 'bitcast': {
+        const scalar = type.kind === 'vector' || type.kind === 'scalar'
+          ? type.scalar
+          : 'f32';
+        const cast = { f32: 'asfloat', u32: 'asuint', i32: 'asint' }[
+          scalar as 'f32' | 'u32' | 'i32'
+        ];
+        expression = `${cast}(${arg(instruction, 0)})`;
+        break;
+      }
+      case 'ray-query': {
+        const [, origin, direction, tMin, tMax, mask] = instruction.args.map(
+          (id) => expressions.get(id) as string,
+        );
+        expression = `${traceFunction(arg(instruction, 0), op.mode)}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask})`;
+        break;
+      }
       case 'array-length': {
         // Structured buffers give their length through out parameters.
         const name = valueName(instruction);
@@ -712,6 +778,14 @@ function declareResource(
     }
     case 'object-table':
       throw new Error('An object table is declared by declareObjectTable');
+    case 'acceleration-structure':
+      if (target === 'd3d12') {
+        throw new Error('Direct3D 12 traces no rays yet');
+      }
+      return [
+        bound(target, `RaytracingAccelerationStructure ${name}`, location, 't'),
+        rayFunctions(name),
+      ].join('\n\n');
   }
 }
 
@@ -863,8 +937,15 @@ export function dxcArguments(
   stage: 'vertex' | 'fragment' | 'compute',
   entryPoint: string,
   target: HlslTarget = 'vulkan',
+  // The code: the programs tracing rays need Shader Model 6.5.
+  code?: string,
 ): string[] {
-  const profiles = { vertex: 'vs_6_0', fragment: 'ps_6_0', compute: 'cs_6_0' };
+  const model = code?.includes('RayQuery<') ? '6_5' : '6_0';
+  const profiles = {
+    vertex: `vs_${model}`,
+    fragment: `ps_${model}`,
+    compute: `cs_${model}`,
+  };
   return [
     ...(target === 'vulkan' ? ['-spirv'] : []),
     '-HV',

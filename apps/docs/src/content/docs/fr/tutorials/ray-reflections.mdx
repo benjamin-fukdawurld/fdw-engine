@@ -1,0 +1,116 @@
+---
+title: Reflets et occlusion ambiante par rayons
+description: Des rayons partis des pixels d'un G-buffer — des reflets miroirs là où les surfaces sont lisses, éclairés avec les matériaux qu'ils touchent, et l'occlusion ambiante — ajoutés à l'image rastérisée.
+sidebar:
+  order: 43
+---
+
+import Example from '../../../../components/Example.astro';
+
+Les reflets en espace écran ne voient que ce qui est à l'écran ;
+l'occlusion ambiante en espace écran ne fait que deviner à partir des
+profondeurs. Les rayons voient toute la scène : l'arrière des boules dans
+le sol, ce qui est derrière la caméra, le dessous d'une table.
+
+<Example name="ray-reflections" />
+
+Cliquez sur le canevas : l'image avec les deux, les reflets seuls,
+l'occlusion seule, l'image rastérisée.
+
+## Un G-buffer
+
+Les rayons partent des pixels : les passes de la scène écrivent, en plus de
+l'image, le point, la normale et la couleur de base de chacun :
+
+```ts
+import { reflectionOutputs } from '@fdw/engine-raytracing';
+
+const passes = renderer.addScenePasses(graph, {
+  items,
+  camera,
+  lights: [sun],
+  target: graph.createTexture('hdr', { format: 'rgba16float' }),
+  format: 'rgba16float',
+  linear: true, // les reflets ajoutent de la lumière : des couleurs linéaires
+  samples: 1,
+  outputs: reflectionOutputs(),
+  rays: { scene, shadows: true },
+});
+```
+
+`reflectionOutputs()` range ce que lisent les reflets dans trois cibles
+(avec la couleur, 32 octets par pixel : le maximum de WebGPU) : le point,
+la normale avec la rugosité en w, la couleur de base avec le métal en w.
+
+## Les reflets
+
+```ts
+import { RayReflections } from '@fdw/engine-raytracing';
+
+const reflections = new RayReflections(renderer, scene, { maxRoughness: 0.4 });
+
+const image = reflections.addPasses(graph, {
+  camera,
+  lights: [sun],
+  color: passes.color,
+  position: passes.outputs.position,
+  normal: passes.outputs.normal,
+  baseColor: passes.outputs.baseColor,
+});
+```
+
+Pour chaque pixel plus lisse que `maxRoughness`, la direction de la vue
+réfléchie par la normale est tracée. Ce qu'elle touche est **éclairé avec
+son propre matériau** : le compilateur compile chaque surface une seconde
+fois, pour les points touchés par les rayons (les attributs interpolés à
+cet endroit, les textures à leur premier niveau) ; puis chaque lumière
+l'éclaire, avec un rayon d'ombre chacune, plus la lumière ambiante. Les
+rayons qui ne touchent rien voient le ciel. La lumière réfléchie est
+ajoutée à l'image par le terme de Fresnel de la surface (plus fort aux
+angles rasants et sur les métaux), estompée à mesure que la rugosité
+augmente.
+
+Les passes sont des passes de calcul : une pour lancer les rayons, une pour
+les tracer, une par matériau de la scène pour les surfaces, une pour les
+éclairer ; puis une passe plein écran les ajoute.
+
+## L'occlusion ambiante
+
+```ts
+import { RayOcclusion } from '@fdw/engine-raytracing';
+
+const occlusion = new RayOcclusion(renderer, scene, { radius: 0.8, samples: 6 });
+const open = occlusion.addPasses(graph, {
+  position: passes.outputs.position,
+  normal: passes.outputs.normal,
+});
+```
+
+Depuis chaque pixel, `samples` rayons dans la demi-sphère de sa normale,
+jusqu'à `radius` mètres : la part qui s'en va sans rien toucher dit à quel
+point le point est ouvert (1 : ouvert, 0 : caché). Les rayons sont tracés
+dans une passe plein écran — un fragment shader trace aussi des rayons,
+avec `addFullscreenPass(…, { rays: scene })` — puis floutés le long des
+surfaces (les voisins aux normales et aux positions proches). L'exemple en
+assombrit l'image :
+
+```ts
+const darkened = renderer.addFullscreenPass(graph, 'darken', {
+  material: darken, // couleur × mix(1, open, strength)
+  inputs: { color: image, occlusion: open },
+  target: graph.createTexture('darkened', { format: 'rgba16float' }),
+  format: 'rgba16float',
+});
+```
+
+Puis le tone mapping du renderer, et l'image est affichée :
+
+```ts
+renderer.addToneMappingPass(graph, {
+  hdr: darkened,
+  target: graph.importTexture('surface', surface.getCurrentTarget()),
+  format: surface.format,
+});
+renderer.executeGraph(graph);
+surface.present();
+```
