@@ -245,6 +245,82 @@ describe('EditorEngine', () => {
     expect(messages.some((m) => m.type === 'pointerLock')).toBe(false);
   });
 
+  it('runs the parts of the plugins: their messages, the scene, the hold', async () => {
+    const { factory, state } = fakeScene();
+    const graphs = [{ kind: 'behavior', id: 'brain', name: 'Brain' }];
+    const withGraphs: SceneFactory = (...args) =>
+      Object.assign(factory(...args), { graphs });
+    const seen: { message?: unknown; scenes: unknown[]; frames: number } = {
+      scenes: [],
+      frames: 0,
+    };
+    let hold = false;
+    let post:
+      ((message: unknown, data?: Uint8Array<ArrayBuffer>) => void) | undefined;
+    const disposed = vi.fn();
+    const { editor, messages, show } = setup(
+      { a: withGraphs },
+      {
+        extensions: [
+          {
+            id: 'acme.graphs',
+            create: (context) => {
+              post = context.post;
+              return {
+                receive: (message) => {
+                  seen.message = message;
+                  context.post({ echo: message }, new Uint8Array([1, 2]));
+                },
+                scene: (scene) =>
+                  seen.scenes.push(
+                    (scene as { graphs?: unknown } | undefined)?.graphs,
+                  ),
+                frame: () => {
+                  seen.frames++;
+                },
+                get holdsScene() {
+                  return hold;
+                },
+                dispose: disposed,
+              };
+            },
+          },
+        ],
+      },
+    );
+    editor.receive({
+      type: 'extension',
+      extension: 'acme.graphs',
+      message: 'hi',
+    });
+    expect(seen.message).toBe('hi');
+    expect(messages.at(-1)).toEqual({
+      type: 'extension',
+      extension: 'acme.graphs',
+      message: { echo: 'hi' },
+      data: new Uint8Array([1, 2]),
+    });
+    // Another id: nobody.
+    editor.receive({ type: 'extension', extension: 'nope', message: 'x' });
+    expect(post).toBeDefined();
+    show();
+    await until(() => state.frames > 2);
+    expect(seen.scenes).toEqual([graphs]);
+    expect(seen.frames).toBeGreaterThan(2);
+    // Held: the scene draws no frames, the extension still runs.
+    hold = true;
+    const frames = state.frames;
+    const before = seen.frames;
+    await until(() => seen.frames > before + 3);
+    expect(state.frames).toBeLessThanOrEqual(frames + 1);
+    hold = false;
+    await until(() => state.frames > frames + 2);
+    editor.stop();
+    editor.destroy();
+    expect(seen.scenes.at(-1)).toBeUndefined();
+    expect(disposed).toHaveBeenCalled();
+  });
+
   it('ends its loop on stop, and destroys the scene after', async () => {
     const a = fakeScene();
     const { editor, running, show } = setup({ a: a.factory });

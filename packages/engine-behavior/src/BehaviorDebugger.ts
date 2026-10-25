@@ -3,7 +3,7 @@ import type { BehaviorInstance } from './BehaviorInstance';
 import type { BehaviorSystem } from './BehaviorSystem';
 import type { Interpreter } from './Interpreter';
 import type { BehaviorNodeKind } from './nodes';
-import type { ProgramNode } from './program';
+import type { BehaviorProgram, ProgramNode } from './program';
 
 /**
  * Where and why the debugger stopped a graph.
@@ -209,6 +209,24 @@ export class BehaviorDebugger<H = unknown> {
     this._breakpoints.clear();
     this.continue();
     this._controls.close();
+  }
+
+  /**
+   * @internal The system runs another graph: a pause ends, the breakpoints
+   * on nodes it no longer has go.
+   */
+  replaced(
+    _instances: Iterable<BehaviorInstance<H>>,
+    program: BehaviorProgram,
+  ): void {
+    this._paused = undefined;
+    this._stepping = false;
+    for (const id of [...this._breakpoints]) {
+      const index = program.byId.get(id);
+      if (index === undefined || program.nodes[index].kind === 'pure') {
+        this._breakpoints.delete(id);
+      }
+    }
   }
 
   /** @internal The system forgets an instance. */

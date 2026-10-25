@@ -1,0 +1,35 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-graph-editing",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"],
+  "references": [
+    {
+      "path": "../engine-shader/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-graph/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-editing/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-behavior/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-animation/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-webgpu/tsconfig.lib.json"
+    }
+  ]
+}

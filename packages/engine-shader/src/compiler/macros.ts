@@ -298,6 +298,7 @@ export function expandMacros({
     }
     for (const id of macros) {
       const resolved = validation.nodes.get(id) as ResolvedNode;
+      graph.origin = graph.origins.get(id) ?? id;
       try {
         const types = validation.types.get(id) as NodeTypes;
         if (isGraphFunction(resolved.definition)) {
@@ -312,6 +313,8 @@ export function expandMacros({
           message: `${resolved.node.type}: ${(error as Error).message}`,
         });
         return;
+      } finally {
+        graph.origin = undefined;
       }
     }
   }

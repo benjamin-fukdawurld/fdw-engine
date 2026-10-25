@@ -1,0 +1,129 @@
+---
+title: Éditer un matériau
+description: "L'éditeur de graphs sur les matériaux procéduraux de la galerie : nœuds, fils, la recherche, l'inspecteur, l'aperçu en direct, le code généré et ses lignes par nœud."
+tableOfContents: false
+sidebar:
+  order: 4
+---
+
+import Editor from '../../../../components/Editor.astro';
+
+Les matériaux du moteur sont des graphs ([Graphs de matériaux](/fdw-engine/fr/guides/material-graph/)).
+L'éditeur les édite à la souris, dans le panneau **Material graph** : le
+même éditeur de graphs que pour les animations et les comportements,
+chaque sorte de graph étant un plugin de l'éditeur. Ce tutoriel modifie le
+bois de la galerie de [matériaux procéduraux](/fdw-engine/fr/tutorials/procedural-materials/),
+pendant qu'il est dessiné.
+
+L'éditeur ci-dessous montre la galerie, le panneau ouvert à côté du
+viewport (**View → Material graph**, ou **Graphs: Edit the materials**
+dans la palette). Rien n'est gardé quand on quitte la page.
+
+<Editor
+  scene="procedural"
+  docks={[]}
+  view="fdw.materialGraph.editor"
+  height={720}
+/>
+
+## 1. Le graph de la scène
+
+La liste à gauche de la barre contient les matériaux de la scène montrée :
+la galerie donne ceux de chaque objet (bois, marbre, roche, lave, briques,
+carrelage, roche précalculée), le niveau les siens. Le premier s'ouvre de
+lui-même ; **live** indique que chaque changement qui compile est dessiné
+aussitôt dans la scène, le matériau refait avec les valeurs de l'ancien.
+
+Le canevas se déplace comme le viewport :
+
+| Entrée                            | Effet                                           |
+| --------------------------------- | ----------------------------------------------- |
+| Bouton du milieu ou droit, glissé | Déplace la vue                                  |
+| Molette                           | Zoome autour du pointeur                        |
+| **F**, le bouton de cadrage       | Cadre la sélection, ou le graph entier          |
+| Clic, Maj+clic, Ctrl+clic         | Sélectionne, ajoute, bascule                    |
+| Glissé sur le fond                | Sélectionne dans un rectangle                   |
+| Glissé sur un nœud                | Déplace la sélection                            |
+| **Espace** ou **Tab**             | Cherche un nœud à ajouter, au pointeur          |
+| **Ctrl+F**                        | Trouve un nœud du graph                         |
+| **Suppr**                         | Retire la sélection (nœuds, fils, notes)        |
+| **Ctrl+C**, **X**, **V**, **D**   | Copier, couper, coller, dupliquer               |
+| **Ctrl+Z**, **Ctrl+Y**            | Annuler, rétablir (aussi dans la barre)         |
+| **N**, **Ctrl+G**                 | Une note au pointeur, un groupe de la sélection |
+
+Les touches vont au canevas une fois qu'on a cliqué dedans. Le bouton de
+disposition replace les nœuds en colonnes, des entrées vers la sortie :
+les matériaux écrits en code n'ont pas de positions, et sont disposés
+ainsi à l'ouverture.
+
+## 2. Nœuds et fils
+
+Un nœud a ses entrées à gauche, ses sorties à droite, chacune avec son
+type : `f32`, `vec3<f32>`… Une entrée non connectée montre sa valeur, en
+gris. Faites glisser d'un port à un autre pour les connecter : pendant le
+glissé, les ports qui acceptent le fil grossissent. Le moteur vérifie la
+connexion avec le graph : un `vec4<f32>` dans un `vec3<f32>` est
+**refusé**, et le message de la validation s'affiche en bas du canevas. La
+seule conversion est celle d'un scalaire en vecteur.
+
+**Alt+clic** sur un port retire ses fils. Un fil lâché dans le vide ouvre
+la recherche, filtrée sur les nœuds qui l'acceptent : le nœud choisi est
+ajouté là, connecté.
+
+Essayez sur le bois :
+
+1. Appuyez sur **Espace** au-dessus du canevas, tapez `smoothstep`,
+   Entrée.
+2. Faites glisser la sortie d'un nœud `mul` dans son entrée `x`, et sa
+   sortie dans un `mix` de la couleur. La sphère de l'aperçu et la capsule
+   de la galerie changent.
+3. **Ctrl+Z** annule le changement ; chacun est une commande de
+   l'historique du graph (P15), les libellés dans les infobulles de la
+   barre.
+
+## 3. L'inspecteur et les problèmes
+
+La colonne à droite du panneau a des onglets :
+
+- **Node** : le nœud sélectionné, son libellé, ses paramètres (le `type`
+  d'un uniform parmi les types des shaders) et les valeurs de ses entrées
+  non connectées, un champ par composante pour les vecteurs. Une valeur
+  est appliquée par **Entrée**, ou en quittant le champ.
+- **Problems** : les erreurs et avertissements du graph ; un clic cadre le
+  nœud. Un nœud en erreur a une bordure rouge, son message dans son
+  infobulle. La barre les compte.
+
+Un graph en erreur n'est pas dessiné : la scène garde le dernier matériau
+qui a compilé, jusqu'à ce que le graph compile de nouveau.
+
+## 4. L'aperçu et le code
+
+- **Preview** : le matériau seul, sur une sphère, un cube ou un plan,
+  dessiné par le moteur dans une texture puis relu, recompilé à chaque
+  changement. Avec **Animate**, il joue le temps du moteur (la lave
+  coule). Un matériau d'un fichier, ou un nouveau, sans scène, se voit là.
+- **Code** : ce que le moteur dessine, généré pour son backend (WGSL sur
+  WebGPU, GLSL ES sur WebGL2, HLSL sur Vulkan), avec le temps de la
+  compilation. Sa **source map** relie les nœuds aux lignes : les lignes
+  du nœud sélectionné ressortent, un clic sur une ligne sélectionne son
+  nœud. Les nœuds posés par une macro (les octaves d'un `fbm`) sont ceux
+  de la macro.
+
+## 5. Fichiers, notes et groupes
+
+- **New**, **Open**, **Save** (la barre) : un nouveau matériau, un
+  `.material.json` de l'utilisateur, le graph enregistré en JSON. Un graph
+  enregistré est une ressource du moteur (`MaterialGraphType`), chargée
+  par un store.
+- **N** pose une note au pointeur : double-cliquez dessus pour y écrire.
+  **Ctrl+G** groupe les nœuds sélectionnés dans un cadre, déplacé avec
+  eux ; double-cliquez sur son titre pour le renommer, **Ctrl+Maj+G**
+  dégroupe.
+- Notes, groupes et positions sont enregistrés dans le document
+  (`layout`), ignorés par le compilateur.
+
+Le graph est édité dans le moteur, qui peut tourner dans un autre
+processus : le panneau en montre la projection et envoie des commandes,
+comme le fait l'outliner pour le niveau.
+[Déboguer un comportement](/fdw-engine/fr/editor/debugging-a-behavior/)
+utilise le même éditeur sur l'esprit des ennemis du jeu.

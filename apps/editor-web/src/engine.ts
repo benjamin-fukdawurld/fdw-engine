@@ -12,6 +12,7 @@ import type {
   ViewportBounds,
 } from '@fdw/editor-ui/protocol';
 import { bitmapCodec } from '@fdw/engine-assets';
+import { graphsExtension } from '@fdw/graph-editor/engine';
 import { unlockAudio, WebAudioEngine } from '@fdw/engine-audio-web';
 import { WebInputSource } from '@fdw/engine-input-web';
 import { createImageBitmapDecoder } from '@fdw/engine-resources-web';
@@ -143,6 +144,8 @@ export class WebEngine {
           imageCodecs: [bitmapCodec(createImageBitmapDecoder())],
           audio,
           input: new WebInputSource(this.element),
+          // The part of the editors of graphs in the engine.
+          extensions: [graphsExtension()],
         },
         options.scene,
       );

@@ -6,11 +6,13 @@ import {
   resolveParams,
 } from '@fdw/engine-graph';
 import {
+  type BehaviorFunctionData,
   type BehaviorGraphData,
   BehaviorGraphFormat,
   BehaviorGraphVersion,
   type BehaviorNode,
   type BehaviorPortType,
+  type BehaviorSignaturePort,
   type BehaviorValue,
   type BehaviorVariable,
   type EventField,
@@ -22,6 +24,13 @@ import {
   ExecInput,
   ThenOutput,
 } from './nodes';
+import {
+  bodyNodeTypes,
+  callNodeType,
+  callType,
+  FunctionInputs,
+  FunctionOutputs,
+} from './functions';
 import { validateBehaviorGraph } from './validate';
 
 /**
@@ -65,6 +74,15 @@ export type ValueInput = Value | BehaviorValue;
  * @group Behavior graph
  */
 export type ExecFrom = Exec | readonly Exec[] | undefined;
+
+/**
+ * A port of the signature of a function: its type, or its type and its
+ * default value.
+ *
+ * @group Functions
+ */
+export type SignatureDeclaration =
+  BehaviorSignaturePort['type'] | Omit<BehaviorSignaturePort, 'name'>;
 
 /**
  * The id and the label of a node: an id to find it in the debugger, a
@@ -134,8 +152,11 @@ export class NodeHandle {
 export class BehaviorGraphBuilder {
   private readonly _nodes: BehaviorNode[] = [];
   private readonly _edges: GraphEdge[] = [];
-  private readonly _variables: BehaviorVariable[] = [];
-  private readonly _events = new Map<string, readonly EventField[]>();
+  private _variables: BehaviorVariable[] = [];
+  private _events = new Map<string, readonly EventField[]>();
+  private _functions: BehaviorFunctionData[] = [];
+  // The function whose body this builder makes.
+  private _signature: BehaviorFunctionData | undefined;
   private readonly _ids = new Set<NodeId>();
   private _nextId = 1;
 
@@ -180,6 +201,120 @@ export class BehaviorGraphBuilder {
       Object.entries(fields).map(([field, type]) => ({ name: field, type })),
     );
     return this;
+  }
+
+  /**
+   * Declares a function or a macro and builds its body with another
+   * builder (`f`): its entries are the outputs of `f.inputs()`, its exits
+   * the inputs of `f.outputs()`. It reads and sets the variables declared
+   * before it, and calls the functions declared before it. Called with
+   * {@link call}.
+   *
+   * @example
+   * ```ts
+   * g.function('heal', { inputs: { amount: 'number' } }, (f) => {
+   *   const start = f.inputs();
+   *   const set = f.set(start.exec('exec'), 'health',
+   *     f.add(f.get('health'), start.value('amount')));
+   *   f.outputs(set.then);
+   * });
+   * g.call(hit.then, 'heal', { amount: 5 });
+   * ```
+   */
+  function(
+    name: string,
+    spec: {
+      readonly kind?: 'function' | 'macro';
+      readonly description?: string;
+      readonly inputs?: Readonly<Record<string, SignatureDeclaration>>;
+      readonly outputs?: Readonly<Record<string, SignatureDeclaration>>;
+    },
+    build: (body: BehaviorGraphBuilder) => void,
+  ): this {
+    if (this._functions.some((fn) => fn.name === name)) {
+      throw new Error(`Function "${name}" is already declared`);
+    }
+    const ports = (
+      declared: Readonly<Record<string, SignatureDeclaration>> = {},
+    ): BehaviorSignaturePort[] =>
+      Object.entries(declared).map(([port, value]) =>
+        typeof value === 'string'
+          ? { name: port, type: value }
+          : { name: port, ...value },
+      );
+    const signature: BehaviorFunctionData = {
+      name,
+      ...(spec.kind !== undefined && { kind: spec.kind }),
+      ...(spec.description !== undefined && {
+        description: spec.description,
+      }),
+      inputs: ports(spec.inputs),
+      outputs: ports(spec.outputs),
+      nodes: [],
+      edges: [],
+    };
+    const body = new BehaviorGraphBuilder(name, this.registry);
+    body._variables = this._variables;
+    body._events = this._events;
+    body._functions = [...this._functions];
+    body._signature = signature;
+    build(body);
+    this._functions.push({
+      ...signature,
+      nodes: [...body._nodes],
+      edges: [...body._edges],
+    });
+    return this;
+  }
+
+  /** In the body of a function: its entries, the inputs of its signature. */
+  inputs(options?: NodeOptions): NodeHandle {
+    this.requireSignature();
+    return this.node(FunctionInputs, {}, options);
+  }
+
+  /**
+   * In the body of a function: its exits, the outputs of its signature.
+   * `from` reaches the exit `then` of a function; the exits of a macro by
+   * name.
+   */
+  outputs(
+    from: ExecFrom | Readonly<Record<string, ExecFrom>>,
+    values: Readonly<Record<string, ValueInput>> = {},
+    options?: NodeOptions,
+  ): NodeHandle {
+    this.requireSignature();
+    const exits =
+      from === undefined || from instanceof Exec || Array.isArray(from)
+        ? { [ThenOutput]: from as ExecFrom }
+        : (from as Readonly<Record<string, ExecFrom>>);
+    const handle = this.node(FunctionOutputs, { inputs: values }, options);
+    for (const [exit, exec] of Object.entries(exits)) {
+      this.link(exec, handle, exit);
+    }
+    return handle;
+  }
+
+  /**
+   * Calls a function or a macro declared before: after `from` (the entry
+   * `exec` of a function; for a macro, its entries by name), its inputs
+   * given.
+   */
+  call(
+    from: ExecFrom | Readonly<Record<string, ExecFrom>>,
+    name: string,
+    inputs: Readonly<Record<string, ValueInput | undefined>> = {},
+    options?: NodeOptions,
+  ): NodeHandle {
+    const entries =
+      from === undefined || from instanceof Exec || Array.isArray(from)
+        ? { [ExecInput]: from as ExecFrom }
+        : (from as Readonly<Record<string, ExecFrom>>);
+    const handle = this.node(callType(name), { inputs }, options);
+    for (const [entry, exec] of Object.entries(entries)) {
+      this.link(exec, handle, entry);
+    }
+    return handle;
   }
 
   // --- Events ------------------------------------------------------------
@@ -456,7 +591,7 @@ export class BehaviorGraphBuilder {
     } = {},
     options: NodeOptions = {},
   ): NodeHandle {
-    const definition = this.registry.require(type);
+    const definition = this.definition(type);
     const id = options.id ?? this.nextId();
     if (this._ids.has(id)) {
       throw new Error(`Node id "${id}" is already used`);
@@ -523,6 +658,9 @@ export class BehaviorGraphBuilder {
       ...(this._variables.length > 0
         ? { variables: [...this._variables] }
         : {}),
+      ...(this._functions.length > 0
+        ? { functions: [...this._functions] }
+        : {}),
     };
     const validation = validateBehaviorGraph(graph, this.registry);
     if (!validation.valid) {
@@ -537,6 +675,29 @@ export class BehaviorGraphBuilder {
     params: Readonly<Record<string, unknown>> = {},
   ): Value {
     return this.node(type, { inputs, params }).value();
+  }
+
+  // A node type of the registry, a call of a function declared, or the
+  // ports of the function built.
+  private definition(type: string): BehaviorNodeType {
+    const called = this._functions.find((fn) => callType(fn.name) === type);
+    if (called) return callNodeType(called);
+    if (
+      this._signature &&
+      (type === FunctionInputs || type === FunctionOutputs)
+    ) {
+      return bodyNodeTypes(this._signature).find(
+        (body) => body.id === type,
+      ) as BehaviorNodeType;
+    }
+    return this.registry.require(type);
+  }
+
+  private requireSignature(): BehaviorFunctionData {
+    if (!this._signature) {
+      throw new Error('Only the body of a function has inputs and outputs');
+    }
+    return this._signature;
   }
 
   private nextId(): NodeId {

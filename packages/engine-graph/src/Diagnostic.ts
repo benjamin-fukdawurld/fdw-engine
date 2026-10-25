@@ -19,6 +19,11 @@ export interface Diagnostic {
   readonly node?: NodeId;
   /** The port in cause. */
   readonly port?: string;
+  /**
+   * Where the node is when it is not in the graph itself: the function of
+   * the document whose body holds it.
+   */
+  readonly scope?: string;
 }
 
 /**
@@ -27,12 +32,13 @@ export interface Diagnostic {
  * @group Validation
  */
 export function formatDiagnostic(diagnostic: Diagnostic): string {
-  const location = diagnostic.node
+  const node = diagnostic.node
     ? diagnostic.port
       ? `#${diagnostic.node}.${diagnostic.port}: `
       : `#${diagnostic.node}: `
     : '';
-  return `${diagnostic.severity}: ${location}${diagnostic.message}`;
+  const scope = diagnostic.scope ? `${diagnostic.scope}: ` : '';
+  return `${diagnostic.severity}: ${scope}${node}${diagnostic.message}`;
 }
 
 /**

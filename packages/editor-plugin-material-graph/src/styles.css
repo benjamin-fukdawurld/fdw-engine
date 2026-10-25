@@ -1,0 +1,3 @@
+/* The classes of the plugin, for the Tailwind of the application: imported
+   by its stylesheet, after that of @fdw/editor-ui. */
+@source './';

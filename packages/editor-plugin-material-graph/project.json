@@ -1,0 +1,7 @@
+{
+  "name": "editor-plugin-material-graph",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/editor-plugin-material-graph/src",
+  "projectType": "library",
+  "tags": []
+}

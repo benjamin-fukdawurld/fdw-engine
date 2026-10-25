@@ -2,3 +2,7 @@
 @import '@fdw/editor-ui/styles.css';
 @import '@fdw/editor-plugin-sample/styles.css';
 @import '@fdw/editor-plugin-isolate/styles.css';
+@import '@fdw/graph-editor/styles.css';
+@import '@fdw/editor-plugin-material-graph/styles.css';
+@import '@fdw/editor-plugin-animation-graph/styles.css';
+@import '@fdw/editor-plugin-behavior-graph/styles.css';

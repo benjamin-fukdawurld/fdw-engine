@@ -1,5 +1,6 @@
 export * from './data';
 export * from './nodes';
+export * from './functions';
 export * from './validate';
 export * from './BehaviorGraphBuilder';
 export * from './program';

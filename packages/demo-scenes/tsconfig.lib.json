@@ -40,6 +40,9 @@
       "path": "../engine-input/tsconfig.lib.json"
     },
     {
+      "path": "../engine-graph-editing/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-geometry/tsconfig.lib.json"
     },
     {

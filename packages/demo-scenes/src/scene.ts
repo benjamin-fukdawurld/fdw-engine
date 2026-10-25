@@ -2,6 +2,7 @@ import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import type { Camera } from '@fdw/engine-core';
 import type { AudioEngine } from '@fdw/engine-audio';
 import type { InputSource } from '@fdw/engine-input';
+import type { GraphTarget } from '@fdw/engine-graph-editing';
 
 // A demo scene, independent of where it runs: a browser canvas (the routes)
 // or a native window (apps/demo-native).
@@ -9,6 +10,10 @@ export interface Scene {
   // Renders a frame; time in seconds since the start.
   frame(time: number): void;
   destroy(): void;
+  // The graphs an editor may change while the scene runs (P19): materials,
+  // animation graphs, behavior graphs. Read again while it runs: a game
+  // that loads its characters gives them once loaded.
+  readonly graphs?: readonly GraphTarget[];
 }
 
 /** What a scene can use from where it runs, besides the backend and the surface. */

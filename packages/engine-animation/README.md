@@ -26,3 +26,5 @@ g.output(
 const animator = new Animator(g.build(), { skeleton, clips });
 animator.set('speed', 2).update(dt); // a Pose, and animator.events
 ```
+
+Since P19, for the editor of graphs: `animator.setGraph(graph)` plays another graph (the parameters of the same name and type kept, the machines in their initial states; a graph that does not play throws and changes nothing), `animator.graph`, and `animator.inspect()`: the weight and the phase of each node in the pose of the last update, the state of each machine, the parameters.

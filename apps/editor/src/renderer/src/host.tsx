@@ -1,4 +1,7 @@
+import { animationGraphPlugin } from '@fdw/editor-plugin-animation-graph';
+import { behaviorGraphPlugin } from '@fdw/editor-plugin-behavior-graph';
 import { isolatePlugin } from '@fdw/editor-plugin-isolate';
+import { materialGraphPlugin } from '@fdw/editor-plugin-material-graph';
 import { samplePlugin } from '@fdw/editor-plugin-sample';
 import { RemoteViewport, type EditorHost } from '@fdw/editor-ui';
 import { engine } from './engine';
@@ -8,8 +11,8 @@ const { platform, versions } = window.editor;
 /**
  * The host of the Electron editor: the engine in a utility process, the
  * storage and the files through the main process (src/main/host.ts); the
- * sample plugin and that of the tutorial of the documentation (isolate),
- * their code in chunks loaded at their first event.
+ * sample plugin, that of the tutorial of the documentation (isolate) and
+ * the editors of graphs, their code in chunks loaded at their first event.
  */
 export const host: EditorHost = {
   engine,
@@ -28,5 +31,11 @@ export const host: EditorHost = {
   },
   popoutUrl: new URL('popout.html', location.href).href,
   about: `Electron ${versions.electron} · Chrome ${versions.chrome} · Node ${versions.node} · ${platform}`,
-  plugins: [samplePlugin, isolatePlugin],
+  plugins: [
+    samplePlugin,
+    isolatePlugin,
+    materialGraphPlugin,
+    animationGraphPlugin,
+    behaviorGraphPlugin,
+  ],
 };

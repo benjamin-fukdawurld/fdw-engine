@@ -6,7 +6,7 @@ export function toWire<M extends PageMessage | EngineMessage>(
   message: M,
 ): Wire<M> {
   return (
-    'data' in message
+    'data' in message && message.data instanceof Uint8Array
       ? { ...message, data: Buffer.from(message.data).toString('base64') }
       : message
   ) as Wire<M>;

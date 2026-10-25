@@ -99,7 +99,9 @@ class StageBuilder {
       op,
       args,
       ...(node?.label ? { name: node.label } : {}),
-      ...(node ? { sourceNode: node.id } : {}),
+      ...(node
+        ? { sourceNode: this._graph.origins.get(node.id) ?? node.id }
+        : {}),
     });
     return id;
   }

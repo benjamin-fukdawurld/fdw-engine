@@ -32,6 +32,18 @@
       "path": "../../packages/editor-plugin-isolate"
     },
     {
+      "path": "../../packages/graph-editor"
+    },
+    {
+      "path": "../../packages/editor-plugin-material-graph"
+    },
+    {
+      "path": "../../packages/editor-plugin-animation-graph"
+    },
+    {
+      "path": "../../packages/editor-plugin-behavior-graph"
+    },
+    {
       "path": "../../packages/engine-native"
     },
     {

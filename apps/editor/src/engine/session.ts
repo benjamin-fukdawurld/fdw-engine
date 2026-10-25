@@ -6,6 +6,7 @@ import {
   type PageMessage,
 } from '@fdw/editor-ui/protocol';
 import { pixelCodec } from '@fdw/engine-assets';
+import { graphsExtension } from '@fdw/graph-editor/engine';
 import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import { createStbImageDecoder } from '@fdw/engine-resources-native';
 import type { Renderer } from './backends';
@@ -105,6 +106,8 @@ export class EngineSession {
           scenes,
           imageCodecs: [pixelCodec(createStbImageDecoder())],
           audio,
+          // The part of the editors of graphs in the engine.
+          extensions: [graphsExtension()],
         },
         defaultScene,
       );

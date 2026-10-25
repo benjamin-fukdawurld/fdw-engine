@@ -29,6 +29,13 @@ interface EdgeEntry {
 export class WorkingGraph {
   readonly name: string;
   readonly nodes = new Map<NodeId, GraphNode>();
+  /**
+   * The node of the graph compiled each node added comes from: the macro or
+   * the function it expands (the source maps of an editor).
+   */
+  readonly origins = new Map<NodeId, NodeId>();
+  /** The node being expanded: the origin of the nodes added meanwhile. */
+  origin: NodeId | undefined;
   private _nextId = 0;
   private _nextRank = 0;
   // The edges into each node, and the nodes each node has edges to.
@@ -124,6 +131,7 @@ export class WorkingGraph {
     do {
       id = `c${this._nextId++}`;
     } while (this.nodes.has(id));
+    if (this.origin !== undefined) this.origins.set(id, this.origin);
 
     const defaults: Record<string, ConstantValue> = {};
     for (const [port, source] of Object.entries(inputs)) {

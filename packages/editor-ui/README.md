@@ -112,6 +112,8 @@ export function activate(context: PluginContext) {
 - **The command palette** (`CommandPalette.tsx`, cmdk in a dialog of Radix, a hole over the native viewport): Ctrl+Shift+P or F1, the commands enabled, by their category and title, with their key.
 - **In React**: `useItems(registry)`, `useMenu(id)`, `usePluginState(id)`, `useToolSnapshot(slot)` (the state of the tool active in a slot), `CommandButton`.
 
+**The part of a plugin in the engine** (P19): an `EngineExtension`, given to the engine by the host (`EditorEnginePlatform.extensions`, an `EngineExtensionFactory` by id), which receives the messages the plugin sends under its id (`extension` messages, JSON and bytes in `data`; `extensionChannel(connection, id)` in the page), sees the scene shown (`scene`, its `graphs`), works before each frame (`frame`) and may hold the scene (`holdsScene`: a debugger stopped, its frames not drawn). The editors of graphs are made so ([`@fdw/graph-editor`](../graph-editor/README.md)). A view may open beside the panels of its area (`split: 'right'` or `'below'`): the editors of graphs beside the viewport.
+
 The plugins are trusted: they run in the page, with what it can do (sandboxed third-party plugins come later, with the import map that gives them React and this package). The sample plugin, a tool and a panel, is [`@fdw/editor-plugin-sample`](../editor-plugin-sample/README.md).
 
 Tested without React (the manifests, the versions, the keys, the menus, the commands, the activation and the deactivation, the restore of a tool) and in the shell (a panel loaded when shown, a command from its menu and its key, a tool from a toolbar and Escape, the palette, a missing plugin, the Plugins panel).

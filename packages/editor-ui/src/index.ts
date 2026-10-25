@@ -1,5 +1,6 @@
 export * from './protocol';
 export * from './host';
+export * from './extensions';
 export * from './EditorShell';
 export * from './editorContext';
 export * from './state/services';

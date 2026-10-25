@@ -31,6 +31,12 @@ export interface ViewContribution {
   readonly location: AreaId;
   /** Open in the default layout. */
   readonly open?: boolean;
+  /**
+   * Opened beside the panels of its area rather than in a tab of theirs:
+   * a group of its own at its right or below (an editor of graphs next to
+   * the viewport).
+   */
+  readonly split?: 'right' | 'below';
   /** The clause under which the View menu lists it. */
   readonly when?: string;
 }
@@ -303,6 +309,7 @@ function checkContributions(check: Checker, value: unknown, path: string) {
     check.string(view, 'icon', at);
     check.string(view, 'when', at);
     check.oneOf(view, 'location', areas, at, true);
+    check.oneOf(view, 'split', ['right', 'below'], at);
     check.type(view, 'open', 'boolean', at);
   });
   if (contributes['menus'] !== undefined) {

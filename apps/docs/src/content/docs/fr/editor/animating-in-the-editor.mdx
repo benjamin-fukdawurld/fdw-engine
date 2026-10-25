@@ -1,0 +1,77 @@
+---
+title: Animer dans l'éditeur
+description: "Le graph d'animation du héros du jeu à la troisième personne : sa machine à états éditée dans une vue à elle, les états et les poids des nœuds pendant qu'il joue, les paramètres forcés."
+tableOfContents: false
+sidebar:
+  order: 5
+---
+
+import Editor from '../../../../components/Editor.astro';
+
+Un personnage est animé par un [graph d'animation](/fdw-engine/fr/guides/animation/) :
+des clips, des mélanges, des couches, et des machines à états pilotées
+par des paramètres (la vitesse, au sol, un saut). Le panneau **Animation
+graph** édite les graphs de la scène pendant qu'ils jouent : celui du
+héros du [jeu à la troisième personne](/fdw-engine/fr/game/tps/), et ceux des
+orcs et du démon.
+
+L'éditeur ci-dessous fait tourner le jeu, le panneau à côté (**View →
+Animation graph**). Cliquez dans le viewport pour jouer, déplacez-vous
+avec **WASD**, courez avec **Maj**, sautez avec **Espace**.
+
+<Editor scene="tps" docks={[]} view="fdw.animationGraph.editor" height={720} />
+
+## 1. Ce qui joue
+
+La liste de la barre contient les graphs d'animation de la scène : **hero
+animation**, puis ceux des sortes d'ennemis (chaque ennemi apparu joue le
+graph de sa sorte, ceux qui apparaissent plus tard le graph édité).
+Pendant que le jeu tourne, le canevas montre, pour l'animator suivi :
+
+- sur chaque nœud son **poids** dans la pose, une barre sous son titre et
+  un badge (`62%`) ; un nœud qui ne joue pas est grisé ;
+- sur une machine à états son **état**, et l'état vers lequel elle passe
+  en fondu (`idle → run`).
+
+L'onglet **Play** choisit l'animator suivi (un orc parmi les autres),
+liste les **paramètres** avec leurs valeurs, et les force : un nombre, un
+booléen, un trigger déclenché. Le jeu règle ses paramètres à chaque
+image : une valeur forcée tient jusqu'à ce qu'il le fasse (arrêtez de
+déplacer le héros pour voir une vitesse forcée prendre effet).
+
+## 2. La machine à états
+
+Un double clic sur un nœud **state machine** l'ouvre dans une vue à
+elle :
+
+- les **états** sont des boîtes, l'initial marqué, l'état qui joue en
+  vert, celui vers lequel elle passe en ambre avec l'avancement du fondu ;
+- les **transitions** sont des flèches : celle en cours en ambre ; un clic
+  en sélectionne une, **Suppr** la retire ;
+- un glissé depuis le point bleu d'un état vers un autre crée une
+  transition ; **Any state** est la source des transitions depuis
+  n'importe quel état (`*`).
+
+L'onglet **State machine** l'édite : les états (renommés avec leurs
+transitions et leur entrée, ajoutés, retirés, l'initial) et chaque
+transition : ses états, son fondu en secondes, son temps de sortie (en
+cycles de l'état), son trigger, ses conditions sur les paramètres
+(`speed > 1.2`). Chaque changement est une commande de l'historique
+(**Ctrl+Z**), et tourne aussitôt dans les animators : leurs paramètres
+gardent leurs valeurs, leurs machines repartent de leurs états initiaux.
+
+Les états sont des entrées du nœud : un état ajouté a besoin d'une pose,
+connectée dans le graph (un clip, un mélange), sinon le graph a une
+erreur et les animators gardent le dernier graph sans erreur. Un graph qui
+nomme un clip que le personnage n'a pas n'est pas joué non plus ; le
+panneau dit pourquoi (**Not running: …**).
+
+## 3. Le graph
+
+Hors de la machine, le graph s'édite comme les
+[matériaux](/fdw-engine/fr/editor/editing-a-material/) : **Espace** ajoute
+un clip, un mélange, un blend space, une couche, un paramètre ; les fils
+portent des poses, des nombres et des booléens ; l'onglet **Node** règle
+le clip d'un nœud, sa vitesse, sa boucle, les points d'un blend space.
+**Save** écrit un `.animation.json`, une ressource du moteur
+(`AnimationGraphType`).

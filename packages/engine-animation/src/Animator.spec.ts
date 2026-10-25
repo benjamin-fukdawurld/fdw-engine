@@ -304,6 +304,49 @@ describe('Animator', () => {
     expect(legX(animator)).toBeCloseTo(0.25);
   });
 
+  it('tells the weight of each node and the state of its machines', () => {
+    const animator = new Animator(machine(), { skeleton, clips });
+    animator.update(0.1);
+    animator.set('speed', 1).update(0.25);
+    const { nodes, machines, parameters } = animator.inspect();
+    const graph = machine();
+    const idOf = (clipName: string) =>
+      graph.nodes.find((node) => node.params['clip'] === clipName)?.id ?? '';
+    // Halfway through the cross-fade from idle to walk.
+    expect(nodes[idOf('Idle')].weight).toBeCloseTo(0.5);
+    expect(nodes[idOf('Walk')].weight).toBeCloseTo(0.5);
+    expect(nodes[idOf('Jump')].weight).toBe(0);
+    expect(nodes[idOf('Walk')].phase).toBeCloseTo(0.25);
+    const body = graph.nodes.find((node) => node.label === 'body')?.id ?? '';
+    expect(machines[body]).toMatchObject({ state: 'idle', next: 'walk' });
+    expect(Object.keys(machines)).toEqual([body]);
+    expect(parameters).toEqual({ speed: 1, grounded: true, jump: false });
+  });
+
+  it('plays another graph, its parameters kept', () => {
+    const animator = new Animator(machine(), { skeleton, clips });
+    animator.set('speed', 2).update(1);
+    expect(animator.state('body')?.state).toBe('walk');
+    const g = new AnimationGraphBuilder('other');
+    g.parameter('speed', 'number');
+    g.parameter('grounded', 'number');
+    g.output(g.clip('Run'));
+    const other = g.build();
+    animator.setGraph(other);
+    expect(animator.graph).toBe(other);
+    expect(animator.get('speed')).toBe(2);
+    // Another type: its default.
+    expect(animator.get('grounded')).toBe(0);
+    expect(animator.state('body')).toBeUndefined();
+    animator.update(0.1);
+    expect(hipsX(animator)).toBeCloseTo(2);
+    // A graph that does not play: the animator keeps its own.
+    const broken = new AnimationGraphBuilder('broken');
+    broken.output(broken.clip('Nope'));
+    expect(() => animator.setGraph(broken.build())).toThrow(/no clip "Nope"/);
+    expect(animator.graph).toBe(other);
+  });
+
   it('reports the missing clips, masks and parameters', () => {
     const g = new AnimationGraphBuilder('missing');
     g.parameter('speed', 'number');

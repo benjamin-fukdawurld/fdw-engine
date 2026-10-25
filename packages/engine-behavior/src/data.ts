@@ -1,4 +1,9 @@
-import type { GraphDocument, GraphEdge, GraphNode } from '@fdw/engine-graph';
+import type {
+  GraphBody,
+  GraphDocument,
+  GraphEdge,
+  GraphNode,
+} from '@fdw/engine-graph';
 
 /**
  * Value of the `format` field of serialized behavior graphs.
@@ -85,6 +90,47 @@ export interface EventField {
 export type BehaviorNode = GraphNode<unknown, BehaviorValue>;
 
 /**
+ * A port of the signature of a function or a macro: an input of its call
+ * node and an output of its `fn.inputs` node, or an output of its call
+ * node and an input of its `fn.outputs` node.
+ *
+ * @group Behavior graph
+ */
+export interface BehaviorSignaturePort {
+  readonly name: string;
+  /** `exec` for the entries and the exits of a macro. */
+  readonly type: Exclude<BehaviorPortType, 'any'>;
+  /** The value of an input not connected; the zero of its type by default. */
+  readonly default?: BehaviorValue;
+}
+
+/**
+ * A graph called by another: its nodes are laid in the graph where it is
+ * called (`call.<name>` nodes) before the graph runs.
+ *
+ * - a `function` has one entry and one exit of the flow (the `exec` output
+ *   of its `fn.inputs` node, the `then` input of its `fn.outputs` node),
+ *   and cannot wait (no `flow.delay`);
+ * - a `macro` has the entries and the exits of its signature (none: its
+ *   values are computed on demand, as a pure node), and may wait.
+ *
+ * Both read and set the variables of the graph; neither handles events.
+ *
+ * @group Behavior graph
+ */
+export interface BehaviorFunctionData extends GraphBody<
+  BehaviorNode,
+  GraphEdge
+> {
+  readonly name: string;
+  /** `function` by default. */
+  readonly kind?: 'function' | 'macro';
+  readonly description?: string;
+  readonly inputs: readonly BehaviorSignaturePort[];
+  readonly outputs: readonly BehaviorSignaturePort[];
+}
+
+/**
  * A behavior graph: events starting chains of nodes run one after the
  * other (the flow of execution, through `exec` ports), which read values
  * computed on demand (the data flow) and change variables. A plain object,
@@ -101,6 +147,8 @@ export interface BehaviorGraphData extends GraphDocument<
   readonly format: typeof BehaviorGraphFormat;
   readonly version: typeof BehaviorGraphVersion;
   readonly variables?: readonly BehaviorVariable[];
+  /** The functions and the macros its `call.<name>` nodes call. */
+  readonly functions?: readonly BehaviorFunctionData[];
 }
 
 /**

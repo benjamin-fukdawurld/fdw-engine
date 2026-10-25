@@ -2,7 +2,7 @@
 title: Le viewport natif
 description: "Comment l'éditeur de bureau montre le moteur dans sa fenêtre, sur Vulkan et sans copie, comment les entrées lui parviennent, et ce que cela coûte."
 sidebar:
-  order: 4
+  order: 7
 ---
 
 L'éditeur de bureau est une application Electron, mais sa vue 3D n'est

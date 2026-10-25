@@ -1,0 +1,122 @@
+---
+title: Editing a material
+description: 'The editor of graphs on the procedural materials of the gallery: nodes, wires, the search, the inspector, the live preview, the code generated and its lines by node.'
+tableOfContents: false
+sidebar:
+  order: 4
+---
+
+import Editor from '../../../components/Editor.astro';
+
+The materials of the engine are graphs ([Material graphs](/fdw-engine/guides/material-graph/)).
+The editor edits them with the mouse, in the **Material graph** panel: the
+same editor of graphs as the animations and the behaviors, each kind of
+graph a plugin of the editor. This tutorial changes the wood of the
+gallery of [procedural materials](/fdw-engine/tutorials/procedural-materials/),
+while it is drawn.
+
+The editor below shows the gallery, the panel opened beside the viewport
+(**View → Material graph**, or **Graphs: Edit the materials** in the
+palette). Nothing is kept when the page is left.
+
+<Editor
+  scene="procedural"
+  docks={[]}
+  view="fdw.materialGraph.editor"
+  height={720}
+/>
+
+## 1. The graph of the scene
+
+The list at the left of the bar has the materials of the scene shown: the
+gallery gives each object's (wood, marble, rock, lava, bricks, tiles,
+baked rock), the level its own. The first one opens by itself; **live**
+says that each change that compiles is drawn in the scene at once, the
+material made again with the values of the old one.
+
+The canvas moves like the viewport:
+
+| Input                           | What it does                                    |
+| ------------------------------- | ----------------------------------------------- |
+| Middle or right button, dragged | Moves the view                                  |
+| Wheel                           | Zooms around the pointer                        |
+| **F**, the frame button         | Frames the selection, or the whole graph        |
+| Click, Shift+click, Ctrl+click  | Selects, adds, toggles                          |
+| Drag on the background          | Selects in a rectangle                          |
+| Drag on a node                  | Moves the selection                             |
+| **Space** or **Tab**            | Searches a node to add, at the pointer          |
+| **Ctrl+F**                      | Finds a node of the graph                       |
+| **Delete**                      | Removes the selection (nodes, wires, notes)     |
+| **Ctrl+C**, **X**, **V**, **D** | Copy, cut, paste, duplicate                     |
+| **Ctrl+Z**, **Ctrl+Y**          | Undo, redo (also in the bar)                    |
+| **N**, **Ctrl+G**               | A note at the pointer, a group of the selection |
+
+The keys go to the canvas once it is clicked. The arrangement button
+places the nodes again in columns, from the inputs to the output: the
+materials made in code have no positions, and are arranged so when opened.
+
+## 2. Nodes and wires
+
+A node has its inputs on the left, its outputs on the right, each with its
+type: `f32`, `vec3<f32>`… An input not connected shows its value, in gray.
+Drag from a port to another to connect them: while dragging, the ports
+that take the wire grow. The engine checks the connection against the
+graph: a `vec4<f32>` into a `vec3<f32>` is **refused**, and the message of
+the validation shows at the bottom of the canvas. The only conversion is a
+scalar into a vector.
+
+**Alt+click** on a port removes its wires. A wire dropped in the void
+opens the search, filtered on the nodes that take it: the node chosen is
+added there, connected.
+
+Try it on the wood:
+
+1. Press **Space** over the canvas, type `smoothstep`, Enter.
+2. Drag the output of a `mul` node into its `x` input, and its output
+   into a `mix` of the color. The sphere of the preview and the capsule of
+   the gallery change.
+3. **Ctrl+Z** undoes the change; each one is a command of the history of
+   the graph (P15), the labels in the tooltips of the bar.
+
+## 3. The inspector and the problems
+
+The column at the right of the panel has tabs:
+
+- **Node**: the node selected, its label, its parameters (the `type` of a
+  uniform among the types of the shaders) and the values of its inputs not
+  connected, a field per component for the vectors. A value is applied by
+  Enter, or by leaving the field.
+- **Problems**: the errors and warnings of the graph; a click frames the
+  node. A node in error has a red border, its message in its tooltip. The
+  bar counts them.
+
+A graph with an error is not drawn: the scene keeps the last material that
+compiled, until the graph compiles again.
+
+## 4. The preview and the code
+
+- **Preview**: the material alone, on a sphere, a cube or a plane, drawn by
+  the engine into a texture and read back, recompiled at each change. With
+  **Animate**, it plays the time of the engine (the lava flows). A material
+  of a file or a new one, without a scene, is seen there.
+- **Code**: what the engine draws, generated for its backend (WGSL on
+  WebGPU, GLSL ES on WebGL2, HLSL on Vulkan), with the time of the
+  compilation. Its **source map** links the nodes to the lines: the lines of
+  the node selected stand out, a click on a line selects its node. The
+  nodes laid by a macro (the octaves of a `fbm`) are those of the macro.
+
+## 5. Files, notes and groups
+
+- **New**, **Open**, **Save** (the bar): a new material, a
+  `.material.json` of the user, the graph saved as JSON. A graph saved is a
+  resource of the engine (`MaterialGraphType`), loaded by a store.
+- **N** lays a note at the pointer: double-click it to write in it. **Ctrl+G**
+  groups the nodes selected in a frame, moved with them; double-click its
+  title to rename it, **Ctrl+Shift+G** ungroups.
+- Notes, groups and positions are saved in the document (`layout`),
+  ignored by the compiler.
+
+The graph is edited in the engine, which may run in another process: the
+panel shows its projection and sends commands, as the outliner does for
+the level. [Debugging a behavior](/fdw-engine/editor/debugging-a-behavior/)
+uses the same editor on the mind of the enemies of the game.

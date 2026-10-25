@@ -1,5 +1,8 @@
 import type { EditorHost, HostStorage } from '@fdw/editor-ui';
+import { animationGraphPlugin } from '@fdw/editor-plugin-animation-graph';
+import { behaviorGraphPlugin } from '@fdw/editor-plugin-behavior-graph';
 import { isolatePlugin } from '@fdw/editor-plugin-isolate';
+import { materialGraphPlugin } from '@fdw/editor-plugin-material-graph';
 import { samplePlugin } from '@fdw/editor-plugin-sample';
 import { CanvasViewport } from './CanvasViewport';
 import type { WebEngine } from './engine';
@@ -16,9 +19,9 @@ function browser(): string {
 /**
  * The host of the web editor: the engine in the page, its canvas in the
  * viewport; the storage in IndexedDB, the files through the File System
- * Access API; the sample plugin and that of the tutorial of the
- * documentation (isolate), their code in chunks loaded at their first
- * event.
+ * Access API; the sample plugin, that of the tutorial of the
+ * documentation (isolate) and the editors of graphs, their code in chunks
+ * loaded at their first event.
  */
 export function createWebHost(
   engine: WebEngine,
@@ -31,6 +34,12 @@ export function createWebHost(
     storage,
     popoutUrl: new URL('popout.html', document.baseURI).href,
     about: `Web · ${browser()} · ${navigator.platform}`,
-    plugins: [samplePlugin, isolatePlugin],
+    plugins: [
+      samplePlugin,
+      isolatePlugin,
+      materialGraphPlugin,
+      animationGraphPlugin,
+      behaviorGraphPlugin,
+    ],
   };
 }

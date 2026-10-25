@@ -11,9 +11,6 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.spec.tsx"],
   "references": [
     {
-      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/engine-resources/tsconfig.lib.json"
     },
     {
@@ -23,19 +20,34 @@
       "path": "../../packages/engine-gltf/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/engine-assets/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/editor-plugin-sample/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/editor-plugin-material-graph/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/editor-plugin-isolate/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/editor-plugin-behavior-graph/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/editor-plugin-animation-graph/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-resources-web/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-input-web/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-audio-web/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/graph-editor/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-assets/tsconfig.lib.json"
     },
     {
       "path": "../../packages/demo-scenes/tsconfig.lib.json"
