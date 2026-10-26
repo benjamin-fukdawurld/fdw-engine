@@ -2,12 +2,15 @@ import type {
   GpuBindGroupEntry,
   GpuBottomLevel,
   GpuBuffer,
+  GpuCommandEncoder,
   GpuTopLevel,
   RenderBackend,
   TopLevelInstance,
 } from '@fdw/engine-backend';
 import {
   AllLayers,
+  ComputeRunner,
+  DeformedVertices,
   Material,
   Mesh,
   Renderable,
@@ -17,13 +20,27 @@ import {
 } from '@fdw/engine-core';
 import { Frustum } from '@fdw/engine-geometry';
 import {
+  compile,
+  CompiledProgram,
+  HitResources,
+  NodeRegistry,
+  RayAlphaMaskVec4s,
   RayInstanceFlags,
   RayInstanceVec4s,
   RayMasks,
+  RaySurfaceVec4s,
   RayVertexVec4s,
 } from '@fdw/engine-shader';
+import {
+  alphaMaskHits,
+  alphaMaskKernel,
+  alphaMaskSquare,
+  AlphaMaskTexels,
+} from './alphaMasks';
+import { deformedVerticesKernel, NoAttribute } from './deformed';
 import { GrowableBuffer } from './GrowableBuffer';
-import { rayMeshData } from './meshData';
+import { MaterialHits, materialValues } from './MaterialHits';
+import { rayMeshData, RayMeshData } from './meshData';
 
 /** What a scene of rays holds, from a source or a list of items. */
 export interface RaySceneUpdate {
@@ -88,6 +105,29 @@ function generatesGeometry(material: Material): boolean {
 /** Floats of an instance record (rayInstances). */
 const InstanceFloats = RayInstanceVec4s * 4;
 
+// The mask of a masked material: its vec4 in the geometry, the version of
+// the material it was baked from.
+interface MaskEntry {
+  readonly offset: number;
+  version: number;
+}
+
+// What the bakes of the masks use, made at the first masked material: the
+// square (its triangles and vertices in the geometry), the hits of its
+// texels, the surfaces evaluated, the programs.
+interface Baker {
+  readonly square: number;
+  readonly hits: GpuBuffer;
+  readonly surfaces: GpuBuffer;
+  readonly materials: MaterialHits;
+  readonly pack: CompiledProgram;
+  // The instance whose record is that of the square: hits made for it.
+  instance: number;
+}
+
+// The flags hold the vec4 of the mask from bit 8: 24 bits.
+const MaxMaskOffset = 1 << 24;
+
 /**
  * The scene the rays are traced against: the acceleration structures of
  * the backend (a bottom level per mesh, kept while the mesh does not
@@ -112,10 +152,35 @@ export class RayScene implements TracedScene {
   // The records of the last update, to know whether the scene changed.
   private _last = new Float32Array(0);
   private _revision = 0;
+  private readonly _masks = new Map<Material, MaskEntry>();
+  private _baker?: Baker;
+  private _runner?: ComputeRunner;
+  private _copy?: CompiledProgram;
+  private readonly _deformed = new Map<
+    GpuBuffer,
+    {
+      mesh: Mesh;
+      entry: MeshEntry;
+      vertices: DeformedVertices;
+      // The records of the vertices at rest.
+      rest: GpuBuffer;
+      seen: boolean;
+    }
+  >();
+  private readonly _registry?: NodeRegistry;
 
   constructor(
     backend: RenderBackend,
-    { capacity = 256, label = 'ray scene' }: { capacity?: number; label?: string } = {},
+    {
+      capacity = 256,
+      label = 'ray scene',
+      registry,
+    }: {
+      capacity?: number;
+      label?: string;
+      /** The nodes of the materials, for the bakes of their alpha masks. */
+      registry?: NodeRegistry;
+    } = {},
   ) {
     if (
       !backend.capabilities?.rayQuery ||
@@ -125,6 +190,7 @@ export class RayScene implements TracedScene {
       throw new Error('The backend traces no rays (rayQuery capability)');
     }
     this.backend = backend;
+    this._registry = registry;
     this._top = backend.createTopLevel({ capacity, label });
     this._geometry = new GrowableBuffer(backend, 16, 1 << 16, `${label} geometry`);
     this._instanceCapacity = Math.max(1, capacity);
@@ -191,8 +257,15 @@ export class RayScene implements TracedScene {
       throw new Error('The ray scene is destroyed');
     }
     const traced: Renderable[] = [];
+    // The items whose material makes its geometry are traced with their
+    // ray mesh, or their vertices moved on the GPU.
     const visit = (item: Renderable) => {
-      if (!generatesGeometry(item.material) && (!filter || filter(item))) {
+      if (
+        (item.rayMesh ||
+          item.material.deformedVertices ||
+          !generatesGeometry(item.material)) &&
+        (!filter || filter(item))
+      ) {
         traced.push(item);
       }
     };
@@ -205,8 +278,12 @@ export class RayScene implements TracedScene {
     const instances: RayInstance[] = [];
     const top: TopLevelInstance[] = [];
     const records: { item: Renderable; entry: MeshEntry; world: Float32Array }[] = [];
+    const bakes: Material[] = [];
     for (const item of traced) {
-      const entry = this.meshEntry(item.mesh);
+      const deformed = item.rayMesh ? undefined : item.material.deformedVertices;
+      const entry = deformed
+        ? this.deformedEntry(item.mesh, deformed)
+        : this.meshEntry(item.rayMesh ?? item.mesh);
       if (!entry) {
         continue;
       }
@@ -218,22 +295,135 @@ export class RayScene implements TracedScene {
       const world = Float32Array.from(worldMatrixOf(item));
       const transparent = item.material.renderState.alphaMode === 'blend';
       const casts = !transparent && item.castShadow !== false;
+      const mask = this.maskOf(item.material, bakes);
       top.push({
         bottom: entry.bottom,
         transform: world,
         mask: RayMasks.visible | (casts ? RayMasks.shadow : 0),
+        ...(mask === undefined ? {} : { opaque: false }),
+        // Where the vertices moved: the box the source knows.
+        ...(deformed && item.bounds
+          ? { bounds: [...item.bounds.min, ...item.bounds.max] }
+          : {}),
       });
       instances.push({ item, material });
       records.push({ item, entry, world });
     }
+    // The masks of the materials gone are freed.
+    for (const [material, mask] of this._masks) {
+      if (!materials.has(material)) {
+        this._geometry.release(mask.offset, RayAlphaMaskVec4s);
+        this._masks.delete(material);
+      }
+    }
     this._materials = [...materials.keys()];
     this._instances = instances;
-    this.writeInstances(records, materials);
+    this.writeInstances(records, materials, bakes.length > 0);
+    // The vertices moved on the GPU: a scene that moves.
+    if ([...this._deformed.values()].some((deformed) => deformed.seen)) {
+      this._revision++;
+    }
     this._top.update(top);
     const encoder = this.backend.createCommandEncoder();
+    this.refit(encoder);
+    if (bakes.length > 0) {
+      this.bake(encoder, bakes);
+    }
     encoder.buildTopLevel?.(this._top);
     this.backend.submit([encoder.finish()]);
     return this;
+  }
+
+  // The vec4 of the mask of a material in the geometry: for the masked
+  // materials (alphaMode 'mask'); added to `bakes` when it is to be baked.
+  private maskOf(material: Material, bakes: Material[]): number | undefined {
+    if (material.renderState.alphaMode !== 'mask') {
+      return undefined;
+    }
+    let mask = this._masks.get(material);
+    if (!mask) {
+      const offset = this._geometry.allocate(RayAlphaMaskVec4s);
+      if (offset + RayAlphaMaskVec4s > MaxMaskOffset) {
+        // Out of the bits of the flags: an opaque material.
+        this._geometry.release(offset, RayAlphaMaskVec4s);
+        return undefined;
+      }
+      mask = { offset, version: -1 };
+      this._masks.set(material, mask);
+    }
+    if (mask.version !== material.version && !bakes.includes(material)) {
+      mask.version = material.version;
+      bakes.push(material);
+    }
+    return mask.offset;
+  }
+
+  // Records the bakes of the masks of the materials (see alphaMasks.ts):
+  // the hit program of each over the square, its alpha packed in bits.
+  private bake(encoder: GpuCommandEncoder, materials: readonly Material[]): void {
+    const baker = this.baker();
+    const pass = encoder.beginComputePass('alpha masks');
+    const hitGroups = [Math.ceil(AlphaMaskTexels / 64)] as const;
+    for (const material of materials) {
+      const program = baker.materials.program(material);
+      const owner = this._masks.get(material) as MaskEntry;
+      this.runner().record(pass, program, {
+        values: {
+          ...this.resources(),
+          ...materialValues(material, program),
+          [HitResources.hits]: baker.hits,
+          [HitResources.surfaces]: baker.surfaces,
+          [HitResources.count]: AlphaMaskTexels,
+          [HitResources.material]: 0,
+        },
+        workgroups: hitGroups,
+        owner,
+      });
+      this.runner().record(pass, baker.pack, {
+        values: {
+          raySurfaces: baker.surfaces,
+          masks: this._geometry.buffer,
+          maskOffset: owner.offset,
+        },
+        workgroups: [Math.ceil(RayAlphaMaskVec4s / 64)],
+        owner,
+      });
+    }
+    pass.end();
+  }
+
+  private baker(): Baker {
+    if (this._baker) {
+      return this._baker;
+    }
+    const square = this._geometry.allocate(2 + 4 * RayVertexVec4s);
+    this._geometry.write(square, alphaMaskSquare(square));
+    const buffer = (vec4s: number, label: string) =>
+      this.backend.buffers.create({
+        label: `alpha masks ${label}`,
+        size: AlphaMaskTexels * vec4s * 16,
+        usage: ['storage', 'copy-dst'],
+      });
+    this._baker = {
+      square,
+      hits: buffer(1, 'hits'),
+      surfaces: buffer(RaySurfaceVec4s, 'surfaces'),
+      materials: new MaterialHits(this.backend, this._registry),
+      pack: compile(alphaMaskKernel(), {
+        capabilities: this.backend.capabilities,
+      }),
+      instance: -1,
+    };
+    return this._baker;
+  }
+
+  // The resources of the scene, by their names in the programs.
+  private resources(): Record<string, GpuBindGroupEntry['resource']> {
+    return {
+      scene: this._top,
+      rayInstances: this._instanceBuffer,
+      rayGeometry: this._geometry.buffer,
+    };
   }
 
   /** Frees the structures and the buffers. */
@@ -248,6 +438,14 @@ export class RayScene implements TracedScene {
     this._top.destroy();
     this._geometry.destroy();
     this._instanceBuffer.destroy();
+    for (const buffer of [...this._deformed.keys()]) {
+      this.releaseDeformed(buffer);
+    }
+    this._runner?.destroy();
+    if (this._baker) {
+      this._baker.hits.destroy();
+      this._baker.surfaces.destroy();
+    }
   }
 
   // The bottom level of a mesh and its place in the buffers: made once
@@ -260,6 +458,59 @@ export class RayScene implements TracedScene {
     if (known) {
       this.forget(mesh, known);
     }
+    const entry = this.createEntry(mesh, false, () => {
+      const current = this._meshes.get(mesh);
+      if (current) {
+        this.forget(mesh, current);
+      }
+    });
+    if (entry) {
+      this._meshes.set(mesh, entry);
+    }
+    return entry;
+  }
+
+  // The entry of the vertices of a mesh moved on the GPU: a dynamic bottom
+  // level per buffer of vertices (the items sharing the mesh move apart),
+  // refit at each update.
+  private deformedEntry(
+    mesh: Mesh,
+    vertices: DeformedVertices,
+  ): MeshEntry | undefined {
+    const known = this._deformed.get(vertices.buffer);
+    if (known && known.entry.version === mesh.version && known.mesh === mesh) {
+      known.vertices = vertices;
+      known.seen = true;
+      return known.entry;
+    }
+    if (known) {
+      this.releaseDeformed(vertices.buffer);
+    }
+    const entry = this.createEntry(mesh, true, () => {
+      if (this._deformed.get(vertices.buffer)?.mesh === mesh) {
+        this.releaseDeformed(vertices.buffer);
+      }
+    });
+    if (entry) {
+      const data = rayMeshData(mesh) as RayMeshData;
+      const rest = this.backend.buffers.create({
+        label: `${mesh.label ?? 'deformed'} rest records`,
+        size: data.vertices.byteLength,
+        usage: ['storage', 'copy-dst'],
+        initialData: data.vertices,
+      });
+      this._deformed.set(vertices.buffer, { mesh, entry, vertices, rest, seen: true });
+    }
+    return entry;
+  }
+
+  // The bottom level of a mesh and its place in the buffers; undefined for
+  // those rays cannot hit.
+  private createEntry(
+    mesh: Mesh,
+    dynamic: boolean,
+    destroyed: () => void,
+  ): MeshEntry | undefined {
     if (mesh.destroyed) {
       return undefined;
     }
@@ -273,6 +524,7 @@ export class RayScene implements TracedScene {
       positions: data.positions,
       indices: data.indices,
       ...(mesh.label ? { label: mesh.label } : {}),
+      ...(dynamic ? { dynamic } : {}),
     });
     const vertexVec4s = data.vertices.length / 4;
     const firstVertex = this._geometry.allocate(vertexVec4s);
@@ -287,30 +539,86 @@ export class RayScene implements TracedScene {
     }
     const firstTriangle = this._geometry.allocate(triangleCount);
     this._geometry.write(firstTriangle, triangles);
-    const entry: MeshEntry = {
+    return {
       version: mesh.version,
       bottom,
       firstTriangle,
       triangleCount,
       firstVertex,
       vertexVec4s,
-      unsubscribe: mesh.onDestroy(() => {
-        const current = this._meshes.get(mesh);
-        if (current) {
-          this.forget(mesh, current);
-        }
-      }),
+      unsubscribe: mesh.onDestroy(destroyed),
     };
-    this._meshes.set(mesh, entry);
-    return entry;
   }
 
   private forget(mesh: Mesh, entry: MeshEntry): void {
+    this.release(entry);
+    this._meshes.delete(mesh);
+  }
+
+  private releaseDeformed(buffer: GpuBuffer): void {
+    const deformed = this._deformed.get(buffer);
+    if (deformed) {
+      this.release(deformed.entry);
+      deformed.rest.destroy();
+      this._deformed.delete(buffer);
+    }
+  }
+
+  private release(entry: MeshEntry): void {
     entry.unsubscribe();
     entry.bottom.destroy();
     this._geometry.release(entry.firstTriangle, entry.triangleCount);
     this._geometry.release(entry.firstVertex, entry.vertexVec4s);
-    this._meshes.delete(mesh);
+  }
+
+  // Records the refits of the deformed vertices seen by the update, and
+  // the copies of their vertices into their records; forgets the others.
+  private refit(encoder: GpuCommandEncoder): void {
+    const moved = [...this._deformed].filter(([buffer, deformed]) => {
+      if (!deformed.seen) {
+        this.releaseDeformed(buffer);
+        return false;
+      }
+      deformed.seen = false;
+      return true;
+    });
+    if (moved.length === 0) {
+      return;
+    }
+    const runner = this.runner();
+    this._copy ??= compile(deformedVerticesKernel(), {
+      capabilities: this.backend.capabilities,
+    });
+    const pass = encoder.beginComputePass('deformed vertices');
+    for (const [buffer, { entry, vertices, rest }] of moved) {
+      const vertexCount = entry.vertexVec4s / RayVertexVec4s;
+      runner.record(pass, this._copy, {
+        values: {
+          vertexCount,
+          firstRecord: entry.firstVertex,
+          deformedStride: vertices.stride,
+          deformedNormal: vertices.normal ?? NoAttribute,
+          deformedTangent: vertices.tangent ?? NoAttribute,
+          deformed: buffer,
+          rest,
+          records: this._geometry.buffer,
+        },
+        workgroups: [Math.ceil(vertexCount / 64)],
+        owner: entry,
+      });
+    }
+    pass.end();
+    for (const [buffer, { entry, vertices }] of moved) {
+      encoder.refitBottomLevel?.(entry.bottom, {
+        buffer,
+        stride: vertices.stride * 16,
+      });
+    }
+  }
+
+  private runner(): ComputeRunner {
+    this._runner ??= new ComputeRunner(this.backend);
+    return this._runner;
   }
 
   private createInstanceBuffer(): GpuBuffer {
@@ -322,23 +630,27 @@ export class RayScene implements TracedScene {
   }
 
   // The records of the instances (see RayInstanceVec4s).
+  // With `square`, the record of the square of the bakes follows those of
+  // the instances (see bake).
   private writeInstances(
     records: readonly { item: Renderable; entry: MeshEntry; world: Float32Array }[],
     materials: ReadonlyMap<Material, number>,
+    square = false,
   ): void {
     const count = records.length;
-    if (count > this._instanceCapacity) {
+    const written = count + (square ? 1 : 0);
+    if (written > this._instanceCapacity) {
       this._instanceBuffer.destroy();
-      this._instanceCapacity = Math.max(count, this._instanceCapacity * 2);
+      this._instanceCapacity = Math.max(written, this._instanceCapacity * 2);
       this._instanceBuffer = this.createInstanceBuffer();
       this._instanceVersion++;
     }
-    if (this._instanceData.length < count * InstanceFloats) {
+    if (this._instanceData.length < written * InstanceFloats) {
       this._instanceData = new Float32Array(this._instanceCapacity * InstanceFloats);
     }
     const data = this._instanceData;
     const words = new Uint32Array(data.buffer);
-    data.fill(0, 0, count * InstanceFloats);
+    data.fill(0, 0, written * InstanceFloats);
     records.forEach(({ item, entry, world }, i) => {
       const o = i * InstanceFloats;
       // The rows of the world matrix.
@@ -371,9 +683,11 @@ export class RayScene implements TracedScene {
       words[o + 24] = entry.firstTriangle;
       words[o + 25] = materials.get(item.material) ?? 0;
       words[o + 26] = item.id ?? 0;
+      const mask = this._masks.get(item.material);
       words[o + 27] =
         (renderState.doubleSided ? RayInstanceFlags.doubleSided : 0) |
-        (renderState.alphaMode !== 'opaque' ? RayInstanceFlags.alpha : 0);
+        (renderState.alphaMode !== 'opaque' ? RayInstanceFlags.alpha : 0) |
+        (mask ? RayInstanceFlags.alphaTest | (mask.offset << 8) : 0);
     });
     // The meshes are in the records (their first index), the materials too.
     const records32 = data.subarray(0, count * InstanceFloats);
@@ -384,12 +698,25 @@ export class RayScene implements TracedScene {
       this._last = records32.slice();
       this._revision++;
     }
-    if (count > 0) {
+    if (square) {
+      // The square of the bakes: the identity, its triangles, material 0.
+      const o = count * InstanceFloats;
+      data.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0], o);
+      data.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0], o + 12);
+      const baker = this.baker();
+      words[o + 24] = baker.square;
+      if (baker.instance !== count) {
+        baker.instance = count;
+        const hits = alphaMaskHits(count);
+        baker.hits.write(0, hits.buffer, 0, hits.byteLength);
+      }
+    }
+    if (written > 0) {
       this._instanceBuffer.write(
         0,
         data.buffer,
         0,
-        count * InstanceFloats * 4,
+        written * InstanceFloats * 4,
       );
     }
   }

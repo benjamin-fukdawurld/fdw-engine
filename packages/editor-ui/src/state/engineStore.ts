@@ -23,6 +23,8 @@ export interface EngineStoreContext {
   readonly device: string;
   readonly backend: string;
   readonly fallback?: string;
+  // The backend traces rays.
+  readonly rays: boolean;
   readonly scenes: readonly string[];
   readonly scene: string;
   readonly loading: boolean;
@@ -52,6 +54,7 @@ export function createEngineStore() {
     context: {
       device: '',
       backend: '',
+      rays: false,
       scenes: [],
       scene: '',
       loading: false,
@@ -69,6 +72,7 @@ export function createEngineStore() {
                 device: message.device,
                 backend: message.backend,
                 fallback: message.fallback,
+                rays: message.rays === true,
                 scenes: message.scenes,
                 scene: message.scene,
               },

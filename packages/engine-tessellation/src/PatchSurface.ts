@@ -70,6 +70,11 @@ export class PatchSurface implements WorldRenderItem {
   readonly patches: Patches;
   readonly castShadow: boolean;
   readonly id?: number;
+  /**
+   * What the rays see of the surface (its geometry is made in the vertex
+   * stage): a mesh of its patches at a fixed level (patchMesh).
+   */
+  rayMesh?: Mesh;
 
   private readonly _backend: RenderBackend;
   private readonly _selection: LevelSelection;

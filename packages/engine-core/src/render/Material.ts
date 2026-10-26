@@ -5,6 +5,7 @@ import type {
   GpuTopLevel,
   UniformValue,
 } from '@fdw/engine-backend';
+import type { DeformedVertices } from './rays';
 import type {
   ConstantValue,
   MaterialGraphData,
@@ -47,6 +48,11 @@ export class Material {
   readonly graph: MaterialGraphData;
   readonly renderState: RenderState;
   readonly label?: string;
+  /**
+   * The vertices of the mesh as its graph moves them, written on the GPU
+   * each frame (a skinning): what the rays see of the items drawn with it.
+   */
+  readonly deformedVertices?: DeformedVertices;
 
   private readonly _values = new Map<string, MaterialValue>();
   private _features: Readonly<Record<string, StaticValue>>;
@@ -60,6 +66,7 @@ export class Material {
     features = {},
     renderState = {},
     label,
+    deformedVertices,
   }: {
     graph: MaterialGraphData;
     values?: Readonly<Record<string, MaterialValue>>;
@@ -68,8 +75,12 @@ export class Material {
     features?: Readonly<Record<string, StaticValue>>;
     renderState?: Partial<RenderState>;
     label?: string;
+    deformedVertices?: DeformedVertices;
   }) {
     this.graph = graph;
+    if (deformedVertices) {
+      this.deformedVertices = deformedVertices;
+    }
     this._features = { ...features };
     this.renderState = {
       ...defaultRenderState,
@@ -135,6 +146,7 @@ export class Material {
   withGraph(
     graph: MaterialGraphData,
     values: Readonly<Record<string, MaterialValue>> = {},
+    { deformedVertices }: { deformedVertices?: DeformedVertices } = {},
   ): Material {
     return new Material({
       graph,
@@ -142,6 +154,7 @@ export class Material {
       features: this._features,
       renderState: this.renderState,
       ...(this.label !== undefined ? { label: this.label } : {}),
+      ...(deformedVertices ? { deformedVertices } : {}),
     });
   }
 }

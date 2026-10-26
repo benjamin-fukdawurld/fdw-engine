@@ -201,6 +201,9 @@ interface BodyState {
   readonly lines: string[];
   readonly expressions: Map<number, string>;
   readonly builtins: Set<string>;
+  // The functions the code calls besides those of its resources (the
+  // traversals with alpha test), by name: shared by the stages.
+  readonly helpers: Map<string, string>;
 }
 
 const valueName = (instruction: IrInstruction) =>
@@ -211,11 +214,13 @@ const valueName = (instruction: IrInstruction) =>
 function emitBody(
   entryPoint: IrEntryPoint,
   resources: ReadonlyMap<string, string>,
+  helpers: Map<string, string>,
 ): BodyState {
   const state: BodyState = {
     lines: [],
     expressions: new Map(),
     builtins: new Set(),
+    helpers,
   };
   const { active } = entryPoint;
   if (active) {
@@ -301,12 +306,20 @@ function emitInstructions(
       case 'ray-query': {
         // The expression of the structure is its identifier: as_<name>.
         const binding = arg(instruction, 0).replace(/^as_/, '');
-        const [, origin, direction, tMin, tMax, mask] = instruction.args.map(
-          (id) => expressions.get(id) as string,
-        );
-        expression = `${traceFunctionName(
-          binding,
-        )}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask}, ${
+        const [, origin, direction, tMin, tMax, mask, instances, geometry] =
+          instruction.args.map((id) => expressions.get(id) as string);
+        const alphaTest = op.alphaTest === true;
+        const name = traceFunctionName(binding, alphaTest);
+        if (alphaTest && !state.helpers.has(name)) {
+          state.helpers.set(
+            name,
+            softwareRayFunctions(binding, accelerationBuffers(arg(instruction, 0)), {
+              instances,
+              geometry,
+            }),
+          );
+        }
+        expression = `${name}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask}, ${
           op.mode === 'any'
         })`;
         break;
@@ -504,8 +517,9 @@ function declareResources(
 function emitCompute(
   compute: IrEntryPoint,
   resources: ReadonlyMap<string, string>,
+  helpers: Map<string, string>,
 ): string {
-  const body = emitBody(compute, resources);
+  const body = emitBody(compute, resources, helpers);
   const [x, y, z] = compute.workgroupSize ?? [1, 1, 1];
   const writes = (compute.writes ?? []).flatMap((write) => {
     const target = resources.get(write.resource);
@@ -546,12 +560,14 @@ export class WgslCodegen implements ShaderCodegen {
       `// Generated from graph "${module.name}". Do not edit.`,
     ];
     const resources = declareResources(layout, sections);
+    const helpers = new Map<string, string>();
 
     const compute = module.entryPoints.find(
       (entryPoint) => entryPoint.stage === 'compute',
     );
     if (compute) {
-      sections.push(emitCompute(compute, resources));
+      const main = emitCompute(compute, resources, helpers);
+      sections.push(...helpers.values(), main);
       return {
         kind: 'single-module',
         code: `${sections.join('\n\n')}\n`,
@@ -585,7 +601,7 @@ export class WgslCodegen implements ShaderCodegen {
       ),
     );
 
-    const vertexBody = emitBody(vertex, resources);
+    const vertexBody = emitBody(vertex, resources, helpers);
     const vertexParameters = [
       ...(vertex.inputs.length > 0 ? ['in: VertexInput'] : []),
       ...[...vertexBody.builtins].map(
@@ -611,7 +627,7 @@ export class WgslCodegen implements ShaderCodegen {
       ].join('\n'),
     );
 
-    const fragmentBody = emitBody(fragment, resources);
+    const fragmentBody = emitBody(fragment, resources, helpers);
     const fragmentParameters = [
       'in: Varyings',
       ...[...fragmentBody.builtins].map(
@@ -686,6 +702,7 @@ export class WgslCodegen implements ShaderCodegen {
       ].join('\n'),
     );
 
+    sections.push(...helpers.values());
     return {
       kind: 'single-module',
       code: `${sections.join('\n\n')}\n`,

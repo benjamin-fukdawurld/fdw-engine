@@ -44,6 +44,11 @@ export interface RayReflectionsGBuffer extends RayGBuffer {
 export interface RayReflectionsOptions {
   /** The roughest surfaces that reflect (0.5); they fade out up to it. */
   readonly maxRoughness?: number;
+  /**
+   * The rays traced by ray tracing pipelines where the backend has them
+   * (see PathTracerOptions.rayTracingPipeline).
+   */
+  readonly rayTracingPipeline?: boolean;
   /** What the reflections that hit nothing see. */
   readonly sky?: PathTracerSky;
   /** The ambient light of the points reflected (the sky by default). */
@@ -177,6 +182,7 @@ function shadeKernel(): MaterialGraphData {
       tMax: s.select(-1, s.select(1e30, 0.999, positional), facing),
       mask: RayMasks.shadow,
       mode: 'any',
+      alphaTest: true,
     });
     const visible = s.and(facing, s.not(g.call(stdRays.hit, { hit: shadow })));
     return s.add(
@@ -318,7 +324,12 @@ export class RayReflections {
   constructor(
     renderer: Renderer,
     scene: RayScene,
-    { maxRoughness = 0.5, sky, ambient }: RayReflectionsOptions = {},
+    {
+      maxRoughness = 0.5,
+      sky,
+      ambient,
+      rayTracingPipeline = false,
+    }: RayReflectionsOptions = {},
   ) {
     this.renderer = renderer;
     this.scene = scene;
@@ -332,7 +343,10 @@ export class RayReflections {
       this.ambient = ambient;
     }
     // Room for the groups of a frame: a few per material.
-    this._runner = new ComputeRunner(renderer.backend, { bindGroups: 1024 });
+    this._runner = new ComputeRunner(renderer.backend, {
+      bindGroups: 1024,
+      rayTracing: rayTracingPipeline,
+    });
     this._hits = new MaterialHits(renderer.backend, renderer.registry);
     const capabilities = renderer.backend.capabilities;
     this._programs = {
@@ -414,6 +428,7 @@ export class RayReflections {
             rays: buffers.rays,
             stride: 2,
             rayHits: buffers.hits,
+            raySurfaces: buffers.surfaces,
           });
           this._hits.forEach(
             this.scene,

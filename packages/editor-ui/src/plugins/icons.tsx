@@ -1,4 +1,5 @@
 import {
+  ApertureIcon,
   BoxIcon,
   BugIcon,
   CircleDotIcon,
@@ -13,6 +14,7 @@ import {
   FolderOpenIcon,
   GlobeIcon,
   HouseIcon,
+  ImageIcon,
   LayoutGridIcon,
   LightbulbIcon,
   ListTreeIcon,
@@ -38,9 +40,11 @@ import {
   Scale3dIcon,
   SettingsIcon,
   SlidersHorizontalIcon,
+  SparklesIcon,
   SquareIcon,
   StepForwardIcon,
   StickyNoteIcon,
+  SunIcon,
   TerminalIcon,
   Trash2Icon,
   Undo2Icon,
@@ -53,6 +57,7 @@ import {
  * of the plugin is loaded, they are those of the editor.
  */
 export const editorIcons: Readonly<Record<string, LucideIcon>> = {
+  aperture: ApertureIcon,
   box: BoxIcon,
   bug: BugIcon,
   check: CheckIcon,
@@ -67,6 +72,7 @@ export const editorIcons: Readonly<Record<string, LucideIcon>> = {
   'folder-open': FolderOpenIcon,
   globe: GlobeIcon,
   home: HouseIcon,
+  image: ImageIcon,
   'layout-grid': LayoutGridIcon,
   lightbulb: LightbulbIcon,
   'list-tree': ListTreeIcon,
@@ -92,9 +98,11 @@ export const editorIcons: Readonly<Record<string, LucideIcon>> = {
   scale: Scale3dIcon,
   settings: SettingsIcon,
   sliders: SlidersHorizontalIcon,
+  sparkles: SparklesIcon,
   square: SquareIcon,
   'step-forward': StepForwardIcon,
   'sticky-note': StickyNoteIcon,
+  sun: SunIcon,
   terminal: TerminalIcon,
   trash: Trash2Icon,
   undo: Undo2Icon,

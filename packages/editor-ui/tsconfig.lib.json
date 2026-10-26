@@ -20,6 +20,9 @@
       "path": "../engine-resources/tsconfig.lib.json"
     },
     {
+      "path": "../engine-raytracing/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-input-web/tsconfig.lib.json"
     },
     {

@@ -12,7 +12,11 @@ import {
   RenderPipelineDescriptor,
   std140LayoutStrategy,
 } from '@fdw/engine-backend';
-import type { CompiledProgram, LogicalBinding } from '@fdw/engine-shader';
+import {
+  tracesRays,
+  type CompiledProgram,
+  type LogicalBinding,
+} from '@fdw/engine-shader';
 import {
   BindingKinds,
   ContextHandle,
@@ -24,7 +28,12 @@ import {
 } from '../addon';
 import { VulkanBuffer } from '../gpu/VulkanBuffer';
 import { VulkanSampler, VulkanTexture } from '../gpu/VulkanTexture';
-import { dxcArguments, HlslCodegen, HlslTarget } from '../shader/HlslCodegen';
+import {
+  dxcArguments,
+  HlslCodegen,
+  HlslTarget,
+  RayTracingEntryPoints,
+} from '../shader/HlslCodegen';
 import { VulkanObjectTable } from './VulkanObjectTable';
 import { VulkanTopLevel } from './VulkanAccelerationStructures';
 
@@ -205,8 +214,17 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
   createComputePipeline({
     program,
     label,
+    rayTracing = false,
   }: ComputePipelineDescriptor): VulkanComputePipeline {
     const layout = this.resolveLayout(program);
+    if (
+      rayTracing &&
+      this.target === 'vulkan' &&
+      this._addon.rayTracingPipelineSupported(this._context) &&
+      tracesRays(program.module)
+    ) {
+      return this.createRayTracingPipeline(program, layout, label);
+    }
     let shader = this._computeShaders.get(program.programKey);
     if (!shader) {
       const sources = this.codegen.emit(program.module, layout);
@@ -229,6 +247,50 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
     const handle = this._addon.createComputePipeline(
       this._context,
       shader,
+      this.groupLayouts(layout),
+      name,
+    );
+    return new VulkanComputePipeline(
+      handle,
+      this._addon.pipelineId(handle),
+      name,
+    );
+  }
+
+  // A program tracing rays as the ray generation shader of a ray tracing
+  // pipeline (see HlslEmitOptions.rayGeneration).
+  private createRayTracingPipeline(
+    program: ComputePipelineDescriptor['program'],
+    layout: PhysicalProgramLayout,
+    label: string | undefined,
+  ): VulkanComputePipeline {
+    const key = `${program.programKey}#rays`;
+    let shader = this._computeShaders.get(key);
+    const sources = this.codegen.emit(program.module, layout, {
+      rayGeneration: true,
+    });
+    if (sources.kind !== 'single-module') {
+      throw new Error(`Program "${program.name}" has no compute stage`);
+    }
+    if (!shader) {
+      shader = this._addon.createShader(
+        this._context,
+        sources.code,
+        dxcArguments('library', RayTracingEntryPoints.generation, this.target, sources.code),
+        `${program.name} (rays)`,
+      );
+      this._computeShaders.set(key, shader);
+    }
+    const compute = program.module.entryPoints.find(
+      (entryPoint) => entryPoint.stage === 'compute',
+    );
+    const [x = 1, y = 1, z = 1] = compute?.workgroupSize ?? [];
+    const name = label ?? program.name;
+    const handle = this._addon.createRayTracingPipeline(
+      this._context,
+      shader,
+      sources.code.includes(`void ${RayTracingEntryPoints.anyHit}(`) ? 1 : 0,
+      [x, y, z],
       this.groupLayouts(layout),
       name,
     );

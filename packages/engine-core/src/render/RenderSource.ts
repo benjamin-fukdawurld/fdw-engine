@@ -27,6 +27,10 @@ interface RenderItemBase {
   // The world bounds, when the source knows them; otherwise computed from
   // the mesh and the world matrix.
   readonly bounds?: Aabb;
+  // What the rays see of the item instead of its mesh, in its space: a
+  // mesh of what its material makes in its vertex stage (the patches of a
+  // terrain), at a level of detail of its own.
+  readonly rayMesh?: Mesh;
 }
 
 /** A mesh drawn with a material, placed by a Transform. */

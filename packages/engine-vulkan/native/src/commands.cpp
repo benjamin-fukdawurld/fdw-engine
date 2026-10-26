@@ -281,16 +281,30 @@ int dispatch(Replay &replay, bool indirect) {
     y = reader.word();
     z = reader.word();
   }
+  // A ray tracing pipeline traces a ray per thread of the workgroups.
+  const bool rays = replay.pipeline && replay.pipeline->bindPoint ==
+                                           VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
   if (!replay.pipeline ||
-      replay.pipeline->bindPoint != VK_PIPELINE_BIND_POINT_COMPUTE) {
+      (replay.pipeline->bindPoint != VK_PIPELINE_BIND_POINT_COMPUTE && !rays)) {
     return fail("No compute pipeline set before dispatching");
   }
+  if (rays && indirect) {
+    return fail("The ray tracing pipelines have no indirect dispatches");
+  }
+  const VkPipelineStageFlags2 stage =
+      rays ? VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR
+           : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
   Barriers barriers{replay.commands};
   for (fdw_vk_group *group : replay.groups) {
-    if (group && useGroup(replay, barriers, group,
-                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0) {
+    if (group && useGroup(replay, barriers, group, stage) != 0) {
       return -1;
     }
+  }
+  if (rays) {
+    // After the writes of its shader table (read as the shaders read,
+    // without VK_KHR_ray_tracing_maintenance1).
+    useBuffer(barriers, replay.pipeline->shaderTable, stage,
+              VK_ACCESS_2_SHADER_READ_BIT);
   }
   if (buffer) {
     useBuffer(barriers, buffer, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
@@ -300,7 +314,15 @@ int dispatch(Replay &replay, bool indirect) {
   if (flushGroups(replay) != 0) {
     return -1;
   }
-  if (buffer) {
+  if (rays) {
+    const fdw_vk_pipeline &pipeline = *replay.pipeline;
+    const VkStridedDeviceAddressRegionKHR callable{};
+    vkCmdTraceRaysKHR(replay.commands, &pipeline.generationRegion,
+                      &pipeline.missRegion, &pipeline.hitRegion, &callable,
+                      x * pipeline.workgroupSize[0],
+                      y * pipeline.workgroupSize[1],
+                      z * pipeline.workgroupSize[2]);
+  } else if (buffer) {
     vkCmdDispatchIndirect(replay.commands, buffer->buffer, offset);
   } else {
     vkCmdDispatch(replay.commands, x, y, z);
@@ -660,6 +682,23 @@ int replayCommands(Replay &replay) {
                                    replay.reader.word(), "top level", &status);
       if (top) {
         status = buildTopLevel(replay.context, replay.commands, top);
+      }
+      break;
+    }
+    case FDW_VK_CMD_REFIT_BOTTOM_LEVEL: {
+      if (replay.inRenderPass || replay.inComputePass) {
+        return fail("Bottom levels are refit outside of the passes");
+      }
+      fdw_vk_bottom_level *bottom =
+          find(replay.context->bottomLevels, replay.reader.word(),
+               "bottom level", &status);
+      fdw_vk_buffer *source = find(replay.context->buffers,
+                                   replay.reader.word(), "buffer", &status);
+      const uint64_t offset = replay.reader.wide();
+      const uint32_t stride = replay.reader.word();
+      if (bottom && source) {
+        status = refitBottomLevel(replay.context, replay.commands, bottom,
+                                  source, offset, stride);
       }
       break;
     }

@@ -10,6 +10,9 @@ import {
   IrInstruction,
   IrStageVariable,
   LogicalBinding,
+  RayAlphaMaskSize,
+  RayInstanceFlags,
+  RayInstanceVec4s,
   ShaderModuleIR,
   ShaderType,
   typeToString,
@@ -203,8 +206,11 @@ function resourceIdentifier(resource: LogicalBinding): string {
 }
 
 // The function tracing rays against a structure (see rayFunctions).
-const traceFunction = (structure: string, mode: 'closest' | 'any') =>
-  `fdw_trace_${mode}_${structure}`;
+const traceFunction = (
+  structure: string,
+  mode: 'closest' | 'any',
+  alphaTest = false,
+) => `fdw_trace_${alphaTest ? 'alpha_' : ''}${mode}_${structure}`;
 
 // Ray queries against a structure: the hit of the ray-query instruction of
 // the IR (instance, triangle with bit 31 for the back faces, barycentrics).
@@ -212,6 +218,10 @@ function rayFunctions(structure: string): string {
   return (['closest', 'any'] as const)
     .map(
       (mode) => `uint4 ${traceFunction(structure, mode)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
+  // An empty interval (a ray that is not traced): no hit.
+  if (!(tMax >= tMin)) {
+    return uint4(0xffffffffu, 0u, 0u, 0u);
+  }
   RayDesc ray;
   ray.Origin = origin;
   ray.Direction = direction;
@@ -234,6 +244,144 @@ function rayFunctions(structure: string): string {
     .join('\n\n');
 }
 
+// The ray queries with alpha test (ray.traceAlpha): the structure is traced
+// without forcing the instances opaque; the candidate triangles of those
+// that are not (their material is masked) are kept where the alpha mask of
+// their material is (RayAlphaMaskSize), read from the buffers of the scene
+// at the uv of the candidate point.
+function alphaRayFunctions(
+  structure: string,
+  // The expressions of an element of the buffers of the scene.
+  instances: (index: string) => string,
+  geometry: (index: string) => string,
+  // Only the test (the any-hit shader of a ray tracing pipeline calls it).
+  testOnly = false,
+): string {
+  const kept = keptFunction(structure);
+  return [
+    `bool ${kept}(uint instance, uint primitive, float2 barycentrics) {
+  const uint4 info = asuint(${instances(`instance * ${RayInstanceVec4s}u + 6u`)});
+  if ((info.w & ${RayInstanceFlags.alphaTest}u) == 0u) {
+    return true;
+  }
+  const uint3 corners = asuint(${geometry('info.x + primitive')}.xyz);
+  const float3 w = float3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
+  const float s = dot(w, float3(${geometry('corners.x')}.w, ${geometry('corners.y')}.w, ${geometry('corners.z')}.w));
+  const float t = dot(w, float3(${geometry('corners.x + 1u')}.w, ${geometry('corners.y + 1u')}.w, ${geometry('corners.z + 1u')}.w));
+  const uint2 texel = min(uint2(frac(float2(s, t)) * ${RayAlphaMaskSize}.0), uint2(${RayAlphaMaskSize - 1}u, ${RayAlphaMaskSize - 1}u));
+  const uint bit = texel.y * ${RayAlphaMaskSize}u + texel.x;
+  const uint4 word = asuint(${geometry(`(info.w >> 8u) + bit / 128u`)});
+  return ((word[(bit / 32u) % 4u] >> (bit % 32u)) & 1u) != 0u;
+}`,
+    ...(testOnly ? [] : (['closest', 'any'] as const)).map(
+      (mode) => `uint4 ${traceFunction(structure, mode, true)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
+  // An empty interval (a ray that is not traced): no hit.
+  if (!(tMax >= tMin)) {
+    return uint4(0xffffffffu, 0u, 0u, 0u);
+  }
+  RayDesc ray;
+  ray.Origin = origin;
+  ray.Direction = direction;
+  ray.TMin = tMin;
+  ray.TMax = tMax;
+  RayQuery<${
+    mode === 'any' ? 'RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH' : 'RAY_FLAG_NONE'
+  }> query;
+  query.TraceRayInline(${structure}, RAY_FLAG_NONE, mask & 0xffu, ray);
+  while (query.Proceed()) {
+    if (query.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+        ${kept}(query.CandidateInstanceIndex(), query.CandidatePrimitiveIndex(), query.CandidateTriangleBarycentrics())) {
+      query.CommitNonOpaqueTriangleHit();
+    }
+  }
+  if (query.CommittedStatus() != COMMITTED_TRIANGLE_HIT) {
+    return uint4(0xffffffffu, 0u, 0u, 0u);
+  }
+  const float2 uv = query.CommittedTriangleBarycentrics();
+  const uint back = query.CommittedTriangleFrontFace() ? 0u : 0x80000000u;
+  return uint4(query.CommittedInstanceIndex(), query.CommittedPrimitiveIndex() | back, asuint(uv.x), asuint(uv.y));
+}`,
+    ),
+  ].join('\n\n');
+}
+
+// The test of the alpha masks of a structure (see alphaRayFunctions).
+const keptFunction = (structure: string) => `fdw_kept_${structure}`;
+
+// The payload of the rays of a ray tracing pipeline: the hit, as the
+// ray-query instruction of the IR gives it.
+const payload = `struct FdwPayload {
+  uint4 hit;
+};`;
+
+// A ray of a ray generation shader: TraceRay, its hit written in the
+// payload by the closest-hit shader (the miss shader for none). Opaque but
+// with alpha test; the rays of an empty interval hit nothing.
+function tracedRayFunction(
+  name: string,
+  structure: string,
+  mode: 'closest' | 'any',
+  alphaTest: boolean,
+): string {
+  const flags = [
+    ...(alphaTest ? [] : ['RAY_FLAG_FORCE_OPAQUE']),
+    ...(mode === 'any' ? ['RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH'] : []),
+  ];
+  return `uint4 ${name}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
+  FdwPayload payload;
+  payload.hit = uint4(0xffffffffu, 0u, 0u, 0u);
+  if (!(tMax > tMin)) {
+    return payload.hit;
+  }
+  RayDesc ray;
+  ray.Origin = origin;
+  ray.Direction = direction;
+  ray.TMin = tMin;
+  ray.TMax = tMax;
+  TraceRay(${structure}, ${flags.join(' | ') || 'RAY_FLAG_NONE'}, mask & 0xffu, 0, 1, 0, ray, payload);
+  return payload.hit;
+}`;
+}
+
+/**
+ * The entry points of a ray tracing pipeline besides its ray generation
+ * shader (rg_main): the miss shader (ms_main), the closest-hit shader
+ * (ch_main) writing the hit in the payload, and with alpha test, the
+ * any-hit shader (ah_main) ignoring the candidates cut by the alpha masks.
+ */
+export const RayTracingEntryPoints = {
+  generation: 'rg_main',
+  miss: 'ms_main',
+  closestHit: 'ch_main',
+  anyHit: 'ah_main',
+} as const;
+
+function rayTracingShaders(resources: Resources): string[] {
+  const alpha = [...resources.alphaTested];
+  if (alpha.length > 1) {
+    throw new Error('A ray tracing pipeline tests the alpha of one structure');
+  }
+  return [
+    `[shader("miss")]
+void ${RayTracingEntryPoints.miss}(inout FdwPayload payload) {
+  payload.hit = uint4(0xffffffffu, 0u, 0u, 0u);
+}`,
+    `[shader("closesthit")]
+void ${RayTracingEntryPoints.closestHit}(inout FdwPayload payload, in BuiltInTriangleIntersectionAttributes attributes) {
+  const uint back = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE ? 0u : 0x80000000u;
+  payload.hit = uint4(InstanceIndex(), PrimitiveIndex() | back, asuint(attributes.barycentrics.x), asuint(attributes.barycentrics.y));
+}`,
+    ...alpha.map(
+      (structure) => `[shader("anyhit")]
+void ${RayTracingEntryPoints.anyHit}(inout FdwPayload payload, in BuiltInTriangleIntersectionAttributes attributes) {
+  if (!${keptFunction(structure)}(InstanceIndex(), PrimitiveIndex(), attributes.barycentrics)) {
+    IgnoreHit();
+  }
+}`,
+    ),
+  ];
+}
+
 // The second buffer of an object table: the row of each instance.
 const instancesIdentifier = (table: string) => `${table}Instances`;
 
@@ -253,6 +401,14 @@ interface Resources {
   // Direct3D 12: the members of the object rows stored with padded columns
   // (a mat3 as a float4x3), and the cast that reads them.
   readonly rowCasts: Map<string, string>;
+  // The functions the code calls besides those of its resources (the ray
+  // queries with alpha test), by name: declared before the entry points.
+  readonly helpers: Map<string, string>;
+  // A ray generation shader (see rayTracingShaders): its rays traced by
+  // TraceRay, the shaders of its hits after it.
+  readonly rayGeneration: boolean;
+  // The structures traced with alpha test, by the any-hit shader.
+  readonly alphaTested: Set<string>;
 }
 
 // Direct3D 12: a member of a uniform block, a global of its cbuffer.
@@ -439,10 +595,34 @@ function emitInstructions(
         break;
       }
       case 'ray-query': {
-        const [, origin, direction, tMin, tMax, mask] = instruction.args.map(
-          (id) => expressions.get(id) as string,
-        );
-        expression = `${traceFunction(arg(instruction, 0), op.mode)}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask})`;
+        const [structure, origin, direction, tMin, tMax, mask, instances, geometry] =
+          instruction.args.map((id) => expressions.get(id) as string);
+        const alphaTest = op.alphaTest === true;
+        if (alphaTest && !resources.helpers.has(structure)) {
+          // The elements of the buffers, wrapped or not (Direct3D 12).
+          const element = (buffer: string) => (index: string) =>
+            `${buffer}[${index}]${resources.wrapped.has(buffer) ? '.value' : ''}`;
+          resources.helpers.set(
+            structure,
+            alphaRayFunctions(
+              structure,
+              element(instances),
+              element(geometry),
+              resources.rayGeneration,
+            ),
+          );
+          resources.alphaTested.add(structure);
+        }
+        const name = `${traceFunction(structure, op.mode, alphaTest)}${
+          resources.rayGeneration ? '_rt' : ''
+        }`;
+        if (resources.rayGeneration && !resources.helpers.has(name)) {
+          resources.helpers.set(
+            name,
+            tracedRayFunction(name, structure, op.mode, alphaTest),
+          );
+        }
+        expression = `${name}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask})`;
         break;
       }
       case 'array-length': {
@@ -632,6 +812,7 @@ function declareResources(
   layout: PhysicalProgramLayout,
   sections: string[],
   target: HlslTarget,
+  rayGeneration = false,
 ): Resources {
   const resources: Resources = {
     target,
@@ -639,6 +820,9 @@ function declareResources(
     blocks: new Set(),
     wrapped: new Set(),
     rowCasts: new Map(),
+    helpers: new Map(),
+    rayGeneration,
+    alphaTested: new Set(),
   };
   for (const group of layout.groups) {
     for (const physical of group.bindings) {
@@ -784,7 +968,8 @@ function declareResource(
       }
       return [
         bound(target, `RaytracingAccelerationStructure ${name}`, location, 't'),
-        rayFunctions(name),
+        // The ray queries; a ray generation shader traces by TraceRay.
+        ...(resources.rayGeneration ? [] : [rayFunctions(name)]),
       ].join('\n\n');
   }
 }
@@ -914,9 +1099,37 @@ function emitCompute(
           '  }',
         ];
   });
+  if (resources.rayGeneration) {
+    // A thread per ray: the index of the ray its invocation.
+    for (const builtin of body.builtins) {
+      if (builtin !== 'global-invocation-id') {
+        throw new Error(
+          `A ray generation shader reads no ${builtin} (the index of its ray only)`,
+        );
+      }
+    }
+    sections.push(payload, ...resources.helpers.values());
+    sections.push(
+      [
+        '[shader("raygeneration")]',
+        `void ${RayTracingEntryPoints.generation}() {`,
+        ...(body.builtins.size > 0
+          ? [
+              `  const uint3 ${builtinParameters['global-invocation-id'].name} = DispatchRaysIndex();`,
+            ]
+          : []),
+        ...body.lines,
+        ...writes,
+        '}',
+      ].join('\n'),
+      ...rayTracingShaders(resources),
+    );
+    return;
+  }
   if (body.builtins.has('num-workgroups')) {
     sections.push(numWorkgroups.declaration[resources.target]);
   }
+  sections.push(...resources.helpers.values());
   sections.push(
     [
       `[numthreads(${x}, ${y}, ${z})]`,
@@ -934,7 +1147,8 @@ function emitCompute(
  * explicit anyway), or to DXIL for Direct3D 12.
  */
 export function dxcArguments(
-  stage: 'vertex' | 'fragment' | 'compute',
+  // 'library': the shaders of a ray tracing pipeline (see HlslEmitOptions).
+  stage: 'vertex' | 'fragment' | 'compute' | 'library',
   entryPoint: string,
   target: HlslTarget = 'vulkan',
   // The code: the programs tracing rays need Shader Model 6.5.
@@ -945,6 +1159,7 @@ export function dxcArguments(
     vertex: `vs_${model}`,
     fragment: `ps_${model}`,
     compute: `cs_${model}`,
+    library: 'lib_6_5',
   };
   return [
     ...(target === 'vulkan' ? ['-spirv'] : []),
@@ -955,14 +1170,23 @@ export function dxcArguments(
       : []),
     '-T',
     profiles[stage],
-    '-E',
-    entryPoint,
+    // A library has several entry points.
+    ...(stage === 'library' ? [] : ['-E', entryPoint]),
   ];
 }
 
 export interface HlslCodegenOptions {
   // Vulkan by default.
   readonly target?: HlslTarget;
+}
+
+export interface HlslEmitOptions {
+  /**
+   * A compute stage tracing rays emitted as the shaders of a ray tracing
+   * pipeline (Vulkan): its thread a ray generation shader, a thread per
+   * ray, its rays traced by TraceRay (see RayTracingEntryPoints).
+   */
+  readonly rayGeneration?: boolean;
 }
 
 // Generates an HLSL module with a vs_main and a ps_main entry point, or a
@@ -975,7 +1199,11 @@ export class HlslCodegen implements ShaderCodegen {
     this.target = target;
   }
 
-  emit(module: ShaderModuleIR, layout: PhysicalProgramLayout): ShaderSources {
+  emit(
+    module: ShaderModuleIR,
+    layout: PhysicalProgramLayout,
+    { rayGeneration = false }: HlslEmitOptions = {},
+  ): ShaderSources {
     const target = this.target;
     const sections: string[] = [
       [
@@ -984,7 +1212,7 @@ export class HlslCodegen implements ShaderCodegen {
         '#pragma pack_matrix(column_major)',
       ].join('\n'),
     ];
-    const resources = declareResources(layout, sections, target);
+    const resources = declareResources(layout, sections, target, rayGeneration);
 
     const compute = module.entryPoints.find(
       (entryPoint) => entryPoint.stage === 'compute',
@@ -994,8 +1222,13 @@ export class HlslCodegen implements ShaderCodegen {
       return {
         kind: 'single-module',
         code: `${sections.join('\n\n')}\n`,
-        entryPoints: { compute: 'cs_main' },
+        entryPoints: {
+          compute: rayGeneration ? RayTracingEntryPoints.generation : 'cs_main',
+        },
       };
+    }
+    if (rayGeneration) {
+      throw new Error('Only the compute stages trace rays in a ray tracing pipeline');
     }
 
     const vertex = module.entryPoints.find(
@@ -1032,6 +1265,7 @@ export class HlslCodegen implements ShaderCodegen {
 
     const vertexBody = emitBody(vertex, resources);
     const fragmentBody = emitBody(fragment, resources);
+    sections.push(...resources.helpers.values());
     if (
       target === 'd3d12' &&
       (vertexBody.builtins.has('instance-index') ||

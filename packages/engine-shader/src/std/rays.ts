@@ -6,7 +6,7 @@ import type {
 } from '../graph/NodeDefinition';
 import type { NodeRegistry } from '../graph/NodeRegistry';
 import { RayInstanceVec4s } from '../compiler/layout';
-import { BuiltinTypes } from '../types/ShaderType';
+import { arrayType, BuiltinTypes } from '../types/ShaderType';
 import * as functions from './functions';
 
 /**
@@ -44,10 +44,36 @@ export const trace: FunctionDefinition = {
   outputs: () => [{ name: 'result', type: BuiltinTypes.vec4u }],
 };
 
+/**
+ * Traces a ray in the scene as `ray.trace`, going through the masked
+ * materials where their alpha is cut (the foliage): the alpha test of the
+ * instances with the alphaTest flag (see RayInstanceFlags), at the uv of
+ * the candidate hits, in their masks (see RayAlphaMaskSize). `instances`
+ * and `geometry` are the buffers of the scene (`input.engine`
+ * rayInstances and rayGeometry): GraphBuilder.traceRay with alphaTest
+ * connects them.
+ *
+ * @group Standard library
+ */
+export const traceAlpha: FunctionDefinition = {
+  id: 'ray.traceAlpha',
+  category: 'function',
+  description:
+    'Traces a ray in the scene, through the cut parts of the masked materials: the hit (see ray.hit*).',
+  implementation: { kind: 'intrinsic', op: 'ray-query' },
+  params: trace.params,
+  inputs: (params, context) => [
+    ...trace.inputs(params, context),
+    { name: 'instances', type: arrayType(BuiltinTypes.vec4f) },
+    { name: 'geometry', type: arrayType(BuiltinTypes.vec4f) },
+  ],
+  outputs: () => [{ name: 'result', type: BuiltinTypes.vec4u }],
+};
+
 /** The value of the x of a hit when the ray hits nothing. */
 export const RayMiss = 0xffffffff;
 
-export const rayDefinitions: readonly NodeDefinition[] = [trace];
+export const rayDefinitions: readonly NodeDefinition[] = [trace, traceAlpha];
 
 const vec4u = BuiltinTypes.vec4u;
 const { add, mul, sub, index, bitAnd, bitcast, notEqual, equal } = functions;

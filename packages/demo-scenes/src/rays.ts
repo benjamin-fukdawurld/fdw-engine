@@ -1,7 +1,6 @@
 import type { RenderBackend } from '@fdw/engine-backend';
 import {
   BaseLight,
-  Renderable,
   RenderGraph,
   Renderer,
   RenderOptions,
@@ -13,7 +12,6 @@ import {
   RayScene,
   reflectionOutputs,
 } from '@fdw/engine-raytracing';
-import { SkinValues } from '@fdw/engine-skinning';
 
 /**
  * How a demo draws its frames: rasterized, with shadows traced by rays,
@@ -27,12 +25,6 @@ export const RayModes: readonly RayMode[] = [
   'reflections',
   'path',
 ];
-
-// The skinned items: their vertices are moved on the GPU, the rays would
-// see them at rest.
-const traceable = (item: Renderable) =>
-  item.material.getValue(SkinValues.rest) === undefined &&
-  item.material.getValue(SkinValues.jointTexture) === undefined;
 
 /**
  * The frames of a demo, in one of the modes of ray tracing (where the
@@ -49,7 +41,11 @@ export class RayView {
   constructor(
     readonly renderer: Renderer,
     backend: RenderBackend,
-    private readonly options: { readonly sky?: PathTracerSky } = {},
+    private readonly options: {
+      readonly sky?: PathTracerSky;
+      // The ray tracing pipelines, where the backend has them.
+      readonly rayTracingPipeline?: boolean;
+    } = {},
   ) {
     this.available = backend.capabilities?.rayQuery === true;
   }
@@ -83,12 +79,23 @@ export class RayView {
       this.renderer.render(options);
       return;
     }
-    const scene = (this._scene ??= new RayScene(this.renderer.backend));
+    // What the frame computes first (the skinning) runs before the update
+    // of the traced scene: its structures refit to the vertices of this
+    // frame.
+    const { prepare: first, ...rest } = options;
+    if (first) {
+      const graph = new RenderGraph({ size: { width: 1, height: 1 } });
+      first(graph);
+      this.renderer.executeGraph(graph);
+      options = rest;
+    }
+    const scene = (this._scene ??= new RayScene(this.renderer.backend, {
+      registry: this.renderer.registry,
+    }));
     scene.update({
       ...(options.source ? { source: options.source } : {}),
       ...(options.items ? { items: options.items } : {}),
       ...(options.layers !== undefined ? { layers: options.layers } : {}),
-      filter: traceable,
     });
     const lights: readonly BaseLight[] = options.lights ?? [
       ...(options.source?.lights?.() ?? []),
@@ -110,7 +117,9 @@ export class RayView {
         ground: { x: background.x * 0.4, y: background.y * 0.4, z: background.z * 0.4 },
       });
     if (this._mode === 'path') {
-      this._tracer ??= new PathTracer(this.renderer, scene);
+      this._tracer ??= new PathTracer(this.renderer, scene, {
+        rayTracingPipeline: this.options.rayTracingPipeline ?? false,
+      });
       if (sky) {
         this._tracer.sky = { ...this._tracer.sky, ...sky };
       }
@@ -145,7 +154,9 @@ export class RayView {
       outputs: reflectionOutputs(),
       // The occlusion culling reads a depth of one sample: kept.
     });
-    this._reflections ??= new RayReflections(this.renderer, scene);
+    this._reflections ??= new RayReflections(this.renderer, scene, {
+      rayTracingPipeline: this.options.rayTracingPipeline ?? false,
+    });
     if (sky) {
       this._reflections.sky = { ...this._reflections.sky, ...sky };
     }

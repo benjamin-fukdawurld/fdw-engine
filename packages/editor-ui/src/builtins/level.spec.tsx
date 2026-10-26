@@ -228,6 +228,23 @@ describe('the level in the editor', () => {
     await waitFor(() => expect(sent('level.tool').at(-1)?.tool).toBe('select'));
   });
 
+  it('draws the level with rays where the engine traces them', async () => {
+    const { send, sent, runtime } = await renderLevel();
+    // An engine without rays: only the rasterized rendering.
+    expect(runtime.keys.values()['engine.rays']).toBe(false);
+    expect(runtime.commands.enabled('fdw.level.rendering.path')).toBe(false);
+    send({ ...readyMessage, rays: true });
+    expect(runtime.commands.enabled('fdw.level.rendering.path')).toBe(true);
+    await act(() => runtime.commands.execute('fdw.level.rendering.path'));
+    expect(sent('level.rendering').at(-1)?.rendering).toBe('path');
+    expect(runtime.keys.values()['level.rendering']).toBe('path');
+    // The gizmo keeps it; a new engine is told it again.
+    fireEvent.keyDown(window, { key: 'x', code: 'KeyX' });
+    expect(runtime.keys.values()['level.rendering']).toBe('path');
+    send({ ...readyMessage, rays: true });
+    expect(sent('level.rendering').at(-1)?.rendering).toBe('path');
+  });
+
   it('draws the rectangle of a selection over the viewport', async () => {
     const { send } = await renderLevel();
     send({

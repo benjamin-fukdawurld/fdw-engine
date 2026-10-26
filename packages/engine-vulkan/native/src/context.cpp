@@ -408,6 +408,20 @@ int createDevice(fdw_vk_context *context) {
   for (const char *name : rayExtensions) {
     rays = rays && hasDeviceExtension(context->physicalDevice, name);
   }
+  // The ray tracing pipelines, with the ray queries, where the device has
+  // them (unless FDW_VK_NO_RAY_TRACING_PIPELINE is set).
+  VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipeline{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR};
+  bool pipelines =
+      rays && !std::getenv("FDW_VK_NO_RAY_TRACING_PIPELINE") &&
+      hasDeviceExtension(context->physicalDevice,
+                         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+  if (pipelines) {
+    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                    &rayTracingPipeline};
+    vkGetPhysicalDeviceFeatures2(context->physicalDevice, &query);
+    pipelines = rayTracingPipeline.rayTracingPipeline == VK_TRUE;
+  }
   if (rays) {
     VkPhysicalDeviceVulkan12Features available12{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
@@ -436,12 +450,32 @@ int createDevice(fdw_vk_context *context) {
     context->scratchAlignment =
         std::max(properties.minAccelerationStructureScratchOffsetAlignment, 1u);
     context->rayQuery = true;
+    if (pipelines) {
+      rayTracingPipeline = {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR};
+      rayTracingPipeline.rayTracingPipeline = VK_TRUE;
+      rayQuery.pNext = &rayTracingPipeline;
+      VkPhysicalDeviceRayTracingPipelinePropertiesKHR pipelineProperties{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
+      VkPhysicalDeviceProperties2 all2{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &pipelineProperties};
+      vkGetPhysicalDeviceProperties2(context->physicalDevice, &all2);
+      context->shaderGroupHandleSize = pipelineProperties.shaderGroupHandleSize;
+      context->shaderGroupHandleAlignment =
+          pipelineProperties.shaderGroupHandleAlignment;
+      context->shaderGroupBaseAlignment =
+          pipelineProperties.shaderGroupBaseAlignment;
+      context->rayTracingPipeline = true;
+    }
   }
 
   std::vector<const char *> extensions;
   if (rays) {
     extensions.insert(extensions.end(), std::begin(rayExtensions),
                       std::end(rayExtensions));
+  }
+  if (context->rayTracingPipeline) {
+    extensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
   }
   if (hasDeviceExtension(context->physicalDevice,
                          VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {

@@ -101,6 +101,9 @@ function writePath(
 /**
  * The closest hit of each ray alive (the others hit nothing): the rays of
  * `stride` vec4 each in `rays`, the origin (w: alive) then the direction.
+ * The point of the surface of each ray (raySurfaces) is cleared: the hit
+ * programs write it for the rays that hit their material, its w is 0 for
+ * the others (see RaySurfaceVec4s).
  */
 export function traceKernel(): MaterialGraphData {
   const { g, s, index, read, write, finish } = kernel('trace rays');
@@ -115,17 +118,88 @@ export function traceKernel(): MaterialGraphData {
     tMin: 0,
     tMax: s.select(-1, 1e30, alive),
     mask: RayMasks.visible,
+    alphaTest: true,
   });
   g.write(write('rayHits', arrayType(BuiltinTypes.vec4u)), { index, value: hit });
+  g.write(write('raySurfaces'), {
+    index: s.add(s.mul(index, s.u32(RaySurfaceVec4s)), s.u32(4)),
+    value: [0, 0, 0, 0],
+  });
   return finish();
+}
+
+/** vec4 per pixel of the guides of the denoiser (see guidesKernel). */
+export const GuideVec4s = 3;
+
+/**
+ * The guides of the denoiser, from the first hits of the camera rays (their
+ * surfaces): the albedo (the base color, or the emission of the unlit
+ * materials, or the sky) and the distance; the normal (the direction back
+ * for the sky: the same for the neighbors); the point hit, w 1 (0 for the
+ * sky). A pixel follows its point from frame to frame (accumulateKernel).
+ */
+export function guidesKernel(): MaterialGraphData {
+  const { g, s, index, read, write, finish } = kernel('guides');
+  const zenith = g.uniform('skyZenith', BuiltinTypes.vec3f);
+  const horizon = g.uniform('skyHorizon', BuiltinTypes.vec3f);
+  const ground = g.uniform('skyGround', BuiltinTypes.vec3f);
+  const paths = read('paths');
+  const surfaces = read('raySurfaces');
+  const surface = (k: number) =>
+    s.index(surfaces, s.add(s.mul(index, s.u32(RaySurfaceVec4s)), s.u32(k)));
+  const [s0, s1, s2, s3, s4] = [0, 1, 2, 3, 4].map(surface);
+  const origin = pathVec(s, paths, index, 0).swizzle('xyz');
+  const dir = s.normalize(pathVec(s, paths, index, 1).swizzle('xyz'));
+  const hitSomething = s.greater(s4.swizzle('w'), 0.5);
+  const position = s4.swizzle('xyz');
+  const metallic = s.saturate(s2.swizzle('w'));
+  const albedo = s.select(
+    skyColor(s, dir, { zenith, horizon, ground }),
+    s.select(
+      s.add(
+        s.mul(s0.swizzle('xyz'), s.sub(1, metallic)),
+        s.mix(s.splat3(0.04), s0.swizzle('xyz'), metallic),
+      ),
+      s2.swizzle('xyz'),
+      s.greater(s3.swizzle('y'), 0.5),
+    ),
+    hitSomething,
+  );
+  const depth = s.select(1e6, s.length(s.sub(position, origin)), hitSomething);
+  const guides = write('guides');
+  const at = (k: number) => s.add(s.mul(index, s.u32(GuideVec4s)), s.u32(k));
+  g.write(guides, { index: at(0), value: s.extend(albedo, depth) });
+  g.write(guides, {
+    index: at(1),
+    value: s.extend(s.select(s.mul(dir, -1), s.normalize(s1.swizzle('xyz')), hitSomething), 0),
+  });
+  g.write(guides, {
+    index: at(2),
+    value: s.extend(position, s.select(0, 1, hitSomething)),
+  });
+  return finish();
+}
+
+// The sky of the rays lost, a gradient from the ground to the zenith.
+function skyColor(
+  s: Shading,
+  dir: PortHandle,
+  { zenith, horizon, ground }: Record<'zenith' | 'horizon' | 'ground', PortHandle>,
+): PortHandle {
+  const up = dir.swizzle('y');
+  return s.select(
+    s.mix(horizon, ground, s.saturate(s.mul(up, -4))),
+    s.mix(horizon, zenith, s.saturate(up)),
+    s.greater(up, 0),
+  );
 }
 
 /**
  * A bounce: what the rays hit (the surfaces written by the hit programs of
  * the materials) gives its emission, the light of a light chosen at random
  * (a shadow ray towards it), and the next direction, sampled from the
- * BSDF; the rays that hit nothing gather the sky. The first bounce writes
- * the guides of the denoiser: the albedo and depth, the normal.
+ * BSDF; the rays that hit nothing gather the sky. Whether a ray hit is
+ * the w of its point in raySurfaces (see traceKernel).
  */
 export function bounceKernel(): MaterialGraphData {
   const { g, s, index, read, write, finish } = kernel('bounce');
@@ -138,7 +212,6 @@ export function bounceKernel(): MaterialGraphData {
   const paths = read('paths');
   const surfaces = read('raySurfaces');
   const lights = read('lights');
-  const hit = s.index(g.storage('rayHits', arrayType(BuiltinTypes.vec4u)), index);
 
   const ray0 = pathVec(s, paths, index, 0);
   const ray1 = pathVec(s, paths, index, 1);
@@ -155,19 +228,13 @@ export function bounceKernel(): MaterialGraphData {
   const emissive = s2.swizzle('xyz');
   const unlit = s.greater(s3.swizzle('y'), 0.5);
   const cutoff = s3.swizzle('z');
-  const hitSomething = g.call(stdRays.hit, { hit });
+  const hitSomething = s.greater(s4.swizzle('w'), 0.5);
   // Written by the hit program: the geometry of the scene is not read.
   const position = s4.swizzle('xyz');
 
   const u = s.random(index, s.add(s.mul(frame, s.u32(16)), s.add(bounce, s.u32(1))), 8);
 
-  // The sky, a gradient from the ground to the zenith.
-  const up = dir.swizzle('y');
-  const sky = s.select(
-    s.mix(horizon, ground, s.saturate(s.mul(up, -4))),
-    s.mix(horizon, zenith, s.saturate(up)),
-    s.greater(up, 0),
-  );
+  const sky = skyColor(s, dir, { zenith, horizon, ground });
 
   // Through the transparent pixels of masked and blended materials.
   const through = s.or(
@@ -231,6 +298,7 @@ export function bounceKernel(): MaterialGraphData {
     ),
     mask: RayMasks.shadow,
     mode: 'any',
+    alphaTest: true,
   });
   const visible = s.and(lit, s.not(g.call(stdRays.hit, { hit: shadow })));
   const direct = s.select(
@@ -284,54 +352,111 @@ export function bounceKernel(): MaterialGraphData {
     s.extend(s.select(nextThroughput, throughput, through), 0),
     s.extend(gathered, 0),
   ]);
-
-  // The guides of the denoiser, at the first hit: the albedo (the base
-  // color, or the emission of the unlit materials, or the sky) and the
-  // distance, the normal.
-  const first = s.equal(bounce, s.u32(0));
-  const albedo = s.select(
-    sky,
-    s.select(
-      s.add(bsdf.diffuse, bsdf.f0),
-      emissive,
-      unlit,
-    ),
-    hitSomething,
-  );
-  const depth = s.select(1e6, s.length(s.sub(position, ray0.swizzle('xyz'))), hitSomething);
-  const guides = write('guides');
-  g.write(guides, {
-    index: s.mul(index, s.u32(2)),
-    value: s.extend(albedo, depth),
-    when: first,
-  });
-  g.write(guides, {
-    index: s.add(s.mul(index, s.u32(2)), s.u32(1)),
-    // The sky: the direction back, the same for the neighbors.
-    value: s.extend(s.select(s.mul(dir, -1), normal, hitSomething), 0),
-    when: first,
-  });
   return finish();
 }
 
 /**
- * The radiance of the frame added to the sum of the frames since the
- * last reset (the camera or the scene moved), and the average. Fireflies
- * (a radiance far above the rest, from rare paths) are clamped.
+ * The radiance of the frame blended into the history of its pixel: the
+ * average of the frames since the last reset (the lights or the materials
+ * changed) while the camera and the scene do not move, an average of the
+ * last `maxHistory` frames otherwise. The history of a pixel is that of
+ * the point it saw in the previous frame (its guides): where that point
+ * was in the image (`previousViewProjection`), read between the four
+ * pixels around it, those that saw the same surface (a point and a normal
+ * close to it); a pixel without history starts again (what was hidden, a
+ * moving object). Fireflies (a radiance far above the rest, from rare
+ * paths) are clamped. The accumulation holds the average and the number
+ * of frames.
  */
 export function accumulateKernel(): MaterialGraphData {
   const { g, s, index, read, write, finish } = kernel('accumulate');
+  const width = g.uniform('width', BuiltinTypes.u32);
+  const height = g.uniform('height', BuiltinTypes.u32);
   const reset = g.uniform('reset', BuiltinTypes.u32);
+  const maxHistory = g.uniform('maxHistory', BuiltinTypes.f32);
+  const previousViewProjection = g.uniform('previousViewProjection', BuiltinTypes.mat4f);
+  // The camera did not move: each pixel keeps its own history.
+  const still = s.greater(g.uniform('still', BuiltinTypes.u32), s.u32(0));
   const clampTo = g.uniform('maxRadiance', BuiltinTypes.f32);
   const sample = pathVec(s, read('paths'), index, 3).swizzle('xyz');
   const luminance = s.luminance(sample);
   const clamped = s.mul(sample, s.min(1, s.div(clampTo, s.max(luminance, 1e-6))));
-  const previous = s.index(read('accumulation'), index);
-  const restart = s.greater(reset, s.u32(0));
-  const sum = s.select(s.add(previous.swizzle('xyz'), clamped), clamped, restart);
-  const frames = s.select(s.add(previous.swizzle('w'), 1), 1, restart);
-  g.write(write('accumulationOut'), { index, value: s.extend(sum, frames) });
-  g.write(write('color'), { index, value: s.extend(s.div(sum, frames), 1) });
+  const guides = read('guides');
+  const previousGuides = read('previousGuides');
+  const accumulation = read('accumulation');
+  const guide = (buffer: PortHandle, pixel: PortHandle, k: number) =>
+    s.index(buffer, s.add(s.mul(pixel, s.u32(GuideVec4s)), s.u32(k)));
+  const depth = guide(guides, index, 0).swizzle('w');
+  const normal = guide(guides, index, 1).swizzle('xyz');
+  const point = guide(guides, index, 2);
+  // Where the point was in the previous image, in pixels (centers at .5).
+  const clip = s.transform(previousViewProjection, s.extend(point.swizzle('xyz'), 1));
+  const ndc = s.div(clip.swizzle('xy'), s.max(clip.swizzle('w'), 1e-6));
+  const fw = s.convert(width, BuiltinTypes.f32);
+  const fh = s.convert(height, BuiltinTypes.f32);
+  const px = s.select(
+    s.sub(s.mul(s.add(s.mul(ndc.swizzle('x'), 0.5), 0.5), fw), 0.5),
+    s.convert(s.remainder(index, width), BuiltinTypes.f32),
+    still,
+  );
+  const py = s.select(
+    s.sub(s.mul(s.sub(0.5, s.mul(ndc.swizzle('y'), 0.5)), fh), 0.5),
+    s.convert(s.div(index, width), BuiltinTypes.f32),
+    still,
+  );
+  const x0 = s.floor(px);
+  const y0 = s.floor(py);
+  const fx = s.sub(px, x0);
+  const fy = s.sub(py, y0);
+  // The four pixels around, weighted, those of the same surface only.
+  const tolerance = s.max(s.mul(depth, 0.02), 0.01);
+  let sum: PortHandle | undefined;
+  let total: PortHandle | undefined;
+  let frames: PortHandle | undefined;
+  for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    const tx = s.add(x0, dx);
+    const ty = s.add(y0, dy);
+    const inside = s.and(
+      s.and(s.greaterEqual(tx, 0), s.less(tx, fw)),
+      s.and(s.greaterEqual(ty, 0), s.less(ty, fh)),
+    );
+    const pixel = s.add(
+      s.mul(s.convert(s.clamp(ty, 0, s.sub(fh, 1)), BuiltinTypes.u32), width),
+      s.convert(s.clamp(tx, 0, s.sub(fw, 1)), BuiltinTypes.u32),
+    );
+    const before = guide(previousGuides, pixel, 2);
+    const same = s.and(
+      s.and(inside, s.greater(s.mul(before.swizzle('w'), point.swizzle('w')), 0.5)),
+      s.and(
+        s.less(s.length(s.sub(before.swizzle('xyz'), point.swizzle('xyz'))), tolerance),
+        s.greater(s.dot(guide(previousGuides, pixel, 1).swizzle('xyz'), normal), 0.9),
+      ),
+    );
+    const weight = s.select(
+      0,
+      s.mul(dx === 0 ? s.sub(1, fx) : fx, dy === 0 ? s.sub(1, fy) : fy),
+      same,
+    );
+    const history = s.index(accumulation, pixel);
+    sum = sum ? s.add(sum, s.mul(history, weight)) : s.mul(history, weight);
+    total = total ? s.add(total, weight) : weight;
+    frames = frames
+      ? s.max(frames, s.select(0, history.swizzle('w'), same))
+      : s.select(0, history.swizzle('w'), same);
+  }
+  const found = s.and(
+    s.greater(total as PortHandle, 1e-3),
+    s.equal(reset, s.u32(0)),
+  );
+  const previous = s.div(sum as PortHandle, s.max(total as PortHandle, 1e-6));
+  const count = s.select(1, s.add(s.min(frames as PortHandle, s.sub(maxHistory, 1)), 1), found);
+  const average = s.select(
+    clamped,
+    s.mix(previous.swizzle('xyz'), clamped, s.div(1, count)),
+    found,
+  );
+  g.write(write('accumulationOut'), { index, value: s.extend(average, count) });
+  g.write(write('color'), { index, value: s.extend(average, 1) });
   return finish();
 }
 
@@ -339,7 +464,9 @@ export function accumulateKernel(): MaterialGraphData {
  * A pass of the à-trous filter (Dammertz et al.): the 5 × 5 B3 spline at a
  * step of `step` pixels, each neighbor weighted by how close its normal,
  * its depth and its color are; on the color divided by the albedo (the
- * textures stay sharp), multiplied back by the last pass.
+ * textures stay sharp), multiplied back by the last pass. Less blur
+ * across colors as the frames of the history of the pixel add up (the w of
+ * its accumulation).
  */
 export function denoiseKernel(): MaterialGraphData {
   const { g, s, index, read, write, finish } = kernel('denoise');
@@ -351,20 +478,22 @@ export function denoiseKernel(): MaterialGraphData {
   const last = g.uniform('last', BuiltinTypes.u32);
   const colors = read('input');
   const guides = read('guides');
+  const frames = s.index(read('accumulation'), index).swizzle('w');
+  const phi = s.div(colorPhi, s.sqrt(s.max(frames, 1)));
   const x = s.convert(s.remainder(index, width), BuiltinTypes.i32);
   const y = s.convert(s.div(index, width), BuiltinTypes.i32);
   const w = s.convert(width, BuiltinTypes.i32);
   const h = s.convert(height, BuiltinTypes.i32);
   const albedoOf = (pixel: PortHandle) =>
-    s.max(s.index(guides, s.mul(pixel, s.u32(2))).swizzle('xyz'), s.splat3(0.02));
+    s.max(s.index(guides, s.mul(pixel, s.u32(GuideVec4s))).swizzle('xyz'), s.splat3(0.02));
   // The illumination: the color over the albedo, on the first pass.
   const illumination = (pixel: PortHandle) => {
     const color = s.index(colors, pixel).swizzle('xyz');
     return s.select(color, s.div(color, albedoOf(pixel)), s.greater(first, s.u32(0)));
   };
   const center = illumination(index);
-  const centerGuide = s.index(guides, s.mul(index, s.u32(2)));
-  const centerNormal = s.index(guides, s.add(s.mul(index, s.u32(2)), s.u32(1))).swizzle('xyz');
+  const centerGuide = s.index(guides, s.mul(index, s.u32(GuideVec4s)));
+  const centerNormal = s.index(guides, s.add(s.mul(index, s.u32(GuideVec4s)), s.u32(1))).swizzle('xyz');
   const kernelWeights = [1 / 16, 1 / 4, 3 / 8, 1 / 4, 1 / 16];
   let sum: PortHandle | undefined;
   let total: PortHandle | undefined;
@@ -374,8 +503,8 @@ export function denoiseKernel(): MaterialGraphData {
       const py = s.clamp(s.add(y, s.mul(step, dy)), 0, s.sub(h, 1));
       const pixel = s.convert(s.add(s.mul(py, w), px), BuiltinTypes.u32);
       const value = illumination(pixel);
-      const guide = s.index(guides, s.mul(pixel, s.u32(2)));
-      const normal = s.index(guides, s.add(s.mul(pixel, s.u32(2)), s.u32(1))).swizzle('xyz');
+      const guide = s.index(guides, s.mul(pixel, s.u32(GuideVec4s)));
+      const normal = s.index(guides, s.add(s.mul(pixel, s.u32(GuideVec4s)), s.u32(1))).swizzle('xyz');
       const normalWeight = s.pow(s.max(s.dot(centerNormal, normal), 0), 32);
       const depthWeight = s.exp(
         s.mul(
@@ -387,7 +516,7 @@ export function denoiseKernel(): MaterialGraphData {
         ),
       );
       const difference = s.sub(value, center);
-      const colorWeight = s.exp(s.mul(-1, s.div(s.dot(difference, difference), s.max(colorPhi, 1e-6))));
+      const colorWeight = s.exp(s.mul(-1, s.div(s.dot(difference, difference), s.max(phi, 1e-6))));
       const weight = s.mul(
         kernelWeights[dx + 2] * kernelWeights[dy + 2],
         s.mul(normalWeight, s.mul(depthWeight, colorWeight)),

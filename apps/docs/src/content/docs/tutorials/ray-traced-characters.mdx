@@ -1,0 +1,95 @@
+---
+title: Rays on animated and generated geometry
+description: Skinned characters and terrains of patches in the scene of the rays — the structures refit to the vertices the GPU moves, the meshes the rays see in place of what the vertex stage makes.
+sidebar:
+  order: 45
+---
+
+import Example from '../../../components/Example.astro';
+
+Rays are traced against structures built from meshes. Some geometry is not
+in a mesh, though: a **skinned character** gets its vertices from a compute
+pass each frame, a **terrain of patches** from its vertex stage. The
+traced scene follows both: the character's shadow moves with its legs, the
+hills shade the valleys.
+
+<Example name="ray-characters" />
+
+Click the canvas: the shadow maps, the shadows traced by rays, then the
+path tracer.
+
+## Skinned characters
+
+The compute skinning writes the vertices of each skinned mesh into a
+buffer of the GPU (`Skinning` in compute mode: WebGPU and Vulkan). The
+material it makes for the mesh names that buffer, as **deformed vertices**:
+
+```ts
+// What the skinning does (you rarely write it yourself): the vertices
+// moved on the GPU, 2 or 3 vec4 each (position, normal, tangent).
+const skinned = material.withGraph(graph, values, {
+  deformedVertices: { buffer, stride: 3, normal: 1, tangent: 2 },
+});
+```
+
+`RayScene` traces such an item with a **dynamic** bottom level, made once
+from the mesh at rest, then **refit** at each update to the vertices of
+the buffer: Vulkan updates the structure on the GPU
+(`VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE`), WebGPU recomputes the
+boxes of its BVH level by level in compute passes. The points the rays
+hit read the moved positions and normals too, copied into the buffers of
+the scene.
+
+The skinning must run **before** the update, so that the rays see the
+pose of the frame:
+
+```ts
+skinning.applyPose(animator.pose).update();
+skinning.dispatch(); // the vertices of this frame
+rays.update({ source: scene, items }); // refit to them
+renderer.render({
+  source: scene,
+  items,
+  camera,
+  surface,
+  rays: { scene: rays, shadows: true },
+});
+```
+
+A refit keeps the tree of the pose at rest: the further the vertices go
+from it, the slower the traversal (a character walking is fine). The
+software top level of WebGPU needs the box of the character in the world:
+the scene graph gives it (`item.bounds`, kept by the skinning).
+
+## Terrains of patches
+
+A `PatchSurface` draws its patches from its vertex stage, at levels of
+detail chosen for the camera: there is no mesh to trace. It gives the rays
+one instead, its **ray mesh**:
+
+```ts
+import { patchMesh } from '@fdw/engine-tessellation';
+
+terrain.surface.rayMesh = patchMesh(terrain.surface.patches, {
+  level: 3, // 8 × 8 quads a patch
+  displacement: { height: (u, v) => heightAt(u, v), scale: 3 },
+});
+```
+
+`patchMesh` displaces the patches as `patchVertex` does on the GPU, from a
+height function on the CPU. `buildTerrain` of the demos sets it. Any item
+can have a `rayMesh`: what the rays see in place of its mesh, in its
+space.
+
+## The materials at the points hit
+
+Both materials compute attributes in their vertex stage
+(`g.vertexAttribute`). At the points hit by rays, those attributes are the
+ones of the geometry traced: the moved vertices, the ray mesh. A graph
+that reads the attributes (`g.attribute('uv')`) works in both; a value
+computed from `vertex-index` and read directly by the surface has no value
+at a point hit: write it as an attribute, the rays read its default.
+
+A surface whose normal cannot be computed there (a normal map from the
+derivatives of the pixels, 0 at the points hit) gets the normal of the
+vertices: the rays leave from it.

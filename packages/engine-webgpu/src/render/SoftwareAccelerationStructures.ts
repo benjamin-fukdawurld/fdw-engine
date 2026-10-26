@@ -14,6 +14,7 @@ import {
   transformBox,
   TriangleFloats,
 } from '@fdw/engine-geometry';
+import { SoftwareRefit, SoftwareRefitPipelines } from './SoftwareRefit';
 
 // The acceleration structures of WebGPU, which has no ray tracing: BVHs
 // built on the CPU, in storage buffers, traversed by the code the WGSL
@@ -27,7 +28,8 @@ import {
 // vec4 where its instances start, their number), its nodes, then for each
 // instance, in the order of its leaves, 4 vec4: the rows of its world to
 // object matrix, then (as u32) the root of its bottom level (reference and
-// count, see BvhRef), its mask, and its index in the update.
+// count, see BvhRef), its mask (bit 8: not opaque), and its index in the
+// update.
 
 /** vec4 of a node and of a triangle in the pool. */
 const NodeVec4s = BvhNodeFloats / 4;
@@ -149,9 +151,16 @@ class UnitPool {
 /** The buffer shared by the bottom levels of a device, in vec4. */
 export class SoftwareBvhPools {
   readonly pool: UnitPool;
+  private _refit?: SoftwareRefitPipelines;
 
-  constructor(device: GPUDevice) {
+  constructor(private readonly device: GPUDevice) {
     this.pool = new UnitPool(device, 16, 1 << 16, 'bottom levels');
+  }
+
+  /** The pipelines of the refits, made for the first dynamic level. */
+  get refit(): SoftwareRefitPipelines {
+    this._refit ??= new SoftwareRefitPipelines(this.device);
+    return this._refit;
   }
 
   get generation(): number {
@@ -173,11 +182,12 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
   private readonly _nodeStart: number;
   private readonly _nodeCount: number;
   private readonly _triangleStart: number;
+  private readonly _refit?: SoftwareRefit;
   private _destroyed = false;
 
   constructor(
     private readonly pools: SoftwareBvhPools,
-    { positions, indices, label }: BottomLevelDescriptor,
+    { positions, indices, label, dynamic = false }: BottomLevelDescriptor,
   ) {
     this.label = label;
     const bvh = buildTriangleBvh(positions, indices);
@@ -198,6 +208,35 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
         ? this._nodeStart + ref * NodeVec4s
         : this._triangleStart + ref * TriangleVec4s;
     const refs = bvh.nodeRefs;
+    if (dynamic) {
+      // The nodes by depth, and the vertices of the triangles in the order
+      // of the pool: what the refits read.
+      const levels: number[][] = [];
+      const visit = (node: number, depth: number) => {
+        (levels[depth] ??= []).push(this._nodeStart + node * NodeVec4s);
+        for (const offset of [3, 11]) {
+          const at = node * BvhNodeFloats + offset;
+          if (refs[at + 4] === 0) {
+            visit(refs[at], depth + 1);
+          }
+        }
+      };
+      if (bvh.root.count === 0 && bvh.nodeCount > 0) {
+        visit(bvh.root.ref, 0);
+      }
+      const order = new Uint32Array(bvh.triangles.buffer);
+      const corners = new Uint32Array(bvh.triangleCount * 3);
+      for (let k = 0; k < bvh.triangleCount; k++) {
+        const t = order[k * TriangleFloats + 3];
+        corners.set(indices.subarray(t * 3, t * 3 + 3), k * 3);
+      }
+      this._refit = new SoftwareRefit(
+        pools.refit,
+        this._triangleStart,
+        corners,
+        levels,
+      );
+    }
     for (let node = 0; node < bvh.nodeCount; node++) {
       for (const offset of [3, 11]) {
         const at = node * BvhNodeFloats + offset;
@@ -220,11 +259,25 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
     return this._destroyed;
   }
 
+  /** Records its refit to vertices on the GPU (dynamic levels). */
+  refit(
+    encoder: GPUCommandEncoder,
+    vertices: GPUBuffer,
+    offset: number,
+    stride: number,
+  ): void {
+    if (!this._refit) {
+      throw new Error('Only the dynamic bottom levels are refit');
+    }
+    this._refit.record(encoder, this.pools.pool.buffer, vertices, offset, stride);
+  }
+
   destroy(): void {
     if (this._destroyed) {
       return;
     }
     this._destroyed = true;
+    this._refit?.destroy();
     // Rewritten only by later queue writes: the commands submitted before
     // still read it.
     this.pools.pool.release(this._nodeStart, this._nodeCount * NodeVec4s);
@@ -295,9 +348,15 @@ export class SoftwareTopLevel implements GpuTopLevel {
     });
     const count = instances.length;
     const boxes = new Float32Array(count * 6);
-    instances.forEach((instance, i) =>
-      transformBox(instance.transform, bottoms[i].bounds, boxes, i * 6),
-    );
+    instances.forEach((instance, i) => {
+      if (instance.bounds) {
+        for (let k = 0; k < 6; k++) {
+          boxes[i * 6 + k] = instance.bounds[k];
+        }
+      } else {
+        transformBox(instance.transform, bottoms[i].bounds, boxes, i * 6);
+      }
+    });
     const bvh = buildBvh(boxes, { maxLeafSize: 2 });
     const instanceBase = 1 + bvh.nodeCount * 4;
     const vec4s = instanceBase + count * InstanceVec4s;
@@ -319,7 +378,13 @@ export class SoftwareTopLevel implements GpuTopLevel {
       }
       const root = bottoms[index].root;
       words.set(
-        [root.ref, root.count, (instance.mask ?? 0xff) & 0xff, index],
+        [
+          root.ref,
+          root.count,
+          ((instance.mask ?? 0xff) & 0xff) |
+            (instance.opaque === false ? 0x100 : 0),
+          index,
+        ],
         at + 12,
       );
     }

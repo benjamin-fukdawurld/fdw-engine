@@ -292,6 +292,13 @@ fdw_vk_group_layout_create(fdw_vk_context *context,
     entry.stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
                        VK_SHADER_STAGE_FRAGMENT_BIT |
                        VK_SHADER_STAGE_COMPUTE_BIT;
+    // And the shaders of the ray tracing pipelines.
+    if (context->rayTracingPipeline) {
+      entry.stageFlags |= VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                          VK_SHADER_STAGE_MISS_BIT_KHR |
+                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
+                          VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+    }
     entries.push_back(entry);
   }
   VkDescriptorSetLayoutCreateInfo info{
@@ -630,11 +637,143 @@ fdw_vk_pipeline *fdw_vk_compute_pipeline_create(
   return pipeline;
 }
 
+int32_t fdw_vk_ray_tracing_pipeline_supported(const fdw_vk_context *context) {
+  return context->rayTracingPipeline ? 1 : 0;
+}
+
+fdw_vk_pipeline *fdw_vk_ray_tracing_pipeline_create(
+    fdw_vk_context *context, fdw_vk_shader *shader, uint32_t any_hit,
+    const uint32_t *workgroup_size, fdw_vk_group_layout *const *groups,
+    uint32_t group_count, const char *label) {
+  if (!context->rayTracingPipeline) {
+    fail("The device has no ray tracing pipelines");
+    return nullptr;
+  }
+  if (!shader || shader->stage != VK_SHADER_STAGE_RAYGEN_BIT_KHR) {
+    fail("A ray tracing pipeline needs a library of ray tracing shaders");
+    return nullptr;
+  }
+  auto *pipeline = new fdw_vk_pipeline();
+  pipeline->bindPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
+  for (int k = 0; k < 3; k++) {
+    pipeline->workgroupSize[k] = std::max(workgroup_size[k], 1u);
+  }
+  if (pipelineLayout(context, groups, group_count, pipeline) != 0) {
+    delete pipeline;
+    return nullptr;
+  }
+  // The entry points of the library (see RayTracingEntryPoints).
+  const struct {
+    VkShaderStageFlagBits stage;
+    const char *name;
+  } entries[] = {
+      {VK_SHADER_STAGE_RAYGEN_BIT_KHR, "rg_main"},
+      {VK_SHADER_STAGE_MISS_BIT_KHR, "ms_main"},
+      {VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, "ch_main"},
+      {VK_SHADER_STAGE_ANY_HIT_BIT_KHR, "ah_main"},
+  };
+  const uint32_t stageCount = any_hit ? 4 : 3;
+  std::vector<VkPipelineShaderStageCreateInfo> stages(stageCount);
+  for (uint32_t i = 0; i < stageCount; i++) {
+    stages[i] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    stages[i].stage = entries[i].stage;
+    stages[i].module = shader->module;
+    stages[i].pName = entries[i].name;
+  }
+  // The groups: the ray generation, the miss, the hit of the triangles.
+  VkRayTracingShaderGroupCreateInfoKHR shaderGroups[3];
+  for (auto &group : shaderGroups) {
+    group = {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR};
+    group.generalShader = VK_SHADER_UNUSED_KHR;
+    group.closestHitShader = VK_SHADER_UNUSED_KHR;
+    group.anyHitShader = VK_SHADER_UNUSED_KHR;
+    group.intersectionShader = VK_SHADER_UNUSED_KHR;
+  }
+  shaderGroups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+  shaderGroups[0].generalShader = 0;
+  shaderGroups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+  shaderGroups[1].generalShader = 1;
+  shaderGroups[2].type =
+      VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+  shaderGroups[2].closestHitShader = 2;
+  if (any_hit) {
+    shaderGroups[2].anyHitShader = 3;
+  }
+  VkRayTracingPipelineCreateInfoKHR info{
+      VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR};
+  info.stageCount = stageCount;
+  info.pStages = stages.data();
+  info.groupCount = 3;
+  info.pGroups = shaderGroups;
+  // The hit and miss shaders trace no rays.
+  info.maxPipelineRayRecursionDepth = 1;
+  info.layout = pipeline->layout;
+  const VkResult result = vkCreateRayTracingPipelinesKHR(
+      context->device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &info, nullptr,
+      &pipeline->pipeline);
+  if (result != VK_SUCCESS) {
+    vkDestroyPipelineLayout(context->device, pipeline->layout, nullptr);
+    delete pipeline;
+    fail("vkCreateRayTracingPipelinesKHR", result);
+    return nullptr;
+  }
+  // The shader table: a record per group, each region at the base
+  // alignment, written in the order of the queue.
+  const uint32_t handleSize = context->shaderGroupHandleSize;
+  const auto align = [](uint64_t value, uint64_t to) {
+    return (value + to - 1) / to * to;
+  };
+  const uint64_t stride =
+      align(handleSize, context->shaderGroupHandleAlignment);
+  const uint64_t region = align(stride, context->shaderGroupBaseAlignment);
+  std::vector<uint8_t> handles(size_t(handleSize) * 3);
+  std::vector<uint8_t> table(size_t(region) * 3);
+  if (vkGetRayTracingShaderGroupHandlesKHR(context->device, pipeline->pipeline,
+                                           0, 3, handles.size(),
+                                           handles.data()) != VK_SUCCESS) {
+    vkDestroyPipeline(context->device, pipeline->pipeline, nullptr);
+    vkDestroyPipelineLayout(context->device, pipeline->layout, nullptr);
+    delete pipeline;
+    fail("vkGetRayTracingShaderGroupHandlesKHR failed");
+    return nullptr;
+  }
+  for (uint32_t group = 0; group < 3; group++) {
+    std::memcpy(table.data() + group * region,
+                handles.data() + group * handleSize, handleSize);
+  }
+  pipeline->shaderTable = createBuffer(
+      context, table.size(),
+      VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
+          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+      label);
+  if (!pipeline->shaderTable ||
+      fdw_vk_buffer_write(context, pipeline->shaderTable, 0, table.data(),
+                          table.size()) != 0) {
+    fdw_vk_buffer_destroy(context, pipeline->shaderTable);
+    vkDestroyPipeline(context->device, pipeline->pipeline, nullptr);
+    vkDestroyPipelineLayout(context->device, pipeline->layout, nullptr);
+    delete pipeline;
+    return nullptr;
+  }
+  const VkDeviceAddress base =
+      bufferAddress(context, pipeline->shaderTable->buffer);
+  // The ray generation region: its size its stride.
+  pipeline->generationRegion = {base, region, region};
+  pipeline->missRegion = {base + region, stride, stride};
+  pipeline->hitRegion = {base + 2 * region, stride, stride};
+  setName(context, VK_OBJECT_TYPE_PIPELINE,
+          reinterpret_cast<uint64_t>(pipeline->pipeline), label);
+  pipeline->id = context->nextId++;
+  context->pipelines[pipeline->id] = pipeline;
+  return pipeline;
+}
+
 void fdw_vk_pipeline_destroy(fdw_vk_context *context,
                              fdw_vk_pipeline *pipeline) {
   if (!pipeline || !context->pipelines.erase(pipeline->id)) {
     return;
   }
+  fdw_vk_buffer_destroy(context, pipeline->shaderTable);
   VkDevice device = context->device;
   defer(context, [device, pipeline] {
     vkDestroyPipeline(device, pipeline->pipeline, nullptr);

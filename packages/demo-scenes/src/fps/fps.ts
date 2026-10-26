@@ -57,7 +57,9 @@ export const createFpsScene: SceneFactory = (
   });
   const scheduler = new Scheduler();
   // Rasterized, or with rays (where the backend traces them): the menu.
-  const view = new RayView(renderer, backend);
+  const view = new RayView(renderer, backend, {
+    rayTracingPipeline: context.rayTracingPipeline ?? false,
+  });
   view.mode = context.rays ?? 'raster';
 
   // The menu: open at the start, at a pause, at the end of a game.

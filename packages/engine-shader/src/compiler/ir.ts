@@ -168,8 +168,15 @@ export type IrOp =
    * instance (0xffffffff without hit), y the triangle in its mesh, with
    * bit 31 set when seen from the back, z and w the bits of the barycentric
    * coordinates u and v (f32: the weights of the second and third vertex).
+   * With `alphaTest` (ray.traceAlpha), two more args, the rayInstances and
+   * rayGeometry buffers: the candidate hits of the instances with the
+   * alphaTest flag are kept where their alpha mask is (RayAlphaMaskSize).
    */
-  | { readonly kind: 'ray-query'; readonly mode: 'closest' | 'any' }
+  | {
+      readonly kind: 'ray-query';
+      readonly mode: 'closest' | 'any';
+      readonly alphaTest?: boolean;
+    }
   /**
    * The only loop of the IR: the sum, for index from 0 to count - 1 (args[0],
    * a u32), of the value `result` computed by `body` from `index`. The body
@@ -325,4 +332,20 @@ export function forEachInstruction(
       forEachInstruction(instruction.op.body, visit);
     }
   }
+}
+
+/**
+ * Whether a module traces rays (a ray-query instruction in one of its
+ * entry points).
+ *
+ * @group Intermediate representation
+ */
+export function tracesRays(module: ShaderModuleIR): boolean {
+  let found = false;
+  for (const entryPoint of module.entryPoints) {
+    forEachInstruction(entryPoint.body, (instruction) => {
+      found ||= instruction.op.kind === 'ray-query';
+    });
+  }
+  return found;
 }

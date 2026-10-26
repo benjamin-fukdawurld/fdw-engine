@@ -78,6 +78,21 @@ to pixel: with 8 rays, the penumbra is smooth up close and a little grainy
 in large ones. Each ray costs: the samples multiply the cost of the
 shadows.
 
+## Leaves and holes
+
+A masked material (`alphaMode: 'mask'`) cuts its pixels below its alpha
+cutoff: leaves, fences, the perforated screen of the example. The rays go
+through the cut parts too: its shadow has the holes.
+
+`RayScene` bakes, once per masked material (again when its values change),
+its **alpha mask**: its surface evaluated over its uv, 256 × 256 bits, kept
+in the buffers of the scene. The rays of the shadows, of the occlusion and
+of the path tracer test the triangles of the masked instances against it
+during the traversal (on Vulkan, the candidate hits of the ray query; in
+WebGPU, the triangles of the BVH), at the uv of the point: no square
+shadows of the leaves. What the alpha reads of the uv (its textures) is in
+the mask; what it reads of the position or of the object is not.
+
 ## On each backend
 
 On **Vulkan**, the GPU traverses its own structures (`VK_KHR_ray_query`):

@@ -92,6 +92,10 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   // shaders: no indirect dispatch, and slower. The features with another
   // path there prefer it (the skinning in the vertex stage).
   readonly emulatedCompute?: boolean;
+  // Ray tracing pipelines (Vulkan, with rayQuery): the compute programs
+  // tracing rays can run as their ray generation shaders, the hardware
+  // scheduling their hits (ComputePipelineDescriptor.rayTracing).
+  readonly rayTracingPipeline?: boolean;
 }
 
 // Everything a renderer needs from a backend, once its device is ready.

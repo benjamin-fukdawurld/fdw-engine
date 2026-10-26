@@ -429,6 +429,7 @@ function shadowRay(registry: NodeRegistry): FunctionDefinition {
     tMax: f.call(select, { ifFalse: 1e30, ifTrue: 0.999, condition: pointLike }),
     mask: RayMasks.shadow,
     mode: 'any',
+    alphaTest: true,
   });
   const blocked = f.call('ray.hit', { hit });
   const casts = f.call(greater, { a: params.swizzle('x'), b: 0.5 });

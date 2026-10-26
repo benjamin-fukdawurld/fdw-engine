@@ -7,7 +7,11 @@ import type {
   GpuTextureFormat,
 } from '../gpu';
 import type { IndexFormat, MeshDescription } from '../mesh';
-import type { GpuTopLevel } from './accelerationStructures';
+import type {
+  BottomLevelVertices,
+  GpuBottomLevel,
+  GpuTopLevel,
+} from './accelerationStructures';
 
 // Abstract rendering API, modelled on WebGPU: it maps almost directly onto
 // Vulkan, Metal and Direct3D 12, and can be emulated on WebGL.
@@ -98,6 +102,15 @@ export interface ComputePipelineDescriptor {
   readonly label?: string;
   // A program with a compute stage.
   readonly program: CompiledProgram;
+  /**
+   * On the backends with the rayTracingPipeline capability, a program that
+   * traces rays runs as the ray generation shader of a ray tracing
+   * pipeline: a ray generation per thread of its dispatches (the same
+   * results), the hits found by its shaders (the alpha test in an any-hit
+   * shader). Elsewhere, or for a program tracing no rays, a compute
+   * pipeline. Default false.
+   */
+  readonly rayTracing?: boolean;
 }
 
 // Opaque backend objects.
@@ -324,5 +337,12 @@ export interface GpuCommandEncoder {
    * capability.
    */
   buildTopLevel?(top: GpuTopLevel): void;
+  /**
+   * Refits a dynamic bottom level to the positions of its vertices in a
+   * buffer of the GPU (written by the passes before: a skinning), outside
+   * of the passes, before the builds of the top levels holding it. On the
+   * backends with the rayQuery capability.
+   */
+  refitBottomLevel?(bottom: GpuBottomLevel, vertices: BottomLevelVertices): void;
   finish(): GpuCommandBuffer;
 }

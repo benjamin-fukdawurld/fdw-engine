@@ -3,11 +3,20 @@ import type { RenderBackend, Surface } from '@fdw/engine-backend';
 import { OrbitActions, OrbitOperator } from '@fdw/engine-camera';
 import {
   Camera,
+  type BaseLight,
   type Material,
   RenderGraph,
   RenderGraphRunner,
   Renderer,
+  type TextureHandle,
 } from '@fdw/engine-core';
+import {
+  PathTracer,
+  RayReflections,
+  RayScene,
+  reflectionOutputs,
+  type PathTracerSky,
+} from '@fdw/engine-raytracing';
 import {
   EditingTools,
   GizmoRenderer,
@@ -35,6 +44,7 @@ import type { Node } from '@fdw/engine-scene';
 import type {
   EngineMessage,
   GizmoSettings,
+  LevelRendering,
   ViewportBounds,
   ViewportTool,
 } from '../../protocol';
@@ -48,7 +58,18 @@ export interface LevelViewOptions {
   readonly post: (message: EngineMessage) => void;
   readonly tool: ViewportTool;
   readonly gizmo: GizmoSettings;
+  /** How the level is drawn (rasterized where the backend traces no rays). */
+  readonly rendering?: LevelRendering;
 }
+
+// The background of the viewport, and the sky of the rays (linear).
+const background = { r: 0.12, g: 0.13, b: 0.15, a: 1 };
+const linear = (c: number) => Math.pow(c, 2.2);
+const sky: PathTracerSky = {
+  zenith: { x: linear(background.r), y: linear(background.g), z: linear(background.b) },
+  horizon: { x: linear(background.r), y: linear(background.g), z: linear(background.b) },
+  ground: { x: 0.4 * linear(background.r), y: 0.4 * linear(background.g), z: 0.4 * linear(background.b) },
+};
 
 const modifierCodes: Readonly<Record<string, keyof Modifiers>> = {
   ShiftLeft: 'shiftKey',
@@ -137,6 +158,11 @@ export class LevelView implements ShownScene {
   };
   #rectangle?: string;
   #previous?: number;
+  // The renderings by rays, made at their first frame.
+  #rendering: LevelRendering = 'raster';
+  #rays?: RayScene;
+  #reflections?: RayReflections;
+  #tracer?: PathTracer;
   readonly #stop: (() => void)[] = [];
   // The materials of the level for the editors of graphs, by the material
   // they draw now.
@@ -218,6 +244,7 @@ export class LevelView implements ShownScene {
     });
     this.setGizmo(options.gizmo);
     this.setTool(options.tool);
+    this.setRendering(options.rendering ?? 'raster');
     const tools = (gizmo?: TransformGizmo) =>
       new EditingTools({
         viewport: this.#viewport,
@@ -259,6 +286,17 @@ export class LevelView implements ShownScene {
     if (tool === 'translate' || tool === 'rotate' || tool === 'scale') {
       this.#gizmo.mode = tool;
     }
+  }
+
+  /**
+   * How the level is drawn: rasterized, or with rays where the backend
+   * traces them (rayQuery capability): the shadows, the reflections too,
+   * or the path tracer, whose image refines while the camera and the level
+   * stay still.
+   */
+  setRendering(rendering: LevelRendering): void {
+    this.#rendering =
+      this.#renderer.backend.capabilities?.rayQuery === true ? rendering : 'raster';
   }
 
   setGizmo({ space, pivot, snapping }: GizmoSettings): void {
@@ -304,14 +342,31 @@ export class LevelView implements ShownScene {
     const { scene, selection } = this.#document;
 
     const graph = new RenderGraph({ size });
+    const rendering = this.#rendering;
+    const rays =
+      rendering === 'raster'
+        ? undefined
+        : (this.#rays ??= new RayScene(this.#renderer.backend, {
+            registry: this.#renderer.registry,
+          })).update({ source: scene });
+    // The rasterized level: the image, or what the tools read of it (the
+    // identifiers of the picking) under the image of the rays.
     let color = this.#renderer.addScenePasses(graph, {
       source: scene,
       camera: this.#camera,
       target: graph.importTexture('surface', target),
       format: surface.format,
-      clearColor: { r: 0.12, g: 0.13, b: 0.15, a: 1 },
+      clearColor: background,
       outputs: { id: this.#picker.output(graph, size.width, size.height) },
+      ...(rays ? { rays: { scene: rays, shadows: true } } : {}),
     }).color;
+    if (rays && (rendering === 'reflections' || rendering === 'path')) {
+      color = this.#renderer.addToneMappingPass(graph, {
+        hdr: this.#traced(graph, rays, rendering, size),
+        target: color,
+        format: surface.format,
+      });
+    }
     const hovered = selection.hovered;
     if (hovered && isAlive(hovered) && !selection.has(hovered)) {
       color = this.#outline.addPasses(graph, {
@@ -361,10 +416,55 @@ export class LevelView implements ShownScene {
     this.#input.dispose();
     this.#post({ type: 'level.rectangle' });
     this.#document.selection.hovered = undefined;
+    this.#tracer?.destroy();
+    this.#reflections?.destroy();
+    this.#rays?.destroy();
     this.#gizmoRenderer.destroy();
     this.#picker.destroy();
     this.#runner.destroy();
     this.#renderer.destroy();
+  }
+
+  // The image of the reflections or of the path tracer, in linear colors.
+  #traced(
+    graph: RenderGraph,
+    rays: RayScene,
+    rendering: 'reflections' | 'path',
+    size: { width: number; height: number },
+  ): TextureHandle {
+    const lights: BaseLight[] = [...(this.#document.scene.lights?.() ?? [])];
+    const hdr = graph.createTexture('rays hdr', { format: 'rgba16float', size });
+    if (rendering === 'path') {
+      this.#tracer ??= new PathTracer(this.#renderer, rays, { sky });
+      return this.#tracer.addPasses(graph, {
+        camera: this.#camera,
+        lights,
+        target: hdr,
+        format: 'rgba16float',
+      });
+    }
+    // The reflections: a G-buffer of the level, its rays added.
+    const passes = this.#renderer.addScenePasses(graph, {
+      source: this.#document.scene,
+      camera: this.#camera,
+      lights,
+      target: hdr,
+      format: 'rgba16float',
+      linear: true,
+      samples: 1,
+      clearColor: background,
+      outputs: reflectionOutputs(),
+      rays: { scene: rays, shadows: true },
+    });
+    this.#reflections ??= new RayReflections(this.#renderer, rays, { sky });
+    return this.#reflections.addPasses(graph, {
+      camera: this.#camera,
+      lights,
+      color: passes.color,
+      position: passes.outputs.position,
+      normal: passes.outputs.normal,
+      baseColor: passes.outputs.baseColor,
+    });
   }
 
   #hasGizmo(): boolean {

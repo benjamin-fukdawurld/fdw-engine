@@ -2,7 +2,12 @@ import type { GpuTexture, RenderBackend } from '@fdw/engine-backend';
 import { Material, type MaterialValue } from '@fdw/engine-core';
 import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
 import type { MaterialGraphData, PortHandle } from '@fdw/engine-shader';
-import { patchGrid, PatchSurface, patchVertex } from '@fdw/engine-tessellation';
+import {
+  patchGrid,
+  patchMesh,
+  PatchSurface,
+  patchVertex,
+} from '@fdw/engine-tessellation';
 import { seededRandom } from '../maze/maze';
 
 // A terrain drawn as a surface of patches: a height map moves the points of
@@ -21,6 +26,9 @@ export interface TerrainOptions {
   readonly edgePixels?: number;
   // The coarsest level of the patches: 6 draws every patch at the finest.
   readonly minLevel?: number;
+  // The level of the patches of the mesh the rays see (3: 8 × 8 quads a
+  // patch).
+  readonly rayLevel?: number;
   readonly seed?: number;
   // Heights from 0 to 1, `resolution` × `resolution`, row by row (rows
   // along z): instead of the hills of terrainHeights.
@@ -141,6 +149,8 @@ export function terrainBase(
   vertex: ReturnType<typeof patchVertex>;
   uv: PortHandle;
   normal: PortHandle;
+  height: PortHandle;
+  level: PortHandle;
 } {
   const heightMap = {
     texture: g.texture('heightMap'),
@@ -151,8 +161,14 @@ export function terrainBase(
     displacement: { ...heightMap, scale: height, texel },
   });
 
+  // The level of the patch, an attribute: 0 where the rays hit.
+  g.vertexAttribute('patchLevel', vertex.level);
+  // The uv of each pixel: an attribute computed in the vertex stage, read
+  // as such (where the rays hit, the uv of the mesh they see).
+  const uv = g.call(std.perFragment, {
+    value: g.attribute('uv', BuiltinTypes.vec2f),
+  });
   // The normal of each pixel: the slopes of the height map.
-  const uv = g.call(std.perFragment, { value: vertex.uv });
   const heightAt = (dx: number, dy: number) =>
     g
       .call(std.textureSample, {
@@ -174,7 +190,13 @@ export function terrainBase(
       }),
     }),
   });
-  return { vertex, uv, normal };
+  return {
+    vertex,
+    uv,
+    normal,
+    height: heightAt(0, 0),
+    level: g.attribute('patchLevel', BuiltinTypes.f32),
+  };
 }
 
 /**
@@ -187,7 +209,7 @@ export function terrainGraph(options: {
   resolution: number;
 }) {
   const g = new GraphBuilder('terrain');
-  const { vertex, normal } = terrainBase(g, options);
+  const { height, level: patchLevel, normal } = terrainBase(g, options);
 
   const splat = (value: PortHandle) =>
     g.call(std.vec3, { x: value, y: value, z: value });
@@ -202,7 +224,7 @@ export function terrainGraph(options: {
     a: g.call(std.smoothstep, {
       low: 0.45,
       high: 0.55,
-      x: g.call(std.perFragment, { value: vertex.height }),
+      x: height,
     }),
     b: g.call(std.smoothstep, { low: 0.8, high: 0.9, x: up }),
   });
@@ -212,7 +234,7 @@ export function terrainGraph(options: {
     snow,
   );
   // The level of the patch, from blue to red.
-  const level = g.call(std.div, { a: vertex.level, b: 6 });
+  const level = g.call(std.div, { a: patchLevel, b: 6 });
   const levels = g.call(std.vec3, {
     x: level,
     y: g.call(std.sub, {
@@ -292,6 +314,18 @@ export function buildTerrain(
     return (top + (bottom - top) * fv) * height;
   };
 
+  // What the rays see: the patches at a fixed level, displaced as the GPU
+  // does.
+  surface.rayMesh = patchMesh(surface.patches, {
+    level: options.rayLevel ?? 3,
+    displacement: {
+      height: (u, v) => heightAt((u - 0.5) * size, (v - 0.5) * size) / height,
+      scale: height,
+      texel: 1 / resolution,
+    },
+    label: 'terrain rays',
+  });
+
   return {
     surface,
     size,
@@ -302,6 +336,7 @@ export function buildTerrain(
     showLevels: (on) => material.setValue('showLevels', on ? 1 : 0),
     destroy: () => {
       surface.destroy();
+      surface.rayMesh?.destroy();
       heightMap.destroy();
       sampler.destroy();
     },

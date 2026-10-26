@@ -16,8 +16,8 @@ pixel, en rebondissant sur les surfaces jusqu'à trouver une lumière.
 <Example name="path-tracing" />
 
 L'image commence granuleuse et s'éclaircit à mesure que les images
-s'additionnent. Cliquez sur le canevas pour comparer avec la rastérisation
-de la même scène.
+s'additionnent. Cliquez sur le canevas : la caméra bouge, puis la
+rastérisation de la même scène.
 
 ## Le path tracer
 
@@ -55,11 +55,10 @@ Tous les pixels à la fois, en vagues de passes de calcul :
    par la densité). Après deux rebonds, les chemins qui portent peu de
    lumière s'arrêtent au hasard (la roulette russe). Les pixels masqués et
    mélangés laissent passer le rayon.
-3. **L'accumulation** : l'image ajoutée à la somme des précédentes, tant
-   que la caméra, la scène, les matériaux et les lumières restent les
-   mêmes ; la moyenne est l'image.
-4. **Le filtre** : tant que les images sont peu nombreuses, un filtre à
-   trous lisse le bruit entre les pixels qui partagent une surface
+3. **L'accumulation** : l'image mêlée à l'historique de chaque pixel
+   (plus bas) ; la moyenne est l'image.
+4. **Le filtre** : tant que les images d'un pixel sont peu nombreuses, un
+   filtre à trous lisse le bruit entre les pixels qui partagent une surface
    (normales et profondeurs proches), en divisant par l'albédo pour que les
    textures restent nettes.
 
@@ -78,5 +77,38 @@ atteindre, les premières images sont granuleuses.
 - Plus d'images : la moyenne converge, à peu près comme la racine carrée de
   leur nombre.
 
-Quand la caméra bouge, le recueil recommence ; le path tracer convient à
-une vue fixe, un aperçu, une image, plus qu'à un jeu.
+## Une caméra qui bouge
+
+Le premier impact de chaque pixel est gardé avec son image : le point vu,
+sa normale. Quand la caméra ou les objets bougent, chaque pixel cherche le
+point qu'il voit dans l'image précédente (projeté avec la caméra
+précédente), entre les quatre pixels autour, et garde leur historique là
+où ils voyaient la même surface (un point et une normale proches des
+siens). Ce qui était caché, ou un objet qui bouge, repart d'une image.
+
+```ts
+const tracer = new PathTracer(renderer, scene, {
+  history: 16, // les images qu'un pixel garde quand tout bouge
+});
+```
+
+Quand tout bouge, un pixel garde ses `history` dernières images : moins,
+moins de flou derrière ce qui bouge et plus de bruit ; immobile, les
+images s'additionnent sans fin. Changer les lumières ou les matériaux fait
+tout recommencer (`tracer.reset()` aussi). L'image en mouvement reste plus
+bruitée qu'une image fixe : le path tracer convient à un aperçu, une
+image, une caméra lente.
+
+## Plus vite sur Vulkan
+
+Sur Vulkan, les noyaux qui tracent des rayons peuvent tourner en
+**pipelines de ray tracing** (`VK_KHR_ray_tracing_pipeline`) : le matériel
+ordonne les rayons et leurs impacts, le test de l'alpha dans un shader
+any-hit. L'image est la même :
+
+```ts
+new PathTracer(renderer, scene, { rayTracingPipeline: true });
+```
+
+Là où le backend n'en a pas (WebGPU, ou un GPU sans eux), l'option revient
+aux ray queries.

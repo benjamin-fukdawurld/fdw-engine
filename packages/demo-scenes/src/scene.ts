@@ -30,6 +30,9 @@ export interface SceneContext {
   // How the scenes that offer it draw at first: rasterized (the default),
   // or with rays, where the backend traces them (see RayView).
   readonly rays?: RayMode;
+  // The rays of the path tracer and of the reflections traced by ray
+  // tracing pipelines, where the backend has them (Vulkan).
+  readonly rayTracingPipeline?: boolean;
 }
 
 export type SceneFactory = (

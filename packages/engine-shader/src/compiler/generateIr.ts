@@ -414,7 +414,11 @@ function translateNode(
       output(
         'result',
         type,
-        { kind: 'ray-query', mode: params['mode'] === 'any' ? 'any' : 'closest' },
+        {
+          kind: 'ray-query',
+          mode: params['mode'] === 'any' ? 'any' : 'closest',
+          ...(args.length > 6 ? { alphaTest: true } : {}),
+        },
         args,
       );
       return;

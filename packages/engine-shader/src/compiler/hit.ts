@@ -50,6 +50,32 @@ const out = (node: string, port = 'result'): InputSource => ({
   ref: { node, port },
 });
 
+// The attributes computed in the vertex stage (output.attribute: a skinned
+// character, the patches of a terrain) are those of the geometry traced,
+// read at the points hit as the others: their nodes are dropped, and what
+// only they used.
+function dropComputedAttributes(graph: WorkingGraph): void {
+  const dropped = [...graph.nodes.values()]
+    .filter((node) => node.type === 'output.attribute')
+    .map((node) => node.id);
+  while (dropped.length > 0) {
+    const id = dropped.pop() as string;
+    const sources = graph.incoming(id).map((edge) => edge.from.node);
+    graph.removeNode(id);
+    for (const source of sources) {
+      const node = graph.nodes.get(source);
+      if (
+        node &&
+        graph.outgoing(source).size === 0 &&
+        !node.type.startsWith('output.') &&
+        !dropped.includes(source)
+      ) {
+        dropped.push(source);
+      }
+    }
+  }
+}
+
 /**
  * Replaces 'output.surface' by the writes of the surface of the ray of the
  * thread, and 'output.compute' with its guard. Returns the node of the hit,
@@ -61,6 +87,7 @@ export function lowerHitSurface(
   diagnostics: Diagnostic[],
   feature: (name: string) => StaticValue | undefined,
 ): string | undefined {
+  dropComputedAttributes(graph);
   const surface = [...graph.nodes.values()].find(
     (node) => node.type === 'output.surface',
   );
@@ -94,6 +121,31 @@ export function lowerHitSurface(
     params: Readonly<Record<string, StaticValue>> = {},
   ) => graph.addNode(type, params, inputs);
   const constant = (value: ConstantValue): InputSource => ({ value });
+  const u32 = (value: number): InputSource =>
+    out(add('const.value', {}, { type: BuiltinTypes.u32, value }), 'value');
+  // The normal of the surface where it is one, else that of the vertices:
+  // what the graph computes from the derivatives of the pixels (a normal
+  // map without tangents) has none at the points hit (they are 0), and a
+  // ray from a NaN normal would go anywhere. Tested on the bits of its
+  // length: the comparisons with NaN differ between the GPUs.
+  const validNormal = (normal: InputSource, fallback: InputSource) => {
+    const squared = out(add('std.dot', { a: normal, b: normal }));
+    const exponent = out(
+      add('std.bitAnd', {
+        a: out(add('std.bitcast', { value: squared }, { to: BuiltinTypes.u32 })),
+        b: u32(0x7f800000),
+      }),
+    );
+    // Both: a select, the IR has no and.
+    const valid = out(
+      add('std.select', {
+        ifFalse: constant(false),
+        ifTrue: out(add('std.greater', { a: squared, b: constant(1e-12) })),
+        condition: out(add('std.notEqual', { a: exponent, b: u32(0x7f800000) })),
+      }),
+    );
+    return out(add('std.select', { ifFalse: fallback, ifTrue: normal, condition: valid }));
+  };
   const { slot } = HitResources;
 
   // The ray of the thread, and its hit (read in the buffer, the index kept
@@ -165,24 +217,26 @@ export function lowerHitSurface(
   }
   // The normal: that of the surface, or of the vertices; turned towards
   // the ray (the back faces seen from inside, the leaves).
-  const normal =
-    source('normal') ??
-    out(
-      add('std.transform3', {
-        matrix: out(
-          add('input.engine', {}, { value: 'object.normalMatrix' }),
-          'value',
+  const vertexNormal = out(
+    add('std.transform3', {
+      matrix: out(
+        add('input.engine', {}, { value: 'object.normalMatrix' }),
+        'value',
+      ),
+      vector: out(
+        add(
+          'input.attribute',
+          {},
+          { semantic: 'normal', type: BuiltinTypes.vec3f },
         ),
-        vector: out(
-          add(
-            'input.attribute',
-            {},
-            { semantic: 'normal', type: BuiltinTypes.vec3f },
-          ),
-          'value',
-        ),
-      }),
-    );
+        'value',
+      ),
+    }),
+  );
+  const surfaceNormal = source('normal');
+  const normal = surfaceNormal
+    ? validNormal(surfaceNormal, vertexNormal)
+    : vertexNormal;
   const facing = add('input.builtin', {}, { builtin: 'front-facing' });
   const unit = out(add('std.normalize', { x: normal }));
   const turned = out(
@@ -414,14 +468,6 @@ export function lowerHitInputs(
         }
         break;
       }
-      case 'output.attribute':
-        diagnostics.push({
-          severity: 'error',
-          node: node.id,
-          message:
-            'the attributes computed in the vertex stage (output.attribute) have no value at the points hit by rays',
-        });
-        break;
     }
   }
 }

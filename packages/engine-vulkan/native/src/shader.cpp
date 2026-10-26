@@ -167,9 +167,12 @@ fdw_vk_shader *fdw_vk_shader_create(fdw_vk_context *context, const char *hlsl,
     return nullptr;
   }
   const std::string profile = option(arguments, count, "-T");
-  shader->stage = profile.rfind("ps", 0) == 0   ? VK_SHADER_STAGE_FRAGMENT_BIT
-                  : profile.rfind("cs", 0) == 0 ? VK_SHADER_STAGE_COMPUTE_BIT
-                                                : VK_SHADER_STAGE_VERTEX_BIT;
+  // A library: the shaders of a ray tracing pipeline (its ray generation
+  // shader stands for them).
+  shader->stage = profile.rfind("ps", 0) == 0    ? VK_SHADER_STAGE_FRAGMENT_BIT
+                  : profile.rfind("cs", 0) == 0  ? VK_SHADER_STAGE_COMPUTE_BIT
+                  : profile.rfind("lib", 0) == 0 ? VK_SHADER_STAGE_RAYGEN_BIT_KHR
+                                                 : VK_SHADER_STAGE_VERTEX_BIT;
   shader->entryPoint = option(arguments, count, "-E");
   if (shader->entryPoint.empty()) {
     shader->entryPoint = "main";

@@ -749,6 +749,10 @@ export class GraphBuilder {
    *   ifFalse: 1, ifTrue: 0, condition: g.call(stdRays.hit, { hit }),
    * });
    * ```
+   *
+   * With `alphaTest`, the ray goes through the cut parts of the masked
+   * materials of the scene (`ray.traceAlpha`, reading the rayInstances and
+   * rayGeometry buffers of the scene).
    */
   traceRay({
     origin,
@@ -757,6 +761,7 @@ export class GraphBuilder {
     tMax,
     mask,
     mode = 'closest',
+    alphaTest = false,
   }: {
     origin: PortHandle | ConstantValue;
     direction: PortHandle | ConstantValue;
@@ -764,9 +769,10 @@ export class GraphBuilder {
     tMax?: PortHandle | number;
     mask?: PortHandle | number;
     mode?: 'closest' | 'any';
+    alphaTest?: boolean;
   }): PortHandle {
     return this.call(
-      'ray.trace',
+      alphaTest ? 'ray.traceAlpha' : 'ray.trace',
       {
         scene: this.engine('scene'),
         origin,
@@ -774,6 +780,12 @@ export class GraphBuilder {
         ...(tMin === undefined ? {} : { tMin }),
         ...(tMax === undefined ? {} : { tMax }),
         ...(mask === undefined ? {} : { mask }),
+        ...(alphaTest
+          ? {
+              instances: this.engine('rayInstances'),
+              geometry: this.engine('rayGeometry'),
+            }
+          : {}),
       },
       { params: { mode } },
     );

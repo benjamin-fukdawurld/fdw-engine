@@ -172,7 +172,11 @@ describe('shadows by rays', () => {
     });
     const traced = queries(program);
     expect(traced).toHaveLength(1);
-    expect(traced[0].op).toEqual({ kind: 'ray-query', mode: 'any' });
+    expect(traced[0].op).toEqual({
+      kind: 'ray-query',
+      mode: 'any',
+      alphaTest: true,
+    });
     expect(program.variantKey['rayShadows']).toBe(true);
     // Without the feature, no ray.
     expect(queries(compile(material(), rays))).toHaveLength(0);
@@ -265,5 +269,30 @@ describe('the hit target', () => {
       }),
     });
     expect(() => compile(g.build(), { target: 'hit' })).toThrow(/vertex-index/);
+  });
+
+  it('reads the attributes computed in the vertex stage from the traced geometry', () => {
+    // Positions made from the vertex index (a terrain of patches): the hit
+    // program reads those of the geometry traced instead.
+    const g = new GraphBuilder('generated');
+    const index = g.call(std.convert, { value: g.builtin('vertex-index') }, { params: { to: BuiltinTypes.f32 } });
+    g.vertexAttribute('position', g.call(std.vec3, { x: index, y: 0, z: 0 }));
+    g.vertexAttribute('uv', g.call(std.vec2, { x: index, y: 1 }));
+    g.surface({
+      baseColor: g.call(std.vec3, {
+        x: g.attribute('uv', BuiltinTypes.vec2f).swizzle('x'),
+      }),
+    });
+    const program = compile(g.build(), { target: 'hit' });
+    const instructions = program.module.entryPoints[0].body;
+    expect(
+      instructions.some(
+        (instruction) =>
+          instruction.op.kind === 'load-builtin' && instruction.op.builtin === 'vertex-index',
+      ),
+    ).toBe(false);
+    expect(program.layout.groups.flatMap((group) => group.bindings.map((b) => b.name))).toContain(
+      'rayGeometry',
+    );
   });
 });

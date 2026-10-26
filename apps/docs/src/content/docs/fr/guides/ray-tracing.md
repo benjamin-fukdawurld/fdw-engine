@@ -11,13 +11,14 @@ mêmes matériaux : seul change ce qui dessine les pixels. Les tutoriels
 montrent chaque usage :
 [les ombres par rayons](/fdw-engine/fr/tutorials/ray-traced-shadows/),
 [les reflets et l'occlusion ambiante](/fdw-engine/fr/tutorials/ray-reflections/),
-[le path tracer](/fdw-engine/fr/tutorials/path-tracing/).
+[le path tracer](/fdw-engine/fr/tutorials/path-tracing/),
+[la géométrie animée et générée](/fdw-engine/fr/tutorials/ray-traced-characters/).
 
 ## Les backends
 
 | Backend | Rayons                                                                                                                                                 |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Vulkan  | En matériel : `VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, là où le GPU les a (RTX, RDNA2 et suivants ; lavapipe en logiciel)               |
+| Vulkan  | En matériel : `VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, là où le GPU les a (RTX, RDNA2 et suivants ; lavapipe en logiciel) ; les pipelines de ray tracing (`VK_KHR_ray_tracing_pipeline`) en option |
 | WebGPU  | En logiciel : un BVH construit sur le CPU, dans des storage buffers, parcouru par du code WGSL que le backend ajoute aux programmes qui tracent des rayons |
 | WebGL2  | Aucun : la rastérisation seule                                                                                                                         |
 
@@ -50,10 +51,16 @@ scene.update({ source, items });
   backends : les instances (leurs matrices, leur matériau, leur objet), les
   triangles et les sommets (position, normale, uv, tangente).
 
-Les rayons ne voient pas ce que déplace le vertex shader : les meshes
-skinnés, la mer, les surfaces tessellées (leurs positions viennent de
-l'étape de sommets) sont laissés de côté, ou vus au repos. `filter` écarte
-d'autres items.
+- **Les masques d'alpha** des matériaux masqués, cuits une fois (plus bas).
+
+Ce que le GPU déplace est suivi : les sommets d'un mesh skinné
+(`Material.deformedVertices`, renseigné par le skinning en calcul)
+ajustent sa structure à chaque mise à jour ; un item dont le matériau fait
+sa géométrie dans le vertex stage (un terrain en patchs) est tracé avec son
+`rayMesh`. Sans l'un ni l'autre, un tel item est laissé de côté (la mer de
+l'océan). `filter` écarte d'autres items. Le
+[tutoriel](/fdw-engine/fr/tutorials/ray-traced-characters/) montre les
+deux.
 
 ## Les ombres par rayons
 
@@ -68,6 +75,18 @@ exactes, à toute distance, sans acné ni texels. Avec `samples`, plusieurs
 rayons à travers la lumière (son `shadow.softness` : le rayon d'un spot, la
 tangente du rayon angulaire d'un soleil) donnent des ombres douces. Les
 shadow maps ne sont pas dessinées.
+
+## L'alpha des matériaux masqués
+
+Les rayons traversent les parties coupées des matériaux masqués
+(`alphaMode: 'mask'`) : les feuilles, les grillages. `RayScene` cuit
+l'alpha de chaque matériau masqué sur ses uv (son programme « impact » sur
+un carré, coupé à son seuil, 256 × 256 bits dans la géométrie de la
+scène), à nouveau quand ses valeurs changent ; les traversées testent
+contre lui les triangles candidats des instances masquées (Vulkan : les
+instances non opaques dans la boucle de la ray query, ou un shader any-hit ;
+WebGPU : dans la traversée WGSL). Dans vos graphs,
+`g.traceRay({ …, alphaTest: true })` (`ray.traceAlpha`) fait de même.
 
 ## Les passes de rayons
 
@@ -99,6 +118,34 @@ dans des buffers, tracés ensemble ; les surfaces qu'ils touchent évaluées
 matériau par matériau ; puis un noyau de rebond. Un dispatch par matériau
 et par rebond : le coût grandit avec le nombre de matériaux de la scène.
 
+Quand la caméra ou la scène bouge, chaque pixel suit le point qu'il voyait :
+l'image précédente reprojetée (le point et la normale du premier impact
+gardés), son historique gardé là où il voyait la même surface, au plus
+`history` images (16) tant que tout bouge ; immobiles, les images
+s'additionnent sans fin.
+
+## Les pipelines de ray tracing
+
+Sur Vulkan, un programme de calcul qui trace des rayons peut tourner comme
+le shader de génération de rayons d'un **pipeline de ray tracing**
+(`createComputePipeline({ program, rayTracing: true })`, la capacité
+`rayTracingPipeline`) : un fil par rayon, `TraceRay` avec un shader
+closest-hit qui écrit l'impact, un shader miss, et le test de l'alpha dans
+un shader any-hit. Les mêmes graphs, les mêmes résultats (un test les
+compare au bit près) ; `ComputeRunner`, `PathTracer` et `RayReflections`
+prennent l'option (`rayTracingPipeline: true`). Ailleurs, les ray queries.
+Les surfaces des matériaux restent des dispatchs de leurs programmes
+« impact » : des hit groups par matériau lieraient les ressources de tous
+les matériaux à la fois.
+
+## Dans l'éditeur
+
+Le viewport du niveau dessine avec des rayons depuis le menu Edit ›
+Rendering (ou la palette) : les ombres tracées, les reflets, le path tracer —
+sur Vulkan (l'éditeur de bureau) et WebGPU (l'éditeur web) ; WebGL2 garde
+la rastérisation. La sélection au pixel et les gizmos restent ceux de la
+rastérisation.
+
 ## Les surfaces aux points d'impact
 
 Un matériau s'écrit une fois : le compilateur compile aussi sa surface pour
@@ -107,7 +154,10 @@ les points touchés par les rayons (`compile(graph, { target: 'hit' })`) :
 - ses attributs interpolés au point d'impact (position, normale, uv,
   tangente), ses matrices d'objet celles de l'instance touchée ;
 - ses textures lues à leur premier niveau (pas de dérivées), ses dérivées
-  à 0 ;
+  à 0 (une normale qui ne peut alors pas être calculée est remplacée par la
+  normale des sommets) ;
+- les attributs que calcule son vertex stage (`g.vertexAttribute`) sont
+  ceux de la géométrie tracée ;
 - ce qu'il donne : la couleur de base et l'alpha, la normale, la rugosité
   et le métal, l'émission — les paramètres de la BSDF du modèle `pbr`
   (Lambert et GGX) qu'utilisent les passes de rayons. `phong` donne une
@@ -138,23 +188,28 @@ graph par les valeurs de son dispatch (`scene.resource(name)`).
 
 ## Coûts
 
-1280 × 720 sur une RTX 2060 SUPER, Vulkan, sans vsync :
+1280 × 720 sur une RTX 2060 SUPER, sans vsync (le TPS : ses personnages, son
+terrain et son feuillage dans la scène des rayons) :
 
-| Démo | Rastérisé | Ombres tracées | + reflets | Path tracer |
-| ---- | --------- | -------------- | --------- | ----------- |
-| FPS      | 974 fps    | 577 fps        | 308 fps       | 106 fps     |
-| TPS      | 82 fps     | 47 fps         | 43 fps        | 51 fps      |
+| Démo | Backend                          | Rastérisé | Ombres tracées | + reflets | Path tracer |
+| ---- | -------------------------------- | --------- | -------------- | --------- | ----------- |
+| FPS  | Vulkan                           | 1170 fps  | 576 fps        | 275 fps   | 89 fps      |
+| FPS  | Vulkan, pipelines de ray tracing |           |                | 305 fps   | 90 fps      |
+| FPS  | WebGPU (Dawn)                    | 560 fps   | 131 fps        | 68 fps    | 33 fps      |
+| TPS  | Vulkan                           | 81 fps    | 39 fps         | 37 fps    | 27 fps      |
+| TPS  | Vulkan, pipelines de ray tracing |           |                | 41 fps    | 34 fps      |
+| TPS  | WebGPU (Dawn)                    | 58 fps    | 7 fps          | 5 fps     | 4 fps       |
 
 En WebGPU, la traversée logicielle coûte plus, et d'autant plus que la
 scène grandit : les ombres tracées conviennent aux petites scènes ; le path
-tracer recueille ses images plus lentement.
+tracer recueille ses images plus lentement. Dans la forêt du TPS, le niveau
+du haut reconstruit sur le CPU à chaque image pèse aussi.
 
 ## Pas encore
 
-- L'alpha des matériaux masqués pendant la traversée (les feuilles
-  projettent des ombres carrées par rayons ; le path tracer les traverse
-  par des rebonds).
-- La mise à jour (refit) des structures des meshes skinnés et déplacés.
-- Les pipelines de ray tracing de Vulkan, DXR sur Direct3D 12, un BVH
-  construit sur le GPU.
-- Un débruiteur temporel (SVGF) pour une caméra qui bouge.
+- Les rayons sur Direct3D 12 (DXR, en ligne ou en pipelines).
+- Un BVH construit sur le GPU (le niveau du haut des grandes scènes coûte
+  sur le CPU à chaque image), des BVH à 4 ou 8 enfants.
+- La variance dans le filtre temporel (SVGF), ReSTIR, l'échantillonnage
+  des cartes d'environnement par importance.
+- La mer de l'océan dans la scène des rayons.

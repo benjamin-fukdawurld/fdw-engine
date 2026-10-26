@@ -126,8 +126,8 @@ function fallbackGraph(): MaterialGraphData {
   return fallback;
 }
 
-// The values of the material slots of a program: those of the material.
-function materialValues(
+/** The values of the material slots of a program: those of the material. */
+export function materialValues(
   material: Material,
   program: CompiledProgram,
 ): Record<string, MaterialValue> {

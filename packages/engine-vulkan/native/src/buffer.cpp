@@ -89,7 +89,14 @@ uint32_t fdw_vk_buffer_id(const fdw_vk_buffer *buffer) { return buffer->id; }
 
 fdw_vk_buffer *fdw_vk_buffer_create(fdw_vk_context *context, uint64_t size,
                                     uint32_t usage, const char *label) {
-  return createBuffer(context, size, bufferUsage(usage), label);
+  VkBufferUsageFlags flags = bufferUsage(usage);
+  // The storage buffers can hold the vertices of the dynamic bottom levels.
+  if (context->rayQuery && (usage & FDW_VK_BUFFER_STORAGE)) {
+    flags |=
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  }
+  return createBuffer(context, size, flags, label);
 }
 
 void fdw_vk_buffer_destroy(fdw_vk_context *context, fdw_vk_buffer *buffer) {

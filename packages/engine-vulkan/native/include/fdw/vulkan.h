@@ -336,6 +336,16 @@ FDW_VK_API fdw_vk_pipeline *fdw_vk_compute_pipeline_create(
     fdw_vk_context *context, fdw_vk_shader *shader,
     fdw_vk_group_layout *const *groups, uint32_t group_count,
     const char *label);
+// Whether the device has the ray tracing pipelines (with ray queries).
+FDW_VK_API int32_t
+fdw_vk_ray_tracing_pipeline_supported(const fdw_vk_context *context);
+// A ray tracing pipeline: a library of shaders (rg_main, ms_main, ch_main,
+// and with any_hit, ah_main), and the layouts of its groups. Its dispatches
+// trace a ray per thread of their workgroups of `workgroup_size` (x, y, z).
+FDW_VK_API fdw_vk_pipeline *fdw_vk_ray_tracing_pipeline_create(
+    fdw_vk_context *context, fdw_vk_shader *shader, uint32_t any_hit,
+    const uint32_t *workgroup_size, fdw_vk_group_layout *const *groups,
+    uint32_t group_count, const char *label);
 FDW_VK_API void fdw_vk_pipeline_destroy(fdw_vk_context *context,
                                         fdw_vk_pipeline *pipeline);
 FDW_VK_API uint32_t fdw_vk_pipeline_id(const fdw_vk_pipeline *pipeline);
@@ -418,13 +428,20 @@ FDW_VK_API int32_t fdw_vk_ray_query_supported(const fdw_vk_context *context);
 typedef struct fdw_vk_bottom_level fdw_vk_bottom_level;
 typedef struct fdw_vk_top_level fdw_vk_top_level;
 
+// The flags of a bottom level.
+enum {
+  // Its vertices move on the GPU: refit by FDW_VK_CMD_REFIT_BOTTOM_LEVEL.
+  FDW_VK_BOTTOM_LEVEL_DYNAMIC = 1,
+};
+
 // The acceleration structure of a triangle mesh: positions (xyz per vertex,
 // `vertex_count` of them) and indices (3 per triangle). Built in the order
 // of the queue, before the commands submitted next. NULL on error.
 FDW_VK_API fdw_vk_bottom_level *
 fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
                            uint32_t vertex_count, const uint32_t *indices,
-                           uint32_t index_count, const char *label);
+                           uint32_t index_count, uint32_t flags,
+                           const char *label);
 // Destroyed once the GPU no longer uses it.
 FDW_VK_API void fdw_vk_bottom_level_destroy(fdw_vk_context *context,
                                             fdw_vk_bottom_level *bottom);
@@ -436,7 +453,8 @@ typedef struct fdw_vk_instance {
   float transform[12];
   // The id of its bottom level.
   uint32_t bottom_level;
-  // 8 bits: the rays sharing a bit with it see it.
+  // 8 bits: the rays sharing a bit with it see it; bit 8 set, it is not
+  // opaque (its candidate hits go to the ray queries that test them).
   uint32_t mask;
 } fdw_vk_instance;
 
@@ -505,6 +523,11 @@ enum {
   // Outside of the passes. top level: builds it from its last update; the
   // passes after it trace rays against it.
   FDW_VK_CMD_BUILD_TOP_LEVEL = 19,
+  // Outside of the passes. bottom level (dynamic), buffer, offset (64),
+  // stride: refits it to the positions of its vertices in the buffer (xyz
+  // float32 of the vertex v at offset + v × stride), before the builds of
+  // the top levels holding it.
+  FDW_VK_CMD_REFIT_BOTTOM_LEVEL = 20,
 };
 
 // Records the commands into a command buffer, with the barriers the

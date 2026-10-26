@@ -137,7 +137,9 @@ export function createTpsScene(
     const occlusion = new OcclusionCulling();
     const scheduler = new Scheduler();
     // Rasterized, or with rays (where the backend traces them): the menu.
-    const rayView = new RayView(renderer, backend);
+    const rayView = new RayView(renderer, backend, {
+      rayTracingPipeline: context.rayTracingPipeline ?? false,
+    });
   rayView.mode = context.rays ?? 'raster';
     const operator = new ThirdPersonOperator(camera, actions, {
       distance: 4.2,

@@ -9,6 +9,8 @@ import {
   type GizmoSettings,
   type LevelFormat,
   type LevelPrimitive,
+  type LevelRendering,
+  levelRenderings,
   type PageMessage,
   type ViewportTool,
 } from '../protocol';
@@ -42,6 +44,16 @@ const addCommand = (primitive: LevelPrimitive) => `${levelId}.add.${primitive}`;
 
 // The keys of the level, while it is in the viewport.
 const levelShown = `engine.scene == ${levelScene}`;
+
+/** The renderings of the viewport, by their commands. */
+const renderings: Readonly<Record<LevelRendering, readonly [string, string]>> = {
+  raster: ['Rasterized', 'image'],
+  shadows: ['Ray traced shadows', 'sun'],
+  reflections: ['Ray traced reflections', 'sparkles'],
+  path: ['Path traced', 'aperture'],
+};
+const renderingCommand = (rendering: LevelRendering) =>
+  `${levelId}.rendering.${rendering}`;
 
 const manifest = {
   id: levelId,
@@ -118,6 +130,15 @@ const manifest = {
         icon: 'pointer',
         toggled: '!tool.primary',
       },
+      ...levelRenderings.map((rendering) => ({
+        id: renderingCommand(rendering),
+        title: renderings[rendering][0],
+        category: 'Rendering',
+        icon: renderings[rendering][1],
+        toggled: `level.rendering == ${rendering}`,
+        // The rays: on the backends that trace them.
+        ...(rendering === 'raster' ? {} : { enablement: 'engine.rays' }),
+      })),
       {
         id: `${levelId}.space`,
         title: 'Local axes',
@@ -177,7 +198,11 @@ const manifest = {
         { command: `${levelId}.space`, group: '5_gizmo' },
         { command: `${levelId}.pivot`, group: '5_gizmo' },
         { command: `${levelId}.snap`, group: '5_gizmo' },
+        { submenu: 'menubar.edit.rendering', title: 'Rendering', group: '6_view' },
       ],
+      'menubar.edit.rendering': levelRenderings.map((rendering) => ({
+        command: renderingCommand(rendering),
+      })),
       'menubar.edit.add': primitives.map(([primitive]) => ({
         command: addCommand(primitive),
       })),
@@ -222,6 +247,14 @@ const manifest = {
 export const levelFilters: readonly FileFilter[] = [
   { name: 'Levels', extensions: ['json', 'glb', 'gltf'] },
 ];
+
+// The rendering of the viewport kept with the layout (with the gizmo).
+function readRendering(value: unknown): LevelRendering {
+  const rendering = (value as { rendering?: unknown } | undefined)?.rendering;
+  return levelRenderings.includes(rendering as LevelRendering)
+    ? (rendering as LevelRendering)
+    : 'raster';
+}
 
 // The settings of the gizmo kept with the layout (the state of the plugin).
 function readGizmo(value: unknown): GizmoSettings {
@@ -338,25 +371,38 @@ function activate(context: PluginContext): void {
     context.tools.register(id, () => createMachine({ id }));
   }
 
-  // The gizmo: kept with the layout, as context keys, sent to the engine.
+  // The gizmo and the rendering: kept with the layout, as context keys,
+  // sent to the engine.
   let keys: IDisposable[] = [];
   const sendGizmo = () => {
-    const gizmo = readGizmo(context.state.get());
+    const state = context.state.get();
+    const gizmo = readGizmo(state);
+    const rendering = readRendering(state);
     keys.forEach((key) => key.dispose());
     keys = [
       context.keys.set('level.gizmo.local', gizmo.space === 'local'),
       context.keys.set('level.gizmo.origins', gizmo.pivot === 'origin'),
       context.keys.set('level.gizmo.snapping', gizmo.snapping),
+      context.keys.set('level.rendering', rendering),
     ];
     post({ type: 'level.gizmo', ...gizmo });
+    post({ type: 'level.rendering', rendering });
+  };
+  const setState = (change: Partial<GizmoSettings> & { rendering?: LevelRendering }) => {
+    const state = context.state.get();
+    context.state.set({
+      ...readGizmo(state),
+      rendering: readRendering(state),
+      ...change,
+    });
+    sendGizmo();
   };
   const setGizmo = (
     change: (gizmo: GizmoSettings) => Partial<GizmoSettings>,
-  ) => {
-    const gizmo = readGizmo(context.state.get());
-    context.state.set({ ...gizmo, ...change(gizmo) });
-    sendGizmo();
-  };
+  ) => setState(change(readGizmo(context.state.get())));
+  for (const rendering of levelRenderings) {
+    commands.register(renderingCommand(rendering), () => setState({ rendering }));
+  }
   commands.register(`${levelId}.space`, () =>
     setGizmo(({ space }) => ({ space: space === 'world' ? 'local' : 'world' })),
   );

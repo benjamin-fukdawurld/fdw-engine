@@ -14,6 +14,7 @@
     "@fdw/engine-graph-editing": "0.0.1",
     "@fdw/engine-input": "0.0.1",
     "@fdw/engine-input-web": "0.0.1",
+    "@fdw/engine-raytracing": "0.0.1",
     "@fdw/engine-resources": "0.0.1",
     "@fdw/engine-scene": "0.0.1",
     "@fdw/engine-scene-io": "0.0.1",

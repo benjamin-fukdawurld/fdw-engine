@@ -40,6 +40,20 @@ export type ViewportTool =
   // Another tool has the button (a tool of a plugin): only the camera moves.
   | 'none';
 
+/**
+ * How the viewport draws the level: rasterized, or with rays (where the
+ * backend traces them): the shadows, the reflections too, or all of it by
+ * the path tracer.
+ */
+export type LevelRendering = 'raster' | 'shadows' | 'reflections' | 'path';
+
+export const levelRenderings: readonly LevelRendering[] = [
+  'raster',
+  'shadows',
+  'reflections',
+  'path',
+];
+
 /** The settings of the gizmo (see TransformGizmo). */
 export interface GizmoSettings {
   readonly space: 'world' | 'local';
@@ -147,6 +161,7 @@ export type PageMessage =
   | ({ readonly type: 'level.command' } & LevelCommand)
   | { readonly type: 'level.tool'; readonly tool: ViewportTool }
   | ({ readonly type: 'level.gizmo' } & GizmoSettings)
+  | { readonly type: 'level.rendering'; readonly rendering: LevelRendering }
   | ExtensionMessage;
 
 /**
@@ -170,6 +185,8 @@ export type EngineMessage =
       readonly backend: string;
       readonly fallback?: string;
       readonly device: string;
+      // Whether the backend traces rays (the renderings of the viewport).
+      readonly rays?: boolean;
       readonly scenes: readonly string[];
       readonly scene: string;
     }

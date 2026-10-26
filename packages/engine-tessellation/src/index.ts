@@ -5,4 +5,6 @@ export type { LevelOptions, LevelView } from './levels';
 export { PatchValues, patchVertex } from './graph';
 export type { PatchDisplacement, PatchVertex } from './graph';
 export { PatchSurface } from './PatchSurface';
+export { patchMesh } from './patchMesh';
+export type { PatchMeshDisplacement } from './patchMesh';
 export type { PatchSurfaceOptions, PatchSurfaceStats } from './PatchSurface';
