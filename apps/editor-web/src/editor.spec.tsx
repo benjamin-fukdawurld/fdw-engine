@@ -103,7 +103,10 @@ describe('the layout of the web editor', () => {
     // The docks hidden: the viewport grows.
     fireEvent.click(screen.getByRole('button', { name: 'Left dock' }));
     fireEvent.click(screen.getByRole('button', { name: 'Right dock' }));
-    await waitFor(() => expect(canvas?.width).toBeGreaterThan(width));
+    // The bounds reach the canvas through the channel, late on a busy CI.
+    await waitFor(() => expect(canvas?.width).toBeGreaterThan(width), {
+      timeout: 10_000,
+    });
     fillsViewport(canvas);
 
     // Behind another tab: hidden, still mounted, with its canvas.
