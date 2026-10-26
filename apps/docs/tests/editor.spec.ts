@@ -133,36 +133,52 @@ test('the material of the tutorial, edited live', async ({ page }, info) => {
   ).toHaveCount(0);
 });
 
+// The game saturates SwiftShader: its GPU work outlives the page and stalls
+// the next context of the same browser. Its tests have their own browser.
+const ownBrowser = test.extend({
+  context: async (
+    { playwright, browserName, launchOptions, baseURL, viewport },
+    use,
+  ) => {
+    const browser = await playwright[browserName].launch(launchOptions);
+    await use(await browser.newContext({ baseURL, viewport }));
+    await browser.close();
+  },
+});
+
 for (const [name, path, graph] of [
   ['behavior', 'editor/debugging-a-behavior/', 'Enemies'],
   ['animation', 'editor/animating-in-the-editor/', 'hero animation'],
 ] as const) {
-  test.slow();
-  test(`the ${name} graph of the game, in its tutorial`, async ({
-    page,
-  }, info) => {
-    const frame = await openEditor(page, path, info.project.name);
-    // Listed once the game has loaded its characters.
-    await expect(
-      frame
-        .getByRole('combobox', { name: new RegExp(`${name} graph shown`, 'i') })
-        .locator('option:checked'),
-    ).toHaveText(graph, { timeout: 120_000 });
-    await expect(frame.getByText('live', { exact: true })).toBeVisible();
-    if (name === 'behavior') {
-      await frame.getByRole('button', { name: 'Debug' }).click();
+  ownBrowser(
+    `the ${name} graph of the game, in its tutorial`,
+    async ({ page }, info) => {
+      ownBrowser.slow();
+      const frame = await openEditor(page, path, info.project.name);
+      // Listed once the game has loaded its characters.
       await expect(
-        frame.getByRole('button', { name: 'Continue' }),
-      ).toBeVisible();
-      await expect(
-        frame.getByRole('status').filter({ hasText: 'Running' }),
-      ).toBeVisible();
-    } else {
-      // The machine of the hero, in its view.
-      await frame.getByRole('group', { name: 'body' }).dblclick();
-      await expect(
-        frame.getByRole('button', { name: 'State move' }),
-      ).toBeVisible();
-    }
-  });
+        frame
+          .getByRole('combobox', {
+            name: new RegExp(`${name} graph shown`, 'i'),
+          })
+          .locator('option:checked'),
+      ).toHaveText(graph, { timeout: 120_000 });
+      await expect(frame.getByText('live', { exact: true })).toBeVisible();
+      if (name === 'behavior') {
+        await frame.getByRole('button', { name: 'Debug' }).click();
+        await expect(
+          frame.getByRole('button', { name: 'Continue' }),
+        ).toBeVisible();
+        await expect(
+          frame.getByRole('status').filter({ hasText: 'Running' }),
+        ).toBeVisible();
+      } else {
+        // The machine of the hero, in its view.
+        await frame.getByRole('group', { name: 'body' }).dblclick();
+        await expect(
+          frame.getByRole('button', { name: 'State move' }),
+        ).toBeVisible();
+      }
+    },
+  );
 }
