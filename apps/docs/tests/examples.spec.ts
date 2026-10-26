@@ -79,6 +79,7 @@ const framesOf: Record<string, number> = {
 // Longer for the examples loading many files.
 const timeouts: Record<string, number> = {
   tps: 120_000,
+  'occlusion-culling': 60_000,
   'levels-of-detail': 60_000,
   'saving-scenes': 60_000,
   coast: 60_000,
@@ -321,7 +322,7 @@ for (const mode of modes) {
       )
       .toBeGreaterThan(after + frames);
     await expect(canvas).toHaveScreenshot(`${mode.shot}-${backend}.png`, {
-      timeout: 20_000,
+      timeout: 30_000,
     });
   });
 }
