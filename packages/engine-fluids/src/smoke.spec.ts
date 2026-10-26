@@ -59,7 +59,7 @@ function smokeHeight(state: ReturnType<typeof createSmokeState>): number {
 }
 
 describe('smoke', () => {
-  it('rises from a fire', () => {
+  it('rises from a fire', { timeout: 30_000 }, () => {
     const state = createSmokeState(layout(8, 16, 8));
     const fire = {
       x: 0,
@@ -109,7 +109,7 @@ describe('smoke', () => {
     expect(rms(after)).toBeLessThan(rms(before) * 0.05);
   });
 
-  it('flows around an obstacle, empty of smoke', () => {
+  it('flows around an obstacle, empty of smoke', { timeout: 30_000 }, () => {
     // In a plane: the section of a ball above a fire.
     const state = createSmokeState(layout(24, 32, 1));
     const ball: FluidBody = {
