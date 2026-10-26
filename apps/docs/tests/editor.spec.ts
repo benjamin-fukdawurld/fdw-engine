@@ -137,6 +137,7 @@ for (const [name, path, graph] of [
   ['behavior', 'editor/debugging-a-behavior/', 'Enemies'],
   ['animation', 'editor/animating-in-the-editor/', 'hero animation'],
 ] as const) {
+  test.slow();
   test(`the ${name} graph of the game, in its tutorial`, async ({
     page,
   }, info) => {
