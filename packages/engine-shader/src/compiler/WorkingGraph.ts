@@ -88,6 +88,11 @@ export class WorkingGraph {
     return (this._incoming.get(node) ?? []).map((entry) => entry.edge);
   }
 
+  /** The nodes a node has edges to. */
+  outgoing(node: NodeId): ReadonlySet<NodeId> {
+    return this._outgoing.get(node) ?? new Set();
+  }
+
   /**
    * The source of an input of a node, or undefined when it is unconnected
    * and has no node-level default.

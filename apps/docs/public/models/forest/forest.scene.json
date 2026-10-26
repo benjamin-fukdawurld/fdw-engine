@@ -56639,194 +56639,222 @@
           "params": {},
           "defaults": { "b": 1 }
         },
-        { "id": "n308", "type": "std.perFragment", "params": {} },
+        {
+          "id": "n308",
+          "type": "output.attribute",
+          "params": { "semantic": "patchLevel" }
+        },
         {
           "id": "n309",
-          "type": "std.add",
-          "params": {},
-          "defaults": { "b": [-0.00390625, 0] }
+          "type": "input.attribute",
+          "params": {
+            "semantic": "uv",
+            "type": { "kind": "vector", "size": 2, "scalar": "f32" }
+          }
         },
-        { "id": "n310", "type": "std.textureSample", "params": {} },
+        { "id": "n310", "type": "std.perFragment", "params": {} },
         {
           "id": "n311",
           "type": "std.add",
           "params": {},
-          "defaults": { "b": [0.00390625, 0] }
+          "defaults": { "b": [-0.00390625, 0] }
         },
         { "id": "n312", "type": "std.textureSample", "params": {} },
-        { "id": "n313", "type": "std.sub", "params": {} },
         {
-          "id": "n314",
+          "id": "n313",
+          "type": "std.add",
+          "params": {},
+          "defaults": { "b": [0.00390625, 0] }
+        },
+        { "id": "n314", "type": "std.textureSample", "params": {} },
+        { "id": "n315", "type": "std.sub", "params": {} },
+        {
+          "id": "n316",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 10 }
         },
-        {
-          "id": "n315",
-          "type": "std.add",
-          "params": {},
-          "defaults": { "b": [0, -0.00390625] }
-        },
-        { "id": "n316", "type": "std.textureSample", "params": {} },
         {
           "id": "n317",
           "type": "std.add",
           "params": {},
-          "defaults": { "b": [0, 0.00390625] }
+          "defaults": { "b": [0, -0.00390625] }
         },
         { "id": "n318", "type": "std.textureSample", "params": {} },
-        { "id": "n319", "type": "std.sub", "params": {} },
         {
-          "id": "n320",
+          "id": "n319",
+          "type": "std.add",
+          "params": {},
+          "defaults": { "b": [0, 0.00390625] }
+        },
+        { "id": "n320", "type": "std.textureSample", "params": {} },
+        { "id": "n321", "type": "std.sub", "params": {} },
+        {
+          "id": "n322",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 10 }
         },
         {
-          "id": "n321",
+          "id": "n323",
           "type": "std.vec3",
           "params": {},
           "defaults": { "y": 1 }
         },
-        { "id": "n322", "type": "std.normalize", "params": {} },
+        { "id": "n324", "type": "std.normalize", "params": {} },
         {
-          "id": "n323",
+          "id": "n325",
+          "type": "std.add",
+          "params": {},
+          "defaults": { "b": [0, 0] }
+        },
+        { "id": "n326", "type": "std.textureSample", "params": {} },
+        {
+          "id": "n327",
+          "type": "input.attribute",
+          "params": {
+            "semantic": "patchLevel",
+            "type": { "kind": "scalar", "scalar": "f32" }
+          }
+        },
+        {
+          "id": "n328",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 128 }
         },
         {
-          "id": "n324",
+          "id": "n329",
           "type": "input.sampler",
           "params": { "name": "groundSampler" },
           "label": "groundSampler"
         },
-        { "id": "n325", "type": "mapping.worldPosition", "params": {} },
+        { "id": "n330", "type": "mapping.worldPosition", "params": {} },
         {
-          "id": "n326",
+          "id": "n331",
           "type": "std.div",
           "params": {},
           "defaults": { "b": 23 }
         },
         {
-          "id": "n327",
+          "id": "n332",
           "type": "noise.fbm",
           "params": { "noise": "simplex", "octaves": 3 },
           "defaults": { "seed": 11 }
         },
         {
-          "id": "n328",
+          "id": "n333",
           "type": "std.smoothstep",
           "params": {},
           "defaults": { "low": -0.35, "high": 0.45 }
         },
         {
-          "id": "n329",
+          "id": "n334",
           "type": "input.texture",
           "params": { "name": "groundColor" },
           "label": "groundColor"
         },
-        { "id": "n330", "type": "std.textureSample", "params": {} },
+        { "id": "n335", "type": "std.textureSample", "params": {} },
         {
-          "id": "n331",
+          "id": "n336",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.37 }
         },
         {
-          "id": "n332",
+          "id": "n337",
           "type": "input.texture",
           "params": { "name": "groundColor" },
           "label": "groundColor"
         },
-        { "id": "n333", "type": "std.textureSample", "params": {} },
+        { "id": "n338", "type": "std.textureSample", "params": {} },
         {
-          "id": "n334",
+          "id": "n339",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.6 }
         },
-        { "id": "n335", "type": "std.vec3", "params": {} },
-        { "id": "n336", "type": "std.mix", "params": {} },
-        { "id": "n337", "type": "std.vec3", "params": {} },
+        { "id": "n340", "type": "std.vec3", "params": {} },
+        { "id": "n341", "type": "std.mix", "params": {} },
+        { "id": "n342", "type": "std.vec3", "params": {} },
         {
-          "id": "n338",
+          "id": "n343",
           "type": "std.mix",
           "params": {},
           "defaults": { "a": [0.58, 0.68, 0.52], "b": [0.72, 0.66, 0.55] }
         },
-        { "id": "n339", "type": "std.mul", "params": {} },
+        { "id": "n344", "type": "std.mul", "params": {} },
         {
-          "id": "n340",
+          "id": "n345",
           "type": "input.texture",
           "params": { "name": "rock" },
           "label": "rock"
         },
         {
-          "id": "n341",
+          "id": "n346",
           "type": "mapping.triplanarTexture",
           "params": {},
           "defaults": { "scale": 0.16666666666666666, "sharpness": 6 }
         },
         {
-          "id": "n342",
+          "id": "n347",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.08 }
         },
-        { "id": "n343", "type": "std.add", "params": {} },
+        { "id": "n348", "type": "std.add", "params": {} },
         {
-          "id": "n344",
+          "id": "n349",
           "type": "std.smoothstep",
           "params": {},
           "defaults": { "low": 0.68, "high": 0.86 }
         },
         {
-          "id": "n345",
+          "id": "n350",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
         {
-          "id": "n346",
+          "id": "n351",
           "type": "input.texture",
           "params": { "name": "groundNormal" },
           "label": "groundNormal"
         },
-        { "id": "n347", "type": "std.textureSample", "params": {} },
-        { "id": "n348", "type": "macro.normalMapping", "params": {} },
+        { "id": "n352", "type": "std.textureSample", "params": {} },
+        { "id": "n353", "type": "macro.normalMapping", "params": {} },
         {
-          "id": "n349",
+          "id": "n354",
           "type": "macro.bumpMapping",
           "params": {},
           "defaults": { "scale": 0.35 }
         },
         {
-          "id": "n350",
+          "id": "n355",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": [0.85, 0.83, 0.8] }
         },
-        { "id": "n351", "type": "std.vec3", "params": {} },
-        { "id": "n352", "type": "std.mix", "params": {} },
+        { "id": "n356", "type": "std.vec3", "params": {} },
+        { "id": "n357", "type": "std.mix", "params": {} },
         {
-          "id": "n353",
+          "id": "n358",
           "type": "input.texture",
           "params": { "name": "groundRoughness" },
           "label": "groundRoughness"
         },
-        { "id": "n354", "type": "std.textureSample", "params": {} },
+        { "id": "n359", "type": "std.textureSample", "params": {} },
         {
-          "id": "n355",
+          "id": "n360",
           "type": "std.mix",
           "params": {},
           "defaults": { "b": 0.8 }
         },
-        { "id": "n356", "type": "std.vec3", "params": {} },
-        { "id": "n357", "type": "std.mix", "params": {} },
-        { "id": "n358", "type": "std.normalize", "params": {} },
+        { "id": "n361", "type": "std.vec3", "params": {} },
+        { "id": "n362", "type": "std.mix", "params": {} },
+        { "id": "n363", "type": "std.normalize", "params": {} },
         {
-          "id": "n359",
+          "id": "n364",
           "type": "output.surface",
           "params": { "shadingModel": "pbr" },
           "defaults": { "metallic": 0 }
@@ -58678,27 +58706,15 @@
           "to": { "node": "n307", "port": "a" }
         },
         {
-          "from": { "node": "n230", "port": "result" },
+          "from": { "node": "n307", "port": "result" },
           "to": { "node": "n308", "port": "value" }
         },
         {
-          "from": { "node": "n308", "port": "result" },
-          "to": { "node": "n309", "port": "a" }
+          "from": { "node": "n309", "port": "value" },
+          "to": { "node": "n310", "port": "value" }
         },
         {
-          "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n310", "port": "texture" }
-        },
-        {
-          "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n310", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n309", "port": "result" },
-          "to": { "node": "n310", "port": "uv" }
-        },
-        {
-          "from": { "node": "n308", "port": "result" },
+          "from": { "node": "n310", "port": "result" },
           "to": { "node": "n311", "port": "a" }
         },
         {
@@ -58715,36 +58731,36 @@
         },
         {
           "from": { "node": "n310", "port": "result" },
-          "to": { "node": "n313", "port": "a" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n312", "port": "result" },
-          "to": { "node": "n313", "port": "b" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n313", "port": "result" },
-          "to": { "node": "n314", "port": "a" }
-        },
-        {
-          "from": { "node": "n308", "port": "result" },
-          "to": { "node": "n315", "port": "a" }
+          "to": { "node": "n313", "port": "a" }
         },
         {
           "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n316", "port": "texture" }
+          "to": { "node": "n314", "port": "texture" }
         },
         {
           "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n316", "port": "sampler" }
+          "to": { "node": "n314", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n313", "port": "result" },
+          "to": { "node": "n314", "port": "uv" }
+        },
+        {
+          "from": { "node": "n312", "port": "result" },
+          "to": { "node": "n315", "port": "a" },
+          "swizzle": "x"
+        },
+        {
+          "from": { "node": "n314", "port": "result" },
+          "to": { "node": "n315", "port": "b" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n315", "port": "result" },
-          "to": { "node": "n316", "port": "uv" }
+          "to": { "node": "n316", "port": "a" }
         },
         {
-          "from": { "node": "n308", "port": "result" },
+          "from": { "node": "n310", "port": "result" },
           "to": { "node": "n317", "port": "a" }
         },
         {
@@ -58760,269 +58776,256 @@
           "to": { "node": "n318", "port": "uv" }
         },
         {
-          "from": { "node": "n316", "port": "result" },
-          "to": { "node": "n319", "port": "a" },
-          "swizzle": "x"
+          "from": { "node": "n310", "port": "result" },
+          "to": { "node": "n319", "port": "a" }
         },
         {
-          "from": { "node": "n318", "port": "result" },
-          "to": { "node": "n319", "port": "b" },
-          "swizzle": "x"
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n320", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n320", "port": "sampler" }
         },
         {
           "from": { "node": "n319", "port": "result" },
-          "to": { "node": "n320", "port": "a" }
+          "to": { "node": "n320", "port": "uv" }
         },
         {
-          "from": { "node": "n314", "port": "result" },
-          "to": { "node": "n321", "port": "x" }
+          "from": { "node": "n318", "port": "result" },
+          "to": { "node": "n321", "port": "a" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n320", "port": "result" },
-          "to": { "node": "n321", "port": "z" }
+          "to": { "node": "n321", "port": "b" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n321", "port": "result" },
-          "to": { "node": "n322", "port": "x" }
+          "to": { "node": "n322", "port": "a" }
         },
         {
-          "from": { "node": "n308", "port": "result" },
-          "to": { "node": "n323", "port": "a" }
+          "from": { "node": "n316", "port": "result" },
+          "to": { "node": "n323", "port": "x" }
         },
         {
-          "from": { "node": "n325", "port": "value" },
-          "to": { "node": "n326", "port": "a" },
+          "from": { "node": "n322", "port": "result" },
+          "to": { "node": "n323", "port": "z" }
+        },
+        {
+          "from": { "node": "n323", "port": "result" },
+          "to": { "node": "n324", "port": "x" }
+        },
+        {
+          "from": { "node": "n310", "port": "result" },
+          "to": { "node": "n325", "port": "a" }
+        },
+        {
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n326", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n326", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n325", "port": "result" },
+          "to": { "node": "n326", "port": "uv" }
+        },
+        {
+          "from": { "node": "n310", "port": "result" },
+          "to": { "node": "n328", "port": "a" }
+        },
+        {
+          "from": { "node": "n330", "port": "value" },
+          "to": { "node": "n331", "port": "a" },
           "swizzle": "xz"
         },
         {
-          "from": { "node": "n326", "port": "result" },
-          "to": { "node": "n327", "port": "point" }
-        },
-        {
-          "from": { "node": "n327", "port": "value" },
-          "to": { "node": "n328", "port": "x" }
-        },
-        {
-          "from": { "node": "n329", "port": "value" },
-          "to": { "node": "n330", "port": "texture" }
-        },
-        {
-          "from": { "node": "n324", "port": "value" },
-          "to": { "node": "n330", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n323", "port": "result" },
-          "to": { "node": "n330", "port": "uv" }
-        },
-        {
-          "from": { "node": "n323", "port": "result" },
-          "to": { "node": "n331", "port": "a" }
+          "from": { "node": "n331", "port": "result" },
+          "to": { "node": "n332", "port": "point" }
         },
         {
           "from": { "node": "n332", "port": "value" },
-          "to": { "node": "n333", "port": "texture" }
+          "to": { "node": "n333", "port": "x" }
         },
         {
-          "from": { "node": "n324", "port": "value" },
-          "to": { "node": "n333", "port": "sampler" }
+          "from": { "node": "n334", "port": "value" },
+          "to": { "node": "n335", "port": "texture" }
         },
         {
-          "from": { "node": "n331", "port": "result" },
-          "to": { "node": "n333", "port": "uv" }
-        },
-        {
-          "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n334", "port": "a" }
-        },
-        {
-          "from": { "node": "n334", "port": "result" },
-          "to": { "node": "n335", "port": "x" }
-        },
-        {
-          "from": { "node": "n334", "port": "result" },
-          "to": { "node": "n335", "port": "y" }
-        },
-        {
-          "from": { "node": "n334", "port": "result" },
-          "to": { "node": "n335", "port": "z" }
-        },
-        {
-          "from": { "node": "n330", "port": "result" },
-          "to": { "node": "n336", "port": "a" },
-          "swizzle": "rgb"
-        },
-        {
-          "from": { "node": "n333", "port": "result" },
-          "to": { "node": "n336", "port": "b" },
-          "swizzle": "rgb"
-        },
-        {
-          "from": { "node": "n335", "port": "result" },
-          "to": { "node": "n336", "port": "t" }
+          "from": { "node": "n329", "port": "value" },
+          "to": { "node": "n335", "port": "sampler" }
         },
         {
           "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n337", "port": "x" }
+          "to": { "node": "n335", "port": "uv" }
         },
         {
           "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n337", "port": "y" }
+          "to": { "node": "n336", "port": "a" }
         },
         {
-          "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n337", "port": "z" }
+          "from": { "node": "n337", "port": "value" },
+          "to": { "node": "n338", "port": "texture" }
         },
         {
-          "from": { "node": "n337", "port": "result" },
-          "to": { "node": "n338", "port": "t" }
+          "from": { "node": "n329", "port": "value" },
+          "to": { "node": "n338", "port": "sampler" }
         },
         {
           "from": { "node": "n336", "port": "result" },
+          "to": { "node": "n338", "port": "uv" }
+        },
+        {
+          "from": { "node": "n333", "port": "result" },
           "to": { "node": "n339", "port": "a" }
         },
         {
-          "from": { "node": "n338", "port": "result" },
-          "to": { "node": "n339", "port": "b" }
-        },
-        {
-          "from": { "node": "n340", "port": "value" },
-          "to": { "node": "n341", "port": "texture" }
-        },
-        {
-          "from": { "node": "n324", "port": "value" },
-          "to": { "node": "n341", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n325", "port": "value" },
-          "to": { "node": "n341", "port": "position" }
-        },
-        {
-          "from": { "node": "n322", "port": "result" },
-          "to": { "node": "n341", "port": "normal" }
-        },
-        {
-          "from": { "node": "n327", "port": "value" },
-          "to": { "node": "n342", "port": "a" }
-        },
-        {
-          "from": { "node": "n322", "port": "result" },
-          "to": { "node": "n343", "port": "a" },
-          "swizzle": "y"
-        },
-        {
-          "from": { "node": "n342", "port": "result" },
-          "to": { "node": "n343", "port": "b" }
-        },
-        {
-          "from": { "node": "n343", "port": "result" },
-          "to": { "node": "n344", "port": "x" }
-        },
-        {
-          "from": { "node": "n344", "port": "result" },
-          "to": { "node": "n345", "port": "b" }
-        },
-        {
-          "from": { "node": "n346", "port": "value" },
-          "to": { "node": "n347", "port": "texture" }
-        },
-        {
-          "from": { "node": "n324", "port": "value" },
-          "to": { "node": "n347", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n323", "port": "result" },
-          "to": { "node": "n347", "port": "uv" }
-        },
-        {
-          "from": { "node": "n347", "port": "result" },
-          "to": { "node": "n348", "port": "sample" },
-          "swizzle": "rgb"
-        },
-        {
-          "from": { "node": "n323", "port": "result" },
-          "to": { "node": "n348", "port": "uv" }
-        },
-        {
-          "from": { "node": "n322", "port": "result" },
-          "to": { "node": "n348", "port": "normal" }
-        },
-        {
-          "from": { "node": "n341", "port": "color" },
-          "to": { "node": "n349", "port": "height" },
-          "swizzle": "a"
-        },
-        {
-          "from": { "node": "n322", "port": "result" },
-          "to": { "node": "n349", "port": "normal" }
-        },
-        {
-          "from": { "node": "n341", "port": "color" },
-          "to": { "node": "n350", "port": "a" },
-          "swizzle": "rgb"
-        },
-        {
-          "from": { "node": "n345", "port": "result" },
-          "to": { "node": "n351", "port": "x" }
-        },
-        {
-          "from": { "node": "n345", "port": "result" },
-          "to": { "node": "n351", "port": "y" }
-        },
-        {
-          "from": { "node": "n345", "port": "result" },
-          "to": { "node": "n351", "port": "z" }
+          "from": { "node": "n339", "port": "result" },
+          "to": { "node": "n340", "port": "x" }
         },
         {
           "from": { "node": "n339", "port": "result" },
-          "to": { "node": "n352", "port": "a" }
+          "to": { "node": "n340", "port": "y" }
+        },
+        {
+          "from": { "node": "n339", "port": "result" },
+          "to": { "node": "n340", "port": "z" }
+        },
+        {
+          "from": { "node": "n335", "port": "result" },
+          "to": { "node": "n341", "port": "a" },
+          "swizzle": "rgb"
+        },
+        {
+          "from": { "node": "n338", "port": "result" },
+          "to": { "node": "n341", "port": "b" },
+          "swizzle": "rgb"
+        },
+        {
+          "from": { "node": "n340", "port": "result" },
+          "to": { "node": "n341", "port": "t" }
+        },
+        {
+          "from": { "node": "n333", "port": "result" },
+          "to": { "node": "n342", "port": "x" }
+        },
+        {
+          "from": { "node": "n333", "port": "result" },
+          "to": { "node": "n342", "port": "y" }
+        },
+        {
+          "from": { "node": "n333", "port": "result" },
+          "to": { "node": "n342", "port": "z" }
+        },
+        {
+          "from": { "node": "n342", "port": "result" },
+          "to": { "node": "n343", "port": "t" }
+        },
+        {
+          "from": { "node": "n341", "port": "result" },
+          "to": { "node": "n344", "port": "a" }
+        },
+        {
+          "from": { "node": "n343", "port": "result" },
+          "to": { "node": "n344", "port": "b" }
+        },
+        {
+          "from": { "node": "n345", "port": "value" },
+          "to": { "node": "n346", "port": "texture" }
+        },
+        {
+          "from": { "node": "n329", "port": "value" },
+          "to": { "node": "n346", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n330", "port": "value" },
+          "to": { "node": "n346", "port": "position" }
+        },
+        {
+          "from": { "node": "n324", "port": "result" },
+          "to": { "node": "n346", "port": "normal" }
+        },
+        {
+          "from": { "node": "n332", "port": "value" },
+          "to": { "node": "n347", "port": "a" }
+        },
+        {
+          "from": { "node": "n324", "port": "result" },
+          "to": { "node": "n348", "port": "a" },
+          "swizzle": "y"
+        },
+        {
+          "from": { "node": "n347", "port": "result" },
+          "to": { "node": "n348", "port": "b" }
+        },
+        {
+          "from": { "node": "n348", "port": "result" },
+          "to": { "node": "n349", "port": "x" }
+        },
+        {
+          "from": { "node": "n349", "port": "result" },
+          "to": { "node": "n350", "port": "b" }
+        },
+        {
+          "from": { "node": "n351", "port": "value" },
+          "to": { "node": "n352", "port": "texture" }
+        },
+        {
+          "from": { "node": "n329", "port": "value" },
+          "to": { "node": "n352", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n328", "port": "result" },
+          "to": { "node": "n352", "port": "uv" }
+        },
+        {
+          "from": { "node": "n352", "port": "result" },
+          "to": { "node": "n353", "port": "sample" },
+          "swizzle": "rgb"
+        },
+        {
+          "from": { "node": "n328", "port": "result" },
+          "to": { "node": "n353", "port": "uv" }
+        },
+        {
+          "from": { "node": "n324", "port": "result" },
+          "to": { "node": "n353", "port": "normal" }
+        },
+        {
+          "from": { "node": "n346", "port": "color" },
+          "to": { "node": "n354", "port": "height" },
+          "swizzle": "a"
+        },
+        {
+          "from": { "node": "n324", "port": "result" },
+          "to": { "node": "n354", "port": "normal" }
+        },
+        {
+          "from": { "node": "n346", "port": "color" },
+          "to": { "node": "n355", "port": "a" },
+          "swizzle": "rgb"
         },
         {
           "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n352", "port": "b" }
-        },
-        {
-          "from": { "node": "n351", "port": "result" },
-          "to": { "node": "n352", "port": "t" }
-        },
-        {
-          "from": { "node": "n353", "port": "value" },
-          "to": { "node": "n354", "port": "texture" }
-        },
-        {
-          "from": { "node": "n324", "port": "value" },
-          "to": { "node": "n354", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n323", "port": "result" },
-          "to": { "node": "n354", "port": "uv" }
-        },
-        {
-          "from": { "node": "n354", "port": "result" },
-          "to": { "node": "n355", "port": "a" },
-          "swizzle": "r"
-        },
-        {
-          "from": { "node": "n345", "port": "result" },
-          "to": { "node": "n355", "port": "t" }
-        },
-        {
-          "from": { "node": "n345", "port": "result" },
           "to": { "node": "n356", "port": "x" }
         },
         {
-          "from": { "node": "n345", "port": "result" },
+          "from": { "node": "n350", "port": "result" },
           "to": { "node": "n356", "port": "y" }
         },
         {
-          "from": { "node": "n345", "port": "result" },
+          "from": { "node": "n350", "port": "result" },
           "to": { "node": "n356", "port": "z" }
         },
         {
-          "from": { "node": "n348", "port": "normal" },
+          "from": { "node": "n344", "port": "result" },
           "to": { "node": "n357", "port": "a" }
         },
         {
-          "from": { "node": "n349", "port": "normal" },
+          "from": { "node": "n355", "port": "result" },
           "to": { "node": "n357", "port": "b" }
         },
         {
@@ -59030,20 +59033,65 @@
           "to": { "node": "n357", "port": "t" }
         },
         {
+          "from": { "node": "n358", "port": "value" },
+          "to": { "node": "n359", "port": "texture" }
+        },
+        {
+          "from": { "node": "n329", "port": "value" },
+          "to": { "node": "n359", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n328", "port": "result" },
+          "to": { "node": "n359", "port": "uv" }
+        },
+        {
+          "from": { "node": "n359", "port": "result" },
+          "to": { "node": "n360", "port": "a" },
+          "swizzle": "r"
+        },
+        {
+          "from": { "node": "n350", "port": "result" },
+          "to": { "node": "n360", "port": "t" }
+        },
+        {
+          "from": { "node": "n350", "port": "result" },
+          "to": { "node": "n361", "port": "x" }
+        },
+        {
+          "from": { "node": "n350", "port": "result" },
+          "to": { "node": "n361", "port": "y" }
+        },
+        {
+          "from": { "node": "n350", "port": "result" },
+          "to": { "node": "n361", "port": "z" }
+        },
+        {
+          "from": { "node": "n353", "port": "normal" },
+          "to": { "node": "n362", "port": "a" }
+        },
+        {
+          "from": { "node": "n354", "port": "normal" },
+          "to": { "node": "n362", "port": "b" }
+        },
+        {
+          "from": { "node": "n361", "port": "result" },
+          "to": { "node": "n362", "port": "t" }
+        },
+        {
+          "from": { "node": "n362", "port": "result" },
+          "to": { "node": "n363", "port": "x" }
+        },
+        {
           "from": { "node": "n357", "port": "result" },
-          "to": { "node": "n358", "port": "x" }
+          "to": { "node": "n364", "port": "baseColor" }
         },
         {
-          "from": { "node": "n352", "port": "result" },
-          "to": { "node": "n359", "port": "baseColor" }
+          "from": { "node": "n360", "port": "result" },
+          "to": { "node": "n364", "port": "roughness" }
         },
         {
-          "from": { "node": "n355", "port": "result" },
-          "to": { "node": "n359", "port": "roughness" }
-        },
-        {
-          "from": { "node": "n358", "port": "result" },
-          "to": { "node": "n359", "port": "normal" }
+          "from": { "node": "n363", "port": "result" },
+          "to": { "node": "n364", "port": "normal" }
         }
       ]
     }

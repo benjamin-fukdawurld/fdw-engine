@@ -32,6 +32,9 @@ export interface ComputeRunnerOptions {
   // destroyed. More than the groups a submission binds (with record): those
   // of its first dispatches would be freed before it. Default 256.
   readonly bindGroups?: number;
+  // The programs tracing rays as ray tracing pipelines, where the backend
+  // has them (see ComputePipelineDescriptor.rayTracing). Default false.
+  readonly rayTracing?: boolean;
 }
 
 const isUniformValue = (value: MaterialValue | undefined): boolean =>
@@ -61,12 +64,14 @@ export class ComputeRunner {
   private readonly _ids = new WeakMap<object, number>();
   private _nextId = 1;
   private readonly _maxGroups: number;
+  private readonly _rayTracing: boolean;
 
   constructor(
     readonly backend: RenderBackend,
     options: ComputeRunnerOptions = {},
   ) {
     this._maxGroups = options.bindGroups ?? 256;
+    this._rayTracing = options.rayTracing ?? false;
   }
 
   // Records and submits a dispatch of the program. Its results can be read
@@ -90,7 +95,10 @@ export class ComputeRunner {
     const { pipelines } = this.backend;
     let pipeline = this._pipelines.get(program.programKey);
     if (!pipeline) {
-      pipeline = pipelines.createComputePipeline({ program });
+      pipeline = pipelines.createComputePipeline({
+        program,
+        ...(this._rayTracing ? { rayTracing: true } : {}),
+      });
       this._pipelines.set(program.programKey, pipeline);
     }
     pass.setPipeline(pipeline);

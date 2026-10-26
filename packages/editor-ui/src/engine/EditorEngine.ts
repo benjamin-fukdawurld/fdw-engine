@@ -10,6 +10,7 @@ import {
   levelScene,
   type EngineMessage,
   type GizmoSettings,
+  type LevelRendering,
   type PageMessage,
   type ViewportBounds,
   type ViewportTool,
@@ -161,6 +162,7 @@ export class EditorEngine {
   // The tool and the gizmo of the page, for the views to come.
   #tool: ViewportTool = 'select';
   #gizmo: GizmoSettings = { space: 'world', pivot: 'center', snapping: false };
+  #rendering: LevelRendering = 'raster';
   // The level files opened or saved one after the other.
   #levelQueue: Promise<void> = Promise.resolve();
   readonly #extensions = new Map<string, EngineExtension>();
@@ -196,6 +198,7 @@ export class EditorEngine {
       backend: backendName,
       ...(fallback !== undefined && { fallback }),
       device: this.#platform.device,
+      rays: this.#platform.backend.capabilities?.rayQuery === true,
       scenes: [levelScene, ...Object.keys(this.#platform.scenes)],
       scene: this.#requested,
     });
@@ -265,6 +268,10 @@ export class EditorEngine {
         this.#view?.setGizmo(gizmo);
         break;
       }
+      case 'level.rendering':
+        this.#rendering = message.rendering;
+        this.#view?.setRendering(message.rendering);
+        break;
       case 'extension': {
         const extension = this.#extensions.get(message.extension);
         try {
@@ -460,6 +467,7 @@ export class EditorEngine {
         post: this.#postLevel,
         tool: this.#tool,
         gizmo: this.#gizmo,
+        rendering: this.#rendering,
       });
       this.#view = view;
       return {

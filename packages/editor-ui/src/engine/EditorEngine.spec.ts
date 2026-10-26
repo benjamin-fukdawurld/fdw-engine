@@ -87,6 +87,7 @@ describe('EditorEngine', () => {
       type: 'ready',
       backend: 'fake',
       device: 'Fake GPU',
+      rays: false,
       scenes: ['level', 'a', 'b'],
       scene: 'a',
     });

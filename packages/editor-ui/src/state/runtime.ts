@@ -183,7 +183,7 @@ export function createEditorRuntime({
         const state = machine.getSnapshot();
         const chrome = editor.getSnapshot().context;
         const { selection, docks, statusBar } = chrome;
-        const { backend, fallback, scene } = engine.getSnapshot().context;
+        const { backend, fallback, rays, scene } = engine.getSnapshot().context;
         const document = level.getSnapshot().context;
         const tools = toolSlots.map((slot) => state.context.tools[slot]);
         return {
@@ -199,6 +199,7 @@ export function createEditorRuntime({
           'engine.ready': backend !== '',
           'engine.backend': backend || undefined,
           'engine.fallback': fallback !== undefined,
+          'engine.rays': rays,
           'engine.scene': scene || undefined,
           'level.open': document.name !== '',
           'level.dirty': document.dirty,

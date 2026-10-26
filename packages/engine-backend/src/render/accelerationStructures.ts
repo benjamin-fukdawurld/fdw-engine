@@ -1,3 +1,5 @@
+import type { GpuBuffer } from '../gpu';
+
 // The acceleration structures that rays are traced against (ray.trace), on
 // the backends with the rayQuery capability: built by the GPU (Vulkan), or
 // by the backend on the CPU and traversed by code it generates (WebGPU).
@@ -11,6 +13,23 @@ export interface BottomLevelDescriptor {
   /** 3 per triangle: indices of the positions. */
   readonly indices: Uint32Array<ArrayBuffer>;
   readonly label?: string;
+  /**
+   * Its vertices move on the GPU (a skinned character): the structure can
+   * be refit to them (GpuCommandEncoder.refitBottomLevel), its triangles
+   * kept. Default false.
+   */
+  readonly dynamic?: boolean;
+}
+
+/**
+ * Where the positions of a dynamic bottom level are on the GPU: xyz
+ * (float32) of the vertex v at offset + v × stride bytes of a storage
+ * buffer, in the order of the positions it was created from.
+ */
+export interface BottomLevelVertices {
+  readonly buffer: GpuBuffer;
+  readonly offset?: number;
+  readonly stride: number;
 }
 
 /**
@@ -35,6 +54,20 @@ export interface TopLevelInstance {
   readonly transform: ArrayLike<number>;
   /** 8 bits: the rays whose mask shares a bit with it see it (0xff). */
   readonly mask?: number;
+  /**
+   * The box of the instance in the world (min xyz, max xyz) when its bottom
+   * level is refit on the GPU: the backends that build the top level on the
+   * CPU (WebGPU) cannot read it there. Default: the box of the bottom level
+   * as created, transformed.
+   */
+  readonly bounds?: ArrayLike<number>;
+  /**
+   * Whether its hits are taken as found (default true). The candidate
+   * hits of an instance that is not opaque are tested by the programs
+   * tracing with an alpha test (ray.traceAlpha), and taken as found by
+   * the others.
+   */
+  readonly opaque?: boolean;
 }
 
 export interface TopLevelDescriptor {

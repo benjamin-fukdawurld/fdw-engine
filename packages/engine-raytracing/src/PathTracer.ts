@@ -24,6 +24,8 @@ import {
   bounceKernel,
   cameraKernel,
   denoiseKernel,
+  GuideVec4s,
+  guidesKernel,
   LightVec4s,
   PathVec4s,
   presentGraph,
@@ -55,6 +57,18 @@ export interface PathTracerOptions {
       };
   /** The brightest a sample can be (luminance), against fireflies (8). */
   readonly maxRadiance?: number;
+  /**
+   * The frames a pixel keeps of its history while the camera or the scene
+   * moves (default 16): fewer, less blur and more noise in motion. Still,
+   * the frames add up without end.
+   */
+  readonly history?: number;
+  /**
+   * The kernels tracing rays as ray tracing pipelines where the backend has
+   * them (rayTracingPipeline capability: Vulkan), the ray queries otherwise
+   * (default false: the ray queries everywhere).
+   */
+  readonly rayTracingPipeline?: boolean;
   readonly sky?: PathTracerSky;
 }
 
@@ -81,7 +95,7 @@ interface Buffers {
   readonly paths: [GpuBuffer, GpuBuffer];
   readonly hits: GpuBuffer;
   readonly surfaces: GpuBuffer;
-  readonly guides: GpuBuffer;
+  readonly guides: [GpuBuffer, GpuBuffer];
   readonly accumulation: [GpuBuffer, GpuBuffer];
   readonly color: GpuBuffer;
   readonly filtered: [GpuBuffer, GpuBuffer];
@@ -151,15 +165,16 @@ export function packLights(
  * the rasterization, compiled for the points hit), then a bounce kernel
  * gathers their emission and the light of a light chosen at random, and
  * samples the next directions. The frames add up while the camera and the
- * scene do not change; an à-trous filter removes the noise of the first
- * ones.
+ * scene do not change; when they move, each pixel follows the point it
+ * sees (its history reprojected, a few frames long); an à-trous filter
+ * removes the noise of the first frames.
  */
 export class PathTracer {
   readonly renderer: Renderer;
   readonly scene: RayScene;
   private readonly _runner: ComputeRunner;
   private readonly _kernels: Record<
-    'camera' | 'trace' | 'bounce' | 'accumulate' | 'denoise',
+    'camera' | 'trace' | 'guides' | 'bounce' | 'accumulate' | 'denoise',
     Kernel
   >;
   private readonly _hits: MaterialHits;
@@ -170,11 +185,16 @@ export class PathTracer {
   private _frames = 0;
   private _accumulated = 0;
   private _signature = '';
+  // What the frames of the history depend on, besides the lighting.
+  private _view = '';
+  private _revision = -1;
+  private _previousViewProjection = new Float32Array(16);
   private readonly _cameras = new WeakMap<Camera, CameraCache>();
   // The owners of the dispatches with their own uniforms.
   private readonly _owners = Array.from({ length: 64 }, () => ({}));
   readonly bounces: number;
   readonly maxRadiance: number;
+  readonly history: number;
   readonly denoise: { iterations: number; colorPhi: number; frames: number } | undefined;
   sky: Required<PathTracerSky>;
 
@@ -189,7 +209,10 @@ export class PathTracer {
       throw new Error('The backend traces no rays (rayQuery capability)');
     }
     // Room for the groups of a frame: a few per material and bounce.
-    this._runner = new ComputeRunner(renderer.backend, { bindGroups: 4096 });
+    this._runner = new ComputeRunner(renderer.backend, {
+      bindGroups: 4096,
+      rayTracing: options.rayTracingPipeline ?? false,
+    });
     this._hits = new MaterialHits(renderer.backend, renderer.registry);
     const capabilities = renderer.backend.capabilities;
     const kernel = (graph: MaterialGraphData): Kernel => ({
@@ -198,6 +221,7 @@ export class PathTracer {
     this._kernels = {
       camera: kernel(cameraKernel()),
       trace: kernel(traceKernel()),
+      guides: kernel(guidesKernel()),
       bounce: kernel(bounceKernel()),
       accumulate: kernel(accumulateKernel()),
       denoise: kernel(denoiseKernel()),
@@ -205,6 +229,7 @@ export class PathTracer {
     this._present = new Material({ graph: presentGraph(), label: 'path tracer' });
     this.bounces = Math.min(16, Math.max(1, options.bounces ?? 4));
     this.maxRadiance = options.maxRadiance ?? 8;
+    this.history = Math.max(1, options.history ?? 16);
     const denoise = options.denoise ?? true;
     this.denoise = denoise
       ? {
@@ -220,21 +245,25 @@ export class PathTracer {
     };
   }
 
-  /** The frames gathered in the image since the last change. */
+  /**
+   * The frames gathered in the image since the last change (of the
+   * camera, the scene, the lights or the materials).
+   */
   get frames(): number {
     return this._accumulated;
   }
 
-  /** Starts gathering again at the next frame. */
+  /** Starts gathering again at the next frame, without history. */
   reset(): void {
     this._signature = '';
   }
 
   /**
    * Traces a frame of the scene (updated before), gathered with the
-   * previous ones while the camera, the lights, the scene and the
-   * materials do not change. The image is in `color`, a vec4 per pixel,
-   * rows from the top.
+   * previous ones: all of them while the camera and the scene do not move,
+   * the last ones (`history`) of the points seen otherwise; none when the
+   * lights or the materials change. The image is in `color`, a vec4 per
+   * pixel, rows from the top.
    */
   trace({ camera, lights = [], width, height, time = 0 }: PathTraceOptions): GpuBuffer {
     const backend = this.renderer.backend;
@@ -243,9 +272,8 @@ export class PathTracer {
     const groups = [Math.ceil(pixels / Workgroup)] as const;
     const cache = this.cameraCache(camera);
     const lightData = packLights(lights);
+    const viewProjection = cache.viewProjectionMatrix.value;
     const signature = [
-      ...cache.viewProjectionMatrix.value,
-      this.scene.revision,
       ...this.scene.materials.map((material) => material.version),
       ...lightData,
       width,
@@ -253,9 +281,16 @@ export class PathTracer {
     ].join(',');
     const reset = signature !== this._signature;
     this._signature = signature;
-    this._accumulated = reset ? 1 : this._accumulated + 1;
+    const view = viewProjection.join(',');
+    const still = !reset && view === this._view;
+    const moved = !still || this.scene.revision !== this._revision;
+    this._view = view;
+    this._revision = this.scene.revision;
+    this._accumulated = moved ? 1 : this._accumulated + 1;
     this._frame++;
     const lightBuffer = this.lightBuffer(lightData);
+    // The guides and the accumulation of this frame, and of the previous.
+    const [previous, current] = this._frames % 2 === 0 ? [0, 1] : [1, 0];
     const lightCount = countLights(lights);
 
     const encoder = backend.createCommandEncoder();
@@ -300,6 +335,7 @@ export class PathTracer {
         rays: buffers.paths[a],
         stride: PathVec4s,
         rayHits: buffers.hits,
+        raySurfaces: buffers.surfaces,
       }, owners[1]);
       this._hits.forEach(
         scene,
@@ -311,6 +347,16 @@ export class PathTracer {
         },
         dispatch,
       );
+      if (bounce === 0) {
+        dispatch(this._kernels.guides.program, {
+          skyZenith: vec3(this.sky.zenith),
+          skyHorizon: vec3(this.sky.horizon),
+          skyGround: vec3(this.sky.ground),
+          paths: buffers.paths[a],
+          raySurfaces: buffers.surfaces,
+          guides: buffers.guides[current],
+        }, owners[3]);
+      }
       dispatch(this._kernels.bounce.program, {
         ...resources,
         frame: this._frame,
@@ -321,23 +367,28 @@ export class PathTracer {
         skyHorizon: vec3(this.sky.horizon),
         skyGround: vec3(this.sky.ground),
         paths: buffers.paths[a],
-        rayHits: buffers.hits,
         raySurfaces: buffers.surfaces,
         pathsOut: buffers.paths[b],
-        guides: buffers.guides,
       }, owners[4 + bounce]);
     }
     const last = (this.bounces + 1) % 2;
-    const [from, to] = this._frames % 2 === 0 ? [0, 1] : [1, 0];
     this._frames++;
     dispatch(this._kernels.accumulate.program, {
+      width,
+      height,
       reset: reset ? 1 : 0,
+      still: still ? 1 : 0,
+      maxHistory: moved ? this.history : 1e9,
+      previousViewProjection: this._previousViewProjection,
       maxRadiance: this.maxRadiance,
       paths: buffers.paths[last],
-      accumulation: buffers.accumulation[from],
-      accumulationOut: buffers.accumulation[to],
+      guides: buffers.guides[current],
+      previousGuides: buffers.guides[previous],
+      accumulation: buffers.accumulation[previous],
+      accumulationOut: buffers.accumulation[current],
       color: buffers.color,
     }, owners[2]);
+    this._previousViewProjection.set(viewProjection);
     let image = buffers.color;
     const denoise = this.denoise;
     if (denoise && this._accumulated < denoise.frames) {
@@ -347,12 +398,12 @@ export class PathTracer {
           width,
           height,
           step: 1 << i,
-          // Less blur across colors as the frames add up.
-          colorPhi: denoise.colorPhi / Math.sqrt(this._accumulated),
+          colorPhi: denoise.colorPhi,
           first: i === 0 ? 1 : 0,
           last: i === denoise.iterations - 1 ? 1 : 0,
           input: image,
-          guides: buffers.guides,
+          guides: buffers.guides[current],
+          accumulation: buffers.accumulation[current],
           output,
         }, owners[3 + 32 + i]);
         image = output;
@@ -472,7 +523,7 @@ export class PathTracer {
       paths: pair(PathVec4s, 'paths'),
       hits: create(1, 'hits'),
       surfaces: create(RaySurfaceVec4s, 'surfaces'),
-      guides: create(2, 'guides'),
+      guides: pair(GuideVec4s, 'guides'),
       accumulation: pair(1, 'accumulation'),
       color: create(1, 'color'),
       filtered: pair(1, 'filtered'),

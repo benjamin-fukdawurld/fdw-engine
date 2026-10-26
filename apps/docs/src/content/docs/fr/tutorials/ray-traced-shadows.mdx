@@ -83,6 +83,21 @@ tournée d'un pixel à l'autre : avec 8 rayons, la pénombre est lisse de près
 et un peu granuleuse quand elle est large. Chaque rayon coûte : les
 échantillons multiplient le coût des ombres.
 
+## Les feuilles et les trous
+
+Un matériau masqué (`alphaMode: 'mask'`) coupe ses pixels sous son seuil
+d'alpha : des feuilles, des grillages, l'écran perforé de l'exemple. Les
+rayons traversent aussi les parties coupées : son ombre a les trous.
+
+`RayScene` cuit, une fois par matériau masqué (à nouveau quand ses valeurs
+changent), son **masque d'alpha** : sa surface évaluée sur ses uv, 256 ×
+256 bits, gardés dans les buffers de la scène. Les rayons des ombres, de
+l'occlusion et du path tracer testent contre lui les triangles des
+instances masquées pendant la traversée (sur Vulkan, les impacts candidats
+de la ray query ; en WebGPU, les triangles du BVH), aux uv du point : plus
+d'ombres carrées des feuilles. Ce que l'alpha lit des uv (ses textures) est
+dans le masque ; ce qu'il lit de la position ou de l'objet n'y est pas.
+
 ## Sur chaque backend
 
 Sur **Vulkan**, le GPU parcourt ses propres structures (`VK_KHR_ray_query`) :

@@ -1,6 +1,8 @@
 import type {
+  BottomLevelVertices,
   GpuAttachmentTarget,
   GpuBindGroup,
+  GpuBottomLevel,
   GpuBuffer,
   GpuCommandBuffer,
   GpuCommandEncoder,
@@ -13,7 +15,10 @@ import type {
   RenderPassDescriptor,
   GpuTopLevel,
 } from '@fdw/engine-backend';
-import { VulkanTopLevel } from './VulkanAccelerationStructures';
+import {
+  VulkanBottomLevel,
+  VulkanTopLevel,
+} from './VulkanAccelerationStructures';
 import { Commands } from '../addon';
 import { VulkanBuffer } from '../gpu/VulkanBuffer';
 import { VulkanTexture } from '../gpu/VulkanTexture';
@@ -280,6 +285,22 @@ export class VulkanCommandEncoder implements GpuCommandEncoder {
     this._writer
       .word(Commands.buildTopLevel)
       .word(unwrap(top, VulkanTopLevel, 'The top level').id);
+  }
+
+  refitBottomLevel(
+    bottom: GpuBottomLevel,
+    { buffer, offset = 0, stride }: BottomLevelVertices,
+  ): void {
+    const level = unwrap(bottom, VulkanBottomLevel, 'The bottom level');
+    if (!level.dynamic) {
+      throw new Error('Only the dynamic bottom levels are refit');
+    }
+    this._writer
+      .word(Commands.refitBottomLevel)
+      .word(level.id)
+      .word(unwrap(buffer, VulkanBuffer, 'The buffer of the vertices').id)
+      .wide(offset)
+      .word(stride);
   }
 
   finish(): GpuCommandBuffer {

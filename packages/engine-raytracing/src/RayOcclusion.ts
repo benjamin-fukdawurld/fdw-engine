@@ -65,28 +65,32 @@ function occlusionGraph(samples: number): MaterialGraphData {
     ),
   );
   const origin = s.add(position.swizzle('xyz'), s.mul(normal, 1e-3));
-  let hidden: PortHandle | number = 0;
-  for (let k = 0; k < samples; k++) {
-    const turn = s.mul(s.fract(s.add(noise, k * 0.6180339887)), 2 * Math.PI);
-    const v = (k + 0.5) / samples;
-    const r = Math.sqrt(v);
-    const direction = s.toWorld(
-      s.vec3(s.mul(s.cos(turn), r), s.mul(s.sin(turn), r), Math.sqrt(1 - v)),
-      frame,
-      normal,
-    );
-    const hit = g.traceRay({
-      origin,
-      direction,
-      tMax: radius,
-      mask: RayMasks.shadow,
-      mode: 'any',
-    });
-    hidden = s.add(
-      hidden,
-      s.select(0, 1, g.call('ray.hit', { hit })),
-    );
-  }
+  // A loop rather than unrolled rays: the traversal once in the code.
+  const hidden = g.fold(
+    s.f32(0),
+    samples,
+    (sum, index) => {
+      const k = s.convert(index, BuiltinTypes.f32);
+      const turn = s.mul(s.fract(s.add(noise, s.mul(k, 0.6180339887))), 2 * Math.PI);
+      const v = s.div(s.add(k, 0.5), samples);
+      const r = s.sqrt(v);
+      const direction = s.toWorld(
+        s.vec3(s.mul(s.cos(turn), r), s.mul(s.sin(turn), r), s.sqrt(s.sub(1, v))),
+        frame,
+        normal,
+      );
+      const hit = g.traceRay({
+        origin,
+        direction,
+        tMax: radius,
+        mask: RayMasks.shadow,
+        mode: 'any',
+        alphaTest: true,
+      });
+      return s.add(sum, s.select(0, 1, g.call('ray.hit', { hit })));
+    },
+    { label: 'hidden' },
+  );
   const open = s.select(
     1,
     s.sub(1, s.mul(hidden, 1 / samples)),

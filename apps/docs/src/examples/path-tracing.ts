@@ -13,8 +13,10 @@ import type { Example } from './runtime';
 
 // A path traced room: the light bounces off the red and green walls onto
 // the white ones, the lamp of the ceiling lights the room softly. The
-// frames add up while nothing moves, the noise fades. Click to switch
-// between the path tracer and the rasterization of the same scene.
+// frames add up while nothing moves, the noise fades; when the camera
+// moves, each pixel keeps the history of the point it sees. Click to
+// switch between the path tracer, with the camera still or moving, and
+// the rasterization of the same scene.
 const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const renderer = new Renderer(backend, {
     output: { toneMapping: 'neutral', encoding: 'srgb' },
@@ -97,13 +99,21 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
         },
       })
     : undefined;
-  let traced = tracer !== undefined;
+  const modes = tracer
+    ? (['path traced', 'path traced, moving', 'rasterized'] as const)
+    : (['rasterized'] as const);
+  let mode = 0;
   canvas.addEventListener('click', () => {
-    traced = tracer !== undefined && !traced;
+    mode = (mode + 1) % modes.length;
   });
 
   onFrame((time) => {
-    if (!tracer || !traced) {
+    // Moving: the camera sways from side to side, looking at the room.
+    const moving = modes[mode] === 'path traced, moving';
+    const sway = moving ? Math.sin(time * 0.6) * 1.2 : 0;
+    camera.position = { x: sway, y: 2, z: 7.5 };
+    camera.rotation = axisAngle(0, 1, 0, sway * 0.06);
+    if (!tracer || modes[mode] === 'rasterized') {
       renderer.render({ items, camera, surface, time, lights: [light], clearColor: { r: 0, g: 0, b: 0, a: 1 } });
       info(tracer ? 'rasterized · click to switch' : 'rasterized: tracing rays needs WebGPU');
       return;
@@ -111,7 +121,11 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     // The scene of the rays, then a frame of paths, added to the others.
     tracer.scene.update({ items });
     tracer.render({ camera, surface, lights: [light], time });
-    info(`path traced, ${tracer.frames} frames · click to switch`);
+    info(
+      moving
+        ? 'path traced, the camera moving: the history of the points seen · click to switch'
+        : `path traced, ${tracer.frames} frames · click to switch`,
+    );
   });
 };
 

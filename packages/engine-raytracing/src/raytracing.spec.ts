@@ -12,6 +12,7 @@ import {
   RayVertexVec4s,
   std,
 } from '@fdw/engine-shader';
+import { alphaMaskKernel } from './alphaMasks';
 import { rayMeshData } from './meshData';
 import { countLights, packLights } from './PathTracer';
 import {
@@ -19,6 +20,7 @@ import {
   bounceKernel,
   cameraKernel,
   denoiseKernel,
+  guidesKernel,
   LightVec4s,
   traceKernel,
 } from './kernels';
@@ -134,7 +136,15 @@ describe('the kernels', () => {
     })();
     const capabilities = { rayQuery: true } as const;
     const programs = [
-      ...[cameraKernel, traceKernel, bounceKernel, accumulateKernel, denoiseKernel].map(
+      ...[
+        cameraKernel,
+        traceKernel,
+        guidesKernel,
+        bounceKernel,
+        accumulateKernel,
+        denoiseKernel,
+        alphaMaskKernel,
+      ].map(
         (kernel) => compile(kernel(), { capabilities }),
       ),
       compile(material, { capabilities, target: 'hit' }),

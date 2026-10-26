@@ -1,6 +1,8 @@
 import type {
+  BottomLevelVertices,
   GpuAttachmentTarget,
   GpuBindGroup,
+  GpuBottomLevel,
   GpuComputePassEncoder,
   GpuComputePipeline,
   GpuBuffer,
@@ -22,7 +24,10 @@ import {
   WebGpuRenderPipeline,
 } from './WebGpuPipelineFactory';
 import { WebGpuPassTimer } from './WebGpuPassTimer';
-import { SoftwareTopLevel } from './SoftwareAccelerationStructures';
+import {
+  SoftwareBottomLevel,
+  SoftwareTopLevel,
+} from './SoftwareAccelerationStructures';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
 
 function unwrap<T>(
@@ -219,6 +224,19 @@ export class WebGpuCommandEncoder implements GpuCommandEncoder {
     if (!(top instanceof SoftwareTopLevel)) {
       throw new Error('The top level was not created by the WebGPU backend');
     }
+  }
+
+  // The software structures are refit in compute passes (SoftwareRefit).
+  refitBottomLevel(
+    bottom: GpuBottomLevel,
+    { buffer, offset = 0, stride }: BottomLevelVertices,
+  ): void {
+    unwrap(bottom, SoftwareBottomLevel, 'The bottom level').refit(
+      this._encoder,
+      unwrap(buffer, Buffer, 'The buffer of the vertices').buffer,
+      offset,
+      stride,
+    );
   }
 
   beginComputePass(label?: string, timing?: PassTiming): GpuComputePassEncoder {

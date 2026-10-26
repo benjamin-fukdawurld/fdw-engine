@@ -5,11 +5,12 @@ import type {
   TopLevelDescriptor,
   TopLevelInstance,
 } from '@fdw/engine-backend';
-import type {
-  BottomLevelHandle,
-  ContextHandle,
-  TopLevelHandle,
-  VulkanAddon,
+import {
+  BottomLevelFlags,
+  type BottomLevelHandle,
+  type ContextHandle,
+  type TopLevelHandle,
+  type VulkanAddon,
 } from '../addon';
 
 // The acceleration structures of the GPU (VK_KHR_acceleration_structure),
@@ -22,14 +23,16 @@ export class VulkanBottomLevel implements GpuBottomLevel {
   readonly label?: string;
   readonly triangleCount: number;
   readonly id: number;
+  readonly dynamic: boolean;
   private _destroyed = false;
 
   constructor(
     private readonly addon: VulkanAddon,
     readonly handle: BottomLevelHandle,
-    { indices, label }: BottomLevelDescriptor,
+    { indices, label, dynamic = false }: BottomLevelDescriptor,
   ) {
     this.triangleCount = indices.length / 3;
+    this.dynamic = dynamic;
     this.id = addon.bottomLevelId(handle);
     this.label = label;
   }
@@ -77,7 +80,7 @@ export class VulkanTopLevel implements GpuTopLevel {
     }
     const data = this._data;
     const floats = new Float32Array(data.buffer);
-    instances.forEach(({ bottom, transform, mask = 0xff }, i) => {
+    instances.forEach(({ bottom, transform, mask = 0xff, opaque }, i) => {
       if (!(bottom instanceof VulkanBottomLevel) || bottom.destroyed) {
         throw new Error(
           'A bottom level of the instances was not created by the Vulkan backend, or was destroyed',
@@ -91,7 +94,8 @@ export class VulkanTopLevel implements GpuTopLevel {
         }
       }
       data[at + 12] = bottom.id;
-      data[at + 13] = mask & 0xff;
+      // Bit 8: not opaque (see fdw_vk_instance).
+      data[at + 13] = (mask & 0xff) | (opaque === false ? 0x100 : 0);
     });
     if (this.addon.updateTopLevel(this.handle, data.subarray(0, words))) {
       this._version++;
@@ -115,6 +119,7 @@ export function createBottomLevel(
       context,
       descriptor.positions,
       descriptor.indices,
+      descriptor.dynamic ? BottomLevelFlags.dynamic : 0,
       descriptor.label,
     ),
     descriptor,

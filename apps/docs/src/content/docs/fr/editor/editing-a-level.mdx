@@ -143,7 +143,19 @@ Dans le navigateur, Chromium ouvre un dialogue pour choisir où écrire ;
 les autres navigateurs téléchargent le fichier. Sur le bureau, les
 dialogues sont ceux du système.
 
-## 9. Les autres scènes
+## 9. Rendre avec des rayons
+
+**Edit → Rendering** choisit comment le viewport dessine le niveau :
+**Rasterized** (par défaut), **Ray traced shadows** (les ombres par
+rayons), **Ray traced reflections** (les reflets, et les ombres), ou
+**Path traced** : toute l'image par rayons, qui s'éclaircit tant que la
+caméra ne bouge pas (voir [le ray tracing](/fdw-engine/fr/guides/ray-tracing/)).
+La palette de commandes les a aussi. Les rendus par rayons demandent un
+backend qui les trace : Vulkan sur le bureau, WebGPU dans le navigateur ;
+en WebGL2 ils sont désactivés. Le choix est gardé avec le layout. La
+sélection, les contours et les gizmos marchent dans tous les rendus.
+
+## 10. Les autres scènes
 
 Le menu **Scene** montre les scènes de démo dans le viewport à la place
 du niveau : la physique, la mer, le jeu dans la forêt… Elles tournent

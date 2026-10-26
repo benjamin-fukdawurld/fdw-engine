@@ -355,8 +355,11 @@ function checkSupport(
       }
     }
 
-    if (definition.id === 'ray.trace' && !capabilities.rayQuery) {
-      error('ray.trace: the backend traces no rays (rayQuery capability)');
+    if (
+      (definition.id === 'ray.trace' || definition.id === 'ray.traceAlpha') &&
+      !capabilities.rayQuery
+    ) {
+      error(`${definition.id}: the backend traces no rays (rayQuery capability)`);
     }
     if (node.type === 'std.bitcast') {
       const from = types?.inputs['value'];

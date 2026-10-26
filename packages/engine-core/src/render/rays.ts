@@ -1,4 +1,18 @@
-import type { GpuBindGroupEntry } from '@fdw/engine-backend';
+import type { GpuBindGroupEntry, GpuBuffer } from '@fdw/engine-backend';
+
+/**
+ * The vertices of a mesh moved on the GPU (Material.deformedVertices):
+ * `stride` vec4 per vertex in a storage buffer, in the order of the
+ * vertices of the mesh, the position first (xyz), the normal and the
+ * tangent at their vec4 when there. The traced scene refits the structure
+ * of the mesh to them, and reads its hits there.
+ */
+export interface DeformedVertices {
+  readonly buffer: GpuBuffer;
+  readonly stride: number;
+  readonly normal?: number;
+  readonly tangent?: number;
+}
 
 /**
  * A scene traced by rays, as the renderer binds it: its acceleration

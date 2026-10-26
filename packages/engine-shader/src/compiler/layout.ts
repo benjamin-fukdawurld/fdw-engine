@@ -395,7 +395,28 @@ export const RayInstanceFlags = {
   doubleSided: 1,
   /** Its material is transparent or masked: see its alpha. */
   alpha: 2,
+  /**
+   * Its material is masked, and its mask is in rayGeometry: the rays
+   * traced with alphaTest go through where it is cut (the foliage). The
+   * bits 8 to 31 of the flags are then the vec4 of the mask in
+   * rayGeometry (see RayAlphaMaskSize).
+   */
+  alphaTest: 4,
 } as const;
+
+/**
+ * The alpha masks of the traced scene: per masked material, its alpha cut
+ * at its cutoff in RayAlphaMaskSize × RayAlphaMaskSize bits over the
+ * [0, 1] square of its uv (repeated), rows of increasing v, 32 bits per
+ * u32, in RayAlphaMaskVec4s vec4 of rayGeometry. A bit is 1 where the
+ * material is kept. Read by the traversals of the rays traced with
+ * alphaTest at the texel nearest to the uv of the point hit.
+ *
+ * @group Program layout
+ */
+export const RayAlphaMaskSize = 256;
+/** @see RayAlphaMaskSize */
+export const RayAlphaMaskVec4s = (RayAlphaMaskSize * RayAlphaMaskSize) / 128;
 
 /**
  * The slots in group order: the built-in slots, then the custom ones sorted

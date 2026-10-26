@@ -140,7 +140,19 @@ In the browser, Chromium opens a dialog to choose where to write; the other
 browsers download the file. On the desktop, the dialogs are those of the
 system.
 
-## 9. The other scenes
+## 9. Rendering with rays
+
+**Edit → Rendering** chooses how the viewport draws the level:
+**Rasterized** (the default), **Ray traced shadows**, **Ray traced
+reflections** (the shadows too), or **Path traced**: the whole image by
+rays, clearing up while the camera stays still (see
+[ray tracing](/fdw-engine/guides/ray-tracing/)). The command palette has
+them too. The renderings by rays need a backend that traces them: Vulkan
+on the desktop, WebGPU in the browser; on WebGL2 they are disabled. The
+choice is kept with the layout. Selecting, the outlines and the gizmos
+work in every rendering.
+
+## 10. The other scenes
 
 The **Scene** menu shows the demo scenes in the viewport instead of the
 level: physics, the ocean, the game in the forest… They run with the

@@ -63,6 +63,10 @@ export class VulkanRenderBackend implements RenderBackend {
       independentBlend: loadVulkanAddon().independentBlend(device.context),
       // Ray queries in every stage, where the GPU has them.
       rayQuery: loadVulkanAddon().rayQuerySupported(device.context),
+      // And the ray tracing pipelines.
+      rayTracingPipeline: loadVulkanAddon().rayTracingPipelineSupported(
+        device.context,
+      ),
     };
     this.pipelines = new VulkanPipelineFactory(
       loadVulkanAddon(),

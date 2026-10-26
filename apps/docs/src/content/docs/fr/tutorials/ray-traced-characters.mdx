@@ -1,0 +1,99 @@
+---
+title: Les rayons sur la géométrie animée et générée
+description: Les personnages skinnés et les terrains en patchs dans la scène des rayons — les structures ajustées aux sommets que le GPU déplace, les meshes que les rayons voient à la place de ce que fait le vertex stage.
+sidebar:
+  order: 45
+---
+
+import Example from '../../../../components/Example.astro';
+
+Les rayons sont tracés contre des structures construites à partir de
+meshes. Une partie de la géométrie n'est pourtant pas dans un mesh : un
+**personnage skinné** reçoit ses sommets d'une passe de calcul à chaque
+image, un **terrain en patchs** de son vertex stage. La scène tracée suit
+les deux : l'ombre du personnage bouge avec ses jambes, les collines
+ombrent les vallées.
+
+<Example name="ray-characters" />
+
+Cliquez sur le canevas : les shadow maps, les ombres tracées par
+rayons, puis le path tracer.
+
+## Les personnages skinnés
+
+Le skinning en calcul écrit les sommets de chaque mesh skinné dans un
+buffer du GPU (`Skinning` en mode `compute` : WebGPU et Vulkan). Le
+matériau qu'il fait pour le mesh nomme ce buffer, comme **sommets
+déformés** :
+
+```ts
+// Ce que fait le skinning (on l'écrit rarement soi-même) : les sommets
+// déplacés sur le GPU, 2 ou 3 vec4 chacun (position, normale, tangente).
+const skinned = material.withGraph(graph, values, {
+  deformedVertices: { buffer, stride: 3, normal: 1, tangent: 2 },
+});
+```
+
+`RayScene` trace un tel item avec une structure du bas **dynamique**,
+construite une fois depuis le mesh au repos, puis **ajustée** (refit) à
+chaque mise à jour aux sommets du buffer : Vulkan met la structure à jour
+sur le GPU (`VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE`), WebGPU
+recalcule les boîtes de son BVH niveau par niveau dans des passes de
+calcul. Les points touchés lisent eux aussi les positions et les normales
+déplacées, copiées dans les buffers de la scène.
+
+Le skinning doit tourner **avant** la mise à jour, pour que les rayons
+voient la pose de l'image :
+
+```ts
+skinning.applyPose(animator.pose).update();
+skinning.dispatch(); // les sommets de cette image
+rays.update({ source: scene, items }); // la structure ajustée
+renderer.render({
+  source: scene,
+  items,
+  camera,
+  surface,
+  rays: { scene: rays, shadows: true },
+});
+```
+
+Un refit garde l'arbre de la pose au repos : plus les sommets s'en
+éloignent, plus la traversée ralentit (un personnage qui marche va bien).
+Le niveau du haut logiciel de WebGPU a besoin de la boîte du personnage
+dans le monde : le graphe de scène la donne (`item.bounds`, tenue à jour
+par le skinning).
+
+## Les terrains en patchs
+
+Un `PatchSurface` dessine ses patchs depuis son vertex stage, aux niveaux
+de détail choisis pour la caméra : il n'y a pas de mesh à tracer. Il en
+donne un aux rayons, son **mesh des rayons** :
+
+```ts
+import { patchMesh } from '@fdw/engine-tessellation';
+
+terrain.surface.rayMesh = patchMesh(terrain.surface.patches, {
+  level: 3, // 8 × 8 quads par patch
+  displacement: { height: (u, v) => heightAt(u, v), scale: 3 },
+});
+```
+
+`patchMesh` déplace les patchs comme `patchVertex` le fait sur le GPU, avec
+une fonction de hauteur sur le CPU. Le `buildTerrain` des démos le
+renseigne. Tout item peut avoir un `rayMesh` : ce que les rayons voient à
+la place de son mesh, dans son espace.
+
+## Les matériaux aux points touchés
+
+Les deux matériaux calculent des attributs dans leur vertex stage
+(`g.vertexAttribute`). Aux points touchés par les rayons, ces attributs
+sont ceux de la géométrie tracée : les sommets déplacés, le mesh des
+rayons. Un graph qui lit les attributs (`g.attribute('uv')`) marche dans
+les deux cas ; une valeur calculée depuis `vertex-index` et lue
+directement par la surface n'a pas de valeur en un point touché :
+écrivez-la comme un attribut, les rayons lisent sa valeur par défaut.
+
+Une surface dont la normale ne peut pas être calculée là (une normal map
+tirée des dérivées des pixels, nulles aux points touchés) prend la normale
+des sommets : les rayons en repartent.

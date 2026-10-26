@@ -22,6 +22,7 @@ import {
   reflectionOutputs,
 } from '@fdw/engine-raytracing';
 import {
+  Aabb,
   buildInstanceBvh,
   buildTriangleBvh,
   BvhInstance,
@@ -122,8 +123,8 @@ export function describeRays(
 
     // hits[i] = the hit of the ray i, from vec4 buffers of origins and
     // directions.
-    const traceProgram = (mode: 'closest' | 'any') => {
-      const g = new GraphBuilder(`trace ${mode}`);
+    const traceProgram = (mode: 'closest' | 'any', alphaTest = false) => {
+      const g = new GraphBuilder(`trace ${mode}${alphaTest ? ' alpha' : ''}`);
       const index = g.builtin('global-invocation-id').swizzle('x');
       const origins = g.storage('origins', arrayType(BuiltinTypes.vec4f));
       const directions = g.storage('directions', arrayType(BuiltinTypes.vec4f));
@@ -138,6 +139,7 @@ export function describeRays(
         tMin: 0.001,
         tMax: 1000,
         mode,
+        alphaTest,
       });
       g.write(hits, { index, value: hit });
       g.compute({
@@ -174,6 +176,7 @@ export function describeRays(
       top: GpuTopLevel,
       mode: 'closest' | 'any',
       { origins, directions }: ReturnType<typeof rays>,
+      by: ComputeRunner = runner,
     ) => {
       const count = origins.length / 4;
       const hits = storage(new Uint32Array(count * 4), true);
@@ -181,7 +184,7 @@ export function describeRays(
       const encoder = backend.createCommandEncoder();
       encoder.buildTopLevel?.(top);
       const pass = encoder.beginComputePass('trace');
-      runner.record(pass, traceProgram(mode), {
+      by.record(pass, traceProgram(mode), {
         values: {
           origins: buffers[0],
           directions: buffers[1],
@@ -272,6 +275,16 @@ export function describeRays(
         expect(anyHits[i * 4] === 0xffffffff).toBe(hits[i * 4] === 0xffffffff);
       }
 
+      // The same rays as a ray tracing pipeline (where the backend has
+      // them): the same hits, to the bit; any hit, hit or not.
+      const pipelines = new ComputeRunner(backend, { rayTracing: true });
+      expect([...(await trace(top, 'closest', input, pipelines))]).toEqual([...hits]);
+      const anyTraced = await trace(top, 'any', input, pipelines);
+      for (let i = 0; i < 512; i++) {
+        expect(anyTraced[i * 4] === 0xffffffff).toBe(hits[i * 4] === 0xffffffff);
+      }
+      pipelines.destroy();
+
       // Fewer instances, updated: the rays see the scene of the update.
       top.update([
         { bottom: bottoms[0], transform: instances[0].world },
@@ -285,6 +298,114 @@ export function describeRays(
       expect([...none].filter((_, k) => k % 4 === 0).every((x) => x === 0xffffffff)).toBe(true);
       top.destroy();
       bottoms.forEach((bottom) => bottom.destroy());
+    });
+
+    it('follows the vertices moved on the GPU and traces the ray meshes', async () => {
+      // A program writing the point hit by each ray (w: whether it hit).
+      const g = new GraphBuilder('points hit');
+      const index = g.builtin('global-invocation-id').swizzle('x');
+      const origins = g.storage('origins', arrayType(BuiltinTypes.vec4f));
+      const points = g.storage('points', arrayType(BuiltinTypes.vec4f), {
+        access: 'read-write',
+      });
+      const hit = g.traceRay({
+        origin: g.call(std.index, { array: origins, index }).swizzle('xyz'),
+        direction: [0, 0, -1],
+        tMin: 0.001,
+        tMax: 100,
+      });
+      g.write(points, {
+        index,
+        value: g.call(std.extend, {
+          xyz: g.call(stdRays.hitPosition, { hit }),
+          w: g.call(std.select, { ifFalse: 0, ifTrue: 1, condition: g.call(stdRays.hit, { hit }) }),
+        }),
+      });
+      g.compute({
+        active: g.call(std.less, {
+          a: index,
+          b: g.call(std.arrayLength, { array: origins }),
+        }),
+      });
+      const program = compile(g.build(), { capabilities: backend.capabilities });
+      const pointsHit = async (scene: RayScene, xs: readonly number[]) => {
+        const origins = storage(new Float32Array(xs.flatMap((x) => [x, 0.1, 5, 1])));
+        const output = storage(new Float32Array(xs.length * 4), true);
+        runner.dispatch(program, {
+          values: {
+            origins,
+            points: output,
+            scene: scene.topLevel,
+            rayInstances: scene.resource('rayInstances') as GpuBuffer,
+            rayGeometry: scene.resource('rayGeometry') as GpuBuffer,
+          },
+          workgroups: [1],
+        });
+        const result = new Float32Array(await output.read());
+        origins.destroy();
+        output.destroy();
+        return [...xs.keys()].map((i) => [...result.subarray(i * 4, i * 4 + 4)]);
+      };
+
+      // A square whose vertices a skinning would move: 2 vec4 each, the
+      // position and the normal; moved 2 to the right and 0.5 back.
+      const mesh = square(0.5);
+      const rest = [
+        [-0.5, -0.5],
+        [0.5, -0.5],
+        [0.5, 0.5],
+        [-0.5, 0.5],
+      ];
+      const deformed = (dx: number, z: number) =>
+        new Float32Array(rest.flatMap(([x, y]) => [x + dx, y, z, 1, 0, 0, 1, 0]));
+      const vertices = storage(deformed(2, -0.5));
+      const g2 = new GraphBuilder('moved');
+      g2.surface({ baseColor: [1, 1, 1] });
+      const material = new Material({
+        graph: g2.build(),
+        deformedVertices: { buffer: vertices, stride: 2, normal: 1 },
+      });
+      const moved = {
+        mesh,
+        material,
+        transform: new Transform(),
+        // Where the vertices are: the box the source knows.
+        bounds: new Aabb([1, -1, -1], [3, 1, 1]),
+      };
+      // A material making its vertices in the vertex stage, traced with
+      // its ray mesh: a square at z = 1, left.
+      const generated = new GraphBuilder('generated');
+      generated.vertexAttribute(
+        'position',
+        generated.call(std.vec3, {
+          x: generated.call(std.convert, { value: generated.builtin('vertex-index') }, {
+            params: { to: BuiltinTypes.f32 },
+          }),
+        }),
+      );
+      generated.surface({ baseColor: [1, 1, 1] });
+      const patches = {
+        mesh: square(0.1),
+        material: new Material({ graph: generated.build() }),
+        transform: new Transform({ position: { x: -2 } }),
+        rayMesh: square(0.5, 1),
+      };
+      const scene = new RayScene(backend).update({ items: [moved, patches] });
+      expect(scene.instances).toHaveLength(2);
+      let hits = await pointsHit(scene, [0, 2, -2]);
+      expect(hits[0][3]).toBe(0);
+      expect(hits[1][3]).toBe(1);
+      expect(hits[1][2]).toBeCloseTo(-0.5, 4);
+      expect(hits[2][3]).toBe(1);
+      expect(hits[2][2]).toBeCloseTo(1, 4);
+      // Moved again on the GPU (here written): the next update follows.
+      vertices.write(0, deformed(2.2, 0.25).buffer);
+      scene.update({ items: [moved, patches] });
+      hits = await pointsHit(scene, [2, 2.65]);
+      expect(hits[0][2]).toBeCloseTo(0.25, 4);
+      expect(hits[1][3]).toBe(1);
+      scene.destroy();
+      vertices.destroy();
     });
 
     it('reads the points hit: positions, normals, uvs, objects, materials', async () => {
@@ -349,7 +470,13 @@ export function describeRays(
         }),
       );
       record(3, extend(g.call(stdRays.hitGeometricNormal, { hit }), 0));
-      g.compute();
+      // The threads past the rays write nothing (no robust accesses).
+      g.compute({
+        active: g.call(std.less, {
+          a: index,
+          b: g.call(std.arrayLength, { array: origins }),
+        }),
+      });
       const program = compile(g.build(), { capabilities: backend.capabilities });
 
       // Towards the turned square, from +x; towards the back one, from +z
@@ -472,6 +599,74 @@ export function describeRays(
       expect(pixel(48, 48)[0]).toBeGreaterThan(120);
       expect(pixel(36, 48)[0]).toBeGreaterThan(120);
       tracer.destroy();
+      renderer.destroy();
+      scene.destroy();
+    });
+
+    it('keeps the history of the points seen when the camera moves', async () => {
+      const renderer = new Renderer(backend, {
+        output: { encoding: 'linear', toneMapping: 'none' },
+      });
+      // A gray floor under a sky brighter at the zenith: the light of the
+      // sky sampled at random, noisy at first.
+      const floorGraph = new GraphBuilder('floor');
+      floorGraph.surface({ shadingModel: 'pbr', baseColor: [0.6, 0.6, 0.6], roughness: 1 });
+      const items = [
+        {
+          mesh: square(4),
+          material: new Material({ graph: floorGraph.build() }),
+          transform: new Transform({ rotation: { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 } }),
+        },
+      ];
+      const scene = new RayScene(backend).update({ items });
+      const camera = (x: number) =>
+        new Camera({
+          position: { x, y: 5, z: 0 },
+          rotation: { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 },
+          projection: {
+            type: 'orthographic',
+            left: -1,
+            right: 1,
+            bottom: -1,
+            top: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+      const sky = {
+        zenith: { x: 2, y: 2, z: 2 },
+        horizon: { x: 0, y: 0, z: 0 },
+        ground: { x: 0, y: 0, z: 0 },
+      };
+      // The spread of the values of the pixels of the middle of the image.
+      const spread = async () => {
+        const pixels = await fixture.readPixels();
+        const values: number[] = [];
+        for (let y = 16; y < 48; y++) {
+          for (let x = 16; x < 48; x++) {
+            values.push(pixels[(y * size + x) * 4]);
+          }
+        }
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+        return Math.sqrt(
+          values.reduce((a, b) => a + (b - mean) * (b - mean), 0) / values.length,
+        );
+      };
+      const tracer = new PathTracer(renderer, scene, { bounces: 1, denoise: false, sky });
+      for (let frame = 0; frame < 32; frame++) {
+        tracer.render({ camera: camera(0), surface: fixture.surface });
+      }
+      // Moved by a few pixels: the history of the floor follows.
+      tracer.render({ camera: camera(0.1), surface: fixture.surface });
+      expect(tracer.frames).toBe(1);
+      const followed = await spread();
+      tracer.destroy();
+      const fresh = new PathTracer(renderer, scene, { bounces: 1, denoise: false, sky });
+      fresh.render({ camera: camera(0.1), surface: fixture.surface });
+      const noisy = await spread();
+      expect(noisy).toBeGreaterThan(4);
+      expect(followed).toBeLessThan(noisy * 0.5);
+      fresh.destroy();
       renderer.destroy();
       scene.destroy();
     });
@@ -678,6 +873,132 @@ export function describeRays(
         between.filter((value) => value > shadowed[0] + 10 && value < lit[0] - 10)
           .length,
       ).toBeGreaterThan(0);
+      renderer.destroy();
+      scene.destroy();
+    });
+
+    it('lets the rays through the cut parts of the masked materials', async () => {
+      const renderer = new Renderer(backend, {
+        output: { encoding: 'linear', toneMapping: 'none' },
+      });
+      const camera = new Camera({
+        position: { x: 0, y: 0, z: 5 },
+        projection: {
+          type: 'orthographic',
+          left: -1,
+          right: 1,
+          bottom: -1,
+          top: 1,
+          near: 0.1,
+          far: 100,
+        },
+      });
+      const ambient = 0.1;
+      const sun = new DirectionalLight({
+        direction: { x: 1, y: 0, z: -1 },
+        ambient: { x: ambient, y: ambient, z: ambient },
+        diffuse: { x: 1, y: 1, z: 1 },
+        specular: { x: 0, y: 0, z: 0 },
+        castShadow: true,
+      });
+      // A leaf: its left half (u < 0.5) cut by its alpha.
+      const leaf = new GraphBuilder('leaf');
+      leaf.surface({
+        shadingModel: 'phong',
+        baseColor: [1, 1, 1],
+        specular: [0, 0, 0],
+        alpha: leaf.call(std.step, {
+          edge: 0.5,
+          x: leaf
+            .call(std.perFragment, { value: leaf.attribute('uv', BuiltinTypes.vec2f) })
+            .swizzle('x'),
+        }),
+      });
+      const items = [
+        { mesh: square(1), material: white(), transform: new Transform() },
+        // 0.5 in front of the ground, left of the center: its shadow falls
+        // 0.5 to the right, from x = -0.25 to 0.25, its left half cut.
+        {
+          mesh: square(0.25, 0.5),
+          material: new Material({
+            graph: leaf.build(),
+            renderState: { alphaMode: 'mask', doubleSided: true },
+          }),
+          transform: new Transform({ position: { x: -0.5 } }),
+        },
+      ];
+      const scene = new RayScene(backend).update({ items });
+      renderer.render({
+        items,
+        camera,
+        surface: fixture.surface,
+        lights: [sun],
+        clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        rays: { scene, shadows: true },
+      });
+      const pixels = await fixture.readPixels();
+      const pixel = (x: number, y: number) => [
+        ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+      ];
+      const byte = (value: number) => Math.round(Math.min(value, 1) * 255);
+      const gray = (value: number) => [byte(value), byte(value), byte(value), 255];
+      // The shadow of the kept half; the light through the cut one.
+      expectColor(pixel(36, 32), gray(ambient));
+      expectColor(pixel(27, 32), gray(ambient + Math.SQRT1_2));
+      // The cut half of the leaf itself is not drawn: the ground behind,
+      // lit (x = -0.7, pixel 9).
+      expectColor(pixel(9, 32), gray(ambient + Math.SQRT1_2));
+
+      // The path tracer sees the ground through the cut half, without a
+      // bounce through it: traced from the camera, the leaf is in the way
+      // only on its right half. With ray queries, and ray tracing
+      // pipelines (their any-hit shader) where the backend has them.
+      const sky = { x: 0, y: 0, z: 0 };
+      expect(scene.instances.length).toBe(2);
+      // Rays straight through the leaf (z = 0.5), from the front: through
+      // its cut half, onto the ground; on its kept half.
+      const origins = new Float32Array([-0.6, 0, 2, 0, -0.4, 0, 2, 0]);
+      const directions = new Float32Array([0, 0, -1, 0, 0, 0, -1, 0]);
+      for (const rayTracing of [false, true]) {
+        const by = new ComputeRunner(backend, { rayTracing });
+        for (const mode of ['closest', 'any'] as const) {
+          const hits = storage(new Uint32Array(8), true);
+          const buffers = [storage(origins), storage(directions)];
+          by.dispatch(traceProgram(mode, true), {
+            values: {
+              origins: buffers[0],
+              directions: buffers[1],
+              hits,
+              scene: scene.topLevel,
+              rayInstances: scene.resource('rayInstances') as GpuBuffer,
+              rayGeometry: scene.resource('rayGeometry') as GpuBuffer,
+            },
+            workgroups: [1],
+          });
+          const found = new Uint32Array(await hits.read());
+          expect([found[0], found[4]], `${mode}, pipeline ${rayTracing}`).toEqual([0, 1]);
+          hits.destroy();
+          buffers.forEach((buffer) => buffer.destroy());
+        }
+        by.destroy();
+      }
+      for (const rayTracingPipeline of [false, true]) {
+        const tracer = new PathTracer(renderer, scene, {
+          bounces: 1,
+          denoise: false,
+          sky: { zenith: sky, horizon: sky, ground: sky },
+          rayTracingPipeline,
+        });
+        for (let frame = 0; frame < 4; frame++) {
+          tracer.render({ camera, surface: fixture.surface, lights: [sun] });
+        }
+        const traced = await fixture.readPixels();
+        const tracedPixel = (x: number, y: number) => traced[(y * size + x) * 4];
+        // In the shadow of the kept half, and in the light of the cut one.
+        expect(tracedPixel(36, 32)).toBeLessThan(40);
+        expect(tracedPixel(27, 32)).toBeGreaterThan(120);
+        tracer.destroy();
+      }
       renderer.destroy();
       scene.destroy();
     });

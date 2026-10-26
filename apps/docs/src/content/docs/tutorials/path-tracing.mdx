@@ -16,7 +16,7 @@ surfaces until it finds a light.
 <Example name="path-tracing" />
 
 The image starts grainy and clears up as the frames add up. Click the
-canvas to compare with the rasterization of the same scene.
+canvas: the camera moves, then the rasterization of the same scene.
 
 ## The path tracer
 
@@ -53,12 +53,11 @@ All the pixels at once, in waves of compute passes:
    density). After two bounces, the paths that carry little light end at
    random (the Russian roulette). The masked and blended pixels let the
    ray go through.
-3. **The accumulation**: the frame added to the sum of those before, while
-   the camera, the scene, the materials and the lights stay; the average
-   is the image.
-4. **The filter**: while the frames are few, an à-trous filter smooths the
-   noise across the pixels that share a surface (close normals and
-   depths), dividing by the albedo so that the textures stay sharp.
+3. **The accumulation**: the frame blended into the history of each pixel
+   (below); the average is the image.
+4. **The filter**: while the frames of a pixel are few, an à-trous filter
+   smooths the noise across the pixels that share a surface (close normals
+   and depths), dividing by the albedo so that the textures stay sharp.
 
 ## The noise
 
@@ -74,5 +73,37 @@ first frames are grainy.
 - More frames: the average converges, about the square root of their
   number.
 
-When the camera moves, the gathering starts again; the path tracer suits a
-still view, a preview, a picture, more than a game.
+## A camera that moves
+
+The first hit of each pixel is kept with its frame: the point seen, its
+normal. When the camera or the objects move, each pixel looks for the
+point it sees in the previous image (projected with the previous camera),
+between the four pixels around it, and keeps their history where they saw
+the same surface (a point and a normal close to its own). What was hidden
+before, or a moving object, starts again from one frame.
+
+```ts
+const tracer = new PathTracer(renderer, scene, {
+  history: 16, // the frames a pixel keeps while things move
+});
+```
+
+While things move, a pixel keeps its last `history` frames: fewer, less
+blur behind what moves and more noise; still, the frames add up without
+end. Changing the lights or the materials starts everything again
+(`tracer.reset()` too). The image in motion stays noisier than a still
+one: the path tracer suits a preview, a picture, a slow camera.
+
+## Faster on Vulkan
+
+On Vulkan, the kernels that trace rays can run as **ray tracing
+pipelines** (`VK_KHR_ray_tracing_pipeline`): the hardware schedules the
+rays and their hits, the alpha test in an any-hit shader. The image is
+the same:
+
+```ts
+new PathTracer(renderer, scene, { rayTracingPipeline: true });
+```
+
+Where the backend has none (WebGPU, or a GPU without them), the option
+falls back to the ray queries.

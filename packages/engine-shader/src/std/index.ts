@@ -300,6 +300,7 @@ export const stdMacros = {
  */
 export const stdRays = {
   trace: rays.trace,
+  traceAlpha: rays.traceAlpha,
   hit: 'ray.hit',
   hitFrontFacing: 'ray.hitFrontFacing',
   hitBarycentrics: 'ray.hitBarycentrics',

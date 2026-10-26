@@ -281,11 +281,23 @@ export class Skinning {
               usage: ['storage', 'copy-src'],
             })
           : undefined;
+      const { normal, tangent } = meshSkin.attributes;
       const skinnedMaterial = material.withGraph(
         skinnedGraph(material.graph, this.mode, meshSkin),
         texture
           ? { [SkinValues.jointTexture]: texture }
           : { [SkinValues.vertices]: vertices as GpuBuffer },
+        // What the rays see of it (compute: the vertices skinned).
+        vertices
+          ? {
+              deformedVertices: {
+                buffer: vertices,
+                stride: meshSkin.stride,
+                ...(normal ? { normal: 1 } : {}),
+                ...(tangent ? { tangent: normal ? 2 : 1 } : {}),
+              },
+            }
+          : {},
       );
       target.setMesh(mesh, skinnedMaterial, {
         castShadow: scene.MeshRenderer.noShadow[target.entity] === 0,

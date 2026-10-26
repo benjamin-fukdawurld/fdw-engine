@@ -57,6 +57,7 @@ const examples: Record<string, string> = {
   'ray-shadows': 'tutorials/ray-traced-shadows/',
   'ray-reflections': 'tutorials/ray-reflections/',
   'path-tracing': 'tutorials/path-tracing/',
+  'ray-characters': 'tutorials/ray-traced-characters/',
 };
 
 // The clock of the examples, stopped: the same image at every run.
@@ -99,6 +100,7 @@ const timeouts: Record<string, number> = {
   'ray-shadows': 120_000,
   'ray-reflections': 300_000,
   'path-tracing': 240_000,
+  'ray-characters': 240_000,
 };
 
 for (const [name, page] of Object.entries(examples)) {

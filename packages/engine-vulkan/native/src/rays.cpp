@@ -69,6 +69,32 @@ int createStructure(fdw_vk_context *context, VkAccelerationStructureTypeKHR type
   return 0;
 }
 
+// The flags of the builds of a bottom level: updatable when dynamic.
+VkBuildAccelerationStructureFlagsKHR bottomFlags(bool dynamic) {
+  return VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+         (dynamic ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR : 0);
+}
+
+// The triangles of a bottom level: the vertices at an address, its indices.
+VkAccelerationStructureGeometryKHR
+triangleGeometry(VkDeviceAddress vertices, uint64_t stride,
+                 uint32_t vertexCount, VkDeviceAddress indices) {
+  VkAccelerationStructureGeometryKHR geometry{
+      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
+  geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+  geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+  auto &triangles = geometry.geometry.triangles;
+  triangles = {
+      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
+  triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+  triangles.vertexData.deviceAddress = vertices;
+  triangles.vertexStride = stride;
+  triangles.maxVertex = vertexCount - 1;
+  triangles.indexType = VK_INDEX_TYPE_UINT32;
+  triangles.indexData.deviceAddress = indices;
+  return geometry;
+}
+
 VkDeviceAddress structureAddress(fdw_vk_context *context,
                                  VkAccelerationStructureKHR structure) {
   VkAccelerationStructureDeviceAddressInfoKHR info{
@@ -158,6 +184,52 @@ int allocateTopLevel(fdw_vk_context *context, fdw_vk_top_level *top,
 
 namespace fdw {
 
+int refitBottomLevel(fdw_vk_context *context, VkCommandBuffer commands,
+                     fdw_vk_bottom_level *bottom, fdw_vk_buffer *source,
+                     uint64_t offset, uint32_t stride) {
+  if (!bottom->dynamic) {
+    return fail("Only the dynamic bottom levels are refit");
+  }
+  if (stride < 12 || offset + uint64_t(bottom->vertexCount - 1) * stride + 12 >
+                         source->size) {
+    return fail("The vertices of the refit are outside of the buffer");
+  }
+  // After the writes of the vertices, and the last uses of the structure
+  // (the rays and builds of the commands before).
+  {
+    Barriers barriers{commands};
+    useBuffer(barriers, source, BuildStage, VK_ACCESS_2_SHADER_READ_BIT);
+  }
+  memoryBarrier(commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+                BuildStage,
+                VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR |
+                    VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+  const VkAccelerationStructureGeometryKHR geometry = triangleGeometry(
+      bufferAddress(context, source->buffer) + offset, stride,
+      bottom->vertexCount, bufferAddress(context, bottom->indices->buffer));
+  VkAccelerationStructureBuildGeometryInfoKHR build{
+      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
+  build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+  build.flags = bottomFlags(true);
+  build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+  build.srcAccelerationStructure = bottom->structure;
+  build.dstAccelerationStructure = bottom->structure;
+  build.geometryCount = 1;
+  build.pGeometries = &geometry;
+  build.scratchData.deviceAddress = bottom->updateScratchAddress;
+  VkAccelerationStructureBuildRangeInfoKHR range{};
+  range.primitiveCount = bottom->triangleCount;
+  const VkAccelerationStructureBuildRangeInfoKHR *ranges = &range;
+  vkCmdBuildAccelerationStructuresKHR(commands, 1, &build, &ranges);
+  // The builds of the top levels and the rays after it wait for it.
+  memoryBarrier(commands, BuildStage,
+                VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+  return 0;
+}
+
 int buildTopLevel(fdw_vk_context *context, VkCommandBuffer commands,
                   fdw_vk_top_level *top) {
   // After the writes of its instances, and the last use of the structure
@@ -198,6 +270,10 @@ void destroyAccelerationStructures(fdw_vk_context *context) {
     vkDestroyAccelerationStructureKHR(context->device, bottom->structure,
                                       nullptr);
     vmaDestroyBuffer(context->allocator, bottom->storage, bottom->allocation);
+    if (bottom->updateScratch) {
+      vmaDestroyBuffer(context->allocator, bottom->updateScratch,
+                       bottom->updateScratchAllocation);
+    }
     delete bottom;
   }
   context->bottomLevels.clear();
@@ -214,7 +290,9 @@ int32_t fdw_vk_ray_query_supported(const fdw_vk_context *context) {
 fdw_vk_bottom_level *
 fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
                            uint32_t vertex_count, const uint32_t *indices,
-                           uint32_t index_count, const char *label) {
+                           uint32_t index_count, uint32_t flags,
+                           const char *label) {
+  const bool dynamic = (flags & FDW_VK_BOTTOM_LEVEL_DYNAMIC) != 0;
   if (!context->rayQuery) {
     fail("The device has no ray queries");
     return nullptr;
@@ -247,24 +325,13 @@ fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
     return nullptr;
   }
 
-  VkAccelerationStructureGeometryKHR geometry{
-      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-  geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-  geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-  auto &triangles = geometry.geometry.triangles;
-  triangles = {
-      VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
-  triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-  triangles.vertexData.deviceAddress = bufferAddress(context, vertices->buffer);
-  triangles.vertexStride = 12;
-  triangles.maxVertex = vertex_count - 1;
-  triangles.indexType = VK_INDEX_TYPE_UINT32;
-  triangles.indexData.deviceAddress =
-      bufferAddress(context, indexBuffer->buffer);
+  VkAccelerationStructureGeometryKHR geometry = triangleGeometry(
+      bufferAddress(context, vertices->buffer), 12, vertex_count,
+      bufferAddress(context, indexBuffer->buffer));
   VkAccelerationStructureBuildGeometryInfoKHR build{
       VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
   build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-  build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+  build.flags = bottomFlags(dynamic);
   build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
   build.geometryCount = 1;
   build.pGeometries = &geometry;
@@ -277,6 +344,8 @@ fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
 
   auto *bottom = new fdw_vk_bottom_level();
   bottom->triangleCount = triangleCount;
+  bottom->vertexCount = vertex_count;
+  bottom->dynamic = dynamic;
   VkBuffer scratch = VK_NULL_HANDLE;
   VmaAllocation scratchAllocation = nullptr;
   VkDeviceAddress scratchAddress = 0;
@@ -284,7 +353,11 @@ fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
                       sizes.accelerationStructureSize, &bottom->storage,
                       &bottom->allocation, &bottom->structure, label) != 0 ||
       createScratch(context, sizes.buildScratchSize, &scratch,
-                    &scratchAllocation, &scratchAddress) != 0) {
+                    &scratchAllocation, &scratchAddress) != 0 ||
+      (dynamic && createScratch(context, sizes.updateScratchSize,
+                                &bottom->updateScratch,
+                                &bottom->updateScratchAllocation,
+                                &bottom->updateScratchAddress) != 0)) {
     if (bottom->structure) {
       vkDestroyAccelerationStructureKHR(context->device, bottom->structure,
                                         nullptr);
@@ -317,9 +390,14 @@ fdw_vk_bottom_level_create(fdw_vk_context *context, const float *positions,
                 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                 VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
 
-  // The inputs and the scratch memory are freed after the build.
+  // The inputs and the scratch memory are freed after the build; the
+  // indices of a dynamic one are kept for its refits.
   fdw_vk_buffer_destroy(context, vertices);
-  fdw_vk_buffer_destroy(context, indexBuffer);
+  if (dynamic) {
+    bottom->indices = indexBuffer;
+  } else {
+    fdw_vk_buffer_destroy(context, indexBuffer);
+  }
   VmaAllocator allocator = context->allocator;
   defer(context, [allocator, scratch, scratchAllocation] {
     vmaDestroyBuffer(allocator, scratch, scratchAllocation);
@@ -336,9 +414,14 @@ void fdw_vk_bottom_level_destroy(fdw_vk_context *context,
   }
   VkDevice device = context->device;
   VmaAllocator allocator = context->allocator;
+  fdw_vk_buffer_destroy(context, bottom->indices);
   defer(context, [device, allocator, bottom] {
     vkDestroyAccelerationStructureKHR(device, bottom->structure, nullptr);
     vmaDestroyBuffer(allocator, bottom->storage, bottom->allocation);
+    if (bottom->updateScratch) {
+      vmaDestroyBuffer(allocator, bottom->updateScratch,
+                       bottom->updateScratchAllocation);
+    }
     delete bottom;
   });
 }
@@ -381,8 +464,11 @@ int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
     target.mask = instance.mask & 0xff;
     target.instanceShaderBindingTableRecordOffset = 0;
     // Both faces: the hits report the face they saw (counterclockwise from
-    // the front, as in the rasterization).
-    target.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    // the front, as in the rasterization). Opaque unless bit 8 of the mask.
+    target.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR |
+                   ((instance.mask & 0x100) != 0
+                        ? VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR
+                        : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR);
     target.accelerationStructureReference = bottom->second->address;
   }
   int replaced = 0;

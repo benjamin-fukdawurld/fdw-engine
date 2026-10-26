@@ -218,6 +218,18 @@ export interface VulkanAddon {
     groups: readonly (GroupLayoutHandle | null)[],
     label?: string,
   ): PipelineHandle;
+  rayTracingPipelineSupported(context: ContextHandle): boolean;
+  // A ray tracing pipeline from a library of shaders (rg_main, ms_main,
+  // ch_main, ah_main with anyHit 1): a ray per thread of its dispatches of
+  // workgroups of `workgroupSize`.
+  createRayTracingPipeline(
+    context: ContextHandle,
+    shader: ShaderHandle,
+    anyHit: number,
+    workgroupSize: readonly [number, number, number],
+    groups: readonly (GroupLayoutHandle | null)[],
+    label?: string,
+  ): PipelineHandle;
   destroyPipeline(pipeline: PipelineHandle): void;
 
   createSwapchain(
@@ -242,11 +254,12 @@ export interface VulkanAddon {
   // Ray queries and acceleration structures, where the device has them.
   rayQuerySupported(context: ContextHandle): boolean;
   // The structure of a mesh (xyz per vertex, 3 indices per triangle),
-  // built in the order of the queue.
+  // built in the order of the queue. Flags: BottomLevelFlags.
   createBottomLevel(
     context: ContextHandle,
     positions: Float32Array,
     indices: Uint32Array,
+    flags: number,
     label?: string,
   ): BottomLevelHandle;
   destroyBottomLevel(bottom: BottomLevelHandle): void;
@@ -306,6 +319,12 @@ export const Commands = {
   writeTimestamp: 17,
   generateMipmaps: 18,
   buildTopLevel: 19,
+  refitBottomLevel: 20,
+} as const;
+
+/** The flags of createBottomLevel (FDW_VK_BOTTOM_LEVEL_*). */
+export const BottomLevelFlags = {
+  dynamic: 1,
 } as const;
 
 let addon: VulkanAddon | undefined;

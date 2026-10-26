@@ -7,7 +7,7 @@ import {
   type RenderItem,
 } from '@fdw/engine-core';
 import { RayScene } from '@fdw/engine-raytracing';
-import { BuiltinTypes, GraphBuilder } from '@fdw/engine-shader';
+import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
 import { axisAngle, createCube, createSphere } from '@fdw/demo-scenes';
 import type { Example } from './runtime';
 
@@ -57,6 +57,40 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
       box({ x: 2.56 + k * 0.16, y: 0.9, z: 1.6 }, { x: 0.025, y: 0.7, z: 0.025 }, material([0.2, 0.2, 0.22])),
     );
   }
+  // A perforated screen: its alpha cut in round holes (a masked material).
+  // The rays go through the holes: its shadow is a grid of light spots.
+  const screen = new GraphBuilder('perforated');
+  const cell = screen.call(std.sub, {
+    a: screen.call(std.fract, {
+      // Per pixel: interpolated from the vertices, the holes would vanish.
+      x: screen.call(std.mul, {
+        a: screen.call(std.perFragment, {
+          value: screen.attribute('uv', BuiltinTypes.vec2f),
+        }),
+        b: 7,
+      }),
+    }),
+    b: [0.5, 0.5],
+  });
+  screen.surface({
+    shadingModel: 'pbr',
+    baseColor: [0.3, 0.45, 0.25],
+    roughness: 0.8,
+    alpha: screen.call(std.step, { edge: 0.3, x: screen.call(std.length, { x: cell }) }),
+  });
+  items.push({
+    mesh: cube,
+    material: new Material({
+      graph: screen.build(),
+      renderState: { alphaMode: 'mask', doubleSided: true },
+    }),
+    transform: new Transform({
+      position: { x: 5, y: 1.6, z: -1.2 },
+      scale: { x: 2.2, y: 2.2, z: 0.02 },
+      rotation: axisAngle(0, 1, 0, 0.9),
+    }),
+  });
+
   const ball: RenderItem = {
     mesh: sphere,
     material: material([0.9, 0.45, 0.2], 0.4),

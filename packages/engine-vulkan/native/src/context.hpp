@@ -130,6 +130,13 @@ struct fdw_vk_pipeline {
   // Whether each set of the layout has bindings: a group still bound from
   // another pipeline is not rebound where this one has an empty set.
   std::vector<bool> usedSets;
+  // A ray tracing pipeline: its shader table (ray generation, miss, hit
+  // group), and the threads of a workgroup of its dispatches (a ray each).
+  fdw_vk_buffer *shaderTable = nullptr;
+  VkStridedDeviceAddressRegionKHR generationRegion{};
+  VkStridedDeviceAddressRegionKHR missRegion{};
+  VkStridedDeviceAddressRegionKHR hitRegion{};
+  uint32_t workgroupSize[3] = {1, 1, 1};
 };
 
 struct fdw_vk_bottom_level {
@@ -140,6 +147,14 @@ struct fdw_vk_bottom_level {
   // Its address, for the instances of the top levels.
   VkDeviceAddress address = 0;
   uint32_t triangleCount = 0;
+  // Dynamic (refit on the GPU): its vertices, its indices kept, and the
+  // scratch memory of its updates.
+  bool dynamic = false;
+  uint32_t vertexCount = 0;
+  fdw_vk_buffer *indices = nullptr;
+  VkBuffer updateScratch = VK_NULL_HANDLE;
+  VmaAllocation updateScratchAllocation = nullptr;
+  VkDeviceAddress updateScratchAddress = 0;
 };
 
 struct fdw_vk_top_level {
@@ -183,6 +198,11 @@ struct fdw_vk_context {
   // buffers), and the alignment of the scratch memory of the builds.
   bool rayQuery = false;
   uint32_t scratchAlignment = 256;
+  // The ray tracing pipelines, and the layout of their shader tables.
+  bool rayTracingPipeline = false;
+  uint32_t shaderGroupHandleSize = 32;
+  uint32_t shaderGroupHandleAlignment = 32;
+  uint32_t shaderGroupBaseAlignment = 64;
   // The color attachments of a render pass (at most 8), and whether their
   // blend states can differ.
   uint32_t maxColorAttachments = 4;
@@ -339,6 +359,9 @@ fdw_vk_buffer *createBuffer(fdw_vk_context *context, uint64_t size,
 // The device address of a buffer (bufferDeviceAddress).
 VkDeviceAddress bufferAddress(fdw_vk_context *context, VkBuffer buffer);
 // Records the build of a top level from its last update.
+int refitBottomLevel(fdw_vk_context *context, VkCommandBuffer commands,
+                     fdw_vk_bottom_level *bottom, fdw_vk_buffer *source,
+                     uint64_t offset, uint32_t stride);
 int buildTopLevel(fdw_vk_context *context, VkCommandBuffer commands,
                   fdw_vk_top_level *top);
 // Frees the acceleration structures of a context being destroyed.

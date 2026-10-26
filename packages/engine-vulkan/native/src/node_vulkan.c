@@ -1210,6 +1210,59 @@ static napi_value js_present(napi_env env, napi_callback_info info) {
 
 // --- Acceleration structures -------------------------------------------------------
 
+// createRayTracingPipeline(context, shader, anyHit, workgroupSize: number[3],
+// layouts, label)
+static napi_value js_create_ray_tracing_pipeline(napi_env env,
+                                                 napi_callback_info info) {
+  ARGS(6);
+  context_handle *owner = owner_arg(env, argv[0]);
+  object_handle *shader = owner ? object_arg(env, argv[1], SHADER) : NULL;
+  if (!shader) {
+    return NULL;
+  }
+  uint32_t size[3];
+  for (uint32_t k = 0; k < 3; k++) {
+    size[k] = (uint32_t)number_arg(env, element(env, argv[3], k));
+  }
+  bool failed = false;
+  const uint32_t count = array_length(env, argv[4]);
+  fdw_vk_group_layout **layouts = (fdw_vk_group_layout **)calloc(
+      count + 1, sizeof(fdw_vk_group_layout *));
+  for (uint32_t i = 0; i < count; i++) {
+    layouts[i] = (fdw_vk_group_layout *)optional_object(
+        env, element(env, argv[4], i), LAYOUT, &failed);
+  }
+  char *label = string_arg(env, argv[5]);
+  fdw_vk_pipeline *pipeline =
+      failed ? NULL
+             : fdw_vk_ray_tracing_pipeline_create(
+                   owner->context, shader->object,
+                   number_arg(env, argv[2]) != 0 ? 1u : 0u, size, layouts, count,
+                   label);
+  free(layouts);
+  free(label);
+  if (failed) {
+    return NULL;
+  }
+  if (!pipeline) {
+    return throw_last_error(env);
+  }
+  return wrap_object(env, argv[0], owner, PIPELINE, pipeline);
+}
+
+static napi_value js_ray_tracing_pipeline_supported(napi_env env,
+                                                    napi_callback_info info) {
+  ARGS(1);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  napi_value result;
+  CHECK(napi_get_boolean(
+      env, fdw_vk_ray_tracing_pipeline_supported(context) == 1, &result));
+  return result;
+}
+
 static napi_value js_ray_query_supported(napi_env env,
                                          napi_callback_info info) {
   ARGS(1);
@@ -1224,10 +1277,10 @@ static napi_value js_ray_query_supported(napi_env env,
 }
 
 // createBottomLevel(context, positions: Float32Array, indices: Uint32Array,
-// label)
+// flags, label)
 static napi_value js_create_bottom_level(napi_env env,
                                          napi_callback_info info) {
-  ARGS(4);
+  ARGS(5);
   context_handle *owner = owner_arg(env, argv[0]);
   void *positions = NULL;
   void *indices = NULL;
@@ -1237,11 +1290,11 @@ static napi_value js_create_bottom_level(napi_env env,
       bytes_arg(env, argv[2], &indices, &indexBytes) != 0) {
     return NULL;
   }
-  char *label = string_arg(env, argv[3]);
+  char *label = string_arg(env, argv[4]);
   fdw_vk_bottom_level *bottom = fdw_vk_bottom_level_create(
       owner->context, (const float *)positions,
       (uint32_t)(positionBytes / 12), (const uint32_t *)indices,
-      (uint32_t)(indexBytes / 4), label);
+      (uint32_t)(indexBytes / 4), (uint32_t)number_arg(env, argv[3]), label);
   free(label);
   if (!bottom) {
     return throw_last_error(env);
@@ -1378,6 +1431,8 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("destroyPipeline", js_destroy_pipeline),
       EXPORT("pipelineId", js_pipeline_id),
       EXPORT("rayQuerySupported", js_ray_query_supported),
+      EXPORT("rayTracingPipelineSupported", js_ray_tracing_pipeline_supported),
+      EXPORT("createRayTracingPipeline", js_create_ray_tracing_pipeline),
       EXPORT("createBottomLevel", js_create_bottom_level),
       EXPORT("destroyBottomLevel", js_destroy_bottom_level),
       EXPORT("bottomLevelId", js_bottom_level_id),
