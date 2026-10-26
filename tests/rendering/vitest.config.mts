@@ -11,6 +11,9 @@ export default defineConfig({
   test: {
     watch: false,
     reporters: ['default'],
+    // The fluids and noises run their CPU references and, on CI, software
+    // GPUs: several seconds per test, past the default 5 s.
+    testTimeout: 30_000,
     projects: [
       {
         extends: true,
