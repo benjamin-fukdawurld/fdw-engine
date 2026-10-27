@@ -24,8 +24,8 @@
 // (a tank of water made of particles: a dam that breaks, crates in it).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent). --rays draws the scenes that offer it (fps, tps) with rays, on
-// Vulkan: the shadows traced, the reflections too, or the path tracer;
-// --ray-pipeline traces their rays by ray tracing pipelines.
+// Vulkan and Direct3D 12: the shadows traced, the reflections too, or the
+// path tracer; --ray-pipeline traces their rays by ray tracing pipelines.
 // Escape or closing the window quits.
 import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import type { RayMode } from '@fdw/demo-scenes';

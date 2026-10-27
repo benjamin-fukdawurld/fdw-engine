@@ -1,6 +1,6 @@
 ---
 title: Le ray tracing
-description: Les rayons tracés dans la scène — les structures d'accélération des backends (en matériel sur Vulkan, en logiciel sur WebGPU), la scène tracée, les ombres, les reflets et l'occlusion ambiante par rayons, le path tracer, et les rayons dans vos propres graphs.
+description: Les rayons tracés dans la scène — les structures d'accélération des backends (en matériel sur Vulkan et Direct3D 12, en logiciel sur WebGPU), la scène tracée, les ombres, les reflets et l'occlusion ambiante par rayons, le path tracer, et les rayons dans vos propres graphs.
 sidebar:
   order: 20
 ---
@@ -16,11 +16,12 @@ montrent chaque usage :
 
 ## Les backends
 
-| Backend | Rayons                                                                                                                                                                                                           |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Vulkan  | En matériel : `VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, là où le GPU les a (RTX, RDNA2 et suivants ; lavapipe en logiciel) ; les pipelines de ray tracing (`VK_KHR_ray_tracing_pipeline`) en option |
-| WebGPU  | En logiciel : un BVH construit sur le CPU, dans des storage buffers, parcouru par du code WGSL que le backend ajoute aux programmes qui tracent des rayons                                                       |
-| WebGL2  | Aucun : la rastérisation seule                                                                                                                                                                                   |
+| Backend     | Rayons                                                                                                                                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vulkan      | En matériel : `VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, là où le GPU les a (RTX, RDNA2 et suivants ; lavapipe en logiciel) ; les pipelines de ray tracing (`VK_KHR_ray_tracing_pipeline`) en option |
+| Direct3D 12 | En matériel : DXR 1.1 (les ray queries, Shader Model 6.5), là où le GPU l'a (RTX, RDNA2 et suivants) ; les pipelines de ray tracing (des state objects, `DispatchRays`) en option                                |
+| WebGPU      | En logiciel : un BVH construit sur le CPU, dans des storage buffers, parcouru par du code WGSL que le backend ajoute aux programmes qui tracent des rayons                                                       |
+| WebGL2      | Aucun : la rastérisation seule                                                                                                                                                                                   |
 
 La capacité `rayQuery` du backend dit s'il trace des rayons
 (`backend.capabilities?.rayQuery`). Sans elle, `RayScene` et les passes de
@@ -39,9 +40,9 @@ const scene = new RayScene(backend);
 scene.update({ source, items });
 ```
 
-- **Un niveau du bas par mesh**, construit une fois (sur le GPU en Vulkan,
-  sur le CPU en WebGPU : un SAH par paniers), gardé tant que le mesh ne
-  change pas.
+- **Un niveau du bas par mesh**, construit une fois (sur le GPU en Vulkan et
+  Direct3D 12, sur le CPU en WebGPU : un SAH par paniers), gardé tant que le
+  mesh ne change pas.
 - **Les instances**, réécrites à chaque mise à jour : chaque item de la
   source (tous, pas seulement ceux que voit la caméra : les rayons regardent
   derrière), chacun avec sa matrice monde, son matériau et son masque (les
@@ -83,9 +84,9 @@ Les rayons traversent les parties coupées des matériaux masqués
 l'alpha de chaque matériau masqué sur ses uv (son programme « impact » sur
 un carré, coupé à son seuil, 256 × 256 bits dans la géométrie de la
 scène), à nouveau quand ses valeurs changent ; les traversées testent
-contre lui les triangles candidats des instances masquées (Vulkan : les
-instances non opaques dans la boucle de la ray query, ou un shader any-hit ;
-WebGPU : dans la traversée WGSL). Dans vos graphs,
+contre lui les triangles candidats des instances masquées (Vulkan,
+Direct3D 12 : les instances non opaques dans la boucle de la ray query, ou
+un shader any-hit ; WebGPU : dans la traversée WGSL). Dans vos graphs,
 `g.traceRay({ …, alphaTest: true })` (`ray.traceAlpha`) fait de même.
 
 ## Les passes de rayons
@@ -126,8 +127,8 @@ s'additionnent sans fin.
 
 ## Les pipelines de ray tracing
 
-Sur Vulkan, un programme de calcul qui trace des rayons peut tourner comme
-le shader de génération de rayons d'un **pipeline de ray tracing**
+Sur Vulkan et Direct3D 12, un programme de calcul qui trace des rayons peut
+tourner comme le shader de génération de rayons d'un **pipeline de ray tracing**
 (`createComputePipeline({ program, rayTracing: true })`, la capacité
 `rayTracingPipeline`) : un fil par rayon, `TraceRay` avec un shader
 closest-hit qui écrit l'impact, un shader miss, et le test de l'alpha dans
@@ -207,7 +208,6 @@ du haut reconstruit sur le CPU à chaque image pèse aussi.
 
 ## Pas encore
 
-- Les rayons sur Direct3D 12 (DXR, en ligne ou en pipelines).
 - Un BVH construit sur le GPU (le niveau du haut des grandes scènes coûte
   sur le CPU à chaque image), des BVH à 4 ou 8 enfants.
 - La variance dans le filtre temporel (SVGF), ReSTIR, l'échantillonnage

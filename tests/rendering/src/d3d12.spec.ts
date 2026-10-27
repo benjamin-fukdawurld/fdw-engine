@@ -3,13 +3,16 @@ import {
   addonPath,
   D3D12Engine,
   D3D12OffscreenSurface,
+  loadD3D12Addon,
 } from '@fdw/engine-d3d12';
+import { describeRays } from './rays';
 import { describeRenderer, RenderingFixture, size } from './suite';
 import { canRun } from '@fdw/engine-backend/testing';
 
 // The shared rendering tests on Direct3D 12, through the native library of
 // @fdw/engine-d3d12, with the debug layer: any message fails the test
-// reading the pixels. Skipped where the addon is not built (Windows only).
+// reading the pixels. Skipped where the addon is not built (Windows only);
+// the rays, where the GPU has no DXR 1.1.
 
 async function createFixture(): Promise<RenderingFixture> {
   const engine = new D3D12Engine({ validation: true, application: 'tests' });
@@ -51,4 +54,19 @@ describeRenderer('Renderer on Direct3D 12', createFixture, {
     existsSync(addonPath()),
     'the Direct3D 12 addon is not built (Windows only)',
   ),
+});
+
+// Whether the GPU has DXR 1.1.
+function tracesRays(): boolean {
+  const addon = loadD3D12Addon();
+  const context = addon.createContext(false);
+  try {
+    return addon.rayQuerySupported(context);
+  } finally {
+    addon.destroyContext(context);
+  }
+}
+
+describeRays('Rays on Direct3D 12', createFixture, {
+  skip: !existsSync(addonPath()) || !tracesRays(),
 });

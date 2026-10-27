@@ -5,6 +5,7 @@ export * from './VulkanOffscreenSurface';
 export * from './VulkanSwapchain';
 export * from './gpu/VulkanBuffer';
 export * from './gpu/VulkanTexture';
+export * from './render/VulkanAccelerationStructures';
 export * from './render/VulkanCommandEncoder';
 export * from './render/VulkanObjectTable';
 export * from './render/VulkanPassTimer';

@@ -40,6 +40,8 @@ Le **binding** `acceleration-structure` (le type `acceleration-structure` des gr
 
 **La face** : en Vulkan, un triangle anti-horaire vu depuis l'origine du rayon est de face, comme pour la rastérisation du moteur : les instances n'ont pas `TRIANGLE_FLIP_FACING` (le test qui compare au CPU l'a montré), seulement `TRIANGLE_FACING_CULL_DISABLE`. La TLAS qui grandit est recréée : sa `version` change, les groupes qui la tiennent sont refaits. Le Shader Model 6.5 est demandé à DXC pour les seuls programmes qui tracent (`RayQuery<`). lavapipe (Mesa 25) a les ray queries : la CI les teste sans GPU.
 
+**Direct3D 12** (matériel, 27 octobre 2026) : DXR 1.1 (le tier 1.1 du raytracing et le Shader Model 6.5), la même API C que la bibliothèque Vulkan (`fdw_dx_bottom_level`, `fdw_dx_top_level`, les commandes 19 et 20), et côté TypeScript les objets du backend Vulkan (`VulkanBottomLevel`, `VulkanTopLevel`). Les BLAS construits avec les transferts, la TLAS par `BuildRaytracingAccelerationStructure` à chaque image, les BLAS dynamiques ajustés (`PERFORM_UPDATE`). Les structures restent dans l'état `RAYTRACING_ACCELERATION_STRUCTURE`, hors du suivi des ressources : une barrière UAV avant et après chaque construction ; les instances, les sommets et les indices passent en `NON_PIXEL_SHADER_RESOURCE` par le suivi. La TLAS est liée comme une vue de son adresse (un registre `t` de son groupe). Les instances ont la même disposition que celles de Vulkan, et la même face sans drapeau : ni `TRIANGLE_FRONT_COUNTERCLOCKWISE` ici, ni `TRIANGLE_FLIP_FACING` là. Le HLSL des rayons est celui de Vulkan, compilé en DXIL.
+
 **WebGL2** : pas de calcul ni de storage buffers dans les fragment shaders : pas de capacité `rayQuery`. Le renderer garde ses ombres en cartes.
 
 ## 3. Les rayons dans les graphs
@@ -131,7 +133,7 @@ Les guides du premier impact (3 vec4 : l'albédo et la distance, la normale, le 
 
 ### 8.4 Les pipelines de ray tracing
 
-Un programme de calcul qui trace des rayons tourne, avec `createComputePipeline({ program, rayTracing: true })` sur un backend qui a la capacité `rayTracingPipeline` (Vulkan, `VK_KHR_ray_tracing_pipeline`, sur le GPU et lavapipe), comme le shader de génération de rayons d'un pipeline de ray tracing : le générateur HLSL émet (`HlslEmitOptions.rayGeneration`) une bibliothèque (`lib_6_5`) : `rg_main` (le corps du programme, `DispatchRaysIndex()` pour l'invocation), `ms_main`, `ch_main` (l'impact au format de `ray-query`, dans la charge utile), et `ah_main` (le masque d'alpha, `IgnoreHit`) quand le programme trace avec l'alpha. La table de shaders a trois enregistrements (génération, miss, hit group). Les dispatchs du programme lancent un rayon par fil (`vkCmdTraceRaysKHR` avec la taille des groupes de travail) : `ComputeRunner` reste le même (`rayTracing`). `PathTracer` et `RayReflections` prennent l'option `rayTracingPipeline` ; les démos `--ray-pipeline`. Les surfaces des matériaux restent des dispatchs de calcul. Un test compare les impacts au bit près aux ray queries.
+Un programme de calcul qui trace des rayons tourne, avec `createComputePipeline({ program, rayTracing: true })` sur un backend qui a la capacité `rayTracingPipeline` (Vulkan, `VK_KHR_ray_tracing_pipeline`, sur le GPU et lavapipe ; Direct3D 12, un state object et `DispatchRays`), comme le shader de génération de rayons d'un pipeline de ray tracing : le générateur HLSL émet (`HlslEmitOptions.rayGeneration`) une bibliothèque (`lib_6_5`) : `rg_main` (le corps du programme, `DispatchRaysIndex()` pour l'invocation), `ms_main`, `ch_main` (l'impact au format de `ray-query`, dans la charge utile), et `ah_main` (le masque d'alpha, `IgnoreHit`) quand le programme trace avec l'alpha. La table de shaders a trois enregistrements (génération, miss, hit group). Les dispatchs du programme lancent un rayon par fil (`vkCmdTraceRaysKHR` avec la taille des groupes de travail) : `ComputeRunner` reste le même (`rayTracing`). `PathTracer` et `RayReflections` prennent l'option `rayTracingPipeline` ; les démos `--ray-pipeline`. Les surfaces des matériaux restent des dispatchs de calcul. Un test compare les impacts au bit près aux ray queries.
 
 ### 8.5 L'aperçu dans l'éditeur
 
@@ -149,6 +151,7 @@ Le terrain du TPS, avec une normal map tirée des dérivées des pixels (0 aux i
 - **Suite de rendu** (6 tests, Dawn, Vulkan sur le GPU et sur lavapipe, avec la couche de validation) : des rayons au hasard dans une scène d'instances, impacts égaux au CPU (instance, triangle, face, barycentriques ; `any` ; une mise à jour plus petite ; une scène vide) ; les points touchés (position, normale, uv, objet, matériau, normale géométrique, un raté) ; les ombres tracées dans les matériaux (dures, qui suivent l'objet déplacé, douces) ; un sol miroir qui reflète un carré rouge ; l'occlusion au pied d'un mur ; le path tracer qui converge vers l'éclairement analytique d'un sol, la couleur d'une lampe, l'ombre d'un bloc.
 - **Documentation** : le guide « Le ray tracing », les tutoriels « Les ombres par rayons », « Les reflets et l'occlusion ambiante par rayons », « Le path tracing » (EN, FR), leurs trois exemples vivants et leurs captures (WebGPU sur SwiftShader ; le repli rasterisé en WebGL2).
 - **La suite (§8)** : `engine-shader` (12) : l'opération avec `alphaTest`, les attributs calculés lus de la géométrie tracée ; `engine-raytracing` (5) : les noyaux (les guides, la cuisson des masques) dans les 8 storage buffers ; la suite de rendu (9 tests, Dawn, Vulkan GPU et lavapipe) : les ombres à travers les trous d'un matériau masqué (matériaux, path tracer en ray queries et en pipelines de ray tracing), l'historique gardé quand la caméra bouge (le bruit réduit de moitié au moins), les sommets déplacés sur le GPU suivis et le mesh des rayons tracé, les impacts des pipelines de ray tracing égaux à ceux des ray queries ; `editor-ui` : les commandes du rendu, leur condition, l'état gardé ; l'éditeur de bureau (Playwright, Vulkan) : le niveau dessiné par le path tracer puis rastérisé à nouveau. Documentation : le tutoriel « Les rayons sur la géométrie animée et générée » et son exemple (un personnage qui marche sur un terrain en patchs), l'écran perforé de « Les ombres par rayons », la caméra qui bouge du path tracing, les sections du guide, « Rendre avec des rayons » dans l'éditeur (EN, FR).
+- **DXR** : la suite des rayons (9 tests) sur Direct3D 12 avec la couche de debug, sur le GPU (DXR 1.1) ; le guide et le README d'`engine-d3d12` (EN, FR).
 
 ## 10. Mesures
 
@@ -184,13 +187,14 @@ La forêt du TPS (des milliers de sapins) coûte surtout par la reconstruction d
 
 ## 11. Reportés
 
-- DXR sur Direct3D 12 (les ray queries de DXR 1.1, puis les pipelines) : le backend Direct3D 12 ne se construit que sous Windows, sans CI Windows ; à faire là où il se teste.
 - La mer de P17 dans la scène des rayons (sa géométrie vient du vertex stage, sans mesh des rayons).
 - Le BVH construit sur le GPU (le niveau du haut de la forêt du TPS coûte sur le CPU à chaque image), les BVH à 4 enfants.
 - Des hit groups par matériau (les ressources de tous les matériaux liées à la fois).
 - La variance de SVGF, ReSTIR, l'échantillonnage des textures d'environnement par importance.
 
 ## 12. État
+
+**DXR** (27 octobre 2026) : les rayons sur Direct3D 12 (§2), en ray queries et en pipelines de ray tracing (§8.4) ; la suite des rayons (`describeRays`, 9 tests) passe sur Direct3D 12 avec la couche de debug, comme les démos FPS et TPS en quatre rendus (`--d3d12 --rays`, `--ray-pipeline`). Sans CI Windows : testé sur le poste.
 
 **La suite** (26 octobre 2026) : l'alpha pendant la traversée, les meshes déformés et les meshes des rayons, le débruitage temporel, les pipelines de ray tracing de Vulkan, l'aperçu dans l'éditeur (§8), leurs tests et leur documentation.
 

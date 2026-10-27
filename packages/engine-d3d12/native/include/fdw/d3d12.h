@@ -234,6 +234,9 @@ typedef enum fdw_dx_binding_kind {
   FDW_DX_BINDING_SAMPLER = 2,
   FDW_DX_BINDING_STORAGE_READ = 3,
   FDW_DX_BINDING_STORAGE_READ_WRITE = 4,
+  // A top level acceleration structure (fdw_dx_top_level), read by ray
+  // queries.
+  FDW_DX_BINDING_ACCELERATION_STRUCTURE = 5,
 } fdw_dx_binding_kind;
 
 typedef struct fdw_dx_layout_binding {
@@ -342,6 +345,17 @@ FDW_DX_API fdw_dx_pipeline *fdw_dx_compute_pipeline_create(
     fdw_dx_context *context, fdw_dx_shader *shader,
     fdw_dx_group_layout *const *groups, uint32_t group_count,
     const char *label);
+// Whether the device has the ray tracing pipelines (with ray queries).
+FDW_DX_API int32_t
+fdw_dx_ray_tracing_pipeline_supported(const fdw_dx_context *context);
+// A ray tracing pipeline (a state object): a library of shaders (rg_main,
+// ms_main, ch_main, and with any_hit, ah_main), and the layouts of its
+// groups. Its dispatches trace a ray per thread of their workgroups of
+// `workgroup_size` (x, y, z).
+FDW_DX_API fdw_dx_pipeline *fdw_dx_ray_tracing_pipeline_create(
+    fdw_dx_context *context, fdw_dx_shader *shader, uint32_t any_hit,
+    const uint32_t *workgroup_size, fdw_dx_group_layout *const *groups,
+    uint32_t group_count, const char *label);
 FDW_DX_API void fdw_dx_pipeline_destroy(fdw_dx_context *context,
                                         fdw_dx_pipeline *pipeline);
 FDW_DX_API uint32_t fdw_dx_pipeline_id(const fdw_dx_pipeline *pipeline);
@@ -415,6 +429,62 @@ FDW_DX_API int fdw_dx_query_pool_read(fdw_dx_context *context,
                                       fdw_dx_query_pool *pool, uint32_t first,
                                       uint32_t count, double *nanoseconds);
 
+// --- Acceleration structures -------------------------------------------------------
+
+// Ray queries (DXR 1.1: raytracing tier 1.1 and Shader Model 6.5), where
+// the device has them. 1 or 0.
+FDW_DX_API int32_t fdw_dx_ray_query_supported(const fdw_dx_context *context);
+
+typedef struct fdw_dx_bottom_level fdw_dx_bottom_level;
+typedef struct fdw_dx_top_level fdw_dx_top_level;
+
+// The flags of a bottom level.
+enum {
+  // Its vertices move on the GPU: refit by FDW_DX_CMD_REFIT_BOTTOM_LEVEL.
+  FDW_DX_BOTTOM_LEVEL_DYNAMIC = 1,
+};
+
+// The acceleration structure of a triangle mesh: positions (xyz per vertex,
+// `vertex_count` of them) and indices (3 per triangle). Built in the order
+// of the queue, before the commands submitted next. NULL on error.
+FDW_DX_API fdw_dx_bottom_level *
+fdw_dx_bottom_level_create(fdw_dx_context *context, const float *positions,
+                           uint32_t vertex_count, const uint32_t *indices,
+                           uint32_t index_count, uint32_t flags,
+                           const char *label);
+// Destroyed once the GPU no longer uses it.
+FDW_DX_API void fdw_dx_bottom_level_destroy(fdw_dx_context *context,
+                                            fdw_dx_bottom_level *bottom);
+FDW_DX_API uint32_t fdw_dx_bottom_level_id(const fdw_dx_bottom_level *bottom);
+
+// An instance of a top level structure.
+typedef struct fdw_dx_instance {
+  // Object to world: the 3 rows of a 3 × 4 matrix.
+  float transform[12];
+  // The id of its bottom level.
+  uint32_t bottom_level;
+  // 8 bits: the rays sharing a bit with it see it; bit 8 set, it is not
+  // opaque (its candidate hits go to the ray queries that test them).
+  uint32_t mask;
+} fdw_dx_instance;
+
+// The acceleration structure of a scene, for `capacity` instances (it grows
+// when updated with more). NULL on error.
+FDW_DX_API fdw_dx_top_level *fdw_dx_top_level_create(fdw_dx_context *context,
+                                                     uint32_t capacity,
+                                                     const char *label);
+// Sets the instances of the next build (FDW_DX_CMD_BUILD_TOP_LEVEL), in the
+// order of the queue. Returns 1 when the structure was replaced by a larger
+// one (the groups holding it must be made again), 0 otherwise, -1 on error.
+FDW_DX_API int fdw_dx_top_level_update(fdw_dx_context *context,
+                                       fdw_dx_top_level *top,
+                                       const fdw_dx_instance *instances,
+                                       uint32_t count);
+// Destroyed once the GPU no longer uses it.
+FDW_DX_API void fdw_dx_top_level_destroy(fdw_dx_context *context,
+                                         fdw_dx_top_level *top);
+FDW_DX_API uint32_t fdw_dx_top_level_id(const fdw_dx_top_level *top);
+
 // --- Commands --------------------------------------------------------------------
 
 // The commands of a submission: 32-bit words, each command an opcode then
@@ -460,6 +530,14 @@ enum {
   // Outside of the passes. texture: computes its levels after the first
   // one, each drawn from the previous one.
   FDW_DX_CMD_GENERATE_MIPMAPS = 18,
+  // Outside of the passes. top level: builds it from its last update; the
+  // passes after it trace rays against it.
+  FDW_DX_CMD_BUILD_TOP_LEVEL = 19,
+  // Outside of the passes. bottom level (dynamic), buffer, offset (64),
+  // stride: refits it to the positions of its vertices in the buffer (xyz
+  // float32 of the vertex v at offset + v × stride), before the builds of
+  // the top levels holding it.
+  FDW_DX_CMD_REFIT_BOTTOM_LEVEL = 20,
 };
 
 // Records the commands into a command list, with the barriers the

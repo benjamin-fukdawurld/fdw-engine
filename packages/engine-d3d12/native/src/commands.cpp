@@ -58,6 +58,9 @@ struct Replay {
   fdw_dx_context *context;
   ID3D12GraphicsCommandList *list;
   Reader reader;
+  // The same list, for the commands of the rays (where the device has
+  // them).
+  ID3D12GraphicsCommandList4 *rays = nullptr;
   bool inRenderPass = false;
   bool inComputePass = false;
   // The pipeline, its root signature as set, and the groups, bound at the
@@ -161,6 +164,14 @@ int useGroup(Replay &replay, Barriers &barriers, const fdw_dx_group *group) {
         return fail("A group uses the destroyed texture " + std::to_string(id));
       }
       barriers.texture(texture->second, ShaderRead);
+      continue;
+    }
+    // The builds of the structures place their own barriers.
+    if (kind == FDW_DX_BINDING_ACCELERATION_STRUCTURE) {
+      if (!context->topLevels.count(id)) {
+        return fail("A group uses the destroyed top level " +
+                    std::to_string(id));
+      }
       continue;
     }
     const auto buffer = context->buffers.find(id);
@@ -333,6 +344,11 @@ int dispatch(Replay &replay, bool indirect) {
   if (!replay.pipeline || !replay.pipeline->compute) {
     return fail("No compute pipeline set before dispatching");
   }
+  // A ray tracing pipeline traces a ray per thread of the workgroups.
+  const fdw_dx_pipeline *pipeline = replay.pipeline;
+  if (pipeline->rays && indirect) {
+    return fail("The ray tracing pipelines have no indirect dispatches");
+  }
   {
     Barriers barriers{replay.context, replay.list};
     for (fdw_dx_group *group : replay.groups) {
@@ -343,9 +359,32 @@ int dispatch(Replay &replay, bool indirect) {
     if (buffer) {
       barriers.buffer(buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
     }
+    if (pipeline->rays) {
+      barriers.buffer(pipeline->shaderTable,
+                      D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    }
   }
   if (flushGroups(replay) != 0) {
     return -1;
+  }
+  if (pipeline->rays) {
+    const D3D12_GPU_VIRTUAL_ADDRESS table =
+        pipeline->shaderTable->resource->GetGPUVirtualAddress();
+    const uint64_t stride = pipeline->tableStride;
+    D3D12_DISPATCH_RAYS_DESC rays{};
+    rays.RayGenerationShaderRecord = {table,
+                                      D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES};
+    rays.MissShaderTable = {table + stride,
+                            D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+                            D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES};
+    rays.HitGroupTable = {table + 2 * stride,
+                          D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+                          D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES};
+    rays.Width = workgroups[0] * pipeline->workgroupSize[0];
+    rays.Height = workgroups[1] * pipeline->workgroupSize[1];
+    rays.Depth = workgroups[2] * pipeline->workgroupSize[2];
+    replay.rays->DispatchRays(&rays);
+    return 0;
   }
   if (!buffer) {
     replay.list->SetComputeRoot32BitConstants(0, 3, workgroups, 0);
@@ -406,7 +445,11 @@ int drawCommand(Replay &replay, uint32_t opcode) {
       replay.dirty.fill(true);
       replay.firstInstance = ~0u;
     }
-    list->SetPipelineState(pipeline->state.Get());
+    if (pipeline->rays) {
+      replay.rays->SetPipelineState1(pipeline->rays.Get());
+    } else {
+      list->SetPipelineState(pipeline->state.Get());
+    }
     if (!pipeline->compute) {
       list->IASetPrimitiveTopology(pipeline->topology);
       // The strides are those of the pipeline.
@@ -754,6 +797,34 @@ int replayCommands(Replay &replay) {
     case FDW_DX_CMD_COPY_TEXTURE:
       status = copyTexture(replay);
       break;
+    case FDW_DX_CMD_BUILD_TOP_LEVEL: {
+      if (replay.inRenderPass || replay.inComputePass) {
+        return fail("Top levels are built outside of the passes");
+      }
+      fdw_dx_top_level *top = find(replay.context->topLevels,
+                                   replay.reader.word(), "top level", &status);
+      if (top) {
+        status = buildTopLevel(replay.context, replay.rays, top);
+      }
+      break;
+    }
+    case FDW_DX_CMD_REFIT_BOTTOM_LEVEL: {
+      if (replay.inRenderPass || replay.inComputePass) {
+        return fail("Bottom levels are refit outside of the passes");
+      }
+      fdw_dx_bottom_level *bottom =
+          find(replay.context->bottomLevels, replay.reader.word(),
+               "bottom level", &status);
+      fdw_dx_buffer *source = find(replay.context->buffers,
+                                   replay.reader.word(), "buffer", &status);
+      const uint64_t offset = replay.reader.wide();
+      const uint32_t stride = replay.reader.word();
+      if (bottom && source) {
+        status = refitBottomLevel(replay.context, replay.rays, bottom, source,
+                                  offset, stride);
+      }
+      break;
+    }
     case FDW_DX_CMD_GENERATE_MIPMAPS: {
       if (replay.inRenderPass || replay.inComputePass) {
         return fail("Mipmaps are computed outside of the passes");
@@ -798,7 +869,8 @@ int fdw_dx_submit(fdw_dx_context *context, const uint32_t *words,
   if (!list) {
     return -1;
   }
-  Replay replay{context, list->list.Get(), Reader(words, count)};
+  Replay replay{context, list->list.Get(), Reader(words, count),
+                list->rays.Get()};
   const int status = replayCommands(replay);
   // On error, what was recorded is still submitted: the tracked state of
   // the resources is that of the commands recorded, which must then run.
