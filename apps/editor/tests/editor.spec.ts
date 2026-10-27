@@ -161,12 +161,20 @@ test('draws the level by rays when the Rendering menu asks for it', async () => 
   // Rasterized again: the image of before.
   await page.keyboard.press('Control+Shift+P');
   await page.keyboard.type('Rasterized');
+  await expect(page.getByRole('option', { name: /Rasterized/ })).toBeVisible();
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-  const again = await region();
-  expect(
-    again.every((value, i) => Math.abs(value - (rasterized[i] ?? 0)) <= 3),
-  ).toBe(true);
+  // The frame of the path tracer still in flight, slow on lavapipe.
+  await expect
+    .poll(
+      async () => {
+        const again = await region();
+        return again.every(
+          (value, i) => Math.abs(value - (rasterized[i] ?? 0)) <= 3,
+        );
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
 });
 
 test('a reload of the page connects it again to the engine', async () => {
