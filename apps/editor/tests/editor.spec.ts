@@ -140,14 +140,23 @@ test('draws the level by rays when the Rendering menu asks for it', async () => 
   const { page } = editor;
   await page.keyboard.press('Control+Shift+P');
   await page.keyboard.type('Path traced');
+  // Offered only when the engine traces rays (rayQuery of lavapipe).
+  await expect(page.getByRole('option', { name: /Path traced/ })).toBeVisible();
   await page.keyboard.press('Enter');
   // The image of the path tracer, gathered over a few frames: the light
-  // bounced off the level, not the rasterized one.
-  await page.waitForTimeout(3000);
-  const traced = await region();
-  expect(
-    traced.some((value, i) => Math.abs(value - (rasterized[i] ?? 0)) > 3),
-  ).toBe(true);
+  // bounced off the level, not the rasterized one. On lavapipe, its first
+  // frame waits for the build of the level and of the pipelines.
+  await expect
+    .poll(
+      async () => {
+        const traced = await region();
+        return traced.some(
+          (value, i) => Math.abs(value - (rasterized[i] ?? 0)) > 3,
+        );
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
   expect(await editor.differsFromPage(area.centerX, area.centerY)).toBe(true);
   // Rasterized again: the image of before.
   await page.keyboard.press('Control+Shift+P');
