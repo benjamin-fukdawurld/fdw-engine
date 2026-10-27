@@ -80,6 +80,9 @@ struct DescriptorHeap {
 struct CommandList {
   ComPtr<ID3D12CommandAllocator> allocator;
   ComPtr<ID3D12GraphicsCommandList> list;
+  // The same list, for the commands of the rays (where the device has
+  // them).
+  ComPtr<ID3D12GraphicsCommandList4> rays;
   uint64_t submission = 0;
   bool recording = false;
 };
@@ -208,6 +211,13 @@ struct fdw_dx_pipeline {
   ComPtr<ID3D12PipelineState> state;
   RootSignature *root = nullptr;
   bool compute = false;
+  // A ray tracing pipeline (compute too): its state object, its shader
+  // table (the records of the ray generation, miss and hit group, each at
+  // the start of a table) and the size of the workgroups of its dispatches.
+  ComPtr<ID3D12StateObject> rays;
+  fdw_dx_buffer *shaderTable = nullptr;
+  uint64_t tableStride = 0;
+  uint32_t workgroupSize[3] = {1, 1, 1};
   D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
   // The stride of each vertex buffer.
   std::vector<uint32_t> strides;
@@ -223,6 +233,31 @@ struct fdw_dx_query_pool {
   std::vector<uint64_t> resolved;
 };
 
+// The acceleration structure of a mesh: in a buffer of its own, built at
+// its creation; a dynamic one keeps its indices and the scratch memory of
+// its refits.
+struct fdw_dx_bottom_level {
+  uint32_t id = 0;
+  ComPtr<ID3D12Resource> storage;
+  uint32_t triangleCount = 0;
+  uint32_t vertexCount = 0;
+  bool dynamic = false;
+  fdw_dx_buffer *indices = nullptr;
+  ComPtr<ID3D12Resource> updateScratch;
+};
+
+// The acceleration structure of a scene, rebuilt by each
+// FDW_DX_CMD_BUILD_TOP_LEVEL from its instances.
+struct fdw_dx_top_level {
+  uint32_t id = 0;
+  ComPtr<ID3D12Resource> storage;
+  ComPtr<ID3D12Resource> scratch;
+  // The instances (D3D12_RAYTRACING_INSTANCE_DESC), written by the updates.
+  fdw_dx_buffer *instances = nullptr;
+  uint32_t capacity = 0;
+  uint32_t count = 0;
+};
+
 struct fdw_dx_swapchain;
 
 struct fdw_dx_context {
@@ -236,6 +271,10 @@ struct fdw_dx_context {
   // Ticks of the timestamps per second (0: no timestamps).
   uint64_t timestampFrequency = 0;
   bool tearing = false;
+  // Ray queries and ray tracing pipelines (DXR 1.1), with the interface of
+  // the device that has them.
+  bool rayQuery = false;
+  ComPtr<ID3D12Device5> rayDevice;
 
   // Every submission signals the next value of the fence: a submission is
   // complete when the fence reaches its value.
@@ -282,6 +321,8 @@ struct fdw_dx_context {
   std::map<uint32_t, fdw_dx_group *> groups;
   std::map<uint32_t, fdw_dx_pipeline *> pipelines;
   std::map<uint32_t, fdw_dx_query_pool *> queryPools;
+  std::map<uint32_t, fdw_dx_bottom_level *> bottomLevels;
+  std::map<uint32_t, fdw_dx_top_level *> topLevels;
   std::set<fdw_dx_shader *> shaders;
   // The root signatures, by their groups.
   std::map<std::string, std::unique_ptr<RootSignature>> rootSignatures;
@@ -388,6 +429,17 @@ fdw_dx_texture *wrapTexture(fdw_dx_context *context,
 void destroyPipelines(fdw_dx_context *context);
 // Destroys the swapchains of a context being destroyed.
 void destroySwapchains(fdw_dx_context *context);
+
+// Records the refit of a dynamic bottom level to the positions of vertices
+// in a buffer (xyz float32 at offset + v × stride).
+int refitBottomLevel(fdw_dx_context *context, ID3D12GraphicsCommandList4 *list,
+                     fdw_dx_bottom_level *bottom, fdw_dx_buffer *source,
+                     uint64_t offset, uint32_t stride);
+// Records the build of a top level from its last update.
+int buildTopLevel(fdw_dx_context *context, ID3D12GraphicsCommandList4 *list,
+                  fdw_dx_top_level *top);
+// Frees the acceleration structures of a context being destroyed.
+void destroyAccelerationStructures(fdw_dx_context *context);
 
 // Registers a read back copy submitted in `submission`: a ticket.
 uint64_t addRead(fdw_dx_context *context, PendingRead read);

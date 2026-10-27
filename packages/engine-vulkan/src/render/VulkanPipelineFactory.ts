@@ -219,7 +219,6 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
     const layout = this.resolveLayout(program);
     if (
       rayTracing &&
-      this.target === 'vulkan' &&
       this._addon.rayTracingPipelineSupported(this._context) &&
       tracesRays(program.module)
     ) {

@@ -99,8 +99,8 @@ const timeouts: Record<string, number> = {
   // The rays traversed in WGSL, on SwiftShader.
   'ray-shadows': 120_000,
   'ray-reflections': 300_000,
-  'path-tracing': 240_000,
-  'ray-characters': 240_000,
+  'path-tracing': 360_000,
+  'ray-characters': 360_000,
 };
 
 for (const [name, page] of Object.entries(examples)) {

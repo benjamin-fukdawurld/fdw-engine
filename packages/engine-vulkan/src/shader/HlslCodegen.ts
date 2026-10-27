@@ -988,9 +988,6 @@ function declareResource(
     case 'object-table':
       throw new Error('An object table is declared by declareObjectTable');
     case 'acceleration-structure':
-      if (target === 'd3d12') {
-        throw new Error('Direct3D 12 traces no rays yet');
-      }
       return [
         bound(target, `RaytracingAccelerationStructure ${name}`, location, 't'),
         // The ray queries; a ray generation shader traces by TraceRay.
@@ -1208,8 +1205,8 @@ export interface HlslCodegenOptions {
 export interface HlslEmitOptions {
   /**
    * A compute stage tracing rays emitted as the shaders of a ray tracing
-   * pipeline (Vulkan): its thread a ray generation shader, a thread per
-   * ray, its rays traced by TraceRay (see RayTracingEntryPoints).
+   * pipeline (Vulkan, Direct3D 12): its thread a ray generation shader, a
+   * thread per ray, its rays traced by TraceRay (see RayTracingEntryPoints).
    */
   readonly rayGeneration?: boolean;
 }

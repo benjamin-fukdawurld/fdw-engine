@@ -1,6 +1,6 @@
 ---
 title: Ray tracing
-description: Rays traced in the scene — the acceleration structures of the backends (in hardware on Vulkan, in software on WebGPU), the traced scene, shadows, reflections and ambient occlusion by rays, the path tracer, and the rays in your own graphs.
+description: Rays traced in the scene — the acceleration structures of the backends (in hardware on Vulkan and Direct3D 12, in software on WebGPU), the traced scene, shadows, reflections and ambient occlusion by rays, the path tracer, and the rays in your own graphs.
 sidebar:
   order: 20
 ---
@@ -15,11 +15,12 @@ use: [shadows by rays](/fdw-engine/tutorials/ray-traced-shadows/),
 
 ## The backends
 
-| Backend | Rays                                                                                                                                                                                                             |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Vulkan  | In hardware: `VK_KHR_acceleration_structure` and `VK_KHR_ray_query`, where the GPU has them (RTX, RDNA2 and later; lavapipe in software); the ray tracing pipelines (`VK_KHR_ray_tracing_pipeline`) as an option |
-| WebGPU  | In software: a BVH built on the CPU, in storage buffers, traversed by WGSL code the backend adds to the programs that trace rays                                                                                 |
-| WebGL2  | None: the rasterization only                                                                                                                                                                                     |
+| Backend     | Rays                                                                                                                                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vulkan      | In hardware: `VK_KHR_acceleration_structure` and `VK_KHR_ray_query`, where the GPU has them (RTX, RDNA2 and later; lavapipe in software); the ray tracing pipelines (`VK_KHR_ray_tracing_pipeline`) as an option |
+| Direct3D 12 | In hardware: DXR 1.1 (ray queries, Shader Model 6.5), where the GPU has it (RTX, RDNA2 and later); the ray tracing pipelines (state objects, `DispatchRays`) as an option                                        |
+| WebGPU      | In software: a BVH built on the CPU, in storage buffers, traversed by WGSL code the backend adds to the programs that trace rays                                                                                 |
+| WebGL2      | None: the rasterization only                                                                                                                                                                                     |
 
 The capability `rayQuery` of the backend says whether it traces rays
 (`backend.capabilities?.rayQuery`). Without it, `RayScene` and the passes
@@ -38,8 +39,9 @@ const scene = new RayScene(backend);
 scene.update({ source, items });
 ```
 
-- **A bottom level per mesh**, built once (on the GPU in Vulkan, on the
-  CPU in WebGPU: a binned SAH), kept while the mesh does not change.
+- **A bottom level per mesh**, built once (on the GPU in Vulkan and
+  Direct3D 12, on the CPU in WebGPU: a binned SAH), kept while the mesh
+  does not change.
 - **The instances**, rewritten at each update: every item of the source
   (all of them, not only those the camera sees: rays look behind), each
   with its world matrix, its material and its mask (the transparent items
@@ -78,9 +80,9 @@ The rays go through the cut parts of the masked materials (`alphaMode:
 masked material over its uv (its hit program over a square, cut at its
 cutoff, 256 × 256 bits in the geometry of the scene), again when its values
 change; the traversals test the candidate triangles of the masked
-instances against it (Vulkan: the non opaque instances in the ray query
-loop, or an any-hit shader; WebGPU: in the WGSL traversal). In your graphs,
-`g.traceRay({ …, alphaTest: true })` (`ray.traceAlpha`) does the same.
+instances against it (Vulkan, Direct3D 12: the non opaque instances in the
+ray query loop, or an any-hit shader; WebGPU: in the WGSL traversal). In
+your graphs, `g.traceRay({ …, alphaTest: true })` (`ray.traceAlpha`) does the same.
 
 ## Passes of rays
 
@@ -119,8 +121,8 @@ frames (16) while things move; still, the frames add up without end.
 
 ## Ray tracing pipelines
 
-On Vulkan, a compute program that traces rays can run as the ray
-generation shader of a **ray tracing pipeline**
+On Vulkan and Direct3D 12, a compute program that traces rays can run as
+the ray generation shader of a **ray tracing pipeline**
 (`createComputePipeline({ program, rayTracing: true })`, the
 `rayTracingPipeline` capability): a thread per ray, `TraceRay` with a
 closest-hit shader writing the hit, a miss shader, and the alpha test in an
@@ -199,7 +201,6 @@ frame weighs too.
 
 ## Not yet
 
-- Rays on Direct3D 12 (DXR, inline or with pipelines).
 - A BVH built on the GPU (the top level of large scenes costs on the CPU
   each frame), BVHs of 4 or 8 children.
 - The variance in the temporal filter (SVGF), ReSTIR, importance sampling
