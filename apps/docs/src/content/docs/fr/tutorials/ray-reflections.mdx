@@ -79,7 +79,10 @@ les tracer, une par matériau de la scène pour les surfaces, une pour les
 ```ts
 import { RayOcclusion } from '@fdw/engine-raytracing';
 
-const occlusion = new RayOcclusion(renderer, scene, { radius: 0.8, samples: 6 });
+const occlusion = new RayOcclusion(renderer, scene, {
+  radius: 0.8,
+  samples: 6,
+});
 const open = occlusion.addPasses(graph, {
   position: passes.outputs.position,
   normal: passes.outputs.normal,

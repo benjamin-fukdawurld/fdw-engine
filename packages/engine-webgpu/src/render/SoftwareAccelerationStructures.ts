@@ -269,7 +269,13 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
     if (!this._refit) {
       throw new Error('Only the dynamic bottom levels are refit');
     }
-    this._refit.record(encoder, this.pools.pool.buffer, vertices, offset, stride);
+    this._refit.record(
+      encoder,
+      this.pools.pool.buffer,
+      vertices,
+      offset,
+      stride,
+    );
   }
 
   destroy(): void {

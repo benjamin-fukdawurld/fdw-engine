@@ -64,7 +64,10 @@ export function cameraKernel(): MaterialGraphData {
     s.sub(1, s.mul(s.div(s.add(y, jy), fh), 2)),
   );
   const unproject = (z: number) => {
-    const point = s.transform(inverse, s.vec4(ndc.swizzle('x'), ndc.swizzle('y'), z, 1));
+    const point = s.transform(
+      inverse,
+      s.vec4(ndc.swizzle('x'), ndc.swizzle('y'), z, 1),
+    );
     return s.div(point.swizzle('xyz'), point.swizzle('w'));
   };
   const near = unproject(0);
@@ -120,7 +123,10 @@ export function traceKernel(): MaterialGraphData {
     mask: RayMasks.visible,
     alphaTest: true,
   });
-  g.write(write('rayHits', arrayType(BuiltinTypes.vec4u)), { index, value: hit });
+  g.write(write('rayHits', arrayType(BuiltinTypes.vec4u)), {
+    index,
+    value: hit,
+  });
   g.write(write('raySurfaces'), {
     index: s.add(s.mul(index, s.u32(RaySurfaceVec4s)), s.u32(4)),
     value: [0, 0, 0, 0],
@@ -171,7 +177,10 @@ export function guidesKernel(): MaterialGraphData {
   g.write(guides, { index: at(0), value: s.extend(albedo, depth) });
   g.write(guides, {
     index: at(1),
-    value: s.extend(s.select(s.mul(dir, -1), s.normalize(s1.swizzle('xyz')), hitSomething), 0),
+    value: s.extend(
+      s.select(s.mul(dir, -1), s.normalize(s1.swizzle('xyz')), hitSomething),
+      0,
+    ),
   });
   g.write(guides, {
     index: at(2),
@@ -184,7 +193,11 @@ export function guidesKernel(): MaterialGraphData {
 function skyColor(
   s: Shading,
   dir: PortHandle,
-  { zenith, horizon, ground }: Record<'zenith' | 'horizon' | 'ground', PortHandle>,
+  {
+    zenith,
+    horizon,
+    ground,
+  }: Record<'zenith' | 'horizon' | 'ground', PortHandle>,
 ): PortHandle {
   const up = dir.swizzle('y');
   return s.select(
@@ -232,7 +245,11 @@ export function bounceKernel(): MaterialGraphData {
   // Written by the hit program: the geometry of the scene is not read.
   const position = s4.swizzle('xyz');
 
-  const u = s.random(index, s.add(s.mul(frame, s.u32(16)), s.add(bounce, s.u32(1))), 8);
+  const u = s.random(
+    index,
+    s.add(s.mul(frame, s.u32(16)), s.add(bounce, s.u32(1))),
+    8,
+  );
 
   const sky = skyColor(s, dir, { zenith, horizon, ground });
 
@@ -275,12 +292,16 @@ export function bounceKernel(): MaterialGraphData {
       s.max(s.sub(l2.swizzle('w'), l3.swizzle('w')), 1e-4),
     ),
   );
-  const bsdf = new Bsdf(s, {
-    baseColor,
-    normal,
-    roughness: s.clamp(s1.swizzle('w'), 0.02, 1),
-    metallic: s.saturate(s2.swizzle('w')),
-  }, s.mul(dir, -1));
+  const bsdf = new Bsdf(
+    s,
+    {
+      baseColor,
+      normal,
+      roughness: s.clamp(s1.swizzle('w'), 0.02, 1),
+      metallic: s.saturate(s2.swizzle('w')),
+    },
+    s.mul(dir, -1),
+  );
   // The shadow ray, from the point moved off the surface.
   const offset = s.mul(normal, 1e-3);
   const lit = s.and(
@@ -304,7 +325,10 @@ export function bounceKernel(): MaterialGraphData {
   const direct = s.select(
     [0, 0, 0],
     s.mul(
-      s.mul(bsdf.evaluate(l), s.mul(l1.swizzle('xyz'), s.mul(attenuation, spot))),
+      s.mul(
+        bsdf.evaluate(l),
+        s.mul(l1.swizzle('xyz'), s.mul(attenuation, spot)),
+      ),
       fCount,
     ),
     visible,
@@ -317,10 +341,21 @@ export function bounceKernel(): MaterialGraphData {
   const below = s.lessEqual(s.dot(normal, wi), 0);
   let nextThroughput = s.mul(throughput, weight);
   // Russian roulette after two bounces.
-  const survive = s.clamp(s.max(s.max(nextThroughput.swizzle('x'), nextThroughput.swizzle('y')), nextThroughput.swizzle('z')), 0.05, 0.95);
+  const survive = s.clamp(
+    s.max(
+      s.max(nextThroughput.swizzle('x'), nextThroughput.swizzle('y')),
+      nextThroughput.swizzle('z'),
+    ),
+    0.05,
+    0.95,
+  );
   const roulette = s.greaterEqual(bounce, s.u32(2));
   const killed = s.and(roulette, s.greater(u[4], survive));
-  nextThroughput = s.select(nextThroughput, s.div(nextThroughput, survive), roulette);
+  nextThroughput = s.select(
+    nextThroughput,
+    s.div(nextThroughput, survive),
+    roulette,
+  );
 
   const gathered = s.add(
     radiance,
@@ -374,13 +409,19 @@ export function accumulateKernel(): MaterialGraphData {
   const height = g.uniform('height', BuiltinTypes.u32);
   const reset = g.uniform('reset', BuiltinTypes.u32);
   const maxHistory = g.uniform('maxHistory', BuiltinTypes.f32);
-  const previousViewProjection = g.uniform('previousViewProjection', BuiltinTypes.mat4f);
+  const previousViewProjection = g.uniform(
+    'previousViewProjection',
+    BuiltinTypes.mat4f,
+  );
   // The camera did not move: each pixel keeps its own history.
   const still = s.greater(g.uniform('still', BuiltinTypes.u32), s.u32(0));
   const clampTo = g.uniform('maxRadiance', BuiltinTypes.f32);
   const sample = pathVec(s, read('paths'), index, 3).swizzle('xyz');
   const luminance = s.luminance(sample);
-  const clamped = s.mul(sample, s.min(1, s.div(clampTo, s.max(luminance, 1e-6))));
+  const clamped = s.mul(
+    sample,
+    s.min(1, s.div(clampTo, s.max(luminance, 1e-6))),
+  );
   const guides = read('guides');
   const previousGuides = read('previousGuides');
   const accumulation = read('accumulation');
@@ -390,7 +431,10 @@ export function accumulateKernel(): MaterialGraphData {
   const normal = guide(guides, index, 1).swizzle('xyz');
   const point = guide(guides, index, 2);
   // Where the point was in the previous image, in pixels (centers at .5).
-  const clip = s.transform(previousViewProjection, s.extend(point.swizzle('xyz'), 1));
+  const clip = s.transform(
+    previousViewProjection,
+    s.extend(point.swizzle('xyz'), 1),
+  );
   const ndc = s.div(clip.swizzle('xy'), s.max(clip.swizzle('w'), 1e-6));
   const fw = s.convert(width, BuiltinTypes.f32);
   const fh = s.convert(height, BuiltinTypes.f32);
@@ -413,7 +457,12 @@ export function accumulateKernel(): MaterialGraphData {
   let sum: PortHandle | undefined;
   let total: PortHandle | undefined;
   let frames: PortHandle | undefined;
-  for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+  for (const [dx, dy] of [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1],
+  ]) {
     const tx = s.add(x0, dx);
     const ty = s.add(y0, dy);
     const inside = s.and(
@@ -426,10 +475,19 @@ export function accumulateKernel(): MaterialGraphData {
     );
     const before = guide(previousGuides, pixel, 2);
     const same = s.and(
-      s.and(inside, s.greater(s.mul(before.swizzle('w'), point.swizzle('w')), 0.5)),
       s.and(
-        s.less(s.length(s.sub(before.swizzle('xyz'), point.swizzle('xyz'))), tolerance),
-        s.greater(s.dot(guide(previousGuides, pixel, 1).swizzle('xyz'), normal), 0.9),
+        inside,
+        s.greater(s.mul(before.swizzle('w'), point.swizzle('w')), 0.5),
+      ),
+      s.and(
+        s.less(
+          s.length(s.sub(before.swizzle('xyz'), point.swizzle('xyz'))),
+          tolerance,
+        ),
+        s.greater(
+          s.dot(guide(previousGuides, pixel, 1).swizzle('xyz'), normal),
+          0.9,
+        ),
       ),
     );
     const weight = s.select(
@@ -449,7 +507,11 @@ export function accumulateKernel(): MaterialGraphData {
     s.equal(reset, s.u32(0)),
   );
   const previous = s.div(sum as PortHandle, s.max(total as PortHandle, 1e-6));
-  const count = s.select(1, s.add(s.min(frames as PortHandle, s.sub(maxHistory, 1)), 1), found);
+  const count = s.select(
+    1,
+    s.add(s.min(frames as PortHandle, s.sub(maxHistory, 1)), 1),
+    found,
+  );
   const average = s.select(
     clamped,
     s.mix(previous.swizzle('xyz'), clamped, s.div(1, count)),
@@ -485,15 +547,24 @@ export function denoiseKernel(): MaterialGraphData {
   const w = s.convert(width, BuiltinTypes.i32);
   const h = s.convert(height, BuiltinTypes.i32);
   const albedoOf = (pixel: PortHandle) =>
-    s.max(s.index(guides, s.mul(pixel, s.u32(GuideVec4s))).swizzle('xyz'), s.splat3(0.02));
+    s.max(
+      s.index(guides, s.mul(pixel, s.u32(GuideVec4s))).swizzle('xyz'),
+      s.splat3(0.02),
+    );
   // The illumination: the color over the albedo, on the first pass.
   const illumination = (pixel: PortHandle) => {
     const color = s.index(colors, pixel).swizzle('xyz');
-    return s.select(color, s.div(color, albedoOf(pixel)), s.greater(first, s.u32(0)));
+    return s.select(
+      color,
+      s.div(color, albedoOf(pixel)),
+      s.greater(first, s.u32(0)),
+    );
   };
   const center = illumination(index);
   const centerGuide = s.index(guides, s.mul(index, s.u32(GuideVec4s)));
-  const centerNormal = s.index(guides, s.add(s.mul(index, s.u32(GuideVec4s)), s.u32(1))).swizzle('xyz');
+  const centerNormal = s
+    .index(guides, s.add(s.mul(index, s.u32(GuideVec4s)), s.u32(1)))
+    .swizzle('xyz');
   const kernelWeights = [1 / 16, 1 / 4, 3 / 8, 1 / 4, 1 / 16];
   let sum: PortHandle | undefined;
   let total: PortHandle | undefined;
@@ -504,7 +575,9 @@ export function denoiseKernel(): MaterialGraphData {
       const pixel = s.convert(s.add(s.mul(py, w), px), BuiltinTypes.u32);
       const value = illumination(pixel);
       const guide = s.index(guides, s.mul(pixel, s.u32(GuideVec4s)));
-      const normal = s.index(guides, s.add(s.mul(pixel, s.u32(GuideVec4s)), s.u32(1))).swizzle('xyz');
+      const normal = s
+        .index(guides, s.add(s.mul(pixel, s.u32(GuideVec4s)), s.u32(1)))
+        .swizzle('xyz');
       const normalWeight = s.pow(s.max(s.dot(centerNormal, normal), 0), 32);
       const depthWeight = s.exp(
         s.mul(
@@ -516,7 +589,9 @@ export function denoiseKernel(): MaterialGraphData {
         ),
       );
       const difference = s.sub(value, center);
-      const colorWeight = s.exp(s.mul(-1, s.div(s.dot(difference, difference), s.max(phi, 1e-6))));
+      const colorWeight = s.exp(
+        s.mul(-1, s.div(s.dot(difference, difference), s.max(phi, 1e-6))),
+      );
       const weight = s.mul(
         kernelWeights[dx + 2] * kernelWeights[dy + 2],
         s.mul(normalWeight, s.mul(depthWeight, colorWeight)),
@@ -526,7 +601,11 @@ export function denoiseKernel(): MaterialGraphData {
     }
   }
   const filtered = s.div(sum as PortHandle, s.max(total as PortHandle, 1e-6));
-  const output = s.select(filtered, s.mul(filtered, albedoOf(index)), s.greater(last, s.u32(0)));
+  const output = s.select(
+    filtered,
+    s.mul(filtered, albedoOf(index)),
+    s.greater(last, s.u32(0)),
+  );
   g.write(write('output'), { index, value: s.extend(output, 1) });
   return finish();
 }
@@ -542,14 +621,23 @@ export function presentGraph(): MaterialGraphData {
   const height = g.uniform('height', BuiltinTypes.u32);
   const uv = g.builtin('screen-uv');
   const column = s.min(
-    s.convert(s.mul(uv.swizzle('x'), s.convert(width, BuiltinTypes.f32)), BuiltinTypes.u32),
+    s.convert(
+      s.mul(uv.swizzle('x'), s.convert(width, BuiltinTypes.f32)),
+      BuiltinTypes.u32,
+    ),
     s.sub(width, s.u32(1)),
   );
   const row = s.min(
-    s.convert(s.mul(uv.swizzle('y'), s.convert(height, BuiltinTypes.f32)), BuiltinTypes.u32),
+    s.convert(
+      s.mul(uv.swizzle('y'), s.convert(height, BuiltinTypes.f32)),
+      BuiltinTypes.u32,
+    ),
     s.sub(height, s.u32(1)),
   );
-  const color = s.index(g.storage('color', vec4f), s.add(s.mul(row, width), column));
+  const color = s.index(
+    g.storage('color', vec4f),
+    s.add(s.mul(row, width), column),
+  );
   g.fullscreen({ color: s.extend(color.swizzle('xyz'), 1) });
   return g.build();
 }

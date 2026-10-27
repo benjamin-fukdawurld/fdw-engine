@@ -298,7 +298,8 @@ export function createRayFunctions(
       const corners = f.call(vertices, { hit });
       const data = geometry(f);
       const position = (component: string) =>
-        f.call(index, { array: data, index: corners.swizzle(component) })
+        f
+          .call(index, { array: data, index: corners.swizzle(component) })
           .swizzle('xyz');
       const p0 = position('x');
       const local = f.call(functions.cross, {

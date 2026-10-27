@@ -15,11 +15,7 @@ import type {
 // A uniform value, or a texture, sampler, storage buffer or acceleration
 // structure (of the programs tracing rays) bound by name.
 export type MaterialValue =
-  | UniformValue
-  | GpuTexture
-  | GpuSampler
-  | GpuBuffer
-  | GpuTopLevel;
+  UniformValue | GpuTexture | GpuSampler | GpuBuffer | GpuTopLevel;
 
 export interface RenderState {
   // 'blend' draws the material after the opaque ones, back to front, with

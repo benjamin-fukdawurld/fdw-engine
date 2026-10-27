@@ -16,11 +16,11 @@ montrent chaque usage :
 
 ## Les backends
 
-| Backend | Rayons                                                                                                                                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend | Rayons                                                                                                                                                                                                           |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Vulkan  | En matériel : `VK_KHR_acceleration_structure` et `VK_KHR_ray_query`, là où le GPU les a (RTX, RDNA2 et suivants ; lavapipe en logiciel) ; les pipelines de ray tracing (`VK_KHR_ray_tracing_pipeline`) en option |
-| WebGPU  | En logiciel : un BVH construit sur le CPU, dans des storage buffers, parcouru par du code WGSL que le backend ajoute aux programmes qui tracent des rayons |
-| WebGL2  | Aucun : la rastérisation seule                                                                                                                         |
+| WebGPU  | En logiciel : un BVH construit sur le CPU, dans des storage buffers, parcouru par du code WGSL que le backend ajoute aux programmes qui tracent des rayons                                                       |
+| WebGL2  | Aucun : la rastérisation seule                                                                                                                                                                                   |
 
 La capacité `rayQuery` du backend dit s'il trace des rayons
 (`backend.capabilities?.rayQuery`). Sans elle, `RayScene` et les passes de
@@ -172,14 +172,14 @@ gris, avec un avertissement.
 dans la scène de l'image (`input.engine('scene')`), dans n'importe quelle
 étape. Son impact, un `vec4<u32>`, se lit avec les fonctions de `stdRays` :
 
-| Fonction                                     | Donne                                                        |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| `hit`                                        | Si le rayon a touché quelque chose                           |
-| `hitPosition`, `hitNormal`                   | Le point touché, sa normale (interpolée), dans le monde      |
-| `hitGeometricNormal`, `hitFrontFacing`       | La normale du triangle, la face touchée                      |
-| `hitUv`, `hitLocalTangent`                   | Les uv, la tangente des sommets                              |
-| `hitObject`, `hitMaterial`, `hitData`        | L'objet (son `id`), le matériau, le vec4 de l'utilisateur    |
-| `hitBarycentrics`, `hitVertices`, `hitWorld` | Les poids des sommets, leurs indices, la matrice             |
+| Fonction                                     | Donne                                                     |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `hit`                                        | Si le rayon a touché quelque chose                        |
+| `hitPosition`, `hitNormal`                   | Le point touché, sa normale (interpolée), dans le monde   |
+| `hitGeometricNormal`, `hitFrontFacing`       | La normale du triangle, la face touchée                   |
+| `hitUv`, `hitLocalTangent`                   | Les uv, la tangente des sommets                           |
+| `hitObject`, `hitMaterial`, `hitData`        | L'objet (son `id`), le matériau, le vec4 de l'utilisateur |
+| `hitBarycentrics`, `hitVertices`, `hitWorld` | Les poids des sommets, leurs indices, la matrice          |
 
 `mode: 'any'` s'arrête au premier impact (les ombres, l'occlusion). Les
 matériaux dessinés par le renderer reçoivent la scène avec `rays` ; une

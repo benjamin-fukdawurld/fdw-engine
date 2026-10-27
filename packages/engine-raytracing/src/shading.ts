@@ -18,9 +18,15 @@ export class Shading extends Ops {
 
   /** A hash of a u32 (PCG): well spread bits. */
   hash(value: Value): PortHandle {
-    const state = this.add(this.mul(value, this.u32(747796405)), this.u32(2891336453));
+    const state = this.add(
+      this.mul(value, this.u32(747796405)),
+      this.u32(2891336453),
+    );
     const shift = this.add(this.shr(state, this.u32(28)), this.u32(4));
-    const word = this.mul(this.xor(this.shr(state, shift), state), this.u32(277803737));
+    const word = this.mul(
+      this.xor(this.shr(state, shift), state),
+      this.u32(277803737),
+    );
     return this.xor(this.shr(word, this.u32(22)), word);
   }
 
@@ -149,7 +155,10 @@ export class Bsdf {
     const vh = s.max(s.dot(this.wo, h), 0);
     const specular = s.div(
       s.mul(
-        s.mul(this.distribution(nh), s.mul(this.visibility(nl), this.visibility(this.nv))),
+        s.mul(
+          this.distribution(nh),
+          s.mul(this.visibility(nl), this.visibility(this.nv)),
+        ),
         this.fresnel(vh),
       ),
       s.max(s.mul(4, s.mul(nl, this.nv)), 1e-4),
@@ -198,7 +207,11 @@ export class Bsdf {
     );
     const sinTheta = s.sqrt(s.max(s.sub(1, s.mul(cosTheta, cosTheta)), 0));
     const h = s.toWorld(
-      s.vec3(s.mul(sinTheta, s.cos(phi)), s.mul(sinTheta, s.sin(phi)), cosTheta),
+      s.vec3(
+        s.mul(sinTheta, s.cos(phi)),
+        s.mul(sinTheta, s.sin(phi)),
+        cosTheta,
+      ),
       frame,
       n,
     );

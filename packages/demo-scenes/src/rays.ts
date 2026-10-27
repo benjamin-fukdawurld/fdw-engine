@@ -114,7 +114,11 @@ export class RayView {
       (background && {
         zenith: background,
         horizon: background,
-        ground: { x: background.x * 0.4, y: background.y * 0.4, z: background.z * 0.4 },
+        ground: {
+          x: background.x * 0.4,
+          y: background.y * 0.4,
+          z: background.z * 0.4,
+        },
       });
     if (this._mode === 'path') {
       this._tracer ??= new PathTracer(this.renderer, scene, {
@@ -128,7 +132,9 @@ export class RayView {
         surface: options.surface,
         lights,
         ...(options.time !== undefined ? { time: options.time } : {}),
-        ...(options.exposure !== undefined ? { exposure: options.exposure } : {}),
+        ...(options.exposure !== undefined
+          ? { exposure: options.exposure }
+          : {}),
       });
       return;
     }

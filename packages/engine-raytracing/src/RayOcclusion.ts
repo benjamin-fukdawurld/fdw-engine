@@ -60,7 +60,9 @@ function occlusionGraph(samples: number): MaterialGraphData {
   // Interleaved gradient noise (Jimenez 2014).
   const noise = s.fract(
     s.mul(
-      s.fract(s.dot(s.convert(pixel, BuiltinTypes.vec2f), [0.06711056, 0.00583715])),
+      s.fract(
+        s.dot(s.convert(pixel, BuiltinTypes.vec2f), [0.06711056, 0.00583715]),
+      ),
       52.9829189,
     ),
   );
@@ -71,11 +73,18 @@ function occlusionGraph(samples: number): MaterialGraphData {
     samples,
     (sum, index) => {
       const k = s.convert(index, BuiltinTypes.f32);
-      const turn = s.mul(s.fract(s.add(noise, s.mul(k, 0.6180339887))), 2 * Math.PI);
+      const turn = s.mul(
+        s.fract(s.add(noise, s.mul(k, 0.6180339887))),
+        2 * Math.PI,
+      );
       const v = s.div(s.add(k, 0.5), samples);
       const r = s.sqrt(v);
       const direction = s.toWorld(
-        s.vec3(s.mul(s.cos(turn), r), s.mul(s.sin(turn), r), s.sqrt(s.sub(1, v))),
+        s.vec3(
+          s.mul(s.cos(turn), r),
+          s.mul(s.sin(turn), r),
+          s.sqrt(s.sub(1, v)),
+        ),
         frame,
         normal,
       );
@@ -121,7 +130,9 @@ function blurGraph(): MaterialGraphData {
           coords: at,
         })
         .swizzle('x');
-      const near = s.length(s.sub(load('position', at).swizzle('xyz'), center.swizzle('xyz')));
+      const near = s.length(
+        s.sub(load('position', at).swizzle('xyz'), center.swizzle('xyz')),
+      );
       const weight = s.mul(
         s.pow(s.max(s.dot(load('normal', at).swizzle('xyz'), normal), 0), 8),
         s.saturate(s.sub(1, s.div(near, s.mul(radius, 0.5)))),

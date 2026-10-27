@@ -217,7 +217,9 @@ const traceFunction = (
 function rayFunctions(structure: string): string {
   return (['closest', 'any'] as const)
     .map(
-      (mode) => `uint4 ${traceFunction(structure, mode)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
+      (
+        mode,
+      ) => `uint4 ${traceFunction(structure, mode)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
   // An empty interval (a ray that is not traced): no hit.
   if (!(tMax >= tMin)) {
     return uint4(0xffffffffu, 0u, 0u, 0u);
@@ -274,7 +276,9 @@ function alphaRayFunctions(
   return ((word[(bit / 32u) % 4u] >> (bit % 32u)) & 1u) != 0u;
 }`,
     ...(testOnly ? [] : (['closest', 'any'] as const)).map(
-      (mode) => `uint4 ${traceFunction(structure, mode, true)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
+      (
+        mode,
+      ) => `uint4 ${traceFunction(structure, mode, true)}(float3 origin, float3 direction, float tMin, float tMax, uint mask) {
   // An empty interval (a ray that is not traced): no hit.
   if (!(tMax >= tMin)) {
     return uint4(0xffffffffu, 0u, 0u, 0u);
@@ -285,7 +289,9 @@ function alphaRayFunctions(
   ray.TMin = tMin;
   ray.TMax = tMax;
   RayQuery<${
-    mode === 'any' ? 'RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH' : 'RAY_FLAG_NONE'
+    mode === 'any'
+      ? 'RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH'
+      : 'RAY_FLAG_NONE'
   }> query;
   query.TraceRayInline(${structure}, RAY_FLAG_NONE, mask & 0xffu, ray);
   while (query.Proceed()) {
@@ -505,13 +511,23 @@ function emitBody(entryPoint: IrEntryPoint, resources: Resources): BodyState {
   const { active } = entryPoint;
   if (active) {
     // The threads out of the guard stop once it is known.
-    emitInstructions(entryPoint.body.slice(0, active.after), resources, state, '  ');
+    emitInstructions(
+      entryPoint.body.slice(0, active.after),
+      resources,
+      state,
+      '  ',
+    );
     state.lines.push(
       `  if (!(${state.expressions.get(active.value)})) {`,
       '    return;',
       '  }',
     );
-    emitInstructions(entryPoint.body.slice(active.after), resources, state, '  ');
+    emitInstructions(
+      entryPoint.body.slice(active.after),
+      resources,
+      state,
+      '  ',
+    );
   } else {
     emitInstructions(entryPoint.body, resources, state, '  ');
   }
@@ -585,9 +601,10 @@ function emitInstructions(
         }`;
         break;
       case 'bitcast': {
-        const scalar = type.kind === 'vector' || type.kind === 'scalar'
-          ? type.scalar
-          : 'f32';
+        const scalar =
+          type.kind === 'vector' || type.kind === 'scalar'
+            ? type.scalar
+            : 'f32';
         const cast = { f32: 'asfloat', u32: 'asuint', i32: 'asint' }[
           scalar as 'f32' | 'u32' | 'i32'
         ];
@@ -595,8 +612,16 @@ function emitInstructions(
         break;
       }
       case 'ray-query': {
-        const [structure, origin, direction, tMin, tMax, mask, instances, geometry] =
-          instruction.args.map((id) => expressions.get(id) as string);
+        const [
+          structure,
+          origin,
+          direction,
+          tMin,
+          tMax,
+          mask,
+          instances,
+          geometry,
+        ] = instruction.args.map((id) => expressions.get(id) as string);
         const alphaTest = op.alphaTest === true;
         if (alphaTest && !resources.helpers.has(structure)) {
           // The elements of the buffers, wrapped or not (Direct3D 12).
@@ -1228,7 +1253,9 @@ export class HlslCodegen implements ShaderCodegen {
       };
     }
     if (rayGeneration) {
-      throw new Error('Only the compute stages trace rays in a ray tracing pipeline');
+      throw new Error(
+        'Only the compute stages trace rays in a ray tracing pipeline',
+      );
     }
 
     const vertex = module.entryPoints.find(

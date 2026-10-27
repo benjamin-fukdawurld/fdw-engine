@@ -145,7 +145,9 @@ test('draws the level by rays when the Rendering menu asks for it', async () => 
   // bounced off the level, not the rasterized one.
   await page.waitForTimeout(3000);
   const traced = await region();
-  expect(traced.some((value, i) => Math.abs(value - (rasterized[i] ?? 0)) > 3)).toBe(true);
+  expect(
+    traced.some((value, i) => Math.abs(value - (rasterized[i] ?? 0)) > 3),
+  ).toBe(true);
   expect(await editor.differsFromPage(area.centerX, area.centerY)).toBe(true);
   // Rasterized again: the image of before.
   await page.keyboard.press('Control+Shift+P');
@@ -153,7 +155,9 @@ test('draws the level by rays when the Rendering menu asks for it', async () => 
   await page.keyboard.press('Enter');
   await page.waitForTimeout(1000);
   const again = await region();
-  expect(again.every((value, i) => Math.abs(value - (rasterized[i] ?? 0)) <= 3)).toBe(true);
+  expect(
+    again.every((value, i) => Math.abs(value - (rasterized[i] ?? 0)) <= 3),
+  ).toBe(true);
 });
 
 test('a reload of the page connects it again to the engine', async () => {

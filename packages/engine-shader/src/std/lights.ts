@@ -114,7 +114,10 @@ function rayVisibility(
   const along = context.add(
     'std.dot',
     {},
-    { a: { ...pixel, swizzle: 'xy' } as ValueSource, b: [0.06711056, 0.00583715] },
+    {
+      a: { ...pixel, swizzle: 'xy' } as ValueSource,
+      b: [0.06711056, 0.00583715],
+    },
   )();
   const noise = context.add(
     'std.fract',

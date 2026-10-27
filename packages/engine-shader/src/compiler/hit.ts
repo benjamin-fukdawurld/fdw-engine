@@ -94,7 +94,8 @@ export function lowerHitSurface(
   if (!surface) {
     diagnostics.push({
       severity: 'error',
-      message: 'the hit target compiles the surface of a material (output.surface)',
+      message:
+        'the hit target compiles the surface of a material (output.surface)',
     });
     return undefined;
   }
@@ -109,8 +110,9 @@ export function lowerHitSurface(
     return (
       graph.inputSource(surface, port) ??
       (() => {
-        const value = ports.find((candidate) => candidate.name === port)
-          ?.default;
+        const value = ports.find(
+          (candidate) => candidate.name === port,
+        )?.default;
         return value === undefined ? undefined : { value };
       })()
     );
@@ -132,7 +134,9 @@ export function lowerHitSurface(
     const squared = out(add('std.dot', { a: normal, b: normal }));
     const exponent = out(
       add('std.bitAnd', {
-        a: out(add('std.bitcast', { value: squared }, { to: BuiltinTypes.u32 })),
+        a: out(
+          add('std.bitcast', { value: squared }, { to: BuiltinTypes.u32 }),
+        ),
         b: u32(0x7f800000),
       }),
     );
@@ -141,10 +145,18 @@ export function lowerHitSurface(
       add('std.select', {
         ifFalse: constant(false),
         ifTrue: out(add('std.greater', { a: squared, b: constant(1e-12) })),
-        condition: out(add('std.notEqual', { a: exponent, b: u32(0x7f800000) })),
+        condition: out(
+          add('std.notEqual', { a: exponent, b: u32(0x7f800000) }),
+        ),
       }),
     );
-    return out(add('std.select', { ifFalse: fallback, ifTrue: normal, condition: valid }));
+    return out(
+      add('std.select', {
+        ifFalse: fallback,
+        ifTrue: normal,
+        condition: valid,
+      }),
+    );
   };
   const { slot } = HitResources;
 
@@ -157,28 +169,44 @@ export function lowerHitSurface(
     },
     swizzle: 'x',
   };
-  const hits = add('input.storage', {}, {
-    name: HitResources.hits,
-    type: arrayType(BuiltinTypes.vec4u),
-    access: 'read',
-    slot,
-  });
-  const surfaces = add('input.storage', {}, {
-    name: HitResources.surfaces,
-    type: arrayType(BuiltinTypes.vec4f),
-    access: 'read-write',
-    slot,
-  });
-  const count = add('input.uniform', {}, {
-    name: HitResources.count,
-    type: BuiltinTypes.u32,
-    slot,
-  });
-  const material = add('input.uniform', {}, {
-    name: HitResources.material,
-    type: BuiltinTypes.u32,
-    slot,
-  });
+  const hits = add(
+    'input.storage',
+    {},
+    {
+      name: HitResources.hits,
+      type: arrayType(BuiltinTypes.vec4u),
+      access: 'read',
+      slot,
+    },
+  );
+  const surfaces = add(
+    'input.storage',
+    {},
+    {
+      name: HitResources.surfaces,
+      type: arrayType(BuiltinTypes.vec4f),
+      access: 'read-write',
+      slot,
+    },
+  );
+  const count = add(
+    'input.uniform',
+    {},
+    {
+      name: HitResources.count,
+      type: BuiltinTypes.u32,
+      slot,
+    },
+  );
+  const material = add(
+    'input.uniform',
+    {},
+    {
+      name: HitResources.material,
+      type: BuiltinTypes.u32,
+      slot,
+    },
+  );
   const last = add('std.sub', {
     a: out(add('std.arrayLength', { array: out(hits, 'value') })),
     b: constant(1),
@@ -250,11 +278,15 @@ export function lowerHitSurface(
   const cutoff: InputSource =
     alphaMode === 'mask'
       ? out(
-          add('input.uniform', {}, {
-            name: 'alphaCutoff',
-            type: BuiltinTypes.f32,
-            default: 0.5,
-          }),
+          add(
+            'input.uniform',
+            {},
+            {
+              name: 'alphaCutoff',
+              type: BuiltinTypes.f32,
+              default: 0.5,
+            },
+          ),
           'value',
         )
       : constant(alphaMode === 'blend' ? -1 : 0);
@@ -273,7 +305,10 @@ export function lowerHitSurface(
         w: constant(0),
       }),
     ),
-    vec4(out(add('ray.hitPosition', { hit: out(hit) }), 'position'), constant(1)),
+    vec4(
+      out(add('ray.hitPosition', { hit: out(hit) }), 'position'),
+      constant(1),
+    ),
   ];
   const base = out(add('std.mul', { a: index, b: constant(RaySurfaceVec4s) }));
   values.forEach((value, k) =>
@@ -285,9 +320,7 @@ export function lowerHitSurface(
   );
 
   // The guard: a ray of the dispatch, which hit this material.
-  const inRange = out(
-    add('std.less', { a: index, b: out(count, 'value') }),
-  );
+  const inRange = out(add('std.less', { a: index, b: out(count, 'value') }));
   const hitSomething = out(
     add('std.notEqual', {
       a: { ref: { node: hit, port: 'result' }, swizzle: 'x' },
@@ -301,7 +334,9 @@ export function lowerHitSurface(
     }),
   );
   const and = (a: InputSource, b: InputSource) =>
-    out(add('std.select', { ifFalse: constant(false), ifTrue: b, condition: a }));
+    out(
+      add('std.select', { ifFalse: constant(false), ifTrue: b, condition: a }),
+    );
   graph.addNode(
     'output.compute',
     { workgroupSize: [64, 1, 1] },
@@ -318,13 +353,15 @@ export function lowerHitSurface(
 }
 
 // What the hit functions give for the vertex attributes.
-const hitAttributes: Record<string, { fn: string; port: string; size: number }> =
-  {
-    position: { fn: 'ray.hitLocalPosition', port: 'position', size: 3 },
-    normal: { fn: 'ray.hitLocalNormal', port: 'normal', size: 3 },
-    uv: { fn: 'ray.hitUv', port: 'uv', size: 2 },
-    tangent: { fn: 'ray.hitLocalTangent', port: 'tangent', size: 4 },
-  };
+const hitAttributes: Record<
+  string,
+  { fn: string; port: string; size: number }
+> = {
+  position: { fn: 'ray.hitLocalPosition', port: 'position', size: 3 },
+  normal: { fn: 'ray.hitLocalNormal', port: 'normal', size: 3 },
+  uv: { fn: 'ray.hitUv', port: 'uv', size: 2 },
+  tangent: { fn: 'ray.hitLocalTangent', port: 'tangent', size: 4 },
+};
 
 /** The attributes the hit programs have: those of the traced vertices. */
 export const HitAttributes = Object.keys(hitAttributes);
@@ -352,11 +389,16 @@ export function lowerHitInputs(
         type: typeOfConstant(source.value),
         value: source.value,
       });
-      graph.redirectPort({ node: id, port }, { ref: { node: constant, port: 'value' } });
+      graph.redirectPort(
+        { node: id, port },
+        { ref: { node: constant, port: 'value' } },
+      );
     } else {
       graph.redirectPort(
         { node: id, port },
-        source.swizzle ? { ref: source.ref, swizzle: source.swizzle } : { ref: source.ref },
+        source.swizzle
+          ? { ref: source.ref, swizzle: source.swizzle }
+          : { ref: source.ref },
       );
     }
     graph.removeNode(id);
@@ -379,14 +421,21 @@ export function lowerHitInputs(
         }
         let value = call(known.fn, known.port);
         if (size < known.size) {
-          value = { ...(value as { ref: never }), swizzle: 'xyzw'.slice(0, size) };
+          value = {
+            ...(value as { ref: never }),
+            swizzle: 'xyzw'.slice(0, size),
+          };
         } else if (size === 4 && known.size === 3) {
           // A position or a normal read as a vec4: w = 1 for the position.
           value = out(
-            graph.addNode('std.extend', {}, {
-              xyz: value,
-              w: { value: semantic === 'position' ? 1 : 0 },
-            }),
+            graph.addNode(
+              'std.extend',
+              {},
+              {
+                xyz: value,
+                w: { value: semantic === 'position' ? 1 : 0 },
+              },
+            ),
           );
         } else if (size > known.size) {
           diagnostics.push({
@@ -404,7 +453,11 @@ export function lowerHitInputs(
         if (value === 'object.world') {
           replace(node.id, 'value', call('ray.hitWorld', 'world'));
         } else if (value === 'object.normalMatrix') {
-          replace(node.id, 'value', call('ray.hitNormalMatrix', 'normalMatrix'));
+          replace(
+            node.id,
+            'value',
+            call('ray.hitNormalMatrix', 'normalMatrix'),
+          );
         } else if (value === 'object.id') {
           replace(node.id, 'value', call('ray.hitObject', 'object'));
         }
@@ -454,10 +507,14 @@ export function lowerHitInputs(
       case 'std.dpdx':
       case 'std.dpdy':
       case 'std.fwidth': {
-        const zero = graph.addNode('std.mul', {}, {
-          a: graph.inputSource(node, 'x'),
-          b: { value: 0 },
-        });
+        const zero = graph.addNode(
+          'std.mul',
+          {},
+          {
+            a: graph.inputSource(node, 'x'),
+            b: { value: 0 },
+          },
+        );
         replace(node.id, 'result', out(zero));
         break;
       }

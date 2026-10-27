@@ -200,17 +200,17 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
                 resource: { buffer },
               }))
             : entry.resource instanceof WebGpuObjectTable
-            ? [
-                {
-                  binding: entry.binding,
-                  resource: { buffer: entry.resource.rowBuffer },
-                },
-                {
-                  binding: entry.binding + 1,
-                  resource: { buffer: entry.resource.instanceBuffer },
-                },
-              ]
-            : [{ binding: entry.binding, resource: bindingResource(entry) }],
+              ? [
+                  {
+                    binding: entry.binding,
+                    resource: { buffer: entry.resource.rowBuffer },
+                  },
+                  {
+                    binding: entry.binding + 1,
+                    resource: { buffer: entry.resource.instanceBuffer },
+                  },
+                ]
+              : [{ binding: entry.binding, resource: bindingResource(entry) }],
         ),
       }),
     );

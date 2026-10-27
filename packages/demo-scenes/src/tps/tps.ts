@@ -140,7 +140,7 @@ export function createTpsScene(
     const rayView = new RayView(renderer, backend, {
       rayTracingPipeline: context.rayTracingPipeline ?? false,
     });
-  rayView.mode = context.rays ?? 'raster';
+    rayView.mode = context.rays ?? 'raster';
     const operator = new ThirdPersonOperator(camera, actions, {
       distance: 4.2,
       height: 1.55,

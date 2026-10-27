@@ -122,7 +122,10 @@ export function packLights(
     const o = count * LightVec4s * 4;
     // The radiance of the light: its diffuse color × π, as the pbr model.
     const color = light.diffuse;
-    data.set([color.x * Math.PI, color.y * Math.PI, color.z * Math.PI, 0], o + 4);
+    data.set(
+      [color.x * Math.PI, color.y * Math.PI, color.z * Math.PI, 0],
+      o + 4,
+    );
     // No cone: every direction.
     data.set([0, 0, 0, -1, 1, 0, 0, -2], o + 8);
     if (light instanceof DirectionalLight) {
@@ -195,7 +198,8 @@ export class PathTracer {
   readonly bounces: number;
   readonly maxRadiance: number;
   readonly history: number;
-  readonly denoise: { iterations: number; colorPhi: number; frames: number } | undefined;
+  readonly denoise:
+    { iterations: number; colorPhi: number; frames: number } | undefined;
   sky: Required<PathTracerSky>;
 
   constructor(
@@ -226,7 +230,10 @@ export class PathTracer {
       accumulate: kernel(accumulateKernel()),
       denoise: kernel(denoiseKernel()),
     };
-    this._present = new Material({ graph: presentGraph(), label: 'path tracer' });
+    this._present = new Material({
+      graph: presentGraph(),
+      label: 'path tracer',
+    });
     this.bounces = Math.min(16, Math.max(1, options.bounces ?? 4));
     this.maxRadiance = options.maxRadiance ?? 8;
     this.history = Math.max(1, options.history ?? 16);
@@ -265,7 +272,13 @@ export class PathTracer {
    * lights or the materials change. The image is in `color`, a vec4 per
    * pixel, rows from the top.
    */
-  trace({ camera, lights = [], width, height, time = 0 }: PathTraceOptions): GpuBuffer {
+  trace({
+    camera,
+    lights = [],
+    width,
+    height,
+    time = 0,
+  }: PathTraceOptions): GpuBuffer {
     const backend = this.renderer.backend;
     const buffers = this.buffers(width, height);
     const pixels = width * height;
@@ -321,22 +334,30 @@ export class PathTracer {
     const scene = this.scene;
     const resources = sceneValues(scene);
 
-    dispatch(this._kernels.camera.program, {
-      width,
-      height,
-      frame: this._frame,
-      inverseViewProjection: cache.inverseViewProjectionMatrix.value,
-      pathsOut: buffers.paths[0],
-    }, owners[0]);
+    dispatch(
+      this._kernels.camera.program,
+      {
+        width,
+        height,
+        frame: this._frame,
+        inverseViewProjection: cache.inverseViewProjectionMatrix.value,
+        pathsOut: buffers.paths[0],
+      },
+      owners[0],
+    );
     for (let bounce = 0; bounce <= this.bounces; bounce++) {
       const [a, b] = [bounce % 2, (bounce + 1) % 2];
-      dispatch(this._kernels.trace.program, {
-        ...resources,
-        rays: buffers.paths[a],
-        stride: PathVec4s,
-        rayHits: buffers.hits,
-        raySurfaces: buffers.surfaces,
-      }, owners[1]);
+      dispatch(
+        this._kernels.trace.program,
+        {
+          ...resources,
+          rays: buffers.paths[a],
+          stride: PathVec4s,
+          rayHits: buffers.hits,
+          raySurfaces: buffers.surfaces,
+        },
+        owners[1],
+      );
       this._hits.forEach(
         scene,
         {
@@ -348,64 +369,80 @@ export class PathTracer {
         dispatch,
       );
       if (bounce === 0) {
-        dispatch(this._kernels.guides.program, {
+        dispatch(
+          this._kernels.guides.program,
+          {
+            skyZenith: vec3(this.sky.zenith),
+            skyHorizon: vec3(this.sky.horizon),
+            skyGround: vec3(this.sky.ground),
+            paths: buffers.paths[a],
+            raySurfaces: buffers.surfaces,
+            guides: buffers.guides[current],
+          },
+          owners[3],
+        );
+      }
+      dispatch(
+        this._kernels.bounce.program,
+        {
+          ...resources,
+          frame: this._frame,
+          bounce,
+          lightCount,
+          lights: lightBuffer,
           skyZenith: vec3(this.sky.zenith),
           skyHorizon: vec3(this.sky.horizon),
           skyGround: vec3(this.sky.ground),
           paths: buffers.paths[a],
           raySurfaces: buffers.surfaces,
-          guides: buffers.guides[current],
-        }, owners[3]);
-      }
-      dispatch(this._kernels.bounce.program, {
-        ...resources,
-        frame: this._frame,
-        bounce,
-        lightCount,
-        lights: lightBuffer,
-        skyZenith: vec3(this.sky.zenith),
-        skyHorizon: vec3(this.sky.horizon),
-        skyGround: vec3(this.sky.ground),
-        paths: buffers.paths[a],
-        raySurfaces: buffers.surfaces,
-        pathsOut: buffers.paths[b],
-      }, owners[4 + bounce]);
+          pathsOut: buffers.paths[b],
+        },
+        owners[4 + bounce],
+      );
     }
     const last = (this.bounces + 1) % 2;
     this._frames++;
-    dispatch(this._kernels.accumulate.program, {
-      width,
-      height,
-      reset: reset ? 1 : 0,
-      still: still ? 1 : 0,
-      maxHistory: moved ? this.history : 1e9,
-      previousViewProjection: this._previousViewProjection,
-      maxRadiance: this.maxRadiance,
-      paths: buffers.paths[last],
-      guides: buffers.guides[current],
-      previousGuides: buffers.guides[previous],
-      accumulation: buffers.accumulation[previous],
-      accumulationOut: buffers.accumulation[current],
-      color: buffers.color,
-    }, owners[2]);
+    dispatch(
+      this._kernels.accumulate.program,
+      {
+        width,
+        height,
+        reset: reset ? 1 : 0,
+        still: still ? 1 : 0,
+        maxHistory: moved ? this.history : 1e9,
+        previousViewProjection: this._previousViewProjection,
+        maxRadiance: this.maxRadiance,
+        paths: buffers.paths[last],
+        guides: buffers.guides[current],
+        previousGuides: buffers.guides[previous],
+        accumulation: buffers.accumulation[previous],
+        accumulationOut: buffers.accumulation[current],
+        color: buffers.color,
+      },
+      owners[2],
+    );
     this._previousViewProjection.set(viewProjection);
     let image = buffers.color;
     const denoise = this.denoise;
     if (denoise && this._accumulated < denoise.frames) {
       for (let i = 0; i < denoise.iterations; i++) {
         const output = buffers.filtered[i % 2];
-        dispatch(this._kernels.denoise.program, {
-          width,
-          height,
-          step: 1 << i,
-          colorPhi: denoise.colorPhi,
-          first: i === 0 ? 1 : 0,
-          last: i === denoise.iterations - 1 ? 1 : 0,
-          input: image,
-          guides: buffers.guides[current],
-          accumulation: buffers.accumulation[current],
-          output,
-        }, owners[3 + 32 + i]);
+        dispatch(
+          this._kernels.denoise.program,
+          {
+            width,
+            height,
+            step: 1 << i,
+            colorPhi: denoise.colorPhi,
+            first: i === 0 ? 1 : 0,
+            last: i === denoise.iterations - 1 ? 1 : 0,
+            input: image,
+            guides: buffers.guides[current],
+            accumulation: buffers.accumulation[current],
+            output,
+          },
+          owners[3 + 32 + i],
+        );
         image = output;
       }
     }
@@ -461,7 +498,11 @@ export class PathTracer {
       format: 'rgba16float',
       size,
     });
-    const image = this.addPasses(graph, { ...options, target: hdr, format: 'rgba16float' });
+    const image = this.addPasses(graph, {
+      ...options,
+      target: hdr,
+      format: 'rgba16float',
+    });
     this.renderer.addToneMappingPass(graph, {
       hdr: image,
       target,

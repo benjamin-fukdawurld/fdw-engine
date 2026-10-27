@@ -417,7 +417,11 @@ describe('HlslCodegen for the ray tracing pipelines', () => {
     const hits = g.storage('hits', arrayType(BuiltinTypes.vec4u), {
       access: 'read-write',
     });
-    const x = g.call(std.convert, { value: index }, { params: { to: BuiltinTypes.f32 } });
+    const x = g.call(
+      std.convert,
+      { value: index },
+      { params: { to: BuiltinTypes.f32 } },
+    );
     const hit = g.traceRay({
       origin: g.call(std.vec3, { x, y: 0, z: 0 }),
       direction: [0, 1, 0],
@@ -432,23 +436,33 @@ describe('HlslCodegen for the ray tracing pipelines', () => {
   it('writes a ray generation shader, its rays traced by TraceRay', () => {
     const program = tracing();
     const layout = std140LayoutStrategy.resolve(program.layout);
-    const sources = codegen.emit(program.module, layout, { rayGeneration: true });
+    const sources = codegen.emit(program.module, layout, {
+      rayGeneration: true,
+    });
     if (sources.kind !== 'single-module') {
       throw new Error('expected a single module');
     }
     expect(sources.entryPoints).toEqual({ compute: 'rg_main' });
     const { code } = sources;
     expect(code).toContain('[shader("raygeneration")]');
-    expect(code).toContain('const uint3 globalInvocationId = DispatchRaysIndex();');
-    expect(code).toMatch(/TraceRay\(as_scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, mask & 0xffu, 0, 1, 0, ray, payload\);/);
+    expect(code).toContain(
+      'const uint3 globalInvocationId = DispatchRaysIndex();',
+    );
+    expect(code).toMatch(
+      /TraceRay\(as_scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, mask & 0xffu, 0, 1, 0, ray, payload\);/,
+    );
     expect(code).not.toContain('RayQuery<');
     // The shaders of the hits: the miss, the closest hit, the alpha test.
     expect(code).toContain('[shader("miss")]');
     expect(code).toContain('[shader("closesthit")]');
-    expect(code).toMatch(/\[shader\("anyhit"\)\][^]*fdw_kept_as_scene\(InstanceIndex\(\), PrimitiveIndex\(\), attributes.barycentrics\)[^]*IgnoreHit\(\);/);
+    expect(code).toMatch(
+      /\[shader\("anyhit"\)\][^]*fdw_kept_as_scene\(InstanceIndex\(\), PrimitiveIndex\(\), attributes.barycentrics\)[^]*IgnoreHit\(\);/,
+    );
     // As a compute shader: the ray queries.
     const compute = emit(program).code;
-    expect(compute).toContain('RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH>');
+    expect(compute).toContain(
+      'RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH>',
+    );
     expect(compute).not.toContain('[shader(');
   });
 });
