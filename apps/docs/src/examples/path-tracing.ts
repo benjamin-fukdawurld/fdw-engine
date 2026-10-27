@@ -61,9 +61,21 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     box(white, { x: 0, y: -0.05, z: 0 }, { x: 4, y: 0.1, z: 4 }),
     box(white, { x: 0, y: 4.05, z: 0 }, { x: 4, y: 0.1, z: 4 }),
     box(white, { x: 0, y: 2, z: -2.05 }, { x: 4, y: 4, z: 0.1 }),
-    box(material([0.75, 0.12, 0.1]), { x: -2.05, y: 2, z: 0 }, { x: 0.1, y: 4, z: 4 }),
-    box(material([0.15, 0.6, 0.15]), { x: 2.05, y: 2, z: 0 }, { x: 0.1, y: 4, z: 4 }),
-    box(new Material({ graph: lamp.build() }), { x: 0, y: 3.98, z: 0 }, { x: 1.2, y: 0.05, z: 1.2 }),
+    box(
+      material([0.75, 0.12, 0.1]),
+      { x: -2.05, y: 2, z: 0 },
+      { x: 0.1, y: 4, z: 4 },
+    ),
+    box(
+      material([0.15, 0.6, 0.15]),
+      { x: 2.05, y: 2, z: 0 },
+      { x: 0.1, y: 4, z: 4 },
+    ),
+    box(
+      new Material({ graph: lamp.build() }),
+      { x: 0, y: 3.98, z: 0 },
+      { x: 1.2, y: 0.05, z: 1.2 },
+    ),
     box(white, { x: -0.7, y: 1.2, z: -0.6 }, { x: 1.1, y: 2.4, z: 1.1 }, 0.35),
     {
       mesh: sphere,
@@ -85,7 +97,13 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   });
   const camera = new Camera({
     position: { x: 0, y: 2, z: 7.5 },
-    projection: { type: 'perspective', fov: 38, aspect: 16 / 9, near: 0.1, far: 100 },
+    projection: {
+      type: 'perspective',
+      fov: 38,
+      aspect: 16 / 9,
+      near: 0.1,
+      far: 100,
+    },
   });
 
   const tracer = backend.capabilities?.rayQuery
@@ -114,8 +132,19 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     camera.position = { x: sway, y: 2, z: 7.5 };
     camera.rotation = axisAngle(0, 1, 0, sway * 0.06);
     if (!tracer || modes[mode] === 'rasterized') {
-      renderer.render({ items, camera, surface, time, lights: [light], clearColor: { r: 0, g: 0, b: 0, a: 1 } });
-      info(tracer ? 'rasterized · click to switch' : 'rasterized: tracing rays needs WebGPU');
+      renderer.render({
+        items,
+        camera,
+        surface,
+        time,
+        lights: [light],
+        clearColor: { r: 0, g: 0, b: 0, a: 1 },
+      });
+      info(
+        tracer
+          ? 'rasterized · click to switch'
+          : 'rasterized: tracing rays needs WebGPU',
+      );
       return;
     }
     // The scene of the rays, then a frame of paths, added to the others.

@@ -103,7 +103,14 @@ describe('buildBvh', () => {
     // node.
     const boxOf = (ref: number, count: number): number[] => {
       if (count > 0) {
-        const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+        const box = [
+          Infinity,
+          Infinity,
+          Infinity,
+          -Infinity,
+          -Infinity,
+          -Infinity,
+        ];
         for (let i = ref; i < ref + count; i++) {
           const t = bvh.order[i];
           for (let corner = 0; corner < 3; corner++) {
@@ -123,16 +130,18 @@ describe('buildBvh', () => {
           bvh.nodeRefs[base + offset + 3],
           bvh.nodeRefs[base + offset + 7],
         );
-        const stored = [0, 1, 2, 4, 5, 6].map((k) => bvh.nodes[base + offset + k]);
+        const stored = [0, 1, 2, 4, 5, 6].map(
+          (k) => bvh.nodes[base + offset + k],
+        );
         for (let axis = 0; axis < 3; axis++) {
           expect(stored[axis]).toBeLessThanOrEqual(child[axis]);
           expect(stored[3 + axis]).toBeGreaterThanOrEqual(child[3 + axis]);
         }
         box.push(...stored);
       }
-      return [0, 1, 2].map((axis) => Math.min(box[axis], box[6 + axis])).concat(
-        [3, 4, 5].map((axis) => Math.max(box[axis], box[6 + axis])),
-      );
+      return [0, 1, 2]
+        .map((axis) => Math.min(box[axis], box[6 + axis]))
+        .concat([3, 4, 5].map((axis) => Math.max(box[axis], box[6 + axis])));
     };
     boxOf(bvh.root.ref, bvh.root.count);
   });
@@ -264,13 +273,18 @@ describe('intersectInstances', () => {
   });
 
   it('skips the instances out of the mask of the ray', () => {
-    const bvh = buildTriangleBvh(new Float32Array([-1, -1, 0, 1, -1, 0, 0, 1, 0]));
+    const bvh = buildTriangleBvh(
+      new Float32Array([-1, -1, 0, 1, -1, 0, 0, 1, 0]),
+    );
     const instances: BvhInstance[] = [
       { bvh, world: compose([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]), mask: 1 },
       { bvh, world: compose([0, 0, -2], [0, 0, 0, 1], [1, 1, 1]), mask: 2 },
     ];
     const top = buildInstanceBvh(instances);
-    const ray = [[0, 0, 5], [0, 0, -1]] as const;
+    const ray = [
+      [0, 0, 5],
+      [0, 0, -1],
+    ] as const;
     expect(intersectInstances(top, instances, ...ray)?.instance).toBe(0);
     expect(
       intersectInstances(top, instances, ...ray, { mask: 2 })?.instance,
@@ -285,7 +299,8 @@ describe('intersectInstances', () => {
     const inverse = invertAffine(m);
     const p = [0.5, -1, 2];
     const moved = [0, 1, 2].map(
-      (row) => m[row] * p[0] + m[4 + row] * p[1] + m[8 + row] * p[2] + m[12 + row],
+      (row) =>
+        m[row] * p[0] + m[4 + row] * p[1] + m[8 + row] * p[2] + m[12 + row],
     );
     const back = [0, 1, 2].map(
       (row) =>

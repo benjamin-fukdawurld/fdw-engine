@@ -15,11 +15,11 @@ use: [shadows by rays](/fdw-engine/tutorials/ray-traced-shadows/),
 
 ## The backends
 
-| Backend | Rays                                                                                                                                       |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend | Rays                                                                                                                                                                                                             |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Vulkan  | In hardware: `VK_KHR_acceleration_structure` and `VK_KHR_ray_query`, where the GPU has them (RTX, RDNA2 and later; lavapipe in software); the ray tracing pipelines (`VK_KHR_ray_tracing_pipeline`) as an option |
-| WebGPU  | In software: a BVH built on the CPU, in storage buffers, traversed by WGSL code the backend adds to the programs that trace rays          |
-| WebGL2  | None: the rasterization only                                                                                                               |
+| WebGPU  | In software: a BVH built on the CPU, in storage buffers, traversed by WGSL code the backend adds to the programs that trace rays                                                                                 |
+| WebGL2  | None: the rasterization only                                                                                                                                                                                     |
 
 The capability `rayQuery` of the backend says whether it traces rays
 (`backend.capabilities?.rayQuery`). Without it, `RayScene` and the passes
@@ -183,14 +183,14 @@ of its dispatch (`scene.resource(name)`).
 1280 × 720 on an RTX 2060 SUPER, without vsync (the TPS: its characters,
 its terrain and its foliage in the scene of the rays):
 
-| Demo | Backend                     | Rasterized | Traced shadows | + reflections | Path tracer |
-| ---- | --------------------------- | ---------- | -------------- | ------------- | ----------- |
-| FPS  | Vulkan                      | 1170 fps   | 576 fps        | 275 fps       | 89 fps      |
-| FPS  | Vulkan, ray tracing pipelines |          |                | 305 fps       | 90 fps      |
-| FPS  | WebGPU (Dawn)               | 560 fps    | 131 fps        | 68 fps        | 33 fps      |
-| TPS  | Vulkan                      | 81 fps     | 39 fps         | 37 fps        | 27 fps      |
-| TPS  | Vulkan, ray tracing pipelines |          |                | 41 fps        | 34 fps      |
-| TPS  | WebGPU (Dawn)               | 58 fps     | 7 fps          | 5 fps         | 4 fps       |
+| Demo | Backend                       | Rasterized | Traced shadows | + reflections | Path tracer |
+| ---- | ----------------------------- | ---------- | -------------- | ------------- | ----------- |
+| FPS  | Vulkan                        | 1170 fps   | 576 fps        | 275 fps       | 89 fps      |
+| FPS  | Vulkan, ray tracing pipelines |            |                | 305 fps       | 90 fps      |
+| FPS  | WebGPU (Dawn)                 | 560 fps    | 131 fps        | 68 fps        | 33 fps      |
+| TPS  | Vulkan                        | 81 fps     | 39 fps         | 37 fps        | 27 fps      |
+| TPS  | Vulkan, ray tracing pipelines |            |                | 41 fps        | 34 fps      |
+| TPS  | WebGPU (Dawn)                 | 58 fps     | 7 fps          | 5 fps         | 4 fps       |
 
 In WebGPU, the software traversal costs more, and more as the scene grows:
 traced shadows suit small scenes; the path tracer gathers its frames

@@ -144,11 +144,7 @@ export interface GpuBindGroup {
 export interface GpuBindGroupEntry {
   readonly binding: number;
   readonly resource:
-    | GpuBuffer
-    | GpuTexture
-    | GpuSampler
-    | GpuObjectTable
-    | GpuTopLevel;
+    GpuBuffer | GpuTexture | GpuSampler | GpuObjectTable | GpuTopLevel;
 }
 
 /**
@@ -343,6 +339,9 @@ export interface GpuCommandEncoder {
    * of the passes, before the builds of the top levels holding it. On the
    * backends with the rayQuery capability.
    */
-  refitBottomLevel?(bottom: GpuBottomLevel, vertices: BottomLevelVertices): void;
+  refitBottomLevel?(
+    bottom: GpuBottomLevel,
+    vertices: BottomLevelVertices,
+  ): void;
   finish(): GpuCommandBuffer;
 }

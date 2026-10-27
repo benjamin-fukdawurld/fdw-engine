@@ -32,7 +32,10 @@ export function rayMeshData(mesh: Mesh): RayMeshData | undefined {
   const source = mesh.indices;
   const indices = source
     ? Uint32Array.from(source)
-    : Uint32Array.from({ length: vertexCount - (vertexCount % 3) }, (_, i) => i);
+    : Uint32Array.from(
+        { length: vertexCount - (vertexCount % 3) },
+        (_, i) => i,
+      );
   if (indices.length < 3) {
     return undefined;
   }

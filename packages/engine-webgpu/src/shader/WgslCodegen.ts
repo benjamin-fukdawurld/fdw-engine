@@ -3,10 +3,7 @@ import type {
   ShaderCodegen,
   ShaderSources,
 } from '@fdw/engine-backend';
-import {
-  softwareRayFunctions,
-  traceFunctionName,
-} from './softwareRays';
+import { softwareRayFunctions, traceFunctionName } from './softwareRays';
 import {
   ConstantValue,
   IrEntryPoint,
@@ -225,13 +222,23 @@ function emitBody(
   const { active } = entryPoint;
   if (active) {
     // The threads out of the guard stop once it is known.
-    emitInstructions(entryPoint.body.slice(0, active.after), resources, state, '  ');
+    emitInstructions(
+      entryPoint.body.slice(0, active.after),
+      resources,
+      state,
+      '  ',
+    );
     state.lines.push(
       `  if (!(${state.expressions.get(active.value)})) {`,
       '    return;',
       '  }',
     );
-    emitInstructions(entryPoint.body.slice(active.after), resources, state, '  ');
+    emitInstructions(
+      entryPoint.body.slice(active.after),
+      resources,
+      state,
+      '  ',
+    );
   } else {
     emitInstructions(entryPoint.body, resources, state, '  ');
   }
@@ -313,10 +320,14 @@ function emitInstructions(
         if (alphaTest && !state.helpers.has(name)) {
           state.helpers.set(
             name,
-            softwareRayFunctions(binding, accelerationBuffers(arg(instruction, 0)), {
-              instances,
-              geometry,
-            }),
+            softwareRayFunctions(
+              binding,
+              accelerationBuffers(arg(instruction, 0)),
+              {
+                instances,
+                geometry,
+              },
+            ),
           );
         }
         expression = `${name}(${origin}, ${direction}, ${tMin}, ${tMax}, ${mask}, ${

@@ -66,9 +66,21 @@ export interface LevelViewOptions {
 const background = { r: 0.12, g: 0.13, b: 0.15, a: 1 };
 const linear = (c: number) => Math.pow(c, 2.2);
 const sky: PathTracerSky = {
-  zenith: { x: linear(background.r), y: linear(background.g), z: linear(background.b) },
-  horizon: { x: linear(background.r), y: linear(background.g), z: linear(background.b) },
-  ground: { x: 0.4 * linear(background.r), y: 0.4 * linear(background.g), z: 0.4 * linear(background.b) },
+  zenith: {
+    x: linear(background.r),
+    y: linear(background.g),
+    z: linear(background.b),
+  },
+  horizon: {
+    x: linear(background.r),
+    y: linear(background.g),
+    z: linear(background.b),
+  },
+  ground: {
+    x: 0.4 * linear(background.r),
+    y: 0.4 * linear(background.g),
+    z: 0.4 * linear(background.b),
+  },
 };
 
 const modifierCodes: Readonly<Record<string, keyof Modifiers>> = {
@@ -296,7 +308,9 @@ export class LevelView implements ShownScene {
    */
   setRendering(rendering: LevelRendering): void {
     this.#rendering =
-      this.#renderer.backend.capabilities?.rayQuery === true ? rendering : 'raster';
+      this.#renderer.backend.capabilities?.rayQuery === true
+        ? rendering
+        : 'raster';
   }
 
   setGizmo({ space, pivot, snapping }: GizmoSettings): void {
@@ -433,7 +447,10 @@ export class LevelView implements ShownScene {
     size: { width: number; height: number },
   ): TextureHandle {
     const lights: BaseLight[] = [...(this.#document.scene.lights?.() ?? [])];
-    const hdr = graph.createTexture('rays hdr', { format: 'rgba16float', size });
+    const hdr = graph.createTexture('rays hdr', {
+      format: 'rgba16float',
+      size,
+    });
     if (rendering === 'path') {
       this.#tracer ??= new PathTracer(this.#renderer, rays, { sky });
       return this.#tracer.addPasses(graph, {

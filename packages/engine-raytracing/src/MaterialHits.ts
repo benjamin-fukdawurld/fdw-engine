@@ -106,11 +106,15 @@ export class MaterialHits {
     };
     scene.materials.forEach((material, index) => {
       const program = this.program(material);
-      dispatch(program, {
-        ...shared,
-        ...materialValues(material, program),
-        [HitResources.material]: index,
-      }, material);
+      dispatch(
+        program,
+        {
+          ...shared,
+          ...materialValues(material, program),
+          [HitResources.material]: index,
+        },
+        material,
+      );
     });
   }
 }
@@ -120,7 +124,11 @@ let fallback: MaterialGraphData | undefined;
 function fallbackGraph(): MaterialGraphData {
   if (!fallback) {
     const g = new GraphBuilder('gray');
-    g.surface({ shadingModel: 'pbr', baseColor: [0.5, 0.5, 0.5], roughness: 0.8 });
+    g.surface({
+      shadingModel: 'pbr',
+      baseColor: [0.5, 0.5, 0.5],
+      roughness: 0.8,
+    });
     fallback = g.build();
   }
   return fallback;

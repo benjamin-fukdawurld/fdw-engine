@@ -276,7 +276,12 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       shader = this._addon.createShader(
         this._context,
         sources.code,
-        dxcArguments('library', RayTracingEntryPoints.generation, this.target, sources.code),
+        dxcArguments(
+          'library',
+          RayTracingEntryPoints.generation,
+          this.target,
+          sources.code,
+        ),
         `${program.name} (rays)`,
       );
       this._computeShaders.set(key, shader);

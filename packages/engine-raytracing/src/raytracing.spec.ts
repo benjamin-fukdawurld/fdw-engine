@@ -36,7 +36,11 @@ const triangle = (attributes: 'position' | 'all', indexed = true) =>
             { semantic: 'position', format: 'float32x3', offset: 0 },
             ...(attributes === 'all'
               ? [
-                  { semantic: 'normal', format: 'float32x3' as const, offset: 12 },
+                  {
+                    semantic: 'normal',
+                    format: 'float32x3' as const,
+                    offset: 12,
+                  },
                   { semantic: 'uv', format: 'float32x2' as const, offset: 24 },
                 ]
               : []),
@@ -49,7 +53,10 @@ const triangle = (attributes: 'position' | 'all', indexed = true) =>
     vertices: [
       new Float32Array(
         attributes === 'all'
-          ? [0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1]
+          ? [
+              0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1,
+              0, 1,
+            ]
           : [0, 0, 0, 1, 0, 0, 0, 1, 0],
       ),
     ],
@@ -63,8 +70,12 @@ describe('rayMeshData', () => {
     >;
     expect([...data.indices]).toEqual([0, 1, 2]);
     expect([...data.positions]).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0]);
-    const vertex = (v: number) =>
-      [...data.vertices.subarray(v * RayVertexVec4s * 4, (v + 1) * RayVertexVec4s * 4)];
+    const vertex = (v: number) => [
+      ...data.vertices.subarray(
+        v * RayVertexVec4s * 4,
+        (v + 1) * RayVertexVec4s * 4,
+      ),
+    ];
     // Position and u, normal and v, tangent.
     expect(vertex(1)).toEqual([1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1]);
   });
@@ -84,7 +95,9 @@ describe('rayMeshData', () => {
           {
             stride: 12,
             stepMode: 'vertex',
-            attributes: [{ semantic: 'position', format: 'float32x3', offset: 0 }],
+            attributes: [
+              { semantic: 'position', format: 'float32x3', offset: 0 },
+            ],
           },
         ],
         vertexCount: 2,
@@ -99,9 +112,15 @@ describe('rayMeshData', () => {
 describe('packLights', () => {
   it('packs the lights for the kernels', () => {
     const lights = [
-      new DirectionalLight({ direction: { x: 0, y: -2, z: 0 }, diffuse: { x: 1, y: 0.5, z: 0 } }),
+      new DirectionalLight({
+        direction: { x: 0, y: -2, z: 0 },
+        diffuse: { x: 1, y: 0.5, z: 0 },
+      }),
       new PointLight({ position: { x: 1, y: 2, z: 3 } }),
-      new SpotLight({ position: { x: 0, y: 1, z: 0 }, direction: { x: 0, y: -1, z: 0 } }),
+      new SpotLight({
+        position: { x: 0, y: 1, z: 0 },
+        direction: { x: 0, y: -1, z: 0 },
+      }),
     ];
     const data = packLights(lights);
     expect(countLights(lights)).toBe(3);
@@ -144,9 +163,7 @@ describe('the kernels', () => {
         accumulateKernel,
         denoiseKernel,
         alphaMaskKernel,
-      ].map(
-        (kernel) => compile(kernel(), { capabilities }),
-      ),
+      ].map((kernel) => compile(kernel(), { capabilities })),
       compile(material, { capabilities, target: 'hit' }),
     ];
     for (const program of programs) {

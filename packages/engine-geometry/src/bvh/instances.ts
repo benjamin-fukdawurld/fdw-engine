@@ -1,10 +1,6 @@
 import type { Matrix4 } from '../math';
 import { Bvh, buildBvh, BvhOptions, traverseBvh } from './Bvh';
-import {
-  intersectTriangles,
-  TriangleBvh,
-  TriangleHit,
-} from './triangles';
+import { intersectTriangles, TriangleBvh, TriangleHit } from './triangles';
 
 /** A mesh placed in the world: what the top level of a scene holds. */
 export interface BvhInstance {
@@ -82,11 +78,7 @@ export function invertAffine(
   out[11] = 0;
   const [tx, ty, tz] = [matrix[12], matrix[13], matrix[14]];
   for (let row = 0; row < 3; row++) {
-    out[12 + row] = -(
-      out[row] * tx +
-      out[4 + row] * ty +
-      out[8 + row] * tz
-    );
+    out[12 + row] = -(out[row] * tx + out[4 + row] * ty + out[8 + row] * tz);
   }
   out[15] = 1;
   return out;

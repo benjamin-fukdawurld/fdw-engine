@@ -44,17 +44,31 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     transform: new Transform({ position, scale }),
   });
   const items: RenderItem[] = [
-    box({ x: 0, y: -0.05, z: 0 }, { x: 16, y: 0.1, z: 12 }, material([0.5, 0.52, 0.55])),
+    box(
+      { x: 0, y: -0.05, z: 0 },
+      { x: 16, y: 0.1, z: 12 },
+      material([0.5, 0.52, 0.55]),
+    ),
     box({ x: 0, y: 2.6, z: -1 }, { x: 7, y: 0.25, z: 0.6 }),
   ];
   for (let k = 0; k < 6; k++) {
-    items.push(box({ x: -3 + k * 1.2, y: 1.25, z: -1 }, { x: 0.3, y: 2.5, z: 0.3 }));
+    items.push(
+      box({ x: -3 + k * 1.2, y: 1.25, z: -1 }, { x: 0.3, y: 2.5, z: 0.3 }),
+    );
   }
   // A lattice of thin bars: their shadows a fine grid.
   for (let k = 0; k < 9; k++) {
     items.push(
-      box({ x: 3.2, y: 0.9 + k * 0.08 - 0.32, z: 1.6 }, { x: 1.6, y: 0.025, z: 0.025 }, material([0.2, 0.2, 0.22])),
-      box({ x: 2.56 + k * 0.16, y: 0.9, z: 1.6 }, { x: 0.025, y: 0.7, z: 0.025 }, material([0.2, 0.2, 0.22])),
+      box(
+        { x: 3.2, y: 0.9 + k * 0.08 - 0.32, z: 1.6 },
+        { x: 1.6, y: 0.025, z: 0.025 },
+        material([0.2, 0.2, 0.22]),
+      ),
+      box(
+        { x: 2.56 + k * 0.16, y: 0.9, z: 1.6 },
+        { x: 0.025, y: 0.7, z: 0.025 },
+        material([0.2, 0.2, 0.22]),
+      ),
     );
   }
   // A perforated screen: its alpha cut in round holes (a masked material).
@@ -76,7 +90,10 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
     shadingModel: 'pbr',
     baseColor: [0.3, 0.45, 0.25],
     roughness: 0.8,
-    alpha: screen.call(std.step, { edge: 0.3, x: screen.call(std.length, { x: cell }) }),
+    alpha: screen.call(std.step, {
+      edge: 0.3,
+      x: screen.call(std.length, { x: cell }),
+    }),
   });
   items.push({
     mesh: cube,
@@ -94,7 +111,10 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const ball: RenderItem = {
     mesh: sphere,
     material: material([0.9, 0.45, 0.2], 0.4),
-    transform: new Transform({ position: { x: -1.5, y: 0.6, z: 1.8 }, scale: { x: 1.2, y: 1.2, z: 1.2 } }),
+    transform: new Transform({
+      position: { x: -1.5, y: 0.6, z: 1.8 },
+      scale: { x: 1.2, y: 1.2, z: 1.2 },
+    }),
   };
   items.push(ball);
 
@@ -108,11 +128,19 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   const camera = new Camera({
     position: { x: 0, y: 4.5, z: 9 },
     rotation: axisAngle(1, 0, 0, -0.42),
-    projection: { type: 'perspective', fov: 45, aspect: 16 / 9, near: 0.1, far: 100 },
+    projection: {
+      type: 'perspective',
+      fov: 45,
+      aspect: 16 / 9,
+      near: 0.1,
+      far: 100,
+    },
   });
 
   // The scene of the rays, where the backend traces them (WebGPU, Vulkan).
-  const scene = backend.capabilities?.rayQuery ? new RayScene(backend) : undefined;
+  const scene = backend.capabilities?.rayQuery
+    ? new RayScene(backend)
+    : undefined;
   const modes = scene
     ? (['shadow maps', 'traced', 'traced, soft'] as const)
     : (['shadow maps'] as const);
@@ -122,7 +150,11 @@ const example: Example = ({ backend, surface, canvas, onFrame, info }) => {
   });
 
   onFrame((time) => {
-    ball.transform.position = { x: -1.5 + Math.sin(time * 0.7) * 1.2, y: 0.6, z: 1.8 };
+    ball.transform.position = {
+      x: -1.5 + Math.sin(time * 0.7) * 1.2,
+      y: 0.6,
+      z: 1.8,
+    };
     const soft = modes[mode] === 'traced, soft';
     // The sun is half a degree wide: its tangent.
     sun.shadow = { softness: soft ? 0.03 : 0 };

@@ -1810,10 +1810,7 @@ export class Renderer {
 
   // The traced scene read by the programs of a view, in this frame.
   private bindRays(view: FrameView, scene: TracedScene | undefined): void {
-    if (
-      scene &&
-      (view.rays !== scene || view.raysVersion !== scene.version)
-    ) {
+    if (scene && (view.rays !== scene || view.raysVersion !== scene.version)) {
       view.rays = scene;
       view.raysVersion = scene.version;
       this.retireGroups(view.bindGroups);

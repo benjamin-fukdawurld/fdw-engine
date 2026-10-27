@@ -779,7 +779,10 @@ describe('GlslEsCodegen', () => {
       });
       g.compute({
         workgroupSize: [64, 1, 1],
-        active: g.call(std.less, { a: index, b: g.uniform('count', BuiltinTypes.u32) }),
+        active: g.call(std.less, {
+          a: index,
+          b: g.uniform('count', BuiltinTypes.u32),
+        }),
       });
       const program = compile(g.build());
       const [draw] = codegen.emitCompute(

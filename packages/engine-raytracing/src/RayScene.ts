@@ -78,7 +78,10 @@ interface MeshEntry {
 const everywhere = (() => {
   const frustum = new Frustum();
   for (let plane = 0; plane < 6; plane++) {
-    frustum.planes.set([plane === 0 ? 1 : 0, plane === 0 ? 0 : 1, 0, 1e30], plane * 4);
+    frustum.planes.set(
+      [plane === 0 ? 1 : 0, plane === 0 ? 0 : 1, 0, 1e30],
+      plane * 4,
+    );
   }
   return frustum;
 })();
@@ -192,7 +195,12 @@ export class RayScene implements TracedScene {
     this.backend = backend;
     this._registry = registry;
     this._top = backend.createTopLevel({ capacity, label });
-    this._geometry = new GrowableBuffer(backend, 16, 1 << 16, `${label} geometry`);
+    this._geometry = new GrowableBuffer(
+      backend,
+      16,
+      1 << 16,
+      `${label} geometry`,
+    );
     this._instanceCapacity = Math.max(1, capacity);
     this._instanceBuffer = this.createInstanceBuffer();
   }
@@ -222,11 +230,7 @@ export class RayScene implements TracedScene {
   }
 
   get version(): number {
-    return (
-      this._top.version +
-      this._geometry.version +
-      this._instanceVersion
-    );
+    return this._top.version + this._geometry.version + this._instanceVersion;
   }
 
   resource(name: string): GpuBindGroupEntry['resource'] | undefined {
@@ -277,10 +281,16 @@ export class RayScene implements TracedScene {
     const materials = new Map<Material, number>();
     const instances: RayInstance[] = [];
     const top: TopLevelInstance[] = [];
-    const records: { item: Renderable; entry: MeshEntry; world: Float32Array }[] = [];
+    const records: {
+      item: Renderable;
+      entry: MeshEntry;
+      world: Float32Array;
+    }[] = [];
     const bakes: Material[] = [];
     for (const item of traced) {
-      const deformed = item.rayMesh ? undefined : item.material.deformedVertices;
+      const deformed = item.rayMesh
+        ? undefined
+        : item.material.deformedVertices;
       const entry = deformed
         ? this.deformedEntry(item.mesh, deformed)
         : this.meshEntry(item.rayMesh ?? item.mesh);
@@ -360,7 +370,10 @@ export class RayScene implements TracedScene {
 
   // Records the bakes of the masks of the materials (see alphaMasks.ts):
   // the hit program of each over the square, its alpha packed in bits.
-  private bake(encoder: GpuCommandEncoder, materials: readonly Material[]): void {
+  private bake(
+    encoder: GpuCommandEncoder,
+    materials: readonly Material[],
+  ): void {
     const baker = this.baker();
     const pass = encoder.beginComputePass('alpha masks');
     const hitGroups = [Math.ceil(AlphaMaskTexels / 64)] as const;
@@ -499,7 +512,13 @@ export class RayScene implements TracedScene {
         usage: ['storage', 'copy-dst'],
         initialData: data.vertices,
       });
-      this._deformed.set(vertices.buffer, { mesh, entry, vertices, rest, seen: true });
+      this._deformed.set(vertices.buffer, {
+        mesh,
+        entry,
+        vertices,
+        rest,
+        seen: true,
+      });
     }
     return entry;
   }
@@ -534,7 +553,8 @@ export class RayScene implements TracedScene {
     const triangles = new Uint32Array(triangleCount * 4);
     for (let t = 0; t < triangleCount; t++) {
       for (let k = 0; k < 3; k++) {
-        triangles[t * 4 + k] = firstVertex + data.indices[t * 3 + k] * RayVertexVec4s;
+        triangles[t * 4 + k] =
+          firstVertex + data.indices[t * 3 + k] * RayVertexVec4s;
       }
     }
     const firstTriangle = this._geometry.allocate(triangleCount);
@@ -633,7 +653,11 @@ export class RayScene implements TracedScene {
   // With `square`, the record of the square of the bakes follows those of
   // the instances (see bake).
   private writeInstances(
-    records: readonly { item: Renderable; entry: MeshEntry; world: Float32Array }[],
+    records: readonly {
+      item: Renderable;
+      entry: MeshEntry;
+      world: Float32Array;
+    }[],
     materials: ReadonlyMap<Material, number>,
     square = false,
   ): void {
@@ -646,7 +670,9 @@ export class RayScene implements TracedScene {
       this._instanceVersion++;
     }
     if (this._instanceData.length < written * InstanceFloats) {
-      this._instanceData = new Float32Array(this._instanceCapacity * InstanceFloats);
+      this._instanceData = new Float32Array(
+        this._instanceCapacity * InstanceFloats,
+      );
     }
     const data = this._instanceData;
     const words = new Uint32Array(data.buffer);

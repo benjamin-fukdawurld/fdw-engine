@@ -63,7 +63,10 @@ function pixelThread(g: GraphBuilder, s: Shading) {
   const width = g.uniform('width', BuiltinTypes.u32);
   const count = g.uniform('pixelCount', BuiltinTypes.u32);
   const pixel = s.convert(
-    g.call('std.uvec2', { x: s.remainder(index, width), y: s.div(index, width) }),
+    g.call('std.uvec2', {
+      x: s.remainder(index, width),
+      y: s.div(index, width),
+    }),
     BuiltinTypes.vec2i,
   );
   const load = (name: string) =>
@@ -123,8 +126,14 @@ function shadeKernel(): MaterialGraphData {
   const rays = g.storage('rays', vec4f);
   const lights = g.storage('lights', vec4f);
   const surfaces = g.storage('raySurfaces', vec4f);
-  const hit = s.index(g.storage('rayHits', arrayType(BuiltinTypes.vec4u)), index);
-  const alive = s.greater(s.index(rays, s.mul(index, s.u32(2))).swizzle('w'), 0.5);
+  const hit = s.index(
+    g.storage('rayHits', arrayType(BuiltinTypes.vec4u)),
+    index,
+  );
+  const alive = s.greater(
+    s.index(rays, s.mul(index, s.u32(2))).swizzle('w'),
+    0.5,
+  );
   const dir = s.normalize(
     s.index(rays, s.add(s.mul(index, s.u32(2)), s.u32(1))).swizzle('xyz'),
   );
@@ -189,7 +198,10 @@ function shadeKernel(): MaterialGraphData {
       sum,
       s.select(
         [0, 0, 0],
-        s.mul(bsdf.evaluate(l), s.mul(l1.swizzle('xyz'), s.mul(attenuation, spot))),
+        s.mul(
+          bsdf.evaluate(l),
+          s.mul(l1.swizzle('xyz'), s.mul(attenuation, spot)),
+        ),
         visible,
       ),
     );
@@ -224,7 +236,10 @@ function shadeKernel(): MaterialGraphData {
 function composeGraph(): MaterialGraphData {
   const g = new GraphBuilder('compose reflections');
   const s = new Shading(g);
-  const pixel = s.convert(g.builtin('frag-coord').swizzle('xy'), BuiltinTypes.vec2i);
+  const pixel = s.convert(
+    g.builtin('frag-coord').swizzle('xy'),
+    BuiltinTypes.vec2i,
+  );
   const load = (name: string) =>
     g.call('std.textureLoad', { texture: g.texture(name), coords: pixel });
   const width = g.uniform('width', BuiltinTypes.u32);
@@ -242,13 +257,20 @@ function composeGraph(): MaterialGraphData {
   const base = load('baseColor');
   const f0 = s.mix(s.splat3(0.04), base.swizzle('xyz'), base.swizzle('w'));
   const cosine = s.saturate(s.dot(normal, s.normalize(s.sub(eye, position))));
-  const fresnel = s.add(f0, s.mul(s.sub(s.splat3(1), f0), s.pow(s.sub(1, cosine), 5)));
-  const fade = s.saturate(s.sub(1, s.div(roughness, s.max(maxRoughness, 1e-4))));
+  const fresnel = s.add(
+    f0,
+    s.mul(s.sub(s.splat3(1), f0), s.pow(s.sub(1, cosine), 5)),
+  );
+  const fade = s.saturate(
+    s.sub(1, s.div(roughness, s.max(maxRoughness, 1e-4))),
+  );
   const added = s.mul(
     s.mul(reflection.swizzle('xyz'), fresnel),
     s.mul(fade, reflection.swizzle('w')),
   );
-  g.fullscreen({ color: s.extend(s.add(color.swizzle('xyz'), added), color.swizzle('w')) });
+  g.fullscreen({
+    color: s.extend(s.add(color.swizzle('xyz'), added), color.swizzle('w')),
+  });
   return g.build();
 }
 

@@ -426,7 +426,11 @@ function shadowRay(registry: NodeRegistry): FunctionDefinition {
   const hit = f.traceRay({
     origin,
     direction,
-    tMax: f.call(select, { ifFalse: 1e30, ifTrue: 0.999, condition: pointLike }),
+    tMax: f.call(select, {
+      ifFalse: 1e30,
+      ifTrue: 0.999,
+      condition: pointLike,
+    }),
     mask: RayMasks.shadow,
     mode: 'any',
     alphaTest: true,

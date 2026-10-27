@@ -132,7 +132,10 @@ describe('the guard of compute graphs', () => {
       value: g.call(std.sqrt, { x: g.call(std.mul, { a: value, b: 3 }) }),
     });
     g.compute({
-      active: g.call(std.less, { a: index, b: g.uniform('count', BuiltinTypes.u32) }),
+      active: g.call(std.less, {
+        a: index,
+        b: g.uniform('count', BuiltinTypes.u32),
+      }),
     });
     const [compute] = compile(g.build()).module.entryPoints;
     const active = compute.active;
@@ -218,7 +221,9 @@ describe('the hit target', () => {
     expect(program.module.entryPoints).toHaveLength(1);
     expect(compute.stage).toBe('compute');
     expect(compute.writes).toHaveLength(5);
-    expect(compute.writes?.every((write) => write.resource === 'raySurfaces')).toBe(true);
+    expect(
+      compute.writes?.every((write) => write.resource === 'raySurfaces'),
+    ).toBe(true);
     expect(compute.active).toBeDefined();
     const ops = instructions(compute).map((instruction) => instruction.op.kind);
     expect(ops).toContain('sample-level');
@@ -231,7 +236,11 @@ describe('the hit target', () => {
       ]),
     );
     expect(slots['rays']).toEqual(['raysUniforms', 'rayHits', 'raySurfaces']);
-    expect(slots['material']).toEqual(['materialUniforms', 'map', 'mapSampler']);
+    expect(slots['material']).toEqual([
+      'materialUniforms',
+      'map',
+      'mapSampler',
+    ]);
     expect(slots['frame']).toEqual([
       'frameUniforms',
       'rayInstances',
@@ -248,24 +257,32 @@ describe('the hit target', () => {
     });
     g.surface({
       shadingModel: 'phong',
-      normal: g.node(stdMacros.normalMapping, { inputs: { sample: normal.swizzle('xyz') } })['normal'],
+      normal: g.node(stdMacros.normalMapping, {
+        inputs: { sample: normal.swizzle('xyz') },
+      })['normal'],
     });
     const program = compile(g.build(), {
       target: 'hit',
       features: { alphaMode: 'mask' },
     });
-    const material = program.layout.groups.find((group) => group.slot === 'material');
-    const block = material?.bindings[0];
-    expect(block?.kind === 'uniform-block' && block.members.map((m) => m.name)).toContain(
-      'alphaCutoff',
+    const material = program.layout.groups.find(
+      (group) => group.slot === 'material',
     );
+    const block = material?.bindings[0];
+    expect(
+      block?.kind === 'uniform-block' && block.members.map((m) => m.name),
+    ).toContain('alphaCutoff');
   });
 
   it('refuses what has no value at a hit', () => {
     const g = new GraphBuilder('instanced');
     g.surface({
       baseColor: g.call(std.vec3, {
-        x: g.call(std.convert, { value: g.builtin('vertex-index') }, { params: { to: BuiltinTypes.f32 } }),
+        x: g.call(
+          std.convert,
+          { value: g.builtin('vertex-index') },
+          { params: { to: BuiltinTypes.f32 } },
+        ),
       }),
     });
     expect(() => compile(g.build(), { target: 'hit' })).toThrow(/vertex-index/);
@@ -275,7 +292,11 @@ describe('the hit target', () => {
     // Positions made from the vertex index (a terrain of patches): the hit
     // program reads those of the geometry traced instead.
     const g = new GraphBuilder('generated');
-    const index = g.call(std.convert, { value: g.builtin('vertex-index') }, { params: { to: BuiltinTypes.f32 } });
+    const index = g.call(
+      std.convert,
+      { value: g.builtin('vertex-index') },
+      { params: { to: BuiltinTypes.f32 } },
+    );
     g.vertexAttribute('position', g.call(std.vec3, { x: index, y: 0, z: 0 }));
     g.vertexAttribute('uv', g.call(std.vec2, { x: index, y: 1 }));
     g.surface({
@@ -288,11 +309,14 @@ describe('the hit target', () => {
     expect(
       instructions.some(
         (instruction) =>
-          instruction.op.kind === 'load-builtin' && instruction.op.builtin === 'vertex-index',
+          instruction.op.kind === 'load-builtin' &&
+          instruction.op.builtin === 'vertex-index',
       ),
     ).toBe(false);
-    expect(program.layout.groups.flatMap((group) => group.bindings.map((b) => b.name))).toContain(
-      'rayGeometry',
-    );
+    expect(
+      program.layout.groups.flatMap((group) =>
+        group.bindings.map((b) => b.name),
+      ),
+    ).toContain('rayGeometry');
   });
 });
