@@ -113,26 +113,33 @@ async function expectLayout(
 }
 
 describe.skipIf(skipHlsl)('The programs of the rendering suite in HLSL', () => {
-  it('compile to valid SPIR-V, with the offsets of the layout', async () => {
-    // Surfaces, raw stages, full screen passes, compute kernels, shadows…
-    expect(programs.size).toBeGreaterThan(30);
-    const codegen = new HlslCodegen();
-    const failures: string[] = [];
-    for (const program of programs.values()) {
-      const layout = std140LayoutStrategy.resolve(program.layout);
-      try {
-        const modules = await compileHlsl(codegen.emit(program.module, layout));
-        for (const spirv of modules.values()) {
-          await validateSpirv(spirv);
-          await expectLayout(spirv, layout, program.name);
+  it(
+    'compile to valid SPIR-V, with the offsets of the layout',
+    { timeout: 30_000 },
+    async () => {
+      // Surfaces, raw stages, full screen passes, compute kernels, shadows…
+      expect(programs.size).toBeGreaterThan(30);
+      const codegen = new HlslCodegen();
+      const failures: string[] = [];
+      for (const program of programs.values()) {
+        const layout = std140LayoutStrategy.resolve(program.layout);
+        try {
+          const modules = await compileHlsl(
+            codegen.emit(program.module, layout),
+          );
+          for (const spirv of modules.values()) {
+            await validateSpirv(spirv);
+            await expectLayout(spirv, layout, program.name);
+          }
+        } catch (error) {
+          failures.push(`${program.name}: ${(error as Error).message}`);
         }
-      } catch (error) {
-        failures.push(`${program.name}: ${(error as Error).message}`);
       }
-    }
-    expect(failures).toEqual([]);
-    // One DXC run per program, one after the other.
-  }, 30_000);
+      expect(failures).toEqual([]);
+      // One DXC run per program, one after the other.
+    },
+    30_000,
+  );
 });
 
 // Validates and links the two stages of a GLSL ES program.
