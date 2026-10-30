@@ -1,8 +1,9 @@
 import type { Engine, RenderBackend, Surface } from '@fdw/engine-backend';
+import { D3D12Engine } from '@fdw/engine-d3d12';
 import { createDawnEngine, DawnWindowSurface } from '@fdw/engine-native';
 import { VulkanEngine } from '@fdw/engine-vulkan';
 import { ViewportSurface } from './ViewportSurface';
-import type { X11Viewport } from './viewport';
+import type { NativeViewport } from './viewport';
 
 /** A backend started on the viewport, with its surface. */
 export interface Renderer {
@@ -36,7 +37,7 @@ async function startOrClean<T>(
  * the window refuses all mean the fallback. FIFO: the swapchain sets the
  * pace.
  */
-export async function startVulkan(viewport: X11Viewport): Promise<Renderer> {
+export async function startVulkan(viewport: NativeViewport): Promise<Renderer> {
   const engine = new VulkanEngine({
     application: 'FDW Editor',
     validation: process.env['FDW_VALIDATION'] === '1',
@@ -66,6 +67,42 @@ export async function startVulkan(viewport: X11Viewport): Promise<Renderer> {
   }, destroy);
 }
 
+/**
+ * Direct3D 12 (FDW_BACKEND=d3d12, Windows), presenting into the viewport
+ * with a DXGI swapchain, without copy, as Vulkan does.
+ */
+export async function startD3D12(viewport: NativeViewport): Promise<Renderer> {
+  const engine = new D3D12Engine({
+    application: 'FDW Editor',
+    validation: process.env['FDW_VALIDATION'] === '1',
+  });
+  const surface = new ViewportSurface(viewport);
+  const destroy = async () => {
+    const messages = engine.device?.takeMessages() ?? [];
+    if (messages.length > 0) {
+      console.log(`[engine] Direct3D 12 debug layer:\n${messages.join('\n')}`);
+    }
+    surface.destroy();
+    await engine.destroy();
+  };
+  return startOrClean(async () => {
+    await engine.init();
+    const { backend, device } = engine;
+    if (!backend || !device) {
+      throw new Error('The Direct3D 12 engine is not ready');
+    }
+    await surface.init(engine);
+    return {
+      backend,
+      device: device.name,
+      surface,
+      waitIdle: () => device.waitIdle(),
+      nextFrame: nextTask,
+      destroy,
+    };
+  }, destroy);
+}
+
 // The pace of Dawn's frames: the copy into the window has no vertical
 // synchronization.
 const dawnInterval = 1000 / 60;
@@ -76,7 +113,7 @@ const dawnInterval = 1000 / 60;
  * viewport by its addon (DawnWindowSurface). About 500 MB/s in 1080p at
  * 60 Hz.
  */
-export async function startDawn(viewport: X11Viewport): Promise<Renderer> {
+export async function startDawn(viewport: NativeViewport): Promise<Renderer> {
   let engine: Engine | undefined;
   const surface = new DawnWindowSurface(viewport);
   const destroy = async () => {

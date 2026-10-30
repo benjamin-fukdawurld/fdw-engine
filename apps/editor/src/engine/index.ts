@@ -1,8 +1,9 @@
 // The engine process of the editor: a utility process of Electron, started
 // by the main process (src/main/engine.ts), which runs the engine on Vulkan
-// and presents into the viewport, a child window of the editor window. The
-// main process gives it the XID of that window and the backend asked for
-// (FDW_BACKEND), then a port to the page at each page load; the
+// (or Direct3D 12, asked for) and presents into the viewport, a child window
+// of the editor window. The main process gives it the handle of that window
+// (an XID, a HWND) and the backend asked for (FDW_BACKEND), then a port to
+// the page at each page load; the
 // EditorEngine of @fdw/editor-ui does the rest. On Dawn (asked for, or the
 // fallback), the engine runs in a Node process of its own (dawn.ts), to
 // which this one relays the messages of the page. The main process and its
@@ -17,9 +18,9 @@ import type {
   Wire,
 } from '../shared/protocol';
 import { fromWire, toWire } from './wire';
-import { startVulkan } from './backends';
+import { startD3D12, startVulkan } from './backends';
 import { EngineSession, type PageLink } from './session';
-import { X11Viewport } from './viewport';
+import { NativeViewport } from './viewport';
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -118,12 +119,15 @@ function connect(next: MessagePortMain): void {
   }
 }
 
-// Vulkan here, or Dawn in its process, given the window and the reason.
+// Vulkan (or Direct3D 12) here, or Dawn in its process, given the window
+// and the reason.
 async function run(parent: string, requested?: string): Promise<void> {
-  const viewport = new X11Viewport(BigInt(parent));
+  const viewport = new NativeViewport(BigInt(parent));
   const backend = await startBackend(
     requested,
-    { name: 'vulkan', start: () => startVulkan(viewport) },
+    requested === 'd3d12'
+      ? { name: 'd3d12', start: () => startD3D12(viewport) }
+      : { name: 'vulkan', start: () => startVulkan(viewport) },
     { name: 'dawn', start: async () => undefined },
   );
   chosen = true;

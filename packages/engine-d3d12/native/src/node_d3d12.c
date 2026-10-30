@@ -124,13 +124,15 @@ static fdw_dx_context *context_arg(napi_env env, napi_value value) {
   return handle->context;
 }
 
-// createContext(validation, application)
+// createContext(validation, application, warp)
 static napi_value js_create_context(napi_env env, napi_callback_info info) {
-  ARGS(2);
-  bool validation = false;
+  ARGS(3);
+  bool validation = false, warp = false;
   napi_get_value_bool(env, argv[0], &validation);
+  napi_get_value_bool(env, argv[2], &warp);
   char *application = string_arg(env, argv[1]);
-  fdw_dx_context_options options = {validation ? 1 : 0, application};
+  fdw_dx_context_options options = {validation ? 1 : 0, application,
+                                    warp ? 1 : 0};
   fdw_dx_context *context = fdw_dx_context_create(&options);
   free(application);
   if (!context) {

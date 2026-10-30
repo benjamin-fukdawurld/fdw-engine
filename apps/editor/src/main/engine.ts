@@ -12,7 +12,8 @@ import dawnPath from '../engine/dawn?modulePath';
 // From out/main, where the bundle runs.
 const repositoryRoot = join(__dirname, '../../../..');
 
-// The XID of a window: 32 bits from Electron (x11::Window), or a long.
+// The XID of a window (32 bits from Electron, x11::Window, or a long), or
+// its HWND.
 function windowId(window: BrowserWindow): bigint {
   const handle = window.getNativeWindowHandle();
   return handle.length === 4
@@ -25,7 +26,7 @@ function windowId(window: BrowserWindow): bigint {
  * renders into a child window placed over the area of the page that React
  * reserves. The page and the engine talk over a MessagePort, given to both
  * at each page load: the main process stays out of the frames. Linux (X11)
- * only so far.
+ * and Windows.
  */
 export class EngineProcess {
   readonly #child: UtilityProcess;
@@ -46,6 +47,10 @@ export class EngineProcess {
         FDW_VULKAN_ADDON: join(
           repositoryRoot,
           'packages/engine-vulkan/build/fdw_vulkan.node',
+        ),
+        FDW_D3D12_ADDON: join(
+          repositoryRoot,
+          'packages/engine-d3d12/build/fdw_d3d12.node',
         ),
         FDW_NATIVE_ADDON: join(
           repositoryRoot,

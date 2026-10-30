@@ -42,7 +42,7 @@ function createWindow(): void {
 
   window.once('ready-to-show', () => {
     window.show();
-    if (process.platform === 'linux') {
+    if (process.platform === 'linux' || process.platform === 'win32') {
       engine = new EngineProcess(window);
       if (connectAsked) engine.connect(window);
     }

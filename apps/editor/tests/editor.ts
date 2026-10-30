@@ -1,5 +1,7 @@
-// The editor started for a test, and the X server it runs in: xprobe
-// (xprobe.c) gives the inputs and reads the pixels of the screen.
+// The editor started for a test, and the screen it runs on: a probe gives
+// the inputs and reads the pixels of the screen, xprobe (xprobe.c) in the X
+// server under Linux, winprobe (winprobe.c) on the desktop under Windows.
+// Both are built with the addon (build-native).
 import {
   _electron,
   expect,
@@ -7,43 +9,42 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
-import {
-  execFileSync,
-  spawn,
-  type ChildProcessByStdio,
-} from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface, type Interface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 
 const editorRoot = join(__dirname, '..');
-const electron = join(editorRoot, 'node_modules/electron/dist/electron');
+const electron = join(
+  editorRoot,
+  process.platform === 'win32'
+    ? 'node_modules/electron/dist/electron.exe'
+    : 'node_modules/electron/dist/electron',
+);
 
 export type Color = readonly [number, number, number];
 
-// Built at the first use, next to its source, when older.
-function xprobePath(): string {
-  const source = join(__dirname, 'xprobe.c');
-  const binary = join(editorRoot, 'build/xprobe');
-  if (
-    !existsSync(binary) ||
-    statSync(binary).mtimeMs < statSync(source).mtimeMs
-  ) {
-    execFileSync('cc', ['-O1', '-o', binary, source, '-lX11', '-ldl']);
+function probePath(): string {
+  const binary = join(
+    editorRoot,
+    process.platform === 'win32' ? 'build/winprobe.exe' : 'build/xprobe',
+  );
+  if (!existsSync(binary)) {
+    throw new Error(`${binary} is not built: run build-native`);
   }
   return binary;
 }
 
-/** The X server, through xprobe: one command, one answer. */
-export class XServer {
+/** The screen, through its probe: one command, one answer. */
+export class ScreenProbe {
   readonly #child: ChildProcessByStdio<Writable, Readable, null>;
   readonly #lines: Interface;
   #queue = Promise.resolve('');
 
   constructor() {
-    this.#child = spawn(xprobePath(), [], {
+    this.#child = spawn(probePath(), [], {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
     this.#lines = createInterface({ input: this.#child.stdout });
@@ -55,7 +56,7 @@ export class XServer {
         new Promise<string>((resolve, reject) => {
           this.#lines.once('line', (line) =>
             line.startsWith('error')
-              ? reject(new Error(`xprobe ${command}: ${line}`))
+              ? reject(new Error(`probe ${command}: ${line}`))
               : resolve(line),
           );
           this.#child.stdin.write(`${command}\n`);
@@ -81,7 +82,7 @@ export class XServer {
     await this.button(button, 'up');
   }
 
-  /** A key, by its X name (a, Delete, Escape…). */
+  /** A key, by its X name (a, Delete, Escape…), on both systems. */
   async press(key: string): Promise<void> {
     await this.#send(`key ${key} down`);
     await this.#send(`key ${key} up`);
@@ -128,7 +129,7 @@ export interface ScreenBox {
 export interface Editor {
   readonly app: ElectronApplication;
   readonly page: Page;
-  readonly x: XServer;
+  readonly screen: ScreenProbe;
   /** The text of the status bar once the engine draws frames. */
   drawing(): Promise<string>;
   /** The area of the viewport on the screen, in device pixels. */
@@ -142,8 +143,9 @@ export interface Editor {
 }
 
 /**
- * Starts the editor in the X server of $DISPLAY, with a user data of its
- * own (the default layout); `env` adds to its environment.
+ * Starts the editor on the screen (the X server of $DISPLAY, the desktop of
+ * Windows), with a user data of its own (the default layout); `env` adds to
+ * its environment.
  */
 export async function startEditor(
   env: Record<string, string> = {},
@@ -169,11 +171,11 @@ export async function startEditor(
     },
   });
   const page = await app.firstWindow();
-  const x = new XServer();
+  const screen = new ScreenProbe();
 
   const scale = () => page.evaluate(() => window.devicePixelRatio);
-  // The origin of the page on the screen: there is no window manager in
-  // the X server of the tests, the content bounds are the window's.
+  // The origin of the page on the screen: the content bounds of the window
+  // (there is no window manager in the X server of the tests).
   const origin = () =>
     app.evaluate(({ BrowserWindow }) => {
       const bounds = BrowserWindow.getAllWindows()[0]?.getContentBounds() ?? {
@@ -237,7 +239,7 @@ export async function startEditor(
   return {
     app,
     page,
-    x,
+    screen,
     drawing: async () => {
       const footer = page.locator('footer');
       await expect(footer).toContainText(/ [1-9]\d* fps/, { timeout: 30_000 });
@@ -248,13 +250,13 @@ export async function startEditor(
     pageColor,
     differsFromPage: async (screenX, screenY) => {
       const [shown, behind] = await Promise.all([
-        x.region(screenX - 2, screenY - 2, 5, 5),
+        screen.region(screenX - 2, screenY - 2, 5, 5),
         pageColor(screenX, screenY),
       ]);
       return shown.some((value, i) => Math.abs(value - (behind[i] ?? 0)) > 12);
     },
     close: async () => {
-      x.close();
+      screen.close();
       await app.close();
       rmSync(userData, { recursive: true, force: true });
     },

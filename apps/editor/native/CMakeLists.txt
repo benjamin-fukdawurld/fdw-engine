@@ -1,33 +1,47 @@
 # Native part of the editor (P18): fdw_editor.node, the native viewport. A
-# child X11 window placed in the Electron window; the engine presents into it
-# with its own Vulkan addon (@fdw/engine-vulkan), or copies the frames of Dawn
-# into it (MIT-SHM).
+# child window placed in the Electron window; the engine presents into it
+# with its own addon (@fdw/engine-vulkan, @fdw/engine-d3d12), or copies the
+# frames of Dawn into it. X11 under Linux (viewport_x11.cpp), Win32 under
+# Windows (viewport_win32.cpp).
 
 cmake_minimum_required(VERSION 3.24)
-project(fdw_editor LANGUAGES CXX)
+project(fdw_editor LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-set(NODE_API_INCLUDE_DIR "" CACHE PATH "Directory of node_api.h")
-if(NOT NODE_API_INCLUDE_DIR)
-  message(FATAL_ERROR "NODE_API_INCLUDE_DIR is not set: build with scripts/build-native.mjs")
-endif()
-if(NOT UNIX OR APPLE)
-  message(FATAL_ERROR "The native viewport is only written for Linux (X11) so far")
-endif()
-find_package(X11 REQUIRED)
-if(NOT X11_Xext_FOUND)
-  message(FATAL_ERROR "libXext (the Shape and MIT-SHM extensions) was not found")
-endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/native/NodeApi.cmake)
 
-add_library(fdw_editor_node MODULE src/viewport.cpp)
-target_include_directories(fdw_editor_node PRIVATE ${NODE_API_INCLUDE_DIR})
+# The probe of the end-to-end tests (tests/xprobe.c, tests/winprobe.c): the
+# inputs and the pixels of the screen. In build/ itself, also with the
+# multi-config generators.
+if(WIN32)
+  add_library(fdw_editor_node MODULE src/viewport_win32.cpp)
+  target_link_libraries(fdw_editor_node PRIVATE user32 gdi32)
+  add_executable(fdw_probe ../tests/winprobe.c)
+  target_link_libraries(fdw_probe PRIVATE user32 gdi32)
+  set_target_properties(fdw_probe PROPERTIES OUTPUT_NAME winprobe)
+elseif(UNIX AND NOT APPLE)
+  find_package(X11 REQUIRED)
+  if(NOT X11_Xext_FOUND)
+    message(FATAL_ERROR "libXext (the Shape and MIT-SHM extensions) was not found")
+  endif()
+  add_library(fdw_editor_node MODULE src/viewport_x11.cpp)
+  target_link_libraries(fdw_editor_node PRIVATE X11::X11 X11::Xext)
+  add_executable(fdw_probe ../tests/xprobe.c)
+  target_link_libraries(fdw_probe PRIVATE X11::X11 ${CMAKE_DL_LIBS})
+  set_target_properties(fdw_probe PROPERTIES OUTPUT_NAME xprobe)
+else()
+  message(FATAL_ERROR "The native viewport is written for Linux (X11) and Windows so far")
+endif()
 target_compile_definitions(fdw_editor_node PRIVATE NAPI_VERSION=8 NODE_GYP_MODULE_NAME=fdw_editor)
-target_link_libraries(fdw_editor_node PRIVATE X11::X11 X11::Xext)
-set_target_properties(fdw_editor_node PROPERTIES OUTPUT_NAME fdw_editor PREFIX "" SUFFIX ".node")
+set_target_properties(fdw_editor_node PROPERTIES OUTPUT_NAME fdw_editor)
+fdw_node_addon(fdw_editor_node)
+set_target_properties(fdw_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}>")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(fdw_editor_node PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
+elseif(MSVC)
+  target_compile_options(fdw_editor_node PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4 /utf-8>)
 endif()

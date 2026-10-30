@@ -1,10 +1,11 @@
-// The native viewport of the editor (P18, Linux X11): a child X11 window
-// placed in the Electron window over the area React reserves. The engine
-// presents into it with its own swapchain (@fdw/engine-vulkan), or, on Dawn,
-// gives its frames read back to presentViewport, which copies them into the
-// window (XShmPutImage). It runs in the engine process (a utility process of
-// Electron), on its JS thread, with an X connection of its own: the parent
-// window is known by its XID, which X11 shares between processes.
+// The native viewport of the editor (P18, Linux X11; viewport_win32.cpp for
+// Windows): a child X11 window placed in the Electron window over the area
+// React reserves. The engine presents into it with its own swapchain
+// (@fdw/engine-vulkan), or, on Dawn, gives its frames read back to
+// presentViewport, which copies them into the window (XShmPutImage). It
+// runs in the engine process (a utility process of Electron), on its JS
+// thread, with an X connection of its own: the parent window is known by its
+// XID, which X11 shares between processes.
 //
 // Node-API:
 //   createViewport(parent: bigint) -> handle   (getNativeWindowHandle())

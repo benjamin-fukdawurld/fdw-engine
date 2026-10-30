@@ -1,6 +1,6 @@
 // Builds a Node-API addon with CMake: the native/ directory of a package
-// into its build/ directory. Shared by the native packages
-// (engine-native, engine-vulkan).
+// into its build/ directory. Shared by the native packages (engine-native,
+// engine-vulkan, engine-d3d12) and the editor.
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
@@ -18,9 +18,12 @@ export function findNodeApi() {
   };
 }
 
+export { fetchPrebuilt } from './prebuilt.mjs';
+
 /**
  * Configures and builds `<root>/native` into `<root>/build`, Release by
- * default (`--debug` on the command line for Debug).
+ * default (`--debug` on the command line for Debug). The build scripts try
+ * fetchPrebuilt first.
  */
 export function buildAddon(root, extraArguments = []) {
   const buildType = process.argv.includes('--debug') ? 'Debug' : 'Release';

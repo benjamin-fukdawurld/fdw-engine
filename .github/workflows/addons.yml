@@ -1,0 +1,114 @@
+# The prebuilt addons (design/p11-windows.md §4): on main, when native
+# sources change, the addons built under Linux and Windows and attached to a
+# GitHub release per addon and per state of its sources
+# (`addons-<name>-<hash>`, tools/native/prebuilt.mjs). The build scripts of
+# the packages fetch them instead of running CMake.
+name: Addons
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/*/native/**'
+      - 'apps/editor/native/**'
+      - 'tools/native/**'
+  workflow_dispatch:
+
+concurrency:
+  group: addons-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  VULKAN_SDK_VERSION: 1.4.363.0
+  # CMake, not a release of a previous run.
+  FDW_FROM_SOURCE: '1'
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # The headers SDL builds its X11 video with, and those of the editor.
+      - name: System packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev \
+            libgbm-dev libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
+            libdecor-0-dev libudev-dev
+
+      # The headers, volk, VMA and DXC, shipped beside the Vulkan addon.
+      - name: Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          cache: true
+
+      - name: Build
+        run: |
+          node packages/engine-native/scripts/build.mjs
+          node packages/engine-vulkan/scripts/build.mjs
+          node packages/engine-d3d12/scripts/build.mjs
+          node apps/editor/scripts/build-native.mjs
+
+      - name: Pack
+        run: node tools/native/prebuilt.mjs pack dist/addons
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: addons-${{ runner.os }}
+          path: dist/addons
+          retention-days: 7
+
+  # One release per addon and state of its sources, the archives of both
+  # systems in it. A release that exists is completed, not replaced.
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: addons
+
+      - name: Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for list in addons/*/tags.txt; do
+            dir=$(dirname "$list")
+            while read -r tag archive; do
+              file="$dir/$archive"
+              if ! gh release view "$tag" > /dev/null 2>&1; then
+                gh release create "$tag" --target "$GITHUB_SHA" \
+                  --title "$tag" \
+                  --notes "Prebuilt addon, for the native sources of $GITHUB_SHA."
+              fi
+              gh release upload "$tag" "$file" --clobber
+            done < "$list"
+          done

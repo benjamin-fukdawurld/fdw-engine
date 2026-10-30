@@ -41,7 +41,14 @@ const glslang = [
     : []),
   ...(process.env['PATH'] ?? '').split(delimiter),
 ]
-  .map((dir) => join(dir, 'glslangValidator'))
+  .map((dir) =>
+    join(
+      dir,
+      process.platform === 'win32'
+        ? 'glslangValidator.exe'
+        : 'glslangValidator',
+    ),
+  )
   .find((path) => existsSync(path));
 
 const sdk = !!(

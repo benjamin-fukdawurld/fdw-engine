@@ -75,3 +75,21 @@ describe.skipIf(!built)('D3D12Device', () => {
     buffer.destroy();
   });
 });
+
+describe.skipIf(!built)('D3D12Device on WARP', () => {
+  it('opens the software rasterizer of Windows', async () => {
+    const device = new D3D12Device({ application: 'tests', adapter: 'warp' });
+    try {
+      expect(device.name).toBe('Microsoft Basic Render Driver');
+      const buffer = device.buffers.create({
+        size: 8,
+        usage: ['storage'],
+        initialData: new Uint32Array([3, 4]),
+      });
+      expect([...new Uint32Array(await buffer.read())]).toEqual([3, 4]);
+      buffer.destroy();
+    } finally {
+      device.destroy();
+    }
+  });
+});

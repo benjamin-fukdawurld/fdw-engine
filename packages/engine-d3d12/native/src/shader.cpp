@@ -62,8 +62,23 @@ bool loadFrom(const std::filesystem::path &directory) {
   return createInstance != nullptr;
 }
 
+// The directory of the addon, where the prebuilt addons bring DXC
+// (tools/native/build-addon.mjs).
+std::filesystem::path addonDirectory() {
+  HMODULE module = nullptr;
+  wchar_t path[MAX_PATH];
+  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          reinterpret_cast<LPCWSTR>(&addonDirectory),
+                          &module) ||
+      GetModuleFileNameW(module, path, MAX_PATH) == 0) {
+    return {};
+  }
+  return std::filesystem::path(path).parent_path();
+}
+
 // Loads the DXC library: FDW_DXC_LIBRARY (dxcompiler.dll, dxil.dll beside
-// it), the Windows SDK, the Vulkan SDK, the system.
+// it), beside the addon, the Windows SDK, the Vulkan SDK, the system.
 int loadDxc() {
   if (createInstance) {
     return 0;
@@ -71,6 +86,9 @@ int loadDxc() {
   std::vector<std::filesystem::path> candidates;
   if (const char *path = std::getenv("FDW_DXC_LIBRARY")) {
     candidates.push_back(std::filesystem::path(path).parent_path());
+  }
+  if (const auto directory = addonDirectory(); !directory.empty()) {
+    candidates.push_back(directory);
   }
   for (const auto &directory : windowsSdkDirectories()) {
     candidates.push_back(directory);

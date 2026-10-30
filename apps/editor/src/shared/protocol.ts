@@ -4,8 +4,8 @@ import type { PageMessage } from '@fdw/editor-ui/protocol';
 
 /** From the main process to the engine process (process.parentPort). */
 export type ControlMessage =
-  // The XID of the Electron window, in decimal, and the backend asked for
-  // (FDW_BACKEND).
+  // The handle of the Electron window (an XID, a HWND), in decimal, and the
+  // backend asked for (FDW_BACKEND).
   | {
       readonly type: 'init';
       readonly parent: string;
@@ -22,7 +22,7 @@ export type ControlMessage =
  * back the EngineMessages to the page.
  */
 export type DawnControlMessage =
-  // The XID of the Electron window, and why Vulkan was not used.
+  // The handle of the Electron window, and why Vulkan was not used.
   | {
       readonly type: 'init';
       readonly parent: string;
