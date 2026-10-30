@@ -12,7 +12,8 @@ by CMake into `build/`, by the shared script `tools/native/build-addon.mjs`.
 
 ## Requirements
 
-- CMake 3.24 or later, and a C/C++20 compiler (GCC or Clang).
+- CMake 3.24 or later, and a C/C++20 compiler: GCC or Clang, Visual
+  Studio 2022 or later (its C++ workload) on Windows.
 - On Linux, the development packages SDL3 needs for its video backends:
   X11 and/or Wayland, as for any SDL build.
 - Nothing for the **Node-API headers**: they come from the `node-api-headers`
@@ -81,8 +82,15 @@ src/addon.ts              Loads the addon, and types its functions
 The native code is portable by construction: CMake, C++20 without system
 APIs, SDL3 for windows and native handles, dependencies fetched rather than
 taken from the system. What depends on the platform — window handles,
-library paths — stays in a few isolated places. Windows and macOS (through
-MoltenVK) are planned; see `design/backlog.md`.
+library paths — stays in a few isolated places. Linux and Windows are built
+and tested in the CI (Windows: Vulkan on lavapipe, Direct3D 12 on WARP,
+`FDW_D3D12_ADAPTER=warp` on a machine without GPU); macOS (through
+MoltenVK) is planned, see `design/p11-windows.md`.
+
+On Windows, under VS Code, Nx Console may set `NX_WORKSPACE_ROOT_PATH` with
+a lowercase drive (`c:\…`): Vitest then loads two copies of itself, and
+every test fails with “Vitest failed to find the runner”. Set it with an
+uppercase drive (`C:\…`) in the terminal.
 
 ## Debugging
 

@@ -99,10 +99,35 @@ npx nx run editor:build
 node apps/editor/scripts/measure.mjs --out measures.json
 ```
 
+## Under Windows
+
+The same contract, with a child window of the Win32 API
+(`apps/editor/native/src/viewport_win32.cpp`):
+
+- **A thread of its own.** A child of a window of another process attaches
+  the input queues of the two threads: if the thread of the child does not
+  handle its messages, the interface of Electron freezes. The window is
+  made by a thread of the addon, which always handles them; the JavaScript
+  thread drives it (`SetWindowPos`, `SetWindowRgn`) and presents into it.
+  A long frame of the engine never freezes the interface.
+- **Disabled, hence transparent to the inputs.** The hit test of Windows
+  skips a disabled child window: the mouse goes to the Electron window,
+  which gives it to the page, and the window never takes the focus.
+  `HTTRANSPARENT` alone would not do: it only lets the mouse through to
+  the windows of the same thread.
+- **The holes** are cut out of its window region (`SetWindowRgn`); the
+  window is put back above the child windows of Chromium when one goes
+  above it.
+- **The backend**: Vulkan by default, as under Linux; `FDW_BACKEND=d3d12`
+  presents with a DXGI swapchain on the same window, without copy either;
+  the fallback on Dawn copies its frames by `SetDIBitsToDevice`.
+
+The addons are loaded by Electron as by Node: they are linked against
+`node.exe` loaded late, and a hook gives them the process that loads them
+(`tools/native/win_delay_load_hook.c`, as node-gyp does).
+
 ## The other systems
 
-The same contract, a native surface placed in the area of the page and
-transparent to the inputs, is planned on the other systems: a `WS_CHILD`
-window under Windows, an `NSView` with a `CAMetalLayer` under macOS, a
-sub-surface under Wayland (Electron runs on XWayland meanwhile). They come
-with the distribution of the editor.
+The same contract is planned under macOS (an `NSView` with a
+`CAMetalLayer`) and Wayland (a sub-surface; Electron runs on XWayland
+meanwhile).

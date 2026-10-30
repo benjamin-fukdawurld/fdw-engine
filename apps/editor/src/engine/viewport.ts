@@ -43,11 +43,12 @@ function loadAddon(): ViewportAddon {
 /**
  * The child window of the Electron window the engine presents into, placed
  * over the area of the page that React reserves. Transparent to the mouse
- * and keyboard: they reach the page. Vulkan presents into it with a
- * swapchain; Dawn gives it its frames read back (an RgbaWindow of
- * DawnWindowSurface). Linux (X11) only so far.
+ * and keyboard: they reach the page. Vulkan or Direct3D 12 present into it
+ * with a swapchain; Dawn gives it its frames read back (an RgbaWindow of
+ * DawnWindowSurface). An X11 window under Linux, a Win32 one under Windows
+ * (native/src/viewport_*.cpp).
  */
-export class X11Viewport implements RgbaWindow {
+export class NativeViewport implements RgbaWindow {
   readonly window: NativeWindowHandle;
   #handle: unknown;
   #bounds: ViewportBounds = { x: 0, y: 0, width: 0, height: 0 };
@@ -111,7 +112,7 @@ export class X11Viewport implements RgbaWindow {
     loadAddon().pumpViewport(this.#handle);
   }
 
-  /** Copies a frame into the window (XShmPutImage): Dawn. */
+  /** Copies a frame into the window (XShmPutImage, SetDIBitsToDevice): Dawn. */
   presentRgba(
     pixels: Uint8Array,
     width: number,

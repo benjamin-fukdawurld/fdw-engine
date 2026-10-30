@@ -31,3 +31,21 @@ export function canRun(name: string, ready: boolean, reason = ''): boolean {
   }
   return false;
 }
+
+/**
+ * Whether windows can be opened: always on Windows and macOS, under X11 or
+ * Wayland on Linux (Xvfb in the CI).
+ */
+export function hasDisplay(): boolean {
+  const process = (
+    globalThis as {
+      process?: { platform: string; env: Record<string, string | undefined> };
+    }
+  ).process;
+  if (!process) return false;
+  return (
+    process.platform === 'win32' ||
+    process.platform === 'darwin' ||
+    !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY'])
+  );
+}

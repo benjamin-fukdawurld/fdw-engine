@@ -1,6 +1,6 @@
 # Node-API setup shared by the native packages (engine-native,
-# engine-vulkan). Its headers and .def file come from node-api-headers, given
-# by build-addon.mjs.
+# engine-vulkan, engine-d3d12) and the addon of the editor. Its headers and
+# .def file come from node-api-headers, given by build-addon.mjs.
 
 set(NODE_API_INCLUDE_DIR "" CACHE PATH "Directory of node_api.h")
 set(NODE_API_DEF "" CACHE FILEPATH "node_api.def of node-api-headers (Windows)")
@@ -38,7 +38,11 @@ function(fdw_node_addon target)
       add_custom_target(fdw_node_api_lib DEPENDS ${lib})
     endif()
     add_dependencies(${target} fdw_node_api_lib)
-    target_link_libraries(${target} PRIVATE ${lib})
+    target_link_libraries(${target} PRIVATE ${lib} delayimp)
+    # node.exe loaded late, as the process that loads the addon: Node, or
+    # Electron (win_delay_load_hook.c).
+    target_sources(${target} PRIVATE ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/win_delay_load_hook.c)
+    target_link_options(${target} PRIVATE /DELAYLOAD:node.exe)
     # The import library of the addon, apart: it can have the name of a
     # static library of the project.
     set_target_properties(${target} PROPERTIES

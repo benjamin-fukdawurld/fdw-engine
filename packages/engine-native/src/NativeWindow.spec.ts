@@ -11,7 +11,7 @@ import {
 } from './addon';
 import { NativeWindow, NativeWindowEvent } from './NativeWindow';
 import { runLoop } from './runLoop';
-import { canRun } from '@fdw/engine-backend/testing';
+import { canRun, hasDisplay } from '@fdw/engine-backend/testing';
 
 // An addon recording the calls, with events queued by the test.
 function fakeAddon() {
@@ -230,7 +230,7 @@ describe('runLoop', () => {
 
 // The real addon, when it is built and a display is available.
 const built = existsSync(new URL('../build/fdw_native.node', import.meta.url));
-const display = !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY']);
+const display = hasDisplay();
 
 describe.skipIf(
   !canRun('window', built && display, 'needs the addon and a display'),

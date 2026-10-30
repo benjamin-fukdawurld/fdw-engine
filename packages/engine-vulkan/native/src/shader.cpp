@@ -54,7 +54,34 @@ void *symbol(void *library, const char *name) {
 #endif
 }
 
-// Loads the DXC library: FDW_DXC_LIBRARY, the Vulkan SDK, the system.
+// The directory of the addon, where the prebuilt addons bring DXC
+// (tools/native/build-addon.mjs).
+std::string addonDirectory() {
+#if defined(_WIN32)
+  HMODULE module = nullptr;
+  char path[MAX_PATH];
+  if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          reinterpret_cast<LPCSTR>(&addonDirectory),
+                          &module) ||
+      GetModuleFileNameA(module, path, MAX_PATH) == 0) {
+    return "";
+  }
+  const std::string file = path;
+  return file.substr(0, file.find_last_of("\\/") + 1);
+#else
+  Dl_info info{};
+  if (!dladdr(reinterpret_cast<void *>(&addonDirectory), &info) ||
+      !info.dli_fname) {
+    return "";
+  }
+  const std::string file = info.dli_fname;
+  return file.substr(0, file.find_last_of('/') + 1);
+#endif
+}
+
+// Loads the DXC library: FDW_DXC_LIBRARY, beside the addon, the Vulkan SDK,
+// the system.
 int loadDxc() {
   if (createInstance) {
     return 0;
@@ -62,6 +89,9 @@ int loadDxc() {
   std::vector<std::string> candidates;
   if (const char *path = std::getenv("FDW_DXC_LIBRARY")) {
     candidates.push_back(path);
+  }
+  if (const std::string directory = addonDirectory(); !directory.empty()) {
+    candidates.push_back(directory + libraryName);
   }
   if (const char *sdk = std::getenv("VULKAN_SDK")) {
 #if defined(_WIN32)
@@ -81,7 +111,8 @@ int loadDxc() {
     }
   }
   return fail(std::string("The DXC library (") + libraryName +
-              ") was not found: set FDW_DXC_LIBRARY or VULKAN_SDK");
+              ") was not found: set FDW_DXC_LIBRARY or VULKAN_SDK, or fetch "
+              "the prebuilt addon");
 }
 
 std::wstring wide(const char *text) {

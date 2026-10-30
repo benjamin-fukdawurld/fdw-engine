@@ -45,6 +45,14 @@ Les numéros sont des identifiants stables : le tableau donne l'ordre prévu, qu
 
 **Revu le 18 octobre 2026, après P9.** Le ray tracing (P10), les plateformes (P11) et le modeleur CAO (P13) passent après l'éditeur de jeu : sans outil pour faire des scènes, le ray tracing n'aurait que les démos à montrer ; Linux suffit tant que rien n'est distribué ; le modeleur gagne à reprendre les fondations de l'éditeur de jeu (sélection, gizmos, commandes, sérialisation, application, éditeurs de graphs) plutôt qu'à les poser lui-même. Le batching statique (P12) devient la prochaine phase.
 
+**Revu le 30 octobre 2026, après P2.** L'éditeur de jeu (P20) et le modeleur CAO (P13) restent repoussés. L'ordre des prochains chantiers :
+
+1. **P11, Windows d'abord** : le développement se fait maintenant sous Windows, mais la CI ne tourne que sous Linux et le viewport natif de l'éditeur ne connaît que X11. Un job Windows en CI (les addons, la suite de rendu sur Direct3D 12 par WARP et sur Vulkan), le viewport de l'éditeur dans une fenêtre `WS_CHILD` transparente aux entrées, les addons précompilés, le démarrage (cache de pipelines, précompilation) ; macOS et Wayland ensuite.
+2. **La consolidation** : un nouvel audit du code ([audit.md](../audit.md) date du 2 octobre, avant presque toutes les phases), et la stabilité des tests : chercher pourquoi les tests de rendu, de fumée, de graph et de layout demandent des timeouts toujours plus longs, plutôt que de les allonger encore.
+3. **Les restes du rendu** : les ombres des lumières ponctuelles ([p2-lights §9](p2-lights.md#9-reportés)), la démo de P2b (occlusion ambiante, sélection au pixel, rendu différé).
+4. **Les draws indirects et le rendu piloté par le GPU** ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), en Vulkan et Direct3D 12 : ils débloquent les deux phases sans retard de l'occlusion (P3), le choix des niveaux de tessellation en calcul (P3b) et le culling des lumières sur le GPU (P2).
+5. **Le gameplay** : le root motion, la recherche de chemin, le contrôleur de personnage contre les volumes de la scène, les ragdolls ; utiles ensuite à l'éditeur de jeu.
+
 ## 3. Les phases
 
 ### P0. Socle
@@ -434,6 +442,8 @@ Démos : le TPS et le FPS avec des ombres et des reflets tracés, puis une vue e
 ### P11. Plateformes et distribution
 
 _Repoussée (18 octobre 2026)_ : Linux suffit tant que rien n'est distribué. Elle reviendra quand l'application de P18 le sera ; elle peut toujours avancer en fond.
+
+_Reprise (30 octobre 2026), Windows d'abord_ : [p11-windows.md](p11-windows.md).
 
 - **Windows et macOS** : addons, surfaces (Win32, Metal par MoltenVK), DXC ; construits et testés en CI. Le viewport natif de l'éditeur (l'étape 6 de P18) : une fenêtre `WS_CHILD` transparente aux entrées (`HTTRANSPARENT`) sous Windows, une `NSView` avec une `CAMetalLayer` sous macOS (le moteur dans un thread du processus principal : une `NSView` ne se partage pas entre processus) ; ses tests de bout en bout sur chaque système.
 - **Wayland natif** pour l'éditeur : une sous-surface (`wl_subsurface`) de celle d'Electron, à la place de XWayland.

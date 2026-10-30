@@ -102,10 +102,36 @@ npx nx run editor:build
 node apps/editor/scripts/measure.mjs --out measures.json
 ```
 
+## Sous Windows
+
+Le même contrat, avec une fenêtre enfant de l'API Win32
+(`apps/editor/native/src/viewport_win32.cpp`) :
+
+- **Un thread à elle.** Une fenêtre enfant d'une fenêtre d'un autre
+  processus attache les files d'entrée des deux threads : si le thread de
+  l'enfant ne traite pas ses messages, l'interface d'Electron gèle. La
+  fenêtre est créée par un thread de l'addon, qui les traite toujours ; le
+  thread JavaScript la pilote (`SetWindowPos`, `SetWindowRgn`) et y
+  présente. Une image longue du moteur ne gèle jamais l'interface.
+- **Désactivée, donc transparente aux entrées.** Le hit-test de Windows
+  saute une fenêtre enfant désactivée : la souris va à la fenêtre
+  d'Electron, qui la donne à la page, et la fenêtre ne prend jamais le
+  focus. `HTTRANSPARENT` seul ne suffirait pas : il ne laisse passer la
+  souris qu'aux fenêtres du même thread.
+- **Les trous** sont découpés de sa région (`SetWindowRgn`) ; la fenêtre
+  repasse au-dessus des fenêtres enfants de Chromium quand l'une passe
+  devant.
+- **Le backend** : Vulkan par défaut, comme sous Linux ;
+  `FDW_BACKEND=d3d12` présente par une swapchain DXGI sur la même
+  fenêtre, sans copie non plus ; le repli sur Dawn copie ses images par
+  `SetDIBitsToDevice`.
+
+Les addons se chargent dans Electron comme dans Node : ils sont liés à
+`node.exe` chargé tard, et un hook leur donne le processus qui les charge
+(`tools/native/win_delay_load_hook.c`, comme le fait node-gyp).
+
 ## Les autres systèmes
 
-Le même contrat, une surface native placée dans la zone de la page et
-transparente aux entrées, est prévu sur les autres systèmes : une fenêtre
-`WS_CHILD` sous Windows, une `NSView` avec une `CAMetalLayer` sous macOS,
-une sous-surface sous Wayland (Electron tourne sur XWayland en
-attendant). Ils viennent avec la distribution de l'éditeur.
+Le même contrat est prévu sous macOS (une `NSView` avec une
+`CAMetalLayer`) et sous Wayland (une sous-surface ; Electron tourne sur
+XWayland en attendant).
