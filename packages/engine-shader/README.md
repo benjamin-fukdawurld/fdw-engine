@@ -172,7 +172,7 @@ g.surface({ baseColor: color });
 
 **Colors are linear.** The `toneMapping` feature (`none`, `reinhard`, `aces`, `neutral` — Khronos PBR Neutral) multiplies the color of the model by the `exposure` of the frame and tone maps it; the `outputEncoding` feature (`srgb`) encodes it for display. The `Renderer` sets both from its `output` option; without them, the color is written as is. The operators and the encoding are function graphs too (`color.toneMapAces`, `color.linearToSrgb`…).
 
-`lighting.phong` sums the lights of the frame (up to `MaxLights`, 16):
+`lighting.phong` sums the lights of the frame, without limit:
 
 ```
 Σ (ambient × baseColor + (diffuse × baseColor × max(N·L, 0) + specular × specularColor × max(V·R, 0)^shininess) × attenuation × spot) + emissive
@@ -182,9 +182,11 @@ The normal and the position are interpolated, then the lighting is computed per 
 
 **Lights** are read with two nodes of `stdLights`, usable in custom shading models too:
 
-- `light.current`: the light being summed — `position` (w = 0 for a directional light), `ambient`, `diffuse`, `specular`, `attenuation`, `spotDirection`, `spotCone`, and its shadow map: `shadow`, `shadowRect`, `shadowMatrix`;
-- `light.sum`: the sum of its `value` input over the lights;
+- `light.current`: the light being summed — `position` (w = 0 for a directional light), `ambient`, `diffuse`, `specular`, `attenuation`, `spotDirection`, `spotCone`, and its shadow map: `shadow`, `shadowRect`, `shadowMatrix` — read from the light pool, a storage buffer of the `frame` group (`lights`, `LightVec4s` vec4 per light, see `lightMembers`);
+- `light.sum`: the sum of its `value` input over the lights. Given the world `position` of the point lit, and with the `lightClusters` feature (set by the renderer), over the global lights and those of the cluster of the point only (the `lightGrid` storage buffer, see `lightClusterMembers`); the body of such a loop cannot compute derivatives (`textureSample`, `dpdx`…): its count changes from pixel to pixel;
 - `light.shadow`: the visibility of the light being summed at a `position` with a `normal` (1 lit, 0 in shadow). With the `shadows` feature, a macro reading the tile of the light in the shadow atlas (the `shadowMap` and `shadowSampler` engine values, 3 × 3 filtered comparisons); without it, 1. The phong and pbr models multiply their direct light by it.
+
+**The environment** (image-based lighting): with the `environment` feature, the `environment.light` macro (`stdEnvironment.light`) gives the light of the environment a surface reflects, from a prefiltered atlas (the `environmentMap` and `environmentSampler` engine values, see `environmentMembers`): the irradiance of the normal × the diffuse color, the radiance of the reflected direction prefiltered for the roughness × (F0 × A + B) (the split sum). `pbr` and `phong` add it; without the feature, it is black and costs nothing. The function graphs `environment.radiance`, `environment.irradiance`, `environment.brdf`, `environment.octahedral` and `environment.equirect` (and their inverses) are usable in any graph.
 
 The `depthOnly` feature compiles a surface without color (`output.fragment` without `color`): the position, and the discard of masked materials, for shadow maps and depth prepasses.
 

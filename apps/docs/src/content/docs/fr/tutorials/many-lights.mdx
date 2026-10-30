@@ -1,0 +1,102 @@
+---
+title: Des centaines de lumières
+description: Éclairer une scène de centaines de lumières ponctuelles et de spots, chaque pixel ne sommant que celles qui l'atteignent, avec les clusters du renderer.
+sidebar:
+  order: 46
+---
+
+import Example from '../../../../components/Example.astro';
+
+Une place la nuit, éclairée par 400 lampes de couleur qui flottent
+au-dessus du sol. Le nombre de lumières d'une image n'a pas de limite :
+toute lumière dont la portée atteint la vue est utilisée. Mais un pixel ne
+les somme pas toutes : le renderer découpe la vue en **clusters**, et
+chaque pixel ne somme que les lumières du sien.
+
+Cliquez sur le canvas : **C** passe des clusters à toutes les lampes pour
+chaque pixel, pour comparer leur coût.
+
+<Example name="many-lights" />
+
+## Beaucoup de lumières, comme d'habitude
+
+Rien ne change dans le code : les lumières sont données à l'image, ou
+viennent des nœuds d'une scène.
+
+```ts
+const lamps = Array.from(
+  { length: 400 },
+  () =>
+    new PointLight({
+      diffuse: { x: 1, y: 0.4, z: 0.1 },
+      quadraticAttenuation: 28,
+    }),
+);
+renderer.render({ items, camera, surface, lights: [moon, ...lamps] });
+```
+
+`renderer.stats.get('scene').lights` donne le nombre de lumières
+utilisées : celles dont la portée atteint le frustum de la caméra.
+
+## La portée d'une lumière
+
+Une lumière ponctuelle ou un spot est atténué par `1 / (constant +
+linéaire × d + quadratique × d²)`. Sa **portée** est la distance où sa
+lumière passe sous 1/256 de sa couleur la plus forte (`lightRange(light)`) :
+au-delà, la lumière n'est pas sommée. Donnez aux lampes d'une scène dense
+une forte atténuation quadratique : plus leur portée est courte, moins il
+y en a par pixel.
+
+- Une lumière sans atténuation (`constant` 1, les autres 0) atteint tout :
+  chaque pixel la somme, comme une lumière directionnelle.
+- Les queues de l'atténuation au-delà de la portée sont abandonnées : moins
+  d'un pas de couleur 8 bits par lumière, mais des centaines de lampes
+  autour d'un point peuvent faire quelques pour cent de lumière.
+
+## Les clusters
+
+La vue est découpée en 16 × 9 tuiles de l'écran et 24 tranches de
+profondeur, plus fines près de la caméra : 3 456 clusters. À chaque image,
+le renderer liste dans chaque cluster les lumières ponctuelles et les spots
+qui peuvent l'atteindre (une sphère autour de chaque lumière, autour du
+cône d'un spot), sur le CPU : environ 0,8 ms pour 1 000 lumières. Les
+lumières sont dans un storage buffer (le pool de lumières), les listes dans
+un autre, sur tous les backends (WebGL2 les lit dans des textures de
+données).
+
+Un pixel trouve son cluster depuis la position de son point, puis somme :
+
+1. les lumières **globales** : les directionnelles, et celles sans portée ;
+2. les lumières de la liste de son cluster.
+
+Le coût d'un pixel dépend des lumières autour de lui, pas du nombre de
+lumières de l'image. `new Renderer(backend, { lightClusters: false })` les
+désactive : chaque pixel somme toutes les lumières, comme l'exemple avec
+**C**.
+
+## Dans un shading model personnalisé
+
+`light.sum` utilise les clusters quand il reçoit la **position** du point
+éclairé (dans le monde). Les modèles `phong` et `pbr` la donnent ; un
+modèle personnalisé devrait le faire aussi :
+
+```ts
+const received = f.call(stdLights.sum, {
+  value: f.call(std.mul, { a: light.diffuse, b: nDotL }),
+  position,
+});
+```
+
+Sans position, la somme parcourt toutes les lumières de l'image.
+
+Dans la boucle d'une somme en clusters, chaque pixel parcourt son propre
+nombre de lumières : les dérivées entre pixels voisins n'y sont pas
+définies. Le compilateur y refuse `std.textureSample` (et `dpdx`, `dpdy`,
+`fwidth`) : échantillonnez à un niveau explicite avec
+`std.textureSampleLevel`, ou calculez la valeur hors de la boucle.
+
+## Les ombres
+
+Chaque lumière qui porte ombre dessine toujours sa shadow map dans
+l'atlas : donnez des ombres à quelques lumières (le soleil, quelques
+spots), pas à des centaines.

@@ -34,6 +34,12 @@ onFrame((time) => {
 });
 ```
 
+Rather than the gradient of `sky`, the rays lost can see an
+[environment](/fdw-engine/tutorials/environment-lighting/), the same as the
+rasterization reflects: `tracer.render({ camera, surface, lights,
+environment })`. The lights are read in the format of the light pool of
+the renderer.
+
 Same scene, same materials as the rasterization: a material compiled for
 the points hit by rays gives the parameters of the BSDF of the `pbr`
 model (base color, metalness, roughness, normal, emission); `unlit`

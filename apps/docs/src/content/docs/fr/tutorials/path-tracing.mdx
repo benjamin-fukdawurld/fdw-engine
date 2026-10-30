@@ -35,6 +35,12 @@ onFrame((time) => {
 });
 ```
 
+Plutôt que le dégradé de `sky`, les rayons perdus peuvent voir un
+[environnement](/fdw-engine/fr/tutorials/environment-lighting/), le même que
+celui que reflète la rastérisation : `tracer.render({ camera, surface,
+lights, environment })`. Les lumières sont lues dans le format du pool de
+lumières du renderer.
+
 La même scène, les mêmes matériaux que la rastérisation : un matériau
 compilé pour les points touchés par les rayons donne les paramètres de la
 BSDF du modèle `pbr` (couleur de base, métal, rugosité, normale,

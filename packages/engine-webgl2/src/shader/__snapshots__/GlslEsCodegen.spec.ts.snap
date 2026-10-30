@@ -96,16 +96,8 @@ layout(std140) uniform FrameUniforms {
   float u_time;
   float u_exposure;
   uint u_lightCount;
-  vec4 u_lightPositions[16];
-  vec4 u_lightAmbients[16];
-  vec4 u_lightDiffuses[16];
-  vec4 u_lightSpeculars[16];
-  vec4 u_lightAttenuations[16];
-  vec4 u_lightSpotDirections[16];
-  vec4 u_lightSpotCones[16];
-  vec4 u_lightShadows[16];
-  vec4 u_lightShadowRects[16];
-  mat4 u_lightShadowMatrices[16];
+  vec4 u_lightClusters;
+  vec4 u_lightClusterDepth;
   mat4 u_cascadeMatrix0;
   mat4 u_cascadeMatrix1;
   mat4 u_cascadeMatrix2;
@@ -118,6 +110,7 @@ layout(std140) uniform FrameUniforms {
   vec4 u_cascadeOffsets;
   vec4 u_fogColor;
   vec4 u_fogHeight;
+  vec4 u_environment;
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {
@@ -165,16 +158,8 @@ layout(std140) uniform FrameUniforms {
   float u_time;
   float u_exposure;
   uint u_lightCount;
-  vec4 u_lightPositions[16];
-  vec4 u_lightAmbients[16];
-  vec4 u_lightDiffuses[16];
-  vec4 u_lightSpeculars[16];
-  vec4 u_lightAttenuations[16];
-  vec4 u_lightSpotDirections[16];
-  vec4 u_lightSpotCones[16];
-  vec4 u_lightShadows[16];
-  vec4 u_lightShadowRects[16];
-  mat4 u_lightShadowMatrices[16];
+  vec4 u_lightClusters;
+  vec4 u_lightClusterDepth;
   mat4 u_cascadeMatrix0;
   mat4 u_cascadeMatrix1;
   mat4 u_cascadeMatrix2;
@@ -187,6 +172,7 @@ layout(std140) uniform FrameUniforms {
   vec4 u_cascadeOffsets;
   vec4 u_fogColor;
   vec4 u_fogHeight;
+  vec4 u_environment;
 } frameUniforms;
 
 layout(std140) uniform MaterialUniforms {

@@ -73,6 +73,7 @@ const received = f.call(stdLights.sum, {
     }),
     b: intensity,
   }),
+  position: position.swizzle('xyz'),
 });
 ```
 
@@ -80,6 +81,11 @@ const received = f.call(stdLights.sum, {
 `specular`), its `attenuation` factors and its spot cone. `light.shadow`
 gives its visibility at a point, from the shadow maps: multiply the light
 by it to receive shadows.
+
+The `position` of the point lit lets `light.sum` loop over the lights that
+can reach it only (those of its cluster, see
+[Hundreds of lights](/fdw-engine/tutorials/many-lights/)); without it, the
+loop goes over every light of the frame.
 
 ## The bands, and the color
 

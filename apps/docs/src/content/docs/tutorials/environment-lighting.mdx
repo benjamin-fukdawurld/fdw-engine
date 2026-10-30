@@ -1,0 +1,115 @@
+---
+title: Image-based lighting
+description: Light a scene with its environment, a sky or a panorama, prefiltered for the reflections of rough and smooth surfaces.
+sidebar:
+  order: 47
+---
+
+import Example from '../../../components/Example.astro';
+
+Spheres from smooth to rough, red plastic in front, gold behind. A sun
+lights them, but most of what they show comes from the **sky**: its
+blue above, its ground below, its sun reflected sharp on the smooth
+spheres and blurred on the rough ones. This is **image-based lighting**:
+the light of the environment, from every direction.
+
+Click the canvas: **E** turns the environment on and off. Without it,
+the metals are black wherever they do not reflect the sun.
+
+<Example name="environment-lighting" />
+
+## An environment
+
+```ts
+const environment = new Environment({ sky: skyFunction });
+renderer.render({ items, camera, surface, lights: [sun], environment });
+```
+
+The source of an `Environment` is one of:
+
+- `{ panorama }`: an equirectangular image, a 2d texture twice as wide as
+  high (the HDR panoramas): its top row is the zenith, its middle column
+  looks toward −z. Linear colors, above 1 for the sun: `rgba16float`;
+- `{ cube }`: a cube texture;
+- `{ sky }`: a function graph of the direction, a procedural sky. Its
+  input `direction` is a normalized `vec3`, its output `color` a linear
+  `vec3`:
+
+```ts
+const f = new GraphBuilder('sky');
+const o = new Ops(f);
+const d = f.functionInput('direction', BuiltinTypes.vec3f);
+const up = d.swizzle('y');
+f.functionOutput(
+  'color',
+  o.select([0.1, 0.09, 0.08], [0.4, 0.55, 0.85], o.greater(up, 0)),
+);
+const skyFunction = defineFunction(f.build(), { id: 'my.sky' });
+```
+
+The options: `intensity` (1) multiplies its light, at no cost; `size`
+(128) the texels of its prefiltered maps, the sharpness of the mirror
+reflections; `samples` (64) the samples of the prefiltering.
+
+## Prefiltered once
+
+A rough surface reflects a wide cone of directions: summing them for
+each pixel would cost hundreds of samples. The renderer prefilters the
+environment once, on the GPU, on its first frame:
+
+1. it **captures** the source into a panorama, with its levels;
+2. it fills an **atlas**: the light reflected by surfaces of 6
+   roughnesses (0, 0.2… 1), the light received by a white diffuse
+   surface for each normal (the irradiance), and a table of the share of
+   the light a surface reflects by its angle and roughness.
+
+The pixels then read a few texels of the atlas. Call
+`environment.update()` when the source changes (a texture rewritten, a
+sky whose sun moves): it is prefiltered again on the next frame.
+
+## In the shading models
+
+- `pbr`: the diffuse color × the irradiance of the normal, plus the
+  light of the reflected direction × the share reflected (Fresnel), both
+  × `occlusion`. This is what makes metals look like metal.
+- `phong`: the irradiance, and reflections as rough as its highlights
+  are wide.
+
+The `ambient` of the lights is still added: give the lights of a scene
+with an environment no ambient. A custom shading model calls
+`stdEnvironment.light` (black without an environment), or reads the
+functions `environment.radiance(direction, roughness)`,
+`environment.irradiance(normal)` and `environment.brdf(nDotV,
+roughness)`.
+
+## Showing the sky
+
+The environment lights the scene, it is not drawn. The example draws it
+on a sphere around the camera: an unlit material calling the same sky
+function in the direction of the view.
+
+```ts
+const s = new GraphBuilder('sky dome');
+const view = s.call(std.normalize, {
+  x: s.call(std.sub, {
+    a: s.call(stdMapping.worldPosition),
+    b: s.engine('camera.position'),
+  }),
+});
+s.surface({ baseColor: s.call(skyFunction, { direction: view }) });
+```
+
+For a panorama, sample it at `environment.equirect(direction)`; for any
+source, `environment.radiance(direction, 0)` gives the sharpest level of
+the atlas.
+
+## Shadows and occlusion
+
+The environment casts no shadow: a sphere on the ground gets the light of
+the sky under it too. The sun's shadows ground the objects; the
+`occlusion` of the surface (a texture, ambient occlusion) darkens the
+light of the environment in the creases.
+
+The [path tracer](/fdw-engine/tutorials/path-tracing/) sees the same
+environment: `tracer.render({ camera, surface, environment })`, its rays
+lost showing the panorama.

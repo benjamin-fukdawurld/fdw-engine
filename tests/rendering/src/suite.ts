@@ -1,4 +1,5 @@
 import { Aabb } from '@fdw/engine-geometry';
+import { CameraCache } from '@fdw/engine-backend';
 import type {
   GpuBuffer,
   GpuTexture,
@@ -36,10 +37,12 @@ import {
   BaseLight,
   Camera,
   computeTangents,
+  lightRange,
   ComputeRunner,
   RenderGraph,
   RenderGraphRunner,
   DirectionalLight,
+  Environment,
   Material,
   mergeMeshes,
   Mesh,
@@ -2922,6 +2925,313 @@ export function describeRenderer(
       });
     });
 
+    describe('environment', () => {
+      // A full screen pass of columns, each showing a value of the
+      // prefiltered environment; returns the color of each column.
+      const probe = async (
+        environment: Environment,
+        values: ((g: GraphBuilder) => PortHandle)[],
+      ) => {
+        const g = new GraphBuilder('probe');
+        const column = g.call(std.floor, {
+          x: g.call(std.mul, {
+            a: g.builtin('screen-uv').swizzle('x'),
+            b: values.length,
+          }),
+        });
+        let color = values[0](g);
+        values.slice(1).forEach((value, i) => {
+          color = g.call(std.select, {
+            ifFalse: color,
+            ifTrue: value(g),
+            condition: g.call(std.greater, { a: column, b: i + 0.5 }),
+          });
+        });
+        g.fullscreen({ color: g.call(std.extend, { xyz: color, w: 1 }) });
+        const frame = new RenderGraph();
+        renderer.addFullscreenPass(frame, 'probe', {
+          material: new Material({ graph: g.build() }),
+          target: frame.importTexture('surface', surface.getCurrentTarget()),
+          format: surface.format,
+          environment,
+        });
+        renderer.executeGraph(frame);
+        const pixels = await fixture.readPixels();
+        return values.map((_, i) => {
+          const x = Math.floor(((i + 0.5) / values.length) * size);
+          const at = (32 * size + x) * 4;
+          return [...pixels.subarray(at, at + 3)];
+        });
+      };
+      const expectNear = (
+        actual: number[][],
+        expected: number[][],
+        tolerance: number,
+      ) =>
+        actual.forEach((color, i) =>
+          expect(
+            color.every(
+              (c, k) => Math.abs(c - expected[i][k] * 255) <= tolerance,
+            ),
+            `probe ${i}: ${JSON.stringify(color)}, expected ${JSON.stringify(
+              expected[i].map((c) => Math.round(c * 255)),
+            )} (±${tolerance})`,
+          ).toBe(true),
+        );
+      // A sky of a function of the direction.
+      const sky = (
+        id: string,
+        color: (f: GraphBuilder, direction: PortHandle) => PortHandle,
+      ) => {
+        const f = new GraphBuilder(id);
+        const direction = f.functionInput('direction', BuiltinTypes.vec3f);
+        f.functionOutput('color', color(f, direction));
+        return defineFunction(f.build(), { id });
+      };
+      const direction = (x: number, y: number, z: number) => {
+        const length = Math.hypot(x, y, z);
+        return [x / length, y / length, z / length];
+      };
+
+      it('reflects the environment in the mirror directions', async () => {
+        // The direction as a color: an orientation error shows.
+        const environment = new Environment(
+          {
+            sky: sky('test.directions', (f, d) =>
+              f.call(std.add, { a: f.call(std.mul, { a: d, b: 0.5 }), b: 0.5 }),
+            ),
+          },
+          { size: 32 },
+        );
+        const directions = [
+          direction(1, 0, 0),
+          direction(-1, 0, 0),
+          direction(0, 0, 1),
+          direction(0, 0, -1),
+          direction(0, 1, 0),
+          direction(0, -1, 0),
+          direction(1, 1, 1),
+          direction(-1, -0.3, 0.6),
+        ];
+        const colors = await probe(
+          environment,
+          directions.map(
+            (d) => (g) =>
+              g.call('environment.radiance', { direction: d, roughness: 0 }),
+          ),
+        );
+        expectNear(
+          colors,
+          directions.map((d) => d.map((c) => c * 0.5 + 0.5)),
+          3,
+        );
+      });
+
+      it('gives the irradiance of a sky lighting the upper half', async () => {
+        // White above the horizon, black below: E / π = (1 + sin β) / 2
+        // for a normal of elevation β.
+        const half = sky('test.half', (f, d) =>
+          f.call(std.select, {
+            ifFalse: [0, 0, 0],
+            ifTrue: [1, 1, 1],
+            condition: f.call(std.greater, { a: d.swizzle('y'), b: 0 }),
+          }),
+        );
+        const elevations = [90, 45, 0, -45, -90];
+        const normals = elevations.map((degrees) => {
+          const angle = (degrees * Math.PI) / 180;
+          return [0, Math.sin(angle), Math.cos(angle)];
+        });
+        for (const environment of [
+          new Environment({ sky: half }, { size: 32 }),
+          // The same, half as bright: its intensity.
+          new Environment({ sky: half }, { size: 32, intensity: 0.5 }),
+        ]) {
+          const colors = await probe(
+            environment,
+            normals.map(
+              (normal) => (g) => g.call('environment.irradiance', { normal }),
+            ),
+          );
+          expectNear(
+            colors,
+            elevations.map((degrees) => {
+              const value =
+                ((1 + Math.sin((degrees * Math.PI) / 180)) / 2) *
+                environment.intensity;
+              return [value, value, value];
+            }),
+            // The horizon blurred by the filtered samples: 2 %.
+            7,
+          );
+        }
+      });
+
+      it('computes the scale and bias of F0 of the split sum', async () => {
+        const environment = new Environment(
+          {
+            sky: sky('test.white', (f) =>
+              f.constant(BuiltinTypes.vec3f, [1, 1, 1]),
+            ),
+          },
+          { size: 32 },
+        );
+        const colors = await probe(environment, [
+          (g) => {
+            const table = g.call('environment.brdf', {
+              nDotV: 1,
+              roughness: 0,
+            });
+            return g.call(std.vec3, {
+              x: table.swizzle('x'),
+              y: table.swizzle('y'),
+              z: 0,
+            });
+          },
+          (g) => {
+            const table = g.call('environment.brdf', {
+              nDotV: 0.5,
+              roughness: 0.5,
+            });
+            return g.call(std.vec3, {
+              x: table.swizzle('x'),
+              y: table.swizzle('y'),
+              z: g.call(std.add, {
+                a: table.swizzle('x'),
+                b: table.swizzle('y'),
+              }),
+            });
+          },
+        ]);
+        // A smooth surface seen straight: all the light, F0 × 1 + 0.
+        expectNear([colors[0]], [[1, 0, 0]], 6);
+        // Rougher, at an angle: less, a bias of grazing light.
+        expect(colors[1][0]).toBeGreaterThan(0.5 * 255);
+        expect(colors[1][0]).toBeLessThan(0.95 * 255);
+        expect(colors[1][1]).toBeGreaterThan(0);
+        expect(colors[1][2]).toBeLessThanOrEqual(255);
+      });
+
+      it('lights the pbr surfaces with the environment', async () => {
+        const environment = new Environment(
+          {
+            sky: sky('test.gray', (f) =>
+              f.constant(BuiltinTypes.vec3f, [0.5, 0.5, 0.5]),
+            ),
+          },
+          { size: 32 },
+        );
+        const material = (metallic: number, roughness: number) => {
+          const g = new GraphBuilder('pbr');
+          g.surface({
+            shadingModel: 'pbr',
+            baseColor: [1, 1, 1],
+            metallic,
+            roughness,
+          });
+          return new Material({ graph: g.build() });
+        };
+        const quad = new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 24,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                  { semantic: 'normal', format: 'float32x3', offset: 12 },
+                ],
+              },
+            ],
+            vertexCount: 4,
+            indexBuffer: { format: 'uint16', count: 6 },
+          },
+          vertices: [
+            new Float32Array([
+              -1, -1, 0, 0, 0, 1, 1, -1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, -1, 1, 0,
+              0, 0, 1,
+            ]),
+          ],
+          indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+        const shade = async (metallic: number, roughness: number) => {
+          renderer.render({
+            items: [
+              {
+                mesh: quad,
+                material: material(metallic, roughness),
+                transform: at(0),
+              },
+            ],
+            camera,
+            surface,
+            environment,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          const pixels = await fixture.readPixels();
+          return [
+            ...pixels.subarray((32 * size + 32) * 4, (32 * size + 32) * 4 + 3),
+          ];
+        };
+        // Without any light: a smooth white metal mirrors the gray sky; a
+        // rough white dielectric diffuses it, a little more with its
+        // reflections.
+        const mirror = await shade(1, 0);
+        expect(Math.abs(mirror[0] - 128)).toBeLessThanOrEqual(6);
+        const rough = await shade(0, 1);
+        expect(rough[0]).toBeGreaterThanOrEqual(124);
+        expect(rough[0]).toBeLessThanOrEqual(150);
+      });
+
+      it('captures panoramas and cube textures', async () => {
+        // Bright above the horizon, dark below, in both.
+        const panorama = backend.textures.createTexture({
+          type: '2d',
+          format: 'rgba8unorm',
+          dimensions: { width: 8, height: 4 },
+          source: new Uint8Array(
+            Array.from({ length: 32 }, (_, i) =>
+              i < 16 ? [255, 255, 255, 255] : [0, 0, 0, 255],
+            ).flat(),
+          ),
+        });
+        const faces = [0, 0, 255, 0, 0, 0];
+        const cube = backend.textures.createTexture({
+          type: 'cube',
+          format: 'rgba8unorm',
+          dimensions: { width: 2, height: 2, layers: 6 },
+          source: new Uint8Array(
+            faces.flatMap((value) =>
+              Array.from({ length: 4 }, () => [
+                value,
+                value,
+                value,
+                255,
+              ]).flat(),
+            ),
+          ),
+        });
+        const up = [0, 1, 0];
+        const down = [0, -1, 0];
+        for (const environment of [
+          new Environment({ panorama }, { size: 32 }),
+          new Environment({ cube }, { size: 32 }),
+        ]) {
+          const colors = await probe(environment, [
+            (g) =>
+              g.call('environment.radiance', { direction: up, roughness: 0 }),
+            (g) =>
+              g.call('environment.radiance', { direction: down, roughness: 0 }),
+            (g) => g.call('environment.irradiance', { normal: up }),
+            (g) => g.call('environment.irradiance', { normal: down }),
+          ]);
+          expect(colors[0][0]).toBeGreaterThan(240);
+          expect(colors[1][0]).toBeLessThan(15);
+          expect(colors[2][0]).toBeGreaterThan(colors[3][0] + 100);
+        }
+      });
+    });
+
     describe('scene inputs', () => {
       it('binds the textures of the graph to the materials of the scene', async () => {
         // A full screen pass fills a texture; a quad samples it.
@@ -3823,6 +4133,141 @@ export function describeRenderer(
             ),
           );
         }
+      });
+
+      it('sums hundreds of lights by clusters, those that reach each pixel', async () => {
+        // A floor seen from above and in front: its pixels span many
+        // tiles and depth slices.
+        const floor = new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 24,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                  { semantic: 'normal', format: 'float32x3', offset: 12 },
+                ],
+              },
+            ],
+            vertexCount: 4,
+            indexBuffer: { format: 'uint16', count: 6 },
+          },
+          vertices: [
+            new Float32Array([
+              -8, 0, 4, 0, 1, 0, 8, 0, 4, 0, 1, 0, 8, 0, -12, 0, 1, 0, -8, 0,
+              -12, 0, 1, 0,
+            ]),
+          ],
+          indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+        });
+        const g = new GraphBuilder('floor');
+        g.surface({ shadingModel: 'phong', baseColor: [1, 1, 1] });
+        const material = new Material({ graph: g.build() });
+        const angle = -0.5;
+        const view = new Camera({
+          position: { x: 0, y: 2.5, z: 4 },
+          rotation: {
+            x: Math.sin(angle / 2),
+            y: 0,
+            z: 0,
+            w: Math.cos(angle / 2),
+          },
+          projection: {
+            type: 'perspective',
+            fov: 60,
+            aspect: 1,
+            near: 0.1,
+            far: 50,
+          },
+        });
+        // 300 colored lamps just above the floor, reaching about 0.8.
+        let seed = 11;
+        const next = () => {
+          seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+          return seed / 2 ** 32;
+        };
+        const lamps = Array.from(
+          { length: 300 },
+          () =>
+            new PointLight({
+              position: {
+                x: (next() - 0.5) * 12,
+                y: 0.2,
+                z: -next() * 14 + 2,
+              },
+              ambient: { x: 0, y: 0, z: 0 },
+              diffuse: { x: next() * 0.3, y: next() * 0.3, z: next() * 0.3 },
+              specular: { x: 0, y: 0, z: 0 },
+              quadraticAttenuation: 30,
+            }),
+        );
+        renderer.render({
+          items: [{ mesh: floor, material, transform: at(0) }],
+          camera: view,
+          surface,
+          lights: lamps,
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        });
+        // Those in front of the camera.
+        expect(renderer.stats.get('scene')?.lights).toBeGreaterThan(200);
+        const pixels = await fixture.readPixels();
+
+        // The point of the floor under a pixel, through the inverse of the
+        // view projection.
+        const cache = new CameraCache(view, backend.cameraMath);
+        const inverse = cache.inverseViewProjectionMatrix.value;
+        const unproject = (x: number, y: number): Vec3 => {
+          const ndc = [
+            ((x + 0.5) / size) * 2 - 1,
+            1 - ((y + 0.5) / size) * 2,
+            0.5,
+            1,
+          ];
+          const p = [0, 1, 2, 3].map((r) =>
+            ndc.reduce((sum, value, c) => sum + inverse[c * 4 + r] * value, 0),
+          );
+          const direction = sub(
+            [p[0] / p[3], p[1] / p[3], p[2] / p[3]],
+            [0, 2.5, 4],
+          );
+          const t = -2.5 / direction[1];
+          return [direction[0] * t, 0, 4 + direction[2] * t];
+        };
+        let lit = 0;
+        for (let y = size / 2; y < size; y += 3) {
+          for (let x = 1; x < size; x += 3) {
+            // The lights reaching the point: diffuse × N·L × attenuation.
+            const point = unproject(x, y);
+            const color = [0, 0, 0];
+            for (const lamp of lamps) {
+              const { x: lx, y: ly, z: lz } = lamp.position;
+              const toLight = sub([lx, ly, lz], point);
+              const d = Math.hypot(...toLight);
+              if (d >= lightRange(lamp)) {
+                continue;
+              }
+              const factor = toLight[1] / d / (1 + 30 * d * d);
+              color[0] += lamp.diffuse.x * factor;
+              color[1] += lamp.diffuse.y * factor;
+              color[2] += lamp.diffuse.z * factor;
+            }
+            const expected = color
+              .map((value) => Math.round(Math.min(value, 1) * 255))
+              .concat(255);
+            const actual = [
+              ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+            ];
+            expect(
+              actual.every((value, i) => Math.abs(value - expected[i]) <= 2),
+              `pixel (${x}, ${y}): ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`,
+            ).toBe(true);
+            if (expected.some((value, i) => i < 3 && value > 10)) {
+              lit++;
+            }
+          }
+        }
+        expect(lit).toBeGreaterThan(30);
       });
 
       // Reference implementation of lighting.pbr, at the center of a pixel,

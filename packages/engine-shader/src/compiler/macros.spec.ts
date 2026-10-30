@@ -369,20 +369,18 @@ describe('lighting.phong', () => {
       binding: 'frameUniforms',
       member: 'lightCount',
     });
-    // The light arrays are read in the loop, at its index.
-    expect(members(op.body)).toEqual(
-      expect.arrayContaining([
-        'lightPositions',
-        'lightAmbients',
-        'lightDiffuses',
-        'lightSpeculars',
-        'lightAttenuations',
-        'lightSpotDirections',
-        'lightSpotCones',
-      ]),
+    // The light is read from the pool in the loop: its 7 first vec4, from
+    // the vec4 of the index.
+    const pool = op.body.find(
+      (i) => i.op.kind === 'load-resource' && i.op.binding === 'lights',
     );
-    const indices = op.body.filter((i) => i.op.kind === 'index');
-    expect(indices.every((i) => i.args[1] === op.index)).toBe(true);
+    expect(
+      op.body.filter((i) => i.op.kind === 'index' && i.args[0] === pool?.id),
+    ).toHaveLength(7);
+    const first = op.body.find(
+      (i) => i.op.kind === 'binary' && i.op.operator === '*',
+    );
+    expect(first?.args[0]).toBe(op.index);
     // What does not depend on the light is computed once, before the loop:
     // the camera position, the normal, the view direction and the clamped
     // shininess.

@@ -9,6 +9,8 @@ import {
   BuiltinTypes,
   compile,
   GraphBuilder,
+  lightMembers,
+  LightVec4s,
   RayVertexVec4s,
   std,
 } from '@fdw/engine-shader';
@@ -21,7 +23,6 @@ import {
   cameraKernel,
   denoiseKernel,
   guidesKernel,
-  LightVec4s,
   traceKernel,
 } from './kernels';
 
@@ -125,15 +126,20 @@ describe('packLights', () => {
     const data = packLights(lights);
     expect(countLights(lights)).toBe(3);
     expect(data.length).toBe(3 * LightVec4s * 4);
-    // Towards the sun, its radiance (diffuse × π).
-    expect([...data.subarray(0, 4)].map((v) => v + 0)).toEqual([0, 1, 0, 0]);
-    expect(data[4]).toBeCloseTo(Math.PI);
+    // In the format of the light pool of the renderer.
+    const vec4 = (light: number, member: string) => {
+      const at = (light * LightVec4s + lightMembers[member].offset) * 4;
+      return [...data.subarray(at, at + 4)].map((v) => v + 0);
+    };
+    // Towards the sun, its diffuse color (the kernels multiply it by π).
+    expect(vec4(0, 'position')).toEqual([0, 1, 0, 0]);
+    expect(vec4(0, 'diffuse')).toEqual([1, 0.5, 0, 0]);
     // A point light: positional, every direction.
-    expect([...data.subarray(16, 20)]).toEqual([1, 2, 3, 1]);
-    expect(data[16 + 11]).toBe(-1);
+    expect(vec4(1, 'position')).toEqual([1, 2, 3, 1]);
+    expect(vec4(1, 'spotCone')).toEqual([-1, -2, 0, 0]);
     // A spot: its direction and cone.
-    expect([...data.subarray(32 + 8, 32 + 11)]).toEqual([0, -1, 0]);
-    expect(data[32 + 11]).toBeGreaterThan(data[32 + 15]);
+    expect(vec4(2, 'spotDirection').slice(0, 3)).toEqual([0, -1, 0]);
+    expect(vec4(2, 'spotCone')[0]).toBeGreaterThan(vec4(2, 'spotCone')[1]);
   });
 });
 
