@@ -226,7 +226,10 @@ describe('HlslCodegen', () => {
     expect(code).toContain('#pragma pack_matrix(column_major)');
     expect(code).toContain('  [[vk::offset(0)]] float4x4 u_viewProjection;');
     expect(code).toContain(
-      '  [[vk::offset(288)]] float4 u_lightPositions[16];',
+      '  [[vk::offset(288)]] float4 u_lightClusters;',
+    );
+    expect(code).toMatch(
+      /\[\[vk::binding\(\d, 0\)\]\] StructuredBuffer<float4> b_lights;/,
     );
     expect(code).toContain(
       '[[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms> frameUniforms;',
@@ -279,7 +282,8 @@ describe('HlslCodegen', () => {
     expect(
       code.match(/t_shadowMap\.SampleCmpLevelZero\(s_shadowSampler, /g),
     ).toHaveLength(9);
-    expect(code).toContain('float4x4 u_lightShadowMatrices[16];');
+    // The shadow matrix of the light, from its columns in the pool.
+    expect(code).toMatch(/transpose\(float4x4\(v\d+, v\d+, v\d+, v\d+\)\)/);
   });
 
   it('carries the state of a fold loop, and writes the integer operators', () => {

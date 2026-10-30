@@ -20,8 +20,9 @@ angle intérieur à son angle extérieur.
 
 Les lumières sont passées à chaque frame — `render({ lights })`, ou
 `addScenePasses(graph, { lights })` — ou viennent de la source (les lumières
-attachées aux nœuds d'une scène). Leurs valeurs vont dans les uniforms
-`frame`, écrits une fois par frame et par vue.
+attachées aux nœuds d'une scène). Leurs valeurs vont dans le **pool de
+lumières**, un storage buffer écrit une fois par frame et par vue : leur
+nombre n'a pas de limite.
 
 ## Seulement ce que voit la caméra
 
@@ -32,9 +33,14 @@ Une lumière ne coûte rien lorsqu'elle ne peut changer aucun pixel de la vue :
   atteint le frustum de la caméra. Sa portée est la distance où son
   atténuation tombe sous 1/256 de sa couleur la plus forte
   (`lightRange(light)`) ; une lumière sans atténuation atteint tout ;
-- parmi les lumières restantes, 16 au plus (`MaxLights`) sont utilisées : les
-  directionnelles, puis les autres selon la lumière qu'elles apportent à ce
-  que voit la caméra.
+- chaque pixel ne somme que les lumières qui peuvent l'atteindre : la vue
+  est découpée en **clusters** (16 × 9 tuiles de l'écran, 24 tranches de
+  profondeur), chacun listant les lumières ponctuelles et les spots dont la
+  portée l'atteint. Un pixel somme les lumières directionnelles et celles
+  sans portée, puis celles de son cluster. Voir
+  [Des centaines de lumières](/fdw-engine/fr/tutorials/many-lights/) ;
+  `new Renderer(backend, { lightClusters: false })` somme toutes les
+  lumières pour chaque pixel.
 
 `renderer.stats.get('scene')` donne, pour la dernière frame, le nombre de
 lumières utilisées, de shadow maps et d'objets projetant des ombres dessinés.
@@ -69,8 +75,18 @@ Les modèles d'éclairage éclairés additionnent les lumières, par fragment :
 
 Un modèle personnalisé les lit avec `light.current` et les additionne avec
 `light.sum` : le compilateur transforme les nœuds situés entre les deux en
-une boucle sur les lumières. Voir
+une boucle sur les lumières. Avec la `position` du point éclairé, la boucle
+ne parcourt que les lumières de son cluster. Voir
 [Un modèle d'éclairage personnalisé](/fdw-engine/fr/tutorials/custom-shading-model/).
+
+## L'environnement
+
+`render({ environment })` éclaire aussi la scène par son environnement
+(image-based lighting) : un panorama, une texture cube ou une fonction de
+ciel, préfiltré une fois sur le GPU. `pbr` le reflète (la couleur diffuse ×
+son irradiance, sa radiance préfiltrée × le Fresnel de la somme séparée),
+`phong` aussi. Voir
+[L'éclairage par l'environnement](/fdw-engine/fr/tutorials/environment-lighting/).
 
 ## Ombres
 

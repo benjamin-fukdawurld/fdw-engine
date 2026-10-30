@@ -3,6 +3,8 @@ import {
   BaseLight,
   Camera,
   ComputeRunner,
+  Environment,
+  LightPoolStride,
   Material,
   MaterialValue,
   RenderGraph,
@@ -22,9 +24,14 @@ import {
   RaySurfaceVec4s,
   stdRays,
 } from '@fdw/engine-shader';
-import { LightVec4s, traceKernel } from './kernels';
+import { poolLight, skyRadiance, traceKernel } from './kernels';
 import { MaterialHits, sceneValues } from './MaterialHits';
-import { countLights, packLights, PathTracerSky } from './PathTracer';
+import {
+  countLights,
+  packLights,
+  PathTracerSky,
+  skyValues,
+} from './PathTracer';
 import type { RayGBuffer } from './RayOcclusion';
 import type { RayScene } from './RayScene';
 import { Bsdf, Shading } from './shading';
@@ -120,9 +127,6 @@ function shadeKernel(): MaterialGraphData {
   const count = g.uniform('pixelCount', BuiltinTypes.u32);
   const lightCount = g.uniform('lightCount', BuiltinTypes.u32);
   const ambient = g.uniform('ambient', BuiltinTypes.vec3f);
-  const zenith = g.uniform('skyZenith', BuiltinTypes.vec3f);
-  const horizon = g.uniform('skyHorizon', BuiltinTypes.vec3f);
-  const ground = g.uniform('skyGround', BuiltinTypes.vec3f);
   const rays = g.storage('rays', vec4f);
   const lights = g.storage('lights', vec4f);
   const surfaces = g.storage('raySurfaces', vec4f);
@@ -156,9 +160,9 @@ function shadeKernel(): MaterialGraphData {
   const origin = s.add(position, s.mul(normal, 1e-3));
   // The lights, one by one.
   const direct = g.fold([0, 0, 0], lightCount, (sum, k) => {
-    const light = (j: number) =>
-      s.index(lights, s.add(s.mul(k, s.u32(LightVec4s)), s.u32(j)));
-    const [l0, l1, l2, l3] = [0, 1, 2, 3].map(light);
+    const light = poolLight(s, lights, k);
+    const l0 = light.position;
+    const l3 = light.attenuation;
     const toLight = s.sub(l0.swizzle('xyz'), s.mul(position, l0.swizzle('w')));
     const distance = s.length(toLight);
     const l = s.div(toLight, s.max(distance, 1e-6));
@@ -180,8 +184,8 @@ function shadeKernel(): MaterialGraphData {
     );
     const spot = s.saturate(
       s.div(
-        s.sub(s.dot(s.mul(l, -1), l2.swizzle('xyz')), l3.swizzle('w')),
-        s.max(s.sub(l2.swizzle('w'), l3.swizzle('w')), 1e-4),
+        s.sub(s.dot(s.mul(l, -1), light.spotDirection), light.outer),
+        s.max(s.sub(light.inner, light.outer), 1e-4),
       ),
     );
     const facing = s.greater(s.dot(normal, l), 0);
@@ -200,7 +204,7 @@ function shadeKernel(): MaterialGraphData {
         [0, 0, 0],
         s.mul(
           bsdf.evaluate(l),
-          s.mul(l1.swizzle('xyz'), s.mul(attenuation, spot)),
+          s.mul(light.radiance, s.mul(attenuation, spot)),
         ),
         visible,
       ),
@@ -215,13 +219,11 @@ function shadeKernel(): MaterialGraphData {
       unlit,
     ),
   ]);
-  const up = dir.swizzle('y');
-  const sky = s.select(
-    s.mix(horizon, ground, s.saturate(s.mul(up, -4))),
-    s.mix(horizon, zenith, s.saturate(up)),
-    s.greater(up, 0),
+  const color = s.select(
+    skyRadiance(s, dir),
+    lit,
+    g.call(stdRays.hit, { hit }),
   );
-  const color = s.select(sky, lit, g.call(stdRays.hit, { hit }));
   g.write(g.storage('reflections', vec4f, { access: 'read-write' }), {
     index,
     value: s.extend(s.select([0, 0, 0], color, alive), s.select(0, 1, alive)),
@@ -391,10 +393,14 @@ export class RayReflections {
     {
       camera,
       lights = [],
+      environment,
       ...gbuffer
     }: RayReflectionsGBuffer & {
       readonly camera: Camera;
       readonly lights?: readonly BaseLight[];
+      // What the rays lost see: the panorama of an environment, instead of
+      // the gradient of the sky.
+      readonly environment?: Environment;
     },
     name = 'reflections',
   ): TextureHandle {
@@ -407,6 +413,7 @@ export class RayReflections {
     const buffers = this.buffers(pixels);
     const lightData = packLights(lights);
     const lightBuffer = this.lightBuffer(lightData);
+    const sky = skyValues(this.renderer, this.sky, environment);
     const eye = [camera.position.x, camera.position.y, camera.position.z];
     const ambient =
       this.ambient ??
@@ -472,9 +479,7 @@ export class RayReflections {
             lightCount: countLights(lights),
             lights: lightBuffer,
             ambient: [ambient.x, ambient.y, ambient.z],
-            skyZenith: vec3(this.sky.zenith),
-            skyHorizon: vec3(this.sky.horizon),
-            skyGround: vec3(this.sky.ground),
+            ...sky,
             rays: buffers.rays,
             rayHits: buffers.hits,
             raySurfaces: buffers.surfaces,
@@ -552,7 +557,7 @@ export class RayReflections {
       this._lights?.destroy();
       this._lights = this.renderer.backend.buffers.create({
         label: 'reflections lights',
-        size: Math.max(data.byteLength, 16 * LightVec4s * 16),
+        size: Math.max(data.byteLength, 16 * LightPoolStride * 4),
         usage: ['storage', 'copy-dst'],
       });
     }
@@ -560,5 +565,3 @@ export class RayReflections {
     return this._lights;
   }
 }
-
-const vec3 = (value: IVec3) => [value.x, value.y, value.z];

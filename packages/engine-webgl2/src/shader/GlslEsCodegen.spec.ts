@@ -414,13 +414,12 @@ describe('GlslEsCodegen', () => {
       std140LayoutStrategy.resolve(program.layout),
     );
     expect(fragment).toContain('uint u_lightCount;');
-    expect(fragment).toContain('vec4 u_lightDiffuses[16];');
+    // The light pool: a storage buffer, in a data texture.
+    expect(fragment).toContain('uniform highp usampler2D s_lights;');
     expect(fragment).toMatch(
       /vec3 (v\d+) = vec3\(0\.0\);\n {2}for \(uint (v\d+) = 0u; \2 < v\d+; \2\+\+\) \{/,
     );
-    expect(fragment).toMatch(
-      / {4}vec4 v\d+ = frameUniforms\.u_lightDiffuses\[v\d+\];/,
-    );
+    expect(fragment).toMatch(/ {4}vec4 v\d+ = s_lightsLoad\(uint\(v\d+\)\);/);
     expect(fragment).toMatch(/ {4}v\d+ \+= v\d+;\n {2}\}/);
   });
 

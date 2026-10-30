@@ -1,0 +1,116 @@
+---
+title: L'éclairage par l'environnement
+description: Éclairer une scène par son environnement, un ciel ou un panorama, préfiltré pour les reflets des surfaces rugueuses et lisses.
+sidebar:
+  order: 47
+---
+
+import Example from '../../../../components/Example.astro';
+
+Des sphères de la plus lisse à la plus rugueuse, du plastique rouge devant,
+de l'or derrière. Un soleil les éclaire, mais l'essentiel de ce qu'elles
+montrent vient du **ciel** : son bleu au-dessus, son sol en dessous, son
+soleil reflété net sur les sphères lisses et flou sur les rugueuses. C'est
+l'**éclairage par l'environnement** (image-based lighting) : la lumière de
+l'environnement, de toutes les directions.
+
+Cliquez sur le canvas : **E** active ou coupe l'environnement. Sans lui,
+les métaux sont noirs partout où ils ne reflètent pas le soleil.
+
+<Example name="environment-lighting" />
+
+## Un environnement
+
+```ts
+const environment = new Environment({ sky: skyFunction });
+renderer.render({ items, camera, surface, lights: [sun], environment });
+```
+
+La source d'un `Environment` est l'une de :
+
+- `{ panorama }` : une image équirectangulaire, une texture 2D deux fois
+  plus large que haute (les panoramas HDR) : sa première ligne est le
+  zénith, sa colonne du milieu regarde vers −z. Des couleurs linéaires,
+  au-delà de 1 pour le soleil : `rgba16float` ;
+- `{ cube }` : une texture cube ;
+- `{ sky }` : un graph de fonction de la direction, un ciel procédural. Son
+  entrée `direction` est un `vec3` normalisé, sa sortie `color` un `vec3`
+  linéaire :
+
+```ts
+const f = new GraphBuilder('sky');
+const o = new Ops(f);
+const d = f.functionInput('direction', BuiltinTypes.vec3f);
+const up = d.swizzle('y');
+f.functionOutput(
+  'color',
+  o.select([0.1, 0.09, 0.08], [0.4, 0.55, 0.85], o.greater(up, 0)),
+);
+const skyFunction = defineFunction(f.build(), { id: 'my.sky' });
+```
+
+Les options : `intensity` (1) multiplie sa lumière, sans coût ; `size`
+(128) les texels de ses cartes préfiltrées, la netteté des reflets miroir ;
+`samples` (64) les échantillons du préfiltrage.
+
+## Préfiltré une fois
+
+Une surface rugueuse reflète un large cône de directions : les sommer pour
+chaque pixel coûterait des centaines d'échantillons. Le renderer préfiltre
+l'environnement une fois, sur le GPU, à sa première image :
+
+1. il **capture** la source dans un panorama, avec ses niveaux ;
+2. il remplit un **atlas** : la lumière reflétée par des surfaces de 6
+   rugosités (0, 0,2… 1), la lumière reçue par une surface blanche diffuse
+   pour chaque normale (l'irradiance), et une table de la part de lumière
+   qu'une surface reflète selon son angle et sa rugosité.
+
+Les pixels lisent ensuite quelques texels de l'atlas. Appelez
+`environment.update()` quand la source change (une texture réécrite, un
+ciel dont le soleil bouge) : il est préfiltré à nouveau à l'image suivante.
+
+## Dans les shading models
+
+- `pbr` : la couleur diffuse × l'irradiance de la normale, plus la lumière
+  de la direction reflétée × la part reflétée (Fresnel), les deux ×
+  `occlusion`. C'est ce qui donne aux métaux l'air de métaux.
+- `phong` : l'irradiance, et des reflets aussi rugueux que ses reflets
+  spéculaires sont larges.
+
+L'`ambient` des lumières s'ajoute toujours : ne donnez pas d'ambient aux
+lumières d'une scène qui a un environnement. Un shading model personnalisé
+appelle `stdEnvironment.light` (noir sans environnement), ou lit les
+fonctions `environment.radiance(direction, roughness)`,
+`environment.irradiance(normal)` et `environment.brdf(nDotV, roughness)`.
+
+## Montrer le ciel
+
+L'environnement éclaire la scène, il n'est pas dessiné. L'exemple le
+dessine sur une sphère autour de la caméra : un matériau sans éclairage
+qui appelle la même fonction du ciel dans la direction de la vue.
+
+```ts
+const s = new GraphBuilder('sky dome');
+const view = s.call(std.normalize, {
+  x: s.call(std.sub, {
+    a: s.call(stdMapping.worldPosition),
+    b: s.engine('camera.position'),
+  }),
+});
+s.surface({ baseColor: s.call(skyFunction, { direction: view }) });
+```
+
+Pour un panorama, échantillonnez-le en `environment.equirect(direction)` ;
+pour toute source, `environment.radiance(direction, 0)` donne le niveau le
+plus net de l'atlas.
+
+## Les ombres et l'occlusion
+
+L'environnement ne porte pas d'ombre : une sphère posée au sol reçoit aussi
+la lumière du ciel sous elle. Les ombres du soleil posent les objets ;
+l'`occlusion` de la surface (une texture, l'occlusion ambiante) assombrit
+la lumière de l'environnement dans les creux.
+
+Le [path tracer](/fdw-engine/fr/tutorials/path-tracing/) voit le même
+environnement : `tracer.render({ camera, surface, environment })`, ses
+rayons perdus montrent le panorama.

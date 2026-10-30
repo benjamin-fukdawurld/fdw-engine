@@ -295,14 +295,12 @@ describe('WgslCodegen', () => {
       wgslLayoutStrategy.resolve(program.layout),
     );
     expect(code).toContain('u_lightCount: u32,');
-    expect(code).toContain('u_lightDiffuses: array<vec4<f32>, 16>,');
+    expect(code).toContain('var<storage, read> b_lights: array<vec4<f32>>;');
     expect(code).toMatch(
       /var (v\d+): vec3<f32> = vec3<f32>\(\);\n {2}for \(var (v\d+): u32 = 0u; \2 < v\d+; \2 = \2 \+ 1u\) \{/,
     );
-    // The light arrays are indexed in place, in the loop body.
-    expect(code).toMatch(
-      / {4}let v\d+: vec4<f32> = frameUniforms\.u_lightDiffuses\[v\d+\];/,
-    );
+    // The light pool is indexed in place, in the loop body.
+    expect(code).toMatch(/ {4}let v\d+: vec4<f32> = b_lights\[v\d+\];/);
     expect(code).toMatch(/ {4}(v\d+) = \1 \+ v\d+;\n {2}\}/);
   });
 

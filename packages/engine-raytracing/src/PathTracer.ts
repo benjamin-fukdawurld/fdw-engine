@@ -1,9 +1,19 @@
-import { CameraCache, GpuBuffer, IVec3, Surface } from '@fdw/engine-backend';
+import {
+  CameraCache,
+  GpuBuffer,
+  GpuSampler,
+  GpuTexture,
+  IVec3,
+  RenderBackend,
+  Surface,
+} from '@fdw/engine-backend';
 import {
   BaseLight,
   Camera,
   ComputeRunner,
   DirectionalLight,
+  Environment,
+  LightPoolStride,
   Material,
   MaterialValue,
   PointLight,
@@ -11,6 +21,7 @@ import {
   Renderer,
   SpotLight,
   TextureHandle,
+  writeLightPool,
 } from '@fdw/engine-core';
 import {
   compile,
@@ -26,7 +37,6 @@ import {
   denoiseKernel,
   GuideVec4s,
   guidesKernel,
-  LightVec4s,
   PathVec4s,
   presentGraph,
   traceKernel,
@@ -81,6 +91,11 @@ export interface PathTraceOptions {
   readonly height: number;
   /** Seconds, the engine time of the materials. */
   readonly time?: number;
+  /**
+   * What the rays lost see: the panorama of an environment, instead of
+   * the gradient of the sky (see PathTracerOptions.sky).
+   */
+  readonly environment?: Environment;
 }
 
 // A compiled kernel.
@@ -103,61 +118,78 @@ interface Buffers {
 
 const Workgroup = 64;
 
+// The 1 × 1 panorama bound without environment, by backend.
+const noPanoramas = new WeakMap<
+  RenderBackend,
+  { texture: GpuTexture; sampler: GpuSampler }
+>();
+
+/**
+ * The values of the sky of the kernels (see skyRadiance): the panorama of
+ * an environment (prefiltered by the renderer when it changed), or the
+ * gradient of a sky.
+ */
+export function skyValues(
+  renderer: Renderer,
+  sky: Required<PathTracerSky>,
+  environment: Environment | undefined,
+): Record<string, MaterialValue> {
+  const backend = renderer.backend;
+  let none = noPanoramas.get(backend);
+  if (!none) {
+    none = {
+      texture: backend.textures.createTexture({
+        label: 'no sky panorama',
+        type: '2d',
+        format: 'rgba8unorm',
+        dimensions: { width: 1, height: 1 },
+        source: new Uint8Array(4),
+      }),
+      sampler: backend.textures.createSampler({
+        minFilter: 'linear',
+        magFilter: 'linear',
+        mipmapFilter: 'nearest',
+        wrapModeS: 'repeat',
+        wrapModeT: 'clamp-to-edge',
+      }),
+    };
+    noPanoramas.set(backend, none);
+  }
+  return {
+    skyZenith: vec3(sky.zenith),
+    skyHorizon: vec3(sky.horizon),
+    skyGround: vec3(sky.ground),
+    skyIntensity: environment?.intensity ?? 0,
+    skyPanorama: environment
+      ? renderer.environmentTextures(environment).panorama
+      : none.texture,
+    skyPanoramaSampler: none.sampler,
+  };
+}
+
+// The lights the kernels light with: directional, point and spot lights.
+const isSupported = (light: BaseLight) =>
+  light instanceof DirectionalLight ||
+  light instanceof PointLight ||
+  light instanceof SpotLight;
+
 /** The lights packLights packs: directional, point and spot lights. */
 export const countLights = (lights: readonly BaseLight[]): number =>
-  lights.filter(
-    (light) =>
-      light instanceof DirectionalLight ||
-      light instanceof PointLight ||
-      light instanceof SpotLight,
-  ).length;
+  lights.filter(isSupported).length;
 
-/** Packs lights for the kernels: LightVec4s vec4 each (see bounceKernel). */
+/**
+ * Packs lights for the kernels: the directional, point and spot lights, in
+ * a light pool, the format of the renderer's (writeLightPool, and
+ * lightMembers in engine-shader: LightVec4s vec4 each).
+ */
 export function packLights(
   lights: readonly BaseLight[],
 ): Float32Array<ArrayBuffer> {
-  const data = new Float32Array(Math.max(1, lights.length) * LightVec4s * 4);
-  let count = 0;
-  for (const light of lights) {
-    const o = count * LightVec4s * 4;
-    // The radiance of the light: its diffuse color × π, as the pbr model.
-    const color = light.diffuse;
-    data.set(
-      [color.x * Math.PI, color.y * Math.PI, color.z * Math.PI, 0],
-      o + 4,
-    );
-    // No cone: every direction.
-    data.set([0, 0, 0, -1, 1, 0, 0, -2], o + 8);
-    if (light instanceof DirectionalLight) {
-      const d = light.direction;
-      const length = Math.hypot(d.x, d.y, d.z) || 1;
-      data.set([-d.x / length, -d.y / length, -d.z / length, 0], o);
-    } else if (light instanceof PointLight || light instanceof SpotLight) {
-      const p = light.position;
-      data.set([p.x, p.y, p.z, 1], o);
-      data.set(
-        [
-          light.constantAttenuation,
-          light.linearAttenuation,
-          light.quadraticAttenuation,
-        ],
-        o + 12,
-      );
-      if (light instanceof SpotLight) {
-        const d = light.direction;
-        const length = Math.hypot(d.x, d.y, d.z) || 1;
-        const cosine = (degrees: number) => Math.cos((degrees * Math.PI) / 180);
-        const outer = cosine(light.outerCutoff);
-        const inner = Math.max(cosine(light.innerCutoff), outer + 1e-4);
-        data.set([d.x / length, d.y / length, d.z / length, inner], o + 8);
-        data[o + 15] = outer;
-      }
-    } else {
-      continue;
-    }
-    count++;
-  }
-  return data.subarray(0, Math.max(1, count) * LightVec4s * 4).slice();
+  const supported = lights.filter(isSupported);
+  return writeLightPool(supported).slice(
+    0,
+    Math.max(1, supported.length) * LightPoolStride,
+  );
 }
 
 /**
@@ -193,6 +225,7 @@ export class PathTracer {
   private _revision = -1;
   private _previousViewProjection = new Float32Array(16);
   private readonly _cameras = new WeakMap<Camera, CameraCache>();
+  private readonly _environmentIds = new Map<Environment, number>();
   // The owners of the dispatches with their own uniforms.
   private readonly _owners = Array.from({ length: 64 }, () => ({}));
   readonly bounces: number;
@@ -278,6 +311,7 @@ export class PathTracer {
     width,
     height,
     time = 0,
+    environment,
   }: PathTraceOptions): GpuBuffer {
     const backend = this.renderer.backend;
     const buffers = this.buffers(width, height);
@@ -291,6 +325,7 @@ export class PathTracer {
       ...lightData,
       width,
       height,
+      this.environmentKey(environment),
     ].join(',');
     const reset = signature !== this._signature;
     this._signature = signature;
@@ -305,6 +340,7 @@ export class PathTracer {
     // The guides and the accumulation of this frame, and of the previous.
     const [previous, current] = this._frames % 2 === 0 ? [0, 1] : [1, 0];
     const lightCount = countLights(lights);
+    const sky = skyValues(this.renderer, this.sky, environment);
 
     const encoder = backend.createCommandEncoder();
     const pass = encoder.beginComputePass('path tracer');
@@ -372,9 +408,7 @@ export class PathTracer {
         dispatch(
           this._kernels.guides.program,
           {
-            skyZenith: vec3(this.sky.zenith),
-            skyHorizon: vec3(this.sky.horizon),
-            skyGround: vec3(this.sky.ground),
+            ...sky,
             paths: buffers.paths[a],
             raySurfaces: buffers.surfaces,
             guides: buffers.guides[current],
@@ -390,9 +424,7 @@ export class PathTracer {
           bounce,
           lightCount,
           lights: lightBuffer,
-          skyZenith: vec3(this.sky.zenith),
-          skyHorizon: vec3(this.sky.horizon),
-          skyGround: vec3(this.sky.ground),
+          ...sky,
           paths: buffers.paths[a],
           raySurfaces: buffers.surfaces,
           pathsOut: buffers.paths[b],
@@ -519,6 +551,20 @@ export class PathTracer {
     this._lightBuffer?.destroy();
   }
 
+  // What the history depends on of an environment: which one, its version
+  // and intensity.
+  private environmentKey(environment: Environment | undefined): string {
+    if (!environment) {
+      return '';
+    }
+    let id = this._environmentIds.get(environment);
+    if (id === undefined) {
+      id = this._environmentIds.size + 1;
+      this._environmentIds.set(environment, id);
+    }
+    return `${id}:${environment.version}:${environment.intensity}`;
+  }
+
   private cameraCache(camera: Camera): CameraCache {
     let cache = this._cameras.get(camera);
     if (!cache) {
@@ -533,7 +579,7 @@ export class PathTracer {
       this._lightBuffer?.destroy();
       this._lightBuffer = this.renderer.backend.buffers.create({
         label: 'path tracer lights',
-        size: Math.max(data.byteLength, 16 * LightVec4s * 16),
+        size: Math.max(data.byteLength, 16 * LightPoolStride * 4),
         usage: ['storage', 'copy-dst'],
       });
     }

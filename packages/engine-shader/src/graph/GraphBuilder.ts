@@ -517,7 +517,8 @@ export class GraphBuilder {
    * the identifier of the object (`object.id`, a u32, 0 for none). These
    * values live in the fixed `frame` and `object` slots, shared by
    * every material. The lights are read with `light.current` and summed with
-   * `light.sum` (see `stdLights`).
+   * `light.sum` (see `stdLights`); the environment with the environment.*
+   * functions (see `stdEnvironment`).
    */
   engine(
     value:
@@ -539,6 +540,9 @@ export class GraphBuilder {
       | 'shadow.cascadeOffsets'
       | 'fog.color'
       | 'fog.height'
+      | 'environment'
+      | 'environmentMap'
+      | 'environmentSampler'
       | 'scene'
       | 'rayInstances'
       | 'rayGeometry',

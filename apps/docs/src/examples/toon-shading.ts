@@ -59,6 +59,8 @@ const example: Example = ({ backend, surface, onFrame }) => {
       }),
       b: intensity,
     }),
+    // The point lit: only the lights of its cluster are summed.
+    position: position.swizzle('xyz'),
   });
 
   // The light, rounded down to a few levels.

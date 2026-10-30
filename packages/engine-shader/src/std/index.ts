@@ -6,6 +6,8 @@ import * as inputs from './inputs';
 import { createCameraFunctions } from './camera';
 import { createColorFunctions } from './color';
 import { createShadingModels } from './lighting';
+import * as environment from './environment';
+import { createEnvironmentFunctions } from './environment';
 import * as fractal from './fractal';
 import * as lights from './lights';
 import * as loops from './loops';
@@ -31,10 +33,11 @@ export type { ShadingModel } from './outputs';
  * The standard functions, by short name.
  *
  * Arithmetic (`add`, `sub`, `mul`, `div`, `min`, `max`, `abs`, `floor`,
- * `fract`, `sqrt`, `sin`, `cos`, `pow`, `saturate`, `step`), vectors (`dot`,
- * `cross`, `length`, `normalize`, `reflect`), interpolation (`mix`, `clamp`,
- * `smoothstep`, `select`), comparisons (`less`, `lessEqual`, `greater`,
- * `greaterEqual`, `equal`, `notEqual`), arrays (`index`, `arrayLength`,
+ * `fract`, `sqrt`, `log2`, `exp2`, `sin`, `cos`, `acos`, `atan2`, `pow`,
+ * `saturate`, `step`), vectors (`dot`, `cross`, `length`, `normalize`,
+ * `reflect`), interpolation (`mix`, `clamp`, `smoothstep`, `select`),
+ * comparisons (`less`, `lessEqual`, `greater`, `greaterEqual`, `equal`,
+ * `notEqual`), arrays (`index`, `arrayLength`,
  * for storage buffers), integers (`remainder`, `bitAnd`, `bitOr`,
  * `bitXor`, `shiftLeft`, `shiftRight`), textures (`textureSample`, `textureSampleLevel`,
  * `textureSampleCube`, `textureSampleCubeLevel`, `textureLoad`,
@@ -61,6 +64,10 @@ export const std = {
   floor: functions.floor,
   fract: functions.fract,
   sqrt: functions.sqrt,
+  log2: functions.log2,
+  exp2: functions.exp2,
+  acos: functions.acos,
+  atan2: functions.atan2,
   sin: functions.sin,
   cos: functions.cos,
   saturate: functions.saturate,
@@ -184,6 +191,20 @@ export const stdFunctionPorts = {
 export const stdLights = {
   current: lights.current,
   sum: lights.sum,
+} as const;
+
+/**
+ * The environment of the frame (image-based lighting): `light`, the light
+ * of the environment a surface reflects, black without the `environment`
+ * feature. The function graphs `environment.radiance`,
+ * `environment.irradiance` and `environment.brdf` read the prefiltered
+ * environment; `environment.octahedral`, `environment.equirect` and their
+ * inverses map directions to textures.
+ *
+ * @group Standard library
+ */
+export const stdEnvironment = {
+  light: environment.light,
 } as const;
 
 /**
@@ -339,6 +360,7 @@ const baseDefinitions: readonly NodeDefinition[] = [
   ...functions.functionDefinitions,
   ...Object.values(stdOutputs),
   ...lights.lightDefinitions,
+  ...environment.environmentDefinitions,
   ...loops.loopDefinitions,
   ...rays.rayDefinitions,
   ...fractal.fractalDefinitions,
@@ -375,6 +397,7 @@ export function standardNodeDefinitions(): readonly NodeDefinition[] {
         ...createRayFunctions(base),
         ...createColorFunctions(base),
         ...createCameraFunctions(base),
+        ...createEnvironmentFunctions(base),
         ...createShadingModels(base),
         ...createNoiseFunctions(base),
         ...createPatternFunctions(base),

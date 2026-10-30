@@ -6,6 +6,8 @@ Les fonctionnalités suivantes ne sont pas planifiées. Elles sont notées pour 
 
 ## 1. Un très grand nombre de lumières
 
+_Fait avec P2_ ([p2-lights.md](p2-lights.md)) : les étapes 2 et 3 ci-dessous (le pool dans un storage buffer, partout ; les clusters, remplis sur le CPU) ; l'étape 4 (le culling en calcul) est reportée. Le texte qui suit est celui d'avant.
+
 Aujourd'hui, ajouter une lumière ne régénère pas le shader (`lightCount` est un uniform, la boucle est dynamique), mais deux limites existent :
 
 - **Stockage** : 16 lumières au plus, dans des tableaux de taille fixe du bloc `frame` (WebGL2 ne garantit que 16 Ko de bloc uniform).

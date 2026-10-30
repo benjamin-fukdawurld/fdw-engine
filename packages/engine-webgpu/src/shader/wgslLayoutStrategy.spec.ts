@@ -77,32 +77,25 @@ describe('wgslLayoutStrategy', () => {
       ['time', 268, 4],
       ['exposure', 272, 4],
       ['lightCount', 276, 4],
-      // Arrays of 16 vec4, aligned to 16 bytes.
-      ['lightPositions', 288, 256],
-      ['lightAmbients', 544, 256],
-      ['lightDiffuses', 800, 256],
-      ['lightSpeculars', 1056, 256],
-      ['lightAttenuations', 1312, 256],
-      ['lightSpotDirections', 1568, 256],
-      ['lightSpotCones', 1824, 256],
-      ['lightShadows', 2080, 256],
-      ['lightShadowRects', 2336, 256],
-      // Arrays of 16 mat4.
-      ['lightShadowMatrices', 2592, 1024],
-      ['cascadeMatrix0', 3616, 64],
-      ['cascadeMatrix1', 3680, 64],
-      ['cascadeMatrix2', 3744, 64],
-      ['cascadeMatrix3', 3808, 64],
-      ['cascadeRect0', 3872, 16],
-      ['cascadeRect1', 3888, 16],
-      ['cascadeRect2', 3904, 16],
-      ['cascadeRect3', 3920, 16],
-      ['cascadeSplits', 3936, 16],
-      ['cascadeOffsets', 3952, 16],
-      ['fogColor', 3968, 16],
-      ['fogHeight', 3984, 16],
+      // The light pool is a storage buffer: the clusters, vec4 aligned
+      // to 16 bytes.
+      ['lightClusters', 288, 16],
+      ['lightClusterDepth', 304, 16],
+      ['cascadeMatrix0', 320, 64],
+      ['cascadeMatrix1', 384, 64],
+      ['cascadeMatrix2', 448, 64],
+      ['cascadeMatrix3', 512, 64],
+      ['cascadeRect0', 576, 16],
+      ['cascadeRect1', 592, 16],
+      ['cascadeRect2', 608, 16],
+      ['cascadeRect3', 624, 16],
+      ['cascadeSplits', 640, 16],
+      ['cascadeOffsets', 656, 16],
+      ['fogColor', 672, 16],
+      ['fogHeight', 688, 16],
+      ['environment', 704, 16],
     ]);
-    expect(block('frame').size).toBe(4000);
+    expect(block('frame').size).toBe(720);
   });
 
   it('pads the mat3 columns of the object block', () => {
