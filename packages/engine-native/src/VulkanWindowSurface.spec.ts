@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { canRun } from '@fdw/engine-backend/testing';
+import { canRun, hasDisplay } from '@fdw/engine-backend/testing';
 import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder } from '@fdw/engine-shader';
 import { addonPath, VulkanEngine } from '@fdw/engine-vulkan';
@@ -12,7 +12,7 @@ const ready = canRun(
   'window',
   existsSync(new URL('../build/fdw_native.node', import.meta.url)) &&
     existsSync(addonPath()) &&
-    !!(process.env['DISPLAY'] || process.env['WAYLAND_DISPLAY']),
+    hasDisplay(),
   'needs the two addons and a display',
 );
 

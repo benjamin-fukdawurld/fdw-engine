@@ -1,4 +1,4 @@
-import type { VulkanAddon } from '@fdw/engine-vulkan';
+import type { ContextHandle, VulkanAddon } from '@fdw/engine-vulkan';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -7,9 +7,16 @@ import { fileURLToPath } from 'node:url';
 /**
  * The addon: the API of the Vulkan addon (the same objects, ids and
  * commands), on Direct3D 12. The layouts of the groups take the stride of
- * their storage buffers, viewed as structured buffers.
+ * their storage buffers, viewed as structured buffers. Its context may be
+ * created on WARP.
  */
-export type D3D12Addon = VulkanAddon;
+export type D3D12Addon = VulkanAddon & {
+  createContext(
+    validation: boolean,
+    application: string | undefined,
+    warp: boolean,
+  ): ContextHandle;
+};
 
 let addon: D3D12Addon | undefined;
 

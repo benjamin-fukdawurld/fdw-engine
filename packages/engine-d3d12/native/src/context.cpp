@@ -41,6 +41,23 @@ std::wstring wide(const char *text) {
   return result;
 }
 
+// WARP, the software rasterizer of Windows: asked for, never a fallback.
+int chooseWarp(fdw_dx_context *context) {
+  ComPtr<IDXGIFactory4> factory4;
+  ComPtr<IDXGIAdapter1> adapter;
+  if (FAILED(context->factory.As(&factory4)) ||
+      FAILED(factory4->EnumWarpAdapter(IID_PPV_ARGS(&adapter))) ||
+      FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0,
+                               __uuidof(ID3D12Device), nullptr))) {
+    return fail("WARP has no Direct3D 12");
+  }
+  DXGI_ADAPTER_DESC1 desc{};
+  adapter->GetDesc1(&desc);
+  context->adapter = adapter;
+  context->deviceName = utf8(desc.Description);
+  return 0;
+}
+
 // The high performance adapter with Direct3D 12, not a software one.
 int chooseAdapter(fdw_dx_context *context) {
   ComPtr<IDXGIFactory6> factory6;
@@ -91,7 +108,7 @@ void filterMessages(ID3D12InfoQueue *queue) {
   queue->SetMessageCountLimit(4096);
 }
 
-int createDevice(fdw_dx_context *context, bool validation) {
+int createDevice(fdw_dx_context *context, bool validation, bool warp) {
   UINT factoryFlags = 0;
   if (validation) {
     // The debug layer, when the Graphics Tools of Windows are installed.
@@ -110,7 +127,7 @@ int createDevice(fdw_dx_context *context, bool validation) {
   if (FAILED(result)) {
     return fail("CreateDXGIFactory2", result);
   }
-  if (chooseAdapter(context) != 0) {
+  if ((warp ? chooseWarp(context) : chooseAdapter(context)) != 0) {
     return -1;
   }
   result = D3D12CreateDevice(context->adapter.Get(), D3D_FEATURE_LEVEL_11_0,
@@ -500,7 +517,8 @@ const char *fdw_dx_last_error(void) { return lastError.c_str(); }
 
 fdw_dx_context *fdw_dx_context_create(const fdw_dx_context_options *options) {
   auto *context = new fdw_dx_context();
-  if (createDevice(context, options && options->validation) != 0) {
+  if (createDevice(context, options && options->validation,
+                   options && options->warp) != 0) {
     const std::string error = lastError;
     fdw_dx_context_destroy(context);
     fail(error);

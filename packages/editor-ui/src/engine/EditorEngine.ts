@@ -29,7 +29,7 @@ export interface EngineViewport {
    * window: left out by a window over the page (Electron).
    */
   setHoles?(holes: readonly ViewportBounds[]): void;
-  /** Before each frame (the X11 window of Electron kept above Chromium's). */
+  /** Before each frame (the window of the viewport kept above Chromium's). */
   pump?(): void;
 }
 

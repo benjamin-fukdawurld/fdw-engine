@@ -12,7 +12,8 @@ SDL3, audio sur miniaudio) et `engine-vulkan` (le backend Vulkan). Chacun a un r
 
 ## Prérequis
 
-- CMake 3.24 ou ultérieur, et un compilateur C/C++20 (GCC ou Clang).
+- CMake 3.24 ou ultérieur, et un compilateur C/C++20 : GCC ou Clang,
+  Visual Studio 2022 ou ultérieur (sa charge de travail C++) sous Windows.
 - Sous Linux, les paquets de développement dont SDL3 a besoin pour ses
   backends vidéo : X11 et/ou Wayland, comme pour tout build de SDL.
 - Rien pour les **en-têtes Node-API** : ils viennent de la dépendance de
@@ -85,8 +86,15 @@ Le code natif est portable par construction : CMake, C++20 sans API
 système, SDL3 pour les fenêtres et les handles natifs, dépendances
 téléchargées plutôt que prises dans le système. Ce qui dépend de la
 plateforme — handles de fenêtre, chemins de bibliothèques — reste
-cantonné à quelques endroits isolés. Windows et macOS (via MoltenVK) sont
-prévus ; voir `design/backlog.md`.
+cantonné à quelques endroits isolés. Linux et Windows sont construits et
+testés en CI (Windows : Vulkan sur lavapipe, Direct3D 12 sur WARP,
+`FDW_D3D12_ADAPTER=warp` sur une machine sans GPU) ; macOS (via MoltenVK)
+est prévu, voir `design/p11-windows.md`.
+
+Sous Windows, dans VS Code, Nx Console peut poser `NX_WORKSPACE_ROOT_PATH`
+avec un lecteur en minuscule (`c:\…`) : Vitest charge alors deux copies de
+lui-même, et chaque test échoue sur « Vitest failed to find the runner ».
+Posez-la avec un lecteur en majuscule (`C:\…`) dans le terminal.
 
 ## Débogage
 

@@ -1,9 +1,13 @@
-// Builds the native addon with CMake: build/fdw_d3d12.node. Windows only:
+// Builds the native addon with CMake: build/fdw_d3d12.node, unless the
+// prebuilt one of these sources can be fetched (with DXC). Windows only:
 // Direct3D 12, DXGI and the DXC header come from the Windows SDK.
-// Usage: node scripts/build.mjs [--debug]
+// Usage: node scripts/build.mjs [--debug] [--from-source]
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildAddon } from '../../../tools/native/build-addon.mjs';
+import {
+  buildAddon,
+  fetchPrebuilt,
+} from '../../../tools/native/build-addon.mjs';
 
 if (process.platform !== 'win32') {
   // Not an error: the tests needing the addon are skipped without it.
@@ -12,4 +16,5 @@ if (process.platform !== 'win32') {
   );
   process.exit(0);
 }
-buildAddon(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+if (!(await fetchPrebuilt(root))) buildAddon(root);

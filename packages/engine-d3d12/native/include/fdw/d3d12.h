@@ -38,9 +38,12 @@ typedef struct fdw_dx_context_options {
   // Windows): its messages are kept, see fdw_dx_message.
   int32_t validation;
   const char *application;
+  // WARP, the software rasterizer of Windows, instead of the GPU.
+  int32_t warp;
 } fdw_dx_context_options;
 
-// Creates a device on the high performance GPU (not a software adapter),
+// Creates a device on the high performance GPU (not a software adapter,
+// unless options->warp),
 // feature level 11.0 and Shader Model 6.0 at least, with its direct queue.
 // Returns NULL on error.
 FDW_DX_API fdw_dx_context *
