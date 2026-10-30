@@ -8,6 +8,7 @@ import {
   Camera,
   ComputeRunner,
   DirectionalLight,
+  Environment,
   Material,
   Mesh,
   RenderGraph,
@@ -33,6 +34,7 @@ import {
   arrayType,
   BuiltinTypes,
   compile,
+  defineFunction,
   GraphBuilder,
   PortHandle,
   std,
@@ -661,6 +663,73 @@ export function describeRays(
       // around it in its shadow: dark (only the light of the blocker).
       expect(pixel(48, 48)[0]).toBeGreaterThan(120);
       expect(pixel(36, 48)[0]).toBeGreaterThan(120);
+      tracer.destroy();
+      renderer.destroy();
+      scene.destroy();
+    });
+
+    it('lights the scene by its environment with the path tracer', async () => {
+      const renderer = new Renderer(backend, {
+        output: { encoding: 'linear', toneMapping: 'none' },
+      });
+      // Looking down at a gray floor, without lights, under a gray sky.
+      const camera = new Camera({
+        position: { x: 0, y: 5, z: 0 },
+        rotation: { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 },
+        projection: {
+          type: 'orthographic',
+          left: -1,
+          right: 1,
+          bottom: -1,
+          top: 1,
+          near: 0.1,
+          far: 100,
+        },
+      });
+      const floorGraph = new GraphBuilder('floor');
+      floorGraph.surface({
+        shadingModel: 'pbr',
+        baseColor: [0.5, 0.5, 0.5],
+        roughness: 1,
+      });
+      const scene = new RayScene(backend).update({
+        items: [
+          {
+            mesh: square(0.5),
+            material: new Material({ graph: floorGraph.build() }),
+            transform: new Transform({
+              rotation: { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 },
+            }),
+          },
+        ],
+      });
+      const f = new GraphBuilder('gray sky');
+      f.functionInput('direction', BuiltinTypes.vec3f);
+      f.functionOutput(
+        'color',
+        f.constant(BuiltinTypes.vec3f, [0.5, 0.5, 0.5]),
+      );
+      const environment = new Environment(
+        { sky: defineFunction(f.build(), { id: 'test.graySky' }) },
+        { size: 16 },
+      );
+      const tracer = new PathTracer(renderer, scene, { bounces: 2 });
+      let pixels: Uint8Array<ArrayBufferLike> = new Uint8Array();
+      for (let frame = 0; frame < 24; frame++) {
+        tracer.render({ camera, surface: fixture.surface, environment });
+        if (frame === 23) {
+          pixels = await fixture.readPixels();
+        }
+      }
+      const pixel = (x: number, y: number) => [
+        ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+      ];
+      // The floor: its albedo × the sky (0.25), and a little of its
+      // specular lobe; the sky around it.
+      const floor = pixel(32, 32)[0];
+      expect(floor).toBeGreaterThan(55);
+      expect(floor).toBeLessThan(85);
+      expect(Math.abs(pixel(2, 2)[0] - 128)).toBeLessThanOrEqual(3);
       tracer.destroy();
       renderer.destroy();
       scene.destroy();

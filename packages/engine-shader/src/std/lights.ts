@@ -36,6 +36,12 @@ export const current: NodeDefinition = {
  * once per light, by the nodes depending on {@link current | light.current};
  * the other nodes it depends on are computed once, outside the loop.
  *
+ * Given the world `position` of the point lit, and with the
+ * `lightClusters` feature (given by the renderer), only the lights that can
+ * reach the point are summed: the global ones (directional, without range)
+ * and those of its cluster (see lightClusterMembers). Otherwise,
+ * every light of the frame.
+ *
  * @example The diffuse light received by a surface
  * ```ts
  * const light = g.node(stdLights.current);
@@ -44,6 +50,7 @@ export const current: NodeDefinition = {
  *     a: light.diffuse,
  *     b: g.call(std.max, { a: g.call(std.dot, { a: normal, b: toLight }), b: 0 }),
  *   }),
+ *   position,
  * });
  * ```
  *
@@ -54,8 +61,116 @@ export const sum: FunctionDefinition = {
   category: 'function',
   description: 'The sum of a value over the lights of the frame.',
   implementation: { kind: 'intrinsic', op: 'light-sum' },
-  inputs: () => [{ name: 'value', type: float }],
+  params: {
+    // Set by the compiler: the lights of a cluster, given by light.cluster.
+    clustered: { kind: 'boolean', default: false },
+  },
+  inputs: (params) => [
+    { name: 'value', type: float },
+    { name: 'position', type: BuiltinTypes.vec3f, optional: true },
+    ...(params['clustered']
+      ? (['first', 'count', 'global'] as const).map((name) => ({
+          name,
+          type: BuiltinTypes.u32,
+        }))
+      : []),
+  ],
   outputs: () => [{ name: 'result', type: float }],
+};
+
+/**
+ * The lights of the cluster of a point (see lightClusterMembers):
+ * the first element of its list in the light grid, the length of the
+ * list, and the number of global lights, summed before it. Inserted by the
+ * compiler before the light.sum nodes given a position, with the
+ * `lightClusters` feature.
+ *
+ * @group Standard library
+ */
+export const cluster: MacroDefinition = {
+  id: 'light.cluster',
+  category: 'macro',
+  description: 'The lights of the cluster of a point.',
+  inputs: () => [{ name: 'position', type: BuiltinTypes.vec3f }],
+  outputs: () =>
+    (['first', 'count', 'global'] as const).map((name) => ({
+      name,
+      type: BuiltinTypes.u32,
+    })),
+  expand: (context) => {
+    const add = (type: string, inputs: Record<string, unknown>, params = {}) =>
+      context.add(type, params, inputs as never)();
+    const engine = (value: string) => add('input.engine', {}, { value });
+    const swizzle = (source: ValueSource, components: string) =>
+      ({ ...source, swizzle: components }) as ValueSource;
+    const point = add('std.extend', { xyz: context.input('position'), w: 1 });
+    const clip = add('std.transform', {
+      matrix: engine('camera.viewProjection'),
+      vector: point,
+    });
+    const viewZ = swizzle(
+      add('std.transform', { matrix: engine('camera.view'), vector: point }),
+      'z',
+    );
+    const grid = engine('lightClusters');
+    const depth = engine('lightClusterDepth');
+    // The slice: floor(log2(d) × scale + bias), d the view depth.
+    const slice = add('std.clamp', {
+      x: add('std.floor', {
+        x: add('std.add', {
+          a: add('std.mul', {
+            a: add('std.log2', {
+              x: add('std.max', {
+                a: add('std.mul', { a: viewZ, b: -1 }),
+                b: 1e-6,
+              }),
+            }),
+            b: swizzle(depth, 'x'),
+          }),
+          b: swizzle(depth, 'y'),
+        }),
+      }),
+      low: 0,
+      high: add('std.sub', { a: swizzle(grid, 'z'), b: 1 }),
+    });
+    // The tile, from the bottom left corner of the clip space.
+    const ndc = add('std.div', {
+      a: swizzle(clip, 'xy'),
+      b: swizzle(clip, 'w'),
+    });
+    const tile = add('std.clamp', {
+      x: add('std.floor', {
+        x: add('std.mul', {
+          a: add('std.add', { a: add('std.mul', { a: ndc, b: 0.5 }), b: 0.5 }),
+          b: swizzle(grid, 'xy'),
+        }),
+      }),
+      low: [0, 0],
+      high: add('std.sub', { a: swizzle(grid, 'xy'), b: 1 }),
+    });
+    const index = add('std.add', {
+      a: add('std.mul', {
+        a: add('std.add', {
+          a: add('std.mul', { a: slice, b: swizzle(grid, 'y') }),
+          b: swizzle(tile, 'y'),
+        }),
+        b: swizzle(grid, 'x'),
+      }),
+      b: swizzle(tile, 'x'),
+    });
+    const u32 = (x: ValueSource) =>
+      add('std.convert', { value: x }, { to: BuiltinTypes.u32 });
+    const header = add('std.mul', { a: u32(index), b: 2 });
+    const lightGrid = engine('lightGrid');
+    return {
+      first: add('std.index', { array: lightGrid, index: header }),
+      count: add('std.index', {
+        array: lightGrid,
+        index: add('std.add', { a: header, b: 1 }),
+      }),
+      global: u32(swizzle(grid, 'w')),
+    };
+  },
 };
 
 /**
@@ -154,5 +269,6 @@ function rayVisibility(
 export const lightDefinitions: readonly NodeDefinition[] = [
   current,
   sum,
+  cluster,
   shadow,
 ];

@@ -58,6 +58,8 @@ const examples: Record<string, string> = {
   'ray-reflections': 'tutorials/ray-reflections/',
   'path-tracing': 'tutorials/path-tracing/',
   'ray-characters': 'tutorials/ray-traced-characters/',
+  'many-lights': 'tutorials/many-lights/',
+  'environment-lighting': 'tutorials/environment-lighting/',
 };
 
 // The clock of the examples, stopped: the same image at every run.

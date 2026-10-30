@@ -120,17 +120,10 @@ export const ObjectTableName = 'objects';
 export const uniformBlockName = (slot: string): string => `${slot}Uniforms`;
 
 /**
- * Maximum number of lights of a frame: the size of the light arrays of the
- * 'frame' uniform block.
- *
- * @group Program layout
- */
-export const MaxLights = 16;
-
-/**
- * The lights of the frame, in the 'frame' uniform block: one array of vec4
- * per property, indexed by light. Each output of the 'light.current' node
- * reads the components of one of them.
+ * The lights of the frame, in the 'lights' storage buffer of the 'frame'
+ * slot (the light pool): LightVec4s vec4 per light, the light i from the
+ * vec4 i × LightVec4s. Each output of the 'light.current' node reads the
+ * components of one of them, at its offset (in vec4).
  *
  * - position: xyz, and w = 1 for a point or spot light, 0 for a directional
  *   light (xyz is then the direction towards the light). The direction from
@@ -147,33 +140,62 @@ export const MaxLights = 16;
  * - shadowRect: tile of the light in the shadow atlas, uv offset (xy) and
  *   size (zw).
  * - shadowMatrix: world to clip space of the light, for its shadow map
- *   (the only matrix: one mat4 per light instead of a vec4).
+ *   (4 vec4, its columns).
+ *
+ * The pool has no fixed size: the renderer writes every light of the frame.
  *
  * @group Program layout
  */
 export const lightMembers: Readonly<
-  Record<string, { readonly member: string; readonly type: ShaderType }>
+  Record<string, { readonly offset: number; readonly type: ShaderType }>
 > = {
-  position: { member: 'lightPositions', type: BuiltinTypes.vec4f },
-  ambient: { member: 'lightAmbients', type: BuiltinTypes.vec3f },
-  diffuse: { member: 'lightDiffuses', type: BuiltinTypes.vec3f },
-  specular: { member: 'lightSpeculars', type: BuiltinTypes.vec3f },
-  attenuation: { member: 'lightAttenuations', type: BuiltinTypes.vec3f },
-  spotDirection: { member: 'lightSpotDirections', type: BuiltinTypes.vec3f },
-  spotCone: { member: 'lightSpotCones', type: BuiltinTypes.vec2f },
-  shadow: { member: 'lightShadows', type: BuiltinTypes.vec4f },
-  shadowRect: { member: 'lightShadowRects', type: BuiltinTypes.vec4f },
-  shadowMatrix: { member: 'lightShadowMatrices', type: BuiltinTypes.mat4f },
+  position: { offset: 0, type: BuiltinTypes.vec4f },
+  ambient: { offset: 1, type: BuiltinTypes.vec3f },
+  diffuse: { offset: 2, type: BuiltinTypes.vec3f },
+  specular: { offset: 3, type: BuiltinTypes.vec3f },
+  attenuation: { offset: 4, type: BuiltinTypes.vec3f },
+  spotDirection: { offset: 5, type: BuiltinTypes.vec3f },
+  spotCone: { offset: 6, type: BuiltinTypes.vec2f },
+  shadow: { offset: 7, type: BuiltinTypes.vec4f },
+  shadowRect: { offset: 8, type: BuiltinTypes.vec4f },
+  shadowMatrix: { offset: 9, type: BuiltinTypes.mat4f },
 };
 
 /**
- * The array of the frame uniform block holding a light property: vec4 per
- * light, or mat4 for matrices.
+ * The vec4 of a light in the light pool (see lightMembers).
  *
  * @group Program layout
  */
-export const lightArrayType = (type: ShaderType): ArrayType =>
-  arrayType(type.kind === 'matrix' ? type : BuiltinTypes.vec4f, MaxLights);
+export const LightVec4s = 13;
+
+/**
+ * The light clusters of the frame (clustered forward shading): the view is
+ * cut in tiles of the screen (x, y) and in slices of the view depth (z),
+ * each cluster listing the lights that reach it. A `light.sum` given the
+ * position of the point (and the 'lightClusters' feature) loops over the
+ * global lights, then over those of the cluster of the point only.
+ *
+ * In the 'frame' uniform block:
+ * - lightClusters: the tiles along x and y, the slices, and the number of
+ *   global lights (w), the first ones of the pool: the directional lights
+ *   and those without range, which reach every cluster.
+ * - lightClusterDepth: the slice of a view depth d is floor(log2(d) × x +
+ *   y), clamped to the slices.
+ *
+ * The 'lightGrid' storage buffer (u32): two per cluster, the first index
+ * of its list and its count, then the lists, indices of lights in the
+ * pool. The cluster of tile (x, y) (from the bottom left of the clip space)
+ * and slice z is (z × tiles y + y) × tiles x + x.
+ *
+ * @group Program layout
+ */
+export const lightClusterMembers: readonly {
+  name: string;
+  type: ShaderType;
+}[] = [
+  { name: 'lightClusters', type: BuiltinTypes.vec4f },
+  { name: 'lightClusterDepth', type: BuiltinTypes.vec4f },
+];
 
 /**
  * Maximum number of shadow cascades of the cascaded light of a frame.
@@ -227,6 +249,50 @@ export const fogMembers: readonly { name: string; type: ShaderType }[] = [
 ];
 
 /**
+ * The prefiltered levels of the environment: the radiance seen by
+ * surfaces of roughness 0, 1 / (EnvironmentLevels - 1)… 1 (see
+ * environmentMembers).
+ *
+ * @group Program layout
+ */
+export const EnvironmentLevels = 6;
+
+/**
+ * The tiles of the atlas of the environment, along x and y (see
+ * environmentMembers).
+ *
+ * @group Program layout
+ */
+export const EnvironmentTiles = { x: 4, y: 2 } as const;
+
+/**
+ * The environment of the frame (image-based lighting), read by the
+ * programs with the 'environment' feature (the environment.* functions).
+ * Its light is prefiltered in an atlas, the 'environmentMap' engine
+ * resource (a 2d float texture, linear filtered by 'environmentSampler'),
+ * of EnvironmentTiles tiles of (size + 2)² texels: each tile has a border
+ * of one texel, so that the bilinear filter does not reach the next one.
+ * Tile k is at column k % 4, row floor(k / 4) (from the top left):
+ *
+ * - tiles 0 to EnvironmentLevels - 1: the radiance a surface of roughness
+ *   k / (EnvironmentLevels - 1) reflects in a direction (GGX, prefiltered
+ *   with N = V = R), an octahedral map of the directions;
+ * - tile EnvironmentLevels: the irradiance of a normal divided by π (the
+ *   light a white lambertian surface reflects), an octahedral map;
+ * - tile EnvironmentLevels + 1: the scale and bias of F0 of the split sum
+ *   (rg, Karis 2013), by N·V (u) and roughness (v).
+ *
+ * In the 'frame' uniform block:
+ * - environment: the size of a tile in texels without its border (x), the
+ *   size of a texel of the atlas in uv (y, z), the intensity (w; 0 without
+ *   environment).
+ *
+ * @group Program layout
+ */
+export const environmentMembers: readonly { name: string; type: ShaderType }[] =
+  [{ name: 'environment', type: BuiltinTypes.vec4f }];
+
+/**
  * Members of the uniform blocks of the engine slots: a fixed contract.
  *
  * @group Program layout
@@ -248,14 +314,12 @@ export const engineUniformBlocks: Readonly<
     { name: 'time', type: BuiltinTypes.f32 },
     // Multiplies the linear color before the tone mapping.
     { name: 'exposure', type: BuiltinTypes.f32 },
-    // Number of lights in the arrays below (see lightMembers).
+    // Number of lights in the light pool (see lightMembers).
     { name: 'lightCount', type: BuiltinTypes.u32 },
-    ...Object.values(lightMembers).map(({ member, type }) => ({
-      name: member,
-      type: lightArrayType(type),
-    })),
+    ...lightClusterMembers,
     ...cascadeMembers,
     ...fogMembers,
+    ...environmentMembers,
   ],
   object: [
     { name: 'world', type: BuiltinTypes.mat4f },
@@ -312,6 +376,14 @@ export const engineValueLocations: Readonly<
   ),
   'fog.color': { slot: 'frame', member: 'fogColor' },
   'fog.height': { slot: 'frame', member: 'fogHeight' },
+  lightCount: { slot: 'frame', member: 'lightCount' },
+  environment: { slot: 'frame', member: 'environment' },
+  ...Object.fromEntries(
+    lightClusterMembers.map(({ name }) => [
+      name,
+      { slot: 'frame', member: name },
+    ]),
+  ),
 };
 
 /**
@@ -329,6 +401,31 @@ export const engineResources: Readonly<Record<string, LogicalBinding>> = {
     type: BuiltinTypes.depthTexture2d,
   },
   shadowSampler: { kind: 'sampler', name: 'shadowSampler', comparison: true },
+  // The light pool and the light clusters (see lightMembers,
+  // lightClusterMembers): bound to the programs summing lights.
+  lights: {
+    kind: 'storage-buffer',
+    name: 'lights',
+    type: arrayType(BuiltinTypes.vec4f),
+    access: 'read',
+  },
+  lightGrid: {
+    kind: 'storage-buffer',
+    name: 'lightGrid',
+    type: arrayType(BuiltinTypes.u32),
+    access: 'read',
+  },
+  // The prefiltered environment (see environmentMembers).
+  environmentMap: {
+    kind: 'texture',
+    name: 'environmentMap',
+    type: BuiltinTypes.texture2d,
+  },
+  environmentSampler: {
+    kind: 'sampler',
+    name: 'environmentSampler',
+    comparison: false,
+  },
   // The scene traced by rays, and what the functions of the hits read (see
   // rayInstanceMembers).
   scene: { kind: 'acceleration-structure', name: 'scene' },

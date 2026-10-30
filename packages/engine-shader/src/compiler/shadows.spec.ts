@@ -39,7 +39,7 @@ const frameBindings = (program: ReturnType<typeof compile>) =>
 describe('shadows', () => {
   it('cost nothing without the shadows feature', () => {
     const program = compile(lit(), attributes);
-    expect(frameBindings(program)).toEqual(['frameUniforms']);
+    expect(frameBindings(program)).toEqual(['frameUniforms', 'lights']);
     expect(
       instructions(stage(program, 'fragment')).some(
         (i) => i.op.kind === 'sample-compare',
@@ -59,6 +59,7 @@ describe('shadows', () => {
         'frameUniforms',
         'shadowMap',
         'shadowSampler',
+        'lights',
       ]);
       const loop = stage(program, 'fragment').body.find(
         (i) => i.op.kind === 'loop-sum',
@@ -68,12 +69,13 @@ describe('shadows', () => {
       const compares = body.filter((i) => i.op.kind === 'sample-compare');
       expect(compares).toHaveLength(9);
       expect(compares[0].type).toEqual(BuiltinTypes.f32);
-      // The shadow matrices are a mat4 per light.
+      // The shadow matrices are a mat4 per light, from 4 vec4 of the pool.
       expect(
         body.some(
           (i) =>
-            i.op.kind === 'load-resource' &&
-            i.op.member === 'lightShadowMatrices',
+            i.op.kind === 'construct' &&
+            i.type.kind === 'matrix' &&
+            i.args.length === 4,
         ),
       ).toBe(true);
     }

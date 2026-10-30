@@ -1,0 +1,99 @@
+---
+title: Hundreds of lights
+description: Light a scene with hundreds of point and spot lights, each pixel summing only those that reach it, with the clusters of the renderer.
+sidebar:
+  order: 46
+---
+
+import Example from '../../../components/Example.astro';
+
+A square at night, lit by 400 colored lamps drifting above the ground.
+There is no limit to the number of lights of a frame: every light whose
+range reaches the view is used. But a pixel does not sum them all: the
+renderer cuts the view into **clusters**, and each pixel only sums the
+lights of its own.
+
+Click the canvas: **C** switches between the clusters and every lamp
+for every pixel, to compare their cost.
+
+<Example name="many-lights" />
+
+## Many lights, as usual
+
+Nothing changes in the code: the lights are given to the frame, or come
+from the nodes of a scene.
+
+```ts
+const lamps = Array.from(
+  { length: 400 },
+  () =>
+    new PointLight({
+      diffuse: { x: 1, y: 0.4, z: 0.1 },
+      quadraticAttenuation: 28,
+    }),
+);
+renderer.render({ items, camera, surface, lights: [moon, ...lamps] });
+```
+
+`renderer.stats.get('scene').lights` tells how many were used: those
+whose range reaches the frustum of the camera.
+
+## The range of a light
+
+A point or spot light is attenuated by `1 / (constant + linear × d +
+quadratic × d²)`. Its **range** is where its light falls below 1/256 of
+its strongest color (`lightRange(light)`): beyond it, the light is not
+summed. Give the lamps of a dense scene a strong quadratic attenuation:
+the shorter their range, the fewer per pixel.
+
+- A light without attenuation (`constant` 1, the others 0) reaches
+  everything: it is summed by every pixel, like a directional light.
+- The tails of the attenuation beyond the range are dropped: less than a
+  step of an 8-bit color per light, but hundreds of lamps around a point
+  can add up to a few percent of light.
+
+## The clusters
+
+The view is cut into 16 × 9 tiles of the screen and 24 slices of depth,
+thinner near the camera: 3 456 clusters. Each frame, the renderer lists
+in each cluster the point and spot lights that can reach it (a sphere
+around each light, around the cone of a spot), on the CPU: about 0.8 ms
+for 1 000 lights. The lights are in a storage buffer (the light pool),
+the lists in another, on every backend (WebGL2 reads them from data
+textures).
+
+A pixel finds its cluster from the position of its point, then sums:
+
+1. the **global** lights: the directional ones, and those without range;
+2. the lights of the list of its cluster.
+
+The cost of a pixel depends on the lights around it, not on the number
+of lights of the frame. `new Renderer(backend, { lightClusters: false })`
+turns them off: each pixel sums every light, as the example does with
+**C**.
+
+## In a custom shading model
+
+`light.sum` uses the clusters when it is given the **position** of the
+point lit (in the world). The `phong` and `pbr` models give it; a custom
+model should too:
+
+```ts
+const received = f.call(stdLights.sum, {
+  value: f.call(std.mul, { a: light.diffuse, b: nDotL }),
+  position,
+});
+```
+
+Without a position, the sum loops over every light of the frame.
+
+In the loop of a clustered sum, each pixel goes through its own number
+of lights: the derivatives between neighboring pixels are undefined
+there. The compiler refuses `std.textureSample` (and `dpdx`, `dpdy`,
+`fwidth`) in it: sample at an explicit level with
+`std.textureSampleLevel`, or compute the value outside the loop.
+
+## Shadows
+
+Each light casting shadows still draws its shadow map into the atlas:
+give shadows to a few lights (the sun, a few spots), not to hundreds.

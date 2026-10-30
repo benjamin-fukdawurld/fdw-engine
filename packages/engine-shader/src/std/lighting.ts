@@ -6,6 +6,7 @@ import type { FunctionDefinition } from '../graph/NodeDefinition';
 import type { NodeRegistry } from '../graph/NodeRegistry';
 import { BuiltinTypes, ShaderType, typeEquals } from '../types/ShaderType';
 import * as functions from './functions';
+import * as environment from './environment';
 import * as lights from './lights';
 import { RayMasks } from '../compiler/layout';
 
@@ -528,8 +529,28 @@ function phong(registry: NodeRegistry): FunctionDefinition {
       b: factor,
     }),
   });
+  // The light of the environment: its irradiance, and its reflections, as
+  // rough as the highlights are wide.
+  const environmentLight = f.call(environment.light, {
+    normal: n,
+    view: v,
+    diffuseColor: baseColor,
+    f0: [0, 0, 0],
+    roughness: f.call(functions.sqrt, {
+      x: f.call(functions.div, {
+        a: 2,
+        b: f.call(functions.add, {
+          a: f.call(functions.max, { a: shininess, b: 1 }),
+          b: 2,
+        }),
+      }),
+    }),
+  });
   const color = f.call(functions.add, {
-    a: f.call(lights.sum, { value: perLight }),
+    a: f.call(functions.add, {
+      a: f.call(lights.sum, { value: perLight, position }),
+      b: environmentLight,
+    }),
     b: emissive,
   });
   f.functionOutput('color', f.call(functions.extend, { xyz: color, w: alpha }));
@@ -545,8 +566,8 @@ function phong(registry: NodeRegistry): FunctionDefinition {
 //
 // The diffuse color of a light is its radiance, scaled by π so that a white
 // light gives baseColor × N·L on a rough dielectric, as Phong. The ambient
-// term is ambient × baseColor × occlusion; image-based lighting will replace
-// it.
+// term is ambient × baseColor × occlusion, plus the light of the
+// environment (image-based lighting) × occlusion.
 function pbr(registry: NodeRegistry): FunctionDefinition {
   const f = new GraphBuilder('pbr', registry);
   const { baseColor, alpha, emissive, normal, worldPosition } = litInputs(f);
@@ -660,8 +681,21 @@ function pbr(registry: NodeRegistry): FunctionDefinition {
     a: f.call(mul, { a: light['ambient'], b: baseColor }),
     b: occlusion,
   });
+  const reflected = f.call(environment.light, {
+    normal: n,
+    view: v,
+    diffuseColor,
+    f0,
+    roughness: r,
+  });
   const color = f.call(add, {
-    a: f.call(lights.sum, { value: f.call(add, { a: ambient, b: direct }) }),
+    a: f.call(add, {
+      a: f.call(lights.sum, {
+        value: f.call(add, { a: ambient, b: direct }),
+        position,
+      }),
+      b: f.call(mul, { a: reflected, b: occlusion }),
+    }),
     b: emissive,
   });
   f.functionOutput('color', f.call(functions.extend, { xyz: color, w: alpha }));

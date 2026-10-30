@@ -164,7 +164,7 @@ describe('Renderer culling', () => {
     expect(renderer.stats.get('scene')?.lights).toBe(2);
   });
 
-  it('keeps the strongest lights when too many reach the view', () => {
+  it('keeps every light that reaches the view, in the light pool', () => {
     const { renderer, log, camera } = setup();
     const lights = Array.from(
       { length: 20 },
@@ -175,13 +175,11 @@ describe('Renderer culling', () => {
         }),
     );
     renderer.render({ items: [itemAt(0)], lights, camera, surface });
-    expect(renderer.stats.get('scene')?.lights).toBe(16);
-    // The 16 nearest of the receiver: x from 0 to 150.
-    const frame = log.buffers.find(
-      (b) => b.label === 'scene frame uniforms',
+    expect(renderer.stats.get('scene')?.lights).toBe(20);
+    const pool = log.buffers.find(
+      (b) => b.label === 'scene lights',
     ) as FakeBuffer;
-    expect(floatsOf(frame)).toContain(150);
-    expect(floatsOf(frame)).not.toContain(190);
+    expect(floatsOf(pool)).toContain(190);
   });
 
   it('gives all the layers by default', () => {

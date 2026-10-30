@@ -24,6 +24,8 @@ export class Ops {
   floor = (x: Value) => this.f.call(functions.floor, { x });
   fract = (x: Value) => this.f.call(functions.fract, { x });
   sqrt = (x: Value) => this.f.call(functions.sqrt, { x });
+  log2 = (x: Value) => this.f.call(functions.log2, { x });
+  exp2 = (x: Value) => this.f.call(functions.exp2, { x });
   saturate = (x: Value) => this.f.call(functions.saturate, { x });
   pow = (base: Value, exponent: Value) =>
     this.f.call(functions.pow, { base, exponent });
