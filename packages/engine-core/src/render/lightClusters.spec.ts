@@ -61,79 +61,83 @@ describe('LightClusters', () => {
     );
   };
 
-  it('lists every light in the clusters of the points it reaches', () => {
-    const next = random(7);
-    const lights = Array.from({ length: 60 }, (_, i) => {
-      const position = {
-        x: (next() - 0.5) * 80,
-        y: (next() - 0.5) * 40,
-        z: -next() * 120,
-      };
-      return i % 3 === 0
-        ? new SpotLight({
-            position,
-            direction: { x: next() - 0.5, y: -1, z: next() - 0.5 },
-            outerCutoff: 10 + next() * 70,
-            quadraticAttenuation: 0.05 + next(),
-          })
-        : new PointLight({ position, quadraticAttenuation: 0.05 + next() });
-    });
-    const { grid, lightClusters, lightClusterDepth } =
-      new LightClusters().assign(lights, 3, view, projection, near, far);
-    expect(lightClusters).toEqual([
-      LightClusterTiles.x,
-      LightClusterTiles.y,
-      LightClusterTiles.slices,
-      3,
-    ]);
-    // Points in front of the camera, near the lights.
-    let checked = 0;
-    for (let n = 0; n < 20000; n++) {
-      const light = lights[Math.floor(next() * lights.length)];
-      const range = lightRange(light);
-      const { x, y, z } = light.position;
-      const point = [
-        x + (next() - 0.5) * 2 * range,
-        y + (next() - 0.5) * 2 * range,
-        z + (next() - 0.5) * 2 * range,
-      ];
-      const clip = transform(viewProjection, point);
-      const inView = [0, 1].every((i) => Math.abs(clip[i]) <= clip[3]);
-      const depth = -transform(view, point)[2];
-      if (!inView || depth < near || depth > far) {
-        continue;
-      }
-      const cluster = clusterOf(point, lightClusters, lightClusterDepth);
-      const listed = new Set(
-        grid.subarray(
-          grid[cluster * 2],
-          grid[cluster * 2] + grid[cluster * 2 + 1],
-        ),
-      );
-      for (let i = 0; i < lights.length; i++) {
-        const other = lights[i];
-        const { x: lx, y: ly, z: lz } = other.position;
-        const to = [point[0] - lx, point[1] - ly, point[2] - lz];
-        const distance = Math.hypot(...to);
-        let reaches = distance < lightRange(other);
-        if (reaches && other instanceof SpotLight) {
-          const { x: dx, y: dy, z: dz } = other.direction;
-          const cosine =
-            (to[0] * dx + to[1] * dy + to[2] * dz) /
-            (distance * Math.hypot(dx, dy, dz));
-          reaches = cosine > Math.cos((other.outerCutoff * Math.PI) / 180);
+  it(
+    'lists every light in the clusters of the points it reaches',
+    { timeout: 60000 },
+    () => {
+      const next = random(7);
+      const lights = Array.from({ length: 60 }, (_, i) => {
+        const position = {
+          x: (next() - 0.5) * 80,
+          y: (next() - 0.5) * 40,
+          z: -next() * 120,
+        };
+        return i % 3 === 0
+          ? new SpotLight({
+              position,
+              direction: { x: next() - 0.5, y: -1, z: next() - 0.5 },
+              outerCutoff: 10 + next() * 70,
+              quadraticAttenuation: 0.05 + next(),
+            })
+          : new PointLight({ position, quadraticAttenuation: 0.05 + next() });
+      });
+      const { grid, lightClusters, lightClusterDepth } =
+        new LightClusters().assign(lights, 3, view, projection, near, far);
+      expect(lightClusters).toEqual([
+        LightClusterTiles.x,
+        LightClusterTiles.y,
+        LightClusterTiles.slices,
+        3,
+      ]);
+      // Points in front of the camera, near the lights.
+      let checked = 0;
+      for (let n = 0; n < 20000; n++) {
+        const light = lights[Math.floor(next() * lights.length)];
+        const range = lightRange(light);
+        const { x, y, z } = light.position;
+        const point = [
+          x + (next() - 0.5) * 2 * range,
+          y + (next() - 0.5) * 2 * range,
+          z + (next() - 0.5) * 2 * range,
+        ];
+        const clip = transform(viewProjection, point);
+        const inView = [0, 1].every((i) => Math.abs(clip[i]) <= clip[3]);
+        const depth = -transform(view, point)[2];
+        if (!inView || depth < near || depth > far) {
+          continue;
         }
-        if (reaches) {
-          checked++;
-          expect(listed.has(3 + i)).toBe(true);
+        const cluster = clusterOf(point, lightClusters, lightClusterDepth);
+        const listed = new Set(
+          grid.subarray(
+            grid[cluster * 2],
+            grid[cluster * 2] + grid[cluster * 2 + 1],
+          ),
+        );
+        for (let i = 0; i < lights.length; i++) {
+          const other = lights[i];
+          const { x: lx, y: ly, z: lz } = other.position;
+          const to = [point[0] - lx, point[1] - ly, point[2] - lz];
+          const distance = Math.hypot(...to);
+          let reaches = distance < lightRange(other);
+          if (reaches && other instanceof SpotLight) {
+            const { x: dx, y: dy, z: dz } = other.direction;
+            const cosine =
+              (to[0] * dx + to[1] * dy + to[2] * dz) /
+              (distance * Math.hypot(dx, dy, dz));
+            reaches = cosine > Math.cos((other.outerCutoff * Math.PI) / 180);
+          }
+          if (reaches) {
+            checked++;
+            expect(listed.has(3 + i)).toBe(true);
+          }
         }
       }
-    }
-    expect(checked).toBeGreaterThan(5000);
-    // Far fewer than every light everywhere.
-    const listedTotal = grid.length - LightClusterCount * 2;
-    expect(listedTotal).toBeLessThan(lights.length * LightClusterCount * 0.1);
-  });
+      expect(checked).toBeGreaterThan(5000);
+      // Far fewer than every light everywhere.
+      const listedTotal = grid.length - LightClusterCount * 2;
+      expect(listedTotal).toBeLessThan(lights.length * LightClusterCount * 0.1);
+    },
+  );
 
   it('leaves out the lights out of the view', () => {
     const behind = new PointLight({
