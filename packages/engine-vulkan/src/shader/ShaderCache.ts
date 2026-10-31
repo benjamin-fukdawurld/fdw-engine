@@ -49,12 +49,15 @@ export class FileShaderCache implements ShaderCache {
 
   /**
    * The cache of the hosts: in the default directory, none when
-   * FDW_SHADER_CACHE is `off`.
+   * FDW_SHADER_CACHE is `off`. An application gives the directory of the
+   * programs it ships (precompiled), read before the cache of the user.
    */
-  static fromEnvironment(): FileShaderCache | undefined {
-    return process.env['FDW_SHADER_CACHE'] === 'off'
-      ? undefined
-      : new FileShaderCache();
+  static fromEnvironment(shipped?: string): ShaderCache | undefined {
+    if (process.env['FDW_SHADER_CACHE'] === 'off') return undefined;
+    const cache = new FileShaderCache();
+    return shipped && existsSync(shipped)
+      ? new LayeredShaderCache(new FileShaderCache(shipped), cache)
+      : cache;
   }
 
   /**
@@ -105,5 +108,25 @@ export class FileShaderCache implements ShaderCache {
 
   #path(key: string): string {
     return join(this.directory, `${key}.bin`);
+  }
+}
+
+/**
+ * The programs an application ships (precompiled, read only) over a cache
+ * of the user: the programs not shipped (the materials of a level) are
+ * compiled once, and kept in the second.
+ */
+export class LayeredShaderCache implements ShaderCache {
+  constructor(
+    readonly shipped: ShaderCache,
+    readonly cache: ShaderCache,
+  ) {}
+
+  get(key: string): Uint8Array | undefined {
+    return this.shipped.get(key) ?? this.cache.get(key);
+  }
+
+  set(key: string, code: Uint8Array): void {
+    this.cache.set(key, code);
   }
 }

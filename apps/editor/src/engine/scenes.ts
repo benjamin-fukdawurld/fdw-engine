@@ -28,10 +28,10 @@ import {
   createStbImageDecoder,
   FileSource,
 } from '@fdw/engine-resources-native';
-import { join } from 'node:path';
 
-// Given by the main process.
-const repositoryRoot = process.env['FDW_REPOSITORY'] ?? '';
+// Given by the main process: those of the documentation, or of the
+// executable.
+const modelsDirectory = process.env['FDW_MODELS'] ?? '';
 
 // The scenes the viewport can show: those of apps/demo-native, by the same
 // names. Loaded when chosen: some load something first (Rapier, the same
@@ -57,10 +57,9 @@ export const scenes: Record<string, () => Promise<SceneFactory>> = {
   'coast-gerstner': async () =>
     createCoast(await createRapierPhysics(), { waves: 'gerstner' }),
   tps: async () => {
-    // The files of the documentation: the models of the forest.
+    // The models of the forest.
     const store = new ResourceStore();
-    const models = join(repositoryRoot, 'apps/docs/public/models');
-    store.mount('file', new FileSource(models), { default: true });
+    store.mount('file', new FileSource(modelsDirectory), { default: true });
     installAssets(store, { codecs: [pixelCodec(createStbImageDecoder())] });
     installGltf(store);
     return createTpsScene({

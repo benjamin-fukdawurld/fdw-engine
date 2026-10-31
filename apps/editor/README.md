@@ -58,6 +58,14 @@ npm run dev
 
 `FDW_VALIDATION=1` enables the Vulkan validation layer; its messages are printed when the engine stops. From a terminal of VS Code, unset `ELECTRON_RUN_AS_NODE`, which makes Electron start as Node.
 
+## The executable
+
+```sh
+npx nx run editor:package   # release/: a portable executable (Windows), an AppImage (Linux)
+```
+
+`scripts/package.mjs` gathers in `dist/` what the engine process reads beside the bundle: the addons, each with its DXC; the models of the forest (`tps`); the programs of the scenes, precompiled by `scripts/precompile.ts` with those addons (the key of a program has the version of DXC), which plays the scenes with the `EditorEngine` on an offscreen surface, on Vulkan and on Direct3D 12 under Windows. It needs a device (a GPU, lavapipe, WARP); `--no-precompile` ships none. electron-builder (`electron-builder.yml`) puts `dist/` in the resources of the executable; packaged, the main process gives their paths to the engine process. The engine reads the programs shipped before the cache of the user (`LayeredShaderCache`). No Dawn fallback in the executable: it needs a Node of its own.
+
 ## Tests
 
 The editor end to end (`tests/editor.spec.ts`), Electron started by Playwright in an X server of its own (`xvfb-run`), on lavapipe: the drivers of a GPU do not present into the windows of Xvfb. The inputs are given by the X server (XTest), as a user would, through the child window: `tests/xprobe.c`, built at the first run, gives them and reads the pixels of the screen, where the child window is (a capture of the page does not have it). Each test has a user data of its own (`FDW_USER_DATA`), so the default layout.

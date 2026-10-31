@@ -16,6 +16,9 @@ export interface Renderer {
   destroy(): Promise<void>;
 }
 
+// The programs precompiled for the executable (scripts/precompile.ts).
+const shippedShaders = process.env['FDW_SHIPPED_SHADERS'];
+
 const nextTask = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 // Destroys what was made before a backend failed to start.
@@ -42,8 +45,8 @@ export async function startVulkan(viewport: NativeViewport): Promise<Renderer> {
     application: 'FDW Editor',
     validation: process.env['FDW_VALIDATION'] === '1',
     // The programs compiled at a previous start (FDW_SHADER_CACHE=off:
-    // none).
-    shaderCache: FileShaderCache.fromEnvironment(),
+    // none), after those the executable ships.
+    shaderCache: FileShaderCache.fromEnvironment(shippedShaders),
   });
   const surface = new ViewportSurface(viewport);
   const destroy = async () => {
@@ -78,7 +81,7 @@ export async function startD3D12(viewport: NativeViewport): Promise<Renderer> {
   const engine = new D3D12Engine({
     application: 'FDW Editor',
     validation: process.env['FDW_VALIDATION'] === '1',
-    shaderCache: FileShaderCache.fromEnvironment(),
+    shaderCache: FileShaderCache.fromEnvironment(shippedShaders),
   });
   const surface = new ViewportSurface(viewport);
   const destroy = async () => {
