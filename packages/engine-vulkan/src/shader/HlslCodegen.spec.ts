@@ -225,9 +225,7 @@ describe('HlslCodegen', () => {
     const { code } = emit(texturedPhong());
     expect(code).toContain('#pragma pack_matrix(column_major)');
     expect(code).toContain('  [[vk::offset(0)]] float4x4 u_viewProjection;');
-    expect(code).toContain(
-      '  [[vk::offset(288)]] float4 u_lightClusters;',
-    );
+    expect(code).toContain('  [[vk::offset(288)]] float4 u_lightClusters;');
     expect(code).toMatch(
       /\[\[vk::binding\(\d, 0\)\]\] StructuredBuffer<float4> b_lights;/,
     );
