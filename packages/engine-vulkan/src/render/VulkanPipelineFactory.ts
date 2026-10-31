@@ -34,6 +34,7 @@ import {
   HlslTarget,
   RayTracingEntryPoints,
 } from '../shader/HlslCodegen';
+import { shaderKey, type ShaderCache } from '../shader/ShaderCache';
 import { VulkanObjectTable } from './VulkanObjectTable';
 import { VulkanTopLevel } from './VulkanAccelerationStructures';
 
@@ -142,6 +143,12 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
     { vertex: ShaderHandle; fragment: ShaderHandle }
   >();
   private readonly _computeShaders = new Map<string, ShaderHandle>();
+  private _dxcVersion?: string;
+  /**
+   * The programs compiled by DXC in previous runs: compiled once, then read
+   * (VulkanEngineOptions.shaderCache). None by default.
+   */
+  shaderCache?: ShaderCache;
 
   constructor(
     private readonly _addon: VulkanAddon,
@@ -234,8 +241,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       if (sources.kind !== 'single-module' || !entryPoint) {
         throw new Error(`Program "${program.name}" has no compute stage`);
       }
-      shader = this._addon.createShader(
-        this._context,
+      shader = this.createShader(
         sources.code,
         dxcArguments('compute', entryPoint, this.target, sources.code),
         `${program.name} (compute)`,
@@ -272,8 +278,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       throw new Error(`Program "${program.name}" has no compute stage`);
     }
     if (!shader) {
-      shader = this._addon.createShader(
-        this._context,
+      shader = this.createShader(
         sources.code,
         dxcArguments(
           'library',
@@ -404,8 +409,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
         );
       }
       const compile = (stage: 'vertex' | 'fragment', entryPoint: string) =>
-        this._addon.createShader(
-          this._context,
+        this.createShader(
           sources.code,
           dxcArguments(stage, entryPoint, this.target, sources.code),
           `${program.name} (${stage})`,
@@ -417,5 +421,25 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       this._shaders.set(program.programKey, shaders);
     }
     return shaders;
+  }
+
+  // A shader module compiled by DXC, or read from the cache.
+  private createShader(
+    hlsl: string,
+    args: readonly string[],
+    label: string,
+  ): ShaderHandle {
+    const cache = this.shaderCache;
+    if (!cache) {
+      return this._addon.createShader(this._context, hlsl, args, label);
+    }
+    this._dxcVersion ??= this._addon.dxcVersion();
+    const key = shaderKey(this._dxcVersion, this.target, args, hlsl);
+    let code = cache.get(key);
+    if (!code) {
+      code = this._addon.compileHlsl(hlsl, args);
+      cache.set(key, code);
+    }
+    return this._addon.createShaderFromCode(this._context, code, args, label);
   }
 }

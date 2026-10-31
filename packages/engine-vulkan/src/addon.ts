@@ -196,6 +196,18 @@ export interface VulkanAddon {
     label?: string,
   ): ShaderHandle;
   destroyShader(shader: ShaderHandle): void;
+  // Compiles an entry point of an HLSL module (SPIR-V, or DXIL for Direct3D
+  // 12) without a module, for a ShaderCache; createShaderFromCode makes the
+  // module of such code (the arguments give its stage and entry point).
+  compileHlsl(hlsl: string, args: readonly string[]): Uint8Array;
+  createShaderFromCode(
+    context: ContextHandle,
+    code: Uint8Array,
+    args: readonly string[],
+    label?: string,
+  ): ShaderHandle;
+  // The version of DXC (and its commit): a part of the keys of the cache.
+  dxcVersion(): string;
   // `stride`: the size of the elements of a storage buffer (Direct3D 12).
   createGroupLayout(
     context: ContextHandle,
