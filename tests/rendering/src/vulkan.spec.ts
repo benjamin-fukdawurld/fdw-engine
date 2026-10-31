@@ -7,14 +7,22 @@ import {
 import { describeRays } from './rays';
 import { describeRenderer, RenderingFixture, size } from './suite';
 import { canRun } from '@fdw/engine-backend/testing';
+import { memoryShaderCache } from './shaderCache';
 
 // The shared rendering tests on Vulkan, through the native library of
 // @fdw/engine-vulkan, with the validation layer: any message fails the
 // test reading the pixels. Skipped where the addon is not built (it needs
-// the Vulkan SDK).
+// the Vulkan SDK). The programs come from a cache after their first
+// compilation.
+
+const shaderCache = memoryShaderCache();
 
 async function createFixture(): Promise<RenderingFixture> {
-  const engine = new VulkanEngine({ validation: true, application: 'tests' });
+  const engine = new VulkanEngine({
+    validation: true,
+    application: 'tests',
+    shaderCache,
+  });
   await engine.init();
   const surface = new VulkanOffscreenSurface(size, size);
   await surface.init(engine);

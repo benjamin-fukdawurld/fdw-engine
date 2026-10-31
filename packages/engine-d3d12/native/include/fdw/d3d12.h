@@ -225,6 +225,22 @@ FDW_DX_API fdw_dx_shader *fdw_dx_shader_create(fdw_dx_context *context,
                                                const char *label);
 FDW_DX_API void fdw_dx_shader_destroy(fdw_dx_context *context,
                                       fdw_dx_shader *shader);
+// Compiles an entry point of an HLSL module to DXIL, without creating a
+// shader: `*code` (freed by fdw_dx_free_code) of `*size` bytes, for a cache
+// of the programs. Returns 0, or -1 on error.
+FDW_DX_API int fdw_dx_compile_hlsl(const char *hlsl,
+                                   const char *const *arguments,
+                                   uint32_t count, uint8_t **code,
+                                   size_t *size);
+FDW_DX_API void fdw_dx_free_code(uint8_t *code);
+// Creates a shader from DXIL compiled before (fdw_dx_compile_hlsl, or a
+// cache): the arguments give its stage.
+FDW_DX_API fdw_dx_shader *fdw_dx_shader_create_from_code(
+    fdw_dx_context *context, const uint8_t *code, size_t size,
+    const char *const *arguments, uint32_t count, const char *label);
+// The version of the DXC library, with its commit when it tells it: a key
+// of the cache of the programs. NULL when DXC is missing.
+FDW_DX_API const char *fdw_dx_dxc_version(void);
 
 // --- Groups of resources -------------------------------------------------------
 

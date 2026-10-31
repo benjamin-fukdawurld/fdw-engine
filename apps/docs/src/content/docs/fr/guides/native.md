@@ -100,6 +100,23 @@ Wayland, Win32, Cocoa) à la surface.
 Khronos lorsqu'elle est installée ; `engine.device.takeMessages()` renvoie
 ses messages depuis le dernier appel.
 
+## Le cache des programmes
+
+Sous Vulkan et Direct3D 12, les programmes sont compilés depuis le HLSL par
+DXC, une douzaine de millisecondes chacun. `FileShaderCache` les garde d'un
+lancement à l'autre, un fichier par programme, sous une clé faite du HLSL,
+des arguments et de la version de DXC : le second démarrage ne les compile
+plus (une demi-seconde de moins pour `tps`). L'éditeur et `demo-native`
+s'en servent ; un autre hôte le donne à son moteur :
+
+```ts
+const engine = new VulkanEngine({ shaderCache: new FileShaderCache() });
+```
+
+Il vit dans le dossier de cache de l'utilisateur
+(`%LOCALAPPDATA%\fdw-engine\shaders`, `~/.cache/fdw-engine/shaders`), ou dans
+`FDW_SHADER_CACHE`. Le supprimer ne coûte qu'un démarrage plus lent.
+
 ## Variables d'environnement
 
 | Variable               | Effet                                                                          |
@@ -109,6 +126,9 @@ ses messages depuis le dernier appel.
 | `FDW_NATIVE_ADDON`     | Charge l'addon de fenêtrage depuis un autre chemin                             |
 | `FDW_VULKAN_ADDON`     | Charge l'addon Vulkan depuis un autre chemin                                   |
 | `NODE_API_INCLUDE_DIR` | Les en-têtes Node-API utilisés pour compiler les addons                        |
+| `FDW_SHADER_CACHE`     | Le dossier des programmes compilés ; `off` : pas de cache                      |
+| `FDW_D3D12_ADAPTER`    | `warp` : Direct3D 12 sur WARP, le rastériseur logiciel de Windows              |
+| `FDW_FROM_SOURCE`      | Construit les addons par CMake plutôt que de télécharger les précompilés       |
 
 ## Pour aller plus loin
 

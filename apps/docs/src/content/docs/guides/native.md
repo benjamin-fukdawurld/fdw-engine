@@ -90,6 +90,23 @@ Wayland, Win32, Cocoa) to the surface.
 layer when it is installed; `engine.device.takeMessages()` returns its
 messages since the last call.
 
+## The cache of the programs
+
+On Vulkan and Direct3D 12, the programs are compiled from HLSL by DXC, about
+a dozen milliseconds each. `FileShaderCache` keeps them between runs, a file
+per program, under a key made of the HLSL, the arguments and the version of
+DXC: the second start does not compile them again (half a second less for
+`tps`). The editor and `demo-native` use it; another host gives it to its
+engine:
+
+```ts
+const engine = new VulkanEngine({ shaderCache: new FileShaderCache() });
+```
+
+It lives in the cache directory of the user (`%LOCALAPPDATA%\fdw-engine\shaders`,
+`~/.cache/fdw-engine/shaders`), or in `FDW_SHADER_CACHE`. Deleting it only
+costs one slower start.
+
 ## Environment variables
 
 | Variable               | Effect                                                            |
@@ -99,6 +116,9 @@ messages since the last call.
 | `FDW_NATIVE_ADDON`     | Loads the window addon from another path                          |
 | `FDW_VULKAN_ADDON`     | Loads the Vulkan addon from another path                          |
 | `NODE_API_INCLUDE_DIR` | The Node-API headers used to build the addons                     |
+| `FDW_SHADER_CACHE`     | The directory of the compiled programs; `off`: no cache           |
+| `FDW_D3D12_ADAPTER`    | `warp`: Direct3D 12 on WARP, the software rasterizer of Windows   |
+| `FDW_FROM_SOURCE`      | Builds the addons with CMake rather than fetching prebuilt ones   |
 
 ## Further
 

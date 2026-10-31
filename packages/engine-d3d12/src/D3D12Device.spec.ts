@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { addonPath } from './addon';
+import { dxcArguments } from '@fdw/engine-vulkan';
+import { addonPath, loadD3D12Addon } from './addon';
 import { D3D12Device } from './D3D12Device';
 import { canRun } from '@fdw/engine-backend/testing';
 
@@ -91,5 +92,19 @@ describe.skipIf(!built)('D3D12Device on WARP', () => {
     } finally {
       device.destroy();
     }
+  });
+});
+
+describe.skipIf(!built)('the compilation for a cache', () => {
+  it('compiles to DXIL without a shader, and tells the version of DXC', () => {
+    const addon = loadD3D12Addon();
+    const hlsl = '[numthreads(1, 1, 1)] void cs_main() {}';
+    expect(addon.dxcVersion()).toMatch(/^\d+\.\d+/);
+    const code = addon.compileHlsl(
+      hlsl,
+      dxcArguments('compute', 'cs_main', 'd3d12', hlsl),
+    );
+    // A DXIL container.
+    expect(new TextDecoder().decode(code.subarray(0, 4))).toBe('DXBC');
   });
 });

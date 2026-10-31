@@ -110,6 +110,28 @@ Avant tout, **mesurer** : le temps jusqu'à la première image de l'éditeur (le
 
 Le WebGPU du navigateur garde son propre cache ; rien à faire pour lui.
 
+### 5.1 Les mesures
+
+`apps/demo-native/scripts/startup-probe.ts`, chargé avant la démo, chronomètre les appels des addons qui compilent (DXC, le pilote) et la génération du HLSL, et donne en fin de course, en ms depuis le début du processus, la première image et le dernier pipeline créé (la scène est prête). `tps`, 300 images sans vsync, cachée, une RTX 5070 Ti sous Windows :
+
+| Backend     | Scène prête | Première image | DXC    | Pilote (cache NVIDIA froid / chaud) | Génération HLSL |
+| ----------- | ----------- | -------------- | ------ | ----------------------------------- | --------------- |
+| Vulkan      | 3,2–3,4 s   | 1,9–2,2 s      | 380 ms | 313 ms / 8 ms                       | 8 ms            |
+| Direct3D 12 | 3,1–3,2 s   | 1,7–1,8 s      | 500 ms | 269 ms / 24 ms                      | 8 ms            |
+
+Le reste : Node et la transpilation du TypeScript par jiti (~1,3 s avant le contexte, propres à la démo : l'éditeur est empaqueté), le contexte (0,25–0,35 s), le chargement des modèles.
+
+- **DXC est payé à chaque lancement** : 31 compilations, 0,4–0,5 s. Le cache des programmes (point 1) le retire : **la scène est prête 0,5–0,7 s plus tôt** (Vulkan 3,3 → 2,75 s, Direct3D 12 3,15 → 2,6 s).
+- **Le pilote a déjà son cache** : NVIDIA garde les pipelines compilés sur disque, et passe de ~300 ms au premier lancement à 8–24 ms ensuite. Un `VkPipelineCache` ou une `ID3D12PipelineLibrary` (point 2) ne gagnerait que ces dizaines de ms ici ; Mesa (lavapipe, RADV) et AMD ont aussi le leur. **Reporté**, à reprendre si un pilote sans cache disque le demande.
+- **La précompilation** (point 3) retire DXC du _premier_ lancement. Elle n'a de sens qu'avec une application livrée : elle vient avec l'exécutable (étape 7), qui embarquera un cache rempli en jouant ses scènes, lu avant celui de l'utilisateur.
+
+### 5.2 Le cache des programmes
+
+- **Les addons** séparent la compilation de la création : `compileHlsl(hlsl, args)` rend le SPIR-V ou le DXIL, `createShaderFromCode(context, code, args, label)` en fait un module, `dxcVersion()` donne la version de DXC et son commit. `createShader` reste, pour les hôtes sans cache.
+- **`ShaderCache`** (`@fdw/engine-vulkan`, partagé avec Direct3D 12) : `get(key)`, `set(key, code)`, la clé étant le SHA-256 de la version de DXC, de la cible, des arguments et du HLSL. `VulkanPipelineFactory` le consulte quand il en a un (`shaderCache` des options de `VulkanEngine` et `D3D12Engine`). Il est dans le paquet du backend natif, pas dans `engine-backend` : il lit des fichiers, et seuls les backends natifs compilent par DXC.
+- **`FileShaderCache`** : un fichier par programme, écrit par un fichier temporaire renommé (deux processus écrivent les mêmes octets), dans `FDW_SHADER_CACHE` ou le dossier de cache de l'utilisateur (`%LOCALAPPDATA%\fdw-engine\shaders`, `~/.cache/fdw-engine/shaders`). Un cache qu'on ne peut pas écrire ne fait que ralentir. L'éditeur et `demo-native` s'en servent ; `FDW_SHADER_CACHE=off` le coupe.
+- **Les tests** : les suites de rendu Vulkan et Direct3D 12 partagent un cache en mémoire ; chaque programme y est compilé par le premier test qui en a besoin, les suivants passent par `createShaderFromCode`.
+
 ## 6. Les étapes
 
 1. **WARP** : l'option d'adaptateur de `D3D12Engine` ; la suite Direct3D 12 passe sur WARP, en local.
@@ -137,4 +159,5 @@ Chaque étape vient avec ses pages de documentation (EN, FR) : contribuer sous W
 - **À vérifier sur un vrai bureau** : les tests de bout en bout de l'éditeur sous Windows (les entrées passent-elles par la fenêtre désactivée, les trous découpent-ils une swapchain _flip_). Le job `windows` exclut l'éditeur jusque-là.
 - **À vérifier au premier passage en CI** : l'action du SDK Vulkan (le loader, lavapipe, le chemin de son manifeste), Dawn sur WARP, le temps du job ; la première release des addons.
 - **Connu** : sur une RTX locale, Dawn (Direct3D 12) donne parfois un temps GPU de passe aberrant (son timestamp de début figé) ; pas sur WARP.
-- **Reste** : le démarrage (étape 6), l'exécutable (étape 7).
+- **Le démarrage** (étape 6) : mesuré (§5.1) ; le cache des programmes fait (§5.2) ; le cache des pipelines reporté (le pilote a le sien) ; la précompilation rattachée à l'exécutable.
+- **Reste** : l'exécutable (étape 7), avec la précompilation.

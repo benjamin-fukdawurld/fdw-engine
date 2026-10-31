@@ -1,4 +1,5 @@
 import { Engine, EngineState } from '@fdw/engine-backend';
+import type { ShaderCache } from '@fdw/engine-vulkan';
 import { signal, Signal } from '@preact/signals-core';
 import { D3D12RenderBackend } from './render/D3D12RenderBackend';
 import { D3D12Device, D3D12DeviceOptions } from './D3D12Device';
@@ -8,6 +9,9 @@ export interface D3D12EngineOptions extends D3D12DeviceOptions {
   // GpuSamplerFactory.defaultMaxAnisotropy): 1 by default, 8 or 16 for
   // sharp textures on surfaces seen at a grazing angle.
   readonly maxAnisotropy?: number;
+  // The programs compiled by DXC, kept between runs (FileShaderCache of
+  // @fdw/engine-vulkan): compiled once, not at each start. None by default.
+  readonly shaderCache?: ShaderCache;
 }
 
 /**
@@ -39,6 +43,7 @@ export class D3D12Engine extends EventTarget implements Engine {
       this.backend = new D3D12RenderBackend(this.device);
       this.backend.textures.defaultMaxAnisotropy =
         this._options.maxAnisotropy ?? 1;
+      this.backend.pipelines.shaderCache = this._options.shaderCache;
     } catch (error) {
       this.device = undefined;
       this.state.value = 'uninitialized';
