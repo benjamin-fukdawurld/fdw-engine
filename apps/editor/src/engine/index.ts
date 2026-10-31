@@ -99,8 +99,44 @@ class DawnProcess {
   }
 }
 
+/**
+ * No backend: Vulkan did not start, and the executable has no Dawn (it
+ * needs a Node of its own). Each page is told why.
+ */
+class NoBackend {
+  readonly #message: string;
+  readonly #exited: Promise<void>;
+  #quit?: () => void;
+
+  constructor(reason: string | undefined) {
+    this.#message = `No backend: ${reason ?? 'unknown'} (no Dawn in the executable)`;
+    this.#exited = new Promise((resolve) => {
+      this.#quit = resolve;
+    });
+  }
+
+  connect(port: MessagePortMain): void {
+    port.postMessage({
+      type: 'error',
+      message: this.#message,
+    } satisfies EngineMessage);
+  }
+
+  setVisible(): void {
+    // No frames anyway.
+  }
+
+  get exited(): Promise<void> {
+    return this.#exited;
+  }
+
+  quit(): void {
+    this.#quit?.();
+  }
+}
+
 const session = new EngineSession();
-let dawn: DawnProcess | undefined;
+let dawn: DawnProcess | NoBackend | undefined;
 // The port waits here until the backend is chosen: Vulkan in this process
 // (the session), or the Dawn process.
 let port: MessagePortMain | undefined;
@@ -138,7 +174,9 @@ async function run(parent: string, requested?: string): Promise<void> {
     return;
   }
   viewport.destroy();
-  dawn = new DawnProcess(parent, backend.fallback);
+  dawn = process.env['FDW_DAWN_PROCESS']
+    ? new DawnProcess(parent, backend.fallback)
+    : new NoBackend(backend.fallback);
   dawn.setVisible(windowVisible);
   if (port) connect(port);
   await dawn.exited;

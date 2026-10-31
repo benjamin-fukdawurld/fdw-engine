@@ -58,6 +58,20 @@ workspaces npm) : `npx nx run editor:install` les installe la première
 fois. Depuis un terminal de VS Code, retirez `ELECTRON_RUN_AS_NODE`, qui
 fait démarrer Electron en Node.
 
+**L'exécutable** : un exécutable portable sous Windows, une AppImage sous
+Linux, avec les addons, DXC et les programmes de ses scènes précompilés ;
+il ne demande ni CMake, ni compilateur, ni SDK Vulkan.
+
+```sh
+npx nx run editor:package     # apps/editor/release
+```
+
+Ses programmes sont compilés en jouant ses scènes sur une surface hors
+écran, sous Vulkan et Direct3D 12 (Windows) : il faut un périphérique, un
+GPU ou un logiciel (lavapipe, WARP) ; `node scripts/package.mjs
+--no-precompile` n'en livre aucun. L'exécutable n'a pas le repli sur
+Dawn : Dawn demande un Node à lui.
+
 ## Le backend
 
 La variable `FDW_BACKEND` choisit le backend, lue au démarrage de

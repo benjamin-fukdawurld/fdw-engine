@@ -1,4 +1,5 @@
 import {
+  app,
   MessageChannelMain,
   utilityProcess,
   type BrowserWindow,
@@ -11,6 +12,45 @@ import dawnPath from '../engine/dawn?modulePath';
 
 // From out/main, where the bundle runs.
 const repositoryRoot = join(__dirname, '../../../..');
+
+/**
+ * Where the engine process finds its files: in the repository, or in the
+ * resources of the executable (scripts/package.mjs), with the programs
+ * precompiled for it.
+ */
+function engineFiles(): Record<string, string> {
+  if (app.isPackaged) {
+    const addons = join(process.resourcesPath, 'addons');
+    return {
+      FDW_EDITOR_ADDON: join(addons, 'editor/fdw_editor.node'),
+      FDW_VULKAN_ADDON: join(addons, 'engine-vulkan/fdw_vulkan.node'),
+      FDW_D3D12_ADDON: join(addons, 'engine-d3d12/fdw_d3d12.node'),
+      FDW_NATIVE_ADDON: join(addons, 'engine-native/fdw_native.node'),
+      FDW_MODELS: join(process.resourcesPath, 'models'),
+      FDW_SHIPPED_SHADERS: join(process.resourcesPath, 'shaders'),
+    };
+  }
+  return {
+    // Its Node process on Dawn: not in the executable.
+    FDW_DAWN_PROCESS: dawnPath,
+    FDW_EDITOR_ADDON: join(__dirname, '../../build/fdw_editor.node'),
+    // The addons of the engine, built in their packages.
+    FDW_VULKAN_ADDON: join(
+      repositoryRoot,
+      'packages/engine-vulkan/build/fdw_vulkan.node',
+    ),
+    FDW_D3D12_ADDON: join(
+      repositoryRoot,
+      'packages/engine-d3d12/build/fdw_d3d12.node',
+    ),
+    FDW_NATIVE_ADDON: join(
+      repositoryRoot,
+      'packages/engine-native/build/fdw_native.node',
+    ),
+    // The models of the documentation (the forest of tps).
+    FDW_MODELS: join(repositoryRoot, 'apps/docs/public/models'),
+  };
+}
 
 // The XID of a window (32 bits from Electron, x11::Window, or a long), or
 // its HWND.
@@ -37,26 +77,7 @@ export class EngineProcess {
       serviceName: 'FDW Engine',
       stdio: 'inherit',
       // The process runs from out/main/chunks: the paths are given to it.
-      env: {
-        ...process.env,
-        FDW_REPOSITORY: repositoryRoot,
-        // Its Node process on Dawn.
-        FDW_DAWN_PROCESS: dawnPath,
-        FDW_EDITOR_ADDON: join(__dirname, '../../build/fdw_editor.node'),
-        // The addons of the engine, built in their packages.
-        FDW_VULKAN_ADDON: join(
-          repositoryRoot,
-          'packages/engine-vulkan/build/fdw_vulkan.node',
-        ),
-        FDW_D3D12_ADDON: join(
-          repositoryRoot,
-          'packages/engine-d3d12/build/fdw_d3d12.node',
-        ),
-        FDW_NATIVE_ADDON: join(
-          repositoryRoot,
-          'packages/engine-native/build/fdw_native.node',
-        ),
-      },
+      env: { ...process.env, ...engineFiles() },
     });
     this.#exited = new Promise((resolve) =>
       this.#child.once('exit', () => resolve()),

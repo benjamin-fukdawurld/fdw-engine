@@ -132,6 +132,15 @@ Le reste : Node et la transpilation du TypeScript par jiti (~1,3 s avant le cont
 - **`FileShaderCache`** : un fichier par programme, écrit par un fichier temporaire renommé (deux processus écrivent les mêmes octets), dans `FDW_SHADER_CACHE` ou le dossier de cache de l'utilisateur (`%LOCALAPPDATA%\fdw-engine\shaders`, `~/.cache/fdw-engine/shaders`). Un cache qu'on ne peut pas écrire ne fait que ralentir. L'éditeur et `demo-native` s'en servent ; `FDW_SHADER_CACHE=off` le coupe.
 - **Les tests** : les suites de rendu Vulkan et Direct3D 12 partagent un cache en mémoire ; chaque programme y est compilé par le premier test qui en a besoin, les suivants passent par `createShaderFromCode`.
 
+### 5.3 La précompilation et l'exécutable
+
+- **`LayeredShaderCache`** : les programmes livrés (un `FileShaderCache` en lecture) puis le cache de l'utilisateur, où vont ceux qui manquent (les matériaux d'un niveau, une scène changée). `FileShaderCache.fromEnvironment(dossier)` le rend quand le dossier existe ; `FDW_SHADER_CACHE=off` coupe les deux.
+- **`apps/editor/scripts/precompile.ts`** joue les scènes de l'éditeur avec son `EditorEngine`, sur une surface hors écran : le niveau (la sélection et ses gizmos, les rendus par rayons quand le backend en trace), puis chaque scène, jusqu'à 60 images et 2 s sans nouveau programme. Un processus par backend : Vulkan, et Direct3D 12 sous Windows. Il lui faut un périphérique, GPU ou logiciel.
+- **La clé contient la version de DXC** : la précompilation charge les addons et le DXC _rassemblés pour l'exécutable_, pas ceux du dépôt.
+- **`apps/editor/scripts/package.mjs`** (`nx run editor:package`) rassemble dans `dist/` les addons (chacun dans son dossier, avec son DXC : celui du SDK Vulkan et celui du SDK Windows diffèrent), les modèles de la forêt (`tps`), les programmes précompilés ; electron-builder en fait les ressources d'un exécutable portable Windows ou d'une AppImage (`release/`). Le processus principal donne au moteur ces chemins quand l'application est empaquetée (`FDW_MODELS`, `FDW_SHIPPED_SHADERS`, les `FDW_*_ADDON`).
+- **Pas de Dawn dans l'exécutable** : il demande un Node 24 à part et lit son script hors de l'asar. Sans Vulkan, la page dit pourquoi.
+- La précompilation a trouvé un bug : en rendu `reflections`, le G-buffer et le niveau rastérisé avaient les mêmes noms dans le graphe (`scene depth`) ; le G-buffer s'appelle maintenant `reflections scene`.
+
 ## 6. Les étapes
 
 1. **WARP** : l'option d'adaptateur de `D3D12Engine` ; la suite Direct3D 12 passe sur WARP, en local.
@@ -160,4 +169,4 @@ Chaque étape vient avec ses pages de documentation (EN, FR) : contribuer sous W
 - **À vérifier au premier passage en CI** : l'action du SDK Vulkan (le loader, lavapipe, le chemin de son manifeste), Dawn sur WARP, le temps du job ; la première release des addons.
 - **Connu** : sur une RTX locale, Dawn (Direct3D 12) donne parfois un temps GPU de passe aberrant (son timestamp de début figé) ; pas sur WARP.
 - **Le démarrage** (étape 6) : mesuré (§5.1) ; le cache des programmes fait (§5.2) ; le cache des pipelines reporté (le pilote a le sien) ; la précompilation rattachée à l'exécutable.
-- **Reste** : l'exécutable (étape 7), avec la précompilation.
+- **L'exécutable** (étape 7, §5.3) : `nx run editor:package`, les programmes des scènes précompilés (95 sous Vulkan). Pas encore en CI : il faudrait un job qui le construise sur lavapipe et WARP et l'attache à une release.

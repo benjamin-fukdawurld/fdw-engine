@@ -87,6 +87,22 @@
       ],
       "dependsOn": ["install"]
     },
+    "package": {
+      "// command": "the executable (scripts/package.mjs): the programs precompiled on this device",
+      "command": "node scripts/package.mjs",
+      "options": {
+        "cwd": "apps/editor"
+      },
+      "dependsOn": [
+        "install",
+        "build-native",
+        {
+          "projects": ["engine-native", "engine-vulkan", "engine-d3d12"],
+          "target": "build-native"
+        },
+        "build"
+      ]
+    },
     "test": {
       "command": "node scripts/test.mjs",
       "options": {
