@@ -391,7 +391,9 @@ function emitInstructions(
               : op.name === 'dpdy'
                 ? // The window y points up in OpenGL: down, as in WGSL.
                   `(-dFdy(${arg(instruction, 0)}))`
-                : `${op.name}(${args(instruction)})`;
+                : op.name === 'atan2'
+                  ? `atan(${args(instruction)})`
+                  : `${op.name}(${args(instruction)})`;
         break;
       case 'select': {
         const [ifFalse, ifTrue, condition] = [0, 1, 2].map((i) =>

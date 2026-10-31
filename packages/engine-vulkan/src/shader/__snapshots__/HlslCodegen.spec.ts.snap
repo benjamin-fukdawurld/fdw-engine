@@ -13,30 +13,25 @@ struct FrameUniforms {
   [[vk::offset(268)]] float u_time;
   [[vk::offset(272)]] float u_exposure;
   [[vk::offset(276)]] uint u_lightCount;
-  [[vk::offset(288)]] float4 u_lightPositions[16];
-  [[vk::offset(544)]] float4 u_lightAmbients[16];
-  [[vk::offset(800)]] float4 u_lightDiffuses[16];
-  [[vk::offset(1056)]] float4 u_lightSpeculars[16];
-  [[vk::offset(1312)]] float4 u_lightAttenuations[16];
-  [[vk::offset(1568)]] float4 u_lightSpotDirections[16];
-  [[vk::offset(1824)]] float4 u_lightSpotCones[16];
-  [[vk::offset(2080)]] float4 u_lightShadows[16];
-  [[vk::offset(2336)]] float4 u_lightShadowRects[16];
-  [[vk::offset(2592)]] float4x4 u_lightShadowMatrices[16];
-  [[vk::offset(3616)]] float4x4 u_cascadeMatrix0;
-  [[vk::offset(3680)]] float4x4 u_cascadeMatrix1;
-  [[vk::offset(3744)]] float4x4 u_cascadeMatrix2;
-  [[vk::offset(3808)]] float4x4 u_cascadeMatrix3;
-  [[vk::offset(3872)]] float4 u_cascadeRect0;
-  [[vk::offset(3888)]] float4 u_cascadeRect1;
-  [[vk::offset(3904)]] float4 u_cascadeRect2;
-  [[vk::offset(3920)]] float4 u_cascadeRect3;
-  [[vk::offset(3936)]] float4 u_cascadeSplits;
-  [[vk::offset(3952)]] float4 u_cascadeOffsets;
-  [[vk::offset(3968)]] float4 u_fogColor;
-  [[vk::offset(3984)]] float4 u_fogHeight;
+  [[vk::offset(288)]] float4 u_lightClusters;
+  [[vk::offset(304)]] float4 u_lightClusterDepth;
+  [[vk::offset(320)]] float4x4 u_cascadeMatrix0;
+  [[vk::offset(384)]] float4x4 u_cascadeMatrix1;
+  [[vk::offset(448)]] float4x4 u_cascadeMatrix2;
+  [[vk::offset(512)]] float4x4 u_cascadeMatrix3;
+  [[vk::offset(576)]] float4 u_cascadeRect0;
+  [[vk::offset(592)]] float4 u_cascadeRect1;
+  [[vk::offset(608)]] float4 u_cascadeRect2;
+  [[vk::offset(624)]] float4 u_cascadeRect3;
+  [[vk::offset(640)]] float4 u_cascadeSplits;
+  [[vk::offset(656)]] float4 u_cascadeOffsets;
+  [[vk::offset(672)]] float4 u_fogColor;
+  [[vk::offset(688)]] float4 u_fogHeight;
+  [[vk::offset(704)]] float4 u_environment;
 };
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms> frameUniforms;
+
+[[vk::binding(1, 0)]] StructuredBuffer<float4> b_lights;
 
 struct MaterialUniforms {
   [[vk::offset(0)]] float u_shininess;
@@ -94,126 +89,142 @@ float4 ps_main(Varyings input, bool frontFacing : SV_IsFrontFace) : SV_Target0 {
   const float v6 = frameUniforms.u_exposure; // #c15
   const float3 v7 = frameUniforms.u_cameraPosition; // #c14
   const float v8 = 1.0; // #c14
-  const float2 v9 = input.v_uv;
-  const float4 v10 = t_map.Sample(s_mapSampler, v9); // #n4
-  const float v11 = 1.0;
-  const float v12 = max(v4_shininess, v11); // #c14
-  const float3 v13 = v10.rgb;
-  const float3 v14 = (v13 * v3_tint); // #n6
-  const float3 v15 = input.v_transform3;
-  const float4 v16 = input.v_transform;
-  const float3 v17 = float3(-1.0, -1.0, -1.0);
-  const float3 v18 = (v15 * v17); // #c12
-  const float3 v19 = v16.xyz;
-  const float3 v20 = (v7 - v19); // #c14
-  const float3 v21 = select(v5, v15, v18); // #c13
-  const float3 v22 = normalize(v20); // #c14
+  const float3 v9 = float3(0.0, 0.0, 0.0); // #c14
+  const float2 v10 = input.v_uv;
+  const float4 v11 = t_map.Sample(s_mapSampler, v10); // #n4
+  const float v12 = 1.0;
+  const float v13 = max(v4_shininess, v12); // #c14
+  const float3 v14 = v11.rgb;
+  const float3 v15 = (v14 * v3_tint); // #n6
+  const float3 v16 = input.v_transform3;
+  const float4 v17 = input.v_transform;
+  const float3 v18 = float3(-1.0, -1.0, -1.0);
+  const float3 v19 = (v16 * v18); // #c12
+  const float3 v20 = v17.xyz;
+  const float3 v21 = (v7 - v20); // #c14
+  const float3 v22 = select(v5, v16, v19); // #c13
   const float3 v23 = normalize(v21); // #c14
-  const uint v24 = frameUniforms.u_lightCount;
-  float3 v97 = (float3)0;
-  for (uint v25 = 0u; v25 < v24; v25 = v25 + 1u) {
-    const float4 v27 = frameUniforms.u_lightPositions[v25];
-    const float4 v29 = frameUniforms.u_lightAmbients[v25];
-    const float3 v30 = v29.xyz;
-    const float4 v32 = frameUniforms.u_lightDiffuses[v25];
-    const float3 v33 = v32.xyz;
-    const float4 v35 = frameUniforms.u_lightSpeculars[v25];
-    const float3 v36 = v35.xyz;
-    const float4 v38 = frameUniforms.u_lightAttenuations[v25];
-    const float3 v39 = v38.xyz;
-    const float4 v41 = frameUniforms.u_lightSpotDirections[v25];
+  const float3 v24 = normalize(v22); // #c14
+  const uint v25 = frameUniforms.u_lightCount;
+  float3 v106 = (float3)0;
+  for (uint v26 = 0u; v26 < v25; v26 = v26 + 1u) {
+    const uint v28 = 13u;
+    const uint v29 = (v26 * v28);
+    const float4 v30 = b_lights[v29];
+    const uint v31 = 1u;
+    const uint v32 = (v29 + v31);
+    const float4 v33 = b_lights[v32];
+    const float3 v34 = v33.xyz;
+    const uint v35 = 2u;
+    const uint v36 = (v29 + v35);
+    const float4 v37 = b_lights[v36];
+    const float3 v38 = v37.xyz;
+    const uint v39 = 3u;
+    const uint v40 = (v29 + v39);
+    const float4 v41 = b_lights[v40];
     const float3 v42 = v41.xyz;
-    const float4 v44 = frameUniforms.u_lightSpotCones[v25];
-    const float2 v45 = v44.xy;
-    const float v46 = v45.x;
-    const float v47 = v45.y;
-    const float v48 = (v46 - v47); // #c14
-    const float3 v49 = float3(1.0, 1.0, 1.0);
-    const float3 v50 = (v36 * v49); // #c14
-    const float3 v51 = (v30 * v14); // #c14
-    const float3 v52 = (v33 * v14); // #c14
-    const float v53 = v27.w;
-    const float3 v54 = ((float3)v53);
-    const float3 v55 = (v19 * v54); // #c14
-    const float3 v56 = v27.xyz;
-    const float3 v57 = (v56 - v55); // #c14
-    const float3 v58 = normalize(v57); // #c14
-    const float v59 = length(v57); // #c14
-    const float3 v60 = float3(-1.0, -1.0, -1.0);
-    const float3 v61 = (v58 * v60); // #c14
-    const float v62 = dot(v23, v58); // #c14
-    const float v63 = v39.y;
-    const float v64 = (v63 * v59); // #c14
-    const float v65 = (v59 * v59); // #c14
-    const float v66 = dot(v61, v42); // #c14
-    const float3 v67 = reflect(v61, v23); // #c14
-    const float v68 = 0.0;
-    const float v69 = max(v62, v68); // #c14
-    const float v70 = 0.0;
-    const float v71 = step(v70, v62); // #c14
-    const float v72 = v39.x;
-    const float v73 = (v72 + v64); // #c14
-    const float v74 = v39.z;
-    const float v75 = (v74 * v65); // #c14
-    const float v76 = (v66 - v47); // #c14
-    const float v77 = dot(v22, v67); // #c14
-    const float3 v78 = ((float3)v69);
-    const float3 v79 = (v52 * v78); // #c14
-    const float v80 = (v73 + v75); // #c14
-    const float v81 = (v76 / v48); // #c14
-    const float v82 = 0.0;
-    const float v83 = max(v77, v82); // #c14
-    const float v84 = 1.0;
-    const float v85 = (v84 / v80); // #c14
-    const float v86 = saturate(v81); // #c14
-    const float v87 = pow(v83, v12); // #c14
-    const float v88 = (v85 * v86); // #c14
-    const float v89 = (v87 * v71); // #c14
-    const float v90 = (v88 * v8); // #c14
-    const float3 v91 = ((float3)v89);
-    const float3 v92 = (v50 * v91); // #c14
-    const float3 v93 = (v79 + v92); // #c14
-    const float3 v94 = ((float3)v90);
-    const float3 v95 = (v93 * v94); // #c14
-    const float3 v96 = (v51 + v95); // #c14
-    v97 = v97 + v96;
+    const uint v43 = 4u;
+    const uint v44 = (v29 + v43);
+    const float4 v45 = b_lights[v44];
+    const float3 v46 = v45.xyz;
+    const uint v47 = 5u;
+    const uint v48 = (v29 + v47);
+    const float4 v49 = b_lights[v48];
+    const float3 v50 = v49.xyz;
+    const uint v51 = 6u;
+    const uint v52 = (v29 + v51);
+    const float4 v53 = b_lights[v52];
+    const float2 v54 = v53.xy;
+    const float v55 = v54.x;
+    const float v56 = v54.y;
+    const float v57 = (v55 - v56); // #c14
+    const float3 v58 = float3(1.0, 1.0, 1.0);
+    const float3 v59 = (v42 * v58); // #c14
+    const float3 v60 = (v34 * v15); // #c14
+    const float3 v61 = (v38 * v15); // #c14
+    const float v62 = v30.w;
+    const float3 v63 = ((float3)v62);
+    const float3 v64 = (v20 * v63); // #c14
+    const float3 v65 = v30.xyz;
+    const float3 v66 = (v65 - v64); // #c14
+    const float3 v67 = normalize(v66); // #c14
+    const float v68 = length(v66); // #c14
+    const float3 v69 = float3(-1.0, -1.0, -1.0);
+    const float3 v70 = (v67 * v69); // #c14
+    const float v71 = dot(v24, v67); // #c14
+    const float v72 = v46.y;
+    const float v73 = (v72 * v68); // #c14
+    const float v74 = (v68 * v68); // #c14
+    const float v75 = dot(v70, v50); // #c14
+    const float3 v76 = reflect(v70, v24); // #c14
+    const float v77 = 0.0;
+    const float v78 = max(v71, v77); // #c14
+    const float v79 = 0.0;
+    const float v80 = step(v79, v71); // #c14
+    const float v81 = v46.x;
+    const float v82 = (v81 + v73); // #c14
+    const float v83 = v46.z;
+    const float v84 = (v83 * v74); // #c14
+    const float v85 = (v75 - v56); // #c14
+    const float v86 = dot(v23, v76); // #c14
+    const float3 v87 = ((float3)v78);
+    const float3 v88 = (v61 * v87); // #c14
+    const float v89 = (v82 + v84); // #c14
+    const float v90 = (v85 / v57); // #c14
+    const float v91 = 0.0;
+    const float v92 = max(v86, v91); // #c14
+    const float v93 = 1.0;
+    const float v94 = (v93 / v89); // #c14
+    const float v95 = saturate(v90); // #c14
+    const float v96 = pow(v92, v13); // #c14
+    const float v97 = (v94 * v95); // #c14
+    const float v98 = (v96 * v80); // #c14
+    const float v99 = (v97 * v8); // #c14
+    const float3 v100 = ((float3)v98);
+    const float3 v101 = (v59 * v100); // #c14
+    const float3 v102 = (v88 + v101); // #c14
+    const float3 v103 = ((float3)v99);
+    const float3 v104 = (v102 * v103); // #c14
+    const float3 v105 = (v60 + v104); // #c14
+    v106 = v106 + v105;
   }
-  const float3 v98 = float3(0.0, 0.0, 0.0);
-  const float3 v99 = (v97 + v98); // #c14
-  const float v100 = 1.0;
-  const float4 v101 = float4(v99, v100); // #c14
-  const float3 v102 = v101.xyz;
-  const float3 v103 = ((float3)v6);
-  const float3 v104 = (v102 * v103); // #c16
-  const float3 v105 = float3(2.51, 2.51, 2.51);
-  const float3 v106 = (v104 * v105); // #c17
-  const float3 v107 = float3(2.43, 2.43, 2.43);
-  const float3 v108 = (v104 * v107); // #c17
-  const float3 v109 = float3(0.03, 0.03, 0.03);
-  const float3 v110 = (v106 + v109); // #c17
-  const float3 v111 = float3(0.59, 0.59, 0.59);
-  const float3 v112 = (v108 + v111); // #c17
-  const float3 v113 = (v104 * v110); // #c17
-  const float3 v114 = (v104 * v112); // #c17
-  const float3 v115 = float3(0.14, 0.14, 0.14);
-  const float3 v116 = (v114 + v115); // #c17
-  const float3 v117 = (v113 / v116); // #c17
-  const float3 v118 = saturate(v117); // #c17
-  const float3 v119 = saturate(v118); // #c18
-  const float3 v120 = float3(12.92, 12.92, 12.92);
-  const float3 v121 = (v119 * v120); // #c18
-  const float3 v122 = float3(0.4166666666666667, 0.4166666666666667, 0.4166666666666667);
-  const float3 v123 = pow(v119, v122); // #c18
-  const float3 v124 = float3(0.0031308, 0.0031308, 0.0031308);
-  const float3 v125 = step(v124, v119); // #c18
-  const float3 v126 = float3(1.055, 1.055, 1.055);
-  const float3 v127 = (v123 * v126); // #c18
-  const float3 v128 = float3(0.055, 0.055, 0.055);
-  const float3 v129 = (v127 - v128); // #c18
-  const float3 v130 = lerp(v121, v129, v125); // #c18
-  const float v131 = v101.w;
-  const float4 v132 = float4(v130, v131); // #c19
-  return v132;
+  const float3 v107 = (v106 + v9); // #c14
+  const float3 v108 = float3(0.0, 0.0, 0.0);
+  const float3 v109 = (v107 + v108); // #c14
+  const float v110 = 1.0;
+  const float4 v111 = float4(v109, v110); // #c14
+  const float3 v112 = v111.xyz;
+  const float3 v113 = ((float3)v6);
+  const float3 v114 = (v112 * v113); // #c16
+  const float3 v115 = float3(2.51, 2.51, 2.51);
+  const float3 v116 = (v114 * v115); // #c17
+  const float3 v117 = float3(2.43, 2.43, 2.43);
+  const float3 v118 = (v114 * v117); // #c17
+  const float3 v119 = float3(0.03, 0.03, 0.03);
+  const float3 v120 = (v116 + v119); // #c17
+  const float3 v121 = float3(0.59, 0.59, 0.59);
+  const float3 v122 = (v118 + v121); // #c17
+  const float3 v123 = (v114 * v120); // #c17
+  const float3 v124 = (v114 * v122); // #c17
+  const float3 v125 = float3(0.14, 0.14, 0.14);
+  const float3 v126 = (v124 + v125); // #c17
+  const float3 v127 = (v123 / v126); // #c17
+  const float3 v128 = saturate(v127); // #c17
+  const float3 v129 = saturate(v128); // #c18
+  const float3 v130 = float3(12.92, 12.92, 12.92);
+  const float3 v131 = (v129 * v130); // #c18
+  const float3 v132 = float3(0.4166666666666667, 0.4166666666666667, 0.4166666666666667);
+  const float3 v133 = pow(v129, v132); // #c18
+  const float3 v134 = float3(0.0031308, 0.0031308, 0.0031308);
+  const float3 v135 = step(v134, v129); // #c18
+  const float3 v136 = float3(1.055, 1.055, 1.055);
+  const float3 v137 = (v133 * v136); // #c18
+  const float3 v138 = float3(0.055, 0.055, 0.055);
+  const float3 v139 = (v137 - v138); // #c18
+  const float3 v140 = lerp(v131, v139, v135); // #c18
+  const float v141 = v111.w;
+  const float4 v142 = float4(v140, v141); // #c19
+  return v142;
 }
 "
 `;

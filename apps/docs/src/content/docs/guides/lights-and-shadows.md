@@ -20,8 +20,9 @@ to its outer angle.
 
 The lights are given to each frame — `render({ lights })`, or
 `addScenePasses(graph, { lights })` — or come from the source (the lights
-attached to the nodes of a scene). Their values go into the `frame`
-uniforms, written once per frame and view.
+attached to the nodes of a scene). Their values go into the **light pool**,
+a storage buffer written once per frame and view: there is no limit to
+their number.
 
 ## Only what the camera sees
 
@@ -32,8 +33,13 @@ A light costs nothing when it cannot change a pixel of the view:
   of the camera. Its range is where its attenuation falls below 1/256 of
   its strongest color (`lightRange(light)`); a light without attenuation
   reaches everything;
-- of the lights left, 16 at most (`MaxLights`) are used: the directional
-  ones, then the others by the light they give to what the camera sees.
+- each pixel only sums the lights that can reach it: the view is cut
+  into **clusters** (16 × 9 tiles of the screen, 24 slices of depth), each
+  listing the point and spot lights whose range reaches it. A pixel sums
+  the directional lights and those without range, then the lights of its
+  cluster. See [Hundreds of lights](/fdw-engine/tutorials/many-lights/);
+  `new Renderer(backend, { lightClusters: false })` sums every light for
+  every pixel.
 
 `renderer.stats.get('scene')` gives, for the last frame, the number of
 lights used, of shadow maps and of shadow casters drawn.
@@ -65,8 +71,18 @@ The lit shading models sum the lights, per fragment:
   glTF, plus the ambient term.
 
 A custom model reads them with `light.current` and sums with `light.sum`:
-the compiler turns the nodes between them into a loop over the lights. See
+the compiler turns the nodes between them into a loop over the lights.
+Given the `position` of the point lit, the loop goes over the lights of
+its cluster only. See
 [A custom shading model](/fdw-engine/tutorials/custom-shading-model/).
+
+## The environment
+
+`render({ environment })` lights the scene with its environment too
+(image-based lighting): a panorama, a cube texture or a sky function,
+prefiltered once on the GPU. `pbr` reflects it (the diffuse color × its
+irradiance, its prefiltered radiance × the Fresnel of the split sum),
+`phong` too. See [Image-based lighting](/fdw-engine/tutorials/environment-lighting/).
 
 ## Shadows
 

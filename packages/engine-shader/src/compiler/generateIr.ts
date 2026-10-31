@@ -4,7 +4,7 @@ import { isFunctionDefinition, PortSchema } from '../graph/NodeDefinition';
 import { swizzleType } from '../graph/swizzle';
 import type { ResolvedNode } from '../graph/validateGraph';
 import type { ConstantValue } from '../types/ConstantValue';
-import { BuiltinTypes, ShaderType } from '../types/ShaderType';
+import { arrayType, BuiltinTypes, ShaderType } from '../types/ShaderType';
 import type {
   IrBuiltin,
   IrEntryPoint,
@@ -19,7 +19,7 @@ import type {
 import {
   engineResources,
   engineValueLocations,
-  lightArrayType,
+  LightVec4s,
   lightMembers,
   uniformBlockName,
 } from './layout';
@@ -75,6 +75,8 @@ class StageBuilder {
   private readonly _scopes: Map<string, ValueId>[] = [new Map()];
   private readonly _loopIndices: ValueId[] = [];
   private _nextId = 1;
+  /** The light of the light loop being built: its index in the pool. */
+  lightIndex: ValueId | undefined;
 
   constructor(
     private readonly _graph: WorkingGraph,
@@ -213,37 +215,61 @@ class StageBuilder {
   }
 }
 
-// The outputs of 'light.current' used by the graph: elements of the light
-// arrays of the frame block, at the index of the loop being built.
+// The outputs of 'light.current' used by the graph: vec4 of the light
+// being summed in the light pool (see lightMembers).
 function translateCurrentLight(
   builder: StageBuilder,
   node: GraphNode,
   usedPorts: ReadonlySet<string>,
 ): void {
-  const index = builder.loopIndex;
-  if (index === undefined) {
+  const light = builder.lightIndex;
+  if (light === undefined) {
     throw new Error('internal error: light.current outside of a light loop');
   }
-  for (const [port, { member, type }] of Object.entries(lightMembers)) {
+  const u32 = BuiltinTypes.u32;
+  const vec4 = BuiltinTypes.vec4f;
+  const constant = (value: number) =>
+    builder.emit(u32, { kind: 'constant', value });
+  let pool: ValueId | undefined;
+  let first: ValueId | undefined;
+  const vec4At = (offset: number) => {
+    pool ??= builder.emit(arrayType(vec4), {
+      kind: 'load-resource',
+      binding: engineResources['lights'].name,
+    });
+    first ??= builder.emit(u32, { kind: 'binary', operator: '*' }, [
+      light,
+      constant(LightVec4s),
+    ]);
+    const index =
+      offset === 0
+        ? first
+        : builder.emit(u32, { kind: 'binary', operator: '+' }, [
+            first,
+            constant(offset),
+          ]);
+    return builder.emit(vec4, { kind: 'index' }, [pool, index]);
+  };
+  for (const [port, { offset, type }] of Object.entries(lightMembers)) {
     if (!usedPorts.has(port)) {
       continue;
     }
-    const elements = lightArrayType(type);
-    const array = builder.emit(elements, {
-      kind: 'load-resource',
-      binding: uniformBlockName('frame'),
-      member,
-    });
-    let value = builder.emit(elements.element, { kind: 'index' }, [
-      array,
-      index,
-    ]);
-    if (type.kind === 'vector' && type.size < 4) {
-      value = builder.emit(
-        type,
-        { kind: 'swizzle', components: 'xyzw'.slice(0, type.size) },
-        [value],
+    let value: ValueId;
+    if (type.kind === 'matrix') {
+      // From its columns.
+      const columns = Array.from({ length: type.columns }, (_, i) =>
+        vec4At(offset + i),
       );
+      value = builder.emit(type, { kind: 'construct' }, columns);
+    } else {
+      value = vec4At(offset);
+      if (type.kind === 'vector' && type.size < 4) {
+        value = builder.emit(
+          type,
+          { kind: 'swizzle', components: 'xyzw'.slice(0, type.size) },
+          [value],
+        );
+      }
     }
     builder.define({ node: node.id, port }, value);
   }
@@ -510,11 +536,13 @@ function translate(
 
 // A loop over the lights of the frame, summing the value computed by the
 // light-dependent nodes the input depends on. The other nodes it depends on
-// are computed before the loop.
+// are computed before the loop. A clustered sum loops over the global
+// lights, then over the list of the cluster in the light grid; otherwise,
+// over every light of the pool.
 function translateLightSum(
   context: StageContext,
   builder: StageBuilder,
-  { node, inputs }: ResolvedNode,
+  { node, inputs, params }: ResolvedNode,
 ): void {
   const types = context.types.get(node.id) as NodeTypes;
   const body = new Set<NodeId>();
@@ -528,13 +556,64 @@ function translateLightSum(
     pending.push(...context.graph.incoming(id).map((edge) => edge.from.node));
   }
 
-  const count = builder.emit(BuiltinTypes.u32, {
-    kind: 'load-resource',
-    binding: uniformBlockName('frame'),
-    member: 'lightCount',
-  });
+  const u32 = BuiltinTypes.u32;
+  const binary = (operator: '+' | '-', a: ValueId, b: ValueId) =>
+    builder.emit(u32, { kind: 'binary', operator }, [a, b]);
+  let list: { first: ValueId; global: ValueId; grid: ValueId } | undefined;
+  let count: ValueId;
+  if (params['clustered']) {
+    const input = (name: string) =>
+      builder.input(
+        node,
+        inputs.find((port) => port.name === name) as PortSchema,
+        u32,
+      ) as ValueId;
+    const global = input('global');
+    list = {
+      first: input('first'),
+      global,
+      grid: builder.emit(arrayType(u32), {
+        kind: 'load-resource',
+        binding: engineResources['lightGrid'].name,
+      }),
+    };
+    count = binary('+', global, input('count'));
+  } else {
+    count = builder.emit(u32, {
+      kind: 'load-resource',
+      binding: uniformBlockName('frame'),
+      member: 'lightCount',
+    });
+  }
   const index = builder.newId();
+  const outer = builder.lightIndex;
   builder.beginLoop(index);
+  if (list) {
+    // The global lights first, then those of the list (read at 0 for the
+    // global ones: the subtraction would wrap around).
+    const isGlobal = builder.emit(
+      BuiltinTypes.bool,
+      { kind: 'compare', operator: '<' },
+      [index, list.global],
+    );
+    const zero = builder.emit(u32, { kind: 'constant', value: 0 });
+    const inList = builder.emit(u32, { kind: 'select' }, [
+      binary('-', index, list.global),
+      zero,
+      isGlobal,
+    ]);
+    const listed = builder.emit(u32, { kind: 'index' }, [
+      list.grid,
+      binary('+', list.first, inList),
+    ]);
+    builder.lightIndex = builder.emit(u32, { kind: 'select' }, [
+      listed,
+      index,
+      isGlobal,
+    ]);
+  } else {
+    builder.lightIndex = index;
+  }
   for (const id of context.order) {
     if (body.has(id)) {
       translate(context, builder, id, {});
@@ -546,6 +625,7 @@ function translateLightSum(
     types.inputs['value'],
   ) as ValueId;
   const instructions = builder.endLoop();
+  builder.lightIndex = outer;
   builder.define(
     { node: node.id, port: 'result' },
     builder.emit(

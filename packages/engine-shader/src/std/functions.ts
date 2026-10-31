@@ -129,6 +129,19 @@ export const notEqual = comparison('notEqual', 'not-equal');
 export const floor = unaryFloat('floor', 'floor');
 export const fract = unaryFloat('fract', 'fract');
 export const sqrt = unaryFloat('sqrt', 'sqrt');
+/** The base 2 logarithm, for x > 0. */
+export const log2 = unaryFloat('log2', 'log2');
+/** 2 raised to the power x. */
+export const exp2 = unaryFloat('exp2', 'exp2');
+/** The angle whose cosine is x, in [0, π], for x in [-1, 1]. */
+export const acos = unaryFloat('acos', 'acos');
+/** The angle of the point (x, y) from the x axis, in [-π, π]. */
+export const atan2 = intrinsic(
+  'atan2',
+  'atan2',
+  [port('y', float), port('x', float)],
+  float,
+);
 
 // Screen space derivatives: computed by the neighboring pixels, so only in
 // the fragment stage.
@@ -506,6 +519,10 @@ export const functionDefinitions: readonly NodeDefinition[] = [
   floor,
   fract,
   sqrt,
+  log2,
+  exp2,
+  acos,
+  atan2,
   sin,
   cos,
   saturate,

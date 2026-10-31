@@ -2,7 +2,8 @@ import {
   GraphBuilder,
   arrayType,
   engineUniformBlocks,
-  MaxLights,
+  LightVec4s,
+  lightMembers,
   std,
   stdMacros,
   BuiltinTypes,
@@ -41,6 +42,22 @@ const setup = () => {
 };
 
 const floatsOf = (buffer: FakeBuffer) => [...new Float32Array(buffer.data)];
+
+// A vec4 of a light in the light pool of the last scene passes (see
+// lightMembers).
+const poolVec4 = (
+  log: ReturnType<typeof fakeBackend>['log'],
+  light: number,
+  member: string,
+) => {
+  const pool = [...log.buffers]
+    .reverse()
+    .find((buffer) => buffer.label === 'scene lights') as FakeBuffer;
+  const at = (light * LightVec4s + lightMembers[member].offset) * 4;
+  return floatsOf(pool)
+    .slice(at, at + 4)
+    .map((v) => +v.toFixed(4));
+};
 
 describe('Renderer', () => {
   it('draws the items and submits once per frame', () => {
@@ -801,27 +818,11 @@ describe('Renderer, shadows', () => {
       surface,
       lights: [new PointLight(), sun()],
     });
-    const frame = log.buffers.find(
-      (b) => b.label === 'scene frame uniforms',
-    ) as FakeBuffer;
-    const floats = floatsOf(frame);
-    const index = (name: string) => {
-      let offset = 0;
-      for (const member of engineUniformBlocks.frame) {
-        if (member.name === name) {
-          return offset / 4;
-        }
-        offset += sizeOf(member.type);
-      }
-      throw new Error(name);
-    };
-    const vec4 = (name: string, light: number) =>
-      floats.slice(index(name) + light * 4, index(name) + light * 4 + 4);
     // The point light has no tile; the sun has the whole atlas.
-    expect(vec4('lightShadows', 0)).toEqual([0, 0, 0, 0]);
-    expect(vec4('lightShadows', 1)[0]).toBe(1);
-    expect(vec4('lightShadows', 1)[3]).toBeCloseTo(1 / 1024);
-    expect(vec4('lightShadowRects', 1)).toEqual([0, 0, 1, 1]);
+    expect(poolVec4(log, 0, 'shadow')).toEqual([0, 0, 0, 0]);
+    expect(poolVec4(log, 1, 'shadow')[0]).toBe(1);
+    expect(poolVec4(log, 1, 'shadow')[3]).toBeCloseTo(1 / 1024);
+    expect(poolVec4(log, 1, 'shadowRect')).toEqual([0, 0, 1, 1]);
   });
 
   it('cuts the view of a perspective camera into shadow cascades', () => {
@@ -851,7 +852,7 @@ describe('Renderer, shadows', () => {
       floats.slice(at[name], at[name] + count);
     // The light reads the cascades; they end further and further, the
     // unused fourth repeating the third.
-    expect(read('lightShadows', 1)[0]).toBe(2);
+    expect(poolVec4(log, 0, 'shadow')[0]).toBe(2);
     const splits = read('cascadeSplits', 4);
     expect(splits[0]).toBeGreaterThan(0.1);
     expect(splits[1]).toBeGreaterThan(splits[0]);
@@ -1001,12 +1002,6 @@ describe('Renderer, phase 4', () => {
     }
     throw new Error(`no frame member ${name}`);
   };
-  // The vec4 of a light in an array of the frame block.
-  const lightVec4 = (floats: number[], array: string, light: number) => {
-    const index = frameIndex(array) + light * 4;
-    return floats.slice(index, index + 4).map((v) => +v.toFixed(4));
-  };
-
   const frameFloats = (log: ReturnType<typeof fakeBackend>['log']) =>
     floatsOf(
       log.buffers.find((b) =>
@@ -1014,7 +1009,7 @@ describe('Renderer, phase 4', () => {
       ) as FakeBuffer,
     );
 
-  it('writes the lights in the arrays of the frame uniforms', () => {
+  it('writes the lights in the light pool, the global ones first', () => {
     const { backend, log } = fakeBackend();
     const renderer = new Renderer(backend);
     const camera = new Camera();
@@ -1049,18 +1044,21 @@ describe('Renderer, phase 4', () => {
     });
     const floats = frameFloats(log);
     expect(floats[frameIndex('lightCount')]).toBe(3);
+    // The directional light and the spot without attenuation reach
+    // everything: the two global lights, before the point light.
+    expect(floats[frameIndex('lightClusters') + 3]).toBe(2);
     // Directional: the direction towards the light, w = 0, no attenuation,
     // a cone lighting every direction.
-    expect(lightVec4(floats, 'lightPositions', 0)).toEqual([0, 1, 0, 0]);
-    expect(lightVec4(floats, 'lightAmbients', 0)).toEqual([0.1, 0.2, 0.3, 0]);
-    expect(lightVec4(floats, 'lightAttenuations', 0)).toEqual([1, 0, 0, 0]);
-    expect(lightVec4(floats, 'lightSpotCones', 0)).toEqual([-1, -2, 0, 0]);
-    // Point: its position, w = 1, its attenuation.
-    expect(lightVec4(floats, 'lightPositions', 1)).toEqual([1, 2, 3, 1]);
-    expect(lightVec4(floats, 'lightAttenuations', 1)).toEqual([1, 0.5, 0, 0]);
+    expect(poolVec4(log, 0, 'position')).toEqual([0, 1, 0, 0]);
+    expect(poolVec4(log, 0, 'ambient')).toEqual([0.1, 0.2, 0.3, 0]);
+    expect(poolVec4(log, 0, 'attenuation')).toEqual([1, 0, 0, 0]);
+    expect(poolVec4(log, 0, 'spotCone')).toEqual([-1, -2, 0, 0]);
     // Spot: its normalized direction and the cosines of its cone.
-    expect(lightVec4(floats, 'lightSpotDirections', 2)).toEqual([0, -1, 0, 0]);
-    expect(lightVec4(floats, 'lightSpotCones', 2)).toEqual([1, 0.5, 0, 0]);
+    expect(poolVec4(log, 1, 'spotDirection')).toEqual([0, -1, 0, 0]);
+    expect(poolVec4(log, 1, 'spotCone')).toEqual([1, 0.5, 0, 0]);
+    // Point: its position, w = 1, its attenuation.
+    expect(poolVec4(log, 2, 'position')).toEqual([1, 2, 3, 1]);
+    expect(poolVec4(log, 2, 'attenuation')).toEqual([1, 0.5, 0, 0]);
 
     // No light: nothing is summed, lit materials only show their emissive
     // color.
@@ -1068,7 +1066,7 @@ describe('Renderer, phase 4', () => {
     expect(frameFloats(log)[frameIndex('lightCount')]).toBe(0);
   });
 
-  it('uses at most MaxLights lights', () => {
+  it('uses every light that reaches the view, without limit', () => {
     const { backend, log } = fakeBackend();
     const renderer = new Renderer(backend);
     renderer.render({
@@ -1082,18 +1080,13 @@ describe('Renderer, phase 4', () => {
       camera: new Camera(),
       surface,
       lights: Array.from(
-        { length: MaxLights + 2 },
+        { length: 100 },
         (_, i) => new PointLight({ position: { x: i, y: 0, z: 0 } }),
       ),
     });
     const floats = frameFloats(log);
-    expect(floats[frameIndex('lightCount')]).toBe(MaxLights);
-    expect(lightVec4(floats, 'lightPositions', MaxLights - 1)).toEqual([
-      MaxLights - 1,
-      0,
-      0,
-      1,
-    ]);
+    expect(floats[frameIndex('lightCount')]).toBe(100);
+    expect(poolVec4(log, 99, 'position')).toEqual([99, 0, 0, 1]);
   });
 
   it('compiles a new variant when a feature changes', () => {

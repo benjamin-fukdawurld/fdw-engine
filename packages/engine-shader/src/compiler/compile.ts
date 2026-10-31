@@ -442,6 +442,92 @@ function checkSupport(
   }
 }
 
+// With the lightClusters feature, the light.sum nodes given the position
+// of the point sum the global lights and those of its cluster only: a
+// light.cluster macro gives them their list in the light grid. Returns
+// whether the graph changed.
+function clusterLightSums(
+  graph: WorkingGraph,
+  feature: (name: string) => StaticValue | undefined,
+): boolean {
+  const sums = [...graph.nodes.values()].filter(
+    (node) =>
+      node.type === 'light.sum' &&
+      !node.params['clustered'] &&
+      graph.inputSource(node, 'position') !== undefined,
+  );
+  if (sums.length === 0 || !feature('lightClusters')) {
+    return false;
+  }
+  for (const node of sums) {
+    const position = graph.inputSource(node, 'position');
+    graph.origin = graph.origins.get(node.id) ?? node.id;
+    const cluster = graph.addNode('light.cluster', {}, { position });
+    const list = (port: string) => ({ ref: { node: cluster, port } });
+    const clustered = graph.addNode(
+      'light.sum',
+      { ...node.params, clustered: true },
+      {
+        value: graph.inputSource(node, 'value'),
+        position,
+        first: list('first'),
+        count: list('count'),
+        global: list('global'),
+      },
+      node.label,
+    );
+    graph.origin = undefined;
+    graph.redirectUses(node.id, clustered);
+    graph.removeNode(node.id);
+  }
+  return true;
+}
+
+// The ops computing derivatives between neighboring pixels: only valid
+// where every pixel of a quad runs them.
+const derivativeOps = new Set(['texture-sample', 'dpdx', 'dpdy', 'fwidth']);
+
+// The loop of a clustered light.sum runs the count of lights of the
+// cluster of each pixel: its body is in non-uniform control flow, where
+// derivatives are undefined (WGSL refuses them).
+function checkClusteredBodies(
+  graph: WorkingGraph,
+  registry: NodeRegistry,
+  diagnostics: Diagnostic[],
+): void {
+  // The nodes of the bodies of the clustered sums.
+  const bodies = lightLoopBodies(graph);
+  const clustered = new Set<NodeId>();
+  const pending = [...graph.nodes.values()]
+    .filter((node) => node.type === 'light.sum' && node.params['clustered'])
+    .flatMap((node) => graph.incoming(node.id).map((edge) => edge.from.node));
+  while (pending.length > 0) {
+    const id = pending.pop() as NodeId;
+    if (clustered.has(id) || !bodies.has(id)) {
+      continue;
+    }
+    clustered.add(id);
+    pending.push(...graph.incoming(id).map((edge) => edge.from.node));
+  }
+  for (const id of clustered) {
+    const node = graph.nodes.get(id) as GraphNode;
+    const definition = registry.get(node.type);
+    const op =
+      definition && isFunctionDefinition(definition)
+        ? definition.implementation.kind === 'intrinsic'
+          ? definition.implementation.op
+          : undefined
+        : undefined;
+    if (op && derivativeOps.has(op)) {
+      diagnostics.push({
+        severity: 'error',
+        node: graph.origins.get(id) ?? id,
+        message: `${node.type} computes derivatives, undefined in the loop of a clustered light.sum (its count of lights changes from pixel to pixel): sample at an explicit level (std.textureSampleLevel), or compute it outside the loop`,
+      });
+    }
+  }
+}
+
 // Replaces the input.engine reads of the object values with input.object
 // reads of the object table, at the row given by the object-index builtin.
 // Returns whether the graph changed.
@@ -538,6 +624,10 @@ function buildLayout(
       .filter(({ node }) => node.type === 'input.engine')
       .map(({ params }) => params['value'] as string),
   );
+  // The lights summed are read from the light pool.
+  if (all.some(({ node }) => node.type === 'light.current')) {
+    engineValues.add('lights');
+  }
   const engineSlots = new Set(
     [...engineValues].map(
       (value) => engineValueLocations[value]?.slot ?? 'frame',
@@ -907,6 +997,11 @@ export function compile(
     lowerHitInputs(working, hit, diagnostics);
     // The functions of the hits it added.
     expandMacros({ graph: working, registry, feature, diagnostics });
+  }
+  if (clusterLightSums(working, feature)) {
+    // The light.cluster macros it added.
+    expandMacros({ graph: working, registry, feature, diagnostics });
+    checkClusteredBodies(working, registry, diagnostics);
   }
   lowerComputedAttributes(working, diagnostics);
   if (diagnostics.length > 0) {

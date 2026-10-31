@@ -7,6 +7,20 @@ export * from './occlusion';
 export { meshBounds, meshBox } from './bounds';
 export { lightRange } from './lightRange';
 export { lightReaches, spotVolume } from './lightVolumes';
+export {
+  isGlobalLight,
+  LightClusterCount,
+  LightClusters,
+  LightClusterTiles,
+} from './lightClusters';
+export { LightPoolStride, writeLightPool } from './lightPool';
+export {
+  Environment,
+  environmentAtlasSize,
+  environmentCaptureSize,
+  environmentTile,
+} from './environment';
+export type { EnvironmentOptions, EnvironmentSource } from './environment';
 export { MaxObjectId } from './ObjectRows';
 export { computeTangents } from './tangents';
 export { isMirror, mergeKey, mergeMeshes, updateMergedVertices } from './merge';

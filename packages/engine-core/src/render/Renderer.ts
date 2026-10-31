@@ -8,10 +8,11 @@ import {
   GpuBuffer,
   GpuRenderPassEncoder,
   GpuSampler,
+  GpuTexture,
   GpuTextureFormat,
+  fullMipLevelCount,
   GpuRenderPipeline,
   IColor,
-  IVec3,
   Mat3,
   Mat4,
   meshSemantics,
@@ -28,6 +29,7 @@ import {
 import { Aabb, Frustum, transformAabb } from '@fdw/engine-geometry';
 import {
   compile,
+  EnvironmentLevels,
   GraphBuilder,
   std,
   CompiledProgram,
@@ -35,7 +37,6 @@ import {
   FunctionDefinition,
   MaterialGraphData,
   MaxCascades,
-  MaxLights,
   NodeRegistry,
   SurfaceOutput,
   ToneMapping,
@@ -48,6 +49,20 @@ import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
 import { meshBox } from './bounds';
 import { lightRange } from './lightRange';
+import { isGlobalLight, LightClusters } from './lightClusters';
+import { LightPoolStride, writeLightPool } from './lightPool';
+import {
+  brdfGraph,
+  BrdfTile,
+  captureGraph,
+  Environment,
+  environmentAtlasSize,
+  environmentCaptureSize,
+  environmentTile,
+  irradianceGraph,
+  IrradianceTile,
+  radianceGraph,
+} from './environment';
 import { lightReaches } from './lightVolumes';
 import { Material, MaterialValue } from './Material';
 import { Mesh } from './Mesh';
@@ -80,8 +95,10 @@ export interface RenderOptions {
   readonly exposure?: number;
   // Lights of the scene, summed by the lit shading models; defaults to the
   // lights of the source. Only those that can light what the camera sees
-  // are used, up to MaxLights (16), the strongest first. Directional and
-  // spot lights with castShadow cast shadows.
+  // are used, without limit: each pixel sums the directional lights, and
+  // the point and spot lights of its cluster (see RendererOptions
+  // .lightClusters). Directional and spot lights with castShadow cast
+  // shadows.
   readonly lights?: readonly BaseLight[];
   // When the lights of the view are all bounded (point and spot lights),
   // what none of them reaches is black: it is not drawn. Materials without
@@ -103,6 +120,10 @@ export interface RenderOptions {
   // @fdw/engine-raytracing): the shadows of the lights, instead of the
   // shadow maps. On the backends with the rayQuery capability.
   readonly rays?: RayTracingOptions;
+  // The light of the environment (image-based lighting): reflected by the
+  // pbr and phong shading models, besides the lights. Prefiltered on its
+  // first frame, and after its update().
+  readonly environment?: Environment;
 }
 
 /** The fog of a view: see RenderOptions.fog. */
@@ -255,6 +276,17 @@ export interface FullscreenPassOptions {
   // The scene the material traces rays against (ray.trace, the hit
   // functions): a RayScene of @fdw/engine-raytracing, updated before.
   readonly rays?: TracedScene;
+  // The environment of the shading models called by the material (as in
+  // the scene passes).
+  readonly environment?: Environment;
+  // The rectangle drawn, in pixels from the top left corner of the
+  // targets: the whole targets by default. screen-uv spans it.
+  readonly viewport?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
 }
 
 // The bytes a pixel of color targets takes, as WebGPU counts them for its
@@ -325,6 +357,11 @@ export interface RendererOptions {
   // Multisample antialiasing: the scene is drawn with this many samples per
   // pixel (4), then resolved into its target. Default 1 (none).
   readonly samples?: number;
+  // Clustered lighting: the view is cut in clusters (tiles of the screen,
+  // slices of the depth), each listing the point and spot lights that
+  // reach it, and each pixel only sums those of its cluster. Off, each
+  // pixel sums every light of the frame. Default true.
+  readonly lightClusters?: boolean;
 }
 
 type PipelineEntry =
@@ -351,9 +388,34 @@ interface UniformGroup {
 interface FrameView extends UniformGroup {
   readonly name: string;
   shadowMap?: GpuAttachmentTarget;
+  // The light pool and the light grid its programs read.
+  lights?: FrameLights;
+  // The prefiltered atlas of the environment its programs read.
+  environment?: GpuAttachmentTarget;
   // The traced scene bound, and its version.
   rays?: TracedScene;
   raysVersion?: number;
+}
+
+// The lights of the scene passes of a name: the light pool and the light
+// grid, storage buffers grown when needed (see lightMembers and
+// lightClusterMembers in engine-shader).
+interface FrameLights {
+  pool?: GpuBuffer;
+  grid?: GpuBuffer;
+}
+
+// An environment prefiltered by the renderer: its textures, the materials
+// of the passes prefiltering it, and the version of the environment they
+// were drawn for.
+interface EnvironmentState {
+  readonly id: number;
+  readonly atlas: GpuTexture;
+  readonly capture: GpuTexture;
+  readonly format: GpuTextureFormat;
+  readonly capturer: Material;
+  readonly tiles: readonly Material[];
+  version: number;
 }
 
 // The world matrix of an item, from its Transform or given by its source,
@@ -395,6 +457,8 @@ interface PassVariant {
   readonly rayShadows?: number;
   // The colors are seen through the fog of the frame.
   readonly fog?: boolean;
+  // The lit materials reflect the environment.
+  readonly environment?: boolean;
   // No color: the shadow maps.
   readonly depthOnly: boolean;
   // Samples per pixel of the attachments.
@@ -519,9 +583,6 @@ const backFaces: readonly PrimitiveState['cullMode'][] = ['back'];
 const bothFaces: readonly PrimitiveState['cullMode'][] = ['front', 'back'];
 const allFaces: readonly PrimitiveState['cullMode'][] = ['none'];
 
-// A cone lighting every direction: the spot factor is always 1.
-const noCone = [-1, -2, 0, 0];
-
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const zero4 = [0, 0, 0, 0];
 
@@ -531,113 +592,15 @@ const isSupported = (light: BaseLight) =>
   light instanceof PointLight ||
   light instanceof SpotLight;
 
-// Appends the values to an array, without spreading them.
-function pushAll(out: number[], values: ArrayLike<number>): void {
-  for (let i = 0; i < values.length; i++) {
-    out.push(values[i]);
-  }
-}
-
-// Appends a direction, normalized, scaled (-1: the opposite), and w.
-function pushDirection(
-  out: number[],
-  { x, y, z }: Readonly<IVec3>,
-  scale: number,
-  w: number,
-): void {
-  const length = (Math.hypot(x, y, z) || 1) / scale;
-  out.push(x / length, y / length, z / length, w);
-}
-
-// A color as a vec4.
-const pushColor = (out: number[], value: Readonly<IVec3>) =>
-  out.push(value.x, value.y, value.z, 0);
-
-// Writes the lights of the frame into the frame values, in the light
-// arrays of the frame uniforms (see lightMembers in engine-shader): one vec4
-// (or mat4) per light and property. `shadows` are the tiles of the lights
-// casting shadows.
-// With `rayOffset`, the shadows are traced by rays: the lights casting
-// shadows get (1, 0, rayOffset, softness) (see light.shadowRay).
+// The frame values of the lights: their count, and the shadow cascades.
+// The lights themselves are in the light pool (see writeLightPool), with
+// the tiles of their shadows; `shadows` are the tiles of the frame.
 function writeLightValues(
   values: Record<string, UniformValue>,
-  lights: readonly BaseLight[],
+  count: number,
   shadows: readonly ShadowTile[] = [],
-  rayOffset?: number,
 ): Record<string, UniformValue> {
-  const positions: number[] = [];
-  const ambients: number[] = [];
-  const diffuses: number[] = [];
-  const speculars: number[] = [];
-  const attenuations: number[] = [];
-  const spotDirections: number[] = [];
-  const spotCones: number[] = [];
-  const lightShadows: number[] = [];
-  const shadowRects: number[] = [];
-  const shadowMatrices: number[] = [];
-  let count = 0;
-  for (const light of lights) {
-    if (light instanceof DirectionalLight) {
-      // Towards the light: the opposite of the direction it shines in.
-      pushDirection(positions, light.direction, -1, 0);
-      attenuations.push(1, 0, 0, 0);
-      pushAll(spotDirections, zero4);
-      pushAll(spotCones, noCone);
-    } else if (light instanceof PointLight || light instanceof SpotLight) {
-      const { x, y, z } = light.position;
-      positions.push(x, y, z, 1);
-      attenuations.push(
-        light.constantAttenuation,
-        light.linearAttenuation,
-        light.quadraticAttenuation,
-        0,
-      );
-      if (light instanceof SpotLight) {
-        // Cutoffs are half-angles of the cone, in degrees. The inner cosine
-        // stays above the outer one: the shader divides by their difference.
-        const cosine = (degrees: number) => Math.cos((degrees * Math.PI) / 180);
-        const outer = cosine(light.outerCutoff);
-        const inner = Math.max(cosine(light.innerCutoff), outer + 1e-4);
-        pushDirection(spotDirections, light.direction, 1, 0);
-        spotCones.push(inner, outer, 0, 0);
-      } else {
-        pushAll(spotDirections, zero4);
-        pushAll(spotCones, noCone);
-      }
-    } else {
-      continue;
-    }
-    // The first tile of the light: its own, or its first cascade (whose
-    // shadow.x of 2 sends the shaders to the cascades).
-    let shadow: ShadowTile | undefined;
-    for (const tile of shadows) {
-      if (tile.light === light && !shadow) {
-        shadow = tile;
-      }
-    }
-    pushColor(ambients, light.ambient);
-    pushColor(diffuses, light.diffuse);
-    pushColor(speculars, light.specular);
-    if (rayOffset !== undefined && castsShadow(light)) {
-      lightShadows.push(1, 0, rayOffset, light.shadow.softness ?? 0);
-    } else {
-      pushAll(lightShadows, shadow?.shadow ?? zero4);
-    }
-    pushAll(shadowRects, shadow?.rect ?? zero4);
-    pushAll(shadowMatrices, shadow?.matrix ?? identity);
-    count++;
-  }
   values['lightCount'] = count;
-  values['lightPositions'] = positions;
-  values['lightAmbients'] = ambients;
-  values['lightDiffuses'] = diffuses;
-  values['lightSpeculars'] = speculars;
-  values['lightAttenuations'] = attenuations;
-  values['lightSpotDirections'] = spotDirections;
-  values['lightSpotCones'] = spotCones;
-  values['lightShadows'] = lightShadows;
-  values['lightShadowRects'] = shadowRects;
-  values['lightShadowMatrices'] = shadowMatrices;
   // The cascades, the unused ones repeating the last.
   const cascades = shadows.filter((tile) => tile.cascade !== undefined);
   const splits: number[] = [];
@@ -733,20 +696,6 @@ const sphereOf = (box: Aabb) => ({
   radius: Math.hypot(...box.halfExtents()),
 });
 
-// The squared distance from a point to a box.
-function distanceToBox2(
-  { x, y, z }: Readonly<IVec3>,
-  { min, max }: Aabb,
-): number {
-  const d = (value: number, low: number, high: number) =>
-    value < low ? low - value : value > high ? value - high : 0;
-  return (
-    d(x, min[0], max[0]) ** 2 +
-    d(y, min[1], max[1]) ** 2 +
-    d(z, min[2], max[2]) ** 2
-  );
-}
-
 // Draws render items with their materials, on any backend. Programs,
 // pipelines, buffers and bind groups are created on first use and cached;
 // uniform buffers are only rewritten when their values change.
@@ -803,9 +752,28 @@ export class Renderer {
   private _toneMapping?: Material;
   // The frame values of the last scene: what the full screen passes read.
   private _frameValues: Record<string, UniformValue> = writeLightValues(
-    { exposure: 1 },
-    [],
+    { exposure: 1, lightClusters: [1, 1, 1, 0], lightClusterDepth: zero4 },
+    0,
   );
+  // The lights of the scene passes, by name; those of the last scene, read
+  // by the full screen passes.
+  private readonly _lights = new Map<string, FrameLights>();
+  private _frameLights?: FrameLights;
+  // Those of the full screen passes before any scene: no light.
+  private _noLights?: FrameLights;
+  private readonly _lightClusters?: LightClusters;
+  // The records of the lights of a frame, reused.
+  private _lightPool?: Float32Array<ArrayBuffer>;
+  // The environments prefiltered, and their atlas in each graph built.
+  private readonly _environments = new WeakMap<Environment, EnvironmentState>();
+  private readonly _environmentHandles = new WeakMap<
+    RenderGraph,
+    Map<Environment, TextureHandle>
+  >();
+  private readonly _environmentTextures: GpuTexture[] = [];
+  private _environmentIds = 0;
+  private _environmentSampler?: GpuSampler;
+  private _sourceSampler?: GpuSampler;
   private readonly _fullscreenMesh = new Mesh({
     label: 'fullscreen',
     description: { vertexBuffers: [], vertexCount: 3 },
@@ -856,6 +824,9 @@ export class Renderer {
     this._shadowAtlasSize = options.shadowAtlasSize ?? 2048;
     this._samples = options.samples ?? 1;
     this._shadowCameras = new ShadowCameras(backend.cameraMath);
+    if (options.lightClusters ?? true) {
+      this._lightClusters = new LightClusters();
+    }
   }
 
   /** The node types the materials are compiled with (the standard ones by default). */
@@ -972,6 +943,7 @@ export class Renderer {
       occlusion,
       fog,
       rays,
+      environment,
     }: ScenePassesOptions,
   ): ScenePasses {
     const rayShadows = rayShadowsOf(rays);
@@ -1042,7 +1014,11 @@ export class Renderer {
       lights ?? from.lights?.() ?? [],
       frustum,
     );
-    const used = this.strongestLights(reaching, receivers);
+    // The global lights first in the pool: the clusters list the others.
+    const used = [
+      ...reaching.filter(isGlobalLight),
+      ...reaching.filter((light) => !isGlobalLight(light)),
+    ];
     if (cullUnlit && used.every(isBounded)) {
       // Only what a light reaches, and what needs no light: the list is
       // compacted in place, the receivers are those kept.
@@ -1075,6 +1051,9 @@ export class Renderer {
           )
         : undefined;
 
+    const environmentAtlas = environment
+      ? this.environmentAtlas(graph, environment)
+      : undefined;
     const view = this.view(name);
     const fogged = fog !== undefined && fog.density > 0;
     const blended = (item: Renderable) =>
@@ -1099,6 +1078,7 @@ export class Renderer {
           linear,
           shadows: shadowPass !== undefined,
           ...(rayShadows && shadows ? { rayShadows: rayShadows.samples } : {}),
+          ...(environment ? { environment: true } : {}),
           ...(fogged ? { fog: true } : {}),
           depthOnly: false,
           samples,
@@ -1147,6 +1127,14 @@ export class Renderer {
       casters: shadowPass?.casters ?? 0,
     });
     const position = camera.position;
+    const lightValues = this.writeLights(
+      name,
+      used,
+      cameraCache,
+      camera,
+      shadowPass?.tiles,
+      shadows ? rayShadows?.offset : undefined,
+    );
     this._frameValues = writeLightValues(
       {
         viewProjection: cameraCache.viewProjectionMatrix.value,
@@ -1160,11 +1148,13 @@ export class Renderer {
           ? [fog.color.r, fog.color.g, fog.color.b, fog.density]
           : zero4,
         fogHeight: [fog?.heightFalloff ?? 0, fog?.height ?? 0, 0, 0],
+        environment: this.environmentValue(environment),
+        ...lightValues,
       },
-      used,
+      used.length,
       shadowPass?.tiles,
-      shadows ? rayShadows?.offset : undefined,
     );
+    this.bindLights(view, this._frameLights);
     this.bindRays(view, rays?.scene);
     const first = opaqueEntries[0] ?? transparentEntries[0];
     if (first) {
@@ -1246,6 +1236,7 @@ export class Renderer {
       const last = !transparents;
       const opaque = graph.addRasterPass(`${name} opaque`, (pass) => {
         const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+        const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
         const read = readInputs(pass);
         let written: TextureHandle | undefined;
         let resolvedColor: TextureHandle | undefined;
@@ -1278,6 +1269,7 @@ export class Renderer {
           }),
           execute: ({ pass: encoder, texture }) => {
             this.bindShadowMap(view, atlas && texture(atlas));
+            this.bindEnvironment(view, ibl && texture(ibl));
             bindInputs(opaqueEntries, read, texture);
             this.drawAll(encoder, opaqueEntries);
           },
@@ -1308,6 +1300,7 @@ export class Renderer {
     const transparent = graph.addRasterPass(`${name} transparent`, (pass) => {
       pass.readDepth(depthVersion);
       const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+      const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
       const read = readInputs(pass);
       const written = pass.writeColor(over, {
         load: include === 'transparent' ? load : 'load',
@@ -1317,6 +1310,7 @@ export class Renderer {
         color: multisampled ? pass.resolveColor(target) : written,
         execute: ({ pass: encoder, texture }) => {
           this.bindShadowMap(view, atlas && texture(atlas));
+          this.bindEnvironment(view, ibl && texture(ibl));
           bindInputs(transparentEntries, read, texture);
           this.drawAll(encoder, transparentEntries);
         },
@@ -1442,12 +1436,17 @@ export class Renderer {
       targets,
       shadows,
       rays,
+      environment,
+      viewport,
     }: FullscreenPassOptions,
   ):
     | TextureHandle
     | { color: TextureHandle; targets: Record<string, TextureHandle> } {
     this._objectRows.beginFrame();
     const view = this.view(name);
+    const environmentAtlas = environment
+      ? this.environmentAtlas(graph, environment)
+      : undefined;
     const prepared = this.prepareFullscreen(
       material,
       format,
@@ -1455,16 +1454,28 @@ export class Renderer {
       blend,
       targets ?? {},
       shadows !== undefined,
+      environment !== undefined,
     );
     // The frame values of the last scene: its camera, its lights, the
     // exposure…
-    this.writeView(view, prepared.layout, this._frameValues);
+    this.writeView(
+      view,
+      prepared.layout,
+      environment
+        ? {
+            ...this._frameValues,
+            environment: this.environmentValue(environment),
+          }
+        : this._frameValues,
+    );
+    this.bindLights(view, this.lastLights());
     this.bindRays(view, rays);
     const written = graph.addRasterPass(name, (pass) => {
       const read = Object.entries(inputs).map(
         ([input, handle]) => [input, pass.read(handle, 'sampled')] as const,
       );
       const atlas = shadows && pass.read(shadows, 'sampled');
+      const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
       const color = pass.writeColor(target, { load, clearValue: clearColor });
       // The extra targets, in the order of their locations.
       const extra = Object.fromEntries(
@@ -1484,6 +1495,15 @@ export class Renderer {
         targets: extra,
         execute: ({ pass: encoder, texture }) => {
           this.bindShadowMap(view, atlas && texture(atlas));
+          this.bindEnvironment(view, ibl && texture(ibl));
+          if (viewport) {
+            encoder.setViewport(
+              viewport.x,
+              viewport.y,
+              viewport.width,
+              viewport.height,
+            );
+          }
           for (const [input, handle] of read) {
             const real = texture(handle) as MaterialValue;
             // Pooled textures are stable: the bind group is rebuilt only
@@ -1523,11 +1543,28 @@ export class Renderer {
       this.retireGroups(view.bindGroups);
     }
     this._views.clear();
+    for (const lights of this._lights.values()) {
+      lights.pool?.destroy();
+      lights.grid?.destroy();
+    }
+    this._noLights?.pool?.destroy();
+    this._noLights?.grid?.destroy();
+    this._lights.clear();
+    this._frameLights = undefined;
+    this._noLights = undefined;
     for (const { bindGroup } of this._objectGroups.values()) {
       this._objectRows.retire(bindGroup);
     }
     this._shadowSampler?.destroy();
     this._shadowSampler = undefined;
+    this._environmentSampler?.destroy();
+    this._environmentSampler = undefined;
+    this._sourceSampler?.destroy();
+    this._sourceSampler = undefined;
+    for (const texture of this._environmentTextures) {
+      texture.destroy();
+    }
+    this._environmentTextures.length = 0;
     this._runner.destroy();
     this._objectRows.destroy();
     this._objectGroups.clear();
@@ -1665,34 +1702,134 @@ export class Renderer {
     return reaching;
   }
 
-  // Up to MaxLights lights: the directional ones, then the others by the
-  // light they give to the nearest point of the receivers.
-  private strongestLights(lights: BaseLight[], receivers: Aabb): BaseLight[] {
-    if (lights.length <= MaxLights) {
-      return lights;
+  // Writes the lights of scene passes into their light pool, and assigns
+  // them to the clusters of the camera (the global ones first, `lights`
+  // gives them first). Returns the frame values of the clusters.
+  private writeLights(
+    name: string,
+    lights: readonly BaseLight[],
+    cameraCache: CameraCache,
+    camera: Camera,
+    shadows: readonly ShadowTile[] | undefined,
+    rayOffset: number | undefined,
+  ): Record<string, UniformValue> {
+    let frameLights = this._lights.get(name);
+    if (!frameLights) {
+      frameLights = {};
+      this._lights.set(name, frameLights);
     }
-    const strength = (light: BaseLight) => {
-      if (light instanceof DirectionalLight) {
-        return Infinity;
-      }
-      const { constantAttenuation, linearAttenuation, quadraticAttenuation } =
-        light as PointLight | SpotLight;
-      const d2 = receivers.isEmpty()
-        ? 0
-        : distanceToBox2((light as PointLight | SpotLight).position, receivers);
-      const { x, y, z } = light.diffuse;
-      return (
-        Math.max(x, y, z) /
-        (constantAttenuation +
-          linearAttenuation * Math.sqrt(d2) +
-          quadraticAttenuation * d2)
+    this._lightPool = writeLightPool(
+      lights,
+      this._lightPool,
+      shadows,
+      rayOffset,
+    );
+    const poolSize = Math.max(lights.length, 1) * LightPoolStride * 4;
+    this.uploadLights(
+      frameLights,
+      'pool',
+      `${name} lights`,
+      this._lightPool.buffer,
+      poolSize,
+    );
+    let values: Record<string, UniformValue>;
+    let grid: Uint32Array<ArrayBuffer>;
+    if (this._lightClusters) {
+      const global = lights.findIndex((light) => !isGlobalLight(light));
+      const first = global < 0 ? lights.length : global;
+      const { near, far } = camera.projection;
+      const assigned = this._lightClusters.assign(
+        lights.slice(first),
+        first,
+        cameraCache.viewMatrix.value,
+        cameraCache.projectionMatrix.value,
+        near,
+        far,
       );
-    };
-    return lights
-      .map((light) => ({ light, strength: strength(light) }))
-      .sort((a, b) => b.strength - a.strength)
-      .slice(0, MaxLights)
-      .map(({ light }) => light);
+      grid = assigned.grid;
+      values = {
+        lightClusters: assigned.lightClusters,
+        lightClusterDepth: assigned.lightClusterDepth,
+      };
+    } else {
+      // Every light, global.
+      grid = new Uint32Array(2);
+      values = {
+        lightClusters: [1, 1, 1, lights.length],
+        lightClusterDepth: zero4,
+      };
+    }
+    this.uploadLights(
+      frameLights,
+      'grid',
+      `${name} light grid`,
+      grid.buffer,
+      grid.byteLength,
+      grid.byteOffset,
+    );
+    this._frameLights = frameLights;
+    return values;
+  }
+
+  // Writes the data of the pool or the grid of scene passes, in a buffer
+  // grown (doubled) when too small.
+  private uploadLights(
+    lights: FrameLights,
+    which: 'pool' | 'grid',
+    label: string,
+    data: ArrayBuffer,
+    size: number,
+    dataOffset = 0,
+  ): void {
+    let buffer = lights[which];
+    if (!buffer || buffer.size < size) {
+      if (buffer) {
+        this._objectRows.retire(buffer);
+      }
+      buffer = this.backend.buffers.create({
+        label,
+        size: Math.max(size, (buffer?.size ?? 0) * 2, 256),
+        usage: ['storage', 'copy-dst'],
+      });
+      lights[which] = buffer;
+      // The bind groups holding the old one.
+      for (const view of this._views.values()) {
+        if (view.lights === lights) {
+          this.retireGroups(view.bindGroups);
+        }
+      }
+    }
+    buffer.write(0, data, dataOffset, size);
+  }
+
+  // The lights of the last scene passes; none before the first.
+  private lastLights(): FrameLights {
+    if (this._frameLights) {
+      return this._frameLights;
+    }
+    if (!this._noLights) {
+      const lights: FrameLights = {};
+      this._lightPool = writeLightPool([], this._lightPool);
+      this.uploadLights(
+        lights,
+        'pool',
+        'no lights',
+        this._lightPool.buffer,
+        LightPoolStride * 4,
+      );
+      const grid = new Uint32Array(2);
+      this.uploadLights(lights, 'grid', 'no light grid', grid.buffer, 8);
+      this._noLights = lights;
+    }
+    return this._noLights;
+  }
+
+  // The light pool and grid read by the programs of a view, in this frame.
+  private bindLights(view: FrameView, lights: FrameLights | undefined): void {
+    if (lights && view.lights !== lights) {
+      view.lights = lights;
+      this.retireGroups(view.bindGroups);
+    }
   }
 
   // --- Shadows -------------------------------------------------------------------
@@ -1808,6 +1945,215 @@ export class Renderer {
     }
   }
 
+  // --- Environment ------------------------------------------------------------
+
+  /**
+   * The textures of an environment, prefiltered now if it changed (as the
+   * scene passes do on their first frame): the capture of its source, an
+   * equirectangular panorama (see environment.equirect) with its levels,
+   * and the prefiltered atlas (see environmentMembers in engine-shader).
+   * For the techniques reading it outside the passes of the renderer (the
+   * path tracer).
+   */
+  environmentTextures(environment: Environment): {
+    readonly panorama: GpuTexture;
+    readonly atlas: GpuTexture;
+  } {
+    const state = this.environmentState(environment);
+    if (state.version !== environment.version) {
+      const graph = new RenderGraph();
+      this.environmentAtlas(graph, environment);
+      this._runner.execute(graph);
+    }
+    return { panorama: state.capture, atlas: state.atlas };
+  }
+
+  // The frame value of an environment (see environmentMembers in
+  // engine-shader): the size of its tiles, of the texels of its atlas, its
+  // intensity. Zero without environment.
+  private environmentValue(environment: Environment | undefined): number[] {
+    if (!environment) {
+      return zero4;
+    }
+    const { width, height } = environmentAtlasSize(environment.size);
+    return [environment.size, 1 / width, 1 / height, environment.intensity];
+  }
+
+  // The prefiltered atlas of an environment in a graph: the passes
+  // prefiltering it are added before its first use when it changed, once
+  // per graph.
+  private environmentAtlas(
+    graph: RenderGraph,
+    environment: Environment,
+  ): TextureHandle {
+    let handles = this._environmentHandles.get(graph);
+    if (!handles) {
+      handles = new Map();
+      this._environmentHandles.set(graph, handles);
+    }
+    const known = handles.get(environment);
+    if (known) {
+      return known;
+    }
+    const state = this.environmentState(environment);
+    const name = `environment ${state.id}`;
+    let atlas = graph.importTexture(`${name} atlas`, state.atlas);
+    if (state.version !== environment.version) {
+      state.version = environment.version;
+      let capture = this.addFullscreenPass(graph, `${name} capture`, {
+        material: state.capturer,
+        target: graph.importTexture(`${name} capture`, state.capture),
+        format: state.format,
+      });
+      capture = graph.addMipmapPass(`${name} capture levels`, capture);
+      state.tiles.forEach((material, tile) => {
+        atlas = this.addFullscreenPass(graph, `${name} tile ${tile}`, {
+          material,
+          inputs: { capture },
+          target: atlas,
+          format: state.format,
+          load: tile === 0 ? 'clear' : 'load',
+          viewport: environmentTile(tile, environment.size),
+        });
+      });
+    }
+    handles.set(environment, atlas);
+    return atlas;
+  }
+
+  // The textures and materials prefiltering an environment, made on its
+  // first use.
+  private environmentState(environment: Environment): EnvironmentState {
+    const known = this._environments.get(environment);
+    if (known) {
+      return known;
+    }
+    const { size, samples, source } = environment;
+    // Linear colors beyond 1 where the backend can render them.
+    const format: GpuTextureFormat =
+      this.backend.capabilities?.renderableFormats?.includes('rgba16float')
+        ? 'rgba16float'
+        : 'rgba8unorm';
+    const capture = environmentCaptureSize(size);
+    const captureTexture = this.backend.textures.createTexture({
+      label: 'environment capture',
+      type: '2d',
+      format,
+      dimensions: capture,
+      usage: ['sampled', 'render-attachment'],
+      mipLevelCount: fullMipLevelCount(capture),
+    });
+    const atlas = this.backend.textures.createTexture({
+      label: 'environment atlas',
+      type: '2d',
+      format,
+      dimensions: environmentAtlasSize(size),
+      usage: ['sampled', 'render-attachment'],
+    });
+    this._environmentTextures.push(atlas, captureTexture);
+    const sampler = this.environmentSampler();
+    // The capture: the source at the level whose texels are about those
+    // of the capture, 4 × 4 taps per texel.
+    const sourceTexture =
+      'panorama' in source
+        ? source.panorama
+        : 'cube' in source
+          ? source.cube
+          : undefined;
+    // Around the vertical, a cube face covers a quarter.
+    const sourceWidth =
+      (sourceTexture?.dimensions.width ?? 0) * ('cube' in source ? 4 : 1);
+    const capturer = new Material({
+      graph: captureGraph(source),
+      label: 'environment capture',
+      values: {
+        texel: [1 / capture.width, 1 / capture.height],
+        ...(sourceTexture
+          ? {
+              source: sourceTexture,
+              sourceSampler: this.sourceSampler(),
+              sourceLevel: Math.max(
+                0,
+                Math.log2(sourceWidth / (capture.width * 4)),
+              ),
+            }
+          : {}),
+      },
+    });
+    // The solid angle of a texel of the first level of the capture.
+    const captureTexel = (4 * Math.PI) / (capture.width * capture.height);
+    const tile = (graph: MaterialGraphData, values: Record<string, number>) =>
+      new Material({
+        graph,
+        label: 'environment prefilter',
+        values: { size, captureTexel, captureSampler: sampler, ...values },
+      });
+    const radiance = radianceGraph();
+    const tiles = [
+      ...Array.from({ length: EnvironmentLevels }, (_, level) =>
+        tile(radiance, {
+          roughness: level / (EnvironmentLevels - 1),
+          // The mirror: a single sample, straight.
+          samples: level === 0 ? 1 : samples,
+        }),
+      ),
+      // Smooth, but wide: more samples.
+      tile(irradianceGraph(), { samples: samples * 4 }),
+      tile(brdfGraph(), { samples: Math.max(samples, 64) }),
+    ];
+    if (tiles.length !== BrdfTile + 1 || IrradianceTile !== EnvironmentLevels) {
+      throw new Error('internal error: the tiles of the environment');
+    }
+    const state: EnvironmentState = {
+      id: this._environmentIds++,
+      atlas,
+      capture: captureTexture,
+      format,
+      capturer,
+      tiles,
+      version: -1,
+    };
+    this._environments.set(environment, state);
+    return state;
+  }
+
+  // Bilinear, clamped: the tiles of the atlas have their borders.
+  private environmentSampler(): GpuSampler {
+    this._environmentSampler ??= this.backend.textures.createSampler({
+      label: 'environment sampler',
+      minFilter: 'linear',
+      magFilter: 'linear',
+      mipmapFilter: 'linear',
+      wrapModeS: 'clamp-to-edge',
+      wrapModeT: 'clamp-to-edge',
+    });
+    return this._environmentSampler;
+  }
+
+  // The sources of the environments: panoramas repeat around the vertical.
+  private sourceSampler(): GpuSampler {
+    this._sourceSampler ??= this.backend.textures.createSampler({
+      label: 'environment source sampler',
+      minFilter: 'linear',
+      magFilter: 'linear',
+      mipmapFilter: 'linear',
+      wrapModeS: 'repeat',
+      wrapModeT: 'clamp-to-edge',
+    });
+    return this._sourceSampler;
+  }
+
+  // The atlas read by the programs of a view, in this frame.
+  private bindEnvironment(
+    view: FrameView,
+    atlas: GpuAttachmentTarget | undefined,
+  ): void {
+    if (atlas && view.environment !== atlas) {
+      view.environment = atlas;
+      this.retireGroups(view.bindGroups);
+    }
+  }
+
   // The traced scene read by the programs of a view, in this frame.
   private bindRays(view: FrameView, scene: TracedScene | undefined): void {
     if (scene && (view.rays !== scene || view.raysVersion !== scene.version)) {
@@ -1864,6 +2210,12 @@ export class Renderer {
         ? { rayShadows: true, rayShadowSamples: variant.rayShadows }
         : {}),
       ...(variant?.fog && !variant.depthOnly ? { fog: true } : {}),
+      ...(variant?.environment && !variant.depthOnly
+        ? { environment: true }
+        : {}),
+      ...(this._lightClusters && !variant?.depthOnly
+        ? { lightClusters: true }
+        : {}),
     };
     const key = `${[...semantics].sort().join(',')}|${JSON.stringify(
       features,
@@ -2046,7 +2398,7 @@ export class Renderer {
         variant.shadows
       }|${variant.fog ?? false}|${variant.depthOnly}|${variant.samples}|${
         variant.outputsKey ?? ''
-      }|${variant.rayShadows ?? 0}`;
+      }|${variant.rayShadows ?? 0}|${variant.environment ?? false}`;
       this._passKeys.set(variant, passKey);
     }
     const cached = byPass.get(passKey);
@@ -2087,9 +2439,13 @@ export class Renderer {
     blend: boolean,
     targets: Readonly<Record<string, FullscreenTarget>>,
     shadows: boolean,
+    environment: boolean,
   ): PreparedItem & { targets: readonly string[] } {
     const mesh = this._fullscreenMesh;
-    const program = this.program(material, mesh, { shadows });
+    const program = this.program(material, mesh, {
+      shadows,
+      ...(environment ? { environment } : {}),
+    });
     // The extra targets of the program, by location after the color.
     const outputs =
       program.module.entryPoints.find((entry) => entry.stage === 'fragment')
@@ -2486,10 +2842,13 @@ export class Renderer {
   }
 
   // The frame and object groups: their uniform buffer and, for the frame of
-  // the programs reading the shadows, the shadow atlas and its sampler.
+  // the programs reading them, the light pool and grid, the shadow atlas and
+  // its sampler, the traced scene.
   private sharedBindGroup(
     state: UniformGroup & {
       shadowMap?: GpuAttachmentTarget;
+      lights?: FrameLights;
+      environment?: GpuAttachmentTarget;
       rays?: TracedScene;
     },
     group: PhysicalBindGroup,
@@ -2504,7 +2863,34 @@ export class Renderer {
             return { binding, resource: state.buffer as GpuBuffer };
           }
           if (resource.kind === 'sampler') {
-            return { binding, resource: this.shadowSampler() };
+            return {
+              binding,
+              resource:
+                resource.name === 'environmentSampler'
+                  ? this.environmentSampler()
+                  : this.shadowSampler(),
+            };
+          }
+          if (resource.name === 'environmentMap') {
+            if (!state.environment) {
+              throw new Error(
+                `"${resource.name}" is read without environment in the frame`,
+              );
+            }
+            return {
+              binding,
+              resource: state.environment as GpuBindGroupEntry['resource'],
+            };
+          }
+          if (resource.name === 'lights' || resource.name === 'lightGrid') {
+            const buffer =
+              state.lights?.[resource.name === 'lights' ? 'pool' : 'grid'];
+            if (!buffer) {
+              throw new Error(
+                `"${resource.name}" is read without lights in the frame`,
+              );
+            }
+            return { binding, resource: buffer };
           }
           if (resource.name !== 'shadowMap') {
             // The traced scene and the buffers of its hits.

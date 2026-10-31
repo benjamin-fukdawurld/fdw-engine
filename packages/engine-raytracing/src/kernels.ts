@@ -2,10 +2,13 @@ import {
   arrayType,
   BuiltinTypes,
   GraphBuilder,
+  lightMembers,
+  LightVec4s,
   MaterialGraphData,
   PortHandle,
   RayMasks,
   RaySurfaceVec4s,
+  std,
   stdRays,
 } from '@fdw/engine-shader';
 import { Bsdf, Shading } from './shading';
@@ -22,8 +25,31 @@ export const PathVec4s = 4;
 
 const vec4f = arrayType(BuiltinTypes.vec4f);
 
-/** vec4 per light in the lights buffer (see packLights). */
-export const LightVec4s = 4;
+/**
+ * A light of a light pool, the buffer of the lights of the renderer (see
+ * lightMembers in engine-shader, writeLightPool in engine-core): what the
+ * kernels read of it. The radiance is the diffuse color × π, as the pbr
+ * model.
+ */
+export function poolLight(s: Shading, lights: PortHandle, light: PortHandle) {
+  const at = (member: string) =>
+    s.index(
+      lights,
+      s.add(
+        s.mul(light, s.u32(LightVec4s)),
+        s.u32(lightMembers[member].offset),
+      ),
+    );
+  const cone = at('spotCone');
+  return {
+    position: at('position'),
+    radiance: s.mul(at('diffuse').swizzle('xyz'), Math.PI),
+    attenuation: at('attenuation'),
+    spotDirection: at('spotDirection').swizzle('xyz'),
+    inner: cone.swizzle('x'),
+    outer: cone.swizzle('y'),
+  };
+}
 
 // A kernel: the thread, its pixel, and the guard of the rays out of the
 // image.
@@ -146,9 +172,6 @@ export const GuideVec4s = 3;
  */
 export function guidesKernel(): MaterialGraphData {
   const { g, s, index, read, write, finish } = kernel('guides');
-  const zenith = g.uniform('skyZenith', BuiltinTypes.vec3f);
-  const horizon = g.uniform('skyHorizon', BuiltinTypes.vec3f);
-  const ground = g.uniform('skyGround', BuiltinTypes.vec3f);
   const paths = read('paths');
   const surfaces = read('raySurfaces');
   const surface = (k: number) =>
@@ -160,7 +183,7 @@ export function guidesKernel(): MaterialGraphData {
   const position = s4.swizzle('xyz');
   const metallic = s.saturate(s2.swizzle('w'));
   const albedo = s.select(
-    skyColor(s, dir, { zenith, horizon, ground }),
+    skyRadiance(s, dir),
     s.select(
       s.add(
         s.mul(s0.swizzle('xyz'), s.sub(1, metallic)),
@@ -190,20 +213,36 @@ export function guidesKernel(): MaterialGraphData {
 }
 
 // The sky of the rays lost, a gradient from the ground to the zenith.
-function skyColor(
-  s: Shading,
-  dir: PortHandle,
-  {
-    zenith,
-    horizon,
-    ground,
-  }: Record<'zenith' | 'horizon' | 'ground', PortHandle>,
-): PortHandle {
+/**
+ * The sky of the rays lost in a direction: the panorama of an environment
+ * (the texture skyPanorama, an equirectangular capture, × skyIntensity)
+ * when skyIntensity > 0, the gradient of skyZenith, skyHorizon and
+ * skyGround otherwise (see skyValues).
+ */
+export function skyRadiance(s: Shading, dir: PortHandle): PortHandle {
+  const g = s.g;
+  const zenith = g.uniform('skyZenith', BuiltinTypes.vec3f);
+  const horizon = g.uniform('skyHorizon', BuiltinTypes.vec3f);
+  const ground = g.uniform('skyGround', BuiltinTypes.vec3f);
+  const intensity = g.uniform('skyIntensity', BuiltinTypes.f32);
   const up = dir.swizzle('y');
-  return s.select(
+  const gradient = s.select(
     s.mix(horizon, ground, s.saturate(s.mul(up, -4))),
     s.mix(horizon, zenith, s.saturate(up)),
     s.greater(up, 0),
+  );
+  const panorama = g
+    .call(std.textureSampleLevel, {
+      texture: g.texture('skyPanorama'),
+      sampler: g.sampler('skyPanoramaSampler'),
+      uv: g.call('environment.equirect', { direction: dir }),
+      level: 0,
+    })
+    .swizzle('rgb');
+  return s.select(
+    gradient,
+    s.mul(panorama, intensity),
+    s.greater(intensity, 0),
   );
 }
 
@@ -219,9 +258,6 @@ export function bounceKernel(): MaterialGraphData {
   const frame = g.uniform('frame', BuiltinTypes.u32);
   const bounce = g.uniform('bounce', BuiltinTypes.u32);
   const lightCount = g.uniform('lightCount', BuiltinTypes.u32);
-  const zenith = g.uniform('skyZenith', BuiltinTypes.vec3f);
-  const horizon = g.uniform('skyHorizon', BuiltinTypes.vec3f);
-  const ground = g.uniform('skyGround', BuiltinTypes.vec3f);
   const paths = read('paths');
   const surfaces = read('raySurfaces');
   const lights = read('lights');
@@ -251,7 +287,7 @@ export function bounceKernel(): MaterialGraphData {
     8,
   );
 
-  const sky = skyColor(s, dir, { zenith, horizon, ground });
+  const sky = skyRadiance(s, dir);
 
   // Through the transparent pixels of masked and blended materials.
   const through = s.or(
@@ -265,9 +301,9 @@ export function bounceKernel(): MaterialGraphData {
     s.convert(s.floor(s.mul(u[3], fCount)), BuiltinTypes.u32),
     s.sub(s.max(lightCount, s.u32(1)), s.u32(1)),
   );
-  const light = (k: number) =>
-    s.index(lights, s.add(s.mul(chosen, s.u32(LightVec4s)), s.u32(k)));
-  const [l0, l1, l2, l3] = [0, 1, 2, 3].map(light);
+  const light = poolLight(s, lights, chosen);
+  const l0 = light.position;
+  const l3 = light.attenuation;
   const toLight = s.sub(l0.swizzle('xyz'), s.mul(position, l0.swizzle('w')));
   const distance = s.length(toLight);
   const l = s.div(toLight, s.max(distance, 1e-6));
@@ -288,8 +324,8 @@ export function bounceKernel(): MaterialGraphData {
   );
   const spot = s.saturate(
     s.div(
-      s.sub(s.dot(s.mul(l, -1), l2.swizzle('xyz')), l3.swizzle('w')),
-      s.max(s.sub(l2.swizzle('w'), l3.swizzle('w')), 1e-4),
+      s.sub(s.dot(s.mul(l, -1), light.spotDirection), light.outer),
+      s.max(s.sub(light.inner, light.outer), 1e-4),
     ),
   );
   const bsdf = new Bsdf(
@@ -325,10 +361,7 @@ export function bounceKernel(): MaterialGraphData {
   const direct = s.select(
     [0, 0, 0],
     s.mul(
-      s.mul(
-        bsdf.evaluate(l),
-        s.mul(l1.swizzle('xyz'), s.mul(attenuation, spot)),
-      ),
+      s.mul(bsdf.evaluate(l), s.mul(light.radiance, s.mul(attenuation, spot))),
       fCount,
     ),
     visible,

@@ -159,6 +159,18 @@ const engineValues: Record<string, ShaderType> = {
   // The fog of the frame (see fogMembers).
   'fog.color': BuiltinTypes.vec4f,
   'fog.height': BuiltinTypes.vec4f,
+  // The light pool and the light clusters, read by light.sum and
+  // light.current (see lightMembers and lightClusterMembers).
+  lightCount: BuiltinTypes.u32,
+  lightClusters: BuiltinTypes.vec4f,
+  lightClusterDepth: BuiltinTypes.vec4f,
+  lights: arrayType(BuiltinTypes.vec4f),
+  lightGrid: arrayType(BuiltinTypes.u32),
+  // The prefiltered environment, read by the environment.* functions (see
+  // environmentMembers).
+  environment: BuiltinTypes.vec4f,
+  environmentMap: BuiltinTypes.texture2d,
+  environmentSampler: BuiltinTypes.sampler,
   // The shadow atlas of the lights, read by the light.shadow macro.
   shadowMap: BuiltinTypes.depthTexture2d,
   shadowSampler: BuiltinTypes.comparisonSampler,

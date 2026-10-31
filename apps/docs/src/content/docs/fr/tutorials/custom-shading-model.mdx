@@ -74,6 +74,7 @@ const received = f.call(stdLights.sum, {
     }),
     b: intensity,
   }),
+  position: position.swizzle('xyz'),
 });
 ```
 
@@ -81,6 +82,11 @@ const received = f.call(stdLights.sum, {
 `diffuse`, `specular`), ses facteurs d'`attenuation` et son cône de spot.
 `light.shadow` donne sa visibilité en un point, à partir des shadow maps :
 multipliez la lumière par cette valeur pour recevoir les ombres.
+
+La `position` du point éclairé permet à `light.sum` de ne parcourir que les
+lumières qui peuvent l'atteindre (celles de son cluster, voir
+[Des centaines de lumières](/fdw-engine/fr/tutorials/many-lights/)) ; sans
+elle, la boucle parcourt toutes les lumières de l'image.
 
 ## Les bandes, et la couleur
 

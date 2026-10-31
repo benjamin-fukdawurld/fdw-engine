@@ -42,9 +42,13 @@ export class FakeBuffer implements GpuBuffer {
     readonly size: number,
     readonly label?: string,
   ) {}
-  write(_: number, value: ArrayBuffer): void {
+  // Keeps the bytes of the last write.
+  write(_: number, value: ArrayBuffer, dataOffset = 0, size?: number): void {
     this.writes++;
-    this.data = value.slice(0);
+    this.data = value.slice(
+      dataOffset,
+      size === undefined ? undefined : dataOffset + size,
+    );
   }
   async read(): Promise<ArrayBuffer> {
     return this.data.slice(0);
