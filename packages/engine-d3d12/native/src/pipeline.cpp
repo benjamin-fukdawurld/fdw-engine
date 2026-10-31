@@ -29,6 +29,7 @@ D3D12_DESCRIPTOR_RANGE_TYPE rangeType(fdw_dx_binding_kind kind) {
     return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
   case FDW_DX_BINDING_TEXTURE:
   case FDW_DX_BINDING_STORAGE_READ:
+  case FDW_DX_BINDING_ACCELERATION_STRUCTURE:
     break;
   }
   return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -197,6 +198,20 @@ bool writeDescriptor(fdw_dx_context *context,
       view.Texture2D.MipLevels = texture->levels;
     }
     device->CreateShaderResourceView(texture->resource.Get(), &view, target);
+    return true;
+  }
+  if (binding.kind == FDW_DX_BINDING_ACCELERATION_STRUCTURE) {
+    const auto found = context->topLevels.find(object);
+    if (found == context->topLevels.end()) {
+      return false;
+    }
+    // A view of the structure by its address, without resource.
+    D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+    view.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+    view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    view.RaytracingAccelerationStructure.Location =
+        found->second->storage->GetGPUVirtualAddress();
+    device->CreateShaderResourceView(nullptr, &view, target);
     return true;
   }
   const auto found = context->buffers.find(object);
@@ -646,11 +661,117 @@ fdw_dx_pipeline *fdw_dx_compute_pipeline_create(
   return pipeline;
 }
 
+int32_t fdw_dx_ray_tracing_pipeline_supported(const fdw_dx_context *context) {
+  return context->rayQuery ? 1 : 0;
+}
+
+fdw_dx_pipeline *fdw_dx_ray_tracing_pipeline_create(
+    fdw_dx_context *context, fdw_dx_shader *shader, uint32_t any_hit,
+    const uint32_t *workgroup_size, fdw_dx_group_layout *const *groups,
+    uint32_t group_count, const char *label) {
+  if (!context->rayQuery) {
+    fail("The device has no ray tracing pipelines");
+    return nullptr;
+  }
+  if (!shader || shader->stage != 'l') {
+    fail("A ray tracing pipeline needs a library of ray tracing shaders");
+    return nullptr;
+  }
+  auto *pipeline = new fdw_dx_pipeline();
+  pipeline->compute = true;
+  for (int k = 0; k < 3; k++) {
+    pipeline->workgroupSize[k] = std::max(workgroup_size[k], 1u);
+  }
+  // The root signature of the compute pipelines, global to the shaders.
+  pipeline->root = rootSignature(context, groups, group_count, true);
+  if (!pipeline->root) {
+    delete pipeline;
+    return nullptr;
+  }
+  // The entry points of the library (see RayTracingEntryPoints), and the
+  // hit group of the triangles.
+  const wchar_t *hitGroup = L"fdw_hit";
+  D3D12_EXPORT_DESC exports[] = {
+      {L"rg_main", nullptr, D3D12_EXPORT_FLAG_NONE},
+      {L"ms_main", nullptr, D3D12_EXPORT_FLAG_NONE},
+      {L"ch_main", nullptr, D3D12_EXPORT_FLAG_NONE},
+      {L"ah_main", nullptr, D3D12_EXPORT_FLAG_NONE},
+  };
+  D3D12_DXIL_LIBRARY_DESC library{};
+  library.DXILLibrary = {shader->bytecode.data(), shader->bytecode.size()};
+  library.NumExports = any_hit ? 4 : 3;
+  library.pExports = exports;
+  D3D12_HIT_GROUP_DESC hit{};
+  hit.HitGroupExport = hitGroup;
+  hit.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
+  hit.ClosestHitShaderImport = L"ch_main";
+  hit.AnyHitShaderImport = any_hit ? L"ah_main" : nullptr;
+  // The payload: the hit (uint4); the attributes: the barycentrics.
+  D3D12_RAYTRACING_SHADER_CONFIG config{16, 8};
+  D3D12_GLOBAL_ROOT_SIGNATURE global{pipeline->root->signature.Get()};
+  // The hit and miss shaders trace no rays.
+  D3D12_RAYTRACING_PIPELINE_CONFIG depth{1};
+  const D3D12_STATE_SUBOBJECT subobjects[] = {
+      {D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, &library},
+      {D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP, &hit},
+      {D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG, &config},
+      {D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE, &global},
+      {D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG, &depth},
+  };
+  D3D12_STATE_OBJECT_DESC desc{D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE,
+                               _countof(subobjects), subobjects};
+  HRESULT result = context->rayDevice->CreateStateObject(
+      &desc, IID_PPV_ARGS(&pipeline->rays));
+  takeDebugMessages(context);
+  if (FAILED(result)) {
+    delete pipeline;
+    fail("CreateStateObject", result);
+    return nullptr;
+  }
+  ComPtr<ID3D12StateObjectProperties> properties;
+  result = pipeline->rays.As(&properties);
+  if (FAILED(result)) {
+    delete pipeline;
+    fail("ID3D12StateObjectProperties", result);
+    return nullptr;
+  }
+  // The shader table: a record per group (its identifier), each at the
+  // start of a table, written in the order of the queue.
+  const void *identifiers[] = {properties->GetShaderIdentifier(L"rg_main"),
+                               properties->GetShaderIdentifier(L"ms_main"),
+                               properties->GetShaderIdentifier(hitGroup)};
+  pipeline->tableStride = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;
+  std::vector<uint8_t> table(size_t(pipeline->tableStride) * 3);
+  for (uint32_t group = 0; group < 3; group++) {
+    if (!identifiers[group]) {
+      delete pipeline;
+      fail("A shader of the ray tracing pipeline has no identifier");
+      return nullptr;
+    }
+    std::memcpy(table.data() + group * pipeline->tableStride,
+                identifiers[group], D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+  }
+  pipeline->shaderTable =
+      fdw_dx_buffer_create(context, table.size(), 0, label);
+  if (!pipeline->shaderTable ||
+      fdw_dx_buffer_write(context, pipeline->shaderTable, 0, table.data(),
+                          table.size()) != 0) {
+    fdw_dx_buffer_destroy(context, pipeline->shaderTable);
+    delete pipeline;
+    return nullptr;
+  }
+  setName(pipeline->rays.Get(), label);
+  pipeline->id = context->nextId++;
+  context->pipelines[pipeline->id] = pipeline;
+  return pipeline;
+}
+
 void fdw_dx_pipeline_destroy(fdw_dx_context *context,
                              fdw_dx_pipeline *pipeline) {
   if (!pipeline || !context->pipelines.erase(pipeline->id)) {
     return;
   }
+  fdw_dx_buffer_destroy(context, pipeline->shaderTable);
   defer(context, [pipeline] { delete pipeline; });
 }
 

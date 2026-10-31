@@ -1,5 +1,6 @@
 import {
   BackendCapabilities,
+  BottomLevelDescriptor,
   CameraMath,
   GpuCommandBuffer,
   GpuCommandEncoder,
@@ -7,11 +8,15 @@ import {
   ObjectTableDescriptor,
   RenderBackend,
   RenderTargetDescriptor,
+  TopLevelDescriptor,
   TransformMath,
   wgpuMatrixPrimitives,
 } from '@fdw/engine-backend';
 import {
+  createBottomLevel,
+  createTopLevel,
   unwrap,
+  VulkanBottomLevel,
   VulkanCommandBuffer,
   VulkanCommandEncoder,
   VulkanObjectTable,
@@ -19,6 +24,7 @@ import {
   VulkanPipelineFactory,
   VulkanTexture,
   VulkanTextureFactory,
+  VulkanTopLevel,
 } from '@fdw/engine-vulkan';
 import { loadD3D12Addon } from '../addon';
 import type { D3D12Device } from '../D3D12Device';
@@ -31,8 +37,9 @@ const transformMath = new TransformMath(wgpuMatrixPrimitives);
 /**
  * The abstract rendering API on a Direct3D 12 device. The native library
  * has the API of the Vulkan one: the objects of the Vulkan backend
- * (buffers, textures, command encoder, object table, pass timer) serve as
- * they are; the pipelines are generated in HLSL for Direct3D 12.
+ * (buffers, textures, command encoder, object table, pass timer,
+ * acceleration structures) serve as they are; the pipelines are generated
+ * in HLSL for Direct3D 12.
  */
 export class D3D12RenderBackend implements RenderBackend {
   readonly buffers;
@@ -57,6 +64,10 @@ export class D3D12RenderBackend implements RenderBackend {
       maxAnisotropy: addon.maxAnisotropy(device.context),
       maxColorAttachments: addon.maxColorAttachments(device.context),
       independentBlend: addon.independentBlend(device.context),
+      // Ray queries in every stage and the ray tracing pipelines, where the
+      // GPU has DXR 1.1.
+      rayQuery: addon.rayQuerySupported(device.context),
+      rayTracingPipeline: addon.rayTracingPipelineSupported(device.context),
     };
     this.pipelines = new VulkanPipelineFactory(addon, device.context, {
       target: 'd3d12',
@@ -84,6 +95,15 @@ export class D3D12RenderBackend implements RenderBackend {
 
   createObjectTable(descriptor: ObjectTableDescriptor): VulkanObjectTable {
     return new VulkanObjectTable(this.buffers, descriptor);
+  }
+
+  // The acceleration structures of the GPU, where it has ray queries.
+  createBottomLevel(descriptor: BottomLevelDescriptor): VulkanBottomLevel {
+    return createBottomLevel(loadD3D12Addon(), this.device.context, descriptor);
+  }
+
+  createTopLevel(descriptor?: TopLevelDescriptor): VulkanTopLevel {
+    return createTopLevel(loadD3D12Addon(), this.device.context, descriptor);
   }
 
   // Where the queue writes timestamps.

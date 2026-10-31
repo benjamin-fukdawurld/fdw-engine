@@ -124,6 +124,18 @@ int createDevice(fdw_dx_context *context, bool validation) {
       model.HighestShaderModel < D3D_SHADER_MODEL_6_0) {
     return fail("The GPU has no Shader Model 6.0");
   }
+  // Ray queries and ray tracing pipelines: DXR 1.1 and Shader Model 6.5.
+  D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5{};
+  D3D12_FEATURE_DATA_SHADER_MODEL rayModel{D3D_SHADER_MODEL_6_5};
+  if (SUCCEEDED(context->device->CheckFeatureSupport(
+          D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))) &&
+      options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1 &&
+      SUCCEEDED(context->device->CheckFeatureSupport(
+          D3D12_FEATURE_SHADER_MODEL, &rayModel, sizeof(rayModel))) &&
+      rayModel.HighestShaderModel >= D3D_SHADER_MODEL_6_5 &&
+      SUCCEEDED(context->device.As(&context->rayDevice))) {
+    context->rayQuery = true;
+  }
   if (context->validation &&
       SUCCEEDED(context->device.As(&context->infoQueue))) {
     filterMessages(context->infoQueue.Get());
@@ -276,6 +288,9 @@ CommandList *beginList(fdw_dx_context *context) {
       result = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
                                          list->allocator.Get(), nullptr,
                                          IID_PPV_ARGS(&list->list));
+    }
+    if (SUCCEEDED(result) && context->rayQuery) {
+      result = list->list.As(&list->rays);
     }
     if (FAILED(result)) {
       fail("CreateCommandList", result);
@@ -508,6 +523,7 @@ void fdw_dx_context_destroy(fdw_dx_context *context) {
     context->reads.clear();
     destroySwapchains(context);
     destroyPipelines(context);
+    destroyAccelerationStructures(context);
     for (auto &[id, buffer] : context->buffers) {
       delete buffer;
     }

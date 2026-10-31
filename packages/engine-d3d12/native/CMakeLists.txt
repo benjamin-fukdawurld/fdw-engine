@@ -29,6 +29,7 @@ add_library(fdw_d3d12 STATIC
   src/mipmaps.cpp
   src/swapchain.cpp
   src/queries.cpp
+  src/rays.cpp
 )
 target_include_directories(fdw_d3d12 PUBLIC include)
 target_compile_definitions(fdw_d3d12 PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)

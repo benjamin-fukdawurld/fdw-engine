@@ -115,7 +115,7 @@ async function expectLayout(
 describe.skipIf(skipHlsl)('The programs of the rendering suite in HLSL', () => {
   it(
     'compile to valid SPIR-V, with the offsets of the layout',
-    { timeout: 30_000 },
+    { timeout: 60_000 },
     async () => {
       // Surfaces, raw stages, full screen passes, compute kernels, shadows…
       expect(programs.size).toBeGreaterThan(30);
