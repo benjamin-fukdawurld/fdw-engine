@@ -19,6 +19,7 @@
     "electron.vite.config.ts",
     "playwright.config.ts",
     "tests/**/*",
+    "scripts/**/*.ts",
     "src/main/**/*",
     "src/engine/**/*",
     "src/preload/**/*",

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { addonPath, loadVulkanAddon } from '../addon';
 import { dxcArguments } from './HlslCodegen';
-import { FileShaderCache, shaderKey } from './ShaderCache';
+import { FileShaderCache, LayeredShaderCache, shaderKey } from './ShaderCache';
 
 describe('shaderKey', () => {
   const args = ['-T', 'cs_6_0', '-E', 'main'];
@@ -78,6 +78,48 @@ describe('FileShaderCache', () => {
       );
       process.env['FDW_SHADER_CACHE'] = '/somewhere';
       expect(new FileShaderCache().directory).toBe('/somewhere');
+    } finally {
+      if (previous === undefined) delete process.env['FDW_SHADER_CACHE'];
+      else process.env['FDW_SHADER_CACHE'] = previous;
+    }
+  });
+});
+
+describe('LayeredShaderCache', () => {
+  let directory: string | undefined;
+  afterEach(() => {
+    if (directory) rmSync(directory, { recursive: true, force: true });
+    directory = undefined;
+  });
+
+  it('reads the programs shipped first, writes into the cache of the user', () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const shipped = new FileShaderCache(join(directory, 'shipped'));
+    shipped.set('a', new Uint8Array([1]));
+    const user = new FileShaderCache(join(directory, 'user'));
+    user.set('a', new Uint8Array([2]));
+    const cache = new LayeredShaderCache(shipped, user);
+    expect([...(cache.get('a') ?? [])]).toEqual([1]);
+    expect(cache.get('b')).toBeUndefined();
+    cache.set('b', new Uint8Array([3]));
+    expect(readdirSync(join(directory, 'shipped'))).toEqual(['a.bin']);
+    expect([...(cache.get('b') ?? [])]).toEqual([3]);
+  });
+
+  it('is what the hosts get when the application ships programs', () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const previous = process.env['FDW_SHADER_CACHE'];
+    try {
+      process.env['FDW_SHADER_CACHE'] = join(directory, 'user');
+      expect(FileShaderCache.fromEnvironment(directory)).toBeInstanceOf(
+        LayeredShaderCache,
+      );
+      // Nothing shipped there.
+      expect(
+        FileShaderCache.fromEnvironment(join(directory, 'none')),
+      ).toBeInstanceOf(FileShaderCache);
+      process.env['FDW_SHADER_CACHE'] = 'off';
+      expect(FileShaderCache.fromEnvironment(directory)).toBeUndefined();
     } finally {
       if (previous === undefined) delete process.env['FDW_SHADER_CACHE'];
       else process.env['FDW_SHADER_CACHE'] = previous;

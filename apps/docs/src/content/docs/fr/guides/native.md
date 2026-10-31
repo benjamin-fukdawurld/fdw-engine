@@ -117,6 +117,13 @@ Il vit dans le dossier de cache de l'utilisateur
 (`%LOCALAPPDATA%\fdw-engine\shaders`, `~/.cache/fdw-engine/shaders`), ou dans
 `FDW_SHADER_CACHE`. Le supprimer ne coûte qu'un démarrage plus lent.
 
+Une application peut aussi livrer ses programmes, compilés d'avance avec le
+DXC qu'elle livre : `FileShaderCache.fromEnvironment(dossier)` les lit
+d'abord, puis le cache de l'utilisateur, où vont les programmes non livrés
+(les matériaux d'un niveau) (`LayeredShaderCache`). Le premier démarrage ne
+lance alors pas DXC non plus. L'exécutable de l'éditeur est construit
+ainsi.
+
 ## Variables d'environnement
 
 | Variable               | Effet                                                                          |

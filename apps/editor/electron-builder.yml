@@ -1,0 +1,22 @@
+# The executable of the editor (scripts/package.mjs gathers dist/ first).
+appId: com.fdw-engine.editor
+productName: FDW Editor
+directories:
+  output: release
+# The bundle only: React and the sources of the packages are in it.
+files:
+  - out/**/*
+  - package.json
+  - '!**/node_modules/**/*'
+# The addons, DXC, the models, the programs precompiled: out of the asar,
+# where the addons can be loaded (process.resourcesPath).
+extraResources:
+  - from: dist
+    to: .
+# The addons are Node-API, built once for every runtime.
+npmRebuild: false
+win:
+  target: portable
+linux:
+  target: AppImage
+  category: Development
