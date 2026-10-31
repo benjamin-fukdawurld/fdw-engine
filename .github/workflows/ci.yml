@@ -225,16 +225,18 @@ jobs:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
           install_runtime: true
           install_lavapipe: true
+          lavapipe_destination: C:\Lavapipe
           cache: true
           stripdown: true
 
-      # lavapipe as the only Vulkan driver, wherever the action put it.
+      # lavapipe as the only Vulkan driver.
       - name: lavapipe
         if: steps.affected.outputs.projects != ''
         run: |
-          manifest=$(find "$VULKAN_SDK/.." "$RUNNER_TOOL_CACHE" "$GITHUB_WORKSPACE/.."             -maxdepth 6 -name 'lvp_icd*.json' 2>/dev/null | head -n 1)
+          manifest=$(find /c/Lavapipe -name 'lvp_icd*.json' 2>/dev/null | head -n 1)
           if [ -z "$manifest" ]; then
-            echo "No lavapipe manifest found" >&2
+            echo "No lavapipe manifest found under C:\\Lavapipe" >&2
+            ls -R /c/Lavapipe >&2 || true
             exit 1
           fi
           echo "lavapipe: $manifest"
