@@ -1,7 +1,7 @@
 import type { Engine, RenderBackend, Surface } from '@fdw/engine-backend';
 import { D3D12Engine } from '@fdw/engine-d3d12';
 import { createDawnEngine, DawnWindowSurface } from '@fdw/engine-native';
-import { VulkanEngine } from '@fdw/engine-vulkan';
+import { FileShaderCache, VulkanEngine } from '@fdw/engine-vulkan';
 import { ViewportSurface } from './ViewportSurface';
 import type { NativeViewport } from './viewport';
 
@@ -41,6 +41,9 @@ export async function startVulkan(viewport: NativeViewport): Promise<Renderer> {
   const engine = new VulkanEngine({
     application: 'FDW Editor',
     validation: process.env['FDW_VALIDATION'] === '1',
+    // The programs compiled at a previous start (FDW_SHADER_CACHE=off:
+    // none).
+    shaderCache: FileShaderCache.fromEnvironment(),
   });
   const surface = new ViewportSurface(viewport);
   const destroy = async () => {
@@ -75,6 +78,7 @@ export async function startD3D12(viewport: NativeViewport): Promise<Renderer> {
   const engine = new D3D12Engine({
     application: 'FDW Editor',
     validation: process.env['FDW_VALIDATION'] === '1',
+    shaderCache: FileShaderCache.fromEnvironment(),
   });
   const surface = new ViewportSurface(viewport);
   const destroy = async () => {
