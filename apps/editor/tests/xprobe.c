@@ -11,7 +11,7 @@
 //   pixel <x> <y>            answers "<r> <g> <b>"
 //   region <x> <y> <w> <h>   answers the mean color "<r> <g> <b>"
 //   sync                     answers "ok" once the server has done the rest
-// Build: cc -O1 -o xprobe xprobe.c -lX11 -ldl
+// Built by the CMake of the addon (native/CMakeLists.txt).
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <dlfcn.h>

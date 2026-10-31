@@ -2,7 +2,8 @@
 # format, typecheck, lint and tests of the projects affected by the change
 # (`check`), then the native addons and the rendering suite on software GPUs
 # (`native`): Vulkan on lavapipe, Dawn, HLSL through DXC, WebGL2 in
-# Chromium with SwiftShader.
+# Chromium with SwiftShader; the same under Windows (`windows`, design/
+# p11-windows.md §2), with Direct3D 12 on WARP.
 name: CI
 
 on:
@@ -176,3 +177,104 @@ jobs:
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
           PROJECTS: ${{ steps.affected.outputs.projects }}
         run: xvfb-run -a npx nx run-many -t test --projects="$PROJECTS"
+
+  # The native job under Windows: the addons built by MSVC, Vulkan on
+  # lavapipe, Direct3D 12 and Dawn on WARP, Chromium with WARP and
+  # SwiftShader. The windows open on the desktop of the runner.
+  windows:
+    name: Windows
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      FDW_REQUIRE_SUITES: vulkan,d3d12,dawn,hlsl,glsl,window
+      # The software rasterizer of Windows: the runner has no GPU.
+      FDW_D3D12_ADAPTER: warp
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - uses: nrwl/nx-set-shas@v4
+
+      # The affected projects tagged gpu, but the desktop editor: its tests
+      # under Windows come with its viewport (design/p11-windows.md §6).
+      - name: Affected GPU projects
+        id: affected
+        run: |
+          projects=$(npx nx show projects --affected --projects 'tag:gpu' --exclude editor --json | jq -r 'join(",")')
+          echo "projects=$projects" >> "$GITHUB_OUTPUT"
+          echo "Affected: ${projects:-none}"
+
+      # The SDK (DXC, spirv-val, spirv-cross, glslangValidator), the Vulkan
+      # loader (the runner has no GPU driver to bring it) and lavapipe.
+      - name: Vulkan SDK, loader and lavapipe
+        if: steps.affected.outputs.projects != ''
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          install_runtime: true
+          install_lavapipe: true
+          cache: true
+          stripdown: true
+
+      # lavapipe as the only Vulkan driver, wherever the action put it.
+      - name: lavapipe
+        if: steps.affected.outputs.projects != ''
+        run: |
+          manifest=$(find "$VULKAN_SDK/.." "$RUNNER_TOOL_CACHE" "$GITHUB_WORKSPACE/.."             -maxdepth 6 -name 'lvp_icd*.json' 2>/dev/null | head -n 1)
+          if [ -z "$manifest" ]; then
+            echo "No lavapipe manifest found" >&2
+            exit 1
+          fi
+          echo "lavapipe: $manifest"
+          echo "VK_DRIVER_FILES=$(cygpath -w "$manifest")" >> "$GITHUB_ENV"
+          echo "$VULKAN_SDK/Bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        if: steps.affected.outputs.projects != ''
+        with:
+          path: .nx/cache
+          key: nx-native-${{ runner.os }}-${{ github.sha }}
+          restore-keys: nx-native-${{ runner.os }}-
+
+      # The CMake builds of the addons (SDL and the other fetched
+      # dependencies): MSBuild rebuilds what changed.
+      - uses: actions/cache@v4
+        if: steps.affected.outputs.projects != ''
+        with:
+          path: |
+            packages/engine-native/build
+            packages/engine-vulkan/build
+            packages/engine-d3d12/build
+          key: native-build-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('packages/*/native/**', 'tools/native/**') }}
+          restore-keys: native-build-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}-
+
+      - name: Chromium (cache)
+        if: steps.affected.outputs.projects != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # Chromium and its headless shell: WebGPU needs the first under
+      # Windows (apps/editor-web/vite.config.mts).
+      - name: Chromium
+        if: steps.affected.outputs.projects != ''
+        run: npx playwright install chromium
+
+      - name: Tests
+        if: steps.affected.outputs.projects != ''
+        env:
+          PROJECTS: ${{ steps.affected.outputs.projects }}
+        run: npx nx run-many -t test --projects="$PROJECTS"

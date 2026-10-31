@@ -91,15 +91,24 @@ export default defineConfig(() => ({
       screenshotFailures: false,
       provider: playwright({
         launchOptions: {
+          // Under Windows, the headless shell of Playwright has no WebGPU:
+          // Chromium itself, in its new headless mode.
+          channel: process.platform === 'win32' ? 'chromium' : undefined,
           args: [
             '--enable-unsafe-webgpu',
-            // WebGPU on SwiftShader by Vulkan, as the tests of the
-            // documentation: on the default adapter, the readbacks of the
-            // picking never resolve.
-            '--enable-features=Vulkan',
-            '--use-vulkan=swiftshader',
+            // WebGPU on SwiftShader, as the tests of the documentation: on
+            // the default adapter, the readbacks of the picking never
+            // resolve. By Vulkan under Linux, WebGL2 on SwiftShader too;
+            // under Windows, these switches leave WebGPU no adapter:
+            // WebGL2 on WARP there.
+            ...(process.platform === 'win32'
+              ? ['--use-angle=d3d11-warp']
+              : [
+                  '--enable-features=Vulkan',
+                  '--use-vulkan=swiftshader',
+                  '--use-angle=swiftshader',
+                ]),
             '--use-webgpu-adapter=swiftshader',
-            '--use-angle=swiftshader',
             '--enable-unsafe-swiftshader',
           ],
         },

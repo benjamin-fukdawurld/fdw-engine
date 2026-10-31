@@ -12,4 +12,5 @@ export * from './render/VulkanPassTimer';
 export * from './render/VulkanPipelineFactory';
 export * from './render/VulkanRenderBackend';
 export * from './shader/HlslCodegen';
+export * from './shader/ShaderCache';
 export * from './tools/spirvTools';

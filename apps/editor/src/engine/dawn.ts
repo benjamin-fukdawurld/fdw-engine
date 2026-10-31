@@ -10,7 +10,7 @@ import type { DawnControlMessage } from '../shared/protocol';
 import { fromWire, toWire } from './wire';
 import { startDawn } from './backends';
 import { EngineSession, type PageLink } from './session';
-import { X11Viewport } from './viewport';
+import { NativeViewport } from './viewport';
 
 const send = (message: EngineMessage) => process.send?.(toWire(message));
 const errorText = (error: unknown) =>
@@ -59,7 +59,7 @@ process.on('message', (data) => {
   switch (message.type) {
     case 'init': {
       started = true;
-      const viewport = new X11Viewport(BigInt(message.parent));
+      const viewport = new NativeViewport(BigInt(message.parent));
       void session
         .run(viewport, async () => {
           const { fallback } = message;

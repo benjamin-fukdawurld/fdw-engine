@@ -8,14 +8,22 @@ import {
 import { describeRays } from './rays';
 import { describeRenderer, RenderingFixture, size } from './suite';
 import { canRun } from '@fdw/engine-backend/testing';
+import { memoryShaderCache } from './shaderCache';
 
 // The shared rendering tests on Direct3D 12, through the native library of
 // @fdw/engine-d3d12, with the debug layer: any message fails the test
 // reading the pixels. Skipped where the addon is not built (Windows only);
-// the rays, where the GPU has no DXR 1.1.
+// the rays, where the GPU has no DXR 1.1. The programs come from a cache
+// after their first compilation.
+
+const shaderCache = memoryShaderCache();
 
 async function createFixture(): Promise<RenderingFixture> {
-  const engine = new D3D12Engine({ validation: true, application: 'tests' });
+  const engine = new D3D12Engine({
+    validation: true,
+    application: 'tests',
+    shaderCache,
+  });
   await engine.init();
   const surface = new D3D12OffscreenSurface(size, size);
   await surface.init(engine);

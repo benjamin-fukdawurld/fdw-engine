@@ -42,7 +42,7 @@ import {
 } from '@fdw/engine-native';
 import { NativeInputSource } from '@fdw/engine-input-native';
 import { createRapierPhysics } from '@fdw/engine-physics-rapier';
-import { VulkanEngine } from '@fdw/engine-vulkan';
+import { FileShaderCache, VulkanEngine } from '@fdw/engine-vulkan';
 import {
   createCity,
   createCityScene,
@@ -146,6 +146,8 @@ if (vulkan) {
   const vulkanEngine = new VulkanEngine({
     validation: args.includes('--validation'),
     application: 'FdwEngine demo',
+    // The programs compiled at a previous run (FDW_SHADER_CACHE=off: none).
+    shaderCache: FileShaderCache.fromEnvironment(),
   });
   await vulkanEngine.init();
   engine = vulkanEngine;
@@ -163,6 +165,7 @@ if (vulkan) {
   const d3d12Engine = new D3D12Engine({
     validation: args.includes('--validation'),
     application: 'FdwEngine demo',
+    shaderCache: FileShaderCache.fromEnvironment(),
   });
   await d3d12Engine.init();
   engine = d3d12Engine;

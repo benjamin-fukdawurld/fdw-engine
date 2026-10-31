@@ -2,12 +2,16 @@ import { Engine, EngineState } from '@fdw/engine-backend';
 import { signal, Signal } from '@preact/signals-core';
 import { VulkanRenderBackend } from './render/VulkanRenderBackend';
 import { VulkanDevice, VulkanDeviceOptions } from './VulkanDevice';
+import type { ShaderCache } from './shader/ShaderCache';
 
 export interface VulkanEngineOptions extends VulkanDeviceOptions {
   // The anisotropy of the samplers created without maxAnisotropy (see
   // GpuSamplerFactory.defaultMaxAnisotropy): 1 by default, 8 or 16 for
   // sharp textures on surfaces seen at a grazing angle.
   readonly maxAnisotropy?: number;
+  // The programs compiled by DXC, kept between runs (FileShaderCache):
+  // compiled once, not at each start. None by default.
+  readonly shaderCache?: ShaderCache;
 }
 
 /**
@@ -38,6 +42,7 @@ export class VulkanEngine extends EventTarget implements Engine {
       this.backend = new VulkanRenderBackend(this.device);
       this.backend.textures.defaultMaxAnisotropy =
         this._options.maxAnisotropy ?? 1;
+      this.backend.pipelines.shaderCache = this._options.shaderCache;
     } catch (error) {
       this.device = undefined;
       this.state.value = 'uninitialized';

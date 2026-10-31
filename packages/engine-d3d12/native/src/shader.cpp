@@ -62,8 +62,23 @@ bool loadFrom(const std::filesystem::path &directory) {
   return createInstance != nullptr;
 }
 
+// The directory of the addon, where the prebuilt addons bring DXC
+// (tools/native/build-addon.mjs).
+std::filesystem::path addonDirectory() {
+  HMODULE module = nullptr;
+  wchar_t path[MAX_PATH];
+  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          reinterpret_cast<LPCWSTR>(&addonDirectory),
+                          &module) ||
+      GetModuleFileNameW(module, path, MAX_PATH) == 0) {
+    return {};
+  }
+  return std::filesystem::path(path).parent_path();
+}
+
 // Loads the DXC library: FDW_DXC_LIBRARY (dxcompiler.dll, dxil.dll beside
-// it), the Windows SDK, the Vulkan SDK, the system.
+// it), beside the addon, the Windows SDK, the Vulkan SDK, the system.
 int loadDxc() {
   if (createInstance) {
     return 0;
@@ -71,6 +86,9 @@ int loadDxc() {
   std::vector<std::filesystem::path> candidates;
   if (const char *path = std::getenv("FDW_DXC_LIBRARY")) {
     candidates.push_back(std::filesystem::path(path).parent_path());
+  }
+  if (const auto directory = addonDirectory(); !directory.empty()) {
+    candidates.push_back(directory);
   }
   for (const auto &directory : windowsSdkDirectories()) {
     candidates.push_back(directory);
@@ -169,6 +187,61 @@ fdw_dx_shader *fdw_dx_shader_create(fdw_dx_context *context, const char *hlsl,
     delete shader;
     return nullptr;
   }
+  shader->stage = option(arguments, count, "-T").c_str()[0];
+  context->shaders.insert(shader);
+  return shader;
+}
+
+const char *fdw_dx_dxc_version(void) {
+  static std::string version;
+  if (!version.empty()) {
+    return version.c_str();
+  }
+  if (loadDxc() != 0) {
+    return nullptr;
+  }
+  ComPtr<IDxcVersionInfo> info;
+  ComPtr<IDxcVersionInfo2> commit;
+  UINT32 major = 0, minor = 0, commits = 0;
+  char *hash = nullptr;
+  if (FAILED(createInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&info))) ||
+      FAILED(info->GetVersion(&major, &minor))) {
+    fail("The version of DXC is unknown");
+    return nullptr;
+  }
+  version = std::to_string(major) + "." + std::to_string(minor);
+  if (SUCCEEDED(info.As(&commit)) &&
+      SUCCEEDED(commit->GetCommitInfo(&commits, &hash)) && hash) {
+    version += std::string(" ") + hash;
+    CoTaskMemFree(hash);
+  }
+  return version.c_str();
+}
+
+int fdw_dx_compile_hlsl(const char *hlsl, const char *const *arguments,
+                        uint32_t count, uint8_t **code, size_t *size) {
+  std::vector<uint8_t> compiled;
+  if (compileHlsl(hlsl, arguments, count, &compiled) != 0) {
+    return -1;
+  }
+  *code = static_cast<uint8_t *>(std::malloc(compiled.size()));
+  std::memcpy(*code, compiled.data(), compiled.size());
+  *size = compiled.size();
+  return 0;
+}
+
+void fdw_dx_free_code(uint8_t *code) { std::free(code); }
+
+fdw_dx_shader *fdw_dx_shader_create_from_code(fdw_dx_context *context,
+                                              const uint8_t *code, size_t size,
+                                              const char *const *arguments,
+                                              uint32_t count, const char *) {
+  if (size == 0) {
+    fail("No DXIL");
+    return nullptr;
+  }
+  auto *shader = new fdw_dx_shader();
+  shader->bytecode.assign(code, code + size);
   shader->stage = option(arguments, count, "-T").c_str()[0];
   context->shaders.insert(shader);
   return shader;

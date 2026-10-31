@@ -7,7 +7,7 @@ import { NativeAudioEngine } from './NativeAudioEngine';
 const addon = new URL(
   '../../engine-native/build/fdw_native.node',
   import.meta.url,
-).pathname;
+);
 const fixture = async (name: string) =>
   new Uint8Array(
     await readFile(

@@ -14,10 +14,15 @@
       "cache": true,
       "inputs": [
         "{projectRoot}/native/**/*",
+        "{projectRoot}/tests/*.c",
         "{projectRoot}/scripts/**/*",
         "{workspaceRoot}/tools/native/**/*"
       ],
-      "outputs": ["{projectRoot}/build/fdw_editor.node"]
+      "outputs": [
+        "{projectRoot}/build/fdw_editor.node",
+        "{projectRoot}/build/xprobe",
+        "{projectRoot}/build/winprobe.exe"
+      ]
     },
     "install": {
       "// command": "npm install, then the binary of Electron: its postinstall does not run under the npm of the CI (scripts not approved)",
@@ -35,7 +40,7 @@
       "dependsOn": [
         "build-native",
         {
-          "projects": ["engine-native", "engine-vulkan"],
+          "projects": ["engine-native", "engine-vulkan", "engine-d3d12"],
           "target": "build-native"
         }
       ]
@@ -62,7 +67,7 @@
       "dependsOn": [
         "build-native",
         {
-          "projects": ["engine-native", "engine-vulkan"],
+          "projects": ["engine-native", "engine-vulkan", "engine-d3d12"],
           "target": "build-native"
         },
         "build"
@@ -82,8 +87,9 @@
       ],
       "dependsOn": ["install"]
     },
-    "test": {
-      "command": "xvfb-run -a -s '-screen 0 1600x1000x24' npx playwright test",
+    "package": {
+      "// command": "the executable (scripts/package.mjs): the programs precompiled on this device",
+      "command": "node scripts/package.mjs",
       "options": {
         "cwd": "apps/editor"
       },
@@ -91,7 +97,22 @@
         "install",
         "build-native",
         {
-          "projects": ["engine-native", "engine-vulkan"],
+          "projects": ["engine-native", "engine-vulkan", "engine-d3d12"],
+          "target": "build-native"
+        },
+        "build"
+      ]
+    },
+    "test": {
+      "command": "node scripts/test.mjs",
+      "options": {
+        "cwd": "apps/editor"
+      },
+      "dependsOn": [
+        "install",
+        "build-native",
+        {
+          "projects": ["engine-native", "engine-vulkan", "engine-d3d12"],
           "target": "build-native"
         },
         "build"

@@ -1,33 +1,43 @@
 import type { Engine, GpuTextureFormat, Surface } from '@fdw/engine-backend';
+import { D3D12Engine, D3D12Swapchain } from '@fdw/engine-d3d12';
 import {
   VulkanEngine,
   VulkanSwapchain,
   VulkanTexture,
 } from '@fdw/engine-vulkan';
-import type { X11Viewport } from './viewport';
+import type { NativeViewport } from './viewport';
 
 /**
- * A surface presenting Vulkan frames into the viewport, without copy: a
- * swapchain on its window, recreated when its bounds change size (as
- * VulkanWindowSurface of @fdw/engine-native does for a NativeWindow).
- * FIFO: the swapchain sets the pace of the render loop.
+ * A surface presenting Vulkan or Direct3D 12 frames into the viewport,
+ * without copy: a swapchain on its window, recreated when its bounds change
+ * size (as VulkanWindowSurface of @fdw/engine-native does for a
+ * NativeWindow). FIFO: the swapchain sets the pace of the render loop.
  */
 export class ViewportSurface implements Surface {
-  private _swapchain?: VulkanSwapchain;
+  private _swapchain?: VulkanSwapchain | D3D12Swapchain;
   private _current?: VulkanTexture;
 
-  constructor(readonly viewport: X11Viewport) {}
+  constructor(readonly viewport: NativeViewport) {}
 
   async init(engine: Engine): Promise<void> {
-    if (!(engine instanceof VulkanEngine) || !engine.device) {
-      throw new Error('The surface needs a ready VulkanEngine');
+    const { window } = this.viewport;
+    if (engine instanceof VulkanEngine && engine.device) {
+      this._swapchain = new VulkanSwapchain(
+        engine.device,
+        window,
+        this.width,
+        this.height,
+      );
+    } else if (engine instanceof D3D12Engine && engine.device) {
+      this._swapchain = new D3D12Swapchain(
+        engine.device,
+        window,
+        this.width,
+        this.height,
+      );
+    } else {
+      throw new Error('The surface needs a ready VulkanEngine or D3D12Engine');
     }
-    this._swapchain = new VulkanSwapchain(
-      engine.device,
-      this.viewport.window,
-      this.width,
-      this.height,
-    );
   }
 
   get format(): GpuTextureFormat {
@@ -60,7 +70,7 @@ export class ViewportSurface implements Surface {
     this._current = undefined;
   }
 
-  private get swapchain(): VulkanSwapchain {
+  private get swapchain(): VulkanSwapchain | D3D12Swapchain {
     if (!this._swapchain) {
       throw new Error('The surface is not initialized');
     }

@@ -219,6 +219,22 @@ FDW_VK_API fdw_vk_shader *fdw_vk_shader_create(fdw_vk_context *context,
                                                const char *label);
 FDW_VK_API void fdw_vk_shader_destroy(fdw_vk_context *context,
                                       fdw_vk_shader *shader);
+// Compiles an entry point of an HLSL module to SPIR-V, without creating a
+// module: `*code` (freed by fdw_vk_free_code) of `*size` bytes, for a cache
+// of the programs. Returns 0, or -1 on error.
+FDW_VK_API int fdw_vk_compile_hlsl(const char *hlsl,
+                                   const char *const *arguments,
+                                   uint32_t count, uint8_t **code,
+                                   size_t *size);
+FDW_VK_API void fdw_vk_free_code(uint8_t *code);
+// Creates a shader module from SPIR-V compiled before (fdw_vk_compile_hlsl,
+// or a cache): the arguments give its stage and entry point.
+FDW_VK_API fdw_vk_shader *fdw_vk_shader_create_from_code(
+    fdw_vk_context *context, const uint8_t *code, size_t size,
+    const char *const *arguments, uint32_t count, const char *label);
+// The version of the DXC library, with its commit when it tells it: a key
+// of the cache of the programs. NULL when DXC is missing.
+FDW_VK_API const char *fdw_vk_dxc_version(void);
 
 // --- Groups of resources -------------------------------------------------------
 

@@ -164,7 +164,7 @@ describe('stb image decoder', () => {
   const addon = new URL(
     '../../engine-native/build/fdw_native.node',
     import.meta.url,
-  ).pathname;
+  );
   it.skipIf(!existsSync(addon))(
     'decodes a PNG with the real addon',
     async () => {

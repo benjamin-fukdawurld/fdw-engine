@@ -6,6 +6,9 @@ export interface D3D12DeviceOptions {
   // Windows). Its messages are read with takeMessages().
   readonly validation?: boolean;
   readonly application?: string;
+  // The GPU, or WARP, the software rasterizer of Windows (for a machine
+  // without GPU, such as the CI). FDW_D3D12_ADAPTER=warp by default.
+  readonly adapter?: 'gpu' | 'warp';
 }
 
 /**
@@ -20,9 +23,17 @@ export class D3D12Device {
   private readonly _addon: D3D12Addon;
   private _context?: ContextHandle;
 
-  constructor({ validation = false, application }: D3D12DeviceOptions = {}) {
+  constructor({
+    validation = false,
+    application,
+    adapter = process.env['FDW_D3D12_ADAPTER'] === 'warp' ? 'warp' : 'gpu',
+  }: D3D12DeviceOptions = {}) {
     this._addon = loadD3D12Addon();
-    this._context = this._addon.createContext(validation, application);
+    this._context = this._addon.createContext(
+      validation,
+      application,
+      adapter === 'warp',
+    );
     this.name = this._addon.deviceName(this._context);
     this.validation = this._addon.validationEnabled(this._context);
     // The buffers of the Vulkan backend: the addons have the same API.

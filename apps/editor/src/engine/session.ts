@@ -11,7 +11,7 @@ import { NativeAudioEngine } from '@fdw/engine-audio-native';
 import { createStbImageDecoder } from '@fdw/engine-resources-native';
 import type { Renderer } from './backends';
 import { scenes } from './scenes';
-import type { X11Viewport } from './viewport';
+import type { NativeViewport } from './viewport';
 
 // The scene shown first: the level (FDW_SCENE chooses another).
 const defaultScene = process.env['FDW_SCENE'] ?? levelScene;
@@ -70,7 +70,7 @@ export class EngineSession {
    * the viewport last.
    */
   async run(
-    viewport: X11Viewport,
+    viewport: NativeViewport,
     start: () => Promise<StartedBackend<Renderer>>,
   ): Promise<void> {
     let renderer: Renderer | undefined;

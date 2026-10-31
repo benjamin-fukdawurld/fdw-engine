@@ -460,8 +460,10 @@ export class LevelView implements ShownScene {
         format: 'rgba16float',
       });
     }
-    // The reflections: a G-buffer of the level, its rays added.
+    // The reflections: a G-buffer of the level, its rays added. Named: the
+    // rasterized level is in the graph too.
     const passes = this.#renderer.addScenePasses(graph, {
+      name: 'reflections scene',
       source: this.#document.scene,
       camera: this.#camera,
       lights,

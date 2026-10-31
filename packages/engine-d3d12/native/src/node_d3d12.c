@@ -124,13 +124,15 @@ static fdw_dx_context *context_arg(napi_env env, napi_value value) {
   return handle->context;
 }
 
-// createContext(validation, application)
+// createContext(validation, application, warp)
 static napi_value js_create_context(napi_env env, napi_callback_info info) {
-  ARGS(2);
-  bool validation = false;
+  ARGS(3);
+  bool validation = false, warp = false;
   napi_get_value_bool(env, argv[0], &validation);
+  napi_get_value_bool(env, argv[2], &warp);
   char *application = string_arg(env, argv[1]);
-  fdw_dx_context_options options = {validation ? 1 : 0, application};
+  fdw_dx_context_options options = {validation ? 1 : 0, application,
+                                    warp ? 1 : 0};
   fdw_dx_context *context = fdw_dx_context_create(&options);
   free(application);
   if (!context) {
@@ -855,6 +857,86 @@ static napi_value js_create_shader(napi_env env, napi_callback_info info) {
   return wrap_object(env, argv[0], owner, SHADER, shader);
 }
 
+// The DXC arguments of argument `index`, kept in `keep` (count of them).
+static const char **arguments_arg(napi_env env, napi_value value,
+                                  strings *keep, uint32_t *count) {
+  *count = array_length(env, value);
+  const char **arguments = (const char **)calloc(*count + 1, sizeof(char *));
+  for (uint32_t i = 0; i < *count && i < 200; i++) {
+    char *argument = string_arg(env, element(env, value, i));
+    keep->items[keep->count++] = argument;
+    arguments[i] = argument;
+  }
+  return arguments;
+}
+
+// compileHlsl(hlsl, args): the SPIR-V, without a module (a Uint8Array).
+static napi_value js_compile_hlsl(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  strings keep = {{NULL}, 0};
+  char *hlsl = string_arg(env, argv[0]);
+  uint32_t count = 0;
+  const char **arguments = arguments_arg(env, argv[1], &keep, &count);
+  uint8_t *code = NULL;
+  size_t size = 0;
+  const int failed =
+      fdw_dx_compile_hlsl(hlsl ? hlsl : "", arguments, count, &code, &size);
+  free(hlsl);
+  free(arguments);
+  free_strings(&keep);
+  if (failed) {
+    return throw_last_error(env);
+  }
+  void *data = NULL;
+  napi_value buffer, result;
+  CHECK(napi_create_arraybuffer(env, size, &data, &buffer));
+  memcpy(data, code, size);
+  fdw_dx_free_code(code);
+  CHECK(napi_create_typedarray(env, napi_uint8_array, size, buffer, 0,
+                               &result));
+  return result;
+}
+
+// createShaderFromCode(context, code: Uint8Array, args, label)
+static napi_value js_create_shader_from_code(napi_env env,
+                                             napi_callback_info info) {
+  ARGS(4);
+  context_handle *owner = owner_arg(env, argv[0]);
+  if (!owner) {
+    return NULL;
+  }
+  void *code = NULL;
+  size_t size = 0;
+  if (bytes_arg(env, argv[1], &code, &size) != 0) {
+    return NULL;
+  }
+  strings keep = {{NULL}, 0};
+  uint32_t count = 0;
+  const char **arguments = arguments_arg(env, argv[2], &keep, &count);
+  char *label = string_arg(env, argv[3]);
+  fdw_dx_shader *shader = fdw_dx_shader_create_from_code(
+      owner->context, (const uint8_t *)code, size, arguments, count, label);
+  free(label);
+  free(arguments);
+  free_strings(&keep);
+  if (!shader) {
+    return throw_last_error(env);
+  }
+  return wrap_object(env, argv[0], owner, SHADER, shader);
+}
+
+// dxcVersion(): a string, or an error when DXC is missing.
+static napi_value js_dxc_version(napi_env env, napi_callback_info info) {
+  (void)info;
+  const char *version = fdw_dx_dxc_version();
+  if (!version) {
+    return throw_last_error(env);
+  }
+  napi_value result;
+  CHECK(napi_create_string_utf8(env, version, NAPI_AUTO_LENGTH, &result));
+  return result;
+}
+
 static napi_value js_destroy_shader(napi_env env, napi_callback_info info) {
   return destroy_object(env, info, SHADER);
 }
@@ -1417,6 +1499,9 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("submit", js_submit),
       EXPORT("createShader", js_create_shader),
       EXPORT("destroyShader", js_destroy_shader),
+      EXPORT("compileHlsl", js_compile_hlsl),
+      EXPORT("createShaderFromCode", js_create_shader_from_code),
+      EXPORT("dxcVersion", js_dxc_version),
       EXPORT("createGroupLayout", js_create_group_layout),
       EXPORT("createGroup", js_create_group),
       EXPORT("destroyGroup", js_destroy_group),
