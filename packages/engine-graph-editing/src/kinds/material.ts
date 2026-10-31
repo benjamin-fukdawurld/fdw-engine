@@ -354,7 +354,7 @@ export function materialGraphKind(
         // A function does not call itself.
         if (definition.id === scope) continue;
         const enumerated = schemas.find(
-          ([, schema]) => schema.values && schema.values.length <= 32,
+          ([, schema]) => schema.values && schema.values.length <= 64,
         );
         const typed = required.find(([, schema]) => schema.kind === 'type');
         const base: Record<string, StaticValue> = {};
