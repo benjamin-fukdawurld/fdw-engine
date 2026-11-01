@@ -277,8 +277,19 @@ jobs:
         if: steps.affected.outputs.projects != ''
         run: npx playwright install chromium
 
+      # Direct3D 12 alone, before the others: its worker crashed under the
+      # load of the parallel suites (WARP, lavapipe, Dawn, Chromium) without
+      # telling which test. The verbose reporter names each test as it ends.
+      - name: Direct3D 12 rendering tests (alone)
+        if: contains(format(',{0},', steps.affected.outputs.projects), ',rendering-tests,')
+        run: |
+          npx nx run engine-d3d12:build-native
+          cd tests/rendering && npx vitest run src/d3d12.spec.ts --reporter=verbose
+
       - name: Tests
         if: steps.affected.outputs.projects != ''
         env:
           PROJECTS: ${{ steps.affected.outputs.projects }}
+          # Run in the step above.
+          FDW_RENDERING_EXCLUDE: src/d3d12.spec.ts
         run: npx nx run-many -t test --projects="$PROJECTS"
