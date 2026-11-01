@@ -21,11 +21,7 @@ export default defineConfig({
           name: 'rendering-tests',
           environment: 'node',
           include: ['src/**/*.spec.ts'],
-          exclude: [
-            'src/**/*.browser.spec.ts',
-            // Files run apart (the CI under Windows: Direct3D 12 alone).
-            ...(process.env['FDW_RENDERING_EXCLUDE']?.split(',') ?? []),
-          ],
+          exclude: ['src/**/*.browser.spec.ts'],
         },
       },
       {
