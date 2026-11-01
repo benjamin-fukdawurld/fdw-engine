@@ -60,11 +60,14 @@ jobs:
             libdecor-0-dev libudev-dev
 
       # The headers, volk, VMA and DXC, shipped beside the Vulkan addon.
+      # volk and VMA are optional components of the Windows installer; the
+      # cache key of the action ignores the components, so no cache there.
       - name: Vulkan SDK
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
-          cache: true
+          optional_components: ${{ runner.os == 'Windows' && 'com.lunarg.vulkan.volk,com.lunarg.vulkan.vma' || '' }}
+          cache: ${{ runner.os != 'Windows' }}
 
       - name: Build
         run: |
