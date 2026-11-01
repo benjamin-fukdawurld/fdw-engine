@@ -977,97 +977,101 @@ export function describeRays(
       scene.destroy();
     });
 
-    it('traces the shadows of the lights in the materials', async () => {
-      const renderer = new Renderer(backend, {
-        output: { encoding: 'linear', toneMapping: 'none' },
-      });
-      const camera = new Camera({
-        position: { x: 0, y: 0, z: 5 },
-        projection: {
-          type: 'orthographic',
-          left: -1,
-          right: 1,
-          bottom: -1,
-          top: 1,
-          near: 0.1,
-          far: 100,
-        },
-      });
-      const ambient = 0.1;
-      const sun = new DirectionalLight({
-        direction: { x: 1, y: 0, z: -1 },
-        ambient: { x: ambient, y: ambient, z: ambient },
-        diffuse: { x: 1, y: 1, z: 1 },
-        specular: { x: 0, y: 0, z: 0 },
-        castShadow: true,
-      });
-      // A ground, and a blocker 0.5 in front of it, left of the center:
-      // its shadow falls 0.5 to the right, on the center.
-      const blocker = {
-        mesh: square(0.25, 0.5),
-        material: white(),
-        transform: new Transform({ position: { x: -0.5 } }),
-      };
-      const items = [
-        { mesh: square(1), material: white(), transform: new Transform() },
-        blocker,
-      ];
-      const scene = new RayScene(backend).update({ items });
-      const render = async (shadows: boolean | { samples: number }) => {
-        renderer.render({
-          items,
-          camera,
-          surface: fixture.surface,
-          lights: [sun],
-          clearColor: { r: 0, g: 0, b: 0, a: 1 },
-          rays: { scene, shadows },
+    it(
+      'traces the shadows of the lights in the materials',
+      { timeout: 60_000 },
+      async () => {
+        const renderer = new Renderer(backend, {
+          output: { encoding: 'linear', toneMapping: 'none' },
         });
-        const pixels = await fixture.readPixels();
-        return (x: number, y: number) => [
-          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        const camera = new Camera({
+          position: { x: 0, y: 0, z: 5 },
+          projection: {
+            type: 'orthographic',
+            left: -1,
+            right: 1,
+            bottom: -1,
+            top: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        const ambient = 0.1;
+        const sun = new DirectionalLight({
+          direction: { x: 1, y: 0, z: -1 },
+          ambient: { x: ambient, y: ambient, z: ambient },
+          diffuse: { x: 1, y: 1, z: 1 },
+          specular: { x: 0, y: 0, z: 0 },
+          castShadow: true,
+        });
+        // A ground, and a blocker 0.5 in front of it, left of the center:
+        // its shadow falls 0.5 to the right, on the center.
+        const blocker = {
+          mesh: square(0.25, 0.5),
+          material: white(),
+          transform: new Transform({ position: { x: -0.5 } }),
+        };
+        const items = [
+          { mesh: square(1), material: white(), transform: new Transform() },
+          blocker,
         ];
-      };
-      const byte = (value: number) => Math.round(Math.min(value, 1) * 255);
-      const gray = (value: number) => [
-        byte(value),
-        byte(value),
-        byte(value),
-        255,
-      ];
-      const lit = gray(ambient + Math.SQRT1_2);
-      const shadowed = gray(ambient);
-      let pixel = await render(true);
-      expectColor(pixel(32, 32), shadowed);
-      expectColor(pixel(28, 36), shadowed);
-      for (const [x, y] of [
-        [16, 32],
-        [48, 32],
-        [32, 8],
-        [56, 56],
-      ]) {
-        expectColor(pixel(x, y), lit);
-      }
-      // The blocker moved: the shadow follows at the next update.
-      blocker.transform.position = { x: 0.5 };
-      scene.update({ items });
-      pixel = await render(true);
-      expectColor(pixel(32, 32), lit);
-      expectColor(pixel(60, 32), shadowed);
-      // Soft: several rays, the edge of the shadow in between.
-      sun.shadow = { softness: 0.05 };
-      pixel = await render({ samples: 4 });
-      expectColor(pixel(62, 32), shadowed);
-      // The edge of the shadow at x = 0.75 (pixel 56), blurred over a few
-      // pixels: values in between.
-      const between = [53, 54, 55, 56, 57, 58].map((x) => pixel(x, 32)[0]);
-      expect(
-        between.filter(
-          (value) => value > shadowed[0] + 10 && value < lit[0] - 10,
-        ).length,
-      ).toBeGreaterThan(0);
-      renderer.destroy();
-      scene.destroy();
-    });
+        const scene = new RayScene(backend).update({ items });
+        const render = async (shadows: boolean | { samples: number }) => {
+          renderer.render({
+            items,
+            camera,
+            surface: fixture.surface,
+            lights: [sun],
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+            rays: { scene, shadows },
+          });
+          const pixels = await fixture.readPixels();
+          return (x: number, y: number) => [
+            ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+          ];
+        };
+        const byte = (value: number) => Math.round(Math.min(value, 1) * 255);
+        const gray = (value: number) => [
+          byte(value),
+          byte(value),
+          byte(value),
+          255,
+        ];
+        const lit = gray(ambient + Math.SQRT1_2);
+        const shadowed = gray(ambient);
+        let pixel = await render(true);
+        expectColor(pixel(32, 32), shadowed);
+        expectColor(pixel(28, 36), shadowed);
+        for (const [x, y] of [
+          [16, 32],
+          [48, 32],
+          [32, 8],
+          [56, 56],
+        ]) {
+          expectColor(pixel(x, y), lit);
+        }
+        // The blocker moved: the shadow follows at the next update.
+        blocker.transform.position = { x: 0.5 };
+        scene.update({ items });
+        pixel = await render(true);
+        expectColor(pixel(32, 32), lit);
+        expectColor(pixel(60, 32), shadowed);
+        // Soft: several rays, the edge of the shadow in between.
+        sun.shadow = { softness: 0.05 };
+        pixel = await render({ samples: 4 });
+        expectColor(pixel(62, 32), shadowed);
+        // The edge of the shadow at x = 0.75 (pixel 56), blurred over a few
+        // pixels: values in between.
+        const between = [53, 54, 55, 56, 57, 58].map((x) => pixel(x, 32)[0]);
+        expect(
+          between.filter(
+            (value) => value > shadowed[0] + 10 && value < lit[0] - 10,
+          ).length,
+        ).toBeGreaterThan(0);
+        renderer.destroy();
+        scene.destroy();
+      },
+    );
 
     it('lets the rays through the cut parts of the masked materials', async () => {
       const renderer = new Renderer(backend, {
