@@ -39,7 +39,9 @@ Du moteur actuel à l'éditeur du middleware de création 3D. Ce plan ordonne le
 | P21   | Les fluides                                         | De l'eau et de la fumée simulées                                    | Grande      |
 | P10   | Ray tracing : hybride, puis path tracer             | Les démos en ray tracing : Vulkan, WGSL logiciel en WebGPU          | Grande      |
 | P11   | Plateformes et distribution                         | Windows, macOS, binaires précompilés                                | Moyenne     |
-| P13   | Le modeleur CAO, dans l'éditeur                     | **L'application de modélisation**                                   | Très grande |
+| P22   | Le modèle pivot et la conversion                    | Un assemblage STEP converti en glTF, avec son rapport de perte      | Grande      |
+| P23   | Le noyau géométrique : une API, des plugins         | Une pièce construite par le noyau maison, comparée à OpenCascade    | Très grande |
+| P13   | L'édition CAO, dans l'éditeur                       | **L'application de modélisation**                                   | Très grande |
 
 Les numéros sont des identifiants stables : le tableau donne l'ordre prévu, qui suit les dépendances (§4). Certaines phases peuvent se chevaucher : les phases de rendu (P14, P17, P21) sont indépendantes de celles de l'éditeur (P15, P16, P18 à P20) et peuvent s'intercaler, et P11 peut avancer en fond.
 
@@ -52,6 +54,13 @@ Les numéros sont des identifiants stables : le tableau donne l'ordre prévu, qu
 3. **Les restes du rendu** : les ombres des lumières ponctuelles ([p2-lights §9](p2-lights.md#9-reportés)), la démo de P2b (occlusion ambiante, sélection au pixel, rendu différé).
 4. **Les draws indirects et le rendu piloté par le GPU** ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), en Vulkan et Direct3D 12 : ils débloquent les deux phases sans retard de l'occlusion (P3), le choix des niveaux de tessellation en calcul (P3b) et le culling des lumières sur le GPU (P2).
 5. **Le gameplay** : le root motion, la recherche de chemin, le contrôleur de personnage contre les volumes de la scène, les ragdolls ; utiles ensuite à l'éditeur de jeu.
+
+**Revu le 1er novembre 2026 : quatre designs ajoutés.** L'éditeur de jeu (P20, [p20-game-editor.md](p20-game-editor.md)) a son design : il ne conçoit que ce qui manque à l'outillage de P15, P16, P18 et P19. L'ancien P13 se découpe en trois phases : **le modèle pivot et la conversion** (P22, [p22-pivot.md](p22-pivot.md)), **le noyau géométrique** (P23, [p23-geometry-kernel.md](p23-geometry-kernel.md)) et **l'édition CAO** (P13, [p13-cad-editing.md](p13-cad-editing.md)), qui garde son numéro. Les trois nouveaux projets et P20 partagent un manifeste de capacités pour leurs plugins ([p20 §8](p20-game-editor.md#8-le-manifeste-de-capacités-commun)). L'ordre, après les chantiers ci-dessus :
+
+6. **P20**, ses étapes 1 à 3 d'abord (les extensions des composants, l'inspecteur généré, les identifiants stables) : l'édition CAO s'en sert aussi.
+7. **P22, étapes 1 à 3** (le socle, le contrat, glTF) : du TypeScript pur, sans GPU, qui peut avancer en fond dès maintenant.
+8. **P23, étapes 1 à 5** (le socle, OpenCascade en référence, les primitives, la tessellation, l'extrusion), puis les formats CAO de P22 (STEP, BREP, FCStd).
+9. **P13**, sa première feature de bout en bout dès que P20 (étapes 1 et 2), P22 et P23 (étape 5) sont là ; la précision des grandes coordonnées peut la précéder.
 
 ## 3. Les phases
 
@@ -393,6 +402,10 @@ Démo : un matériau procédural (P14) et l'IA du TPS modifiés et débogués da
 
 ### P20. L'éditeur de jeu
 
+_Designé_ (1er novembre 2026) : [p20-game-editor.md](p20-game-editor.md). Les extensions des composants et l'inspecteur généré, les identifiants stables des préfabriqués, le projet (un dossier, des GUID, des métadonnées, un catalogue dérivé), la cuisson des assets, les outils de la vue, jouer dans l'éditeur (un second monde dans le même processus), la publication.
+
+Le plan d'origine :
+
 Un petit éditeur de jeu dans l'application de P18, qui réunit P15, P16 et P19. Il précède le ray tracing et le modeleur CAO, qu'il accueillera.
 
 - **Les panneaux** : l'arbre de la scène, l'inspecteur (généré par les schémas des composants de P16), le navigateur de ressources (P5), la vue avec les gizmos (P15), les éditeurs de graphs (P19), la console.
@@ -451,15 +464,41 @@ _Reprise (30 octobre 2026), Windows d'abord_ : [p11-windows.md](p11-windows.md).
 - **Le démarrage** : un cache de pipelines persisté, la précompilation des programmes (phase 7 du material graph).
 - **N5** : Direct3D 12 — _fait_ (24 octobre 2026) : `@fdw/engine-d3d12`, le même `HlslCodegen` compilé en DXIL, la suite de rendu partagée et la démo native sur Direct3D 12 ([native-backends.md](native-backends.md), §10). Reste Dawn sans copie, si besoin.
 
+### P22. Le modèle pivot et la conversion
+
+_Designé_ (1er novembre 2026) : [p22-pivot.md](p22-pivot.md). Une représentation en mémoire des scènes 3D et des modèles CAO, indépendante des formats et du rendu, entre des lecteurs et des écrivains enregistrés par plugin, et le moteur.
+
+- **Le socle** : une table de ressources à plat et un graphe de scène léger, des identifiants aléatoires et une clé source, les unités et les repères déclarés, l'instanciation par référence, la validation des références pendantes.
+- **Les données** : le B-rep calqué sur STEP (NURBS et surfaces analytiques, tolérances telles que lues), les meshes en cache dérivé à la demande, l'arbre de features en couche optionnelle, les matériaux en material graph, l'apparence CAO légère, les textures par un résolveur, les propriétés et le PMI, l'animation d'`engine-animation`, des extensions opaques.
+- **La perte toujours dite** : un rapport par écrivain, en mode permissif ou strict.
+- **Les formats** : glTF d'abord, puis STEP, BREP, FCStd ; les formats natifs (CATIA, NX, Creo, SolidWorks) en plugins propriétaires, hors du dépôt public.
+- **L'adaptateur du moteur** : le pivot vers les ressources du moteur (par `ModelData` et `instantiate`), sans garder le pivot entier en mémoire ; la scène vers le pivot pour l'export.
+
+Démo : un assemblage STEP converti en glTF avec son rapport, puis ouvert dans l'éditeur.
+
+### P23. Le noyau géométrique
+
+_Designé_ (1er novembre 2026) : [p23-geometry-kernel.md](p23-geometry-kernel.md). L'étape 2 de l'ancien P13, devenue une phase. Une API abstraite sur le B-rep du pivot : un registre léger, une capacité par plugin, asynchrone, dans des workers qui possèdent leurs B-rep.
+
+- **OpenCascade en référence** : il valide l'interface et sert d'étalon à une batterie de cas pathologiques ; il ne reste pas dans le produit.
+- **Le noyau maison**, en TypeScript, capacité par capacité : primitives et transformations, tessellation (une tolérance et un angle), extrusion et révolution de profils résolus, vérification et réparation, balayage, booléens, congés et chanfreins ; puis WebAssembly là où la mesure le justifie, un petit module par capacité.
+
+Démo : une pièce construite par le noyau maison, affichée dans l'éditeur, comparée à OpenCascade.
+
 ### P13. Le modeleur CAO
 
-_Repoussée (18 octobre 2026) après l'éditeur de jeu (P20)_ : ses fondations (la sélection, les gizmos, les commandes, la sérialisation, l'interface, les éditeurs de graphs) sont devenues P15, P16, P18, P19 et P20. Il reste ce qui est propre à la CAO, dans l'application de P18, à côté de l'éditeur de jeu. Chaque étape a son design.
+_Repoussée (18 octobre 2026) après l'éditeur de jeu (P20)_ : ses fondations (la sélection, les gizmos, les commandes, la sérialisation, l'interface, les éditeurs de graphs) sont devenues P15, P16, P18, P19 et P20.
+
+_Designé_ (1er novembre 2026) : [p13-cad-editing.md](p13-cad-editing.md). Les données et le noyau sont devenus P22 et P23 ; il reste l'édition CAO paramétrique, dans l'application de P18, à côté de l'éditeur de jeu.
 
 1. **La précision des grandes coordonnées** (rendu relatif à la caméra), décisive pour la CAO et le BIM.
-2. **Le noyau géométrique abstrait** : l'API que les moteurs géométriques implémentent (profils, solides, opérations, triangulation pour l'affichage). Le moteur fournit une implémentation de base : profils 2D, extrusion, révolution, triangulation des faces. Un noyau complet (OpenCascade, par exemple) peut se brancher derrière l'API, sans être une dépendance du projet.
-3. **Les esquisses** : le dessin 2D sur un plan (segments, arcs, cercles), les contraintes (coïncidence, parallélisme, distances, angles) et leur solveur.
-4. **Les opérations et l'arbre paramétrique** : extrusion, révolution autour d'un axe, puis d'autres (balayage, lissage, booléens selon le noyau). Un historique qu'on modifie et qui se recalcule.
-5. **L'éditeur du middleware** : le modeleur et l'éditeur de jeu réunis, les pièces modélisées posées dans les niveaux.
+2. **L'arbre de features** du pivot, ses types en plugins, le graphe de dépendances ; **la régénération** partielle, l'ancien résultat affiché pendant le calcul.
+3. **Le nommage topologique** : des identifiants stables tenus par le noyau, une description géométrique en repli, signalée.
+4. **Les esquisses** : un solveur derrière une interface abstraite, les contraintes en plugins (géométriques, relations, cotes).
+5. **La première feature de bout en bout** (esquisse, extrusion, affichage) ; annuler et rétablir par l'`History` de P15, l'enregistrement par un écrivain du pivot, la récupération après plantage.
+6. **L'édition directe** d'un B-rep sans historique, par le même mécanisme : chaque opération devient une feature.
+7. **L'interface** : la vue 3D, l'arbre de features, le mode esquisse ; puis les features avancées au rythme du noyau.
+8. **L'éditeur du middleware** : le modeleur et l'éditeur de jeu réunis, les pièces modélisées posées dans les niveaux.
 
 ## 4. Les dépendances
 
@@ -480,7 +519,10 @@ _Repoussée (18 octobre 2026) après l'éditeur de jeu (P20)_ : ses fondations (
 - **P18** avant **P20** ; **P19** est un composant web qui peut commencer avant, dans la doc.
 - **P20** réunit **P15**, **P16**, **P18** et **P19**.
 - **P21** après **P17** (le rendu de l'eau partagé) ; elle s'appuie sur les compute graphs et leur repli WebGL2.
-- **P13** après **P20** : elle reprend son application et ses outils.
+- **P20** : ses étapes 1 et 2 (les extensions des composants, l'inspecteur et les commandes génériques) avant **P13** (les paramètres des features) ; l'import de formats externes par **P22**, les chargeurs existants suffisant d'ici là.
+- **P22** : les étapes 1 à 3 sans dépendance ; l'adaptateur du moteur sur **P5** (`engine-assets`) ; STEP, BREP et FCStd après **P23** (étapes 1 et 2).
+- **P23** après le socle de **P22** (les types du B-rep).
+- **P13** après **P20** (l'application, l'inspecteur, l'`History`), **P22** (l'arbre de features, l'enregistrement) et **P23** (étapes 1 à 5 pour la première feature) ; la précision des grandes coordonnées peut la précéder.
 
 ## 5. Plus tard, hors du plan
 
