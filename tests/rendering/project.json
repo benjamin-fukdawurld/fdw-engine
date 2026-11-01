@@ -25,6 +25,9 @@
         },
         {
           "env": "VULKAN_SDK"
+        },
+        {
+          "env": "FDW_RENDERING_EXCLUDE"
         }
       ],
       "dependsOn": [
