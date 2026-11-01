@@ -54,6 +54,49 @@ jobs:
       - name: Links
         run: node tools/docs/check-links.mjs apps/docs/dist
 
+      # The site, for the examples.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: apps/docs/dist
+          retention-days: 1
+
+      - name: Upload the site
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/docs/dist
+
+  # Each example on WebGL2 and WebGPU (SwiftShader), its clock stopped,
+  # compared to apps/docs/tests/screenshots: a job per backend and half of
+  # the examples, too slow on SwiftShader for a single job.
+  examples:
+    name: Examples (${{ matrix.project }} ${{ matrix.shard }}/2)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [webgl2, webgpu]
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: apps/docs/dist
+
       - name: Chromium (cache)
         uses: actions/cache@v4
         with:
@@ -63,18 +106,18 @@ jobs:
       - name: Chromium
         run: npx playwright install --with-deps chromium
 
-      # Each example on WebGL2 and WebGPU (SwiftShader), its clock stopped,
-      # compared to apps/docs/tests/screenshots.
+      # Playwright directly: docs:visual would build the site again.
       - name: Examples
+        working-directory: apps/docs
         env:
           UPDATE: ${{ inputs.update-screenshots && '--update-snapshots' || '' }}
-        run: npx nx run docs:visual -- $UPDATE
+        run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 $UPDATE
 
       - name: Report of the examples
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: examples-report
+          name: examples-report-${{ matrix.project }}-${{ matrix.shard }}
           path: |
             apps/docs/playwright-report
             apps/docs/out-tsc/playwright
@@ -83,19 +126,13 @@ jobs:
         if: inputs.update-screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: reference-images
+          name: reference-images-${{ matrix.project }}-${{ matrix.shard }}
           path: apps/docs/tests/screenshots
-
-      - name: Upload the site
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: apps/docs/dist
 
   deploy:
     name: Publish
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, examples]
     runs-on: ubuntu-24.04
     permissions:
       pages: write

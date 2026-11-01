@@ -159,19 +159,21 @@ test('draws the level by rays when the Rendering menu asks for it', async () => 
   await page.keyboard.press('Enter');
   // The image of the path tracer, gathered over a few frames: the light
   // bounced off the level, not the rasterized one. On lavapipe, its first
-  // frame waits for the build of the level and of the pipelines.
+  // frame waits for the build of the level and of the pipelines, and its
+  // first frames are still dark, close to the page.
   await expect
     .poll(
       async () => {
         const traced = await region();
-        return traced.some(
-          (value, i) => Math.abs(value - (rasterized[i] ?? 0)) > 3,
+        return (
+          traced.some(
+            (value, i) => Math.abs(value - (rasterized[i] ?? 0)) > 3,
+          ) && (await editor.differsFromPage(area.centerX, area.centerY))
         );
       },
       { timeout: 30_000 },
     )
     .toBe(true);
-  expect(await editor.differsFromPage(area.centerX, area.centerY)).toBe(true);
   // Rasterized again: the image of before.
   await page.keyboard.press('Control+Shift+P');
   await page.keyboard.type('Rasterized');
