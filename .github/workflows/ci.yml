@@ -217,17 +217,19 @@ jobs:
           echo "Affected: ${projects:-none}"
 
       # The SDK (DXC, spirv-val, spirv-cross, glslangValidator), the Vulkan
-      # loader (the runner has no GPU driver to bring it) and lavapipe.
+      # loader (the runner has no GPU driver to bring it) and lavapipe. volk
+      # and VMA are optional components of the Windows installer. Not cached:
+      # the key of the action ignores the components, and its cache would
+      # bring back an SDK without them.
       - name: Vulkan SDK, loader and lavapipe
         if: steps.affected.outputs.projects != ''
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
+          optional_components: com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
           install_runtime: true
           install_lavapipe: true
           lavapipe_destination: C:\Lavapipe
-          cache: true
-          stripdown: true
 
       # lavapipe as the only Vulkan driver.
       - name: lavapipe

@@ -48,7 +48,7 @@ Deux jobs Linux en parallèle :
 
 - Construit le site (`nx run docs:build`), avec la référence API.
 - Vérifie les liens internes, ancres comprises : `tools/docs/check-links.mjs` (`npm run docs:links`), sur le site construit.
-- **Captures des exemples vivants** : `@playwright/test` (`npx nx run docs:visual`) ouvre la page de chaque exemple dans Chromium, sur WebGL2 et sur WebGPU (SwiftShader), et compare le canvas seul (pas les polices) à une référence versionnée (`apps/docs/tests/screenshots/`), avec une tolérance (1 % des pixels). L'horloge des exemples est figée (`?time=1.5`) et le rendu s'arrête après quelques frames (`?frames=10`) : l'image est la même à chaque exécution, et le CPU est libre pendant la capture. Sur WebGL2, un exemple qui demande du calcul doit afficher son message. Une différence publie le rapport et les images de l'écart en artefact ; lancé à la main avec `update-screenshots`, le workflow rend de nouvelles références sur la machine de la CI.
+- **Captures des exemples vivants** : `@playwright/test` (`npx nx run docs:visual`) ouvre la page de chaque exemple dans Chromium, sur WebGL2 et sur WebGPU (SwiftShader), et compare le canvas seul (pas les polices) à une référence versionnée (`apps/docs/tests/screenshots/`), avec une tolérance (1 % des pixels). L'horloge des exemples est figée (`?time=1.5`) et le rendu s'arrête après quelques frames (`?frames=10`) : l'image est la même à chaque exécution, et le CPU est libre pendant la capture. En CI, le site est construit une fois puis les captures se partagent quatre jobs (`Examples`, un par backend et par moitié des exemples), trop lentes sur SwiftShader pour un seul job de 30 min. Sur WebGL2, un exemple qui demande du calcul doit afficher son message. Une différence publie le rapport et les images de l'écart en artefact ; lancé à la main avec `update-screenshots`, le workflow rend de nouvelles références sur la machine de la CI.
 - **Publie** sur GitHub Pages, sous `/fdw-engine/`, depuis `main`. À faire une fois dans les réglages du dépôt : Pages → Source → GitHub Actions.
 
 ## 5. Les mesures
@@ -65,7 +65,7 @@ Deux jobs Linux en parallèle :
 
 Plus de commit direct sur `main` : chaque changement passe par une branche (`FDW-P0`, …) et une pull request.
 
-- **Une règle sur `main`** (un ruleset du dépôt) : pas de push direct, pas de force push, pas de suppression ; une pull request obligatoire ; les statuts `Check`, `Native and rendering` et `Build the documentation` verts pour fusionner ; les conversations résolues.
+- **Une règle sur `main`** (un ruleset du dépôt) : pas de push direct, pas de force push, pas de suppression ; une pull request obligatoire ; les statuts `Check`, `Native and rendering`, `Build the documentation` et les quatre `Examples (…)` verts pour fusionner ; les conversations résolues.
 - **Fusion par squash** : un commit par pull request sur `main`, un historique linéaire ; les branches supprimées après la fusion.
 - **Le format en local** : `npm run format` formate les fichiers suivis par git, `npm run format:check` vérifie comme la CI.
 
