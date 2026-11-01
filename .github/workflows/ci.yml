@@ -277,19 +277,43 @@ jobs:
         if: steps.affected.outputs.projects != ''
         run: npx playwright install chromium
 
-      # Direct3D 12 alone, before the others: its worker crashed under the
-      # load of the parallel suites (WARP, lavapipe, Dawn, Chromium) without
-      # telling which test. The verbose reporter names each test as it ends.
-      - name: Direct3D 12 rendering tests (alone)
+      # The rays of Direct3D 12 apart: WARP on the runner announces DXR 1.1
+      # but crashes the process on the first trace (not on a workstation).
+      # Their crash does not fail the job; its dump, the addon and the
+      # version of WARP are kept to find where it is.
+      - name: Crash dumps
         if: contains(format(',{0},', steps.affected.outputs.projects), ',rendering-tests,')
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\node.exe'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:RUNNER_TEMP\dumps" -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
+          foreach ($dll in 'd3d10warp.dll', 'd3d12core.dll') {
+            "$dll $((Get-Item "$env:SystemRoot\System32\$dll").VersionInfo.FileVersionRaw)"
+          }
+
+      - name: Direct3D 12 rays (diagnosis)
+        id: d3d12-rays
+        if: contains(format(',{0},', steps.affected.outputs.projects), ',rendering-tests,')
+        continue-on-error: true
         run: |
           npx nx run engine-d3d12:build-native
-          cd tests/rendering && npx vitest run src/d3d12.spec.ts --reporter=verbose
+          cd tests/rendering && npx vitest run src/d3d12.spec.ts -t 'Rays on Direct3D 12' --reporter=verbose
+
+      - uses: actions/upload-artifact@v4
+        if: steps.d3d12-rays.outcome == 'failure'
+        with:
+          name: d3d12-rays-crash
+          path: |
+            ${{ runner.temp }}/dumps
+            packages/engine-d3d12/build/*.node
+          if-no-files-found: warn
 
       - name: Tests
         if: steps.affected.outputs.projects != ''
         env:
           PROJECTS: ${{ steps.affected.outputs.projects }}
-          # Run in the step above.
-          FDW_RENDERING_EXCLUDE: src/d3d12.spec.ts
+          # Run in their own step above.
+          FDW_D3D12_RAYS: 'off'
         run: npx nx run-many -t test --projects="$PROJECTS"

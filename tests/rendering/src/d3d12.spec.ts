@@ -13,8 +13,8 @@ import { memoryShaderCache } from './shaderCache';
 // The shared rendering tests on Direct3D 12, through the native library of
 // @fdw/engine-d3d12, with the debug layer: any message fails the test
 // reading the pixels. Skipped where the addon is not built (Windows only);
-// the rays, where the GPU has no DXR 1.1. The programs come from a cache
-// after their first compilation.
+// the rays, where the GPU has no DXR 1.1 or FDW_D3D12_RAYS=off. The
+// programs come from a cache after their first compilation.
 
 const shaderCache = memoryShaderCache();
 
@@ -75,6 +75,12 @@ function tracesRays(): boolean {
   }
 }
 
+// FDW_D3D12_RAYS=off: the CI under Windows, whose WARP announces DXR 1.1
+// but crashes the process on the first trace; the rays run there in a step
+// of their own, which collects the crash dump.
 describeRays('Rays on Direct3D 12', createFixture, {
-  skip: !existsSync(addonPath()) || !tracesRays(),
+  skip:
+    process.env['FDW_D3D12_RAYS'] === 'off' ||
+    !existsSync(addonPath()) ||
+    !tracesRays(),
 });
