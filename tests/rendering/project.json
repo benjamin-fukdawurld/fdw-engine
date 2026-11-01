@@ -25,9 +25,6 @@
         },
         {
           "env": "VULKAN_SDK"
-        },
-        {
-          "env": "FDW_D3D12_RAYS"
         }
       ],
       "dependsOn": [
