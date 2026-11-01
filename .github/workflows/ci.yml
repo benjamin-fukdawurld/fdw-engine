@@ -278,53 +278,38 @@ jobs:
         run: npx playwright install chromium
 
       # The rays of Direct3D 12 apart: WARP on the runner announces DXR 1.1
-      # but crashes the process on the first trace (not on a workstation).
-      # Their crash does not fail the job; its dump, the addon and the
-      # version of WARP are kept to find where it is.
-      - name: Crash dumps
+      # but divides by zero (0xC0000094) on the first trace, not on a
+      # workstation. Under cdb, which prints the native stack where it stops,
+      # with the symbols of Microsoft; the crash does not fail the job.
+      - name: Direct3D 12 rays (diagnosis)
         if: contains(format(',{0},', steps.affected.outputs.projects), ',rendering-tests,')
+        continue-on-error: true
+        timeout-minutes: 15
         shell: pwsh
         run: |
-          # WER is disabled on the runners.
-          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
-          New-ItemProperty -Path $wer -Name Disabled -PropertyType DWord -Value 0 -Force | Out-Null
-          New-ItemProperty -Path $wer -Name DontShowUI -PropertyType DWord -Value 1 -Force | Out-Null
-          Set-Service -Name WerSvc -StartupType Manual
-          Start-Service -Name WerSvc
-          $key = "$wer\LocalDumps\node.exe"
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:RUNNER_TEMP\dumps" -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
           foreach ($dll in 'd3d10warp.dll', 'd3d12core.dll') {
             "$dll $((Get-Item "$env:SystemRoot\System32\$dll").VersionInfo.FileVersionRaw)"
           }
-
-      - name: Direct3D 12 rays (diagnosis)
-        id: d3d12-rays
-        if: contains(format(',{0},', steps.affected.outputs.projects), ',rendering-tests,')
-        continue-on-error: true
-        # pwsh: the exit codes of Windows whole, Git Bash keeps 8 bits.
-        shell: pwsh
-        run: |
           npx nx run engine-d3d12:build-native
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # In a thread of the main process: its exit code is the one of the
-          # crash (0xC0000005 access violation, 0xC0000409 fast fail...).
+          $cdb = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $cdb) { 'cdb.exe not found on the runner'; exit 1 }
+          # Stops on the division by zero (first chance), and on the second
+          # chance of the other exceptions: registers, code and stack.
+          $commands = "$env:RUNNER_TEMP\cdb.txt"
+          @(
+            '.symfix'
+            'sxe -c "r; ub @rip L10; kn 80; q" dz'
+            'sxd -c2 "r; kn 80; q" av'
+            'sxd -c2 "kn 80; q" eh'
+            'g'
+          ) | Set-Content $commands
+          # In a thread of the main process: the debugger sees the crash.
           Set-Location tests/rendering
-          npx vitest run src/d3d12.spec.ts -t 'Rays on Direct3D 12' --reporter=verbose --pool=threads
+          & $cdb.FullName -G -cf $commands node ../../node_modules/vitest/vitest.mjs run src/d3d12.spec.ts -t 'Rays on Direct3D 12' --reporter=verbose --pool=threads
           $status = $LASTEXITCODE
-          'vitest exit code: {0} (0x{0:X8})' -f $status
-          Get-ChildItem "$env:RUNNER_TEMP\dumps" -ErrorAction SilentlyContinue
+          'exit code: {0} (0x{0:X8})' -f $status
           exit $status
-
-      - uses: actions/upload-artifact@v4
-        if: steps.d3d12-rays.outcome == 'failure'
-        with:
-          name: d3d12-rays-crash
-          path: |
-            ${{ runner.temp }}/dumps
-            packages/engine-d3d12/build/*.node
-          if-no-files-found: warn
 
       - name: Tests
         if: steps.affected.outputs.projects != ''
