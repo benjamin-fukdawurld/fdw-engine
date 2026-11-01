@@ -105,6 +105,30 @@ topInputs(D3D12_GPU_VIRTUAL_ADDRESS instances, uint32_t count) {
   return inputs;
 }
 
+// The instance in place of none: WARP (10.0.26100, the CI runners) divides
+// by the count of the instances of a build, and reads the bottom level of
+// the instances without one. A triangle in a bottom level of its own, that
+// no ray sees (mask 0).
+int inactiveInstance(fdw_dx_context *context,
+                     D3D12_RAYTRACING_INSTANCE_DESC *instance) {
+  if (!context->inactiveBottomLevel) {
+    const float positions[] = {0, 0, 0, 1, 0, 0, 0, 1, 0};
+    const uint32_t indices[] = {0, 1, 2};
+    context->inactiveBottomLevel = fdw_dx_bottom_level_create(
+        context, positions, 3, indices, 3, 0, "inactive instance");
+    if (!context->inactiveBottomLevel) {
+      return -1;
+    }
+  }
+  *instance = {};
+  instance->Transform[0][0] = 1;
+  instance->Transform[1][1] = 1;
+  instance->Transform[2][2] = 1;
+  instance->AccelerationStructure =
+      context->inactiveBottomLevel->storage->GetGPUVirtualAddress();
+  return 0;
+}
+
 // Frees the memory of a top level (once the GPU no longer uses it).
 void releaseTopLevel(fdw_dx_context *context, fdw_dx_top_level *top) {
   ComPtr<ID3D12Resource> storage = std::move(top->storage);
@@ -199,9 +223,10 @@ int buildTopLevel(fdw_dx_context *context, ID3D12GraphicsCommandList4 *list,
                     D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
   }
   structureBarrier(list, top->storage.Get());
+  // Without instances, the inactive one written in their place.
   D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build{};
-  build.Inputs =
-      topInputs(top->instances->resource->GetGPUVirtualAddress(), top->count);
+  build.Inputs = topInputs(top->instances->resource->GetGPUVirtualAddress(),
+                           std::max(top->count, 1u));
   build.DestAccelerationStructureData = top->storage->GetGPUVirtualAddress();
   build.ScratchAccelerationStructureData =
       top->scratch->GetGPUVirtualAddress();
@@ -221,6 +246,7 @@ void destroyAccelerationStructures(fdw_dx_context *context) {
     delete bottom;
   }
   context->bottomLevels.clear();
+  context->inactiveBottomLevel = nullptr;
 }
 
 } // namespace fdw
@@ -353,7 +379,16 @@ fdw_dx_top_level *fdw_dx_top_level_create(fdw_dx_context *context,
     return nullptr;
   }
   auto *top = new fdw_dx_top_level();
+  // The inactive instance until the first update: the builds have one.
+  D3D12_RAYTRACING_INSTANCE_DESC inactive;
   if (allocateTopLevel(context, top, std::max(capacity, 1u), label) != 0) {
+    delete top;
+    return nullptr;
+  }
+  if (inactiveInstance(context, &inactive) != 0 ||
+      fdw_dx_buffer_write(context, top->instances, 0, &inactive,
+                          sizeof(inactive)) != 0) {
+    releaseTopLevel(context, top);
     delete top;
     return nullptr;
   }
@@ -398,9 +433,14 @@ int fdw_dx_top_level_update(fdw_dx_context *context, fdw_dx_top_level *top,
     }
     replaced = 1;
   }
-  if (count > 0 &&
-      fdw_dx_buffer_write(context, top->instances, 0, data.data(),
-                          uint64_t(count) * sizeof(data[0])) != 0) {
+  if (count == 0) {
+    data.resize(1);
+    if (inactiveInstance(context, &data[0]) != 0) {
+      return -1;
+    }
+  }
+  if (fdw_dx_buffer_write(context, top->instances, 0, data.data(),
+                          uint64_t(data.size()) * sizeof(data[0])) != 0) {
     return -1;
   }
   top->count = count;

@@ -323,6 +323,9 @@ struct fdw_dx_context {
   std::map<uint32_t, fdw_dx_query_pool *> queryPools;
   std::map<uint32_t, fdw_dx_bottom_level *> bottomLevels;
   std::map<uint32_t, fdw_dx_top_level *> topLevels;
+  // The bottom level of the inactive instance of the empty top levels
+  // (rays.cpp), created with the first; in bottomLevels.
+  fdw_dx_bottom_level *inactiveBottomLevel = nullptr;
   std::set<fdw_dx_shader *> shaders;
   // The root signatures, by their groups.
   std::map<std::string, std::unique_ptr<RootSignature>> rootSignatures;
