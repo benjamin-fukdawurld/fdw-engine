@@ -1,376 +1,502 @@
 # Audit du code — FdwEngine
 
-_Date : 02/10/2026 — état du dépôt : commit `f722411`._
-_Périmètre : `packages/engine-backend`, `packages/engine-core`, `packages/engine-webgpu`, `apps/demo`, outillage. Cet audit remplace le précédent (26/09, mis à jour le 28/09) et reprend ses points comme liste de contrôle._
+_Date : 31/10/2026, sur la branche `FDW-P11-2` au commit `390133b`, soit environ 150 commits après l'audit précédent (02/10/2026, commit `f722411`)._
+_Périmètre : tout le dépôt (45 packages et 5 applications, environ 200 000 lignes de TypeScript, plus les addons natifs C/C++ et la CI). L'audit du 02/10 a servi de liste de contrôle : son statut détaillé est à l'annexe A._
 
 **Légende des statuts :**
 
-| Statut     | Signification                                                |
-| ---------- | ------------------------------------------------------------ |
-| 🟢 Corrigé | Corrigé depuis l'audit précédent, vérifié dans le code       |
-| 🟡 Partiel | Correction commencée mais incomplète                         |
-| 🔴 Ouvert  | Toujours présent                                             |
-| 🆕 Nouveau | Nouveau constat (souvent introduit par les derniers commits) |
+| Statut      | Signification                                         |
+| ----------- | ----------------------------------------------------- |
+| 🟢 Corrigé  | Corrigé depuis l'audit précédent, vérifié dans le code |
+| 🟡 Partiel  | Correction commencée mais incomplète                  |
+| 🔴 Ouvert   | Toujours présent                                      |
+| ⚪ Obsolète | Le code visé n'existe plus                            |
+| 🆕 Nouveau  | Nouveau constat                                       |
 
-Les points marqués « (vérifié) » ont été confirmés par exécution : compilation, script Node ou commande Nx. Les autres viennent de la relecture du code.
-
-**Sur la partie material :** elle est en cours d'implémentation, et la cible est décrite dans [design/material-graph.md](design/material-graph.md). La section 2 ne la juge donc pas sur ce qui manque, mais classe les constats en quatre catégories : les bugs du code utilisé aujourd'hui, ce qui entre en conflit avec le design cible, les fondations à conserver, et les prochaines étapes.
+Les points marqués « (vérifié) » ont été confirmés par une exécution : spec jetable, script Node, commande Nx ou chronométrage. Les autres viennent de la relecture du code.
 
 ---
 
 ## Sommaire
 
 0. [Synthèse](#0-synthèse)
-1. [Compilation, CI et outillage de build](#1-compilation-ci-et-outillage-de-build)
-2. [Partie material (en cours d'implémentation)](#2-partie-material-en-cours-dimplémentation)
-3. [engine-backend](#3-engine-backend)
-4. [engine-core](#4-engine-core)
-5. [engine-webgpu](#5-engine-webgpu)
-6. [Application demo](#6-application-demo)
-7. [Hygiène du dépôt](#7-hygiène-du-dépôt)
-8. [Plan d'action recommandé](#8-plan-daction-recommandé)
+1. [Les timeouts des tests qui s'allongent](#1-les-timeouts-des-tests-qui-sallongent)
+2. [Compilation, Nx et CI](#2-compilation-nx-et-ci)
+3. [Backends et rendu : engine-backend, engine-core, engine-webgpu, engine-webgl2, engine-shader, engine-graph](#3-backends-et-rendu)
+4. [Addons natifs : Vulkan, Direct3D 12, N-API](#4-addons-natifs)
+5. [Simulation et runtime : fluides, océan, physique, animation, comportement, audio, entrées, caméra, géométrie](#5-simulation-et-runtime)
+6. [Assets, ressources et scènes](#6-assets-ressources-et-scènes)
+7. [Édition, éditeur et applications](#7-édition-éditeur-et-applications)
+8. [Hygiène du dépôt](#8-hygiène-du-dépôt)
+9. [Plan d'action](#9-plan-daction)
+10. [Annexe A : statut de l'audit du 02/10](#annexe-a--statut-de-laudit-du-0210)
 
 ---
 
 ## 0. Synthèse
 
-### Ce qui a avancé depuis l'audit précédent
+### Ce qui va bien
 
-- 🟢 Les régressions N1 à N5 de l'audit du 28/09 sont presque toutes corrigées :
-  - la formule du padding des buffers ;
-  - `ArrayBuffer.isView` pour les sources de textures ;
-  - la factory de textures générique (`GpuTextureFactory<ImageBitmap>`) ;
-  - `vite/client` retiré d'engine-backend ;
-  - l'import de `Material` retiré de la démo.
-- 🟢 La normal matrix est maintenant calculée en 3×3 (`transpose(inverse(mat3(M)))`). Elle a été **vérifiée numériquement** contre wgpu-matrix, composition avec le parent comprise.
-- 🟢 Les tailles des buffers de lumières sont exprimées par des constantes nommées (`LightColorDataSize`…). Il n'y a plus ni chevauchement ni débordement (vérifié : Directional 48 o, Point 60 o, Spot 80 o).
-- 🟢 Le contrat de format des mat3 est documenté, `@webgpu/types` est mis à jour en 0.1.74, et la dépendance d'engine-webgpu vers engine-core est retirée du `package.json`.
+- 🟢 Les trois points bloquants du 02/10 sont résolus : le workspace Nx est synchronisé, tout compile, et il y a des tests partout (Vitest seulement, plus de Jest) (vérifié : `nx sync:check`, `tsc -b`, `nx run-many -t typecheck lint test`).
+- 🟢 La même suite de rendu tourne de bout en bout sur chaque backend (Dawn, Vulkan sur lavapipe, D3D12 sur WARP, WebGL2 sur SwiftShader), et les programmes sont validés en HLSL et en GLSL ES.
+- 🟢 L'app Electron est configurée correctement : `contextIsolation`, `sandbox`, une CSP sans `unsafe-eval`, des clés de stockage filtrées.
+- 🟢 La clé du cache de shaders HLSL inclut la version et le commit de DXC, la cible, les arguments et la source.
 
-### Ce qui bloque aujourd'hui
+### Ce qui pose problème
 
-1. 🆕 **Le workspace Nx est désynchronisé** (vérifié) : `packages/engine-webgpu/tsconfig.lib.json:11` référence encore engine-core, ce qui fait échouer `nx sync:check`, et donc les tâches Nx en CI ou en mode non interactif (§1).
-2. 🆕 **engine-webgpu ne compile plus** (vérifié) : la mise à jour de `@webgpu/types` fait apparaître une erreur de type dans `TextureFactory.ts:59` (§1).
-3. 🔴 **Aucun test**, et la cible `nx test` est cassée (§1).
+1. **La durée des tests augmente à chaque phase**, et les timeouts ne font que la suivre (§1). La cause n'est ni l'aléa ni « un CI chargé » en général :
+   - certains tests font en série un travail qui grandit avec le moteur ;
+   - une référence CPU est très lente ;
+   - deux tests se synchronisent sur le rythme des images ;
+   - la CI fait tourner en même temps plus de rasteriseurs logiciels qu'elle n'a de cœurs.
+2. **Les parseurs et chargeurs ne résistent pas aux entrées malformées** : cycles de nœuds (glTF, scènes, assets), bombe de décompression KTX2, allocations non bornées (§6).
+3. **Les addons natifs ont des use-after-free et des états bloqués** : images du swapchain libérées au resize, liste D3D12 bloquée après un seul échec, hazard de lecture dans le suivi Vulkan (§4).
+4. **Les ressources GPU fuient à la destruction** : `Renderer.destroy`, pipelines WebGL2, meshes et samplers des fluides et de l'océan (§3, §5).
+5. **Il y a des bugs de correction visibles** : textures 3D créées en 2D en WebGPU, `Buffer.write` qui écrase ses voisins, nœuds physiques figés à 30 fps, NaN dans le spectre de l'océan et dans le BVH (§3, §5).
 
 ### Les 10 priorités
 
-| #   | Point                                                                                                                              | Section |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 1   | Supprimer la référence obsolète à engine-core dans `engine-webgpu/tsconfig.lib.json`                                               | §1      |
-| 2   | Restreindre les sources de données à `ArrayBufferView<ArrayBuffer>` (erreur de compilation)                                        | §1, §5  |
-| 3   | Padding de la branche `writeBuffer` de `BufferFactory` (le chemin utilisé par la démo)                                             | §5      |
-| 4   | `try/finally` dans `CachedValue`                                                                                                   | §3      |
-| 5   | Exporter `DirectionalLight`, `PointLight` et `SpotLight`                                                                           | §4      |
-| 6   | Shader Phong : texture de shininess et spéculaire non conditionné à N·L (bugs visibles dans la démo)                               | §2.1    |
-| 7   | Mettre en cache le pipeline créé à chaque frame, et rendre explicite le rafraîchissement de la caméra                              | §2.1    |
-| 8   | Corriger la stratégie de structs uniform (`hasDynamicSize`, alignement à 16, `runtimeSize`) avant d'en dépendre pour les matériaux | §2.1    |
-| 9   | Installer Vitest et écrire les premiers tests (layouts WGSL, padding des buffers, maths)                                           | §1      |
-| 10  | Indices uint32 et triangulation OBJ                                                                                                | §6      |
+| #   | Point                                                                                                                                                                                      | Section     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| 1   | Tests de rendu : paralléliser DXC, spirv-val et spirv-cross, ne plus jouer deux fois la suite Dawn, limiter le parallélisme des projets `gpu`. Retirer ensuite les timeouts ajoutés depuis le 24/10 | §1          |
+| 2   | Référence CPU de la fumée sans allocation dans les boucles                                                                                                                                 | §1.3        |
+| 3   | Tests de layout et de graph : attendre un signal du moteur, pas un nombre d'images                                                                                                         | §1.4, §1.5  |
+| 4   | Use-after-free du swapchain (Vulkan et D3D12), liste D3D12 bloquée, segfault sur un argument DXC                                                                                           | §4          |
+| 5   | Cycles et bornes dans glTF, scene-io et engine-assets ; bombe zlib/zstd KTX2                                                                                                              | §6          |
+| 6   | `dimension: '3d'` dans `TextureFactory`, padding destructif de `Buffer.write`                                                                                                             | §3          |
+| 7   | Physique : `moved` remis à zéro trop tôt, `addCharacter` sur un nœud déjà équipé                                                                                                           | §5          |
+| 8   | `GraphClient.save` désynchronisé, listeners de pointeur non retirés, ordre des frères après undo                                                                                           | §7          |
+| 9   | Fuites GPU à la destruction : Renderer, pipelines WebGL2, fluides, océan                                                                                                                  | §3, §5      |
+| 10  | Cache CI : `maxCacheSize` Nx, clés par branche, filtres de chemins pour docs et bench                                                                                                     | §2          |
 
 ---
 
-## 1. Compilation, CI et outillage de build
+## 1. Les timeouts des tests qui s'allongent
 
-### Compilation (`tsc -b`, vérifié)
+### 1.1 L'historique
 
-| Projet         | État            | Détail                                                                                                                                 |
-| -------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| engine-backend | 🟢 compile      | —                                                                                                                                      |
-| engine-core    | 🟢 compile      | —                                                                                                                                      |
-| engine-webgpu  | 🆕 **1 erreur** | `src/gpu/TextureFactory.ts:59` : `ArrayBuffer \| ArrayBufferView<ArrayBufferLike>` n'est pas assignable à `GPUAllowSharedBufferSource` |
-| demo           | 🔴 5 erreurs    | voir ci-dessous                                                                                                                        |
+| Commit    | Date  | Test                                                     | Timeout                        |
+| --------- | ----- | -------------------------------------------------------- | ------------------------------ |
+| `3303c0d` | 24/10 | suite de rendu, « adds up the octaves »                  | 5 s → 30 s                     |
+| `e3ec2dd` |       | docs, graph du jeu dans son tutoriel                     | 60 s → 120 s                   |
+| `a95800b` |       | même test                                                | `test.slow()` (×3)             |
+| `3b50e81` |       | editor-web, layout (`waitFor` sur la largeur du canvas)  | 1 s → 10 s                     |
+| `081a27b` |       | engine-fluids, deux tests de fumée                       | 5 s → 30 s                     |
+| `0fa1b52` |       | tests/rendering, tout le projet                          | 5 s → 30 s                     |
+| `a3da07c` |       | docs, captures des exemples (+ occlusion-culling à 60 s) | 20 s → 30 s                    |
+| `c35193b` | 27/10 | programmes HLSL                                          | 30 s                           |
+| `e70b69c` |       | même test                                                | timeout retiré                 |
+| `b8fe1ac` |       | même test                                                | 30 s → 60 s                    |
 
-**Cause de l'erreur dans engine-webgpu.** Depuis la version 0.1.74, `@webgpu/types` définit `GPUAllowSharedBufferSource` comme `BufferSource | SharedArrayBuffer`. Avec la lib DOM de TypeScript 5.9, `BufferSource` n'accepte que `ArrayBuffer | ArrayBufferView<ArrayBuffer>`. Or le contrat utilise un `ArrayBufferView` nu, qui vaut par défaut `ArrayBufferView<ArrayBufferLike>` et inclut donc les vues sur un `SharedArrayBuffer`.
+En une semaine, la suite de rendu est passée de 87 à 99 tests (`it(` dans `suite.ts`), et le nombre de programmes compilés croît avec elle (166 aujourd'hui). Chaque phase ajoute du travail, et ce travail s'exécute en série.
 
-**Correction.** Restreindre le type à `ArrayBufferView<ArrayBuffer>` dans trois fichiers :
+### 1.2 Programmes HLSL et GLSL : du travail en série qui croît linéairement (vérifié)
 
-- `engine-backend/src/gpu/GpuTexture.ts:68` ;
-- `engine-backend/src/gpu/GpuBuffer.ts:31` (`initialData`) ;
-- `engine-webgpu/src/gpu/TextureFactory.ts:25`.
+[programs.spec.ts](tests/rendering/src/programs.spec.ts) traite chaque programme ainsi :
 
-Il faut éviter les casts `as BufferSource` : celui de `BufferFactory.ts:145` masque déjà ce problème.
+- `compileHlsl` lance **un processus DXC par étage**, chacun dans un `mkdtemp`/`rm` ([spirvTools.ts:62-93](packages/engine-vulkan/src/tools/spirvTools.ts#L62-L93)) ;
+- `validateSpirv` lance **un spirv-val**, dans un autre répertoire temporaire ;
+- `reflectUniformBlocks` lance **un spirv-cross**, dans un troisième.
 
-Comme `noEmitOnError` est actif, cette erreur empêche aussi de régénérer les déclarations d'engine-webgpu dans `dist/`.
+Le tout s'exécute un programme après l'autre, dans un seul test.
 
-**Erreurs de la démo** (🔴 inchangées, toutes triviales) :
+Mesures sur un poste de 24 cœurs inoccupé :
 
-- `Header.tsx:5` et `main.tsx:1` : imports et variables inutilisés ;
-- `routes/depth-testing/route.tsx:98` et `routes/index-buffer/route.tsx:98` : `setRotation` inutilisé ;
-- `routes/index.tsx:13` : `onSurfaceReady` renvoie `void` au lieu de `Promise<void>`.
+| Mesure                                                     | Valeur                                   |
+| ---------------------------------------------------------- | ---------------------------------------- |
+| Programmes / étages                                        | 166 / 274                                |
+| Processus lancés pour le HLSL                              | environ 820, en série                    |
+| Coût d'un lancement à vide (dxc / spirv-val / spirv-cross) | 34 / 13 / 14 ms                          |
+| Test HLSL                                                  | **13,1 s** (programme le plus long : « fractal sums », 361 ms) |
+| Test GLSL (un glslangValidator par programme ou par draw)  | 5,2 s                                    |
+| `programs.spec.ts` seul                                    | 27 s                                     |
+| Le même fichier, avec les 3 autres specs du projet         | **44 s**                                 |
 
-🟢 L'erreur de `RenderPipeline.ts:4` (import de `Material`) est corrigée.
+Sur un runner GitHub à 4 vCPU, avec lavapipe et WARP qui tournent en même temps, il faut multiplier ces durées. Chaque programme ajouté allonge donc le test d'environ 50 ms × (sa part de la charge).
 
-### Nx
+Deux aggravations :
 
-- 🆕 **Workspace désynchronisé** (vérifié) : `nx sync:check` signale « Stale references: packages/engine-core/tsconfig.lib.json » dans `packages/engine-webgpu/tsconfig.lib.json:11`. La dépendance a été retirée du `package.json` mais pas de la référence TypeScript. Il suffit de supprimer cette ligne ou de lancer `npx nx sync`.
-- 🔴 **`nx test` est cassé** : « externalDependency 'jest' could not be found ». Il manque `jest`, `jest.preset.js` et `@swc/jest`, et trois plugins de `nx.json` (`@nx/jest`, `@nx/vite`, `@nx/vitest`) créent chacun une cible `test`. Il vaudrait mieux garder uniquement Vitest et supprimer les `jest.config.ts`.
+- **La suite Dawn tourne deux fois.** `programs.spec.ts` rejoue `describeRenderer` sur Dawn uniquement pour enregistrer les programmes, alors que `dawn.spec.ts` joue la même suite, au même moment, dans un autre worker. Cela fait environ 100 tests et 25 s de GPU logiciel en double (vérifié).
+- **Un test casse sous la charge.** Lancés ensemble, `dawn.spec` et `programs.spec` échouent tous les deux sur « measures the GPU time of the passes » avec **80 523 ms** pour une passe (vérifié ; ils passent quand on les lance séparément). Cause probable : [WebGpuPassTimer.ts:108-116](packages/engine-webgpu/src/render/WebGpuPassTimer.ts#L108-L116) résout `_used` paires de timestamps, alors qu'une passe non jouée à cette image garde l'horodatage d'une image précédente. `end >= begin` laisse alors passer un écart énorme. Il faut ne lire que les paires écrites à cette image (un masque par slot).
 
-### Tests
+**Corrections :**
 
-- 🔴 **Il n'y a aucun fichier `*.spec.ts` ni `*.test.ts`.** C'est le manque le plus coûteux à ce stade : les régressions de la dernière passe (padding, types de source) et plusieurs bugs de ce rapport (stride des tableaux uniform, `setRotation`, `hasDynamicSize`) auraient été détectés par des tests unitaires de quelques lignes, exécutables dans Node sans GPU.
+1. Faire tourner les programmes dans un pool de `os.availableParallelism()` tâches, et non en série. Gain attendu : environ ×6 à ×8 sur un poste, ×3 sur un runner.
+2. Utiliser un seul répertoire temporaire par programme au lieu de trois, et y lancer spirv-val et spirv-cross côte à côte.
+3. Mettre en cache les résultats par `programKey` + version de DXC (le `FileShaderCache` de `82a36d9` le permet déjà) : un programme inchangé n'est pas revalidé.
+4. Enregistrer les programmes dans `dawn.spec.ts` via `recordPrograms`, puis valider dans le même fichier (ou par un `globalSetup`), pour supprimer la deuxième suite Dawn.
+5. Une fois ces corrections faites, **retirer** le `testTimeout: 30_000` de [vitest.config.mts](tests/rendering/vitest.config.mts) et les `timeout` de `programs.spec.ts`, et revenir aux 5 s par défaut.
 
-### Lint
+### 1.3 Fumée : une référence CPU qui alloue à chaque cellule (vérifié)
 
-- 🔴 0 erreur et 269 warnings (247 au précédent audit), dont 258 dans la démo et parmi eux 243 `no-non-null-assertion`.
-- 🔴 Les `packages/*/.eslintrc.json` sont au format legacy et ignorés par ESLint 9, donc la règle `@nx/dependency-checks` ne s'applique jamais.
+« rises from a fire » (grille 8×16×8 = 1 024 cellules, 41 pas) prend 1,7 s, et « flows around an obstacle » (24×32×1, 120 pas) 2,0 s, sur un poste inoccupé. Cela fait **environ 30 ms par pas pour 1 024 cellules**, soit environ 30 µs par cellule et par pas.
 
----
+Décomposition mesurée (41 pas) :
 
-## 2. Partie material (en cours d'implémentation)
+| Variante                       | Durée  |
+| ------------------------------ | ------ |
+| complète                       | 1,2 s  |
+| sans feu                       | 1,06 s |
+| sans solveur de pression (0 itération) | 0,68 s |
+| 42 000 `simplexNoise` seuls    | 22 ms  |
 
-Ce que couvre cette section :
+Le bruit n'y est pour rien. Le coût vient du style de [smoke/cpu.ts](packages/engine-fluids/src/smoke/cpu.ts), qui alloue en permanence :
 
-- dans engine-backend : `material/` (`types.ts`, `utils.ts`) et le système de types GPU (`gpu/`) ;
-- dans engine-webgpu : le générateur de shaders (`shader/`) et la stratégie de structs (`gpu/structs.ts`, `layouts.ts`, `writers.ts`, `serializers.ts`) ;
-- dans la démo : l'usage actuel (`utils3d/Material.ts`, `Scene.ts`, `RenderPipeline.ts`, `routes/loading-model`).
+- `eachCell` et `eachFace` créent un tableau `[i, j, k]` par visite ;
+- `shift`, `center`, `neighborCell` et `p.map(...)` créent des tableaux ;
+- `faceLattice(grid, axis)` crée un objet et trois tableaux **à chaque échantillon** ;
+- `sampleLatticeCpu` fait trois `[0, 1, 2].map` par appel ([grid.ts:223-280](packages/engine-fluids/src/smoke/grid.ts#L223-L280)) ;
+- la confinement appelle `force()` deux fois par face et par axe, avec six `neighborCell`.
 
-La classe `Material` d'engine-backend a été supprimée volontairement. C'est cohérent avec le design, qui la place dans engine-core.
+Le solveur de Jacobi alloue aussi un `Float32Array` par itération.
 
-### 2.1 Bugs du code utilisé aujourd'hui
+À 30 s de timeout, le test tolère un ralentissement de ×15 ; ce n'est plus un test unitaire.
 
-Ces bugs ont un effet visible ou un risque de plantage **maintenant**, indépendamment de la suite du chantier.
+**Correction :** réécrire les boucles chaudes avec des index entiers et des scratch préalloués (lattices calculées une fois par pas, deux tampons de pression alternés). Le travail est mécanique et le gain attendu dépasse ×10. La même remarque vaut pour `engine-noise` (§5). Ensuite, retirer les `{ timeout: 30_000 }` de [smoke.spec.ts](packages/engine-fluids/src/smoke.spec.ts).
 
-**Dans le shader Phong** (`engine-webgpu/src/shader/templates/phong/functions.wgsl.eta`) :
+### 1.4 Layout de l'éditeur web : un test qui attend des images
 
-- 🔴 **Texture de shininess** (lignes 60-71, vérifié) : la valeur de la texture multiplie la valeur uniform au lieu de la remplacer (`result * tex.r * 255`), ce qui donne jusqu'à environ 16 000 et fait disparaître les reflets. Là où `tex.r == 0`, la shininess vaut 0 et `pow(x, 0.0)` vaut 1 : ces texels ont un spéculaire blanc plein (et `pow(0, 0)` est indéfini en WGSL). De plus, `if (it.shininess)` à la ligne 61 ignore la valeur 0. La démo charge une texture de shininess (`loading-model/route.tsx:146`), donc le bug est visible.
-- 🔴 **Spéculaire non conditionné à N·L** (lignes 94-105, 124) : des reflets apparaissent sur les faces opposées à la lumière.
-- 🔴 **Ambient par défaut blanc** (lignes 6 et 81) : l'ambient égale le diffus plein, et le rendu est jusqu'à 2x trop clair.
+Le test (1,5 s ici) masque les docks, puis attend que `canvas.width` grandisse. Or la nouvelle taille fait deux étapes avant d'arriver au canvas :
 
-**Dans la démo** (`apps/demo/src/utils3d`) :
+1. [useViewportBounds.ts:57-65](packages/editor-ui/src/useViewportBounds.ts#L57-L65) lit les bornes **une fois par `requestAnimationFrame`** ;
+2. le message traverse le `MessageChannel`, puis est appliqué entre deux images du moteur ([EditorEngine.ts:209-212](packages/editor-ui/src/engine/EditorEngine.ts#L209-L212), boucle `run()` `:316-340`), qui tourne sur le même thread que la page.
 
-- 🔴 **`createRenderPipeline` à chaque frame et pour chaque mesh** (`Scene.ts:296-322`), avec le vertex layout et le descripteur reconstruits à chaque fois, alors que tout est statique. Il faut les créer une fois dans `setupMesh` et les stocker dans `MeshRenderData`.
-- 🆕 **Un effet de bord caché** (`Scene.ts:292-294`, vérifié) : les deux réaffectations `material.frameUniforms[n].value = cameraAdapter.*.value` ressemblent à du code mort (le bind group est déjà construit avec ces buffers), mais c'est la lecture de `.value` qui déclenche l'upload de la position et de la vue de la caméra par `CachedValue`. Si on supprime ces lignes, la caméra se fige. Et `projectionMatrixBuffer` n'est jamais relu : un changement d'aspect ou un resize n'atteint jamais le GPU. Il faut un `update()` explicite qui lit les trois buffers à chaque frame.
-- 🆕 **`setupMesh` modifie le matériau** (`Scene.ts:113, 189, 218`) : il ajoute des uniforms au matériau et crée 7 buffers de lumière à chaque appel. Un matériau partagé par deux meshs, ou un second appel, produit des `var` WGSL et des bindings en double, et le shader ne compile pas.
-- 🆕 **Stride de vertex calculé par un `switch` incomplet** (`Material.ts:46-74`) : les formats non listés (`float16x2`, `unorm8x4`…) comptent pour 0 octet. Le `stride` déjà calculé par l'importeur (`obj-importer.ts:57`) est ignoré.
-- 🔴 **Attributs codés en dur** (`loading-model/route.tsx:73-77`) : la route suppose position, normale et UV, et le template lit toujours `in.normal` et `in.uv` (`phong-shader.wgsl.eta:38-39`). Un OBJ sans normales ou sans UV donne un layout incohérent et une erreur de compilation WGSL.
+Le délai est donc de **2 à 3 images**. Sur SwiftShader avec la scène `shadows` d'un runner chargé, une image peut durer une seconde ou plus : passer de 1 s à 10 s ne fait que suivre la cadence d'images, et la prochaine fonctionnalité de rendu demandera de nouveau plus.
 
-**Bugs latents dans la stratégie de structs.** Elle est exportée mais pas encore utilisée par la démo. Ces bugs se déclencheront dès que les matériaux en dépendront :
+**Correction :** se synchroniser sur un événement, pas sur une durée. Le moteur publie déjà `stats` avec `width` et `height` : il suffit qu'il envoie aussi un message `resized` (ou `stats` immédiat) quand `setBounds` change la taille, et que le test l'attende. Le test peut aussi utiliser une scène vide plutôt que `shadows`.
 
-- 🔴 **Toutes les structs imbriquées sont rejetées** (`engine-webgpu/src/gpu/structs.ts:42, 158`) : `'hasDynamicSize' in field.type` est toujours vrai, car `build()` définit toujours la clé, même à `undefined` (`engine-backend/src/gpu/structs.ts:59`). Il faut tester `field.type.hasDynamicSize === true`.
-- 🔴 **Règles WGSL de l'espace uniform non appliquées** (`engine-webgpu/src/gpu/structs.ts:178-189`, `layouts.ts`) : le stride des tableaux n'est pas arrondi à 16 (`uniformArrays.float32` a un stride de 4, donc `array<f32, N>` est invalide en uniform), et l'alignement et la taille des tableaux et des structs imbriquées ne sont pas arrondis à 16.
-- 🟡 **`runtimeSize` et `size` incohérents** (`engine-webgpu/src/gpu/structs.ts:93, 204`) : depuis la dernière passe, `size` est arrondi, mais `runtimeSize()` renvoie toujours la taille brute. Par exemple, une struct `{ vec3 }` donne 16 d'un côté et 12 de l'autre.
-- 🔴 **`build()` partage son état** (`engine-backend/src/gpu/structs.ts:51-62`) : il renvoie le `blueprint` et le tableau `fields` vivants du builder, donc un `withField` après `build()` modifie la struct déjà construite.
-- 🔴 **Sérialisation invalide** (`engine-webgpu/src/gpu/structs.ts:138-140, 226-228`) : une struct est émise en `{ a: f32 }` anonyme, ce qui donne `var<uniform> x: {…}`, invalide en WGSL.
-- 🔴 **Écriture de tableau** (`engine-backend/src/gpu/arrays.ts:47`) : avec une `length` fixe et une valeur plus courte, le writer reçoit `undefined` et lève une exception.
+### 1.5 Graph du jeu dans la documentation : le test attend le chargement complet du jeu
 
-### 2.2 Ce qui entre en conflit avec le design cible
+[apps/docs/tests/editor.spec.ts](apps/docs/tests/editor.spec.ts) attend que la liste des graphs contienne « Enemies » ou « hero animation ». Ces graphs ne sont listés qu'une fois **tout le jeu TPS chargé** ([tps.ts:594-610](packages/demo-scenes/src/tps/tps.ts#L594-L610)) :
 
-Ce n'est pas un bug, mais ces éléments devront changer ou disparaître pour atteindre [design/material-graph.md](design/material-graph.md). Mieux vaut le savoir avant de construire dessus.
+- 30 Mo de modèles et de textures JPEG ;
+- `bakeRockTexture` sur le GPU ;
+- `buildForest` ;
+- l'instanciation des ennemis et du héros, et la compilation de leurs pipelines.
 
-**Du code WGSL dans l'API abstraite.** `GpuType.serialize()` (`GpuType.ts:6`), `GpuArray.serialize()` (`GpuArray.ts:9`), `GpuSerializer`, `SerializerApi` et `StructBuildStrategy.getSerializeCallback` (`GpuStruct.ts:43`) produisent du texte WGSL depuis engine-backend. Dans le design (§13), la génération de code passe dans `WgslCodegen`. **Recommandation : ne plus ajouter d'usages de `serialize()`.**
+Tout cela se fait sur SwiftShader, pendant que la boucle de l'éditeur dessine des images sans arrêt. Le commentaire du test le reconnaît lui-même (« The game saturates SwiftShader »), et la parade a été de donner à ce test son propre navigateur.
 
-**Les types de `material/types.ts` mélangent logique et physique :**
+Par ailleurs, Playwright lance par défaut 50 % des cœurs en workers, donc deux Chromium avec SwiftShader (lui-même multi-thread) sur un runner à 4 vCPU. Chaque asset, ennemi ou passe de rendu ajouté au jeu allonge le test.
 
-- `MaterialUniformType` (lignes 20-30) utilise les types physiques `GpuType` et `GpuStruct`, là où le design prévoit des types logiques `ShaderType`.
-- Chaque uniform a son propre binding, là où le design prévoit **un bloc uniform par slot**.
-- `MaterialTextureBindingShape` (lignes 32-56) associe une texture et un sampler optionnel dans un même binding, et stocke un `format` (physique) au lieu d'un `sampleType`. Le design sépare textures et samplers.
-- Les bindings contiennent des valeurs d'exécution (`CachedValue`) à côté de la forme : le design sépare la forme (`ProgramLayout`) des valeurs (`Material`).
-- `MaterialBinding` (ligne 58) porte le même nom que le `MaterialBinding` d'exécution du design (un par couple matériau et programme). Il faudra renommer l'un des deux.
-- `MaterialDescription` (lignes 60-64) est l'équivalent de `ProgramLayout` dans le design.
-- `GpuTextureType` (`GpuTexture.ts:1`) n'a ni `1d` ni `cube-array`.
+**Correction :**
 
-**La numérotation des bindings se fait dans les templates Eta :**
+1. Ce test vérifie l'éditeur de graphs, pas le jeu : lui donner un niveau minimal (`options.level`, un ennemi, pas de forêt) via un paramètre de la page de doc réservé aux tests.
+2. Dans l'éditeur, limiter la cadence des images tant que la scène charge (`ready` non résolu), ou les suspendre quand l'iframe n'est pas visible.
+3. Mettre `workers: 1` pour le projet `webgpu` de [playwright.config.mts](apps/docs/playwright.config.mts), ou utiliser `fullyParallel: false` avec un seul projet SwiftShader à la fois.
 
-- un `@binding(i)` par uniform (`uniforms.wgsl.eta:2`) ;
-- les textures à `bindingOffset + 2i` (`textures.wgsl.eta:1-3`, `phong-shader.wgsl.eta:19`), avec le même calcul recopié dans `Material.ts:157, 183-187` ;
-- les noms de textures viennent du `label`, qui est optionnel (on peut obtenir `var undefined`), et leur type est toujours `texture_2d<f32>` ;
-- les noms d'attributs sont utilisés tels quels comme identifiants WGSL (`vertex-attributes.wgsl.eta:4`), ce qui casse avec une sémantique personnalisée.
+Le même raisonnement vaut pour les timeouts par exemple (`tps` 120 s, `occlusion-culling`/`levels-of-detail`/`coast` 60 s) et pour les captures passées de 20 à 30 s.
 
-Le fragment utilise déjà 9 uniform buffers, pour une limite par défaut de 12 (`maxUniformBuffersPerShaderStage`). La règle « un binding par uniform » atteindra bientôt cette limite, ce qui est un argument de plus pour un bloc par slot.
+### 1.6 La cause commune : la CI fait tourner plus de GPU logiciels qu'elle n'a de cœurs
 
-**Les slots `frame` et `object` ne sont pas partagés :** chaque mesh a son propre bind group `frame`, avec son layout et ses buffers de lumières (`Scene.ts:113-187, 244-250`). Le design prévoit des layouts fixes partagés par tous les matériaux. En plus, les entrées de layout n'ont pas de `minBindingSize`, et les tailles de buffers sont écrites en dur (`3 * 4`) au lieu d'utiliser `GpuType.size`.
+| Niveau                        | Parallélisme par défaut                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| Nx (`nx run-many -t test`)    | 3 projets à la fois ([nx.json](nx.json) ne fixe pas `parallel`)               |
+| Vitest, dans chaque projet    | environ un worker par cœur ; tests/rendering lance ses 4 specs en même temps  |
+| Dans chaque worker            | lavapipe, WARP et SwiftShader répartissent la rastérisation sur tous les cœurs ; DXC lance des processus |
+| Runners `ubuntu-24.04` / `windows-2025` | **4 vCPU**                                                          |
 
-**Le chemin Eta sera remplacé.** `ShaderWritter` et les templates sont voués à être remplacés par `WgslCodegen` (design §13). Leurs imports `?raw` ne fonctionnent qu'avec Vite. `apps/demo/src/utils3d/RenderPipeline.ts` n'est plus utilisé et peut être supprimé.
+Le job `native` peut ainsi faire tourner en même temps : Dawn deux fois, lavapipe, WARP, Chromium avec SwiftShader (editor-web) et des processus DXC, sur 4 cœurs. Chaque test GPU ajouté ralentit **tous les autres**. C'est pourquoi des tests anciens, inchangés, exigent eux aussi des timeouts plus longs. La mesure du §1.2 le montre : le même fichier passe de 27 s à 44 s sur 24 cœurs dès que ses voisins tournent.
 
-**La disposition des lumières côté CPU** (🆕) : les vec3 sont compacts (offsets 0, 12, 24, 36…), alors que WGSL les place à 0, 16, 32, 48. Les tailles WGSL seraient 64, 80 et 96 octets, et 60 octets (Point) n'est même pas un multiple de 16. Les buffers de `engine-core` ne sont donc pas envoyables tels quels. C'est cohérent avec le design si l'on considère ces buffers comme un **stockage CPU**, emballé par le backend via `PhysicalLayoutStrategy` : il faut alors l'écrire explicitement. Dans cette logique, `LightColorDataSize` et les constantes voisines (tailles d'emballage CPU) n'ont pas leur place dans l'API abstraite (`engine-backend/src/light/types.ts`) et iraient mieux dans engine-core.
+**Correction :**
 
-### 2.3 Les fondations à conserver
+1. Lancer `nx run-many -t test --projects="$PROJECTS" --parallel=1` pour les projets `gpu`. Ils sont déjà dans un job à part, donc le job `check` n'est pas ralenti.
+2. Dans [tests/rendering/vitest.config.mts](tests/rendering/vitest.config.mts), fixer `maxWorkers: 2` (ou `fileParallelism: false` sur CI).
+3. **Suivre les durées plutôt que les timeouts** : ajouter le reporter `junit` en CI, publier le fichier, et faire échouer un test qui dépasse son budget de plus de 50 % par rapport à `main`. Le dossier `tools/bench` existe déjà pour ce genre de comparaison.
+4. Ne plus allonger un timeout sans un chronométrage local qui justifie la nouvelle valeur.
 
-Ces pièces sont de bonnes bases pour le design et méritent d'être gardées :
+### 1.7 Autres tests instables relevés
 
-| Élément                                                                                   | Pourquoi le garder                                                                                                                                                                                                                                               |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `StructBuildStrategy` (`engine-backend/src/gpu/GpuStruct.ts:24-44`) et `StructBuilder`    | C'est exactement le point d'extension prévu pour `PhysicalLayoutStrategy` (uniform et storage WGSL, std140, HLSL), une fois le callback de sérialisation retiré. Le calcul des offsets est juste : un `vec3` suivi d'un `f32` place bien le `f32` à l'offset 12. |
-| `uniformLayout` (`engine-webgpu/src/gpu/layouts.ts`)                                      | Correct pour les scalaires, vecteurs et matrices WGSL (vec3 alignement 16 et taille 12, mat3 48 octets, mat2 alignement 8). C'est une table toute prête pour `typeOf()`.                                                                                         |
-| `uniformWriters` (`engine-webgpu/src/gpu/writers.ts`)                                     | Corrects en little-endian, et le mat3 utilise des colonnes complétées, cohérentes avec la taille de 48 octets. Ce sont les writers physiques du design.                                                                                                          |
-| `MaterialBindingSlot` et `getMaterialBindingSlotOrder()` (`engine-backend/src/material/`) | Ils donnent les groupes 0/1/2 dans un ordre déterministe, avec les slots personnalisés triés : exactement ce que demande le §7.7 du design. Il reste à dédupliquer les slots personnalisés et à retirer le `as any`.                                             |
-| `MeshDescription`, `MeshAttributeSemantic`, `VertexAttributeFormats`                      | Correspondent directement à `input.attribute` et à la correspondance mesh / programme (§10.2 du design).                                                                                                                                                         |
-| `ShaderWritter.formatAttributeType` (dupliqué dans `Material.ts:213`)                     | C'est le début de la table de compatibilité « format de vertex → `ShaderType` ». À extraire et à dédupliquer.                                                                                                                                                    |
-| `CachedValue`, `CameraAdapter`, `TransformAdapter`                                        | Prêts pour les slots `frame` et `object` et les uploads versionnés (une fois les bugs du §3 corrigés).                                                                                                                                                           |
-| La décomposition Phong (`getAmbient`, `getDiffuse`, `getSpecular`, `getLighting`)         | Elle se transpose directement en macro `lighting.phong`, une fois les bugs du §2.1 corrigés.                                                                                                                                                                     |
-
-### 2.4 Prochaines étapes recommandées pour la partie material
-
-Ces étapes sont petites, testables, et dans l'ordre :
-
-1. **Fiabiliser la stratégie de structs** :
-
-   - le test `hasDynamicSize === true` ;
-   - l'arrondi à 16 des tableaux et des structs en espace uniform ;
-   - un `runtimeSize` aligné ;
-   - une copie du blueprint dans `build()`.
-
-   L'ajouter avec des tests Vitest qui comparent les offsets à des valeurs de référence WGSL. Ces tests tournent dans Node, sans GPU.
-
-2. **Corriger la démo actuelle** :
-   - mettre en cache le pipeline et le shader module dans `MeshRenderData` ;
-   - rendre explicite le rafraîchissement de la caméra (projection comprise) ;
-   - conditionner le spéculaire à N·L ;
-   - faire que la texture de shininess remplace la valeur (avec un minimum de 1).
-3. **Créer `@fdw/engine-shader`** avec seulement `ShaderType`, `T` et le type `ProgramLayout`. Écrire une `PhysicalLayoutStrategy` pour l'espace uniform WGSL (`ShaderType` → `GpuStruct` via la stratégie existante), et la tester.
-4. **Retirer `serialize()`** de `GpuType`, `GpuArray`, `GpuStruct` et `GpuSerializer`. Déplacer le nommage des types WGSL dans une fonction `wgslTypeName(ShaderType)` d'engine-webgpu, et faire migrer temporairement les templates vers elle.
-5. **Remplacer `MaterialBindingShape` et `MaterialDescription` par `ProgramLayout`.** Faire passer la démo à un bloc uniform par slot, avec des groupes `frame` (caméra, lumières) et `object` partagés et créés une seule fois. Valider sur la démo réelle.
-6. **Phases 1 et 2 du design** : `GraphBuilder` avec validation et aller-retour JSON, puis un compilateur minimal (unlit) vers l'IR, puis `WgslCodegen` avec des tests par snapshot.
-7. **`ProgramCache` et `PipelineCache`** (clé `programKey + layoutKey + stateKey + passKey`). Porter `loading-model`, puis écrire `lighting.phong` en macro, ce qui permet de retirer Eta.
+- `packages/engine-resources-web/src/web.spec.ts:229` a échoué une fois dans la suite complète, sans être reproduit seul : c'est une question de durée.
+- Le test « real addon » d'`engine-resources-native` ne tourne **jamais** en CI (§4.4).
 
 ---
 
-## 3. engine-backend
+## 2. Compilation, Nx et CI
 
-Le code material et la stratégie de structs sont traités au §2.
+### 2.1 État (vérifié)
 
-| Point                                                     | Statut                                                                                                                          | Emplacement                                                       |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Normal matrix                                             | 🟢 vérifiée numériquement, composition avec le parent comprise                                                                  | `math/TransformMath.ts:35-41`                                     |
-| View-projection                                           | 🟢                                                                                                                              | `camera/CameraAdapter.ts:102`                                     |
-| Type `source` des textures                                | 🟢 générique (`TextureSource = never`) ; voir §1 pour `ArrayBufferView<ArrayBuffer>`                                            | `gpu/GpuTexture.ts:66-71`                                         |
-| `wgpu-matrix`, types `GPU*`, `ImageBitmap`, `vite/client` | 🟢 retirés                                                                                                                      | —                                                                 |
-| Format des mat3                                           | 🟡 documenté ; initialisation en `Float32Array(9)` toujours présente (code mort, `CachedValue` calcule dès la première lecture) | `primitives/types.ts:33-36`, `transform/TransformCache.ts:71, 95` |
-| `CachedValue` sans `try/finally`                          | 🔴 si `updateStrategy` lève une exception, `_updating` reste vrai et tous les accès suivants lèvent « Circular dependency »     | `utils/CachedValue.ts:58-63`                                      |
-| `positionBuffer` lit `options.camera`                     | 🔴 il n'est plus mis à jour si on change de caméra                                                                              | `camera/CameraAdapter.ts:54-55`                                   |
-| `destroy()` absent des adaptateurs                        | 🔴 4 buffers fuient dans `CameraAdapter`, 5 dans `TransformAdapter`                                                             | —                                                                 |
-| `write(0, m.buffer)` ignore `byteOffset`                  | 🔴 latent (wgpu-matrix renvoie des tableaux neufs aujourd'hui) ; `GpuBuffer.write` n'accepte que `ArrayBuffer`                  | `CameraAdapter.ts:69, 84, 99`, `gpu/GpuBuffer.ts:16-21`           |
-| `Engine extends EventTarget`                              | 🔴 suppose un environnement DOM ou Node                                                                                         | `Engine.ts:13`                                                    |
-| Conventions de clip space implicites                      | 🔴                                                                                                                              | `math/CameraMath.ts:28-46`                                        |
-| `@preact/signals-core` non déclaré                        | 🔴 ne fonctionne que grâce au `package.json` racine                                                                             | `package.json:4`, `Engine.ts:1`                                   |
-| `Surface` limitée (pas de resize ni de present)           | 🔴                                                                                                                              | `Surface.ts:3-7`                                                  |
+| Point                                        | Statut | Détail                                                                                                                                                                                                                      |
+| -------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsc -b`, typecheck                          | 🟢     | 0 erreur sur tous les packages audités.                                                                                                                                                                                     |
+| `nx sync:check`                              | 🟢     | À jour.                                                                                                                                                                                                                     |
+| Tests                                        | 🟢     | Ils passent : par exemple 532 tests pour les 6 packages du §3, 53 pour engine-vulkan, 15 pour engine-d3d12.                                                                                                                  |
+| Lint                                         | 🟡     | 0 erreur, une trentaine de warnings. Les `.eslintrc.json` d'engine-backend, engine-core, engine-webgpu et engine-webgl2 sont au format legacy et **ignorés par ESLint 9**, donc `@nx/dependency-checks` ne s'applique jamais. Il faut les migrer vers `eslint.config.mjs`. |
+| `NX_WORKSPACE_ROOT_PATH` en minuscules (Windows) | 🆕 basse | Les tests lancés par Nx échouent (« Cannot read properties of undefined (reading 'config') ») si le chemin est `c:\…`. À documenter dans le README.                                                                       |
 
-### Nouveaux constats
+### 2.2 Cibles Nx
 
-- 🆕 **Majeur — `TransformAdapter` fixe la taille des mat3 à `12 * 4`** (`transform/TransformAdapter.ts:45`). Ça contredit le contrat qui vient d'être documenté (« le format est défini par la bibliothèque de maths du backend ») : un backend avec des mat3 de 9 floats écrirait 36 octets dans un buffer de 48. La taille doit venir du layout physique du backend, ou au minimum de `mat3.identity().byteLength`.
-- 🆕 **Mineur — `getWorldMatrix` et `getWorldNormalMatrix` renvoient la matrice locale elle-même** quand il n'y a pas de parent (`TransformMath.ts:50, 63`). Un futur usage avec `out=` en place corromprait les deux matrices.
-- 🆕 **Mineur — une échelle nulle** donne une matrice singulière à `invert`, et des `Inf`/`NaN` sont envoyés au GPU sans aucune garde.
-- 🆕 **Mineur — `ColorView` duplique le code de `Vec*View`** avec les mêmes défauts (`asArray()` lève une exception si l'offset n'est pas un multiple de 4, et le getter `buffer` renvoie une `DataView`). Il n'est pas encore utilisé : les couleurs des lumières sont toujours typées `IVec3`.
+| Gravité | Lieu                                                                    | Constat                                                                                                                                                                                                                         | Correction                                                                                                          |
+| ------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| moyenne | `packages/engine-{vulkan,d3d12}/project.json` (`build-native.outputs`) | Seul le `.node` est déclaré. `dxcompiler`, `dxil.dll` et `.prebuilt` (déposés par `tools/native/prebuilt.mjs:169-178`) ne sont pas restaurés depuis le cache : l'addon revient sans son DXC.                                      | Les ajouter aux `outputs`.                                                                                          |
+| moyenne | mêmes fichiers (`build-native.inputs`)                                  | Manquent : `FDW_FROM_SOURCE`, le mode debug, la version de `node-api-headers`, le Windows SDK. Sans `VULKAN_SDK`, le script sort en 0 sans rien produire (`scripts/build.mjs:15-21`), et ce succès vide est mis en cache.          | Ajouter ces inputs, et faire échouer le script sans SDK.                                                            |
+| basse   | `tests/rendering/project.json`, `packages/engine-vulkan/project.json`   | `FDW_REQUIRE_SUITES`, `FDW_D3D12_ADAPTER` et `VK_DRIVER_FILES` ne sont pas des inputs : un succès obtenu avec des suites sautées peut être rejoué depuis le cache.                                                                 | `{ "env": … }` pour chacune.                                                                                        |
+| basse   | `packages/engine-native/project.json`                                   | `dependentTasksOutputFiles: "**/*.js"` ignore le `.node` d'engine-vulkan.                                                                                                                                                       | Ajouter `**/*.node`.                                                                                                |
 
-### Mineurs toujours ouverts
+### 2.3 Workflows GitHub
 
-- Les modes de wrap ont des noms de style OpenGL (`wrapModeS`, `T`, `R`) dans `gpu/GpuSampler.ts:16-18`.
-- `mat2` existe sans `Mat2Api`.
-- `CameraCache._camera` est public, et `transformParentProvider` est en lecture seule (impossible de changer le parent d'un objet).
-- `CachedValue` contient des `any` et des `as unknown as`, et lire `.version` déclenche un recalcul.
-
----
-
-## 4. engine-core
-
-| Point                                                                                         | Statut                                                                                                                                                                          | Emplacement                                                                  |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `SpotLight` hors limites                                                                      | 🟢                                                                                                                                                                              | `light/SpotLight.ts:20-25`                                                   |
-| Tailles des lumières en constantes nommées                                                    | 🟢 (mais voir §2.2 sur leur emplacement et l'alignement GPU)                                                                                                                    | `light/*.ts`                                                                 |
-| Seul `BaseLight` est exporté                                                                  | 🔴 (vérifié : le package exporte uniquement `BaseLight`, `Camera` et `Transform`, et le constructeur de `BaseLight` est `protected`). Il suffit d'ajouter trois `export * from` | `light/index.ts:1`                                                           |
-| `Object.freeze` ne protège rien                                                               | 🔴 (vérifié : `spot.position.x = 9` écrit bien la valeur, et la version reste à 7) : les caches deviennent périmés sans erreur                                                  | 13 occurrences, par ex. `BaseLight.ts:42`, `Camera.ts:53`, `Transform.ts:44` |
-| Compteurs de version des lumières                                                             | 🔴 (vérifié : ils démarrent à 1, 4 et 7)                                                                                                                                        | `BaseLight.ts:34`                                                            |
-| Le setter de `projection` garde l'objet de l'appelant ; pas de `lookAt` ni de helper d'aspect | 🔴                                                                                                                                                                              | `Camera.ts:79-82`                                                            |
-| Pas de graphe de scène, pas de parent sur `Transform`                                         | 🔴 (attendu : prévu par le design)                                                                                                                                              | —                                                                            |
-| Valeurs par défaut du cutoff de `SpotLight` et unité non documentée                           | 🔴                                                                                                                                                                              | `SpotLight.ts:45-46`                                                         |
-| Exports nommés et par défaut mélangés                                                         | 🔴                                                                                                                                                                              | `light/*.ts`                                                                 |
-
-- 🆕 **Mineur — le compteur de version est incrémenté avant d'exister** (`BaseLight.ts:29-34`) : les setters appelés dans le constructeur font `undefined++` (qui donne `NaN`) avant que `_version = 0` soit exécuté. C'est sans conséquence aujourd'hui grâce à cette remise à zéro, mais c'est fragile. Il vaut mieux initialiser `_version` en premier et écrire les vues directement plutôt que par les setters.
+| Gravité | Lieu                                                   | Constat                                                                                                                                                                                                                       | Correction                                                                                           |
+| ------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| moyenne | `ci.yml`, `docs.yml`                                   | `.nx/cache` est sauvé sous une clé par commit, avec des `restore-keys` : chaque run réenregistre tout le cache, qui grossit. En local, il fait 6,3 Go pour 335 entrées, et `nx.json` n'a pas de `maxCacheSize` (vérifié). Avec le SDK, Playwright et les builds natifs, le quota de 10 Go va tourner en éviction permanente. | `maxCacheSize: "1GB"`, une clé par branche, ne sauver que sur `main`.                                |
+| moyenne | `bench.yml`, `docs.yml`                                | Aucun filtre de chemins : chaque PR lance la build de la doc, ses captures Playwright et les benchmarks (jusqu'à 45 min).                                                                                                      | `paths`/`paths-ignore`, ou `nx affected` ; benchmarks sur `main` ou sur un label.                    |
+| moyenne | `addons.yml:30-114`, `tools/native/prebuilt.mjs`       | Les prébuilts sont publiés depuis `main` sans attendre la CI ni faire de test de chargement, et le téléchargement n'est pas vérifié par un `sha256`. Le hash des prébuilts ignore `scripts/build.mjs`, `VULKAN_SDK_VERSION` et `node-api-headers`, donc des binaires périmés restent servis. | `workflow_run` sur une CI en succès, smoke test, `sha256` publié ; compléter le hash et les `paths`.  |
+| moyenne | `design/ci.md`                                         | Le document a divergé des workflows : docs et bench tournent sur chaque PR, la liste des projets `gpu` est incomplète, `windows` n'est pas dans les statuts exigés.                                                             | Aligner le document, et décider si Windows bloque une PR.                                            |
+| basse   | `ci.yml` (`windows`)                                   | Il n'y a pas de sccache ou de ccache pour MSVC.                                                                                                                                                                               | sccache.                                                                                             |
+| basse   | `ci.yml`, `docs.yml`                                   | `playwright install --with-deps` relance `apt` même quand le cache Playwright est présent.                                                                                                                                    | Séparer `install-deps` et `install`.                                                                 |
+| basse   | tous                                                   | Les actions tierces sont épinglées par tag, alors que `addons.yml` a `contents: write`.                                                                                                                                       | Épingler par SHA.                                                                                    |
 
 ---
 
-## 5. engine-webgpu
+## 3. Backends et rendu
 
-La stratégie de structs et les shaders sont traités au §2. Sur les 25 points précédents de cette section, 3 sont corrigés, 2 partiels et 20 encore ouverts.
+### 3.1 engine-webgpu
 
-| Point                                           | Statut                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Emplacement                       |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Writer mat3                                     | 🟢                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `gpu/writers.ts:147`              |
-| `ArrayBuffer.isView`, factory `<ImageBitmap>`   | 🟢                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `gpu/TextureFactory.ts:15, 56`    |
-| Padding des buffers                             | 🟡 la formule est correcte et la branche `mappedAtCreation` aussi. **La branche `writeBuffer` (`:145`), celle de la démo, n'est toujours pas complétée** : un `Uint16Array` de 3 indices (6 octets) provoque une erreur de validation GPU sans exception, l'écriture est perdue et le buffer reste à zéro. La branche mappée tronque silencieusement les données trop grandes (`Math.min`, `:135, 140`) alors que `writeBuffer` échoue. `Buffer.size` (`:51-52`) renvoie la taille arrondie. `Buffer.write` (`:77`) a le même problème de multiple de 4 | `gpu/BufferFactory.ts`            |
-| Dépendance vers engine-core                     | 🟡 retirée du `package.json`, **toujours dans `tsconfig.lib.json:11`** (voir §1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | —                                 |
-| Dépendances non déclarées                       | 🔴 `eta`, `wgpu-matrix` (6 imports), `@preact/signals-core`. `@webgpu/types` non plus, alors que les exports pointent vers les sources. Le `package.json` racine indique encore `^0.1.64` alors que le lockfile est en 0.1.74                                                                                                                                                                                                                                                                                                                           | `package.json:3-6`                |
-| Textures                                        | 🔴 voir le détail ci-dessous                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `TextureFactory.ts`, `Texture.ts` |
-| Cycle de vie de `WebGpuEngine`                  | 🔴 l'état reste à `initializing` en cas d'échec, `device.lost` n'est pas géré, `destroy()` plante sans `init()` (`:56`), `pause()` et `resume()` ne font que changer l'état                                                                                                                                                                                                                                                                                                                                                                             | `WebGpuEngine.ts`                 |
-| `WebGpuSurface`                                 | 🔴 pas d'init possible si le moteur est en pause (`:28`), une nouvelle vue à chaque accès (`:57-59`)                                                                                                                                                                                                                                                                                                                                                                                                                                                    | —                                 |
-| Sampler                                         | 🔴 label non transmis, casts non vérifiés, `maxAnisotropy` non validé                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `TextureFactory.ts:79-88`         |
-| `vec4` ignore `w`                               | 🔴 dans `one`, `toArray` (qui alloue `Array(3)`), `fromArray`, `isFinite`, `isNaN` et `str`                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `math/primitives/vec4.ts:119-157` |
-| `quat.equals` avec un epsilon de 0              | 🔴                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `quat.ts:117-121`                 |
-| `mat4.setScaling` divise par l'échelle courante | 🔴                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `mat4.ts:157`                     |
+| Statut | Gravité | Lieu                                                                                         | Constat                                                                                                                                                                                                                       | Correction                                                                                                        |
+| ------ | ------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 🔴     | haute   | [TextureFactory.ts:128-152](packages/engine-webgpu/src/gpu/TextureFactory.ts#L128-L152)       | `dimension` n'est jamais transmis, donc une texture `3d` est créée en 2D (vérifié avec Dawn). Les textures 3D de KTX2 et d'engine-assets sont inutilisables en WebGPU, alors qu'elles marchent en WebGL2.                        | `dimension: type === '3d' ? '3d' : '2d'`, plus un test Dawn.                                                      |
+| 🆕     | moyenne | [BufferFactory.ts:126-127](packages/engine-webgpu/src/gpu/BufferFactory.ts#L126-L127)         | Une écriture dont la longueur n'est pas un multiple de 4 est complétée par des zéros qui **écrasent jusqu'à 3 octets voisins** : `[1..8]`, puis `write(0, [9,9])`, donne `9,9,0,0,5,6,7,8` (vérifié).                            | Ne compléter que si l'écriture atteint la fin du buffer, sinon lever une erreur.                                  |
+| 🆕     | moyenne | [WebGpuPassTimer.ts:108-116](packages/engine-webgpu/src/render/WebGpuPassTimer.ts#L108-L116)  | Des timestamps d'une image précédente sont lus, ce qui donne une passe de 80 s (vérifié, §1.2).                                                                                                                               | Masque des paires écrites à cette image.                                                                          |
+| 🔴     | moyenne | `TextureFactory.ts:154`                                                                      | La table d'octets par pixel lève son exception **après** `createTexture`, donc la texture fuit (vérifié). Elle duplique aussi `texelBytes` d'engine-backend, qui gère `bgra8unorm` alors qu'elle ne le gère pas.                  | Valider le format avant de créer la texture, avec `texelBytes`.                                                   |
+| 🔴     | moyenne | `WebGpuEngine.ts:31-83, 107-118`                                                             | `device.lost` et `uncapturederror` ne sont pas gérés. `destroy()` pendant `init()` laisse l'état `ready` avec un device actif (vérifié).                                                                                        | Écouter `device.lost`, et dans `init()` annuler le résultat si l'état a changé entre-temps.                       |
+| 🆕     | basse   | `wgslLayoutStrategy.ts:221`, `WgslCodegen.ts:476-490`                                        | La ligne de la table d'objets est calculée en std140 mais lue comme une struct WGSL de stockage. Les deux coïncident aujourd'hui, mais rien ne le vérifie.                                                                      | Assertion sur la taille et les offsets, ou `@size`/`@align`.                                                      |
+| 🔴     | basse   | `WebGpuSurface.ts:29, 34, 80-91`, `TextureFactory.ts:279-293`                                | La surface ne peut pas s'initialiser en pause, `getPreferredCanvasFormat` ignore l'option `gpu`, une vue est créée à chaque accès, et le sampler ne reçoit pas de label.                                                         | —                                                                                                                 |
 
-Le détail des textures :
+### 3.2 engine-webgl2
 
-- le type `3d` n'est jamais transmis à `dimension`, donc la texture est créée en 2D (`TextureFactory.ts:32-46`, `Texture.ts:48-49`) ;
-- `2d-array` lève une exception (`Texture.ts:52-53`) ;
-- un cubemap exige que l'appelant passe `layers: 6` explicitement ;
-- seule la couche 0 est envoyée ;
-- il n'y a pas de mipmaps ;
-- la table d'octets par pixel ne couvre que les formats 8 bits, et l'exception est levée **après** `createTexture`, donc la texture GPU fuit.
+| Statut | Gravité | Lieu                                                                 | Constat                                                                                                                                                                                                                                       | Correction                                                                                            |
+| ------ | ------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 🆕     | moyenne | `WebGl2PipelineFactory.ts:403-413, 588`, `engine-backend/src/render/types.ts:121-127` | `GpuRenderPipeline` n'a pas de `destroy()`. Il y a un VAO par pipeline qui n'est jamais supprimé, `_linkedPrograms` grandit sans limite, et le programme lié en double (cache trouvé après coup, ou échec du link) fuit. En WebGPU, `_modules` n'a pas d'éviction non plus. | Supprimer programme et shaders sur ces chemins, et ajouter `destroy()` au contrat des pipelines.      |
+| 🆕     | moyenne | `WebGl2CommandEncoder.ts`, `WebGl2PipelineFactory.ts`, `WebGl2Buffer.ts`, `readback.ts`, `shader/storage.ts` | Environ 2 200 lignes critiques n'ont pas de test unitaire (il n'existe que 2 specs). La suite de rendu les couvre en bout en bout, mais pas les cas limites.                                                                                     | Tests avec un contexte GL simulé.                                                                     |
+| 🆕     | basse   | `WebGl2Buffer.ts:170-196`                                            | Le contrat d'écriture diffère de WebGPU : offset non aligné accepté, `copy-dst` non vérifié. Un code valide en WebGL2 échoue donc en WebGPU.                                                                                                     | `checkBufferWrite` commun dans engine-backend.                                                        |
+| 🆕     | basse   | `WebGl2Engine.ts`                                                    | `webglcontextlost` et `webglcontextrestored` ne sont pas gérés.                                                                                                                                                                                | —                                                                                                     |
 
-### Nouveaux constats
+### 3.3 engine-core
 
-- 🆕 **Majeur — `mat4.setRotation` est faux même sans échelle** (`math/primitives/mat4.ts:166-168`) : `mat * fromQuat(q * inv(R))` applique la rotation `R·q·R⁻¹` et non `q`. Il faut décomposer T et S puis reconstruire `T · fromQuat(q) · S`, ce qui règle aussi la division par zéro de `setScaling`. `getRotation` (`:140-142`) renvoie toujours un quaternion non unitaire si l'objet a une échelle.
-- 🆕 **Mineur — `instanceof ImageBitmap`** (`TextureFactory.ts:42, 51`) lève une `ReferenceError` hors du DOM, par exemple dans des tests Node. Il faut protéger l'appel avec `typeof ImageBitmap !== 'undefined'`. De plus, la taille de copie vient du descripteur et non du bitmap, et `copyExternalImageToTexture` refuse les formats entiers.
-- 🆕 **Mineur — `Texture.view`** (`Texture.ts:31-35`) appelle `createView` à chaque accès. Il faudrait la mettre en cache.
-- 🆕 **Mineur — la table des usages de buffer est dupliquée** (`BufferFactory.ts:12-19, 29-36`), et il y manque `MAP_READ`, `MAP_WRITE` et `INDIRECT` : la relecture et les draws indirects ne sont pas exprimables.
-- 🆕 **Mineur — `mat3.one()`** (`mat3.ts:109-123`) écrit 1 dans les cases de padding, et `mat3.toArray` (`:126-140`) utilise `push` au lieu d'une affectation par index.
-- 🆕 **Mineur — `init()` peut être rappelé** quand le moteur est déjà prêt (`WebGpuEngine.ts:9`), ce qui fait fuir le device précédent.
+| Statut | Gravité | Lieu                                                                         | Constat                                                                                                                                                                                                       | Correction                                                      |
+| ------ | ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 🆕     | moyenne | [Renderer.ts:1540-1571](packages/engine-core/src/render/Renderer.ts#L1540-L1571) | `destroy()` ne libère ni les vertex et index buffers des meshes (`_meshes` est une `WeakMap` non itérable, `:716`), ni les uniforms des matériaux, ni `_fullscreenMesh`, ni le sampler du tone mapping. En WebGL2, ils fuient jusqu'au GC, à chaque changement de scène. | Tenir un `Set` des ressources créées.                           |
+| 🔴     | moyenne | `Camera.ts:53-76`, `light/*.ts`                                              | `Object.freeze` ne protège pas les vues : `spot.position.x = 9` écrit la valeur sans incrémenter la version, et les caches deviennent périmés (vérifié).                                                          | Vues en lecture seule, ou setters qui incrémentent la version.  |
+| 🆕     | basse   | `render/lightVolumes.ts:22`                                                  | Un `outerCutoff` supérieur à 90° n'est borné que dans `lightClusters` : `spotVolume` élimine alors des zones éclairées. L'unité n'est pas documentée.                                                            | Borner dans le setter de `SpotLight`.                           |
+| 🔴     | basse   | `light/BaseLight.ts:30-35`, `Camera.ts:79-81`                                | Les versions démarrent à 1, 4 et 7 ; le setter de `projection` garde l'objet de l'appelant (vérifié). Les exports nommés et par défaut sont mélangés.                                                           | —                                                               |
 
----
+### 3.4 engine-backend
 
-## 6. Application demo
+| Statut | Gravité | Lieu                                                                         | Constat                                                                                                                                                                                                                                                     | Correction                                                          |
+| ------ | ------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 🆕     | moyenne | `gpu/{GpuType,GpuArray,GpuStruct,structs,arrays,…}.ts`, `material/*`, `camera/CameraAdapter.ts`, `transform/*`, et `engine-webgpu/src/gpu/{structs,arrays,…}.ts` | Environ **1 750 lignes de code mort mais exporté** : tout passe désormais par `PhysicalLayoutStrategy`. Plusieurs anciens points y deviennent ⚪.                                                                                                             | Supprimer (garder `CameraCache` et `CachedValue`).                  |
+| 🔴     | moyenne | `math/TransformMath.ts:54-60`                                                | Une échelle nulle donne une normal matrix `[Inf, NaN…]` envoyée au GPU (`Renderer.ts:2748`), alors que `TransformPool.normalBlock` renvoie 0 dans ce cas : il y a deux implémentations divergentes (vérifié).                                                 | Réutiliser `normalBlock`.                                           |
+| 🔴     | moyenne | `math/wgpu-matrix/{mat4,vec4,quat,mat3}.ts`                                  | `setRotation` et `setScaling` sont faux, et `vec4` ignore `w` dans six fonctions. C'est exporté, mais non utilisé et non testé.                                                                                                                              | Corriger et tester, ou supprimer.                                   |
+| 🔴     | moyenne | `package.json`                                                               | `wgpu-matrix`, `@preact/signals-core` et `@webgpu/types` ne sont pas déclarés (ce qui serait détecté une fois le lint migré, §2.1).                                                                                                                          | Les déclarer.                                                       |
+| 🆕     | basse   | `shader/std140LayoutStrategy.ts:134-240`, `engine-webgpu/src/shader/wgslLayoutStrategy.ts:83-190` | `writeUniform` existe en deux copies presque identiques.                                                                                                                                                                                                    | Extraire, paramétré par les strides.                                |
 
-Les deux derniers commits n'ont modifié que `RenderPipeline.ts` dans la démo. Les points spécifiques aux matériaux sont traités au §2.1.
+### 3.5 engine-shader et engine-graph
 
-| Point                                                         | Statut                                                                                                                                                                                 | Emplacement                                 |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| Import de `Material`                                          | 🟢                                                                                                                                                                                     | `utils3d/RenderPipeline.ts`                 |
-| Indices `Uint16`                                              | 🔴 masqué pour l'instant : la route charge `sphere.obj` (1 922 sommets), et Mustang.obj (750 846 sommets) n'est plus chargé par aucune route. Tout gros modèle déborderait sans erreur | `Mesh.ts:23`, `Scene.ts:326`                |
-| Quads tronqués                                                | 🔴 seuls `face.v[0..2]` sont lus, et `tessellate` n'apparaît nulle part. Mustang.obj compte 722 883 quads et environ 2 000 faces de 5 à 64 côtés                                       | `obj-importer.ts:60-66`                     |
-| `hasUVs` / `hasNormals` calculés pour tout le modèle          | 🔴 décale le stride en mode entrelacé, plante sur `vertex.n!` en mode planaire                                                                                                         | `obj-importer.ts:55-57, 110`                |
-| `readLines` coupe des lignes MTL                              | 🔴 supprimer le bloc fautif ; le code après la boucle gère déjà le reste                                                                                                               | `utils.ts:71-74`                            |
-| Pas de nettoyage                                              | 🔴 aucun `cancelAnimationFrame` dans la démo, et ni les surfaces, ni les buffers, ni les textures ne sont détruits. Changer de route laisse tourner l'ancienne boucle                  | `loading-model/route.tsx:219, 222`          |
-| Race condition sur le moteur                                  | 🔴 `instance` est assigné avant la fin de `init()`, et `Header` comme `Layout` appellent `useEngine`. Un échec de `init()` reste en cache                                              | `globals/engine.ts:17, 29-33`               |
-| `ResizeObserver` déconnecté                                   | 🔴 masqué car `Layout.tsx:45` passe une taille fixe de 1240×720                                                                                                                        | `RenderSurface.tsx:24-56`                   |
-| Depth texture jamais recréée au resize                        | 🔴                                                                                                                                                                                     | `Application.ts:31`, `route.tsx:162`        |
-| Chemin du MTL et `response.ok`                                | 🔴 le chemin est résolu par rapport à la page, et la réponse n'est pas vérifiée                                                                                                        | `obj-importer.ts:44`, `mtl-parser.ts:124`   |
-| `StrictMode`, `.catch` manquant, `destroyEngine` sans `await` | 🔴                                                                                                                                                                                     | `main.tsx`, `Layout.tsx:37`, `engine.ts:40` |
+| Statut | Gravité | Lieu                                                                                                        | Constat                                                                                                                                                                                                                       | Correction                                                    |
+| ------ | ------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 🆕     | basse   | `WgslCodegen.ts:78-209`, `GlslEsCodegen.ts:93-208`, `HlslCodegen.ts:174-502`                                | Huit helpers de nommage sont dupliqués dans les trois codegens, et ils ont déjà divergé : seul GLSL fusionne `__`, si bien que `a__b` et `a_b` donnent tous deux `u_a_b`, ce qui fait une déclaration en double.                   | `codegen/naming.ts` commun, et refuser `__` à la validation.  |
+| 🆕     | basse   | `compiler/{generateIr,optimize,…}.ts`, `std/*`                                                              | Environ 2 900 lignes de compilateur ne sont testées qu'indirectement.                                                                                                                                                          | Tests unitaires sur `optimize` et `generateIr`.               |
+| 🆕     | basse   | `engine-graph/src/structure.ts:203-225`                                                                     | `topologicalOrder` est en O(n²) (`shift()`), et le message de cycle liste aussi les nœuds situés en aval.                                                                                                                      | Index de lecture.                                             |
 
 ---
 
-## 7. Hygiène du dépôt
+## 4. Addons natifs
 
-| Point                                                                                       | Statut                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/demo/public/Mustang.obj` (95,7 Mo) commité, sans `.gitattributes` ni Git LFS          | 🔴 Il n'est plus utilisé par aucune route. Le passer sous LFS ou le retirer ; le retirer de l'historique réécrit l'historique Git, ce qui est à décider en connaissance de cause                                                               |
-| `apps/demo/tsconfig.tsbuildinfo` commité, pas de `*.tsbuildinfo` dans le `.gitignore`       | 🔴                                                                                                                                                                                                                                             |
-| `three`, `@11ty/nunjucks` et `node@^24` dans le `package.json` racine                       | 🔴 `three` et `nunjucks` ne sont importés nulle part                                                                                                                                                                                           |
-| Dépendances de la démo déclarées à la racine (`apps/demo/package.json` n'en déclare aucune) | 🔴                                                                                                                                                                                                                                             |
-| `paths` vers `packages/ui` inexistant dans `tsconfig.base.json`                             | 🔴                                                                                                                                                                                                                                             |
-| `exports` des packages pointant vers `src/*.ts` (non publiables)                            | 🔴                                                                                                                                                                                                                                             |
-| `design/material-graph.md` n'est référencé nulle part                                       | 🆕 Ajouter un lien « Design proposals » dans le README. Le document propose aussi de nouveaux packages (`engine-shader`, `engine-webgl2`) absents du schéma d'architecture du README, et il est en français alors que le README est en anglais |
+### 4.1 engine-vulkan
+
+| Gravité | Lieu                                                     | Constat                                                                                                                                                                                                                         | Correction                                                                    |
+| ------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| haute   | `native/src/tracking.cpp:77-84` (et `:114-118`, `:147-151`) | **Hazard read-after-write** : une lecture qui suit une autre lecture ajoute ses stages sans barrière, alors que la barrière posée depuis l'écriture ne couvrait que le premier lecteur (par exemple copie → uniform au fragment → storage au compute). | Suivre la dernière écriture et les stages déjà synchronisés avec elle.        |
+| haute   | `native/src/swapchain.cpp:134-140`, `node_vulkan.c:281, 1240` | **Use-after-free** : `releaseImages` fait `delete` des textures du swapchain au resize, alors que des externals JS gardent ces pointeurs.                                                                                        | Résoudre les handles par id.                                                  |
+| moyenne | `swapchain.cpp:358-366`                                  | La taille demandée est comparée à l'extent clampé : le swapchain peut être recréé (avec `vkDeviceWaitIdle`) à chaque image.                                                                                                        | Comparer à la dernière taille demandée.                                       |
+| moyenne | `swapchain.cpp:192-200`                                  | Après un échec de `vkCreateSwapchainKHR`, `outdated` reste à false, et l'acquire suivant indexe hors bornes.                                                                                                                     | `outdated = true`.                                                            |
+| moyenne | `commands.cpp:60-63, 639-663`                            | Les groupes et le pipeline ne sont pas remis à zéro à chaque passe : une passe utilise un groupe hérité sans barrière.                                                                                                          | Remettre l'état à zéro à chaque passe (sémantique WebGPU).                     |
+| basse   | `texture.cpp:54-55`, `node_vulkan.c:838-847`, `context.cpp:66-106` | La copie de `depth24plus-stencil8` utilise 8 octets par pixel au lieu de 4 ; un argument DXC NULL passe ; `pendingWaits` est perdu quand `submit` échoue.                                                                         | —                                                                             |
+
+### 4.2 engine-d3d12
+
+| Gravité | Lieu                                                      | Constat                                                                                                                                                                          | Correction                                                   |
+| ------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| haute   | `native/src/context.cpp:291-299, 347-354`                 | **Un seul `Close()` en échec bloque le contexte** : la liste est marquée soumise, et le HRESULT de `Reset` n'est pas vérifié (vérifié : une copie hors bornes, puis trois copies valides échouent). | Recréer la liste et réinitialiser le suivi d'état.           |
+| haute   | `node_d3d12.c:842-849`, `shader.cpp:113, 123`             | **Segfault** avec `compileHlsl('x', ['-T', 1])` (vérifié, code 139).                                                                                                             | `TypeError` et borner `count`.                               |
+| haute   | `swapchain.cpp:48-53`, `node_d3d12.c:1243`                | Use-after-free des images du swapchain, comme pour Vulkan.                                                                                                                       | Idem.                                                        |
+| moyenne | `commands.cpp:296, 335, 694, 723`                         | Aucune vérification de bornes dans le replay : copies, indirect, `copyTexture` (vérifié). Sans la debug layer, c'est un comportement indéfini.                                     | Tester `offset + size` et les alignements.                   |
+| moyenne | `texture.cpp:377, 450`                                    | Copies de `depth24plus-stencil8` invalides (`R32G8X24_TYPELESS`) (vérifié).                                                                                                      | `GetCopyableFootprints` par plan.                            |
+| moyenne | `rays.cpp:341, 389, 395-398`                              | La réallocation du TLAS libère avant d'allouer, et le TLAS ne garde aucune référence vers ses BLAS, qui peuvent être détruits pendant qu'il les utilise.                            | Allouer avant de libérer ; `ComPtr` des BLAS dans le TLAS.   |
+| moyenne | `context.cpp:358-368`                                     | Si `Signal` échoue, un allocator encore en vol peut être `Reset`.                                                                                                                | Déclarer le contexte perdu.                                  |
+| basse   | `shader.cpp:50-58`, `commands.cpp:70-72`                  | `dxil.dll` reste chargé quand `dxcompiler.dll` échoue ; l'état du replay n'est pas remis à zéro à chaque passe.                                                                  | —                                                            |
+
+### 4.3 Cache de shaders HLSL (`82a36d9`)
+
+- 🟢 La clé couvre la version et le commit de DXC, la cible, les arguments et le HLSL.
+- 🆕 **moyenne** : une entrée corrompue va directement au driver, sans vérification de l'en-tête SPIR-V ou DXBC et sans recompilation en cas d'échec (`VulkanPipelineFactory.createShader`, `shader.cpp:232-244`). Il faut vérifier le magic et un hash, puis recompiler en cas d'échec.
+- 🆕 **basse** : la clé ignore `dxil.dll`. Le cache n'a ni éviction ni limite de taille ([ShaderCache.ts:96-107](packages/engine-vulkan/src/shader/ShaderCache.ts#L96-L107)) : prévoir un sous-répertoire par version de DXC.
+
+### 4.4 engine-native, audio, input, resources (N-API)
+
+| Gravité | Lieu                                                                    | Constat                                                                                                                                                                                                           | Correction                                                                      |
+| ------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| moyenne | `engine-resources-native/src/native.spec.ts:164-169`, `project.json:6`  | Le test de l'addon réel est en `skipIf(!existsSync(addon))`, le projet n'a pas le tag `gpu` et pas de `dependsOn` vers `build-native` : **il ne tourne jamais en CI** (vérifié). Même chose pour engine-input-native. | Tag `gpu` et `dependsOn`, ou `canRun` avec `FDW_REQUIRE_SUITES`.                |
+| basse   | `engine-native/native/src/node_window.c:46-57, 110`                     | Les handles de fenêtre n'ont pas de type tag : un clip audio passé à leur place provoque un crash.                                                                                                                | `napi_type_tag_object`, comme dans `node_audio.c`.                              |
+| basse   | `node_audio.c:424`, `node_image.c:198`                                  | L'`ArrayBuffer` d'entrée peut être détaché pendant que le pool libuv le lit.                                                                                                                                      | Copier avant de mettre le travail en file.                                      |
+| basse   | `node_audio.c:62-65, 424-433`, `node_window.c:108`                      | Fuites sur les chemins d'erreur N-API ; `malloc` non testé.                                                                                                                                                       | —                                                                               |
+
+Points vérifiés sans problème : les finalizers, les enums alignés avec engine-backend, aucun pointeur de TypedArray gardé après un appel, `last_error` en `thread_local`, et la copie de repli pour Electron.
 
 ---
 
-## 8. Plan d'action recommandé
+## 5. Simulation et runtime
 
-**Étape 1 — Débloquer le build (moins d'une heure)**
+| Statut | Gravité | Lieu                                                                                           | Constat                                                                                                                                                                                                                                       | Correction                                                                                    |
+| ------ | ------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 🆕     | haute   | [ScenePhysics.ts:233](packages/engine-physics/src/ScenePhysics.ts#L233)                         | `moved` repasse à 0 au deuxième pas immobile sans attendre `sync()`. Avec plusieurs pas fixes par image (30 fps pour une physique à 60 Hz), le nœud reste figé sur une pose intermédiaire : corps à x = 0,1, nœud à x = 0,05 (vérifié). | Ne remettre `moved` à 0 qu'après une écriture faite dans `sync()`.                            |
+| 🆕     | haute   | `ScenePhysics.ts:129-130`                                                                      | `addCharacter` sur un nœud qui a déjà un corps : l'ancien corps fuit, et Rapier plante avec `RuntimeError: unreachable` (vérifié).                                                                                                           | Faire `_characters.set` après `attach()`.                                                     |
+| 🆕     | haute   | `engine-ocean/src/spectrum.ts:146-157`                                                         | JONSWAP avec `windSpeed: 0` ou `fetch: 0` : toutes les amplitudes valent NaN, sur le GPU comme dans `Buoyancy` (vérifié).                                                                                                                    | Valider les paramètres, ou renvoyer un spectre nul.                                           |
+| 🆕     | haute   | `engine-geometry/src/bvh/Bvh.ts:372-390`                                                       | `rayBoxDistance` calcule `0 × ∞ = NaN` : un rayon vertical en x = 0 traverse un sol en grille (vérifié). Le WGSL a le même défaut.                                                                                                           | Traiter `d === 0` comme le font `rayBox` et `raycastBox`.                                     |
+| 🆕     | haute   | `engine-behavior/src/BehaviorInstance.ts:167`                                                  | `flow.delay(NaN)` crée un minuteur qui bloque définitivement tous les délais de l'instance (vérifié).                                                                                                                                        | `Number.isFinite(s) ? Math.max(0, s) : 0`.                                                    |
+| 🆕     | moyenne | `ScenePhysics.ts:194`                                                                          | `teleport()` écrit la pose monde comme pose locale sous un parent : x = 20 au lieu de 10 (vérifié).                                                                                                                                          | N'écrire que si `follow === Follow.body`.                                                     |
+| 🆕     | moyenne | `engine-physics-rapier/src/RapierPhysics.ts:403-410, 519-536`                                  | Un corps supprimé à l'intérieur d'un capteur n'émet jamais `end` (vérifié). `filter.exclude` est ignoré par `move`. Un personnage survit à son corps.                                                                                         | Émettre les `end` avant la purge, et retirer le contrôleur.                                   |
+| 🆕     | moyenne | `engine-ocean/src/OceanSpectrum.ts:148, 222`                                                   | Avec `resolution: 4`, on dispatche 0,5 workgroup, donc rien n'est calculé (vérifié). Sans relecture, `fields` relance une FFT CPU complète à chaque image.                                                                                     | `n >= 8` ; une évaluation au plus par `update`.                                               |
+| 🆕     | moyenne | `engine-ocean/src/gerstner.ts:106`, `fields.ts:106-121`                                        | `sample()` réalloue et recalcule toutes les phases : 7 échantillons × 379 points par pas pour la barque.                                                                                                                                     | Phases en cache dans `update`.                                                                |
+| 🆕     | moyenne | `engine-ocean/src/OceanRenderer.ts:237`                                                        | `environmentIntensity` est copié une seule fois : après un `setLook`, le reflet et le ciel divergent.                                                                                                                                         | Relire la valeur à chaque `addPasses`.                                                        |
+| 🆕     | moyenne | `engine-fluids/src/shallow/ShallowWater.ts:446`, `particles/ParticleFluid.ts:452`              | Une relecture lancée avant `reset()` ou `clear()` réécrit l'état ancien, ce qui donne un à-coup de flottaison.                                                                                                                                 | Compteur de génération.                                                                       |
+| 🆕     | moyenne | `ParticleFluidRenderer.ts:612`, `SmokeRenderer.ts:382`, `OceanRenderer.ts:93, 223, 245`        | `destroy()` laisse fuir des meshes et des samplers.                                                                                                                                                                                           | Les suivre et les détruire.                                                                   |
+| 🆕     | moyenne | `engine-fluids/src/fluids.spec.ts:99`                                                          | Le test « read back for the physics » ne fait aucun `await` et ne vérifie jamais `heightAt`. `splash`, `addSource` et `reset` ne sont pas testés.                                                                                               | —                                                                                             |
+| 🆕     | moyenne | `engine-tessellation/src/patchMesh.ts:448`                                                     | Le mesh de lancer de rayons coupe les quads selon l'autre diagonale que le shader : les rayons touchent une autre surface que celle dessinée. Il n'y a aucun test.                                                                             | Indexer `[c00, c01, c11, c00, c11, c10]`, plus un test.                                       |
+| 🆕     | moyenne | `engine-skinning/src/graph.ts:106`                                                             | Le mode `vertex` lit les poids bruts, et `compute` les poids normalisés : les deux modes divergent (écart avec p6 §6).                                                                                                                        | Poids normalisés partout.                                                                     |
+| 🆕     | moyenne | `engine-animation/src/Animator.ts:184`                                                         | Dans un blend synchronisé, une vitesse négative joue le clip à l'endroit (vérifié).                                                                                                                                                           | Phase miroir.                                                                                 |
+| 🆕     | moyenne | `engine-behavior/src/Interpreter.ts:109`                                                       | `maxSteps` ne compte pas la même chose en interprété et en compilé (vérifié).                                                                                                                                                                 | Aligner.                                                                                      |
+| 🆕     | moyenne | `engine-input-web/src/WebInputSource.ts:118-119`                                               | Il n'y a ni `setPointerCapture` ni `pointercancel` : un bouton relâché hors de l'élément reste enfoncé.                                                                                                                                       | Capturer le pointeur et traiter l'annulation.                                                 |
+| 🆕     | basse   | `Animator.ts:659`, `Interpreter.ts:234`, `engine-noise/src/fractal.ts:113`                     | NaN accepté dans `Parameters.set` ; les tours de `forLoop` ne comptent pas dans `maxSteps` ; `fbm` avec 0 octave renvoie NaN.                                                                                                                  | Valider les entrées.                                                                          |
+| 🆕     | basse   | `WebAudioEngine.ts:629, 684-697`, `MusicPlayer.ts:287-291`                                     | Les bus ne sont pas déconnectés avec un contexte fourni, l'écouteur `abort` n'est jamais retiré, et `stop()` puis `play()` démarre sans fondu enchaîné.                                                                                         | —                                                                                             |
+| 🆕     | basse   | `engine-input/src/Input.ts:258-264`, `engine-camera/src/target.ts:31-51`, `instances.ts:157-166` | Un stick qui dérive monopolise `lastDevice` ; le pan orthographique ne suit pas le pointeur ; `frontFace` est inversé pour les instances miroirs.                                                                                               | —                                                                                             |
 
-1. Supprimer la référence à engine-core dans `engine-webgpu/tsconfig.lib.json` (ou lancer `npx nx sync`).
-2. Restreindre `ArrayBufferView` à `ArrayBufferView<ArrayBuffer>` dans `GpuTexture`, `GpuBuffer` et `TextureFactory`, et retirer le cast `as BufferSource`.
-3. Corriger les 5 erreurs triviales de la démo.
-4. Ajouter `**/docs` aux ignores ESLint.
+**Allocations dans les boucles chaudes.** C'est un problème transversal, et la même cause que le §1.3. Sont concernés :
 
-**Étape 2 — Le filet de sécurité** 5. Garder uniquement Vitest (supprimer le plugin et les configs Jest). 6. Écrire les premiers tests :
+- `engine-noise/src/noise.ts` : environ 1,3 µs par fbm 2D, soit environ 1,4 s pour une heightmap de 1024² (vérifié) ;
+- `engine-animation` (closures par clip, `Pose.add`, `subarray`) ;
+- `engine-skinning` (`invert` alloue un `Float64Array` par nœud et par image) ;
+- `engine-behavior` (un `Frame` par nœud exécuté) ;
+- `engine-geometry` (un `Uint32Array` par feuille visitée et par rayon) ;
+- `engine-fluids/buffers.ts` (environ 240 objets par image), `bodies.ts` ;
+- `engine-camera` et `engine-input`.
 
-- padding de `BufferFactory` ;
-- offsets des structs uniform WGSL (valeurs de référence) ;
-- `TransformMath` et `mat4.setRotation` ;
-- `CachedValue` (exception dans `updateStrategy`) ;
-- tailles des lumières.
+Une règle de lint (ou une revue) contre `map`, `forEach` et les littéraux de tableau dans les fonctions appelées par cellule ou par image serait utile, avec un benchmark par module dans `tools/bench`.
 
-**Étape 3 — Les corrections rapides à fort impact** 7. `try/finally` dans `CachedValue`. 8. Exporter les trois lumières. 9. Padding de la branche `writeBuffer`, exception si les données dépassent la taille, `Buffer.size` égal à la taille demandée. 10. Shader Phong : texture de shininess, spéculaire conditionné à N·L, ambient par défaut. 11. Pipeline mis en cache, rafraîchissement explicite de la caméra (projection comprise).
+**Duplication.** `lookValues` existe en trois copies (WaterSurface, ParticleFluidRenderer, Ocean), `toneMapping*` en deux, `Ocean.sampleAt` recopie `heightAbove`, et la détection des corps retirés est dupliquée entre fluids et ocean.
 
-**Étape 4 — La partie material** 12. Suivre les étapes du §2.4. Commencer par fiabiliser la stratégie de structs avec ses tests, puis créer `engine-shader` avec `ShaderType` et `ProgramLayout`.
+---
 
-**Étape 5 — Le reste** 13. Démo : indices uint32, triangulation OBJ, nettoyage des ressources, race condition, resize. 14. Moteur : `mat4.setRotation`, `vec4`, textures (3d, array, mipmaps), cycle de vie de `WebGpuEngine`, `destroy()` sur les adaptateurs. 15. Dépôt : déclarer les dépendances, migrer ESLint vers le format flat, décider du sort de Mustang.obj, ajouter `*.tsbuildinfo` au `.gitignore`.
+## 6. Assets, ressources et scènes
+
+| Statut | Gravité | Lieu                                                                         | Constat                                                                                                                                                                                                 | Correction                                                                                  |
+| ------ | ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 🆕     | haute   | `engine-gltf/src/scene/physics.ts:319-330`                                   | Les parents sont remontés sans détecter les cycles : deux nœuds parents l'un de l'autre font boucler le chargeur à l'infini (vérifié).                                                                   | Valider l'arbre au décodage.                                                                |
+| 🆕     | haute   | `engine-ktx2/src/workers.ts:37-44`                                           | **Bombe de décompression** : un fichier de 261 Ko gonfle à 256 Mo avant d'être rejeté (vérifié).                                                                                                        | Décompresser par morceaux et borner à `uncompressedByteLength`.                             |
+| 🆕     | haute   | `engine-scene-io/src/instantiate.ts:191`                                     | Une scène qui s'inclut elle-même (A → A, ou A → B → A) fige le processus : récursion en microtâches, sans que l'annulation puisse l'arrêter (vérifié).                                                    | Pile des URI en cours et profondeur maximale.                                               |
+| 🆕     | haute   | `engine-scene-io/src/instantiate.ts:234`                                     | Un batch dont `parent` est invalide n'est pas libéré par `dispose()` (vérifié).                                                                                                                         | Valider dans `parseFdwScene`.                                                               |
+| 🆕     | moyenne | `engine-gltf/src/scene/import.ts:229-234`, `engine-assets/src/instantiate.ts:206` | Un cycle provoque un stack overflow, et un nœud partagé est émis plusieurs fois (vérifié).                                                                                                              | `Set` des nœuds visités.                                                                    |
+| 🆕     | moyenne | `engine-gltf/src/geometry.ts:140-143, 349-354`                               | Les indices ne sont pas comparés au nombre de sommets : normales NaN, et en strip/fan, `Uint16` tronque 70 000 en 4 464 (vérifié).                                                                       | Vérifier l'indice maximal et choisir le type d'index d'après lui.                           |
+| 🆕     | moyenne | `engine-gltf/src/accessors.ts:253, 283`, `reader.ts:211-214`                 | Un `byteOffset` négatif donne des zéros, et l'allocation se fait avant le contrôle de bornes : `count = 2^29` alloue 8 Gio (vérifié).                                                                    | Borner avant d'allouer.                                                                     |
+| 🆕     | moyenne | `engine-obj/src/obj.ts:109-113, 195-206`                                     | Un indice de face invalide donne des positions NaN, sans warning (vérifié).                                                                                                                             | Valider, puis ignorer la face avec un warning.                                              |
+| 🆕     | moyenne | `engine-gltf/src/scene/import.ts:113-155`                                    | `fileAccessors` est une copie moins sûre de `GltfReader.readBuffer`.                                                                                                                                    | Factoriser.                                                                                 |
+| 🆕     | moyenne | `engine-resources/src/sources/HttpSource.ts:27`                              | Une URL absolue venant d'une scène reçoit les `headers` configurés : `Authorization` part chez un tiers (vérifié).                                                                                       | `allowedOrigins`, ou pas d'en-têtes hors de l'origine.                                      |
+| 🆕     | moyenne | `engine-resources/src/uri.ts:49, 73`                                         | `..` au-delà de la racine : `HttpSource` sort de `base` (vérifié).                                                                                                                                      | Borner à la racine du schéma.                                                               |
+| 🆕     | moyenne | `ResourceStore.ts:221, 924`                                                  | L'écouteur `abort` n'est jamais retiré (100 écouteurs après 100 chargements) ; `providedBytes` ne copie pas, donc un décodeur qui transfère le buffer le détache (vérifié).                                | Retirer l'écouteur ; copier les octets.                                                     |
+| 🆕     | moyenne | `engine-assets/src/instantiate.ts:145-156`                                   | Un clone de handle fuit quand le modèle n'est pas prêt (vérifié).                                                                                                                                       | `require()` avant `clone()`.                                                                |
+| 🆕     | moyenne | `engine-scene-io/src/format.ts:297`, `engine-scene/src/scene/Scene.ts:313`   | `count` n'est pas comparé aux longueurs des tableaux : positions NaN (vérifié).                                                                                                                         | Valider.                                                                                    |
+| 🆕     | basse   | `accessors.ts:288`, `ktx2/codec.ts:174-193`, `obj/mtl.ts`, `nodes.ts:99-121`, `format.ts:213-324`, `ResourceStore.ts:382`, `ArchiveSource.ts:182` | Strides chevauchants, indices signés, largeur 0, cube non carré, chemins MTL absolus, `types["constructor"]` qui lit le prototype, entrées de 0 octet jamais évincées, zip stocké sans contrôle de bornes (vérifié pour la plupart). | Valider à l'entrée, `Object.hasOwn`.                                                        |
+
+**Tests manquants :** il n'existe aucun test de robustesse sur des entrées malformées (accessor hors bornes, sparse, cycles, bombes zlib/zstd, data URI). Un petit corpus de fichiers malformés par parseur, joué en CI, couvrirait la plupart de ces constats.
+
+---
+
+## 7. Édition, éditeur et applications
+
+### 7.1 Édition, undo/redo et plugins
+
+| Statut | Gravité | Lieu                                                                                               | Constat                                                                                                                                                                                       | Correction                                                    |
+| ------ | ------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 🆕     | haute   | `graph-editor/src/client.ts:138, 227`                                                              | Les resolvers de `save()` sont dans une file FIFO, mais le workspace ne répond pas pour une session inconnue : la file se décale, le 2ᵉ save résout le 1ᵉʳ, et le dernier reste pendant (vérifié). | Id de requête ; rejeter les saves en attente à la fermeture.  |
+| 🆕     | haute   | `graph-editor/src/GraphCanvas.tsx:354-355`, `editor-plugin-animation-graph/src/main.tsx:130`       | Les listeners de `window` ne sont retirés qu'au `pointerup` : rien sur `pointercancel` ni au démontage (vérifié).                                                                                | `setPointerCapture`, ou un cleanup dans un `useEffect`.       |
+| 🆕     | haute   | `engine-editing/src/commands/commands.ts:176, 213`                                                 | L'undo d'une suppression ou d'un reparentage ne restaure pas l'ordre des frères (vérifié).                                                                                                      | Mémoriser le frère suivant, et `setParent(…, before)`.        |
+| 🆕     | moyenne | `commands.ts:207`                                                                                  | `ReparentCommand.do` n'est pas atomique quand un cycle est détecté en cours de route (vérifié).                                                                                                 | Tout valider avant de déplacer.                               |
+| 🆕     | moyenne | `engine-graph-editing/src/GraphSession.ts:337`, `commands.ts:83`                                   | Deux drags distincts (ou deux renommages) fusionnent en une seule entrée (vérifié).                                                                                                           | `History.seal()` à la fin du geste.                           |
+| 🆕     | moyenne | `GraphCanvas.tsx:552-553`, `editor-plugin-isolate/src/main.tsx:139-158`                            | Une suppression mixte crée 2 entrées, isoler N nœuds en crée N, et désactiver le plugin laisse les nœuds cachés (vérifié).                                                                      | `history.transaction` ; un disposable dans les subscriptions. |
+| 🆕     | moyenne | `engine-editing/src/EditingTools.ts:127`                                                           | Il n'y a pas de `dispose()` : les listeners de sélection s'accumulent, 2 par affichage de `LevelView` (vérifié).                                                                                | `dispose()` appelé par `LevelView.destroy()`.                 |
+| 🆕     | moyenne | `editor-ui/src/engine/level/LevelDocument.ts:465`                                                  | `redoLabels.at(-1)` affiche le redo le plus lointain au lieu du prochain (vérifié).                                                                                                             | `redoLabels[0]`.                                              |
+| 🆕     | basse   | `History.ts:209`, `pluginHost.ts:287`, `GraphSession.ts:310-322`, `editor-plugin-behavior-graph/src/main.tsx:37` | Une commande qui lève une exception disparaît des deux piles ; un plugin `failed` se réactive tout seul ; un `remove` vide salit la session ; `acceptsBehaviorType` est copié.                    | —                                                             |
+
+### 7.2 apps/editor (Electron)
+
+| Gravité | Lieu                                                     | Constat                                                                                                                                                                                                       | Correction                                                                          |
+| ------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| moyenne | `apps/editor/src/main/index.ts:16-31`, `main/host.ts:35-73` | Il n'y a ni `will-navigate` ni handler de permissions, et l'IPC ne vérifie pas `senderFrame` : une page vers laquelle la fenêtre aurait navigué garde le preload, avec le stockage et les dialogues de fichiers. | Refuser la navigation hors de l'app, refuser toutes les permissions, vérifier l'URL de l'émetteur. |
+| moyenne | `main/host.ts:81-89`                                     | Dans l'app packagée, l'origine de toute URL `file:` vaut `"null"`, donc n'importe quel `popout.html` du disque s'ouvre avec le preload (vérifié).                                                                | Comparer à l'URL exacte du popout livré, ou utiliser un protocole `app://`.          |
+| basse   | `main/index.ts:56-59`, `electron-builder.yml`            | Le listener `engine:connect` fuit à chaque fenêtre recréée ; aucun fuse Electron n'est configuré.                                                                                                             | `@electron/fuses`.                                                                  |
+
+### 7.3 apps/demo et demo-scenes
+
+| Gravité | Lieu                                                                     | Constat                                                                                                                                                                                                                | Correction                                       |
+| ------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| moyenne | `apps/demo/src/routes/loading-model/route.tsx:32-47`, `material-graph/route.tsx:94-189` | Quitter la route pendant un `await` démarre une boucle sur un renderer détruit, ou laisse un rejet non attrapé (`Layout.tsx:60`).                                                                                       | Drapeau `disposed` ou `AbortController`, et un `.catch`. |
+| moyenne | `demo-scenes/src/shadows.ts:136`, `pbr.ts:108`                           | `destroy` ne libère pas les meshes, ce qui aggrave le §3.3.                                                                                                                                                            | Détruire meshes et matériaux.                    |
+| basse   | `apps/demo/src/hooks/useSurface.ts:82-109`, routes WebGPU brutes          | La surface n'est jamais libérée, et des buffers et textures restent sans `destroy`.                                                                                                                                     | —                                                |
+
+---
+
+## 8. Hygiène du dépôt
+
+| Statut | Gravité | Point                                                                                                                                                                                                                     | Correction                                                                                                                                                         |
+| ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 🟡     | moyenne | `apps/demo/public/Mustang.obj` (95,7 Mo) est toujours un blob git normal, pas LFS, et aucune route ne le charge, pas plus que `Mustang.mtl` et `teapot.obj` (vérifié).                                                     | Les retirer, ou `git lfs migrate`. **Ces deux options suppriment des données ou réécrivent l'historique : à décider en équipe.**                                     |
+| 🔴     | basse   | 4 `*.tsbuildinfo` sont commités (demo, editor ×2, editor-ui).                                                                                                                                                             | `*.tsbuildinfo` dans le `.gitignore`, et `git rm --cached`.                                                                                                        |
+| 🆕     | basse   | `.gitignore:62` contient `assets` sans ancrage, ce qui ignore `tools/assets/` et `apps/demo/src/assets/` (vérifié avec `git check-ignore`). Les fichiers ajoutés y sont invisibles, pour git comme pour les hash Nx.     | `/assets`.                                                                                                                                                         |
+| 🆕     | basse   | `antique_estoc_1k.gltf/` (2,5 Mo, LFS) est à la racine : c'est une source de `tools/assets/make-characters.mjs`.                                                                                                          | Le déplacer sous `assets/`.                                                                                                                                        |
+| 🔴     | basse   | `three`, `@11ty/nunjucks` et `node` sont toujours à la racine sans être utilisés ; `lucide-react` est déclaré dans editor-plugin-material-graph sans être utilisé ; apps/demo et editor-web ne déclarent pas leurs dépendances `@fdw/*`. | Nettoyer.                                                                                                                                                          |
+| 🔴     | basse   | `tsconfig.base.json:22-23` a des `paths` vers `packages/ui`, qui n'existe pas ; les `exports` pointent vers `src/*.ts`.                                                                                                     | —                                                                                                                                                                  |
+| ⚪     | —       | `dist/` à la racine (8 Mo) est ignoré : rien à faire.                                                                                                                                                                     | —                                                                                                                                                                  |
+
+---
+
+## 9. Plan d'action
+
+**Semaine 1 : rendre aux tests une durée stable (§1).** C'est le chantier qui débloque les autres, car chaque correction ajoute aujourd'hui des tests qui ralentissent tous les autres.
+
+1. `programs.spec.ts` : pool de processus, un seul répertoire temporaire par programme, programmes enregistrés depuis `dawn.spec.ts`.
+2. Masque des timestamps dans `WebGpuPassTimer`.
+3. `--parallel=1` pour les projets `gpu` en CI, et `maxWorkers` dans tests/rendering.
+4. Référence CPU de la fumée sans allocation.
+5. Message `resized` du moteur pour le test de layout ; niveau minimal pour les tests de graph de la doc ; `workers: 1` pour SwiftShader.
+6. Rapport JUnit des durées en CI, puis **retrait des timeouts** de `0fa1b52`, `081a27b`, `3b50e81`, `3303c0d`, `c35193b`/`b8fe1ac` et `e3ec2dd`/`a95800b`, un par un, en s'appuyant sur ces durées.
+
+**Semaine 2 : crashes et sécurité.** §4 (use-after-free, liste D3D12, segfault DXC, hazard Vulkan), §6 en haute gravité (cycles, bombe KTX2, scènes récursives), §7.2 (navigation et origine dans Electron), §6 `HttpSource`.
+
+**Semaine 3 : correction visible.** Textures 3D et `Buffer.write` en WebGPU, physique (`moved`, `addCharacter`, `teleport`), NaN dans l'océan, le BVH et les comportements, `GraphClient.save`, undo de l'ordre des frères.
+
+**Ensuite.** Fuites GPU à la destruction, suppression des ~1 750 lignes de code mort, migration ESLint et dépendances déclarées, allocations par image, cache CI et filtres de chemins, et l'hygiène du §8.
+
+---
+
+## Annexe A : statut de l'audit du 02/10
+
+| Point du 02/10                                                                 | Statut | Commentaire                                                                                       |
+| ------------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------- |
+| Workspace Nx désynchronisé (`engine-webgpu/tsconfig.lib.json`)                 | 🟢     | `nx sync:check` à jour.                                                                           |
+| engine-webgpu ne compile plus (`TextureFactory.ts:59`)                         | 🟢     | `initialData` est typé `ArrayBufferView<ArrayBuffer>`.                                            |
+| Aucun test, `nx test` cassé                                                    | 🟢     | Vitest partout, Jest retiré.                                                                      |
+| Padding de la branche `writeBuffer`                                            | 🟡     | Le padding existe, mais il écrase les octets voisins (§3.1).                                      |
+| `try/finally` dans `CachedValue`                                               | 🟢     | —                                                                                                 |
+| Exports de `DirectionalLight`, `PointLight`, `SpotLight`                       | 🟢     | —                                                                                                 |
+| Shader Phong, pipeline recréé à chaque image, rafraîchissement de la caméra    | ⚪     | Remplacés par engine-shader et le `Renderer`.                                                     |
+| Stratégie de structs uniform (`hasDynamicSize`, alignement, `runtimeSize`)     | 🟢 / ⚪ | Corrigé, mais le code est désormais mort (§3.4).                                                  |
+| Indices uint32 et triangulation OBJ                                            | ⚪     | L'importeur de la démo est supprimé, remplacé par `@fdw/engine-obj` (voir §6 pour ses défauts).   |
+| `Object.freeze` sur Camera et lumières, versions des lumières, projection gardée par référence | 🔴     | §3.3.                                                                                             |
+| Normal matrix en 3×3                                                           | 🟢 / 🔴 | Correcte, mais sans garde pour une échelle nulle dans `TransformMath` (§3.4).                     |
+| wgpu-matrix (`setRotation`, `setScaling`, `vec4`)                              | 🔴     | Le code a été déplacé dans engine-backend sans être corrigé (§3.4).                               |
+| `TextureFactory` : vues, couches, mipmaps, `ImageBitmap`                       | 🟢     | Sauf `dimension: '3d'` (§3.1) et la taille du bitmap.                                             |
+| `WebGpuEngine` : `device.lost`, course `destroy`/`init`                        | 🔴     | §3.1.                                                                                             |
+| Démo : course sur le moteur (`globals/engine.ts:18-22`)                        | 🔴     | `instance` est assigné avant `await init()`.                                                      |
+| Démo : `ResizeObserver` déconnecté (`RenderSurface.tsx:24-56`)                 | 🔴     | Masqué par la taille fixe de `Layout.tsx:68`.                                                     |
+| Démo : nettoyage, `StrictMode`, `.catch`, `destroyEngine`                      | 🟡     | Le nettoyage est fait en partie ; `destroyEngine` est mort ; il manque un `.catch` (§7.3).        |
+| `Mustang.obj` hors LFS                                                         | 🟡     | §8.                                                                                               |
+| `*.tsbuildinfo` commités ; dépendances inutiles à la racine ; `paths` vers `packages/ui` | 🔴     | §8.                                                                                               |
+| `design/material-graph.md` non référencé                                       | 🟢     | Lié depuis le README.                                                                             |
