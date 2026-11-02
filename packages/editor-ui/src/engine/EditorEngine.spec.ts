@@ -180,6 +180,27 @@ describe('EditorEngine', () => {
     expect(a.state.frames).toBe(frames);
   });
 
+  it('tells its stats after the first frame at a new size', async () => {
+    const a = fakeScene();
+    const { editor, messages, show } = setup({ a: a.factory });
+    show();
+    await until(() => messages.some((message) => message.type === 'stats'));
+    const stats = () =>
+      messages.filter((message) => message.type === 'stats').length;
+    const before = stats();
+    const frames = a.state.frames;
+    editor.receive({ type: 'bounds', x: 0, y: 0, width: 800, height: 600 });
+    // Long before the end of the second.
+    await vi.waitFor(() => expect(stats()).toBe(before + 1), {
+      timeout: 200,
+    });
+    expect(a.state.frames).toBeGreaterThan(frames);
+    // Moved, the same size: no stats before the end of the second.
+    editor.receive({ type: 'bounds', x: 10, y: 0, width: 800, height: 600 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(stats()).toBe(before + 1);
+  });
+
   it('replaces the scene once the next one is loaded', async () => {
     const a = fakeScene();
     const b = fakeScene();

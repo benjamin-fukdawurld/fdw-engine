@@ -38,6 +38,9 @@ export default defineConfig({
     },
     {
       name: 'webgpu',
+      // One page at a time: SwiftShader spreads its WebGPU work on every
+      // core, two browsers of it share a runner of 4 vCPU and time out.
+      workers: 1,
       use: {
         browserName: 'chromium',
         launchOptions: {

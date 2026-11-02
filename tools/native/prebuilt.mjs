@@ -13,8 +13,8 @@
 //                                                   built here, and their tags
 //   node tools/native/prebuilt.mjs smoke <out-dir>  each archive unpacked and
 //                                                   its addon loaded
-//   node tools/native/prebuilt.mjs tags             the tag and archive of
-//                                                   each addon of this system
+//   node tools/native/prebuilt.mjs tags             the tag and archives of
+//                                                   each addon, per system
 //   node tools/native/prebuilt.mjs windows-sdk      the Windows SDK DXC comes
 //                                                   from (an input of Nx)
 import { execFileSync } from 'node:child_process';
@@ -154,7 +154,10 @@ function addonOf(root) {
 }
 
 const tagOf = (name, hash) => `addons-${name}-${hash}`;
-const assetOf = (name) => `${name}-${platform}.tar.gz`;
+const assetOf = (name, of = platform) => `${name}-${of}.tar.gz`;
+
+// The systems the CI builds the addons for (addons.yml).
+const releasedPlatforms = { linux: 'linux-x64', win32: 'win32-x64' };
 const sha256Of = (data) => createHash('sha256').update(data).digest('hex');
 
 // The addons of this system.
@@ -299,11 +302,15 @@ if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   } else if (command === 'smoke' && out) {
     smoke(out);
   } else if (command === 'tags') {
-    for (const [name, addon] of localAddons()) {
+    for (const [name, addon] of Object.entries(addons)) {
       const hash = sourceHash(resolve(repositoryRoot, addon.root));
       if (!hash)
         throw new Error(`The native sources of ${name} differ from git`);
-      console.log(`${tagOf(name, hash)} ${assetOf(name)}`);
+      for (const [system, of] of Object.entries(releasedPlatforms)) {
+        if (!addon.platforms || addon.platforms.includes(system)) {
+          console.log(`${tagOf(name, hash)} ${assetOf(name, of)}`);
+        }
+      }
     }
   } else if (command === 'windows-sdk') {
     console.log(windowsSdkBin() ?? 'none');

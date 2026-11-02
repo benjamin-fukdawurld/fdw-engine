@@ -447,6 +447,17 @@ fdw_vk_top_level *fdw_vk_top_level_create(fdw_vk_context *context,
   return top;
 }
 
+// Whether an object to world matrix (3 rows of 4) mirrors: its 3 x 3 part
+// has a negative determinant. The winding of its triangles is then turned
+// over in the world, where the hits report their face (as the CPU and the
+// WebGPU traversals).
+static bool mirrors(const float *m) {
+  return m[0] * (m[5] * m[10] - m[6] * m[9]) -
+             m[1] * (m[4] * m[10] - m[6] * m[8]) +
+             m[2] * (m[4] * m[9] - m[5] * m[8]) <
+         0;
+}
+
 int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
                             const fdw_vk_instance *instances, uint32_t count) {
   std::vector<VkAccelerationStructureInstanceKHR> data(count);
@@ -464,8 +475,12 @@ int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
     target.mask = instance.mask & 0xff;
     target.instanceShaderBindingTableRecordOffset = 0;
     // Both faces: the hits report the face they saw (counterclockwise from
-    // the front, as in the rasterization). Opaque unless bit 8 of the mask.
+    // the front in the world, as in the rasterization: flipped for a
+    // mirror). Opaque unless bit 8 of the mask.
     target.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR |
+                   (mirrors(instance.transform)
+                        ? VK_GEOMETRY_INSTANCE_TRIANGLE_FLIP_FACING_BIT_KHR
+                        : 0) |
                    ((instance.mask & 0x100) != 0
                         ? VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR
                         : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR);

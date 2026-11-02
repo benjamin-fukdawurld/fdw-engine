@@ -15,16 +15,16 @@ Le développement se fait maintenant sous Windows, mais la CI ne tourne que sous
 
 Un job **`windows`** dans `ci.yml`, en parallèle de `native`, sur `windows-2025` (gratuit : le dépôt est public, [ci.md §1](ci.md#1-le-coût)). Comme `native`, il ne lance que les projets tagués `gpu` touchés par le changement, et s'arrête en succès sinon : son statut peut être exigé pour fusionner.
 
-|                      | Linux (`native`)                 | Windows (`windows`)                                                             |
-| -------------------- | -------------------------------- | ------------------------------------------------------------------------------- |
-| Compilateur          | GCC, ccache                      | MSVC (Visual Studio 2022 du runner), sans cache de compilation (§2.1)           |
-| Vulkan               | lavapipe (`mesa-vulkan-drivers`) | lavapipe, par l'action `install-vulkan-sdk-action`                              |
-| Direct3D 12          | —                                | WARP, le rastériseur logiciel de Windows                                        |
-| Dawn                 | Vulkan (lavapipe)                | Direct3D 12 (WARP)                                                              |
-| SDK Vulkan           | archive `tar.xz`, en cache       | la même action, avec le loader (le runner n'a pas de pilote GPU qui l'installe) |
-| Fenêtres             | Xvfb                             | le bureau du runner (une session interactive)                                   |
-| `FDW_REQUIRE_SUITES` | `vulkan,dawn,hlsl,glsl,window`   | `vulkan,d3d12,dawn,hlsl,glsl,window`                                            |
-| Éditeur              | Electron, `xprobe`               | Electron, `winprobe` (§3.4)                                                     |
+|                      | Linux (`native`)                      | Windows (`windows`)                                                             |
+| -------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
+| Compilateur          | GCC, ccache                           | MSVC (Visual Studio 2022 du runner), sans cache de compilation (§2.1)           |
+| Vulkan               | lavapipe (`mesa-vulkan-drivers`)      | lavapipe, par l'action `install-vulkan-sdk-action`                              |
+| Direct3D 12          | —                                     | WARP, le rastériseur logiciel de Windows                                        |
+| Dawn                 | Vulkan (lavapipe)                     | Direct3D 12 (WARP)                                                              |
+| SDK Vulkan           | archive `tar.xz`, en cache            | la même action, avec le loader (le runner n'a pas de pilote GPU qui l'installe) |
+| Fenêtres             | Xvfb                                  | le bureau du runner (une session interactive)                                   |
+| `FDW_REQUIRE_SUITES` | `vulkan,dawn,hlsl,glsl,window,native` | `vulkan,d3d12,dawn,hlsl,glsl,window,native`                                     |
+| Éditeur              | Electron, `xprobe`                    | Electron, `winprobe` (§3.4)                                                     |
 
 **Le SDK, le loader et lavapipe sous Windows** : l'action [`jakoch/install-vulkan-sdk-action`](https://github.com/jakoch/install-vulkan-sdk-action) installe le SDK de la version fixée, le loader Vulkan (`vulkan-1.dll`, qu'aucun pilote n'installe sur le runner) et lavapipe compilé pour Windows, le tout en cache. Le job désigne lavapipe au loader par `VK_DRIVER_FILES`. L'écrire à la main demanderait l'installateur silencieux du SDK, celui du runtime et une build de Mesa (mesa-dist-win) : trois téléchargements à tenir à jour. SwiftShader, l'autre Vulkan logiciel, demanderait de le compiler : écarté.
 

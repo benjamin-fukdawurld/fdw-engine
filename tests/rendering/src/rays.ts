@@ -235,7 +235,12 @@ export function describeRays(
           world: compose(
             [(next() * 2 - 1) * 8, (next() * 2 - 1) * 8, (next() * 2 - 1) * 8],
             [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(angle / 2)],
-            [0.5 + next() * 1.5, 0.5 + next() * 1.5, 0.5 + next() * 1.5],
+            // Mirrored every third: the winding turned over in the world.
+            [
+              (i % 3 === 0 ? -1 : 1) * (0.5 + next() * 1.5),
+              0.5 + next() * 1.5,
+              0.5 + next() * 1.5,
+            ],
           ),
           mask: i === 4 ? 0x2 : 0x1,
         };

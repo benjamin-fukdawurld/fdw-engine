@@ -17,6 +17,8 @@ interface Slot {
   // The pairs written in the frame, by slot: a pass not played in it keeps
   // the timestamps of an earlier frame in the query set.
   readonly written: Uint8Array;
+  // When the frame was resolved, before its submission (performance.now()).
+  resolvedAt: number;
 }
 
 /**
@@ -60,6 +62,7 @@ export class WebGpuPassTimer implements GpuPassTimer {
       frame: -1,
       used: 0,
       written: new Uint8Array(capacity),
+      resolvedAt: 0,
     }));
     this._written = new Uint8Array(capacity);
   }
@@ -100,6 +103,7 @@ export class WebGpuPassTimer implements GpuPassTimer {
     slot.state = 'resolved';
     slot.frame = frame;
     slot.used = used;
+    slot.resolvedAt = performance.now();
   }
 
   /**
@@ -119,15 +123,19 @@ export class WebGpuPassTimer implements GpuPassTimer {
           }
           const stamps = new BigInt64Array(slot.buffer.getMappedRange());
           const durations = new Float64Array(this.capacity).fill(NaN);
+          // The passes ran after the submission and ended before now: a
+          // longer measure is garbage (seen with Dawn under load: a
+          // beginning resolved to a value of long before).
+          const elapsed = performance.now() - slot.resolvedAt;
           for (let i = 0; i < slot.used; i++) {
             if (!slot.written[i]) {
               continue;
             }
             const begin = stamps[i * 2];
             const end = stamps[i * 2 + 1];
-            if (end >= begin && begin > 0n) {
-              durations[i] = Number(end - begin) / 1e6;
-              if (durations[i] > 1000) console.log("DBG", i, slot.used, begin, end, [...stamps]);
+            const duration = Number(end - begin) / 1e6;
+            if (end >= begin && begin > 0n && duration <= elapsed) {
+              durations[i] = duration;
             }
           }
           slot.buffer.unmap();

@@ -400,6 +400,17 @@ fdw_dx_top_level *fdw_dx_top_level_create(fdw_dx_context *context,
   return top;
 }
 
+// Whether an object to world matrix (3 rows of 4) mirrors: its 3 x 3 part
+// has a negative determinant. The winding of its triangles is then turned
+// over in the world, where the hits report their face (as the CPU and the
+// WebGPU traversals).
+static bool mirrors(const float *m) {
+  return m[0] * (m[5] * m[10] - m[6] * m[9]) -
+             m[1] * (m[4] * m[10] - m[6] * m[8]) +
+             m[2] * (m[4] * m[9] - m[5] * m[8]) <
+         0;
+}
+
 int fdw_dx_top_level_update(fdw_dx_context *context, fdw_dx_top_level *top,
                             const fdw_dx_instance *instances, uint32_t count) {
   std::vector<D3D12_RAYTRACING_INSTANCE_DESC> data(count);
@@ -422,8 +433,12 @@ int fdw_dx_top_level_update(fdw_dx_context *context, fdw_dx_top_level *top,
     // Both faces: the hits report the face they saw (counterclockwise from
     // the front, as in the rasterization, without
     // TRIANGLE_FRONT_COUNTERCLOCKWISE: the convention of Vulkan without
-    // TRIANGLE_FLIP_FACING). Opaque unless bit 8 of the mask.
+    // TRIANGLE_FLIP_FACING), set for a mirror: the front face is the one
+    // seen counterclockwise in the world. Opaque unless bit 8 of the mask.
     target.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE |
+                   (mirrors(instance.transform)
+                        ? D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_FRONT_COUNTERCLOCKWISE
+                        : 0) |
                    ((instance.mask & 0x100) != 0
                         ? D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_NON_OPAQUE
                         : D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE);

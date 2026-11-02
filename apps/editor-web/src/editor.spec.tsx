@@ -103,10 +103,19 @@ describe('the layout of the web editor', () => {
     // The docks hidden: the viewport grows.
     fireEvent.click(screen.getByRole('button', { name: 'Left dock' }));
     fireEvent.click(screen.getByRole('button', { name: 'Right dock' }));
-    // The bounds reach the canvas through the channel, late on a busy CI.
-    await waitFor(() => expect(canvas?.width).toBeGreaterThan(width), {
-      timeout: 10_000,
+    // The engine tells its new size (stats) after its first frame at it:
+    // waited for as an event, whatever the cadence of the frames.
+    let grown = 0;
+    await waitFor(() => {
+      const area = screen.getByTestId('viewport').getBoundingClientRect();
+      grown = Math.round(area.width * window.devicePixelRatio);
+      expect(grown).toBeGreaterThan(width);
     });
+    await screen.findByText(
+      (text) => text.startsWith('webgpu · ') && text.includes(`${grown} × `),
+      undefined,
+      { timeout: 20_000 },
+    );
     fillsViewport(canvas);
 
     // Behind another tab: hidden, still mounted, with its canvas.
