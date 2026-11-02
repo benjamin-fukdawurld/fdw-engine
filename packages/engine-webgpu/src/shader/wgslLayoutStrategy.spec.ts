@@ -230,3 +230,42 @@ describe('wgslLayoutStrategy.writeUniform', () => {
     expect(() => write(BuiltinTypes.f32, [1])).toThrow(/expects a number/);
   });
 });
+
+describe('wgslLayoutStrategy object tables', () => {
+  const resolveRow = (members: { name: string; type: ShaderType }[]) =>
+    wgslLayoutStrategy.resolve({
+      groups: [
+        {
+          slot: 'object',
+          bindings: [{ kind: 'object-table', name: 'objects', members }],
+        },
+      ],
+    }).groups[0].bindings[0].objectRow;
+
+  it('lays out the rows as the WGSL storage struct reads them', () => {
+    const row = resolveRow([
+      { name: 'world', type: BuiltinTypes.mat4f },
+      { name: 'normal', type: BuiltinTypes.mat3f },
+      { name: 'tint', type: BuiltinTypes.vec3f },
+      { name: 'id', type: BuiltinTypes.u32 },
+    ]);
+    expect(row?.members.map((member) => member.offset)).toEqual([
+      0, 64, 112, 124,
+    ]);
+    expect(row?.size).toBe(128);
+  });
+
+  it('rejects rows that the WGSL struct would read differently', () => {
+    // std140 rounds the elements up to 16 bytes, a storage struct does not.
+    expect(() =>
+      resolveRow([
+        { name: 'weights', type: arrayType(BuiltinTypes.f32, 4) },
+        { name: 'id', type: BuiltinTypes.u32 },
+      ]),
+    ).toThrow(/"id" is at 64 in the rows written, at 16 in the WGSL struct/);
+    // A row of 16 bytes written, a struct of 4.
+    expect(() => resolveRow([{ name: 'id', type: BuiltinTypes.u32 }])).toThrow(
+      /rows of 16 bytes written, of 4 bytes/,
+    );
+  });
+});

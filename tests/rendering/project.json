@@ -24,7 +24,20 @@
           "transitive": true
         },
         {
+          "dependentTasksOutputFiles": "**/*.node",
+          "transitive": true
+        },
+        {
           "env": "VULKAN_SDK"
+        },
+        {
+          "env": "FDW_REQUIRE_SUITES"
+        },
+        {
+          "env": "FDW_D3D12_ADAPTER"
+        },
+        {
+          "env": "VK_DRIVER_FILES"
         }
       ],
       "dependsOn": [

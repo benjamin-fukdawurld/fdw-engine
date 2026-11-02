@@ -1,7 +1,9 @@
 import { stubLayout } from '@fdw/editor-ui/testing';
 import {
+  acceptsBehaviorType as engineAccepts,
   actionNode,
   BehaviorGraphBuilder,
+  type BehaviorPortType,
   BehaviorSystem,
   createBehaviorRegistry,
 } from '@fdw/engine-behavior';
@@ -24,7 +26,7 @@ import {
   pausedKey,
   stepCommand,
 } from './index';
-import { shortValue } from './main';
+import { acceptsBehaviorType, shortValue } from './main';
 
 beforeAll(() => {
   stubLayout();
@@ -62,6 +64,27 @@ function orcs() {
   };
   return { system, target, roars };
 }
+
+describe('acceptsBehaviorType', () => {
+  // The page guesses as the engine decides (a copy, the engine kept out
+  // of the page).
+  it('is the rule of the engine', () => {
+    const types: BehaviorPortType[] = [
+      'exec',
+      'number',
+      'boolean',
+      'string',
+      'vec3',
+      'entity',
+      'any',
+    ];
+    for (const from of types) {
+      for (const to of types) {
+        expect(acceptsBehaviorType(from, to)).toBe(engineAccepts(from, to));
+      }
+    }
+  });
+});
 
 describe('the behavior plugin', () => {
   afterEach(cleanup);

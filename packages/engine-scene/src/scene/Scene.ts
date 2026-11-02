@@ -287,6 +287,15 @@ export class Scene implements SceneGraph {
     if (mesh && !material) {
       throw new Error('A batch with a mesh needs a material');
     }
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(`Invalid batch count ${count}`);
+    }
+    // Checked before any entity is made: a short array reads as NaN.
+    const short = (array: ArrayLike<number> | undefined, size: number) =>
+      array !== undefined && array.length < count * size;
+    if (short(positions, 3) || short(rotations, 4) || short(scales, 3)) {
+      throw new Error(`A batch of ${count} with arrays shorter than its count`);
+    }
     // The values of the components, the same for every entity.
     const hierarchy = {
       parent: None,

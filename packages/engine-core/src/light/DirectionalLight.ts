@@ -28,22 +28,22 @@ export class DirectionalLight
       ),
       data,
     );
-    this._direction = new Vec3View(this._buffer, BaseLight.bufferSize);
+    this._direction = this.trackedVec3(BaseLight.bufferSize);
     this.direction = data?.direction ?? { x: 0, y: 0, z: -1 };
     this.castShadow = data?.castShadow ?? false;
     this.shadow = data?.shadow ?? {};
+
+    // The initial values are version 0, whatever the light type.
+    this._version = 0;
   }
 
   public get direction(): Readonly<Vec3View> {
-    return Object.freeze(this._direction);
+    return this._direction;
   }
 
   public set direction(value: Partial<IVec3>) {
     this._direction.x = value.x ?? this._direction.x;
     this._direction.y = value.y ?? this._direction.y;
     this._direction.z = value.z ?? this._direction.z;
-    this._version++;
   }
 }
-
-export default DirectionalLight;

@@ -19,7 +19,8 @@ export function spotVolume(
   const axes = lookAxes(light.direction);
   // The axis of the cone: -z of the axes.
   const d = axes.z.map((v) => -v);
-  const angle = (light.outerCutoff * Math.PI) / 180;
+  // In degrees; SpotLight clamps it to 90, plain data may not.
+  const angle = (Math.min(light.outerCutoff, 90) * Math.PI) / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const p = [px, py, pz];

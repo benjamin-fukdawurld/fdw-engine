@@ -125,6 +125,39 @@ describe('GraphCanvas', () => {
     expect(session.projection().nodes.map((n) => n.id)).toContain('roar');
   });
 
+  it('drops a drag cancelled, and the listeners of one unmounted', () => {
+    const { session, node } = renderCanvas();
+    const before = session.projection().layout.nodes?.['roar'];
+    press(node('roar'), { clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 30 });
+    fireEvent.pointerCancel(window);
+    release(window, { clientX: 60, clientY: 30 });
+    expect(session.projection().layout.nodes?.['roar']).toEqual(before);
+    press(node('roar'), { clientX: 10, clientY: 10 });
+    cleanup();
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 30 });
+    release(window, { clientX: 60, clientY: 30 });
+    expect(session.projection().layout.nodes?.['roar']).toEqual(before);
+  });
+
+  it('deletes nodes and edges selected together in one step', () => {
+    const { session, canvas, node } = renderCanvas();
+    press(node('roar'));
+    release(window);
+    const edge = session
+      .projection()
+      .edges.find((e) => e.from.node === 'hit' && e.to.node === 'angry');
+    if (!edge) throw new Error('No edge');
+    const wire = Array.from(canvas.querySelectorAll('[data-edge]')).find(
+      (g) => g.getAttribute('data-edge') === edgeKey(edge),
+    )?.firstElementChild;
+    if (!wire) throw new Error('No wire');
+    fireEvent.pointerDown(wire, { button: 0, ctrlKey: true });
+    fireEvent.keyDown(canvas, { key: 'Delete' });
+    expect(session.history.undoLabels).toHaveLength(1);
+    expect(session.projection().edges).not.toContainEqual(edge);
+  });
+
   it('connects a wire dragged from an output to an input, and tells the ports that fit', () => {
     const { session, results, port } = renderCanvas();
     press(port('compare >', 'output', 'value'));

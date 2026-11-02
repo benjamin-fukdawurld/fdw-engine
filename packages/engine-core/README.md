@@ -117,4 +117,4 @@ const camera = new Camera({
 });
 ```
 
-Rendering these objects is the backend's job, for instance through `TransformAdapter` and `CameraAdapter` from `@fdw/engine-backend`, combined with the factories of `@fdw/engine-webgpu`.
+Rendering these objects is the job of the `Renderer`, which draws them through the `RenderBackend` of a backend (`@fdw/engine-webgpu`, `@fdw/engine-webgl2`…).

@@ -3,7 +3,7 @@ import {
   perlinNoise,
   simplexNoise,
   valueNoise,
-  worleyNoise,
+  worleyF1,
 } from './noise';
 
 /** The noises a fractal sum can add up. */
@@ -19,7 +19,7 @@ export function noise(kind: NoiseKind, point: NoisePoint, seed = 0): number {
     case 'simplex':
       return simplexNoise(point, seed);
     case 'worley':
-      return worleyNoise(point, seed).f1;
+      return worleyF1(point, seed);
   }
 }
 
@@ -73,6 +73,13 @@ export function octaveWeight(footprint: number, frequency: number): number {
   return 1 - t * t * (3 - 2 * t);
 }
 
+const noOptions: FractalOptions = {};
+
+// The point of an octave, reused per dimension: the noises read its length.
+const scaledPoints = [2, 3, 4].map((n) => new Array<number>(n).fill(0));
+const scaledPoint = (n: number): number[] =>
+  scaledPoints[n - 2] ?? new Array<number>(n).fill(0);
+
 /**
  * A fractal sum of a noise: the octaves (the noise at growing frequencies
  * and shrinking amplitudes) added up, divided by the sum of the
@@ -83,18 +90,21 @@ export function octaveWeight(footprint: number, frequency: number): number {
 export function fractal(
   kind: FractalKind,
   point: NoisePoint,
-  {
-    noise: noiseKind = 'perlin',
-    octaves = 5,
-    lacunarity = 2,
-    gain = 0.5,
-    seed = 0,
-    footprint = 0,
-  }: FractalOptions = {},
+  options: FractalOptions = noOptions,
 ): number {
+  const noiseKind = options.noise ?? 'perlin';
+  const octaves = options.octaves ?? 5;
+  const lacunarity = options.lacunarity ?? 2;
+  const gain = options.gain ?? 0.5;
+  const seed = options.seed ?? 0;
+  const footprint = options.footprint ?? 0;
+  if (!(octaves >= 1)) {
+    // No octave: a sum of nothing divided by nothing (NaN).
+    throw new Error(`octaves must be at least 1, got ${octaves}`);
+  }
   const term = terms[kind];
   const average = fadedOctaveAverages[kind];
-  const scaled = new Array<number>(point.length);
+  const scaled = scaledPoint(point.length);
   let sum = 0;
   let amplitude = 1;
   let frequency = 1;

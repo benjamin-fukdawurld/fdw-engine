@@ -264,7 +264,7 @@ export interface PhysicsImport {
   };
   /** The local transform of a glTF node. */
   trs(node: number): Trs;
-  /** The parent of a glTF node. */
+  /** The parent of a glTF node; a cycle fails the import (see `nodeTree`). */
   parent(node: number): number | undefined;
   /** The collision geometry of a glTF mesh, in the space of its node. */
   meshShape(
@@ -315,24 +315,26 @@ export async function importBodies(
       return bit < 16 ? mask | (1 << bit) : mask;
     }, 0);
 
-  const motionOf = (i: number): number | undefined => {
-    for (let n: number | undefined = i; n !== undefined; n = input.parent(n))
-      if (physicsOf(nodes[n])?.motion) return n;
-    return undefined;
-  };
-  // The transform of a node in the space of an ancestor (undefined: the world).
-  const relative = (i: number, ancestor: number | undefined): Trs => {
+  // A node and its ancestors, nearest first: a cycle of parents fails rather
+  // than loops.
+  const ancestry = (i: number, until?: number): number[] => {
     const chain: number[] = [];
-    for (
-      let n: number | undefined = i;
-      n !== ancestor && n !== undefined;
-      n = input.parent(n)
-    )
+    const seen = new Set<number>();
+    for (let n: number | undefined = i; n !== until && n !== undefined;) {
+      if (seen.has(n)) throw new Error(`node ${i}: a cycle of parents`);
+      seen.add(n);
       chain.push(n);
-    return chain
+      n = input.parent(n);
+    }
+    return chain;
+  };
+  const motionOf = (i: number): number | undefined =>
+    ancestry(i).find((n) => physicsOf(nodes[n])?.motion);
+  // The transform of a node in the space of an ancestor (undefined: the world).
+  const relative = (i: number, ancestor: number | undefined): Trs =>
+    ancestry(i, ancestor)
       .reverse()
       .reduce((trs, n) => composeTrs(trs, input.trs(n)), identityTrs);
-  };
 
   const colliderDesc = async (
     i: number,

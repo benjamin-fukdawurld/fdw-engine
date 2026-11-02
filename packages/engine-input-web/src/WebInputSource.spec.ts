@@ -42,6 +42,25 @@ describe('WebInputSource', () => {
     expect(input.pointer.wheel).toBe(3);
   });
 
+  it('captures the pointer pressed, and releases a pointer cancelled', () => {
+    const { element, input, send } = setup();
+    const captured: number[] = [];
+    element.setPointerCapture = (id: number) => captured.push(id);
+    send('pointerdown', { button: 0, pointerId: 7 });
+    send('pointerdown', { button: 2, pointerId: 7 });
+    send('pointerdown', { button: 0, pointerId: 8 });
+    input.update();
+    expect(captured).toEqual([7, 7, 8]);
+    // Released outside of the element: the capture brings the pointerup.
+    send('pointerup', { button: 0, pointerId: 8 });
+    // The browser takes the other pointer: no pointerup.
+    send('pointercancel', { button: -1, pointerId: 7 });
+    input.update();
+    expect(input.pointer.isDown(0)).toBe(false);
+    expect(input.pointer.isDown(2)).toBe(false);
+    expect(input.pointer.released(2)).toBe(true);
+  });
+
   it('normalizes the pointer over the window', () => {
     const target = Object.assign(new EventTarget(), {
       innerWidth: 400,

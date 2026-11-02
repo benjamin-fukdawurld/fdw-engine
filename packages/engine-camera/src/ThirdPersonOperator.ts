@@ -148,6 +148,9 @@ export class ThirdPersonOperator {
   private readonly _pointer = { x: 0, y: 0 };
   private readonly _forward = { x: 0, y: 0, z: 0 };
   private readonly _right = { x: 0, y: 0, z: 0 };
+  private readonly _view = { fov: 0, aspect: 0 };
+  // The end of the full arm, probed.
+  private readonly _to = { x: 0, y: 0, z: 0 };
 
   constructor(
     private readonly _target: CameraTarget,
@@ -219,7 +222,7 @@ export class ThirdPersonOperator {
     const actions = this._actions;
     const names = this._names;
     const flip = this.invertY ? -1 : 1;
-    const { aspect } = viewOf(this._target);
+    const { aspect } = viewOf(this._target, this._view);
 
     // Right turns the view right, up looks up.
     const look = actions.vector(names.look, this._vector);
@@ -257,7 +260,7 @@ export class ThirdPersonOperator {
 
   /** Where the camera is: behind the pivot, over the shoulder. */
   get position(): Vec3Like {
-    return this.along(this._arm);
+    return this.along(this._arm, { x: 0, y: 0, z: 0 });
   }
 
   /** Writes the position and the rotation into the target. */
@@ -268,16 +271,15 @@ export class ThirdPersonOperator {
 
   // The point of the arm at `length` from the pivot: the shoulder offset
   // shrinks with the arm, so that a short arm stays behind the head.
-  private along(length: number): Vec3Like {
+  private along(length: number, out: Vec3Like): Vec3Like {
     const forward = forwardOf(this.yaw, this.pitch, this._forward);
     const right = rightOf(this.yaw, this._right);
     const side =
       this.distance > 0 ? (this.shoulder * length) / this.distance : 0;
-    return {
-      x: this.pivot.x - forward.x * length + right.x * side,
-      y: this.pivot.y - forward.y * length + right.y * side,
-      z: this.pivot.z - forward.z * length + right.z * side,
-    };
+    out.x = this.pivot.x - forward.x * length + right.x * side;
+    out.y = this.pivot.y - forward.y * length + right.y * side;
+    out.z = this.pivot.z - forward.z * length + right.z * side;
+    return out;
   }
 
   // The length the probe allows for the arm.
@@ -285,7 +287,7 @@ export class ThirdPersonOperator {
     if (!this.probe) {
       return this.distance;
     }
-    const to = this.along(this.distance);
+    const to = this.along(this.distance, this._to);
     const hit = this.probe(this.pivot, to, this.radius);
     if (hit === undefined) {
       return this.distance;

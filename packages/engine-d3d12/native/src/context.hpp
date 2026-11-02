@@ -85,6 +85,9 @@ struct CommandList {
   ComPtr<ID3D12GraphicsCommandList4> rays;
   uint64_t submission = 0;
   bool recording = false;
+  // The state of each texture (by id) before this list changed it: put
+  // back when the list fails to close, as it then never runs.
+  std::map<uint32_t, D3D12_RESOURCE_STATES> textureStates;
 };
 
 // A chunk of upload memory, mapped, used linearly by the writes until its
@@ -254,6 +257,9 @@ struct fdw_dx_top_level {
   ComPtr<ID3D12Resource> scratch;
   // The instances (D3D12_RAYTRACING_INSTANCE_DESC), written by the updates.
   fdw_dx_buffer *instances = nullptr;
+  // The storage of the bottom levels of the last update: kept while the
+  // structure points to them, even when the bottom levels are destroyed.
+  std::vector<ComPtr<ID3D12Resource>> bottomLevels;
   uint32_t capacity = 0;
   uint32_t count = 0;
 };
@@ -281,6 +287,9 @@ struct fdw_dx_context {
   ComPtr<ID3D12Fence> fence;
   HANDLE fenceEvent = nullptr;
   uint64_t submitted = 0;
+  // A submission could not be signalled: what the GPU still runs is
+  // unknown, so nothing is recorded or recycled any more.
+  bool lost = false;
 
   // The command lists, recycled. Each list recorded starts a new epoch:
   // the buffers are back in the common state.

@@ -62,6 +62,44 @@ describe('parseObj', () => {
       0, 0, 1,
     ]);
   });
+
+  it('skips the faces with an invalid index, with a warning', () => {
+    const warnings: string[] = [];
+    const { groups } = parseObj(
+      [
+        'v 0 0 0',
+        'v 1 0 0',
+        'v 0 1 0',
+        'vn 0 0 1',
+        'f 1 2 3',
+        'f 1 2 4', // past the positions
+        'f 1 2 -4', // before the first
+        'f 0 1 2', // 0 is not an index
+        'f 1/1 2 3', // no uv
+        'f 1//2 2//1 3//1', // no second normal
+        'f 1 2 x',
+        'f 1 2 1.5',
+        'f /1 2 3', // no position
+      ].join('\n'),
+      { warn: (m) => void warnings.push(m) },
+    );
+    expect(warnings).toHaveLength(8);
+    expect(warnings[0]).toBe(
+      'OBJ: line 6: invalid face index, the face is skipped',
+    );
+    const mesh = groups[0].primitives.get('')!;
+    expect([...mesh.indices!]).toEqual([0, 1, 2]);
+    expect([...(mesh.vertices[0] as Float32Array)].some(Number.isNaN)).toBe(
+      false,
+    );
+  });
+
+  it('looks for the MTL files of absolute paths next to the OBJ file', () => {
+    const { mtllibs } = parseObj(
+      'mtllib C:\\models\\a.mtl\nmtllib /home/b.mtl\nmtllib sub/c.mtl\n',
+    );
+    expect(mtllibs).toEqual(['a.mtl', 'b.mtl', 'sub/c.mtl']);
+  });
 });
 
 describe('parseMtl', () => {
@@ -83,6 +121,20 @@ describe('parseMtl', () => {
       transform: { scale: [2, 2], offset: [0, 0] },
     });
     expect(red.normalTexture?.image).toBe('base/n.png');
+  });
+
+  it('reduces the absolute texture paths to their file name', () => {
+    const materials = parseMtl(
+      'newmtl A\nmap_Kd C:\\textures\\a.png\nmap_Ks /home/me/b.png\nnorm file:///c.png\nmap_Ke sub\\d.png\n',
+      (p) => `base/${p}`,
+    );
+    const a = materials.get('A')!;
+    expect([
+      a.diffuseTexture?.image,
+      a.specularTexture?.image,
+      a.normalTexture?.image,
+      a.emissiveTexture?.image,
+    ]).toEqual(['base/a.png', 'base/b.png', 'base/c.png', 'base/sub/d.png']);
   });
 });
 

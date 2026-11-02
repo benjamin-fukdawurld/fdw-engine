@@ -6,6 +6,7 @@ import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ShaderSources } from '@fdw/engine-backend';
 import { dxcArguments } from '../shader/HlslCodegen';
+import { shaderKey, type ShaderCache } from '../shader/ShaderCache';
 
 // The command line tools of the Vulkan SDK (DXC, spirv-val, spirv-cross),
 // for tests and tooling. The backend itself will compile with the DXC
@@ -56,41 +57,79 @@ async function runTool(path: string, args: string[]): Promise<string> {
 export type SpirvStage = 'vertex' | 'fragment' | 'compute';
 
 /**
+ * Runs `use` with a new temporary directory, removed after: the files of
+ * the tools of a program in a single one.
+ */
+export async function withTemporaryDirectory<T>(
+  use: (dir: string) => Promise<T>,
+): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), 'fdw-spirv-'));
+  try {
+    return await use(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// The version of the dxc of the SDK (`dxc --version`), asked once.
+let dxcVersion: Promise<string> | undefined;
+
+/** Where compileHlsl works, and what it can skip. */
+export interface CompileHlslOptions {
+  /** The directory of the files; a temporary one by default. */
+  readonly dir?: string;
+  /**
+   * The SPIR-V of the modules already compiled, by shaderKey (the version
+   * of DXC, its arguments and the HLSL): DXC only runs for the others.
+   */
+  readonly cache?: ShaderCache;
+}
+
+/**
  * Compiles the entry points of an HLSL module to SPIR-V with DXC: one
- * module per stage.
+ * module per stage, the stages at the same time.
  */
 export async function compileHlsl(
   sources: ShaderSources,
+  options: CompileHlslOptions = {},
 ): Promise<Map<SpirvStage, Uint8Array>> {
   if (sources.kind !== 'single-module') {
     throw new Error('HLSL is a single module');
   }
-  const dxc = tool('dxc');
-  const dir = await mkdtemp(join(tmpdir(), 'fdw-hlsl-'));
-  try {
-    const input = join(dir, 'program.hlsl');
-    await writeFile(input, sources.code);
-    const result = new Map<SpirvStage, Uint8Array>();
-    for (const [stage, entryPoint] of Object.entries(sources.entryPoints) as [
-      SpirvStage,
-      string | undefined,
-    ][]) {
-      if (!entryPoint) {
-        continue;
-      }
-      const output = join(dir, `${stage}.spv`);
-      await runTool(dxc, [
-        ...dxcArguments(stage, entryPoint, 'vulkan', sources.code),
-        input,
-        '-Fo',
-        output,
-      ]);
-      result.set(stage, new Uint8Array(await readFile(output)));
-    }
-    return result;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+  const { dir, cache } = options;
+  if (!dir) {
+    return withTemporaryDirectory((temporary) =>
+      compileHlsl(sources, { ...options, dir: temporary }),
+    );
   }
+  const dxc = tool('dxc');
+  const version = cache
+    ? await (dxcVersion ??= runTool(dxc, ['--version']).then((out) =>
+        out.trim(),
+      ))
+    : '';
+  const input = join(dir, 'program.hlsl');
+  let written: Promise<void> | undefined;
+  const stages = (
+    Object.entries(sources.entryPoints) as [SpirvStage, string | undefined][]
+  ).filter((entry): entry is [SpirvStage, string] => !!entry[1]);
+  const modules = await Promise.all(
+    stages.map(async ([stage, entryPoint]) => {
+      const args = dxcArguments(stage, entryPoint, 'vulkan', sources.code);
+      const key = cache && shaderKey(version, 'vulkan', args, sources.code);
+      const cached = key && cache.get(key);
+      if (cached) {
+        return cached;
+      }
+      await (written ??= writeFile(input, sources.code));
+      const output = join(dir, `${stage}.spv`);
+      await runTool(dxc, [...args, input, '-Fo', output]);
+      const spirv = new Uint8Array(await readFile(output));
+      if (key) cache.set(key, spirv);
+      return spirv;
+    }),
+  );
+  return new Map(stages.map(([stage], index) => [stage, modules[index]]));
 }
 
 /**
@@ -133,26 +172,39 @@ export async function compileDxil(
 }
 
 // Runs a tool on a SPIR-V module written to a temporary file.
-async function withModule<T>(
+function withModule<T>(
   spirv: Uint8Array,
   use: (path: string) => Promise<T>,
 ): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), 'fdw-spirv-'));
-  try {
+  return withTemporaryDirectory(async (dir) => {
     const path = join(dir, 'module.spv');
     await writeFile(path, spirv);
-    return await use(path);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+    return use(path);
+  });
 }
+
+const validate = (path: string) =>
+  runTool(tool('spirv-val'), ['--target-env', 'vulkan1.3', path]);
 
 /** Validates a SPIR-V module for Vulkan 1.3; throws with the messages. */
 export async function validateSpirv(spirv: Uint8Array): Promise<void> {
-  const validator = tool('spirv-val');
-  await withModule(spirv, (path) =>
-    runTool(validator, ['--target-env', 'vulkan1.3', path]),
-  );
+  await withModule(spirv, validate);
+}
+
+/**
+ * Validates a SPIR-V module (validateSpirv) and reflects its uniform blocks
+ * (reflectUniformBlocks) from a single file, written in `dir`: spirv-val
+ * and spirv-cross run side by side.
+ */
+export async function checkSpirv(
+  spirv: Uint8Array,
+  dir: string,
+  name = 'module',
+): Promise<Map<string, ReflectedBlock>> {
+  const path = join(dir, `${name}.spv`);
+  await writeFile(path, spirv);
+  const [, blocks] = await Promise.all([validate(path), reflect(path)]);
+  return blocks;
 }
 
 /** A uniform block of a SPIR-V module, as reflected by spirv-cross. */
@@ -167,13 +219,14 @@ export interface ReflectedBlock {
 }
 
 /** The uniform blocks of a SPIR-V module, by name of their variable. */
-export async function reflectUniformBlocks(
+export function reflectUniformBlocks(
   spirv: Uint8Array,
 ): Promise<Map<string, ReflectedBlock>> {
-  const crossCompiler = tool('spirv-cross');
-  const json = await withModule(spirv, (path) =>
-    runTool(crossCompiler, [path, '--reflect']),
-  );
+  return withModule(spirv, reflect);
+}
+
+async function reflect(path: string): Promise<Map<string, ReflectedBlock>> {
+  const json = await runTool(tool('spirv-cross'), [path, '--reflect']);
   const reflection = JSON.parse(json) as {
     types: Record<
       string,

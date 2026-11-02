@@ -1,39 +1,74 @@
 import { isAbortError, ResourceError } from '../errors';
 import type { ReadOptions, ResourceSource } from '../ResourceSource';
 import type { ResourceBytes } from '../types';
+import { normalizePath } from '../uri';
 
 export interface HttpSourceOptions {
   /** Prepended to relative paths: `/`, `/assets/`, `https://cdn.example.com/`. */
   readonly base?: string;
+  /** Sent only to the allowed origins: a scene may name any absolute URL. */
   readonly headers?: HeadersInit;
+  /** Like `headers`, applied only to the allowed origins. */
   readonly credentials?: RequestCredentials;
+  /**
+   * The origins (`https://cdn.example.com`) that receive `headers` and
+   * `credentials`. By default the origin of `base`, and the page's own.
+   */
+  readonly allowedOrigins?: readonly string[];
   /** For tests and platforms with a custom fetch. */
   readonly fetch?: typeof fetch;
 }
 
 const ABSOLUTE = /^([a-zA-Z][a-zA-Z0-9+.-]*:)?\/\//;
 
+function pageOrigin(): string | undefined {
+  const location = (globalThis as { location?: { origin?: string } }).location;
+  return location?.origin;
+}
+
+/** The origin of an absolute URL (or of one relative to the page), if any. */
+function originOf(url: string): string | undefined {
+  if (url === '') return undefined;
+  try {
+    const origin = new URL(url, pageOrigin()).origin;
+    return origin === 'null' ? undefined : origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export class HttpSource implements ResourceSource {
   private readonly base: string;
   private readonly fetchFn: typeof fetch;
+  private readonly allowed: ReadonlySet<string>;
 
   constructor(private readonly options: HttpSourceOptions = {}) {
     const base = options.base ?? '';
     this.base = base === '' || base.endsWith('/') ? base : base + '/';
     this.fetchFn = options.fetch ?? ((...args) => globalThis.fetch(...args));
+    const origins = options.allowedOrigins ?? [this.base, pageOrigin() ?? ''];
+    this.allowed = new Set(
+      origins.map((o) => originOf(o)).filter((o) => o !== undefined),
+    );
   }
 
   private url(path: string): string {
     if (ABSOLUTE.test(path)) return path;
-    return this.base + path.replace(/^\/+/, '');
+    // `..` cannot climb above `base`.
+    return this.base + normalizePath(path, true).replace(/^\/+/, '');
   }
 
-  private init(signal?: AbortSignal, method = 'GET'): RequestInit {
+  private init(url: string, signal?: AbortSignal, method = 'GET'): RequestInit {
+    // A URL relative to the page stays on its origin; an absolute one gets
+    // the configured headers only when its origin is allowed.
+    const origin = ABSOLUTE.test(url) ? originOf(url) : undefined;
+    const trusted =
+      !ABSOLUTE.test(url) || (origin !== undefined && this.allowed.has(origin));
     return {
       method,
       signal,
-      headers: this.options.headers,
-      credentials: this.options.credentials,
+      headers: trusted ? this.options.headers : undefined,
+      credentials: trusted ? this.options.credentials : undefined,
     };
   }
 
@@ -50,7 +85,8 @@ export class HttpSource implements ResourceSource {
   ): Promise<ResourceBytes> {
     let response: Response;
     try {
-      response = await this.fetchFn(this.url(path), this.init(signal));
+      const url = this.url(path);
+      response = await this.fetchFn(url, this.init(url, signal));
     } catch (e) {
       this.fail(path, e);
     }
@@ -98,10 +134,8 @@ export class HttpSource implements ResourceSource {
   async stat(path: string): Promise<{ size?: number; revision?: string }> {
     let response: Response;
     try {
-      response = await this.fetchFn(
-        this.url(path),
-        this.init(undefined, 'HEAD'),
-      );
+      const url = this.url(path);
+      response = await this.fetchFn(url, this.init(url, undefined, 'HEAD'));
     } catch (e) {
       this.fail(path, e);
     }

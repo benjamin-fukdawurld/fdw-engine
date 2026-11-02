@@ -1,8 +1,9 @@
-import type {
-  GpuBuffer,
-  GpuBufferFactory,
-  GpuBufferUpdateFrequency,
-  GpuBufferUsage,
+import {
+  checkBufferWrite,
+  type GpuBuffer,
+  type GpuBufferFactory,
+  type GpuBufferUpdateFrequency,
+  type GpuBufferUsage,
 } from '@fdw/engine-backend';
 import { GL } from '../gl';
 import { StorageTextureWidth } from '../shader/storage';
@@ -173,17 +174,25 @@ export class WebGl2Buffer implements GpuBuffer {
     dataOffset = 0,
     size?: number,
   ): void {
-    const byteLength = size ?? value.byteLength - dataOffset;
-    if (dataOffset + byteLength > value.byteLength) {
-      throw new Error(
-        `Write of ${byteLength} bytes from offset ${dataOffset} exceeds source data size ${value.byteLength}`,
-      );
-    }
-    if (offset + byteLength > this.size) {
-      throw new Error(
-        `Write of ${byteLength} bytes at ${offset} exceeds buffer size ${this.size}`,
-      );
-    }
+    // The contract of WebGPU, for code valid on both backends.
+    const byteLength = checkBufferWrite(this, offset, value, dataOffset, size);
+    this.upload(offset, value, dataOffset, byteLength);
+  }
+
+  /** Writes the initial data of a buffer, which may not have copy-dst. */
+  writeInitial(value: ArrayBuffer, dataOffset: number, size: number): void {
+    const byteLength = checkBufferWrite(this, 0, value, dataOffset, size, {
+      initial: true,
+    });
+    this.upload(0, value, dataOffset, byteLength);
+  }
+
+  private upload(
+    offset: number,
+    value: ArrayBuffer,
+    dataOffset: number,
+    byteLength: number,
+  ): void {
     // The rest of the buffer, from the texture written by the commands
     // submitted so far.
     this.updateBuffer();
@@ -330,8 +339,7 @@ export class WebGl2BufferFactory implements GpuBufferFactory {
       label,
     );
     if (initialData) {
-      buffer.write(
-        0,
+      buffer.writeInitial(
         initialData.buffer,
         initialData.byteOffset,
         initialData.byteLength,

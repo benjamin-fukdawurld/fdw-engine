@@ -1,4 +1,5 @@
 import {
+  checkBufferWrite,
   GpuBuffer as FdGpuBuffer,
   GpuBufferFactory,
   GpuBufferUpdateFrequency,
@@ -86,32 +87,20 @@ export class Buffer implements FdGpuBuffer {
     dataOffset?: number,
     size?: number,
   ): void {
-    if ((this.buffer.usage & GPUBufferUsage.COPY_DST) === 0) {
-      throw new Error(
-        `Buffer "${
-          this.label ?? '(unlabeled)'
-        }" was not created with 'copy-dst' usage and cannot be written to after creation.`,
-      );
-    }
+    this.upload(
+      offset,
+      value,
+      dataOffset,
+      checkBufferWrite(this, offset, value, dataOffset, size),
+    );
+  }
 
-    if (offset % 4 !== 0) {
-      throw new Error(`Write offset must be a multiple of 4 (got ${offset})`);
-    }
-
-    const byteLength = size ?? value.byteLength - (dataOffset ?? 0);
-    if ((dataOffset ?? 0) + byteLength > value.byteLength) {
-      throw new Error(
-        `Write of ${byteLength} bytes from offset ${
-          dataOffset ?? 0
-        } exceeds source data size ${value.byteLength}`,
-      );
-    }
-    if (offset + byteLength > this.size) {
-      throw new Error(
-        `Write of ${byteLength} bytes at ${offset} exceeds buffer size ${this.size}`,
-      );
-    }
-
+  private upload(
+    offset: number,
+    value: ArrayBuffer,
+    dataOffset: number | undefined,
+    byteLength: number,
+  ): void {
     if (byteLength % 4 === 0) {
       this.device.queue.writeBuffer(
         this.buffer,
@@ -122,7 +111,8 @@ export class Buffer implements FdGpuBuffer {
       );
       return;
     }
-
+    // The end of a buffer whose size is not a multiple of 4 (see
+    // checkBufferWrite): the padding of its allocation is overwritten.
     const padded = padData(value, dataOffset, byteLength);
     this.device.queue.writeBuffer(this.buffer, offset, padded);
   }

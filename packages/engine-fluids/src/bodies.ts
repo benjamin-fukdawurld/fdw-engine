@@ -6,6 +6,7 @@ import type {
 } from '@fdw/engine-backend';
 import { Ops } from '@fdw/engine-ocean';
 import { writeData } from './buffers';
+import { forgetRemovedBodies } from '@fdw/engine-physics';
 import type { PhysicsBody } from '@fdw/engine-physics';
 import { arrayType, BuiltinTypes } from '@fdw/engine-shader';
 import type { GraphBuilder, PortHandle } from '@fdw/engine-shader';
@@ -43,21 +44,32 @@ export function packBodies(
   bodies: readonly FluidBody[],
   out = new Float32Array(Math.max(bodies.length, 1) * BodyStride * 4),
 ): Float32Array {
-  bodies.forEach((body, i) => {
+  // Written in place: once a frame for every body.
+  const vec4 = (o: number, x: number, y: number, z: number, w: number) => {
+    out[o] = x;
+    out[o + 1] = y;
+    out[o + 2] = z;
+    out[o + 3] = w;
+  };
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
     const o = i * BodyStride * 4;
     const { shape, position: p, rotation: q } = body;
-    const size =
-      shape.type === 'sphere'
-        ? [shape.radius, shape.radius, shape.radius]
-        : [shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z];
-    out.set([p.x, p.y, p.z, shape.type === 'sphere' ? 0 : 1], o);
-    out.set([q.x, q.y, q.z, q.w], o + 4);
-    out.set([...size, 0], o + 8);
-    out.set([body.velocity.x, body.velocity.y, body.velocity.z, 0], o + 12);
+    vec4(o, p.x, p.y, p.z, shape.type === 'sphere' ? 0 : 1);
+    vec4(o + 4, q.x, q.y, q.z, q.w);
+    if (shape.type === 'sphere') {
+      vec4(o + 8, shape.radius, shape.radius, shape.radius, 0);
+    } else {
+      const h = shape.halfExtents;
+      vec4(o + 8, h.x, h.y, h.z, 0);
+    }
+    const v = body.velocity;
+    vec4(o + 12, v.x, v.y, v.z, 0);
     const w = body.angularVelocity;
-    out.set([w.x, w.y, w.z, 0], o + 16);
-    out.set([body.center.x, body.center.y, body.center.z, 0], o + 20);
-  });
+    vec4(o + 16, w.x, w.y, w.z, 0);
+    const c = body.center;
+    vec4(o + 20, c.x, c.y, c.z, 0);
+  }
   return out;
 }
 
@@ -98,6 +110,7 @@ export class FluidBodies {
   private readonly _extra: FluidBody[] = [];
   private _current: FluidBody[] = [];
   private readonly _data = new Float32Array(MaxBodies * BodyStride * 4);
+  private readonly _pose = new Float32Array(7);
 
   constructor(backend: RenderBackend) {
     this.buffer = backend.buffers.create({
@@ -166,18 +179,9 @@ export class FluidBodies {
    */
   update(): this {
     const current: FluidBody[] = [];
-    const pose = new Float32Array(7);
-    const alive = new Map<PhysicsBody['world'], Set<PhysicsBody>>();
+    const pose = this._pose;
+    forgetRemovedBodies(this._entries);
     for (const [body, entry] of this._entries) {
-      let bodies = alive.get(body.world);
-      if (!bodies) {
-        bodies = new Set(body.world.bodies);
-        alive.set(body.world, bodies);
-      }
-      if (!bodies.has(body)) {
-        this._entries.delete(body);
-        continue;
-      }
       const center = copy(body.position);
       for (const { shape, collider } of entry.shapes) {
         let position = center;

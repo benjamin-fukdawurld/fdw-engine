@@ -1,4 +1,4 @@
-import { Camera, Renderer } from '@fdw/engine-core';
+import { Camera, RenderGraph, Renderer } from '@fdw/engine-core';
 import { fakeBackend, surface } from '@fdw/engine-core/testing';
 import type { PhysicsBody } from '@fdw/engine-physics';
 import { compile } from '@fdw/engine-shader';
@@ -11,6 +11,7 @@ import { GerstnerWaves } from './gerstner';
 import { butterflyGraph, resolveGraph, spectrumGraph } from './graphs';
 import { oceanGraph } from './material';
 import { Ocean } from './Ocean';
+import { OceanRenderer } from './OceanRenderer';
 import { OceanSpectrum } from './OceanSpectrum';
 import {
   heightAbove,
@@ -90,6 +91,15 @@ describe('spectrum', () => {
     expect(data.heightDeviation).toBeLessThan(0.6);
     expect(spectrumDensity(-0.3, 0, { model: 'phillips' })).toBe(0);
     expect(spectrumDensity(0.3, 0, { model: 'phillips' })).toBeGreaterThan(0);
+  });
+
+  it('is a still sea without wind or fetch', () => {
+    for (const calm of [{ windSpeed: 0 }, { fetch: 0 }]) {
+      expect(spectrumDensity(0.3, 0.1, calm)).toBe(0);
+      const data = createSpectrum({ ...calm, resolution: 8, cascades: [50] });
+      expect(data.amplitudes.every((v) => v === 0)).toBe(true);
+      expect(data.heightDeviation).toBe(0);
+    }
   });
 
   it('gives the sum of its waves at every point, fields packed by two', () => {
@@ -201,6 +211,17 @@ describe('Gerstner waves', () => {
     expect(
       heightAbove((x, z, out) => waves.sample(x, z, out), 5 + s.dx, 1 + s.dz),
     ).toBeCloseTo(s.h, 4);
+  });
+
+  it('keeps its phases from one update to the next', () => {
+    const moving = new GerstnerWaves(waves.waves);
+    const before = moving.sample(2, 3).h;
+    moving.update(2.5);
+    expect(moving.phases()).toEqual(waves.phases());
+    expect(moving.sample(2, 3)).toEqual(waves.sample(2, 3));
+    expect(moving.sample(2, 3).h).not.toBe(before);
+    // Another time than the waves': computed apart.
+    expect(moving.phases(0)[1]).toBeCloseTo(1, 12);
   });
 
   it('wraps the phases: exact at any time', () => {
@@ -409,5 +430,96 @@ describe('ocean', () => {
       renderer.render({ items: [ocean], camera, surface }),
     ).not.toThrow();
     expect(renderer.stats.get('scene')?.drawn).toBe(1);
+  });
+});
+
+describe('ocean spectrum and renderer', () => {
+  const sky = (backend: ReturnType<typeof fakeBackend>['backend']) => ({
+    texture: backend.textures.createTexture({
+      type: 'cube',
+      format: 'rgba8unorm',
+      dimensions: { width: 4, height: 4, layers: 6 },
+    }),
+    sampler: backend.textures.createSampler(),
+    levels: 3,
+  });
+
+  it('needs 8 points along its grids, a workgroup', () => {
+    const { backend } = fakeBackend({ compute: true, storageBuffers: true });
+    expect(
+      () => new OceanSpectrum(backend, { resolution: 4, cascades: [50] }),
+    ).toThrow(/8 or more/);
+  });
+
+  it('evaluates the fields of the CPU once per update, without readback', () => {
+    const { backend } = fakeBackend({ compute: true, storageBuffers: true });
+    const spectrum = new OceanSpectrum(backend, {
+      resolution: 8,
+      cascades: [50],
+      readback: false,
+    });
+    spectrum.update(1);
+    const fields = spectrum.fields;
+    expect(spectrum.fields).toBe(fields);
+    spectrum.heightAt(1, 2);
+    expect(spectrum.fields).toBe(fields);
+    spectrum.update(2);
+    const next = spectrum.fields;
+    expect(next).not.toBe(fields);
+    expect(spectrum.fieldsTime).toBe(2);
+    expect(spectrum.fields).toBe(next);
+    spectrum.destroy();
+  });
+
+  it('follows the look of the water behind it, and frees its samplers', () => {
+    const { backend } = fakeBackend({
+      objectTable: true,
+      compute: true,
+      storageBuffers: true,
+      renderableFormats: ['rgba16float'],
+    });
+    const ocean = new Ocean({
+      waves: new GerstnerWaves([
+        { direction: 0, wavelength: 10, amplitude: 1 },
+      ]),
+      environment: sky(backend),
+    });
+    // The samplers of the renderer, alive until destroyed.
+    let alive = 0;
+    const create = backend.textures.createSampler;
+    backend.textures.createSampler = (descriptor) => {
+      alive++;
+      const sampler = create(descriptor);
+      return { ...sampler, destroy: () => alive-- };
+    };
+    const renderer = new OceanRenderer(new Renderer(backend));
+    const camera = new Camera({
+      position: { x: 0, y: 10, z: 0 },
+      projection: {
+        type: 'perspective',
+        fov: 60,
+        aspect: 1,
+        near: 0.1,
+        far: 1000,
+      },
+    });
+    const frame = () =>
+      renderer.addPasses(new RenderGraph({ size: { width: 8, height: 8 } }), {
+        ocean,
+        camera,
+        items: [],
+      });
+    frame();
+    ocean.setLook({ environmentIntensity: 3 });
+    frame();
+    const background = (
+      renderer as unknown as {
+        _backgrounds: WeakMap<Ocean, { getValue(name: string): unknown }>;
+      }
+    )._backgrounds.get(ocean);
+    expect(background?.getValue('environmentIntensity')).toBe(3);
+    expect(alive).toBeGreaterThan(0);
+    renderer.destroy();
+    expect(alive).toBe(0);
   });
 });

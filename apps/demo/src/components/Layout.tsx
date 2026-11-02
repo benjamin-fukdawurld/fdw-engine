@@ -57,7 +57,12 @@ function EngineLayout({ children, onSurfaceReady }: Omit<Props, 'portable'>) {
     }
     if (isSurfaceReady) {
       console.log('Surface is ready');
-      onSurfaceReady?.(engine!, surface!, canvasRef.current!);
+      // A route that fails to set up (a model not loaded) tells it.
+      Promise.resolve()
+        .then(() => onSurfaceReady?.(engine!, surface!, canvasRef.current!))
+        .catch((error: unknown) =>
+          console.error('The demo failed to start:', error),
+        );
     }
   }, [isSurfaceReady, surfaceError, onSurfaceReady]);
 

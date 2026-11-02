@@ -201,28 +201,44 @@ export class History {
     return this._undone.map((command) => command.label).reverse();
   }
 
-  /** Undoes the last entry; false when there is none. */
+  /**
+   * Ends a gesture: the next command makes a new entry, even when the last
+   * one could absorb it (two drags of the same object, one after the other).
+   */
+  seal(): void {
+    this._mergeable = false;
+  }
+
+  /**
+   * Undoes the last entry; false when there is none. A command that throws
+   * stays where it was, to be undone again.
+   */
   undo(): boolean {
     if (!this.canUndo) {
       return false;
     }
-    const command = this._done.pop() as Command;
-    command.undo();
-    this._undone.push(command);
+    const command = this._done.at(-1) as Command;
     this._mergeable = false;
+    command.undo();
+    this._done.pop();
+    this._undone.push(command);
     this.changed();
     return true;
   }
 
-  /** Redoes the last entry undone; false when there is none. */
+  /**
+   * Redoes the last entry undone; false when there is none. A command that
+   * throws stays where it was, to be redone again.
+   */
   redo(): boolean {
     if (!this.canRedo) {
       return false;
     }
-    const command = this._undone.pop() as Command;
-    command.do();
-    this._done.push(command);
+    const command = this._undone.at(-1) as Command;
     this._mergeable = false;
+    command.do();
+    this._undone.pop();
+    this._done.push(command);
     this.changed();
     return true;
   }

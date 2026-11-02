@@ -27,13 +27,13 @@ export type { Value } from './ops';
 export type { WaveDerivatives, WaveShader } from './shader';
 export { clipmapGrid } from './clipmap';
 export type { ClipmapGrid, ClipmapOptions } from './clipmap';
-export { defaultWaterLook, oceanGraph } from './material';
+export { defaultWaterLook, oceanGraph, waterLookValues } from './material';
 export type { OceanGraphOptions, WaterLook } from './material';
 export { createSky, skyColor } from './sky';
 export type { SkyEnvironment, SkyOptions } from './sky';
 export { Ocean } from './Ocean';
 export type { OceanOptions, Waves } from './Ocean';
-export { OceanRenderer } from './OceanRenderer';
+export { OceanRenderer, toneMappingMaterial } from './OceanRenderer';
 export type { OceanPassesOptions, WaterItem } from './OceanRenderer';
 export { Buoyancy, boxPoints } from './Buoyancy';
 export type {

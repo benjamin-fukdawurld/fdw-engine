@@ -1,4 +1,4 @@
-import type { Surface } from '@fdw/engine-backend';
+import type { GpuSampler, Surface } from '@fdw/engine-backend';
 import {
   Material,
   Mesh,
@@ -9,13 +9,17 @@ import {
 import type {
   Camera,
   DirectionalLight,
-  MaterialValue,
   ScenePassesOptions,
   TextureHandle,
   WorldRenderItem,
 } from '@fdw/engine-core';
 import { Aabb } from '@fdw/engine-geometry';
-import { defaultWaterLook, Ops } from '@fdw/engine-ocean';
+import {
+  defaultWaterLook,
+  Ops,
+  toneMappingMaterial,
+  waterLookValues,
+} from '@fdw/engine-ocean';
 import type { SkyEnvironment, WaterLook } from '@fdw/engine-ocean';
 import { arrayType, BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
 import type {
@@ -24,7 +28,7 @@ import type {
   ToneMapping,
 } from '@fdw/engine-shader';
 import { freshWaterLook } from '../shallow/WaterSurface';
-import { toneMappingMaterial } from '../smoke/SmokeRenderer';
+
 import type { ParticleFluid } from './ParticleFluid';
 
 const vec4Array = arrayType(BuiltinTypes.vec4f);
@@ -394,6 +398,10 @@ export class ParticleFluidRenderer {
     { item: WorldRenderItem; material: Material }
   >();
   private readonly _passes: number;
+  // What the renderer made, destroyed with it: the meshes of the
+  // particles, the samplers.
+  private readonly _meshes: Mesh[] = [];
+  private readonly _samplers: GpuSampler[];
 
   constructor(renderer: Renderer, options: ParticleFluidRendererOptions) {
     this.renderer = renderer;
@@ -405,11 +413,6 @@ export class ParticleFluidRenderer {
       );
     }
     this._runner = new RenderGraphRunner(backend);
-    this._toneMapping = toneMappingMaterial(
-      renderer,
-      options.toneMapping ?? 'neutral',
-      options.encoding ?? 'srgb',
-    );
     const linear = backend.textures.createSampler({
       minFilter: 'linear',
       magFilter: 'linear',
@@ -422,6 +425,13 @@ export class ParticleFluidRenderer {
       wrapModeS: 'clamp-to-edge',
       wrapModeT: 'clamp-to-edge',
     });
+    this._samplers = [linear, nearest];
+    this._toneMapping = toneMappingMaterial(
+      renderer,
+      options.toneMapping ?? 'neutral',
+      options.encoding ?? 'srgb',
+      { label: 'fluids output', sampler: nearest },
+    );
     this._passes = options.smoothing ?? 3;
     const smooth = smoothDepthGraph();
     this._smoothing = [0, 1].map(
@@ -447,14 +457,14 @@ export class ParticleFluidRenderer {
         environment: environment.texture,
         environmentSampler: environment.sampler,
         environmentLevels: Math.max(environment.levels - 1, 0),
-        ...lookValues(look),
+        ...waterLookValues(look),
       },
     });
   }
 
   /** Changes how the liquid looks: any uniform of `WaterLook`. */
   setLook(look: Partial<WaterLook>): this {
-    for (const [name, value] of Object.entries(lookValues(look))) {
+    for (const [name, value] of Object.entries(waterLookValues(look))) {
       this.shading.setValue(name, value);
     }
     return this;
@@ -488,8 +498,10 @@ export class ParticleFluidRenderer {
         min.map((v) => v - radius) as [number, number, number],
         max.map((v) => v + radius) as [number, number, number],
       );
+      const mesh = particleQuads(liquid.layout.count);
+      this._meshes.push(mesh);
       const item: WorldRenderItem = {
-        mesh: particleQuads(liquid.layout.count),
+        mesh,
         material,
         castShadow: false,
         bounds,
@@ -611,16 +623,12 @@ export class ParticleFluidRenderer {
 
   destroy(): void {
     this._runner.destroy();
-  }
-}
-
-// The uniforms of a look.
-function lookValues(look: Partial<WaterLook>): Record<string, MaterialValue> {
-  const values: Record<string, MaterialValue> = {};
-  for (const [name, value] of Object.entries(look)) {
-    if (value !== undefined) {
-      values[name] = typeof value === 'number' ? value : [...value];
+    for (const mesh of this._meshes) {
+      mesh.destroy();
+    }
+    this._meshes.length = 0;
+    for (const sampler of this._samplers) {
+      sampler.destroy();
     }
   }
-  return values;
 }

@@ -124,6 +124,10 @@ export interface GpuRenderPipeline {
   // vertex buffer to bind: buffers with no attribute read by the program are
   // left out.
   readonly vertexBuffers: readonly number[];
+  // Frees the native objects of the pipeline (a WebGL2 program and vertex
+  // array, a Vulkan pipeline). Not before the submission of the commands
+  // that use it; idempotent.
+  destroy(): void;
 }
 
 export interface GpuBindGroupLayout {

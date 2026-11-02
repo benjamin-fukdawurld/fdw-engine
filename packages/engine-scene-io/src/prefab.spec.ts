@@ -184,3 +184,45 @@ describe('instances of scenes', () => {
     });
   });
 });
+
+describe('scenes including scenes', () => {
+  const including = (...scenes: string[]) => ({
+    format: 'fdw-scene',
+    schemaVersion: 1,
+    nodes: scenes.map((scene) => ({ name: scene, instance: { scene } })),
+  });
+  const json = (document: object) =>
+    new TextEncoder().encode(JSON.stringify(document));
+
+  it('refuses a scene including itself, directly or not', async () => {
+    const { store, mem } = testStore({});
+    installSceneIo(store);
+    mem.set('a.scene.json', json(including('a.scene.json')));
+    mem.set('b.scene.json', json(including('c.scene.json')));
+    mem.set('c.scene.json', json(including('b.scene.json')));
+    const room = new Scene();
+    const before = room.world.count;
+    for (const uri of ['a.scene.json', 'b.scene.json']) {
+      const handle = store.load(SceneDataType, uri);
+      await expect(instantiateScene(handle, room, { store })).rejects.toThrow(
+        /includes itself/,
+      );
+      handle.release();
+    }
+    // The nodes made before the cycle was found are removed.
+    expect(room.world.count).toBe(before);
+  });
+
+  it('refuses scenes nested too deep', async () => {
+    const { store, mem } = testStore({});
+    installSceneIo(store);
+    for (let i = 0; i < 40; i++)
+      mem.set(`s${i}.scene.json`, json(including(`s${i + 1}.scene.json`)));
+    mem.set('s40.scene.json', json(including()));
+    const handle = store.load(SceneDataType, 's0.scene.json');
+    await expect(
+      instantiateScene(handle, new Scene(), { store }),
+    ).rejects.toThrow(/nested/);
+    handle.release();
+  });
+});

@@ -81,6 +81,14 @@ class DocumentCommand<D> implements Command {
   }
 }
 
+// The commands that are whole gestures: not merged with the next one.
+const gestures = new Set<GraphCommand['op']>([
+  'move',
+  'label',
+  'editNote',
+  'editGroup',
+]);
+
 const sameRef = (a: PortRef, b: PortRef) =>
   a.node === b.node && a.port === b.port;
 const errorKey = (d: Diagnostic) =>
@@ -253,6 +261,10 @@ export class GraphSession<D extends GraphDocument = GraphDocument> {
       return this.#execute(command);
     } catch (error) {
       return { refused: (error as Error).message };
+    } finally {
+      // Sent once per gesture (at the end of a drag, a text validated): two
+      // drags of the same nodes, two renames, are two steps.
+      if (gestures.has(command.op)) this.history.seal();
     }
   }
 
@@ -308,15 +320,30 @@ export class GraphSession<D extends GraphDocument = GraphDocument> {
         return this.#change(`Add ${template?.title ?? type}`, next);
       }
       case 'remove': {
-        const ids = new Set(command.ids);
+        // Only what is there: nothing removed is no step (nor a change).
+        const there = new Set([
+          ...body.nodes.map((node) => node.id),
+          ...(body.layout?.notes ?? []).map((note) => note.id),
+          ...(body.layout?.groups ?? []).map((group) => group.id),
+        ]);
+        const ids = new Set(command.ids.filter((id) => there.has(id)));
+        let next = command.edges?.length
+          ? disconnect(body, command.edges)
+          : body;
+        const edges = body.edges.length - next.edges.length;
+        if (ids.size === 0 && edges === 0) return {};
         const nodes = body.nodes.filter((node) => ids.has(node.id));
-        let next = removeNodes(body, ids);
-        next = removeDecorations(next, ids);
-        const count = ids.size;
+        if (ids.size > 0) {
+          next = removeNodes(next, ids);
+          next = removeDecorations(next, ids);
+        }
+        const count = ids.size + edges;
         return this.#change(
-          nodes.length === 1 && count === 1
-            ? `Delete ${this.#title(nodes[0])}`
-            : `Delete ${plural(count, 'item')}`,
+          ids.size === 0
+            ? 'Disconnect'
+            : nodes.length === 1 && count === 1
+              ? `Delete ${this.#title(nodes[0])}`
+              : `Delete ${plural(count, 'item')}`,
           next,
         );
       }

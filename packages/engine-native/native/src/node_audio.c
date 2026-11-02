@@ -56,13 +56,29 @@ static void finalize_blob(napi_env env, void *data, void *hint) {
   free(ref);
 }
 
-static napi_value make_external(napi_env env, void *ref, napi_finalize finalize,
+// The handle of a ref, which it owns: NULL when it cannot be created (the
+// ref then finalized), with no exception thrown (the completions of the
+// thread pool reject instead).
+static napi_value wrap_external(napi_env env, void *ref,
+                                napi_finalize finalize,
                                 const napi_type_tag *tag) {
   napi_value external;
-  if (napi_create_external(env, ref, finalize, NULL, &external) != napi_ok ||
-      napi_type_tag_object(env, external, tag) != napi_ok) {
-    napi_throw_error(env, NULL, "Cannot create the handle");
+  if (napi_create_external(env, ref, finalize, NULL, &external) != napi_ok) {
+    finalize(env, ref, NULL);
     return NULL;
+  }
+  // Untagged, it is finalized when collected.
+  if (napi_type_tag_object(env, external, tag) != napi_ok) {
+    return NULL;
+  }
+  return external;
+}
+
+static napi_value make_external(napi_env env, void *ref, napi_finalize finalize,
+                                const napi_type_tag *tag) {
+  napi_value external = wrap_external(env, ref, finalize, tag);
+  if (!external) {
+    napi_throw_error(env, NULL, "Cannot create the handle");
   }
   return external;
 }
@@ -340,9 +356,9 @@ static napi_value js_clip_create(napi_env env, napi_callback_info info) {
 typedef struct decode_job {
   napi_async_work work;
   napi_deferred deferred;
-  // Keeps the input alive while the pool reads it.
-  napi_ref input;
-  const void *bytes;
+  // A copy of the input: the input can be detached (transferred) while the
+  // pool reads it.
+  void *bytes;
   size_t length;
   // A clip (decoded), or a blob (checked, kept encoded).
   int stream;
@@ -372,14 +388,14 @@ static void complete_decode(napi_env env, napi_status status, void *data) {
       if (ref) {
         ref->blob = job->blob;
         job->blob = NULL;
-        result = make_external(env, ref, finalize_blob, &blob_tag);
+        result = wrap_external(env, ref, finalize_blob, &blob_tag);
       }
     } else {
       clip_ref *ref = (clip_ref *)calloc(1, sizeof(clip_ref));
       if (ref) {
         ref->clip = job->clip;
         job->clip = NULL;
-        result = make_external(env, ref, finalize_clip, &clip_tag);
+        result = wrap_external(env, ref, finalize_clip, &clip_tag);
       }
     }
     if (!result) {
@@ -396,8 +412,8 @@ static void complete_decode(napi_env env, napi_status status, void *data) {
   }
   fdw_audio_clip_release(job->clip);
   fdw_audio_blob_release(job->blob);
-  napi_delete_reference(env, job->input);
   napi_delete_async_work(env, job->work);
+  free(job->bytes);
   free(job);
 }
 
@@ -408,28 +424,57 @@ static napi_value start_decode(napi_env env, napi_callback_info info,
     napi_throw_type_error(env, NULL, "Expected the bytes of the file");
     return NULL;
   }
-  decode_job *job = (decode_job *)calloc(1, sizeof(decode_job));
-  if (!job) {
-    napi_throw_error(env, NULL, "Out of memory");
-    return NULL;
-  }
-  job->stream = stream;
-  if (!bytes_of(env, argv[0], &job->bytes, &job->length)) {
-    free(job);
+  const void *bytes = NULL;
+  size_t length = 0;
+  if (!bytes_of(env, argv[0], &bytes, &length)) {
     napi_throw_type_error(env, NULL, "Expected a Uint8Array");
     return NULL;
   }
+  // A copy, read by the pool: the input can be detached (transferred) once
+  // this call returns.
+  decode_job *job = (decode_job *)calloc(1, sizeof(decode_job));
+  if (job) {
+    job->bytes = malloc(length > 0 ? length : 1);
+  }
+  if (!job || !job->bytes) {
+    free(job);
+    napi_throw_error(env, NULL, "Out of memory");
+    return NULL;
+  }
+  if (length > 0) {
+    memcpy(job->bytes, bytes, length);
+  }
+  job->length = length;
+  job->stream = stream;
   napi_value promise;
   napi_value name;
-  if (napi_create_reference(env, argv[0], 1, &job->input) != napi_ok ||
-      napi_create_promise(env, &job->deferred, &promise) != napi_ok ||
-      napi_create_string_utf8(env, "fdw:decodeAudio", NAPI_AUTO_LENGTH,
-                              &name) != napi_ok ||
+  if (napi_create_string_utf8(env, "fdw:decodeAudio", NAPI_AUTO_LENGTH, &name) !=
+          napi_ok ||
       napi_create_async_work(env, NULL, name, execute_decode, complete_decode,
-                             job, &job->work) != napi_ok ||
-      napi_queue_async_work(env, job->work) != napi_ok) {
+                             job, &job->work) != napi_ok) {
+    free(job->bytes);
+    free(job);
     napi_throw_error(env, NULL, "Cannot start the decoding");
     return NULL;
+  }
+  if (napi_create_promise(env, &job->deferred, &promise) != napi_ok) {
+    napi_delete_async_work(env, job->work);
+    free(job->bytes);
+    free(job);
+    napi_throw_error(env, NULL, "Cannot start the decoding");
+    return NULL;
+  }
+  if (napi_queue_async_work(env, job->work) != napi_ok) {
+    // The promise is given: rejected.
+    napi_value message;
+    napi_value error;
+    napi_create_string_utf8(env, "Cannot start the decoding",
+                            NAPI_AUTO_LENGTH, &message);
+    napi_create_error(env, NULL, message, &error);
+    napi_reject_deferred(env, job->deferred, error);
+    napi_delete_async_work(env, job->work);
+    free(job->bytes);
+    free(job);
   }
   return promise;
 }

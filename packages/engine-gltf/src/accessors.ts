@@ -39,8 +39,41 @@ function arrayType(componentType: number): TypedArrayConstructor {
   return type;
 }
 
+// The indices of sparse accessors and of primitives: unsigned only.
+const isUnsigned = (componentType: number) =>
+  componentType === GltfComponentType.UNSIGNED_BYTE ||
+  componentType === GltfComponentType.UNSIGNED_SHORT ||
+  componentType === GltfComponentType.UNSIGNED_INT;
+
+const isCount = (value: number) => Number.isSafeInteger(value) && value >= 0;
+
+/**
+ * The end of `count` elements of `size` bytes, `stride` bytes apart from
+ * `offset`, checked against `length` before anything is allocated: a
+ * negative offset, overlapping elements (a stride shorter than an element)
+ * or a range past the end fail.
+ */
+function elementsEnd(
+  length: number,
+  offset: number,
+  stride: number,
+  size: number,
+  count: number,
+): number {
+  if (!isCount(offset))
+    throw new Error(`Invalid accessor byteOffset ${offset}`);
+  if (!isCount(stride) || stride < size)
+    throw new Error(
+      `Accessor stride ${stride} overlaps its ${size}-byte elements`,
+    );
+  const end = count === 0 ? offset : offset + (count - 1) * stride + size;
+  if (end > length)
+    throw new Error('Accessor out of the bounds of its buffer view');
+  return end;
+}
+
 // Copies `count` elements of `size` bytes, `stride` bytes apart in `source`,
-// tightly into `target`.
+// tightly into `target` (the range checked by `elementsEnd`).
 function copyElements(
   source: Uint8Array,
   offset: number,
@@ -50,8 +83,6 @@ function copyElements(
   target: Uint8Array,
 ) {
   if (count === 0) return;
-  if (offset + (count - 1) * stride + size > source.byteLength)
-    throw new Error('Accessor out of the bounds of its buffer view');
   if (stride === size) {
     target.set(source.subarray(offset, offset + count * size));
     return;
@@ -80,28 +111,64 @@ export function accessorReader(
     const type = arrayType(accessor.componentType);
     const components = componentCounts[accessor.type];
     if (!components) throw new Error(`Unknown accessor type ${accessor.type}`);
-    const array = new type(accessor.count * components);
+    if (!isCount(accessor.count))
+      throw new Error(`Invalid count ${accessor.count} of accessor ${index}`);
     const size = components * type.BYTES_PER_ELEMENT;
-    const bytes = new Uint8Array(array.buffer);
-    // Without a buffer view, the values are zeros (and sparse ones).
+    // The ranges read are checked before the arrays are allocated: a count
+    // the buffer views cannot hold fails without allocating it.
+    let source: Uint8Array | undefined;
+    const offset = accessor.byteOffset ?? 0;
+    const stride =
+      accessor.bufferView !== undefined
+        ? json.bufferViews?.[accessor.bufferView]?.byteStride || size
+        : size;
     if (accessor.bufferView !== undefined) {
-      const stride =
-        json.bufferViews?.[accessor.bufferView]?.byteStride || size;
-      copyElements(
-        await bufferView(accessor.bufferView),
-        accessor.byteOffset ?? 0,
-        stride,
-        size,
-        accessor.count,
-        bytes,
-      );
+      source = await bufferView(accessor.bufferView);
+      elementsEnd(source.byteLength, offset, stride, size, accessor.count);
     }
     const sparse = accessor.sparse;
+    let sparseSources: [Uint8Array, Uint8Array] | undefined;
     if (sparse && sparse.count > 0) {
+      if (!isCount(sparse.count) || sparse.count > accessor.count)
+        throw new Error(
+          `Invalid sparse count ${sparse.count} of accessor ${index}`,
+        );
+      if (!isUnsigned(sparse.indices.componentType))
+        throw new Error(
+          `The sparse indices of accessor ${index} are not unsigned`,
+        );
+      const indexSize = arrayType(
+        sparse.indices.componentType,
+      ).BYTES_PER_ELEMENT;
+      sparseSources = [
+        await bufferView(sparse.indices.bufferView),
+        await bufferView(sparse.values.bufferView),
+      ];
+      elementsEnd(
+        sparseSources[0].byteLength,
+        sparse.indices.byteOffset ?? 0,
+        indexSize,
+        indexSize,
+        sparse.count,
+      );
+      elementsEnd(
+        sparseSources[1].byteLength,
+        sparse.values.byteOffset ?? 0,
+        size,
+        size,
+        sparse.count,
+      );
+    }
+    const array = new type(accessor.count * components);
+    const bytes = new Uint8Array(array.buffer);
+    // Without a buffer view, the values are zeros (and sparse ones).
+    if (source)
+      copyElements(source, offset, stride, size, accessor.count, bytes);
+    if (sparse && sparseSources) {
       const indexType = arrayType(sparse.indices.componentType);
       const indices = new indexType(sparse.count);
       copyElements(
-        await bufferView(sparse.indices.bufferView),
+        sparseSources[0],
         sparse.indices.byteOffset ?? 0,
         indexType.BYTES_PER_ELEMENT,
         indexType.BYTES_PER_ELEMENT,
@@ -110,7 +177,7 @@ export function accessorReader(
       );
       const values = new Uint8Array(sparse.count * size);
       copyElements(
-        await bufferView(sparse.values.bufferView),
+        sparseSources[1],
         sparse.values.byteOffset ?? 0,
         size,
         size,
@@ -154,8 +221,8 @@ export async function packAccessors(
   const accessors: GltfAccessor[] = [];
   const bufferViews: GltfBufferView[] = [];
   const views: Uint8Array<ArrayBuffer>[] = [];
-  // `count` elements of `size` bytes, `stride` apart: a range past the end
-  // is cut, and fails in the worker as it would here.
+  // `count` elements of `size` bytes, `stride` apart: an invalid range
+  // fails here, as it would in the worker.
   const range = async (
     index: number,
     offset: number,
@@ -164,7 +231,7 @@ export async function packAccessors(
     count: number,
   ): Promise<number> => {
     const bytes = await bufferView(index);
-    const end = count === 0 ? offset : offset + (count - 1) * stride + size;
+    const end = elementsEnd(bytes.byteLength, offset, stride, size, count);
     views.push(bytes.slice(offset, end));
     return (
       bufferViews.push({
@@ -180,6 +247,8 @@ export async function packAccessors(
     if (!accessor) throw new Error(`Missing accessor ${index}`);
     const components = componentCounts[accessor.type];
     if (!components) throw new Error(`Unknown accessor type ${accessor.type}`);
+    if (!isCount(accessor.count) || !isCount(accessor.sparse?.count ?? 0))
+      throw new Error(`Invalid count of accessor ${index}`);
     const size =
       components * arrayType(accessor.componentType).BYTES_PER_ELEMENT;
     let packed: GltfAccessor = { ...accessor, byteOffset: 0 };

@@ -51,7 +51,8 @@ constexpr FormatInfo formats[] = {
     {"depth16unorm", VK_FORMAT_D16_UNORM, 2, VK_IMAGE_ASPECT_DEPTH_BIT},
     {"depth24plus", VK_FORMAT_D32_SFLOAT, 4, VK_IMAGE_ASPECT_DEPTH_BIT},
     {"depth32float", VK_FORMAT_D32_SFLOAT, 4, VK_IMAGE_ASPECT_DEPTH_BIT},
-    {"depth24plus-stencil8", VK_FORMAT_D32_SFLOAT_S8_UINT, 8,
+    // The copies see the depth only (wholeTexture): 4 bytes per pixel.
+    {"depth24plus-stencil8", VK_FORMAT_D32_SFLOAT_S8_UINT, 4,
      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT},
     // Compressed formats, by blocks of 4 × 4 pixels, where the device has
     // them (fdw_vk_format_supported).
@@ -373,6 +374,11 @@ void fdw_vk_texture_destroy(fdw_vk_context *context, fdw_vk_texture *texture) {
 
 uint32_t fdw_vk_texture_id(const fdw_vk_texture *texture) {
   return texture->id;
+}
+
+fdw_vk_texture *fdw_vk_texture_find(fdw_vk_context *context, uint32_t id) {
+  const auto found = context->textures.find(id);
+  return found == context->textures.end() ? nullptr : found->second;
 }
 
 uint32_t fdw_vk_texture_pixel_size(const fdw_vk_texture *texture) {

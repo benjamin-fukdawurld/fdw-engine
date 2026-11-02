@@ -141,6 +141,10 @@ fdw_vk_texture_create(fdw_vk_context *context,
 FDW_VK_API void fdw_vk_texture_destroy(fdw_vk_context *context,
                                        fdw_vk_texture *texture);
 FDW_VK_API uint32_t fdw_vk_texture_id(const fdw_vk_texture *texture);
+// The texture of an id, or NULL once destroyed (the images of a swapchain
+// too, when it is recreated or destroyed).
+FDW_VK_API fdw_vk_texture *fdw_vk_texture_find(fdw_vk_context *context,
+                                               uint32_t id);
 // Bytes per pixel of the format of a texture.
 FDW_VK_API uint32_t fdw_vk_texture_pixel_size(const fdw_vk_texture *texture);
 // Writes the whole first level (every layer), as queue.writeTexture: rows

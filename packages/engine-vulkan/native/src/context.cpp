@@ -101,6 +101,9 @@ uint64_t submit(fdw_vk_context *context,
   const VkResult result =
       vkQueueSubmit2(context->queue, 1, &info, VK_NULL_HANDLE);
   if (result != VK_SUCCESS) {
+    // Not waited for: the next submission waits for the images still.
+    context->pendingWaits.insert(context->pendingWaits.begin(), waits.begin(),
+                                 waits.end());
     fail("vkQueueSubmit2", result);
     return 0;
   }

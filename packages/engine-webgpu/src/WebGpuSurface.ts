@@ -11,6 +11,9 @@ export class WebGpuSurface implements Surface {
   readonly config: WebGpuSurfaceConfig;
   context: GPUCanvasContext;
   textureFormat?: GPUTextureFormat;
+  // The view of the current texture, created once per texture.
+  private _texture?: GPUTexture;
+  private _view?: GPUTextureView;
 
   constructor(canvas: HTMLCanvasElement, config: WebGpuSurfaceConfig = {}) {
     const context = canvas.getContext('webgpu');
@@ -26,12 +29,19 @@ export class WebGpuSurface implements Surface {
       throw new Error('Engine must be a WebGpuEngine');
     }
 
-    if (engine.state.value !== 'ready') {
-      throw new Error('Engine must be in ready state to initialize surface');
+    // A paused engine keeps its device.
+    const device = engine.device;
+    if (
+      (engine.state.value !== 'ready' && engine.state.value !== 'paused') ||
+      !device
+    ) {
+      throw new Error(
+        'Engine must be in ready or paused state to initialize surface',
+      );
     }
 
-    const device = engine.device!;
-    this.textureFormat = navigator.gpu.getPreferredCanvasFormat();
+    // The format of the entry point of the engine (Dawn outside a browser).
+    this.textureFormat = engine.gpu?.getPreferredCanvasFormat() ?? 'bgra8unorm';
     this.context.configure({
       device,
       format: this.textureFormat,
@@ -65,7 +75,7 @@ export class WebGpuSurface implements Surface {
   getCurrentTarget(): WebGpuRenderTarget {
     const texture = this.context.getCurrentTexture();
     return new WebGpuRenderTarget(
-      texture.createView(),
+      this.viewOf(texture),
       texture.width,
       texture.height,
       this.format,
@@ -77,8 +87,17 @@ export class WebGpuSurface implements Surface {
     return;
   }
 
-  get textureView() {
-    return this.context.getCurrentTexture().createView();
+  get textureView(): GPUTextureView {
+    return this.viewOf(this.context.getCurrentTexture());
+  }
+
+  // The context returns the same texture until the frame is presented.
+  private viewOf(texture: GPUTexture): GPUTextureView {
+    if (this._texture !== texture || !this._view) {
+      this._texture = texture;
+      this._view = texture.createView();
+    }
+    return this._view;
   }
 
   get colorAttachment(): GPURenderPassColorAttachment {

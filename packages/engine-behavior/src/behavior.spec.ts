@@ -429,6 +429,42 @@ describe.each<BehaviorMode>(['interpret', 'compile'])(
       );
     });
 
+    it('counts the same nodes against maxSteps, the event and loop turns included', () => {
+      // The event node and two records: 3 nodes.
+      const chain = builder();
+      const a = recordNode(chain, chain.onUpdate().then, 'a');
+      recordNode(chain, a.then, 'b');
+      const two = run(chain.build(), mode, { maxSteps: 2 });
+      two.system.attach(0);
+      expect(() => two.system.run(0.1)).toThrow('more than 2 nodes');
+      const three = run(chain.build(), mode, { maxSteps: 3 });
+      three.system.attach(0);
+      three.system.run(0.1);
+      expect(three.host.calls).toEqual(['a', 'b']);
+      // A loop of empty turns: each turn counts.
+      const loop = builder();
+      loop.forLoop(loop.onUpdate().then, 1, 1e9);
+      const { system } = run(loop.build(), mode, { maxSteps: 50 });
+      system.attach(0);
+      expect(() => system.run(0.1)).toThrow('more than 50 nodes');
+    });
+
+    it('waits no time for a delay of NaN seconds, and the others still wake', () => {
+      const g = builder();
+      g.variable('seconds', 'number', Number.NaN);
+      const update = g.onUpdate();
+      const seq = g.sequence(update.then, 2);
+      const bad = g.delay(seq.exec('then0'), g.get('seconds'));
+      recordNode(g, bad.then, 'nan');
+      const good = g.delay(seq.exec('then1'), 0.1);
+      recordNode(g, good.then, 'good');
+      const { system, host } = run(g.build(), mode);
+      system.attach(0);
+      for (let i = 0; i < 3; i++) system.run(0.1);
+      expect(host.calls).toContain('nan');
+      expect(host.calls).toContain('good');
+    });
+
     it('starts afresh after a node threw', () => {
       const g = builder();
       g.event('go');

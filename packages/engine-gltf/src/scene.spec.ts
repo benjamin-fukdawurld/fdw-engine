@@ -272,6 +272,39 @@ describe('glTF scenes: import', () => {
     expect([...data.batches[0].positions]).toEqual([0, 0, 0, 5, 0, 0]);
     expect([...data.batches[0].rotations]).toEqual([0, 0, 0, 1, 0, 0, 0, 1]);
   });
+
+  it('reads a file whose nodes are parents of each other, the cycle cut', async () => {
+    const b = new GltfBuilder();
+    b.json.extensionsUsed = ['KHR_physics_rigid_bodies', 'KHR_implicit_shapes'];
+    b.json.extensions = {
+      KHR_implicit_shapes: {
+        shapes: [{ type: 'sphere', sphere: { radius: 0.5 } }],
+      },
+    };
+    // 0 and 1 are each other's parent, 1 has a collider (its parents were
+    // walked up forever); 2 is the child of 0 and of 1, and in the scene too.
+    b.add('nodes', { name: 'a', children: [1, 2] });
+    b.add('nodes', {
+      name: 'b',
+      children: [0, 2],
+      extensions: {
+        KHR_physics_rigid_bodies: { collider: { geometry: { shape: 0 } } },
+      },
+    });
+    b.add('nodes', { name: 'c' });
+    b.add('scenes', { nodes: [0, 1, 2, 0] });
+    b.json.scene = 0;
+    const { scene, warnings } = setup({ 'cycle.gltf': JSON.stringify(b.json) });
+    const data = await scene('cycle.gltf');
+    // Each node once, under its first parent.
+    expect(data.nodes.map((n) => [n.name, n.parent])).toEqual([
+      ['a', undefined],
+      ['b', 0],
+      ['c', 0],
+    ]);
+    expect(data.nodes[1].components?.['physics body']).toBeDefined();
+    expect(warnings.some((w) => /cycle/.test(w))).toBe(true);
+  });
 });
 
 function tintedGraph() {

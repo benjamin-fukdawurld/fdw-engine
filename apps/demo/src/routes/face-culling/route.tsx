@@ -251,6 +251,17 @@ function RouteComponent() {
         passEncoder.end();
 
         wengine.device!.queue.submit([commandEncoder.finish()]);
+        // Drawn once: the GPU frees them when the work submitted is done.
+        for (const resource of [
+          vertexDataBuffer,
+          indexDataBuffer,
+          offsetBuffer,
+          modelMatrixBuffer,
+          viewMatrixBuffer,
+          projectionMatrixBuffer,
+        ]) {
+          resource.destroy();
+        }
       }}
     />
   );

@@ -285,18 +285,34 @@ void DescriptorHeap::release(uint32_t first, uint32_t count) {
 }
 
 CommandList *beginList(fdw_dx_context *context) {
+  if (context->lost) {
+    fail("The Direct3D 12 device is lost: a submission could not be "
+         "signalled");
+    return nullptr;
+  }
   const uint64_t done = completed(context);
   CommandList *chosen = nullptr;
-  for (auto &candidate : context->lists) {
-    if (!candidate->recording && candidate->submission <= done) {
-      chosen = candidate.get();
+  for (auto candidate = context->lists.begin();
+       candidate != context->lists.end();) {
+    CommandList *entry = candidate->get();
+    if (entry->recording || entry->submission > done) {
+      ++candidate;
+      continue;
+    }
+    HRESULT result = entry->allocator->Reset();
+    if (SUCCEEDED(result)) {
+      result = entry->list->Reset(entry->allocator.Get(), nullptr);
+    }
+    if (SUCCEEDED(result)) {
+      chosen = entry;
       break;
     }
+    // A list that cannot be reset is dropped: another one is created.
+    candidate = context->lists.erase(candidate);
   }
   ID3D12Device *device = context->device.Get();
   if (chosen) {
-    chosen->allocator->Reset();
-    chosen->list->Reset(chosen->allocator.Get(), nullptr);
+    chosen->textureStates.clear();
   } else {
     auto list = std::make_unique<CommandList>();
     HRESULT result = device->CreateCommandAllocator(
@@ -343,22 +359,48 @@ uint64_t submit(fdw_dx_context *context, CommandList *list) {
   if (list) {
     executed.push_back(list);
   }
-  bool failed = false;
+  // A list that fails to close never runs, nor do those after it (they
+  // count on its barriers).
+  std::vector<CommandList *> dropped;
   for (CommandList *entry : executed) {
     entry->recording = false;
     const HRESULT result = entry->list->Close();
-    if (FAILED(result)) {
-      fail("Closing a command list", result);
-      failed = true;
+    if (FAILED(result) || !dropped.empty()) {
+      if (dropped.empty()) {
+        fail("Closing a command list", result);
+      }
+      dropped.push_back(entry);
       continue;
     }
     ID3D12CommandList *lists[] = {entry->list.Get()};
     context->queue->ExecuteCommandLists(1, lists);
   }
+  if (!dropped.empty()) {
+    // The textures are back in their states before the lists dropped (the
+    // last one first), and the lists are replaced: a list that failed to
+    // close cannot be reset.
+    for (auto entry = dropped.rbegin(); entry != dropped.rend(); ++entry) {
+      for (const auto &[id, state] : (*entry)->textureStates) {
+        const auto texture = context->textures.find(id);
+        if (texture != context->textures.end()) {
+          texture->second->state = state;
+        }
+      }
+    }
+    for (CommandList *entry : dropped) {
+      executed.erase(std::find(executed.begin(), executed.end(), entry));
+      context->lists.erase(std::find_if(
+          context->lists.begin(), context->lists.end(),
+          [entry](const auto &list) { return list.get() == entry; }));
+    }
+  }
   const uint64_t value = context->submitted + 1;
   const HRESULT result = context->queue->Signal(context->fence.Get(), value);
   takeDebugMessages(context);
   if (FAILED(result)) {
+    // The allocators of the lists executed may still be in use, and will
+    // never be known done: the context is lost.
+    context->lost = true;
     fail("Signal", result);
     return 0;
   }
@@ -366,7 +408,7 @@ uint64_t submit(fdw_dx_context *context, CommandList *list) {
   for (CommandList *entry : executed) {
     entry->submission = value;
   }
-  return failed ? 0 : value;
+  return dropped.empty() ? value : 0;
 }
 
 uint64_t completed(fdw_dx_context *context) {
@@ -577,11 +619,13 @@ int fdw_dx_wait_idle(fdw_dx_context *context) {
   // A new signal, after everything in the queue: the presentations too,
   // queued after the submission of their frame.
   const uint64_t last = submit(context);
-  if (last == 0 || waitFor(context, last) != 0) {
+  // After a list that failed to close, what was signalled is still waited
+  // for (the destruction of the context counts on it).
+  if (context->lost || waitFor(context, context->submitted) != 0) {
     return -1;
   }
   collect(context);
-  return 0;
+  return last == 0 ? -1 : 0;
 }
 
 int fdw_dx_flush(fdw_dx_context *context) {

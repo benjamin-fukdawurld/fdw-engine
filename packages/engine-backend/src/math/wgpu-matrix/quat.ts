@@ -115,9 +115,9 @@ export const QuatApi: IQuatApi = {
     return quat.clone(mat);
   },
   equals: (a: Float32Array, b: Float32Array, epsilon?: number): boolean => {
-    return a.every(
-      (value, index) => Math.abs(value - b[index]) <= (epsilon ?? 0),
-    );
+    // The same default tolerance as the other primitives.
+    epsilon = epsilon ?? 1e-6;
+    return a.every((value, index) => Math.abs(value - b[index]) < epsilon);
   },
   toArray: (mat: Float32Array, out?: number[]): number[] => {
     out = out ?? [];

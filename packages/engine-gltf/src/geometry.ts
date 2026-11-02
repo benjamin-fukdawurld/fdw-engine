@@ -127,6 +127,19 @@ export function vertexAttribute(
   };
 }
 
+/** The largest of indices, checked against the vertices they index. */
+export function maxIndex(
+  indices: ArrayLike<number>,
+  vertexCount: number,
+): number {
+  let max = 0;
+  for (let i = 0; i < indices.length; i++)
+    if (indices[i] > max) max = indices[i];
+  if (indices.length > 0 && max >= vertexCount)
+    throw new Error(`Index ${max} out of the ${vertexCount} vertices`);
+  return max;
+}
+
 /** Triangle lists from strips and fans; the indices of a list as they are. */
 export function triangleList(
   mode: number,
@@ -137,8 +150,10 @@ export function triangleList(
   const at = indices ? (i: number) => indices[i] : (i: number) => i;
   const count = indices ? indices.length : vertexCount;
   const triangles = Math.max(count - 2, 0);
+  // The type of the largest index written, not of the vertex count.
+  const max = indices ? maxIndex(indices, vertexCount) : vertexCount - 1;
   const out =
-    vertexCount > 65536
+    max > 65535
       ? new Uint32Array(triangles * 3)
       : new Uint16Array(triangles * 3);
   for (let i = 0; i < triangles; i++) {
@@ -275,6 +290,9 @@ export function primitiveMeshData({
       array,
     };
   });
+  // An index past the vertices would read garbage (NaN normals, a wrong
+  // index type): the primitive fails.
+  if (indices) maxIndex(indices, vertexCount);
   let list = triangleList(mode, indices, vertexCount);
   let count = vertexCount;
   if (normals && !attributes.has('NORMAL')) {
@@ -348,7 +366,14 @@ export async function readPrimitive(
   let indices: ArrayLike<number> | undefined = decoded?.indices;
   if (!indices && indexAccessor !== undefined) {
     const data = await accessor(indexAccessor);
-    if (data.components !== 1 || data.array instanceof Float32Array)
+    if (
+      data.components !== 1 ||
+      !(
+        data.array instanceof Uint8Array ||
+        data.array instanceof Uint16Array ||
+        data.array instanceof Uint32Array
+      )
+    )
       throw new Error('Indices must be unsigned scalars');
     indices = data.array;
   }

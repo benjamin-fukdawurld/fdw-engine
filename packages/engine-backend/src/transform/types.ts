@@ -1,6 +1,5 @@
-import { SnapshotProvider } from '../utils/types';
 import { TransformData } from '../types';
-import { IQuat, IVec3, Mat3, Mat4 } from '../math';
+import { IQuat, IVec3 } from '../math';
 
 export type TransformState = {
   version: number;
@@ -22,8 +21,3 @@ export type TransformSnapshot = Readonly<TransformState> &
     rotation: Readonly<ArrayQuat>;
     scale: Readonly<ArrayVec3>;
   };
-
-export type TransformParentProvider = {
-  readonly worldMatrix: SnapshotProvider<Mat4>;
-  readonly worldNormalMatrix: SnapshotProvider<Mat3>;
-};

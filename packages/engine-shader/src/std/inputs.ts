@@ -12,7 +12,7 @@ import type { NodeDefinition, ShaderStage } from '../graph/NodeDefinition';
 import { cascadeMembers } from '../compiler/layout';
 
 // Uniforms, textures and samplers belong to a binding slot, matching the
-// MaterialBindingSlot of engine-backend: 'frame', 'material', 'object', or a
+// slots of the renderer: 'frame', 'material', 'object', or a
 // custom slot.
 const slotParam = { kind: 'string', default: 'material' } as const;
 

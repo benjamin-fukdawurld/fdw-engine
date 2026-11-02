@@ -7,6 +7,7 @@ import {
   Camera,
   DirectionalLight,
   Material,
+  Mesh,
   PointLight,
   SpotLight,
   Renderer,
@@ -78,23 +79,35 @@ function RouteComponent() {
   const frameRef = useRef<number | undefined>(undefined);
   const rendererRef = useRef<Renderer | undefined>(undefined);
   const scopeRef = useRef<ResourceScope | undefined>(undefined);
+  // The route left: what is still being loaded starts nothing.
+  const disposedRef = useRef(false);
+  const cubeRef = useRef<Mesh | undefined>(undefined);
 
   // Stop rendering when leaving the route.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    disposedRef.current = false;
+    return () => {
+      disposedRef.current = true;
       if (frameRef.current !== undefined) {
         cancelAnimationFrame(frameRef.current);
       }
+      cubeRef.current?.destroy();
+      cubeRef.current = undefined;
       rendererRef.current?.destroy();
+      rendererRef.current = undefined;
       scopeRef.current?.dispose();
-    },
-    [],
-  );
+      scopeRef.current = undefined;
+    };
+  }, []);
 
   const onSurfaceReady = async (engine: Engine, surface: Surface) => {
     const backend = engine.backend;
     if (!backend) {
       throw new Error('The engine is not ready');
+    }
+    // One renderer per surface, even if called again.
+    if (disposedRef.current || rendererRef.current) {
+      return;
     }
     const renderer = new Renderer(backend);
     rendererRef.current = renderer;
@@ -104,7 +117,12 @@ function RouteComponent() {
     const scope = demoResources(backend).scope('material-graph');
     scopeRef.current = scope;
     const map = await scope.load<Texture>(TextureType, 'cube.png').ready;
+    // Left while loading: the renderer and the scope are gone already.
+    if (disposedRef.current) {
+      return;
+    }
     const cube = createCube();
+    cubeRef.current = cube;
     const textured = new Material({
       graph: texturedGraph(),
       values: { map: map.texture, mapSampler: map.sampler },

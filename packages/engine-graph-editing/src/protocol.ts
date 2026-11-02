@@ -147,8 +147,12 @@ export type GraphCommand =
         readonly side: 'input' | 'output';
       };
     }
-  /** Removes nodes, notes and groups. */
-  | { readonly op: 'remove'; readonly ids: readonly string[] }
+  /** Removes nodes, notes and groups, and edges: one step. */
+  | {
+      readonly op: 'remove';
+      readonly ids: readonly string[];
+      readonly edges?: readonly GraphEdge[];
+    }
   | {
       readonly op: 'connect';
       readonly from: PortRef;
@@ -329,8 +333,16 @@ export type GraphRequest =
       readonly session: string;
       readonly command: GraphCommand;
     }
-  /** Answered by `file`. */
-  | { readonly op: 'save'; readonly session: string; readonly name?: string }
+  /**
+   * Answered by `file`, with the same `request`; or by `closed` when no such
+   * session is open.
+   */
+  | {
+      readonly op: 'save';
+      readonly session: string;
+      readonly name?: string;
+      readonly request?: number;
+    }
   /** The file written by the host. */
   | { readonly op: 'saved'; readonly session: string; readonly name: string }
   /** The shape of the preview of a material, and whether it plays its time. */
@@ -376,6 +388,8 @@ export type GraphEvent =
   | {
       readonly op: 'file';
       readonly session: string;
+      /** The `request` of the `save` answered. */
+      readonly request?: number;
       readonly name: string;
       readonly text: string;
     }

@@ -113,15 +113,21 @@ export function patchMesh(
         vertex++;
       }
     }
-    // Two triangles a quad, their front on the side of the normal.
+    // Two triangles a quad, their front on the side of the normal, cut
+    // along the diagonal patchVertex draws: (0, 0) (0, 1) (1, 1), (0, 0)
+    // (1, 1) (1, 0).
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
         const c00 = first + j * side + i;
         const c10 = c00 + 1;
         const c01 = c00 + side;
         const c11 = c01 + 1;
-        indices.set([c00, c01, c10, c10, c01, c11], index);
-        index += 6;
+        indices[index++] = c00;
+        indices[index++] = c01;
+        indices[index++] = c11;
+        indices[index++] = c00;
+        indices[index++] = c11;
+        indices[index++] = c10;
       }
     }
   }

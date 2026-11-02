@@ -85,13 +85,17 @@ fn ${p}_kept(instance: u32, triangle: u32, u: f32, v: f32) -> bool {
   }: a BVH traversed in software.
 const ${p}_far = 3.0e38;
 ${alphaFunction}
-// Where a ray enters a box within [tMin, tMax], or ${p}_far.
+// Where a ray enters a box within [tMin, tMax], or ${p}_far. Along an axis
+// the ray does not move (the huge inverse of ${p}_inverse), it is in the
+// slab or misses the box: on its planes, the products would cut it.
 fn ${p}_box(low: vec3<f32>, high: vec3<f32>, origin: vec3<f32>, inverse: vec3<f32>, tMin: f32, tMax: f32) -> f32 {
-  let t0 = (low - origin) * inverse;
-  let t1 = (high - origin) * inverse;
+  let still = abs(inverse) >= vec3<f32>(1e19);
+  let inside = (origin >= low) & (origin <= high);
+  let t0 = select((low - origin) * inverse, vec3<f32>(-${p}_far), still);
+  let t1 = select((high - origin) * inverse, vec3<f32>(${p}_far), still);
   let near = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), max(min(t0.z, t1.z), tMin));
   let far = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), min(max(t0.z, t1.z), tMax));
-  return select(${p}_far, near, near <= far);
+  return select(${p}_far, near, near <= far && all(inside | !still));
 }
 
 // Whether a vector has no infinity nor NaN (by its bits: the comparisons
@@ -233,7 +237,13 @@ fn ${p}_instances(origin: vec3<f32>, direction: vec3<f32>, tMin: f32, mask: u32,
     let d = vec4<f32>(direction, 0.0);
     let localOrigin = vec3<f32>(dot(r0, o), dot(r1, o), dot(r2, o));
     let localDirection = vec3<f32>(dot(r0, d), dot(r1, d), dot(r2, d));
-    if (${p}_bottom(localOrigin, localDirection, tMin, info.xy, info.w, (info.z & 0x100u) == 0u, anyHit, tBest, best)) {
+    let stop = ${p}_bottom(localOrigin, localDirection, tMin, info.xy, info.w, (info.z & 0x100u) == 0u, anyHit, tBest, best);
+    // A hit in a mirrored instance (bit 9; each instance is visited once):
+    // its winding is turned over in the world.
+    if ((info.z & 0x200u) != 0u && (*best).x == info.w) {
+      (*best).y = (*best).y ^ 0x80000000u;
+    }
+    if (stop) {
       return true;
     }
   }

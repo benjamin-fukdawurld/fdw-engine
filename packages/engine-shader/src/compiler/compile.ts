@@ -408,6 +408,11 @@ function checkSupport(
         `resource name "${name}" must start with a letter and contain only letters, digits and _`,
       );
     }
+    // Two consecutive underscores are reserved in GLSL, and the generators
+    // would map "a__b" and "a_b" to the same identifier.
+    if (name.includes('__')) {
+      error(`resource name "${name}" must not contain "__"`);
+    }
     if (/Uniforms$/.test(name)) {
       error(`resource name "${name}" is reserved for uniform blocks`);
     }
@@ -420,6 +425,9 @@ function checkSupport(
       error(
         `slot name "${slot}" must start with a letter and contain only letters, digits and _`,
       );
+    }
+    if (slot.includes('__')) {
+      error(`slot name "${slot}" must not contain "__"`);
     }
     if (node.type === 'input.uniform') {
       const type = params['type'] as ShaderType;

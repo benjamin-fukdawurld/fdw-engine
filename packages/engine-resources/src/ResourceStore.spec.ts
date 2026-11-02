@@ -102,6 +102,27 @@ describe('sharing and lifetime', () => {
     expect(disposed).toEqual(['aaaa', 'bbbb', 'cccc']);
   });
 
+  it('evicts entries of no size past maxIdle', async () => {
+    const { store, disposed } = harness(
+      { a: '', b: '', c: '' },
+      { maxIdle: 2 },
+    );
+    for (const name of ['a', 'b', 'c']) {
+      const h = store.load(TextType, name);
+      await h.ready;
+      h.release();
+    }
+    // 0 bytes each: the budget alone would keep them forever.
+    expect(disposed).toEqual(['']);
+  });
+
+  it('keeps paths under the root of their scheme', async () => {
+    const { store } = harness({ 'a.txt': 'a' });
+    expect(store.normalize('../../a.txt')).toBe('mem:a.txt');
+    expect(store.resolve('mem:m/x.json', '../../../a.txt')).toBe('mem:a.txt');
+    expect(await store.load(TextType, 'mem:../a.txt').ready).toBe('a');
+  });
+
   it('does not evict what has a handle', async () => {
     const { store, disposed } = harness({ a: 'aaaa' }, { budget: 1 });
     const h = store.load(TextType, 'a');
@@ -245,6 +266,31 @@ describe('cancellation', () => {
     expect(other.status.value).toBe('loading');
     other.release();
     expect(aborted).toEqual(['mem:x']);
+  });
+
+  it('removes its listener from an external signal once done', async () => {
+    const { store } = harness({ a: 'a', b: 'b' });
+    const ctl = new AbortController();
+    let listeners = 0;
+    const add = ctl.signal.addEventListener.bind(ctl.signal);
+    const remove = ctl.signal.removeEventListener.bind(ctl.signal);
+    ctl.signal.addEventListener = ((...args: Parameters<typeof add>) => {
+      listeners++;
+      add(...args);
+    }) as typeof add;
+    ctl.signal.removeEventListener = ((...args: Parameters<typeof remove>) => {
+      listeners--;
+      remove(...args);
+    }) as typeof remove;
+    const kept = store.load(TextType, 'a', { signal: ctl.signal });
+    await kept.ready;
+    await sleep();
+    expect(listeners).toBe(0); // loaded: the signal has nothing left to cancel
+    const released = store.load(TextType, 'b', { signal: ctl.signal });
+    released.release();
+    expect(listeners).toBe(0);
+    ctl.abort();
+    expect(kept.status.value).toBe('ready');
   });
 
   it('a handle released before the load ends stops waiting', async () => {
@@ -755,6 +801,37 @@ describe('sub-resources', () => {
     await sleep(10);
     store.update();
     expect(green.value).toBe('blue');
+  });
+});
+
+describe('provided bytes', () => {
+  it('hands each reader its own copy', async () => {
+    const store = new ResourceStore({ debounceMs: 0, warn: () => undefined });
+    store.mount('mem', new MemorySource({ 'pack.bin': 'x' }), {
+      default: true,
+    });
+    const PackType = defineResourceType<Uint8Array>('pack');
+    const BlobType = defineResourceType<Uint8Array>('blob');
+    const part = new TextEncoder().encode('part');
+    store.registerLoader({
+      type: PackType,
+      async load(ctx) {
+        ctx.provide(ResourceBytesType, 'part', part);
+        return part;
+      },
+    });
+    store.registerLoader({
+      type: BlobType,
+      async load(ctx) {
+        const bytes = await ctx.bytes();
+        structuredClone(bytes, { transfer: [bytes.buffer] }); // a worker decoder
+        return bytes;
+      },
+    });
+    await store.load(PackType, 'pack.bin').ready;
+    await store.load(BlobType, 'pack.bin#part').ready;
+    expect(part.byteLength).toBe(4); // not detached
+    expect(new TextDecoder().decode(part)).toBe('part');
   });
 });
 

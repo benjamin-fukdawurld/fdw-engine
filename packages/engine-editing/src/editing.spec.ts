@@ -133,6 +133,31 @@ describe('History', () => {
     expect(target.value).toBe(0);
     history.redo();
     expect(target.value).toBe(3);
+
+    // A gesture sealed: the next one is another entry.
+    history.seal();
+    history.execute(new PropertyCommand('Value', access, 4, 'value'));
+    expect(history.undoLabels).toEqual(['Value', 'Value']);
+  });
+
+  it('keeps a command that throws where it was', () => {
+    let fail = true;
+    const history = new History();
+    history.execute(
+      defineCommand(
+        'flaky',
+        () => undefined,
+        () => {
+          if (fail) throw new Error('not now');
+        },
+      ),
+    );
+    expect(() => history.undo()).toThrow('not now');
+    expect(history.undoLabels).toEqual(['flaky']);
+    expect(history.canRedo).toBe(false);
+    fail = false;
+    expect(history.undo()).toBe(true);
+    expect(history.redoLabels).toEqual(['flaky']);
   });
 });
 
@@ -184,6 +209,40 @@ describe('Commands on a scene', () => {
     expect(a.parent).toBe(b);
     history.undo();
     expect(a.parent).toBe(scene.root);
+  });
+
+  it('puts nodes back at their place among their siblings', () => {
+    const scene = new Scene();
+    const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((name) =>
+      scene.root.add({ name }),
+    );
+    const names = () => scene.root.children.map((node) => node.name);
+    const history = new History();
+    history.execute(new DeleteNodesCommand('Delete', [c, a]));
+    expect(names()).toEqual(['b', 'd']);
+    history.undo();
+    expect(names()).toEqual(['a', 'b', 'c', 'd']);
+
+    const group = scene.root.add({ name: 'group' });
+    history.execute(new ReparentCommand('Parent', [b, a], group));
+    expect(names()).toEqual(['c', 'd', 'group']);
+    history.undo();
+    expect(names()).toEqual(['a', 'b', 'c', 'd', 'group']);
+    expect(d.parent).toBe(scene.root);
+  });
+
+  it('moves no node when one of them cannot', () => {
+    const scene = new Scene();
+    const a = scene.root.add({ name: 'a' });
+    const b = scene.root.add({ name: 'b' });
+    const inside = b.add({ name: 'inside' });
+    const history = new History();
+    expect(() =>
+      history.execute(new ReparentCommand('Parent', [a, b], inside)),
+    ).toThrow();
+    expect(a.parent).toBe(scene.root);
+    expect(b.parent).toBe(scene.root);
+    expect(history.canUndo).toBe(false);
   });
 });
 
@@ -570,5 +629,16 @@ describe('EditingTools', () => {
     });
     tools.keyDown({ key: 'Escape' });
     expect(tools.rectangle).toBeUndefined();
+  });
+
+  it('stops following the selection once disposed', () => {
+    const scene = new Scene();
+    const node = scene.root.add();
+    const selection = new Selection<typeof node>();
+    const gizmo = new TransformGizmo({ size: 100 });
+    const tools = new EditingTools({ viewport: viewport(), selection, gizmo });
+    tools.dispose();
+    selection.set([node]);
+    expect(gizmo.targets).toEqual([]);
   });
 });

@@ -15,12 +15,15 @@ typedef struct context_handle {
 } context_handle;
 
 // The handle of an object (buffer, texture…) keeps its context alive (a
-// strong reference), so that the context outlives it.
+// strong reference), so that the context outlives it. The textures are
+// found again by id: the images of a swapchain are freed when it is
+// recreated, their handles then fail cleanly.
 typedef struct object_handle {
   context_handle *owner;
   napi_ref owner_ref;
   int kind;
   void *object;
+  uint32_t id;
 } object_handle;
 
 #define CHECK(call)                                                            \
@@ -258,10 +261,20 @@ static napi_value wrap_object(napi_env env, napi_value context_value,
                               context_handle *owner, object_kind kind,
                               void *object) {
   object_handle *handle = (object_handle *)malloc(sizeof(object_handle));
+  if (!handle) {
+    napi_throw_error(env, NULL, "Out of memory");
+    return NULL;
+  }
   handle->owner = owner;
   handle->kind = (int)kind;
   handle->object = object;
-  CHECK(napi_create_reference(env, context_value, 1, &handle->owner_ref));
+  handle->id = kind == TEXTURE ? fdw_vk_texture_id(object) : 0;
+  if (napi_create_reference(env, context_value, 1, &handle->owner_ref) !=
+      napi_ok) {
+    free(handle);
+    napi_throw_error(env, NULL, "Node-API call failed: napi_create_reference");
+    return NULL;
+  }
   napi_value result;
   CHECK(napi_create_external(env, handle, finalize_object, NULL, &result));
   return result;
@@ -277,6 +290,9 @@ static object_handle *object_arg(napi_env env, napi_value value,
              kind_names[kind]);
     napi_throw_type_error(env, NULL, message);
     return NULL;
+  }
+  if (handle->object && handle->owner->context && kind == TEXTURE) {
+    handle->object = fdw_vk_texture_find(handle->owner->context, handle->id);
   }
   if (!handle->object || !handle->owner->context) {
     char message[64];
@@ -306,6 +322,9 @@ static napi_value destroy_object(napi_env env, napi_callback_info info,
   if (napi_get_value_external(env, argv[0], (void **)&handle) != napi_ok ||
       !handle || handle->kind != (int)kind) {
     return undefined(env);
+  }
+  if (handle->object && handle->owner->context && kind == TEXTURE) {
+    handle->object = fdw_vk_texture_find(handle->owner->context, handle->id);
   }
   if (handle->object && handle->owner->context) {
     switch (kind) {
@@ -826,6 +845,40 @@ static void *optional_object(napi_env env, napi_value value, object_kind kind,
 
 // --- Shaders -----------------------------------------------------------------------
 
+// The most DXC arguments of a shader.
+#define MAX_DXC_ARGUMENTS 200
+
+// The DXC arguments of a value (an array of strings), kept in `keep`
+// (count of them); NULL, a TypeError thrown, for anything else.
+static const char **arguments_arg(napi_env env, napi_value value,
+                                  strings *keep, uint32_t *count) {
+  bool is = false;
+  napi_is_array(env, value, &is);
+  *count = is ? array_length(env, value) : 0;
+  if (!is || *count > MAX_DXC_ARGUMENTS) {
+    napi_throw_type_error(env, NULL,
+                          "Expected at most 200 DXC arguments, as strings");
+    return NULL;
+  }
+  const char **arguments = (const char **)calloc(*count + 1, sizeof(char *));
+  if (!arguments) {
+    napi_throw_error(env, NULL, "Out of memory");
+    return NULL;
+  }
+  for (uint32_t i = 0; i < *count; i++) {
+    char *argument = string_arg(env, element(env, value, i));
+    if (!argument) {
+      free(arguments);
+      free_strings(keep);
+      napi_throw_type_error(env, NULL, "Expected the DXC arguments as strings");
+      return NULL;
+    }
+    keep->items[keep->count++] = argument;
+    arguments[i] = argument;
+  }
+  return arguments;
+}
+
 // createShader(context, hlsl, arguments: string[], label)
 static napi_value js_create_shader(napi_env env, napi_callback_info info) {
   ARGS(4);
@@ -834,14 +887,12 @@ static napi_value js_create_shader(napi_env env, napi_callback_info info) {
     return NULL;
   }
   strings keep = {{NULL}, 0};
-  char *hlsl = string_arg(env, argv[1]);
-  const uint32_t count = array_length(env, argv[2]);
-  const char **arguments = (const char **)calloc(count + 1, sizeof(char *));
-  for (uint32_t i = 0; i < count && i < 200; i++) {
-    char *argument = string_arg(env, element(env, argv[2], i));
-    keep.items[keep.count++] = argument;
-    arguments[i] = argument;
+  uint32_t count = 0;
+  const char **arguments = arguments_arg(env, argv[2], &keep, &count);
+  if (!arguments) {
+    return NULL;
   }
+  char *hlsl = string_arg(env, argv[1]);
   char *label = string_arg(env, argv[3]);
   fdw_vk_shader *shader = fdw_vk_shader_create(
       owner->context, hlsl ? hlsl : "", arguments, count, label);
@@ -855,26 +906,16 @@ static napi_value js_create_shader(napi_env env, napi_callback_info info) {
   return wrap_object(env, argv[0], owner, SHADER, shader);
 }
 
-// The DXC arguments of argument `index`, kept in `keep` (count of them).
-static const char **arguments_arg(napi_env env, napi_value value,
-                                  strings *keep, uint32_t *count) {
-  *count = array_length(env, value);
-  const char **arguments = (const char **)calloc(*count + 1, sizeof(char *));
-  for (uint32_t i = 0; i < *count && i < 200; i++) {
-    char *argument = string_arg(env, element(env, value, i));
-    keep->items[keep->count++] = argument;
-    arguments[i] = argument;
-  }
-  return arguments;
-}
-
 // compileHlsl(hlsl, args): the SPIR-V, without a module (a Uint8Array).
 static napi_value js_compile_hlsl(napi_env env, napi_callback_info info) {
   ARGS(2);
   strings keep = {{NULL}, 0};
-  char *hlsl = string_arg(env, argv[0]);
   uint32_t count = 0;
   const char **arguments = arguments_arg(env, argv[1], &keep, &count);
+  if (!arguments) {
+    return NULL;
+  }
+  char *hlsl = string_arg(env, argv[0]);
   uint8_t *code = NULL;
   size_t size = 0;
   const int failed =
@@ -911,6 +952,9 @@ static napi_value js_create_shader_from_code(napi_env env,
   strings keep = {{NULL}, 0};
   uint32_t count = 0;
   const char **arguments = arguments_arg(env, argv[2], &keep, &count);
+  if (!arguments) {
+    return NULL;
+  }
   char *label = string_arg(env, argv[3]);
   fdw_vk_shader *shader = fdw_vk_shader_create_from_code(
       owner->context, (const uint8_t *)code, size, arguments, count, label);

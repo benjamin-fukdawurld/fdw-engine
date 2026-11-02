@@ -35,8 +35,12 @@ export function formatUri({ scheme, path, fragment }: ParsedUri): string {
   }`;
 }
 
-/** Collapses `.`, `..`, `//` and backslashes. An URL origin is kept as is. */
-export function normalizePath(path: string): string {
+/**
+ * Collapses `.`, `..`, `//` and backslashes. An URL origin is kept as is.
+ * `rooted` treats a relative path as relative to a root it cannot leave (the
+ * root of a scheme): a leading `..` is dropped instead of kept.
+ */
+export function normalizePath(path: string, rooted = false): string {
   path = path.replace(/\\/g, '/');
   const origin = URL_PREFIX.exec(path)?.[0] ?? '';
   let rest = path.slice(origin.length);
@@ -46,7 +50,7 @@ export function normalizePath(path: string): string {
     if (segment === '' || segment === '.') continue;
     if (segment === '..') {
       if (out.length > 0 && out[out.length - 1] !== '..') out.pop();
-      else if (!absolute) out.push('..');
+      else if (!absolute && !rooted) out.push('..');
       continue;
     }
     out.push(segment);
@@ -69,13 +73,20 @@ export function extname(path: string): string {
   return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
-/** Resolves `relative` against the path of a resource (a glTF and its textures). */
-export function resolvePath(basePath: string, relative: string): string {
+/**
+ * Resolves `relative` against the path of a resource (a glTF and its
+ * textures). `rooted` bounds `..` at the root, as in normalizePath.
+ */
+export function resolvePath(
+  basePath: string,
+  relative: string,
+  rooted = false,
+): string {
   if (relative.startsWith('/') || URL_PREFIX.test(relative)) {
-    return normalizePath(relative);
+    return normalizePath(relative, rooted);
   }
   const dir = dirname(basePath);
-  return normalizePath(dir ? `${dir}/${relative}` : relative);
+  return normalizePath(dir ? `${dir}/${relative}` : relative, rooted);
 }
 
 /**

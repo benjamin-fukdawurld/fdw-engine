@@ -14,6 +14,9 @@ interface Slot {
   frame: number;
   // The slots measured in the frame: the others are NaN.
   used: number;
+  // The pairs written in the frame, by slot: a pass not played in it keeps
+  // the timestamps of an earlier frame in the query set.
+  readonly written: Uint8Array;
 }
 
 /**
@@ -26,6 +29,8 @@ export class WebGpuPassTimer implements GpuPassTimer {
   private readonly _resolved: GPUBuffer;
   private readonly _slots: Slot[];
   private _used = 0;
+  // The pairs written since the last resolve.
+  private readonly _written: Uint8Array;
   private _latest?: PassTimes;
   private _destroyed = false;
 
@@ -54,12 +59,15 @@ export class WebGpuPassTimer implements GpuPassTimer {
       state: 'free' as const,
       frame: -1,
       used: 0,
+      written: new Uint8Array(capacity),
     }));
+    this._written = new Uint8Array(capacity);
   }
 
   /** The timestamp writes of the pass of slot `index`. */
   timestampWrites(index: number): GPURenderPassTimestampWrites {
     this._used = Math.max(this._used, index + 1);
+    this._written[index] = 1;
     return {
       querySet: this._querySet,
       beginningOfPassWriteIndex: index * 2,
@@ -72,8 +80,11 @@ export class WebGpuPassTimer implements GpuPassTimer {
     this._used = 0;
     const slot = this._slots.find((candidate) => candidate.state === 'free');
     if (!slot || used === 0) {
+      this._written.fill(0);
       return;
     }
+    slot.written.set(this._written);
+    this._written.fill(0);
     const target = encoder as {
       gpu?: GPUCommandEncoder;
       timers?: Set<WebGpuPassTimer>;
@@ -109,10 +120,14 @@ export class WebGpuPassTimer implements GpuPassTimer {
           const stamps = new BigInt64Array(slot.buffer.getMappedRange());
           const durations = new Float64Array(this.capacity).fill(NaN);
           for (let i = 0; i < slot.used; i++) {
+            if (!slot.written[i]) {
+              continue;
+            }
             const begin = stamps[i * 2];
             const end = stamps[i * 2 + 1];
             if (end >= begin && begin > 0n) {
               durations[i] = Number(end - begin) / 1e6;
+              if (durations[i] > 1000) console.log("DBG", i, slot.used, begin, end, [...stamps]);
             }
           }
           slot.buffer.unmap();

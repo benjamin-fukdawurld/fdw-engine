@@ -135,7 +135,11 @@ export function GraphPanel(props: GraphPanelProps) {
     }
   };
   const saveFile = async () => {
-    const file = await client.save();
+    const file = await client.save().catch((error: unknown) => {
+      client.tell(error instanceof Error ? error.message : String(error));
+      return undefined;
+    });
+    if (!file) return;
     const data = encoder.encode(file.text) as Uint8Array<ArrayBuffer>;
     if (await host.files.save(file.name, data, filters))
       client.saved(file.name);

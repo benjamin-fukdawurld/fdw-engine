@@ -20,3 +20,12 @@ win:
 linux:
   target: AppImage
   category: Development
+# The fuses of Electron (@electron/fuses, flipped in the executable): no
+# ELECTRON_RUN_AS_NODE, NODE_OPTIONS nor --inspect, the app from its asar
+# only. The engine runs in a utilityProcess, not a fork.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true

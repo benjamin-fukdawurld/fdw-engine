@@ -21,7 +21,7 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
       ),
       data,
     );
-    this._position = new Vec3View(this._buffer, BaseLight.bufferSize);
+    this._position = this.trackedVec3(BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
     this._attenuation = new DataView(
       this._buffer,
@@ -31,17 +31,19 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
     this.constantAttenuation = data?.constantAttenuation ?? 1.0;
     this.linearAttenuation = data?.linearAttenuation ?? 0.0;
     this.quadraticAttenuation = data?.quadraticAttenuation ?? 0.0;
+
+    // The initial values are version 0, whatever the light type.
+    this._version = 0;
   }
 
   public get position(): Readonly<Vec3View> {
-    return Object.freeze(this._position);
+    return this._position;
   }
 
   public set position(value: Partial<IVec3>) {
     this._position.x = value.x ?? this._position.x;
     this._position.y = value.y ?? this._position.y;
     this._position.z = value.z ?? this._position.z;
-    this._version++;
   }
 
   public get constantAttenuation(): number {
@@ -71,5 +73,3 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
     this._version++;
   }
 }
-
-export default PointLight;

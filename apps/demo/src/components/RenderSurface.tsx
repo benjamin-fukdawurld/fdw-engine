@@ -20,40 +20,37 @@ type Props = BaseProps &
 const RenderSurface = memo(({ width, height, onReady, onResize }: Props) => {
   const [ready, setReady] = useState<boolean>(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The last callback given, for the observer made once.
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
 
   useLayoutEffect(() => {
-    if (ready) {
+    if (ready || !canvasRef.current) {
       return;
     }
-
-    if (!canvasRef.current) {
-      return;
-    }
-
     onReady?.(canvasRef.current);
     setReady(true);
-
-    let resizeObserver: ResizeObserver | undefined;
-
-    if (!width || !height) {
-      canvasRef.current.width = canvasRef.current.clientWidth;
-      canvasRef.current.height = canvasRef.current.clientHeight;
-
-      resizeObserver = new ResizeObserver(() => {
-        if (canvasRef.current) {
-          canvasRef.current.width = canvasRef.current.clientWidth;
-          canvasRef.current.height = canvasRef.current.clientHeight;
-          onResize?.(canvasRef.current);
-        }
-      });
-
-      resizeObserver.observe(canvasRef.current);
-    }
-
-    return () => {
-      resizeObserver?.disconnect();
-    };
   }, [onReady, ready]);
+
+  // Without a size, the canvas follows its box, for as long as it is shown.
+  const sized = Boolean(width && height);
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (sized || !canvas) {
+      return;
+    }
+    const fit = () => {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    };
+    fit();
+    const resizeObserver = new ResizeObserver(() => {
+      fit();
+      onResizeRef.current?.(canvas);
+    });
+    resizeObserver.observe(canvas);
+    return () => resizeObserver.disconnect();
+  }, [sized]);
 
   return (
     <canvas

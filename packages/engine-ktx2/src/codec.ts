@@ -27,7 +27,7 @@ import {
 } from './container';
 import { engineFormat } from './formats';
 import {
-  inflate,
+  inflateLevel,
   ktx2Tasks,
   type InflateJob,
   type TranscodeJob,
@@ -176,9 +176,17 @@ function shapeOf(ktx: Ktx2Container, uri: string): Shape {
     new ResourceError('unsupported', uri, `${uri}: ${message}`);
   const { pixelWidth: width, pixelDepth: depth, layerCount, faceCount } = ktx;
   const height = Math.max(ktx.pixelHeight, 1);
+  if (width === 0)
+    throw new ResourceError('decode', uri, `${uri}: an image of width 0`);
   if (faceCount !== 1 && faceCount !== 6)
     throw new ResourceError('decode', uri, `${uri}: ${faceCount} faces`);
   if (faceCount === 6) {
+    if (ktx.pixelHeight !== width)
+      throw new ResourceError(
+        'decode',
+        uri,
+        `${uri}: a cube of ${width}×${ktx.pixelHeight} faces, not square`,
+      );
     if (layerCount > 0) throw unsupported('cube arrays are not supported');
     return { type: 'cube', width, height, layers: 6 };
   }
@@ -196,6 +204,10 @@ function shapeOf(ktx: Ktx2Container, uri: string): Shape {
 const levelImages = (shape: Shape, level: number) =>
   shape.type === '3d' ? Math.max(shape.layers >> level, 1) : shape.layers;
 
+/** The size in bytes of a level of a format: all its images. */
+const levelSize = (shape: Shape, format: GpuTextureFormat, level: number) =>
+  textureLevelSize(format, shape, level) * levelImages(shape, level);
+
 /** Checks the sizes of the levels of a format: `decode` otherwise. */
 function checkLevels(
   shape: Shape,
@@ -204,8 +216,7 @@ function checkLevels(
   uri: string,
 ): void {
   levels.forEach((data, level) => {
-    const expected =
-      textureLevelSize(format, shape, level) * levelImages(shape, level);
+    const expected = levelSize(shape, format, level);
     if (data.byteLength !== expected) {
       throw new ResourceError(
         'decode',
@@ -226,6 +237,8 @@ const owned = (bytes: Uint8Array): Uint8Array<ArrayBuffer> =>
 async function readLevels(
   bytes: ResourceBytes,
   ktx: Ktx2Container,
+  shape: Shape,
+  format: GpuTextureFormat,
   options: Ktx2Options,
   uri: string,
   signal?: AbortSignal,
@@ -252,6 +265,19 @@ async function readLevels(
   }
   const levelData = (level: Ktx2Container['levels'][number]) =>
     bytes.subarray(level.byteOffset, level.byteOffset + level.byteLength);
+  if (scheme !== Ktx2Supercompression.none) {
+    // The inflated sizes are those of the format, checked before inflating:
+    // they bound what the data may inflate to.
+    ktx.levels.forEach(({ uncompressedByteLength }, level) => {
+      const expected = levelSize(shape, format, level);
+      if (uncompressedByteLength !== expected)
+        throw new ResourceError(
+          'decode',
+          uri,
+          `${uri}: level ${level} of ${format} inflates to ${uncompressedByteLength} bytes, not ${expected}`,
+        );
+    });
+  }
   if (scheme !== Ktx2Supercompression.none && workers) {
     // Copies: the file stays here.
     const job: InflateJob = {
@@ -286,9 +312,7 @@ async function readLevels(
     }
     try {
       levels.push(
-        scheme === Ktx2Supercompression.zlib
-          ? await inflate(data)
-          : owned(await zstd!.decode(data, level.uncompressedByteLength)),
+        await inflateLevel(scheme, data, level.uncompressedByteLength, zstd),
       );
     } catch (cause) {
       throw new ResourceError(
@@ -433,7 +457,15 @@ export function ktx2Codec(options: Ktx2Options = {}): ImageCodec {
           uri,
           `${uri}: VkFormat ${ktx.vkFormat} is not supported`,
         );
-      const levels = await readLevels(bytes, ktx, options, uri, signal);
+      const levels = await readLevels(
+        bytes,
+        ktx,
+        shape,
+        format,
+        options,
+        uri,
+        signal,
+      );
       checkLevels(shape, format, levels, uri);
       return {
         type: shape.type,

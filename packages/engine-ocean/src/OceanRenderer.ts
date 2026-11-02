@@ -1,4 +1,4 @@
-import type { Surface } from '@fdw/engine-backend';
+import type { GpuSampler, Surface } from '@fdw/engine-backend';
 import {
   Material,
   RenderGraph,
@@ -71,6 +71,10 @@ export class OceanRenderer {
   private readonly _runner: RenderGraphRunner;
   private readonly _toneMapping: Material;
   private readonly _backgrounds = new WeakMap<WaterItem, Material>();
+  // The samplers of the renderer (the tone mapping, the backgrounds, the
+  // reads of the water), destroyed with it.
+  private readonly _nearest: GpuSampler;
+  private readonly _linear: GpuSampler;
 
   constructor(
     renderer: Renderer,
@@ -84,18 +88,24 @@ export class OceanRenderer {
       );
     }
     this._runner = new RenderGraphRunner(renderer.backend);
+    const textures = renderer.backend.textures;
+    this._nearest = textures.createSampler({
+      minFilter: 'nearest',
+      magFilter: 'nearest',
+      wrapModeS: 'clamp-to-edge',
+      wrapModeT: 'clamp-to-edge',
+    });
+    this._linear = textures.createSampler({
+      minFilter: 'linear',
+      magFilter: 'linear',
+      wrapModeS: 'clamp-to-edge',
+      wrapModeT: 'clamp-to-edge',
+    });
     this._toneMapping = toneMappingMaterial(
+      renderer,
       options.toneMapping ?? 'neutral',
       options.encoding ?? 'srgb',
-    );
-    this._toneMapping.setValue(
-      'hdrSampler',
-      renderer.backend.textures.createSampler({
-        minFilter: 'nearest',
-        magFilter: 'nearest',
-        wrapModeS: 'clamp-to-edge',
-        wrapModeT: 'clamp-to-edge',
-      }),
+      { label: 'ocean output', sampler: this._nearest },
     );
   }
 
@@ -109,6 +119,12 @@ export class OceanRenderer {
   ): TextureHandle {
     const renderer = this.renderer;
     const format = 'rgba16float';
+    const material = this.background(ocean);
+    // The sky behind follows the look of the water (`setLook`).
+    material.setValue(
+      'environmentIntensity',
+      ocean.material.getValue('environmentIntensity') ?? 1,
+    );
     const scene = renderer.addScenePasses(graph, {
       ...options,
       name: 'scene',
@@ -119,7 +135,7 @@ export class OceanRenderer {
       outputs: { sceneDepth: { format, value: 'view-depth' } },
     });
     const background = renderer.addFullscreenPass(graph, 'ocean background', {
-      material: this.background(ocean),
+      material,
       inputs: { color: scene.color, depth: scene.outputs.sceneDepth },
       target: graph.createTexture('ocean color', { format }),
       format,
@@ -175,6 +191,8 @@ export class OceanRenderer {
 
   destroy(): void {
     this._runner.destroy();
+    this._nearest.destroy();
+    this._linear.destroy();
   }
 
   // The sky behind the scene, and the copy of the image for the water.
@@ -219,13 +237,7 @@ export class OceanRenderer {
     });
     g.fullscreen({ color });
     g.target('behind', color, 1);
-    const backend = this.renderer.backend;
-    const nearest = backend.textures.createSampler({
-      minFilter: 'nearest',
-      magFilter: 'nearest',
-      wrapModeS: 'clamp-to-edge',
-      wrapModeT: 'clamp-to-edge',
-    });
+    const nearest = this._nearest;
     material = new Material({
       graph: g.build(),
       label: 'ocean background',
@@ -234,33 +246,33 @@ export class OceanRenderer {
         environmentSampler: ocean.material.getValue(
           'environmentSampler',
         ) as never,
-        environmentIntensity: ocean.material.getValue(
-          'environmentIntensity',
-        ) as never,
         colorSampler: nearest,
         depthSampler: nearest,
       },
     });
-    // The water reads the copy and the depth, filtered.
-    const linear = backend.textures.createSampler({
-      minFilter: 'linear',
-      magFilter: 'linear',
-      wrapModeS: 'clamp-to-edge',
-      wrapModeT: 'clamp-to-edge',
-    });
-    ocean.material.setValue('sceneColorSampler', linear);
+    // The water reads the copy filtered, and the depth.
+    ocean.material.setValue('sceneColorSampler', this._linear);
     ocean.material.setValue('sceneDepthSampler', nearest);
     this._backgrounds.set(ocean, material);
     return material;
   }
 }
 
-// Tone mapping and encoding of the linear image, for the surface.
-function toneMappingMaterial(
+/**
+ * Tone mapping and encoding of a linear image (the `hdr` texture), for a
+ * surface. Read through `sampler` (nearest), or a sampler of its own,
+ * which the caller destroys (`hdrSampler`).
+ */
+export function toneMappingMaterial(
+  renderer: Renderer,
   toneMapping: ToneMapping,
   encoding: 'srgb' | 'linear',
+  {
+    label = 'tone mapping',
+    sampler,
+  }: { readonly label?: string; readonly sampler?: GpuSampler } = {},
 ): Material {
-  const g = new GraphBuilder('ocean output');
+  const g = new GraphBuilder(label);
   const texel = g.call(std.textureSample, {
     texture: g.texture('hdr'),
     sampler: g.sampler('hdrSampler'),
@@ -276,5 +288,18 @@ function toneMappingMaterial(
     rgb = g.call('color.linearToSrgb', { color: rgb });
   }
   g.fullscreen({ color: g.call(std.extend, { xyz: rgb, w: 1 }) });
-  return new Material({ graph: g.build(), label: 'ocean output' });
+  return new Material({
+    graph: g.build(),
+    label,
+    values: {
+      hdrSampler:
+        sampler ??
+        renderer.backend.textures.createSampler({
+          minFilter: 'nearest',
+          magFilter: 'nearest',
+          wrapModeS: 'clamp-to-edge',
+          wrapModeT: 'clamp-to-edge',
+        }),
+    },
+  });
 }

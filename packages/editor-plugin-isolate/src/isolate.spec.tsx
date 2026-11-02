@@ -101,17 +101,17 @@ describe('the isolate plugin', () => {
     return { ...fake, runtime, send };
   }
 
-  // The visibilities the page asked the engine for, by node.
-  const edits = (posted: readonly unknown[]) =>
+  // The visibilities the page asked the engine for, by node: in batches,
+  // one entry of the history each.
+  const batches = (posted: readonly unknown[]) =>
     posted.flatMap((message) => {
-      const edit = message as {
+      const batch = message as {
         type: string;
         command?: string;
-        id?: string;
-        value?: unknown;
+        commands?: readonly { id?: string; value?: unknown }[];
       };
-      return edit.type === 'level.command' && edit.command === 'edit'
-        ? [[edit.id, edit.value]]
+      return batch.type === 'level.command' && batch.command === 'batch'
+        ? [(batch.commands ?? []).map((edit) => [edit.id, edit.value])]
         : [];
     });
 
@@ -127,19 +127,42 @@ describe('the isolate plugin', () => {
     );
     send({ type: 'level.selection', ids: ['cube1'] });
     await act(() => runtime.commands.execute(isolateCommand));
-    expect(edits(posted)).toEqual([
-      ['cube2', false],
-      ['lamp', false],
-      ['table', false],
+    expect(batches(posted)).toEqual([
+      [
+        ['cube2', false],
+        ['lamp', false],
+        ['table', false],
+      ],
     ]);
     expect(runtime.keys.values()[isolatedKey]).toBe(true);
 
     posted.length = 0;
     await act(() => runtime.commands.execute(showAllCommand));
-    expect(edits(posted)).toEqual([
-      ['cube2', true],
-      ['lamp', true],
-      ['table', true],
+    expect(batches(posted)).toEqual([
+      [
+        ['cube2', true],
+        ['lamp', true],
+        ['table', true],
+      ],
+    ]);
+    expect(runtime.keys.values()[isolatedKey]).toBeUndefined();
+  });
+
+  it('shows again what it hid when deactivated', async () => {
+    const { runtime, posted, send } = await renderLevel();
+    await waitFor(() =>
+      expect(runtime.plugins.info(isolateId)?.status).toBe('active'),
+    );
+    send({ type: 'level.selection', ids: ['lamp'] });
+    await act(() => runtime.commands.execute(isolateCommand));
+    posted.length = 0;
+    await act(() => runtime.plugins.deactivate(isolateId));
+    expect(batches(posted)).toEqual([
+      [
+        ['cube1', true],
+        ['cube2', true],
+        ['table', true],
+      ],
     ]);
     expect(runtime.keys.values()[isolatedKey]).toBeUndefined();
   });

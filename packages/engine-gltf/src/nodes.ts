@@ -33,6 +33,13 @@ export function decomposeMatrix(m: readonly number[]): Trs {
   let sx = Math.hypot(m[0], m[1], m[2]);
   const sy = Math.hypot(m[4], m[5], m[6]);
   const sz = Math.hypot(m[8], m[9], m[10]);
+  // A scale of 0 has no rotation to recover: the identity, not NaNs.
+  if (sx === 0 || sy === 0 || sz === 0)
+    return {
+      translation: [m[12], m[13], m[14]],
+      rotation: [0, 0, 0, 1],
+      scale: [sx, sy, sz],
+    };
   const det =
     m[0] * (m[5] * m[10] - m[6] * m[9]) -
     m[4] * (m[1] * m[10] - m[2] * m[9]) +
@@ -95,8 +102,61 @@ export function decomposeMatrix(m: readonly number[]): Trs {
   };
 }
 
-/** A node of the model, before its extensions. */
-export function nodeData(node: GltfNode): ModelNodeData {
+/**
+ * The hierarchy of the nodes of a file, made a forest: a child that is not
+ * a node, the node itself, already has a parent, or is an ancestor (a
+ * cycle) is left out, with a warning.
+ */
+export interface NodeTree {
+  /** The valid children of each node. */
+  readonly children: readonly (readonly number[])[];
+  /** The parent of each child. */
+  readonly parents: ReadonlyMap<number, number>;
+}
+
+/** Validates the hierarchy of the nodes of a file (see `NodeTree`). */
+export function nodeTree(
+  json: GltfJson,
+  warn: (message: string) => void,
+): NodeTree {
+  const nodes = json.nodes ?? [];
+  const parents = new Map<number, number>();
+  // A forest stays one when a child without parent is given a parent that
+  // is not under it.
+  const isAncestor = (node: number, of: number) => {
+    for (let n: number | undefined = of; n !== undefined; n = parents.get(n))
+      if (n === node) return true;
+    return false;
+  };
+  const children = nodes.map((node, i) =>
+    (node.children ?? []).filter((child) => {
+      const why = !(
+        Number.isInteger(child) &&
+        child >= 0 &&
+        child < nodes.length
+      )
+        ? 'is not a node'
+        : parents.has(child)
+          ? `already has the parent ${parents.get(child)}`
+          : isAncestor(child, i)
+            ? 'is an ancestor (a cycle)'
+            : undefined;
+      if (why) {
+        warn(`node ${i}: child ${child} left out: it ${why}`);
+        return false;
+      }
+      parents.set(child, i);
+      return true;
+    }),
+  );
+  return { children, parents };
+}
+
+/** A node of the model, before its extensions; its children validated by `nodeTree`. */
+export function nodeData(
+  node: GltfNode,
+  children: readonly number[] = node.children ?? [],
+): ModelNodeData {
   const trs =
     node.matrix && node.matrix.length === 16
       ? decomposeMatrix(node.matrix)
@@ -106,18 +166,30 @@ export function nodeData(node: GltfNode): ModelNodeData {
     ...(trs.translation ? { translation: [...trs.translation] as const } : {}),
     ...(trs.rotation ? { rotation: [...trs.rotation] as const } : {}),
     ...(trs.scale ? { scale: [...trs.scale] as const } : {}),
-    children: node.children ?? [],
+    children: [...children],
     ...(node.mesh !== undefined ? { mesh: node.mesh } : {}),
     ...(node.skin !== undefined ? { skin: node.skin } : {}),
     ...(node.camera !== undefined ? { camera: node.camera } : {}),
   };
 }
 
-/** The nodes of the default scene (`scene`, else the first), or all the parentless nodes without scenes. */
-export function rootNodes(json: GltfJson): number[] {
+/**
+ * The nodes of the default scene (`scene`, else the first), or all the
+ * parentless nodes without scenes. With a `NodeTree`, a node of the scene
+ * under another is left out: it is reached from its parent.
+ */
+export function rootNodes(json: GltfJson, tree?: NodeTree): number[] {
+  const count = json.nodes?.length ?? 0;
   const scene = json.scenes?.[json.scene ?? 0];
-  if (scene) return [...(scene.nodes ?? [])];
-  const children = new Set((json.nodes ?? []).flatMap((n) => n.children ?? []));
+  // Each node once, and only nodes.
+  if (scene)
+    return [...new Set(scene.nodes ?? [])].filter(
+      (i) =>
+        Number.isInteger(i) && i >= 0 && i < count && !tree?.parents.has(i),
+    );
+  const children = tree
+    ? new Set(tree.parents.keys())
+    : new Set((json.nodes ?? []).flatMap((n) => n.children ?? []));
   return (json.nodes ?? []).map((_, i) => i).filter((i) => !children.has(i));
 }
 

@@ -18,7 +18,7 @@ import {
   type ResourceUri,
 } from '@fdw/engine-resources';
 import { accessorReader } from './accessors';
-import { BufferType } from './buffers';
+import { decodeUri, fileBuffers, memoize } from './buffers';
 import type {
   GltfAttributeData,
   GltfContext,
@@ -32,6 +32,7 @@ import {
   animationData,
   cameraData,
   nodeData,
+  nodeTree,
   rootNodes,
   skinData,
 } from './nodes';
@@ -57,16 +58,6 @@ const modeNames: Readonly<Record<number, string>> = {
   1: 'lines',
   2: 'a line loop',
   3: 'a line strip',
-};
-
-// The URIs of glTF are percent-encoded (`my%20texture.png`); the sources
-// take plain paths.
-const decodeUri = (uri: string): string => {
-  try {
-    return decodeURIComponent(uri);
-  } catch {
-    return uri;
-  }
 };
 
 /**
@@ -102,15 +93,6 @@ export function modelName(uri: ResourceUri): string {
   return dot > 0 ? file.slice(0, dot) : file;
 }
 
-const memoize = <T>(read: (index: number) => Promise<T>) => {
-  const cache = new Map<number, Promise<T>>();
-  return (index: number): Promise<T> => {
-    let promise = cache.get(index);
-    if (!promise) cache.set(index, (promise = read(index)));
-    return promise;
-  };
-};
-
 /**
  * One load of a glTF file: its buffers, images and accessors read once
  * each, its meshes and materials provided as sub-resources of its URI, its
@@ -120,21 +102,23 @@ export class GltfReader {
   readonly context: GltfContext;
   private readonly active = new Map<string, GltfExtension>();
   private readonly accessor: (index: number) => Promise<GltfAttributeData>;
+  private readonly buffers: ReturnType<typeof fileBuffers>;
 
   constructor(
     private readonly ctx: LoadContext<unknown>,
     private readonly json: GltfJson,
-    private readonly bin: Uint8Array<ArrayBuffer> | undefined,
+    bin: Uint8Array<ArrayBuffer> | undefined,
     private readonly config: GltfConfig,
     warn: (message: string) => void,
   ) {
+    this.buffers = fileBuffers(ctx, json, bin);
     this.context = {
       uri: ctx.uri,
       json,
       signal: ctx.signal,
       options: config.options,
       warn,
-      buffer: memoize((index) => this.readBuffer(index)),
+      buffer: this.buffers.buffer,
       bufferView: memoize((index) => this.readBufferView(index)),
       image: (index) => this.image(index),
     };
@@ -186,20 +170,6 @@ export class GltfReader {
     });
   }
 
-  private async readBuffer(index: number): Promise<Uint8Array<ArrayBuffer>> {
-    const buffer = this.json.buffers?.[index];
-    if (!buffer) throw new Error(`Missing buffer ${index}`);
-    if (buffer.uri === undefined) {
-      if (index === 0 && this.bin) return this.bin;
-      throw new Error(`Buffer ${index} has no data`);
-    }
-    // An external file is a dependency: shared, cancelled with this load.
-    return (
-      decodeDataUri(buffer.uri) ??
-      this.ctx.use(BufferType, this.ctx.resolve(decodeUri(buffer.uri))).ready
-    );
-  }
-
   private async readBufferView(
     index: number,
   ): Promise<Uint8Array<ArrayBuffer>> {
@@ -207,11 +177,7 @@ export class GltfReader {
     if (!view) throw new Error(`Missing buffer view ${index}`);
     const [decoder] = this.hooks(view, 'bufferView');
     if (decoder) return decoder[1].bufferView(decoder[0], view, this.context);
-    const bytes = await this.context.buffer(view.buffer);
-    const start = view.byteOffset ?? 0;
-    if (start + view.byteLength > bytes.byteLength)
-      throw new Error(`Buffer view ${index} out of its buffer`);
-    return bytes.subarray(start, start + view.byteLength);
+    return this.buffers.bufferView(index);
   }
 
   /**
@@ -412,8 +378,11 @@ export class GltfReader {
         ),
       ),
     ]);
-    const nodes = (json.nodes ?? []).map((node) => {
-      let data = nodeData(node);
+    const tree = nodeTree(json, (m) =>
+      this.context.warn(`${this.ctx.uri}: ${m}`),
+    );
+    const nodes = (json.nodes ?? []).map((node, i) => {
+      let data = nodeData(node, tree.children[i]);
       for (const [ext, extension] of this.hooks(node, 'node'))
         data = extension.node(ext, data, this.context, node);
       return data;
@@ -421,7 +390,7 @@ export class GltfReader {
     let model: ModelData = {
       name: modelName(this.ctx.uri),
       nodes,
-      roots: rootNodes(json),
+      roots: rootNodes(json, tree),
       meshes,
       skins,
       animations,

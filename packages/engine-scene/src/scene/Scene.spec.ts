@@ -292,6 +292,21 @@ describe('Scene', () => {
     );
   });
 
+  it('refuses a batch whose arrays are shorter than its count', () => {
+    const scene = new Scene();
+    const before = scene.world.count;
+    expect(() =>
+      scene.createBatch({ count: 2, positions: new Float32Array(3) }),
+    ).toThrow(/shorter/);
+    expect(() =>
+      scene.createBatch({ count: 2, rotations: new Float32Array(4) }),
+    ).toThrow(/shorter/);
+    expect(() => scene.createBatch({ count: -1 })).toThrow(/count/);
+    expect(() => scene.createBatch({ count: 1.5 })).toThrow(/count/);
+    // Nothing made.
+    expect(scene.world.count).toBe(before);
+  });
+
   it('answers the queries of the application', () => {
     const scene = new Scene();
     const mesh = triangle();

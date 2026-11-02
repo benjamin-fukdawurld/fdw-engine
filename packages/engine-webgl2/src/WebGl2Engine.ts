@@ -19,13 +19,33 @@ export type WebGl2EngineOptions = {
 // engine owns the context, and the surfaces render to framebuffers of their
 // own (with the depth buffer of the renderer), copied to their canvas when
 // presented.
+//
+// Besides the events of the states, dispatches `lost` when the browser takes
+// the context back (too many contexts, a GPU reset), and `restored` when it
+// gives a new one: every resource is lost with the context, so the engine
+// must then be destroyed and initialized again.
 export class WebGl2Engine extends EventTarget implements Engine {
   canvas?: HTMLCanvasElement | OffscreenCanvas;
   gl?: WebGL2RenderingContext;
   backend: WebGl2RenderBackend | undefined = undefined;
   state: Signal<EngineState> = signal('uninitialized');
+  // Whether the context was lost: nothing is rendered any longer.
+  lost = false;
 
   private readonly _options: WebGl2EngineOptions;
+
+  private readonly _onLost = (event: Event): void => {
+    // Without it, the browser never restores the context.
+    event.preventDefault();
+    this.lost = true;
+    this.dispatchEvent(new CustomEvent<WebGl2Engine>('lost', { detail: this }));
+  };
+
+  private readonly _onRestored = (): void => {
+    this.dispatchEvent(
+      new CustomEvent<WebGl2Engine>('restored', { detail: this }),
+    );
+  };
 
   constructor(options: WebGl2EngineOptions = {}) {
     super();
@@ -42,6 +62,7 @@ export class WebGl2Engine extends EventTarget implements Engine {
       );
     }
     this.state.value = 'initializing';
+    this.lost = false;
 
     try {
       const canvas =
@@ -66,10 +87,13 @@ export class WebGl2Engine extends EventTarget implements Engine {
       }
       this.canvas = canvas;
       this.gl = gl;
+      canvas.addEventListener('webglcontextlost', this._onLost);
+      canvas.addEventListener('webglcontextrestored', this._onRestored);
       this.backend = new WebGl2RenderBackend(gl);
       this.backend.textures.defaultMaxAnisotropy =
         this._options.maxAnisotropy ?? 1;
     } catch (error) {
+      this.unwatch();
       this.canvas = undefined;
       this.gl = undefined;
       this.state.value = 'uninitialized';
@@ -104,6 +128,8 @@ export class WebGl2Engine extends EventTarget implements Engine {
 
   async destroy(): Promise<void> {
     this.state.value = 'destroying';
+    // The context lost below is not reported.
+    this.unwatch();
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext();
     this.gl = undefined;
     this.canvas = undefined;
@@ -113,6 +139,11 @@ export class WebGl2Engine extends EventTarget implements Engine {
     this.dispatchEvent(
       new CustomEvent<WebGl2Engine>('destroyed', { detail: this }),
     );
+  }
+
+  private unwatch(): void {
+    this.canvas?.removeEventListener('webglcontextlost', this._onLost);
+    this.canvas?.removeEventListener('webglcontextrestored', this._onRestored);
   }
 }
 

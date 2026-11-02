@@ -195,6 +195,19 @@ function keyBefore(times: Float32Array, time: number): number {
   return low;
 }
 
+// The values of a key, copied without a subarray view per sample.
+function copyValues(
+  values: Float32Array,
+  start: number,
+  size: number,
+  target: Float32Array,
+  out: number,
+): void {
+  for (let c = 0; c < size; c++) {
+    target[out + c] = values[start + c];
+  }
+}
+
 function sampleTrack(track: Track, time: number, pose: Pose): void {
   const { times, values, interpolation, path } = track;
   const size = sizes[path];
@@ -210,12 +223,11 @@ function sampleTrack(track: Track, time: number, pose: Pose): void {
   const stride = interpolation === 'CUBICSPLINE' ? size * 3 : size;
   const valueAt = interpolation === 'CUBICSPLINE' ? size : 0;
   if (time <= times[0] || last === 0) {
-    target.set(values.subarray(valueAt, valueAt + size), out);
+    copyValues(values, valueAt, size, target, out);
     return;
   }
   if (time >= times[last]) {
-    const start = last * stride + valueAt;
-    target.set(values.subarray(start, start + size), out);
+    copyValues(values, last * stride + valueAt, size, target, out);
     return;
   }
   const k = keyBefore(times, time);
@@ -224,7 +236,7 @@ function sampleTrack(track: Track, time: number, pose: Pose): void {
   const t = dt > 0 ? (time - t0) / dt : 0;
   switch (interpolation) {
     case 'STEP':
-      target.set(values.subarray(k * size, k * size + size), out);
+      copyValues(values, k * size, size, target, out);
       return;
     case 'LINEAR':
       if (size === 4) {

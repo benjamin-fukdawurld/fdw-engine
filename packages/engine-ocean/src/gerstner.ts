@@ -43,6 +43,8 @@ export class GerstnerWaves {
   private readonly _constants: readonly GerstnerConstants[];
   private readonly _sample = waveSample();
   private _time = 0;
+  // The phases at the time of the waves, computed by `update`.
+  private readonly _phases: Float64Array;
 
   constructor(waves: readonly GerstnerWave[], { gravity = 9.81 } = {}) {
     if (waves.length === 0) {
@@ -64,6 +66,8 @@ export class GerstnerWaves {
         phase: wave.phase ?? 0,
       };
     });
+    this._phases = new Float64Array(waves.length);
+    this.update(0);
   }
 
   /** The time of the waves, in seconds. */
@@ -73,6 +77,10 @@ export class GerstnerWaves {
 
   update(time: number): void {
     this._time = time;
+    const constants = this._constants;
+    for (let i = 0; i < constants.length; i++) {
+      this._phases[i] = phaseAt(constants[i], time);
+    }
   }
 
   /** The highest crest, and the farthest horizontal motion, in meters. */
@@ -89,10 +97,9 @@ export class GerstnerWaves {
    * [0, 2π): what the shaders add to k (d · x), exact at any time.
    */
   phases(time = this._time): number[] {
-    return this._constants.map((wave) => {
-      const phase = (wave.phase - wave.omega * time) % (2 * Math.PI);
-      return phase < 0 ? phase + 2 * Math.PI : phase;
-    });
+    return time === this._time
+      ? Array.from(this._phases)
+      : this._constants.map((wave) => phaseAt(wave, time));
   }
 
   /** The constants of the waves: direction, wave number, amplitudes. */
@@ -103,9 +110,11 @@ export class GerstnerWaves {
   /** The water at a point (x, z) of the still surface, at the time of the waves. */
   sample(x: number, z: number, out: WaveSample = waveSample()): WaveSample {
     clearSample(out);
-    const phases = this.phases();
-    this._constants.forEach((wave, i) => {
-      const theta = wave.k * (wave.dx * x + wave.dz * z) + phases[i];
+    // The phases of `update`: nothing computed again nor allocated per point.
+    const constants = this._constants;
+    for (let i = 0; i < constants.length; i++) {
+      const wave = constants[i];
+      const theta = wave.k * (wave.dx * x + wave.dz * z) + this._phases[i];
       const cos = Math.cos(theta);
       const sin = Math.sin(theta);
       const q = wave.horizontal;
@@ -119,7 +128,7 @@ export class GerstnerWaves {
       out.dxdx -= qk * wave.dx * wave.dx;
       out.dzdz -= qk * wave.dz * wave.dz;
       out.dxdz -= qk * wave.dx * wave.dz;
-    });
+    }
     return out;
   }
 
@@ -132,4 +141,10 @@ export class GerstnerWaves {
       this._sample,
     );
   }
+}
+
+// The phase of a wave at a time, phase - ωt wrapped to [0, 2π).
+function phaseAt(wave: GerstnerConstants, time: number): number {
+  const phase = (wave.phase - wave.omega * time) % (2 * Math.PI);
+  return phase < 0 ? phase + 2 * Math.PI : phase;
 }

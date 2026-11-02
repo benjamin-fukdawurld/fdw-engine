@@ -8,7 +8,7 @@ import {
   transformOf,
   writeTrs,
 } from '../targets';
-import { SceneTrash } from './SceneTrash';
+import { placesOf, placeUnder, SceneTrash } from './SceneTrash';
 
 /**
  * Sets the local transforms of editables (nodes, transforms) from values
@@ -137,12 +137,12 @@ export class CreateNodeCommand implements Command {
 
 /**
  * Removes nodes (and their branches): they go to the trash of their scene,
- * and come back under their parent when undone. Destroyed for good when
- * the history drops the command.
+ * and come back under their parent, at their place among their siblings,
+ * when undone. Destroyed for good when the history drops the command.
  */
 export class DeleteNodesCommand implements Command {
   private readonly _nodes: Node[];
-  private readonly _parents: Node[];
+  private readonly _places: { node: Node; parent: Node; before?: Node }[];
 
   constructor(
     readonly label: string,
@@ -158,7 +158,7 @@ export class DeleteNodesCommand implements Command {
       }
       return node.parent !== undefined;
     });
-    this._parents = this._nodes.map((node) => node.parent as Node);
+    this._places = placesOf(this._nodes);
   }
 
   get nodes(): readonly Node[] {
@@ -174,11 +174,11 @@ export class DeleteNodesCommand implements Command {
   }
 
   undo(): void {
-    this._nodes.forEach((node, i) => {
-      if (node.alive && this._parents[i].alive) {
-        SceneTrash.of(node.scene).restore(node, this._parents[i]);
+    for (const { node, parent, before } of this._places) {
+      if (node.alive && parent.alive) {
+        SceneTrash.of(node.scene).restore(node, parent, before);
       }
-    });
+    }
   }
 
   dispose(undone: boolean): void {
@@ -192,25 +192,38 @@ export class DeleteNodesCommand implements Command {
   }
 }
 
-/** Moves nodes under another parent, keeping their local transforms. */
+/**
+ * Moves nodes under another parent, keeping their local transforms; undone,
+ * they go back at their place among their siblings. Nothing moves when one
+ * of them cannot (the parent is in its branch).
+ */
 export class ReparentCommand implements Command {
-  private readonly _before: Node[];
+  private readonly _places: { node: Node; parent: Node; before?: Node }[];
 
   constructor(
     readonly label: string,
     private readonly _nodes: readonly Node[],
     private readonly _parent: Node,
   ) {
-    this._before = _nodes.map((node) => node.parent as Node);
+    this._places = placesOf(_nodes);
   }
 
   do(): void {
+    for (const node of this._nodes) {
+      for (let p: Node | undefined = this._parent; p; p = p.parent) {
+        if (p === node) {
+          throw new Error(`"${node.name}" cannot be moved under itself`);
+        }
+      }
+    }
     for (const node of this._nodes) {
       this._parent.add(node);
     }
   }
 
   undo(): void {
-    this._nodes.forEach((node, i) => this._before[i].add(node));
+    for (const { node, parent, before } of this._places) {
+      placeUnder(node, parent, before);
+    }
   }
 }

@@ -217,6 +217,9 @@ export function GraphCanvas({
   cameraRef.current = camera;
   const [drag, setDrag] = useState<Drag>();
   const dragRef = useRef<Drag | undefined>(undefined);
+  // Removes the listeners of the drag in progress: at its end, or unmounted.
+  const stopDrag = useRef<() => void>(undefined);
+  useEffect(() => () => stopDrag.current?.(), []);
   const [search, setSearch] = useState<{
     at: Point;
     world: Point;
@@ -343,16 +346,30 @@ export function GraphCanvas({
       dragRef.current = { ...current };
       setDrag(dragRef.current);
     };
-    const up = (event: PointerEvent) => {
+    const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      if (stopDrag.current === stop) stopDrag.current = undefined;
+    };
+    const up = (event: PointerEvent) => {
+      stop();
       const current = dragRef.current;
       dragRef.current = undefined;
       setDrag(undefined);
       if (current) endDrag(current, event);
     };
+    // The pointer taken away (a touch scrolled, the window left): nothing done.
+    const cancel = () => {
+      stop();
+      dragRef.current = undefined;
+      setDrag(undefined);
+    };
+    stopDrag.current?.();
+    stopDrag.current = stop;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
   };
 
   const endDrag = (current: Drag, event: PointerEvent) => {
@@ -549,8 +566,14 @@ export function GraphCanvas({
       .map((id) => view.edges.find((edge) => `edge:${edgeKey(edge)}` === id))
       .filter((edge): edge is GraphEdge => edge !== undefined);
     const items = selection.filter((id) => !id.startsWith('edge:'));
-    if (edges.length > 0) dispatch({ op: 'disconnect', edges });
-    if (items.length > 0) dispatch({ op: 'remove', ids: items });
+    // One step, the edges with the items.
+    if (edges.length > 0 || items.length > 0) {
+      dispatch({
+        op: 'remove',
+        ids: items,
+        ...(edges.length > 0 && { edges }),
+      });
+    }
     onSelectionChange([]);
   };
   const nextId = (prefix: string, taken: readonly { id: string }[]) => {

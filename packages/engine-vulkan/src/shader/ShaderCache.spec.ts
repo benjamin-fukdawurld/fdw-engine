@@ -3,13 +3,21 @@ import {
   existsSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addonPath, loadVulkanAddon } from '../addon';
+import {
+  addonPath,
+  loadVulkanAddon,
+  type ContextHandle,
+  type ShaderHandle,
+  type VulkanAddon,
+} from '../addon';
+import { VulkanPipelineFactory } from '../render/VulkanPipelineFactory';
 import { dxcArguments } from './HlslCodegen';
 import { FileShaderCache, LayeredShaderCache, shaderKey } from './ShaderCache';
 
@@ -17,7 +25,8 @@ describe('shaderKey', () => {
   const args = ['-T', 'cs_6_0', '-E', 'main'];
   it('changes with each of its parts', () => {
     const key = shaderKey('1.8', 'vulkan', args, 'void main() {}');
-    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    // In a directory per version of DXC.
+    expect(key).toMatch(/^dxc-1\.8-[0-9a-f]{8}\/[0-9a-f]{64}$/);
     expect(shaderKey('1.8', 'vulkan', args, 'void main() {}')).toBe(key);
     for (const other of [
       shaderKey('1.9', 'vulkan', args, 'void main() {}'),
@@ -39,6 +48,10 @@ describe('shaderKey', () => {
   });
 });
 
+// A SPIR-V program: its magic number, then words.
+const spirv = (...words: number[]) =>
+  new Uint8Array(new Uint32Array([0x07230203, ...words]).buffer);
+
 describe('FileShaderCache', () => {
   let directory: string | undefined;
   afterEach(() => {
@@ -50,13 +63,52 @@ describe('FileShaderCache', () => {
     directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
     const first = new FileShaderCache(join(directory, 'cache'));
     expect(first.get('a')).toBeUndefined();
-    first.set('a', new Uint8Array([1, 2, 3, 4]));
+    first.set('a', spirv(1));
     // Another process, later.
     const second = new FileShaderCache(join(directory, 'cache'));
-    expect([...(second.get('a') ?? [])]).toEqual([1, 2, 3, 4]);
+    expect(second.get('a')).toEqual(spirv(1));
     expect([second.hits, second.misses, first.misses]).toEqual([1, 0, 1]);
     // No temporary file left.
     expect(readdirSync(join(directory, 'cache'))).toEqual(['a.bin']);
+  });
+
+  it('keeps the programs of each version of DXC in a directory', () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const cache = new FileShaderCache(directory);
+    const key = shaderKey('1.8.2405 (abc) dxil 1.8', 'd3d12', [], 'x');
+    cache.set(key, new TextEncoder().encode('DXBC....'));
+    const [version] = readdirSync(directory);
+    expect(version).toMatch(/^dxc-1\.8\.2405_abc_dxil_1\.8-[0-9a-f]{8}$/);
+    expect(readdirSync(join(directory, version ?? ''))).toEqual([
+      `${key.split('/')[1]}.bin`,
+    ]);
+    expect(cache.get(key)).toEqual(new TextEncoder().encode('DXBC....'));
+  });
+
+  it('misses the entries corrupted, truncated, or not a program', () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const cache = new FileShaderCache(directory);
+    cache.set('a', spirv(1, 2));
+    const path = join(directory, 'a.bin');
+    const bytes = readFileSync(path);
+    // A bit flipped in the program: its hash differs.
+    const flipped = Buffer.from(bytes);
+    flipped[flipped.length - 1] ^= 1;
+    writeFileSync(path, flipped);
+    expect(cache.get('a')).toBeUndefined();
+    // Truncated.
+    writeFileSync(path, bytes.subarray(0, bytes.length - 2));
+    expect(cache.get('a')).toBeUndefined();
+    // A program of before the header.
+    writeFileSync(path, spirv(1, 2));
+    expect(cache.get('a')).toBeUndefined();
+    // Neither SPIR-V nor DXIL, with a right hash.
+    cache.set('a', new Uint8Array([1, 2, 3, 4]));
+    expect(cache.get('a')).toBeUndefined();
+    expect([cache.hits, cache.misses]).toEqual([0, 4]);
+    // Written again.
+    cache.set('a', spirv(1, 2));
+    expect(cache.get('a')).toEqual(spirv(1, 2));
   });
 
   it('is only slower when it cannot be written', () => {
@@ -95,15 +147,15 @@ describe('LayeredShaderCache', () => {
   it('reads the programs shipped first, writes into the cache of the user', () => {
     directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
     const shipped = new FileShaderCache(join(directory, 'shipped'));
-    shipped.set('a', new Uint8Array([1]));
+    shipped.set('a', spirv(1));
     const user = new FileShaderCache(join(directory, 'user'));
-    user.set('a', new Uint8Array([2]));
+    user.set('a', spirv(2));
     const cache = new LayeredShaderCache(shipped, user);
-    expect([...(cache.get('a') ?? [])]).toEqual([1]);
+    expect(cache.get('a')).toEqual(spirv(1));
     expect(cache.get('b')).toBeUndefined();
-    cache.set('b', new Uint8Array([3]));
+    cache.set('b', spirv(3));
     expect(readdirSync(join(directory, 'shipped'))).toEqual(['a.bin']);
-    expect([...(cache.get('b') ?? [])]).toEqual([3]);
+    expect(cache.get('b')).toEqual(spirv(3));
   });
 
   it('is what the hosts get when the application ships programs', () => {
@@ -124,6 +176,53 @@ describe('LayeredShaderCache', () => {
       if (previous === undefined) delete process.env['FDW_SHADER_CACHE'];
       else process.env['FDW_SHADER_CACHE'] = previous;
     }
+  });
+});
+
+describe('the pipeline factory and its cache', () => {
+  // An addon that compiles to a word, and refuses the programs of the
+  // previous version (as the native side refuses a corrupted program).
+  const addon = () => {
+    const calls = { compiled: 0, created: 0 };
+    const fake = {
+      dxcVersion: () => '1.8',
+      compileHlsl: () => {
+        calls.compiled++;
+        return spirv(2);
+      },
+      createShaderFromCode: (_: ContextHandle, code: Uint8Array) => {
+        if (code[4] !== 2) throw new Error('The code is not SPIR-V');
+        calls.created++;
+        return {} as ShaderHandle;
+      },
+    };
+    return { calls, addon: fake as unknown as VulkanAddon };
+  };
+  const createShader = (factory: VulkanPipelineFactory) =>
+    (
+      factory as unknown as {
+        createShader(hlsl: string, args: string[], label: string): unknown;
+      }
+    ).createShader('void main() {}', ['-T', 'cs_6_0'], 'test');
+
+  it('compiles again a program the native side refuses, and replaces it', () => {
+    const { calls, addon: fake } = addon();
+    const entries = new Map<string, Uint8Array>();
+    const factory = new VulkanPipelineFactory(fake, {} as ContextHandle);
+    factory.shaderCache = {
+      get: (key) => entries.get(key),
+      set: (key, code) => void entries.set(key, code),
+    };
+    createShader(factory);
+    expect(calls).toEqual({ compiled: 1, created: 1 });
+    createShader(factory);
+    expect(calls).toEqual({ compiled: 1, created: 2 });
+    // Refused: compiled again, then read.
+    const [key] = entries.keys();
+    entries.set(key ?? '', spirv(9));
+    createShader(factory);
+    expect(calls).toEqual({ compiled: 2, created: 3 });
+    expect(entries.get(key ?? '')).toEqual(spirv(2));
   });
 });
 

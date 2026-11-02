@@ -133,6 +133,12 @@ export const createShadowsScene: SceneFactory = (backend, surface) => {
         clearColor: { r: 0.05, g: 0.06, b: 0.08, a: 1 },
       });
     },
-    destroy: () => renderer.destroy(),
+    // The meshes free their buffers in the renderer, before it goes; the
+    // uniforms of the materials are the renderer's.
+    destroy: () => {
+      cube.destroy();
+      sphere.destroy();
+      renderer.destroy();
+    },
   };
 };

@@ -10,7 +10,7 @@ import {
   type ResourceLoader,
 } from '@fdw/engine-resources';
 import { parseGraph, type MaterialGraphData } from '@fdw/engine-shader';
-import { SceneDataType, type SceneData } from './data';
+import { SceneDataType, type SceneBatchData, type SceneData } from './data';
 
 // The format of the engine: the SceneData as JSON, the typed arrays (the
 // vertices, the transforms of the batches, a heightfield) in a binary
@@ -87,6 +87,9 @@ interface BinaryRef {
     readonly length: number;
   };
 }
+
+const isIndex = (value: unknown): value is number =>
+  Number.isInteger(value) && (value as number) >= 0;
 
 const isBinaryRef = (value: unknown): value is BinaryRef =>
   typeof value === 'object' && value !== null && '$binary' in value;
@@ -211,8 +214,11 @@ function decode(value: unknown, buffer: ResourceBytes | undefined): unknown {
   if (isBinaryRef(value)) {
     if (!buffer) throw new Error('A binary array without a buffer');
     const { type, byteOffset, length } = value.$binary;
-    const Type = arrayTypes[type];
-    if (!Type) throw new Error(`Unknown binary type ${type}`);
+    // Own keys only: "constructor" would read the prototype of the table.
+    const Type = Object.hasOwn(arrayTypes, type) ? arrayTypes[type] : undefined;
+    if (!Type) throw new Error(`Unknown binary type ${String(type)}`);
+    if (!isIndex(byteOffset) || !isIndex(length))
+      throw new Error('A binary array with an invalid offset or length');
     const end = byteOffset + length * Type.BYTES_PER_ELEMENT;
     if (end > buffer.byteLength)
       throw new Error('A binary array past its buffer');
@@ -288,13 +294,33 @@ export function parseFdwScene(
   });
   const nodes = list('nodes');
   nodes.forEach((node: { parent?: number }, i: number) => {
-    if (node.parent !== undefined && !(node.parent >= 0 && node.parent < i))
+    if (node.parent !== undefined && !(isIndex(node.parent) && node.parent < i))
       throw new Error(`Node ${i}: its parent must come before it`);
+  });
+  const batches = list('batches');
+  batches.forEach((batch: SceneBatchData, b: number) => {
+    const { parent, count } = batch;
+    if (parent !== undefined && !(isIndex(parent) && parent < nodes.length))
+      throw new Error(`Batch ${b}: its parent ${String(parent)} is not a node`);
+    if (!isIndex(count)) throw new Error(`Batch ${b}: invalid count`);
+    const arrays = [
+      ['positions', 3],
+      ['rotations', 4],
+      ['scales', 3],
+    ] as const;
+    for (const [key, size] of arrays) {
+      const array = batch[key] as ArrayLike<number> | undefined;
+      if (array !== undefined && !(array.length >= count * size))
+        throw new Error(`Batch ${b}: "${key}" is shorter than its count`);
+    }
+    for (const [name, column] of Object.entries(batch.components ?? {}))
+      if (!Array.isArray(column?.data) || column.data.length > count)
+        throw new Error(`Batch ${b}: component ${name} has too many values`);
   });
   return {
     name: body['name'] as string | undefined,
     nodes,
-    batches: list('batches'),
+    batches,
     meshes: list('meshes'),
     materials,
   };

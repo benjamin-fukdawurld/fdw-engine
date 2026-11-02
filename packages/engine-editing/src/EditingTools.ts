@@ -109,6 +109,7 @@ export class EditingTools<T extends Editable> {
   private _hovering = false;
   private _hoverNext?: ViewportPoint;
   private readonly _listeners: (() => void)[] = [];
+  private readonly _stopSelection: () => void;
 
   constructor(options: EditingToolsOptions<T>) {
     this.viewport = options.viewport;
@@ -124,8 +125,19 @@ export class EditingTools<T extends Editable> {
       mouse: options.tolerance?.mouse ?? 8,
       touch: options.tolerance?.touch ?? 20,
     };
-    this.selection.onChange(() => this.syncGizmo());
+    this._stopSelection = this.selection.onChange(() => this.syncGizmo());
     this.syncGizmo();
+  }
+
+  /**
+   * Stops following the selection (which outlives the tools) and drops a
+   * press in progress; the tools are not used anymore.
+   */
+  dispose(): void {
+    this.cancel();
+    this._stopSelection();
+    this._listeners.length = 0;
+    this._hoverNext = undefined;
   }
 
   /**

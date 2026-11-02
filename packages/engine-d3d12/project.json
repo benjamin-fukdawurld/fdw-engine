@@ -22,6 +22,16 @@
         {
           "dependentTasksOutputFiles": "**/*.js",
           "transitive": true
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.node",
+          "transitive": true
+        },
+        {
+          "env": "FDW_REQUIRE_SUITES"
+        },
+        {
+          "env": "FDW_D3D12_ADAPTER"
         }
       ],
       "dependsOn": ["build-native"]
@@ -35,9 +45,28 @@
       "inputs": [
         "{projectRoot}/native/**/*",
         "{projectRoot}/scripts/**/*",
-        "{workspaceRoot}/tools/native/**/*"
+        "{workspaceRoot}/tools/native/**/*",
+        {
+          "externalDependencies": ["node-api-headers"]
+        },
+        {
+          "env": "FDW_FROM_SOURCE"
+        },
+        {
+          "runtime": "node tools/native/prebuilt.mjs windows-sdk"
+        }
       ],
-      "outputs": ["{projectRoot}/build/fdw_d3d12.node"]
+      "outputs": [
+        "{projectRoot}/build/fdw_d3d12.node",
+        "{projectRoot}/build/.prebuilt",
+        "{projectRoot}/build/dxcompiler.dll",
+        "{projectRoot}/build/dxil.dll"
+      ],
+      "configurations": {
+        "debug": {
+          "args": "--debug"
+        }
+      }
     }
   }
 }

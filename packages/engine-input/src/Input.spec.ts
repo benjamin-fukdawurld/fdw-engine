@@ -164,6 +164,30 @@ describe('Input', () => {
     input.update();
     expect(gamepad.stick('left')).toEqual({ x: 1, y: 0 });
   });
+
+  it('leaves the last device to the others while a stick drifts', () => {
+    const { source, input } = setup();
+    const pad = source.connectGamepad();
+    // Past the dead zone, at rest.
+    source.setAxis(pad, 'rightX', 0.3);
+    input.update();
+    expect(input.lastDevice).toBe('gamepad');
+    source.sink?.pointerMove(0.5, 0.5);
+    input.update();
+    expect(input.lastDevice).toBe('pointer');
+    source.setAxis(pad, 'rightX', 0.31);
+    input.update();
+    input.update();
+    expect(input.lastDevice).toBe('pointer');
+    // Moved: the gamepad again, and while held far.
+    source.setAxis(pad, 'rightX', 0.6);
+    input.update();
+    expect(input.lastDevice).toBe('gamepad');
+    source.keyDown('KeyW');
+    source.setAxis(pad, 'rightX', 1);
+    input.update();
+    expect(input.lastDevice).toBe('gamepad');
+  });
 });
 
 describe('ActionMap', () => {

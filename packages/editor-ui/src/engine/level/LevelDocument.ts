@@ -228,6 +228,11 @@ export class LevelDocument {
       case 'reparent':
         this.#reparent(command.id, command.parent);
         break;
+      case 'batch':
+        this.history.transaction(command.label, () =>
+          command.commands.forEach((part) => this.run(part)),
+        );
+        break;
       case 'select':
         this.selection.set(
           command.ids.flatMap((id) => {
@@ -462,7 +467,7 @@ export class LevelDocument {
     this.#post({
       type: 'level.history',
       ...(this.history.canUndo && { undo: this.history.undoLabels.at(-1) }),
-      ...(this.history.canRedo && { redo: this.history.redoLabels.at(-1) }),
+      ...(this.history.canRedo && { redo: this.history.redoLabels[0] }),
     });
   }
 

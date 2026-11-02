@@ -58,5 +58,10 @@ vitest.config.*.timestamp*
 bench.json
 bench_results.json
 
-# Sources of tools/assets (third-party packs, downloaded at the root)
-assets
+# Sources of tools/assets (third-party packs, downloaded into /assets); only
+# the antique estoc is versioned (Git LFS)
+/assets/*
+!/assets/antique_estoc_1k.gltf/
+
+# TypeScript incremental build state
+*.tsbuildinfo

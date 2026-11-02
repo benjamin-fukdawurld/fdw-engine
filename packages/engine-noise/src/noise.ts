@@ -1,4 +1,4 @@
-import { hashCell, pcg, toUnit } from './hash';
+import { hashCellBits, pcg, toUnit } from './hash';
 
 // The noises of the material graph (noise.value2… noise.worley4), in
 // TypeScript: the same algorithms, the same hashes, the same constants, in
@@ -9,32 +9,28 @@ import { hashCell, pcg, toUnit } from './hash';
 /** The dimensions of the noises: 2 to 4 coordinates (the 4th one: time). */
 export type NoisePoint = ArrayLike<number>;
 
+// The scratch values of the noises, reused: a call allocates nothing (the
+// noises run per texel of heightmaps and textures). Not reentrant, as
+// nothing they call calls back.
 const hash = [0, 0, 0, 0];
-const cell = [0, 0, 0, 0];
+const g = [0, 0, 0, 0];
+const base = new Float64Array(4);
+const t = new Float64Array(4);
+const u = new Float64Array(4);
+const key = new Float64Array(4);
+// The values of the 2^n corners of a lattice cell.
+const values = new Float64Array(16);
+// The offsets of the n + 1 corners of a simplex, 4 numbers a corner.
+const offsets = new Float64Array(20);
 
 // The quintic fade of Perlin's improved noise: t³ (t (6 t - 15) + 10).
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const mix = (a: number, b: number, t: number) => a * (1 - t) + b * t;
 
-// The hash of the cell `base + corner` (corner: one bit per coordinate).
-function cornerHash(
-  base: NoisePoint,
-  corner: number,
-  seed: number,
-  out: number[],
-): number[] {
-  const n = base.length;
-  const key = cell.slice(0, n);
-  for (let k = 0; k < n; k++) {
-    key[k] = base[k] + ((corner >> k) & 1);
-  }
-  return hashCell(key, seed, out);
-}
-
 // Interpolates the 2^n corner values, along x, then y, z, w.
-function interpolate(values: number[], u: readonly number[]): number {
-  let count = values.length;
-  for (let k = 0; k < u.length; k++) {
+function interpolate(n: number): number {
+  let count = 1 << n;
+  for (let k = 0; k < n; k++) {
     count /= 2;
     for (let i = 0; i < count; i++) {
       values[i] = mix(values[2 * i], values[2 * i + 1], u[k]);
@@ -43,27 +39,41 @@ function interpolate(values: number[], u: readonly number[]): number {
   return values[0];
 }
 
+// The noises on a lattice: the value of each corner, interpolated.
+const Value = 0;
+const Gradient = 1;
+
 function lattice(
   point: NoisePoint,
   seed: number,
-  corner: (h: number[], t: readonly number[], corner: number) => number,
+  kind: typeof Value | typeof Gradient,
 ): number {
   const n = point.length;
-  const base: number[] = [];
-  const t: number[] = [];
-  const u: number[] = [];
   for (let k = 0; k < n; k++) {
-    base.push(Math.floor(point[k]));
-    t.push(point[k] - base[k]);
-    u.push(fade(t[k]));
+    base[k] = Math.floor(point[k]);
+    t[k] = point[k] - base[k];
+    u[k] = fade(t[k]);
   }
+  const seedMix = pcg(seed);
   // Corner c: bit k for coordinate k. Interpolated along x first: the
   // corners are ordered with x as the lowest bit.
-  const values: number[] = [];
   for (let c = 0; c < 1 << n; c++) {
-    values.push(corner(cornerHash(base, c, seed, hash), t, c));
+    for (let k = 0; k < n; k++) {
+      key[k] = base[k] + ((c >> k) & 1);
+    }
+    const h = hashCellBits(key, n, seedMix, hash);
+    if (kind === Value) {
+      values[c] = toUnit(h[0]) * 2 - 1;
+      continue;
+    }
+    gradient(h, n, g);
+    let dot = 0;
+    for (let k = 0; k < n; k++) {
+      dot += g[k] * (t[k] - ((c >> k) & 1));
+    }
+    values[c] = dot;
   }
-  return interpolate(values, u);
+  return interpolate(n);
 }
 
 /**
@@ -71,7 +81,7 @@ function lattice(
  * lattice, interpolated by the quintic fade. As noise.value2/3/4.
  */
 export function valueNoise(point: NoisePoint, seed = 0): number {
-  return lattice(point, seed, (h) => toUnit(h[0]) * 2 - 1);
+  return lattice(point, seed, Value);
 }
 
 // A random unit vector from a hash: the components in [-1, 1), normalized.
@@ -88,8 +98,6 @@ function gradient(h: readonly number[], n: number, out: number[]): number[] {
   return out;
 }
 
-const g = [0, 0, 0, 0];
-
 /** The scale of the gradient noise: its largest value, √n / 2, to 1. */
 const perlinScale = (n: number) => 2 / Math.sqrt(n);
 
@@ -99,17 +107,7 @@ const perlinScale = (n: number) => 2 / Math.sqrt(n);
  * noise.perlin2/3/4.
  */
 export function perlinNoise(point: NoisePoint, seed = 0): number {
-  const n = point.length;
-  return (
-    lattice(point, seed, (h, t, c) => {
-      gradient(h, n, g);
-      let dot = 0;
-      for (let k = 0; k < n; k++) {
-        dot += g[k] * (t[k] - ((c >> k) & 1));
-      }
-      return dot;
-    }) * perlinScale(n)
-  );
+  return lattice(point, seed, Gradient) * perlinScale(point.length);
 }
 
 // The skew and unskew factors of the simplex lattices, by dimension.
@@ -129,43 +127,53 @@ export const simplexScales = { 2: 99, 3: 108, 4: 109 } as const;
 const step = (edge: number, x: number) => (x < edge ? 0 : 1);
 const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
 
-// The offsets of the corners of the simplex of x0 after the first one (the
-// last one is (1, 1…)), as the rank comparisons of the shaders compute them.
-function simplexCorners(x0: readonly number[]): number[][] {
-  const n = x0.length;
+// The offsets of the corners of the simplex of x0 (in `t`), into
+// `offsets`: the first one 0, the last one (1, 1…), those between as the
+// rank comparisons of the shaders compute them.
+function simplexCorners(n: 2 | 3 | 4): void {
+  const x0 = t;
+  offsets.fill(0, 0, 4);
+  offsets.fill(1, n * 4, n * 4 + 4);
   if (n === 2) {
     const x = step(x0[1], x0[0]);
-    return [
-      [x, 1 - x],
-      [1, 1],
-    ];
+    offsets[4] = x;
+    offsets[5] = 1 - x;
+    return;
   }
   if (n === 3) {
     // g = step(x0.yzx, x0.xyz), l = 1 - g; i1 = min(g, l.zxy), i2 = max.
-    const gv = [step(x0[1], x0[0]), step(x0[2], x0[1]), step(x0[0], x0[2])];
-    const l = gv.map((v) => 1 - v);
-    const lz = [l[2], l[0], l[1]];
-    return [
-      gv.map((v, k) => Math.min(v, lz[k])),
-      gv.map((v, k) => Math.max(v, lz[k])),
-      [1, 1, 1],
-    ];
+    const g0 = step(x0[1], x0[0]);
+    const g1 = step(x0[2], x0[1]);
+    const g2 = step(x0[0], x0[2]);
+    const lz0 = 1 - g2;
+    const lz1 = 1 - g0;
+    const lz2 = 1 - g1;
+    offsets[4] = Math.min(g0, lz0);
+    offsets[5] = Math.min(g1, lz1);
+    offsets[6] = Math.min(g2, lz2);
+    offsets[8] = Math.max(g0, lz0);
+    offsets[9] = Math.max(g1, lz1);
+    offsets[10] = Math.max(g2, lz2);
+    return;
   }
   // The rank of each coordinate among the four (Gustavson, McEwan).
-  const isX = [step(x0[1], x0[0]), step(x0[2], x0[0]), step(x0[3], x0[0])];
-  const isYZ = [step(x0[2], x0[1]), step(x0[3], x0[1]), step(x0[3], x0[2])];
-  const rank = [
-    isX[0] + isX[1] + isX[2],
-    1 - isX[0] + isYZ[0] + isYZ[1],
-    1 - isX[1] + (1 - isYZ[0]) + isYZ[2],
-    1 - isX[2] + (1 - isYZ[1]) + (1 - isYZ[2]),
-  ];
-  return [
-    rank.map((r) => clamp01(r - 2)),
-    rank.map((r) => clamp01(r - 1)),
-    rank.map((r) => clamp01(r)),
-    [1, 1, 1, 1],
-  ];
+  const x1 = step(x0[1], x0[0]);
+  const x2 = step(x0[2], x0[0]);
+  const x3 = step(x0[3], x0[0]);
+  const yz0 = step(x0[2], x0[1]);
+  const yz1 = step(x0[3], x0[1]);
+  const yz2 = step(x0[3], x0[2]);
+  rankOffsets(0, x1 + x2 + x3);
+  rankOffsets(1, 1 - x1 + yz0 + yz1);
+  rankOffsets(2, 1 - x2 + (1 - yz0) + yz2);
+  rankOffsets(3, 1 - x3 + (1 - yz1) + (1 - yz2));
+}
+
+// The offsets of coordinate k in the 3 corners between, from its rank.
+function rankOffsets(k: number, rank: number): void {
+  offsets[4 + k] = clamp01(rank - 2);
+  offsets[8 + k] = clamp01(rank - 1);
+  offsets[12 + k] = clamp01(rank);
 }
 
 /**
@@ -183,36 +191,36 @@ export function simplexNoise(point: NoisePoint, seed = 0): number {
     sum += point[k];
   }
   const s = sum * f;
-  const base: number[] = [];
   let baseSum = 0;
   for (let k = 0; k < n; k++) {
-    base.push(Math.floor(point[k] + s));
+    base[k] = Math.floor(point[k] + s);
     baseSum += base[k];
   }
-  const t = baseSum * unskew;
-  const x0: number[] = [];
+  const shift = baseSum * unskew;
+  // x0, the point from the first corner, in t.
   for (let k = 0; k < n; k++) {
-    x0.push(point[k] - base[k] + t);
+    t[k] = point[k] - base[k] + shift;
   }
-  const offsets = [new Array(n).fill(0), ...simplexCorners(x0)];
+  simplexCorners(n);
+  const seedMix = pcg(seed);
   let total = 0;
-  offsets.forEach((offset, c) => {
-    const x: number[] = [];
-    const key: number[] = [];
+  for (let c = 0; c <= n; c++) {
+    // x, the point from corner c, in u.
     let squared = 0;
     for (let k = 0; k < n; k++) {
-      x.push(x0[k] - offset[k] + c * unskew);
-      key.push(base[k] + offset[k]);
-      squared += x[k] * x[k];
+      const offset = offsets[c * 4 + k];
+      u[k] = t[k] - offset + c * unskew;
+      key[k] = base[k] + offset;
+      squared += u[k] * u[k];
     }
     const a = Math.max(r2 - squared, 0);
-    gradient(hashCell(key, seed, hash), n, g);
+    gradient(hashCellBits(key, n, seedMix, hash), n, g);
     let dot = 0;
     for (let k = 0; k < n; k++) {
-      dot += g[k] * x[k];
+      dot += g[k] * u[k];
     }
     total += a * a * a * a * dot;
-  });
+  }
   return total * simplexScales[n];
 }
 
@@ -239,31 +247,59 @@ export function worleyNoise(
   seed = 0,
   jitter = 1,
 ): WorleyValue {
+  worley(point, seed, jitter);
+  const id = pcg(bestHash);
+  return {
+    f1: Math.sqrt(best1),
+    f2: Math.sqrt(best2),
+    id,
+    random: toUnit(id),
+  };
+}
+
+/**
+ * The distance F1 of {@link worleyNoise}, without its other values: what
+ * the fractal sums add up, allocating nothing.
+ *
+ * @internal
+ */
+export function worleyF1(point: NoisePoint, seed = 0, jitter = 1): number {
+  worley(point, seed, jitter);
+  return Math.sqrt(best1);
+}
+
+// The squared distances to the two nearest feature points, and the hash
+// of the cell of the nearest: the result of worley().
+let best1 = 0;
+let best2 = 0;
+let bestHash = 0;
+// The offset of the cell searched, in -1…1 per coordinate.
+const offset = new Float64Array(4);
+
+function worley(point: NoisePoint, seed: number, jitter: number): void {
   const n = point.length;
-  const base: number[] = [];
-  const f: number[] = [];
+  // The point in its cell, in t.
   for (let k = 0; k < n; k++) {
-    base.push(Math.floor(point[k]));
-    f.push(point[k] - base[k]);
+    base[k] = Math.floor(point[k]);
+    t[k] = point[k] - base[k];
   }
-  let best1 = 1e10;
-  let best2 = 1e10;
-  let bestHash = 0;
-  const key: number[] = new Array(n).fill(0);
+  const seedMix = pcg(seed);
+  best1 = 1e10;
+  best2 = 1e10;
+  bestHash = 0;
   const count = 3 ** n;
   for (let i = 0; i < count; i++) {
     let squared = 0;
     let digits = i;
-    const offset: number[] = [];
     for (let k = 0; k < n; k++) {
-      offset.push((digits % 3) - 1);
+      offset[k] = (digits % 3) - 1;
       digits = Math.floor(digits / 3);
       key[k] = base[k] + offset[k];
     }
-    hashCell(key, seed, hash);
+    hashCellBits(key, n, seedMix, hash);
     for (let k = 0; k < n; k++) {
       const feature = offset[k] + 0.5 + jitter * (toUnit(hash[k]) - 0.5);
-      const d = feature - f[k];
+      const d = feature - t[k];
       squared += d * d;
     }
     if (squared < best1) {
@@ -274,11 +310,4 @@ export function worleyNoise(
       best2 = Math.min(best2, squared);
     }
   }
-  const id = pcg(bestHash);
-  return {
-    f1: Math.sqrt(best1),
-    f2: Math.sqrt(best2),
-    id,
-    random: toUnit(id),
-  };
 }

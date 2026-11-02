@@ -71,6 +71,8 @@ struct Replay {
   std::array<bool, 8> dirty{};
   std::array<fdw_dx_buffer *, 16> vertexBuffers{};
   bool vertexDirty = false;
+  // An index buffer set in the pass.
+  bool indexBuffer = false;
   // The first instance set as a root constant (none: ~0).
   uint32_t firstInstance = ~0u;
   // The resolves at the end of the render pass: target, resolve target.
@@ -80,6 +82,24 @@ struct Replay {
   uint64_t scratchUsed = 0;
   D3D12_RESOURCE_STATES scratchState = D3D12_RESOURCE_STATE_COMMON;
 };
+
+// The start of a pass: nothing is bound (WebGPU), so that the barriers of
+// a pass are those of what it sets.
+void resetBindings(Replay &replay) {
+  replay.pipeline = nullptr;
+  replay.root = nullptr;
+  replay.groups.fill(nullptr);
+  replay.dirty.fill(false);
+  replay.vertexBuffers.fill(nullptr);
+  replay.vertexDirty = false;
+  replay.indexBuffer = false;
+  replay.firstInstance = ~0u;
+}
+
+// Whether [offset, offset + size) is inside `limit` bytes.
+bool inside(uint64_t offset, uint64_t size, uint64_t limit) {
+  return offset <= limit && size <= limit - offset;
+}
 
 template <typename T>
 T *find(const std::map<uint32_t, T *> &objects, uint32_t id, const char *what,
@@ -336,6 +356,10 @@ int dispatch(Replay &replay, bool indirect) {
     if (!buffer) {
       return status;
     }
+    if (offset % 4 != 0 || !inside(offset, 12, buffer->size)) {
+      return fail("The indirect arguments are outside of the buffer, or "
+                  "their offset is not a multiple of 4");
+    }
   } else {
     for (uint32_t &count : workgroups) {
       count = reader.word();
@@ -493,6 +517,7 @@ int drawCommand(Replay &replay, uint32_t opcode) {
     if (!buffer) {
       return status;
     }
+    replay.indexBuffer = true;
     const D3D12_INDEX_BUFFER_VIEW view{
         buffer->resource->GetGPUVirtualAddress(),
         static_cast<UINT>(buffer->size),
@@ -514,6 +539,9 @@ int drawCommand(Replay &replay, uint32_t opcode) {
     const uint32_t count = reader.word();
     const uint32_t instances = reader.word();
     const uint32_t firstInstance = reader.word();
+    if (opcode == FDW_DX_CMD_DRAW_INDEXED && !replay.indexBuffer) {
+      return fail("No index buffer set before drawing");
+    }
     if (flushGroups(replay) != 0) {
       return -1;
     }
@@ -558,6 +586,7 @@ int beginRenderPass(Replay &replay) {
   };
   std::vector<Color> colors;
   replay.resolves.clear();
+  resetBindings(replay);
   uint32_t width = 0;
   uint32_t height = 0;
   // The barriers of the pass, placed together before it.
@@ -685,6 +714,19 @@ int copyBuffer(Replay &replay) {
   if (!source || !destination) {
     return status;
   }
+  if (sourceOffset % 4 != 0 || destinationOffset % 4 != 0 || size % 4 != 0) {
+    return fail("The offsets and size of a buffer copy are multiples of 4");
+  }
+  if (!inside(sourceOffset, size, source->size) ||
+      !inside(destinationOffset, size, destination->size)) {
+    return fail("The buffer copy is outside of the buffers");
+  }
+  if (source == destination) {
+    return fail("A buffer cannot be copied into itself");
+  }
+  if (size == 0) {
+    return 0;
+  }
   {
     // Both barriers in one call.
     Barriers barriers{replay.context, replay.list};
@@ -708,6 +750,37 @@ int copyTexture(Replay &replay) {
   if (!source || !destination) {
     return status;
   }
+  if (source == destination) {
+    return fail("A texture cannot be copied into itself");
+  }
+  const FormatInfo *format = source->format;
+  // The same texel size and kind: Direct3D copies between the formats of a
+  // group (rgba8unorm and its sRGB view), not between others.
+  if (format->pixelSize != destination->format->pixelSize ||
+      format->block != destination->format->block ||
+      format->depth != destination->format->depth ||
+      format->stencil != destination->format->stencil ||
+      source->samples != destination->samples) {
+    return fail("The textures of a copy have different formats or samples");
+  }
+  if (width > source->width || height > source->height ||
+      width > destination->width || height > destination->height) {
+    return fail("The texture copy is outside of the textures");
+  }
+  if (format->block > 1 && (width % format->block != 0 ||
+                            height % format->block != 0)) {
+    return fail("A copy of compressed textures takes whole blocks");
+  }
+  // Depth and multisampled textures are copied whole.
+  const bool whole = format->depth || source->samples > 1;
+  if (whole && (source->width != destination->width ||
+                source->height != destination->height)) {
+    return fail("Depth and multisampled textures are copied whole, into "
+                "textures of the same size");
+  }
+  if (width == 0 || height == 0) {
+    return 0;
+  }
   {
     // Both barriers in one call.
     Barriers barriers{replay.context, replay.list};
@@ -718,10 +791,15 @@ int copyTexture(Replay &replay) {
                                  D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};
   D3D12_TEXTURE_COPY_LOCATION from{source->resource.Get(),
                                    D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};
-  // Depth and multisampled textures are copied whole.
-  const bool whole = source->format->depth || source->samples > 1;
   const D3D12_BOX box{0, 0, 0, width, height, 1};
   replay.list->CopyTextureRegion(&to, 0, 0, 0, &from, whole ? nullptr : &box);
+  // The stencil plane of a depth stencil texture: its first subresource
+  // follows those of the depth.
+  if (format->stencil) {
+    from.SubresourceIndex = source->levels * source->layers;
+    to.SubresourceIndex = destination->levels * destination->layers;
+    replay.list->CopyTextureRegion(&to, 0, 0, 0, &from, nullptr);
+  }
   return 0;
 }
 
@@ -776,6 +854,7 @@ int replayCommands(Replay &replay) {
       if (replay.inRenderPass || replay.inComputePass) {
         return fail("A pass is already open");
       }
+      resetBindings(replay);
       replay.inComputePass = true;
       break;
     case FDW_DX_CMD_END_COMPUTE_PASS:

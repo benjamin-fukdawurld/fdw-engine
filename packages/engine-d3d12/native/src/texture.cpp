@@ -82,8 +82,10 @@ constexpr FormatInfo formats[] = {
      DXGI_FORMAT_D32_FLOAT, 4, true},
     {"depth32float", DXGI_FORMAT_R32_TYPELESS, DXGI_FORMAT_R32_FLOAT,
      DXGI_FORMAT_D32_FLOAT, 4, true},
+    // Two planes: the depth (4 bytes a pixel, as the writes and reads
+    // carry it) and the stencil, copied each with its own footprint.
     {"depth24plus-stencil8", DXGI_FORMAT_R32G8X24_TYPELESS,
-     DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS, DXGI_FORMAT_D32_FLOAT_S8X24_UINT, 8,
+     DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS, DXGI_FORMAT_D32_FLOAT_S8X24_UINT, 4,
      true, true},
     // Compressed formats, by blocks of 4 × 4 pixels. Direct3D has neither
     // ETC2 nor ASTC.
@@ -193,6 +195,21 @@ int createAttachmentView(fdw_dx_context *context, fdw_dx_texture *texture) {
 uint32_t subresource(const fdw_dx_texture *texture, uint32_t level,
                      uint32_t layer) {
   return level + layer * texture->levels;
+}
+
+// The format of the copies of a subresource of the first plane: that of
+// the resource, but the depth plane of a depth stencil format
+// (R32_TYPELESS, not R32G8X24_TYPELESS), as GetCopyableFootprints tells.
+DXGI_FORMAT copyFormat(fdw_dx_context *context,
+                       const fdw_dx_texture *texture) {
+  if (!texture->format->stencil) {
+    return texture->format->resource;
+  }
+  const D3D12_RESOURCE_DESC desc = texture->resource->GetDesc();
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout{};
+  context->device->GetCopyableFootprints(&desc, 0, 1, 0, &layout, nullptr,
+                                         nullptr, nullptr);
+  return layout.Footprint.Format;
 }
 
 } // namespace
@@ -329,6 +346,11 @@ uint32_t fdw_dx_texture_id(const fdw_dx_texture *texture) {
   return texture->id;
 }
 
+fdw_dx_texture *fdw_dx_texture_find(fdw_dx_context *context, uint32_t id) {
+  const auto found = context->textures.find(id);
+  return found != context->textures.end() ? found->second : nullptr;
+}
+
 uint32_t fdw_dx_texture_pixel_size(const fdw_dx_texture *texture) {
   return texture->format->pixelSize;
 }
@@ -374,7 +396,7 @@ int fdw_dx_texture_write_level(fdw_dx_context *context,
   const uint64_t pitch = (rowSize + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) &
                          ~uint64_t(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
   D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
-  footprint.Footprint.Format = format->resource;
+  footprint.Footprint.Format = copyFormat(context, texture);
   footprint.Footprint.Width = columns * block;
   footprint.Footprint.Height = rows * block;
   footprint.Footprint.Depth = 1;
@@ -447,7 +469,7 @@ int fdw_dx_texture_read(fdw_dx_context *context, fdw_dx_texture *texture,
   useTexture(context, list, texture, D3D12_RESOURCE_STATE_COPY_SOURCE);
   D3D12_TEXTURE_COPY_LOCATION to{read.readback.Get(),
                                  D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT};
-  to.PlacedFootprint.Footprint = {texture->format->resource, copyWidth,
+  to.PlacedFootprint.Footprint = {copyFormat(context, texture), copyWidth,
                                   copyHeight, 1, static_cast<UINT>(pitch)};
   D3D12_TEXTURE_COPY_LOCATION from{texture->resource.Get(),
                                    D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};

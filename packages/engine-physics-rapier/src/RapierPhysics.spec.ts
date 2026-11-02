@@ -565,4 +565,65 @@ describe('RapierPhysics', () => {
     expect([...world.bodies]).toHaveLength(3);
     world.destroy();
   });
+
+  it('ends the pairs of a body removed inside a sensor', () => {
+    const world = engine.createWorld({ gravity: { x: 0, y: 0, z: 0 } });
+    const trigger = world.createBody({
+      type: 'static',
+      colliders: [{ shape: Shapes.box(1), sensor: true }],
+    });
+    const ball = world.createBody({
+      type: 'dynamic',
+      colliders: [{ shape: Shapes.sphere(0.25), events: true }],
+    });
+    world.step(1 / 60);
+    world.step(1 / 60);
+    expect(world.events.map((e) => e.type)).toEqual([]);
+    world.removeBody(ball);
+    world.step(1 / 60);
+    expect(world.events).toHaveLength(1);
+    const [event] = world.events;
+    expect(event.type).toBe('end');
+    expect(event.sensor).toBe(true);
+    expect([event.a.body, event.b.body]).toEqual([ball, trigger]);
+    world.step(1 / 60);
+    expect(world.events).toHaveLength(0);
+    world.destroy();
+  });
+
+  it('moves a character through the body its filter excludes', () => {
+    const world = withGround();
+    const wall = world.createBody({
+      type: 'static',
+      position: { x: 1, y: 1 },
+      colliders: [{ shape: Shapes.box(0.1, 1, 2) }],
+    });
+    const character = world.createCharacter({
+      shape: Shapes.capsule(0.5, 0.3),
+      position: { y: 0.85 },
+    });
+    world.step(1 / 60);
+    const blocked = character.move({ x: 1, y: 0, z: 0 });
+    expect(blocked.movement.x).toBeLessThan(0.7);
+    const through = character.move({ x: 1, y: 0, z: 0 }, { exclude: wall });
+    expect(through.movement.x).toBeCloseTo(1);
+    world.destroy();
+  });
+
+  it('removes the controller of a character with its body', () => {
+    const world = withGround();
+    const character = world.createCharacter({
+      shape: Shapes.capsule(0.5, 0.3),
+      position: { y: 0.85 },
+    });
+    world.removeBody(character.body);
+    expect([...world.bodies]).toHaveLength(1);
+    const characters = (world as unknown as { _characters: Set<unknown> })
+      ._characters;
+    expect(characters.size).toBe(0);
+    // Forgotten: removing the character does nothing more.
+    world.removeCharacter(character);
+    world.step(1 / 60);
+    world.destroy();
+  });
 });

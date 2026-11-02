@@ -152,7 +152,8 @@ export class ZipReader implements ArchiveReader {
       offset += 46 + nameLen + extraLen + commentLen;
       if (name.endsWith('/')) continue; // directory
 
-      const path = normalizePath(name);
+      // Entry names cannot climb out of the archive.
+      const path = normalizePath(name, true);
       if (size > this.maxEntrySize) {
         throw bad(`${path} has ${size} bytes, more than ${this.maxEntrySize}`);
       }
@@ -178,8 +179,14 @@ export class ZipReader implements ArchiveReader {
             30 +
             view.getUint16(local + 26, true) +
             view.getUint16(local + 28, true);
+          if (start + csize > bytes.byteLength) {
+            throw bad(`${path} runs past the end of the archive`);
+          }
           const raw = bytes.subarray(start, start + csize);
-          if (method === 0) return new Uint8Array(raw);
+          if (method === 0) {
+            if (csize !== size) throw bad(`size mismatch for ${path}`);
+            return new Uint8Array(raw);
+          }
           if (method === 8) {
             // Never past the size declared, checked against the limits.
             const out = await this.inflate(raw, size);

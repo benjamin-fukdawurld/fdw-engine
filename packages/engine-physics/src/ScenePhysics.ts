@@ -126,8 +126,10 @@ export class ScenePhysics {
   ): PhysicsCharacter {
     const [position] = this.nodePose(node, 'body');
     const character = this.world.createCharacter({ ...desc, position });
-    this._characters.set(node.entity, character);
+    // Attached first: the body the node had goes (with its character), not
+    // the new one.
     this.attach(node, character.body, 'body', desc);
+    this._characters.set(node.entity, character);
     return character;
   }
 
@@ -174,7 +176,8 @@ export class ScenePhysics {
 
   /**
    * Moves a body and its node at once, without drawing the way between:
-   * a respawn.
+   * a respawn. The pose is in the world; the node is written only if it
+   * follows its body (a kinematic node is followed by its body instead).
    */
   teleport(node: Node, position?: Partial<IVec3>, rotation?: IQuat): void {
     const body = this.bodyOf(node);
@@ -186,12 +189,16 @@ export class ScenePhysics {
       body.linearVelocity = { x: 0, y: 0, z: 0 };
       body.angularVelocity = { x: 0, y: 0, z: 0 };
     }
-    const { previous, current, moved } = this.Body;
+    const { follow, previous, current, moved } = this.Body;
     const o = node.entity * PoseSize;
     body.readPose(current, o);
     previous.set(current.subarray(o, o + PoseSize), o);
-    moved[node.entity] = 1;
-    this.write(node.entity, 1);
+    // Only the nodes following their body are under the root: elsewhere the
+    // pose in the world is not the local one.
+    if (follow[node.entity] === Follow.body) {
+      moved[node.entity] = 1;
+      this.write(node.entity, 1);
+    }
   }
 
   /**
@@ -229,8 +236,9 @@ export class ScenePhysics {
           break;
         }
       }
-      // 1: moving; 2: stopped at this step, written once more; 0: at rest.
-      moved[e] = changed ? 1 : moved[e] === 1 ? 2 : 0;
+      // 1: moving; 2: stopped, to be written once more by `sync` (which
+      // puts it at rest, 0): several steps may run between two syncs.
+      moved[e] = changed ? 1 : moved[e] !== 0 ? 2 : 0;
     }
   }
 
@@ -246,6 +254,9 @@ export class ScenePhysics {
       const e = entities[i];
       if (follow[e] === Follow.body && moved[e] !== 0) {
         this.write(e, t);
+        if (moved[e] === 2) {
+          moved[e] = 0;
+        }
       }
     }
   }

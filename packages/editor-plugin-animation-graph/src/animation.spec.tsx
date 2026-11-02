@@ -165,6 +165,28 @@ describe('the animation plugin', () => {
     expect(await screen.findByRole('group', { name: 'body' })).toBeTruthy();
   });
 
+  it('drops a transition dragged when the pointer is cancelled', async () => {
+    const { target, graph } = hero();
+    const { runtime } = await renderGraphEditor(
+      [animationGraphPlugin],
+      [target],
+    );
+    await act(() => runtime.workbench.openView(animationGraphView));
+    fireEvent.doubleClick(await screen.findByRole('group', { name: 'body' }));
+    const handle = await screen.findByLabelText('Transition from run');
+    fireEvent.pointerDown(handle, { button: 0 });
+    fireEvent.pointerCancel(window);
+    fireEvent.pointerUp(screen.getByRole('button', { name: 'State idle' }));
+    // Dragged again, then released: one transition, run to idle.
+    fireEvent.pointerDown(handle, { button: 0 });
+    fireEvent.pointerUp(screen.getByRole('button', { name: 'State idle' }));
+    const machine = () =>
+      graph().nodes.find((n) => n.type === 'anim.stateMachine');
+    await waitFor(() =>
+      expect(machine()?.params['transitions']).toHaveLength(2),
+    );
+  });
+
   it('weighs the nodes by the animator', () => {
     expect(
       animationOverlay({

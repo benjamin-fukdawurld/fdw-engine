@@ -9,6 +9,64 @@ export type TrashListener = (
 const trashes = new WeakMap<Scene, SceneTrash>();
 
 /**
+ * Moves a node under a parent (keeping its local transform), before
+ * `before`, or last when `before` is not a child of the parent: the place
+ * a command puts back.
+ */
+export function placeUnder(node: Node, parent: Node, before?: Node): void {
+  const { scene } = parent;
+  scene.setParent(node.entity, parent.entity);
+  if (!before?.alive || before === node || before.parent !== parent) {
+    return;
+  }
+  // Added last by the scene: linked again before `before`, in place (the
+  // siblings do not move).
+  const { Hierarchy } = scene;
+  const entity = node.entity;
+  const previous = Hierarchy.previous[entity];
+  Hierarchy.next[previous] = -1;
+  Hierarchy.last[parent.entity] = previous;
+  const prior = Hierarchy.previous[before.entity];
+  Hierarchy.previous[entity] = prior;
+  Hierarchy.next[entity] = before.entity;
+  Hierarchy.previous[before.entity] = entity;
+  if (prior >= 0) {
+    Hierarchy.next[prior] = entity;
+  } else {
+    Hierarchy.first[parent.entity] = entity;
+  }
+}
+
+/**
+ * Where nodes are among their siblings: for each, the first sibling after
+ * it that is not one of the nodes, to put them back before it. In the order
+ * to put them back (by parent, the first child first).
+ */
+export function placesOf(
+  nodes: readonly Node[],
+): { node: Node; parent: Node; before?: Node }[] {
+  const moved = new Set(nodes);
+  const places: { node: Node; parent: Node; before?: Node; index: number }[] =
+    [];
+  for (const node of nodes) {
+    const parent = node.parent;
+    if (!parent) {
+      continue;
+    }
+    const children = parent.children;
+    const index = children.indexOf(node);
+    const before = children.slice(index + 1).find((s) => !moved.has(s));
+    places.push({ node, parent, index, ...(before && { before }) });
+  }
+  places.sort((a, b) => a.index - b.index);
+  return places.map(({ node, parent, before }) => ({
+    node,
+    parent,
+    ...(before && { before }),
+  }));
+}
+
+/**
  * Where the commands put the nodes they remove, to put them back when
  * undone: a hidden branch out of the tree of the scene (not under its
  * root), so the nodes keep their entity, their components and their
@@ -56,9 +114,12 @@ export class SceneTrash {
     this.emit(node, 'discarded');
   }
 
-  /** Puts a node of the trash back under a parent. */
-  restore(node: Node, parent: Node): void {
-    this.scene.setParent(node.entity, parent.entity);
+  /**
+   * Puts a node of the trash back under a parent: before `before` (its place
+   * among its siblings), or last when `before` is not a child of it.
+   */
+  restore(node: Node, parent: Node, before?: Node): void {
+    placeUnder(node, parent, before);
     this.emit(node, 'restored');
   }
 

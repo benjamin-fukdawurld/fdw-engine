@@ -42,7 +42,7 @@ Deux jobs Linux en parallèle :
 
 **Windows et macOS** ne sont pas dans P0 : les addons n'y sont pas encore construits (c'est la phase P11). Windows s'est ajouté avec P11 : un troisième job, **`windows`**, les projets tagués `gpu` sous Windows, Direct3D 12 compris, à chaque pull request comme `native` ([p11-windows.md §2](p11-windows.md#2-la-ci-sous-windows)). macOS viendra ensuite.
 
-**Le code généré** : le WGSL est déjà validé par Dawn (Tint) dans la suite de rendu, le HLSL par DXC et spirv-val. On ajoute le GLSL ES (WebGL2) par `glslangValidator` (dans le SDK Vulkan), sur les programmes de la suite que WebGL2 peut exécuter (ni calcul, ni storage buffer) : `programs.spec.ts`, qui remplace `hlsl.spec.ts`, enregistre les programmes une fois et valide les deux langages. naga demanderait une chaîne Rust pour un gain faible face à Tint : écarté.
+**Le code généré** : le WGSL est déjà validé par Dawn (Tint) dans la suite de rendu, le HLSL par DXC et spirv-val. On ajoute le GLSL ES (WebGL2) par `glslangValidator` (dans le SDK Vulkan), sur les programmes de la suite que WebGL2 peut exécuter (ni calcul, ni storage buffer) : `dawn.spec.ts` enregistre les programmes pendant la suite Dawn (une seule fois), puis `programs.ts` valide les deux langages, en parallèle. naga demanderait une chaîne Rust pour un gain faible face à Tint : écarté.
 
 ## 4. `docs.yml` : la documentation
 

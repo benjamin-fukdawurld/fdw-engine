@@ -57,6 +57,15 @@ describe('DataUriSource', () => {
       text(await s.read('text/plain,hi%20there', { signal: signal() })),
     ).toBe('hi there');
   });
+
+  it('rejects malformed payloads as decode errors', async () => {
+    const s = new DataUriSource();
+    for (const uri of ['text/plain', 'a;base64,@@@', 'text/plain,%E0%A4%A']) {
+      await expect(s.read(uri, { signal: signal() })).rejects.toMatchObject({
+        code: 'decode',
+      });
+    }
+  });
 });
 
 describe('HttpSource', () => {
@@ -104,6 +113,57 @@ describe('HttpSource', () => {
     });
     await src.read('https://cdn.example.com/x.png', { signal: signal() });
     expect(fetchFn.mock.calls[0][0]).toBe('https://cdn.example.com/x.png');
+  });
+
+  it('keeps the paths under the base', async () => {
+    const fetchFn = vi.fn(async (_url: string, _init?: RequestInit) =>
+      body(['x']),
+    );
+    const src = new HttpSource({
+      base: 'https://cdn.example.com/assets/',
+      fetch: fetchFn as unknown as typeof fetch,
+    });
+    await src.read('../../private/key.bin', { signal: signal() });
+    expect(fetchFn.mock.calls[0][0]).toBe(
+      'https://cdn.example.com/assets/private/key.bin',
+    );
+  });
+
+  it('sends its headers and credentials only to the allowed origins', async () => {
+    const fetchFn = vi.fn(async (_url: string, _init?: RequestInit) =>
+      body(['x']),
+    );
+    const make = (allowedOrigins?: string[]) =>
+      new HttpSource({
+        base: 'https://cdn.example.com/assets/',
+        headers: { Authorization: 'Bearer secret' },
+        credentials: 'include',
+        allowedOrigins,
+        fetch: fetchFn as unknown as typeof fetch,
+      });
+    const initFor = async (src: HttpSource, path: string) => {
+      fetchFn.mockClear();
+      await src.read(path, { signal: signal() });
+      return fetchFn.mock.calls[0][1]!;
+    };
+    const src = make();
+    expect(await initFor(src, 'a.png')).toMatchObject({
+      headers: { Authorization: 'Bearer secret' },
+      credentials: 'include',
+    });
+    expect(
+      await initFor(src, 'https://cdn.example.com/other/b.png'),
+    ).toMatchObject({ headers: { Authorization: 'Bearer secret' } });
+    for (const url of ['https://evil.example/x.png', '//evil.example/x.png']) {
+      const init = await initFor(src, url);
+      expect(init.headers).toBeUndefined();
+      expect(init.credentials).toBeUndefined();
+    }
+    const listed = make(['https://other.example']);
+    expect(
+      (await initFor(listed, 'https://other.example/x.png')).headers,
+    ).toEqual({ Authorization: 'Bearer secret' });
+    expect((await initFor(listed, 'a.png')).headers).toBeUndefined();
   });
 
   it('maps statuses to error codes', async () => {
@@ -283,6 +343,40 @@ describe('ArchiveSource (zip)', () => {
     await expect(
       src.read('bomb.txt', { signal: signal() }),
     ).rejects.toMatchObject({ code: 'decode', message: /past 10 bytes/ });
+  });
+
+  it('checks the bounds of a stored entry', async () => {
+    const read = async (bytes: Uint8Array, path: string) =>
+      new ArchiveSource({
+        source: new MemorySource({ 'pack.zip': bytes }),
+        path: 'pack.zip',
+      }).read(path, { signal: signal() });
+    // The central directory claims more bytes than the archive holds.
+    const long = zip({ 'a.txt': { data: 'abcd' } });
+    const view = new DataView(long.buffer);
+    const cd = long.length - 22 - (46 + 'a.txt'.length);
+    view.setUint32(cd + 20, 1000, true);
+    view.setUint32(cd + 24, 1000, true);
+    await expect(read(long, 'a.txt')).rejects.toMatchObject({
+      code: 'decode',
+      message: /past the end/,
+    });
+    // A stored entry whose two sizes differ.
+    const liar = zip({ 'a.txt': { data: 'abcd', size: 10 } });
+    await expect(read(liar, 'a.txt')).rejects.toMatchObject({
+      code: 'decode',
+      message: /size mismatch/,
+    });
+  });
+
+  it('keeps entry names inside the archive', async () => {
+    const src = new ArchiveSource({
+      source: new MemorySource({
+        'pack.zip': zip({ '../../etc/x.txt': { data: 'x' } }),
+      }),
+      path: 'pack.zip',
+    });
+    expect(await src.list('')).toEqual(['etc/x.txt']);
   });
 
   it('drops the index when the archive changes', async () => {

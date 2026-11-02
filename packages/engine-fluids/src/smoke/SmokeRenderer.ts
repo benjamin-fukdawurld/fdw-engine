@@ -1,4 +1,4 @@
-import type { Surface } from '@fdw/engine-backend';
+import type { GpuSampler, Surface } from '@fdw/engine-backend';
 import {
   Material,
   RenderGraph,
@@ -10,7 +10,7 @@ import type {
   ScenePassesOptions,
   TextureHandle,
 } from '@fdw/engine-core';
-import { Ops } from '@fdw/engine-ocean';
+import { Ops, toneMappingMaterial } from '@fdw/engine-ocean';
 import { arrayType, BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
 import type {
   MaterialGraphData,
@@ -240,6 +240,9 @@ export class SmokeRenderer {
   private readonly _materials = new WeakMap<SmokeGrid, Material>();
   private readonly _toneMapping: Material;
   private readonly _passes = new WeakMap<RenderGraph, number>();
+  // The sampler of the renderer (the tone mapping, the reads of the
+  // smokes), destroyed with it.
+  private readonly _nearest: GpuSampler;
 
   constructor(
     renderer: Renderer,
@@ -253,10 +256,17 @@ export class SmokeRenderer {
       );
     }
     this._runner = new RenderGraphRunner(renderer.backend);
+    this._nearest = renderer.backend.textures.createSampler({
+      minFilter: 'nearest',
+      magFilter: 'nearest',
+      wrapModeS: 'clamp-to-edge',
+      wrapModeT: 'clamp-to-edge',
+    });
     this._toneMapping = toneMappingMaterial(
       renderer,
       options.toneMapping ?? 'neutral',
       options.encoding ?? 'srgb',
+      { label: 'fluids output', sampler: this._nearest },
     );
   }
 
@@ -264,13 +274,7 @@ export class SmokeRenderer {
   materialOf(smoke: SmokeGrid): Material {
     let material = this._materials.get(smoke);
     if (!material) {
-      const backend = this.renderer.backend;
-      const sampler = backend.textures.createSampler({
-        minFilter: 'nearest',
-        magFilter: 'nearest',
-        wrapModeS: 'clamp-to-edge',
-        wrapModeT: 'clamp-to-edge',
-      });
+      const sampler = this._nearest;
       material = new Material({
         graph: smokeGraph(smoke.layout),
         label: 'smoke',
@@ -381,50 +385,12 @@ export class SmokeRenderer {
 
   destroy(): void {
     this._runner.destroy();
+    this._nearest.destroy();
   }
 }
 
-const toneMappingFunctions: Record<string, string> = {
-  reinhard: 'color.toneMapReinhard',
-  aces: 'color.toneMapAces',
-  neutral: 'color.toneMapNeutral',
-};
-
-/** Tone mapping and encoding of a linear image (the `hdr` texture), for a surface. */
-export function toneMappingMaterial(
-  renderer: Renderer,
-  toneMapping: ToneMapping,
-  encoding: 'srgb' | 'linear',
-): Material {
-  const g = new GraphBuilder('fluids output');
-  const texel = g.call(std.textureSample, {
-    texture: g.texture('hdr'),
-    sampler: g.sampler('hdrSampler'),
-    uv: g.builtin('screen-uv'),
-  });
-  let rgb = texel.swizzle('rgb');
-  if (toneMapping !== 'none') {
-    rgb = g.call(toneMappingFunctions[toneMapping], {
-      color: g.call(std.mul, { a: rgb, b: g.engine('exposure') }),
-    });
-  }
-  if (encoding === 'srgb') {
-    rgb = g.call('color.linearToSrgb', { color: rgb });
-  }
-  g.fullscreen({ color: g.call(std.extend, { xyz: rgb, w: 1 }) });
-  return new Material({
-    graph: g.build(),
-    label: 'fluids output',
-    values: {
-      hdrSampler: renderer.backend.textures.createSampler({
-        minFilter: 'nearest',
-        magFilter: 'nearest',
-        wrapModeS: 'clamp-to-edge',
-        wrapModeT: 'clamp-to-edge',
-      }),
-    },
-  });
-}
+// Shared with the sea: still exported from here.
+export { toneMappingMaterial };
 
 /**
  * A material that draws a grid of smoke in a plane (2D, one cell along z)

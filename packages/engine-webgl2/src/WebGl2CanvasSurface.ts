@@ -19,8 +19,14 @@ export class WebGl2CanvasSurface implements Surface {
     if (!(engine instanceof WebGl2Engine)) {
       throw new Error('Engine must be a WebGl2Engine');
     }
-    if (engine.state.value !== 'ready' || !engine.gl) {
-      throw new Error('Engine must be in ready state to initialize surface');
+    // A paused engine keeps its context.
+    if (
+      (engine.state.value !== 'ready' && engine.state.value !== 'paused') ||
+      !engine.gl
+    ) {
+      throw new Error(
+        'Engine must be in ready or paused state to initialize surface',
+      );
     }
     this._engine = engine;
     if (engine.canvas !== this.canvas) {

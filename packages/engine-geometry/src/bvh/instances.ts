@@ -50,6 +50,17 @@ export function buildInstanceBvh(
   return buildBvh(boxes, { maxLeafSize: 1, ...options });
 }
 
+// Whether an affine matrix mirrors: its 3 × 3 part has a negative
+// determinant.
+function isMirror(m: Matrix4): boolean {
+  return (
+    m[0] * (m[5] * m[10] - m[6] * m[9]) +
+      m[1] * (m[6] * m[8] - m[4] * m[10]) +
+      m[2] * (m[4] * m[9] - m[5] * m[8]) <
+    0
+  );
+}
+
 /** The inverse of an affine matrix (column-major), into out. */
 export function invertAffine(
   matrix: Matrix4,
@@ -89,6 +100,14 @@ export interface InstanceHit extends TriangleHit {
   instance: number;
 }
 
+// The scratch of the rays through the instances (one ray at a time): the
+// inverse of a world matrix, the ray in the frame of the mesh.
+const scratch = {
+  inverse: new Float64Array(16),
+  localOrigin: new Float64Array(3),
+  localDirection: new Float64Array(3),
+};
+
 /**
  * Casts a ray against instances (the top level `top`, built by
  * buildInstanceBvh from them): the closest hit within (tMin, tMax), or with
@@ -121,9 +140,7 @@ export function intersectInstances(
     frontFace: true,
     instance: -1,
   };
-  const inverse = new Float64Array(16);
-  const localOrigin = new Float64Array(3);
-  const localDirection = new Float64Array(3);
+  const { inverse, localOrigin, localDirection } = scratch;
   traverseBvh(
     top,
     origin,
@@ -172,6 +189,11 @@ export function intersectInstances(
         );
         if (found) {
           hit.instance = index;
+          // A mirror turns the winding over: the front face of the
+          // triangle in the instance space is its back face in the world.
+          if (isMirror(instance.world)) {
+            hit.frontFace = !hit.frontFace;
+          }
           if (mode === 'any') {
             return true;
           }

@@ -93,10 +93,17 @@ export class WebGl2RenderPipeline implements GpuRenderPipeline {
       | undefined,
     readonly blend: WebGl2BlendState | undefined,
     readonly label?: string,
+    // Deletes the vertex array, and the program with its last pipeline.
+    private _destroy?: () => void,
   ) {}
 
   get vertexBuffers(): readonly number[] {
     return this.buffers.map((buffer) => buffer.buffer);
+  }
+
+  destroy(): void {
+    this._destroy?.();
+    this._destroy = undefined;
   }
 }
 
@@ -225,7 +232,11 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
 
   private readonly _layouts = new Map<string, PhysicalProgramLayout>();
   private readonly _programs = new Map<string, Promise<WebGl2Program>>();
+  // The programs linked, by key: those of the render pipelines are deleted
+  // with the last one using them (see acquire), which bounds the map to the
+  // programs in use; those of the compute pipelines are kept.
   private readonly _linkedPrograms = new Map<string, WebGl2Program>();
+  private readonly _users = new Map<string, number>();
   private readonly _bindGroupLayouts = new Map<string, WebGl2BindGroupLayout>();
   private readonly _parallelCompile: { COMPLETION_STATUS_KHR: GLenum } | null;
 
@@ -343,7 +354,13 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
     descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline> {
     const { program } = descriptor;
-    let pending = this._programs.get(program.programKey);
+    const key = program.programKey;
+    // Linked by createRenderPipeline.
+    const linkedProgram = this._linkedPrograms.get(key);
+    if (linkedProgram) {
+      return this.pipeline(descriptor, linkedProgram);
+    }
+    let pending = this._programs.get(key);
     if (!pending) {
       const { program: glProgram, finish } = this.link(program);
       pending = (
@@ -355,11 +372,20 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
             )
           : Promise.resolve()
       ).then(() => finish(glProgram));
-      this._programs.set(program.programKey, pending);
+      this._programs.set(key, pending);
       // A failed link can be retried.
-      pending.catch(() => this._programs.delete(program.programKey));
+      pending.catch(() => {
+        if (this._programs.get(key) === pending) {
+          this._programs.delete(key);
+        }
+      });
     }
-    return this.pipeline(descriptor, await pending);
+    const result = await pending;
+    // Deleted meanwhile, with the last pipeline using it: linked again.
+    if (this._linkedPrograms.get(key) !== result) {
+      return this.createRenderPipelineAsync(descriptor);
+    }
+    return this.pipeline(descriptor, result);
   }
 
   // Starts compiling and linking a program. finish() checks the result and
@@ -402,6 +428,10 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
     const finish = (linkedProgram: WebGLProgram): WebGl2Program => {
       const cached = this._linkedPrograms.get(key);
       if (cached) {
+        // Linked meanwhile by another call: this one is not needed.
+        gl.deleteShader(vertex);
+        gl.deleteShader(fragment);
+        gl.deleteProgram(linkedProgram);
         return cached;
       }
       if (!gl.getProgramParameter(linkedProgram, GL.LINK_STATUS)) {
@@ -410,11 +440,14 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
           shaderLog(gl, fragment, 'Fragment', sources.fragment),
           gl.getProgramInfoLog(linkedProgram),
         ].filter(Boolean);
+        gl.deleteShader(vertex);
+        gl.deleteShader(fragment);
         gl.deleteProgram(linkedProgram);
         throw new Error(
           `Program "${compiled.name}" failed to link:\n${logs.join('\n')}`,
         );
       }
+      // Kept by the program while attached: freed with it.
       gl.deleteShader(vertex);
       gl.deleteShader(fragment);
       const result = this.assignBindings(
@@ -582,10 +615,12 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         }": WebGL2 blends every color target the same way (capability independentBlend)`,
       );
     }
+    const vertexArray = this.gl.createVertexArray();
+    const release = this.acquire(descriptor.program.programKey, program);
     return new WebGl2RenderPipeline(
       program,
       buffers,
-      this.gl.createVertexArray(),
+      vertexArray,
       topologies()[primitive.topology],
       primitive.cullMode === 'none'
         ? undefined
@@ -609,6 +644,29 @@ export class WebGl2PipelineFactory implements GpuPipelineFactory {
         : undefined,
       blend ? blendState(blend) : undefined,
       descriptor.label ?? descriptor.program.name,
+      () => {
+        this.gl.deleteVertexArray(vertexArray);
+        release();
+      },
     );
+  }
+
+  // Counts a render pipeline using a program, until the returned function
+  // is called: the last one deletes the program.
+  private acquire(key: string, program: WebGl2Program): () => void {
+    this._users.set(key, (this._users.get(key) ?? 0) + 1);
+    return () => {
+      const users = (this._users.get(key) ?? 1) - 1;
+      if (users > 0) {
+        this._users.set(key, users);
+        return;
+      }
+      this._users.delete(key);
+      if (this._linkedPrograms.get(key) === program) {
+        this._linkedPrograms.delete(key);
+        this._programs.delete(key);
+      }
+      this.gl.deleteProgram(program.program);
+    };
   }
 }

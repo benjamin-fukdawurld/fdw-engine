@@ -169,6 +169,22 @@ describe('fractal sums', () => {
     );
   });
 
+  it('refuses a sum of no octave, rather than NaN', () => {
+    expect(() => fbm([1, 2], { octaves: 0 })).toThrow(
+      'octaves must be at least 1, got 0',
+    );
+    expect(() => ridged([1, 2], { octaves: Number.NaN })).toThrow('octaves');
+  });
+
+  it('gives the same values to the same points, whatever came between', () => {
+    // The noises reuse their scratch values: a call does not leak into
+    // the next one, of another dimension or kind.
+    const a = fbm([0.3, 0.7], { noise: 'simplex' });
+    worleyNoise([1.5, 2.5, 3.5, 4.5]);
+    perlinNoise([9.1, 8.2, 7.3]);
+    expect(fbm([0.3, 0.7], { noise: 'simplex' })).toBe(a);
+  });
+
   it('warps the domain by a fbm per coordinate', () => {
     const point = [1.2, 3.4];
     const [x, y] = warp(point, { strength: 2, octaves: 2 });

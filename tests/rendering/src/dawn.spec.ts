@@ -1,18 +1,28 @@
 import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder, std, BuiltinTypes } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
+import type { CompiledProgram } from '@fdw/engine-shader';
 import { createDawnFixture, dawn } from './dawnFixture';
+import { describePrograms, recordPrograms } from './programs';
 import { describeRays } from './rays';
 import { describeRenderer } from './suite';
 import { canRun } from '@fdw/engine-backend/testing';
 
 // The shared rendering tests on WebGPU, with Dawn (the WebGPU implementation
-// of Chrome) running in Node. Skipped where Dawn cannot load.
+// of Chrome) running in Node. Skipped where Dawn cannot load. The suite
+// records the programs it creates, then checked in HLSL and GLSL ES
+// (programs.ts): the suite runs once for both.
 const createFixture = () => createDawnFixture();
 
 const ready = canRun('dawn', !!dawn, 'the webgpu package (Dawn) did not load');
 
-describeRenderer('Renderer on WebGPU (Dawn)', createFixture, { skip: !ready });
+const programs = new Map<string, CompiledProgram>();
+describeRenderer(
+  'Renderer on WebGPU (Dawn)',
+  () => createDawnFixture((backend) => recordPrograms(backend, programs)),
+  { skip: !ready },
+);
+describePrograms(programs, ready);
 describeRays('Rays on WebGPU (Dawn)', createFixture, { skip: !ready });
 
 describe.skipIf(!ready)('WebGPU validation (Dawn)', () => {

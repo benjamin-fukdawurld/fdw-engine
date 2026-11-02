@@ -20,6 +20,8 @@ export type LightAttenuationData = {
 
 export const LightAttenuationDataSize = 12 as const; // 3 floats, each float is 4 bytes
 
+// The half-angles of the cone of a spot light, in degrees, in [0, 90]: full
+// intensity within the inner one, none beyond the outer one.
 export type LightCutoffData = {
   innerCutoff: number;
   outerCutoff: number;

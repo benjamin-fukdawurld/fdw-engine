@@ -15,8 +15,10 @@ using namespace fdw;
 
 namespace {
 
-// The entry of the DXC library, loaded once.
+// The entry of the DXC library, loaded once, and that of its validator
+// (dxil.dll), when one was loaded.
 DxcCreateInstanceProc createInstance = nullptr;
+DxcCreateInstanceProc createValidator = nullptr;
 
 // The directories of the Windows SDK binaries, the newest first: their
 // dxcompiler.dll and dxil.dll go together.
@@ -47,19 +49,34 @@ bool loadFrom(const std::filesystem::path &directory) {
     return false;
   }
   const std::filesystem::path validator = directory / "dxil.dll";
+  HMODULE signer = nullptr;
   if (!directory.empty() && std::filesystem::exists(validator, error)) {
-    LoadLibraryW(validator.c_str());
+    signer = LoadLibraryW(validator.c_str());
   } else if (directory.empty()) {
-    LoadLibraryW(L"dxil.dll");
+    signer = LoadLibraryW(L"dxil.dll");
   }
   HMODULE library = LoadLibraryW(
       directory.empty() ? L"dxcompiler.dll" : compiler.c_str());
-  if (!library) {
+  const auto entry = library ? reinterpret_cast<DxcCreateInstanceProc>(
+                                   GetProcAddress(library, "DxcCreateInstance"))
+                             : nullptr;
+  if (!entry) {
+    // Unloaded: the DXC of another candidate would find this validator
+    // by name, though it may not go with it.
+    if (library) {
+      FreeLibrary(library);
+    }
+    if (signer) {
+      FreeLibrary(signer);
+    }
     return false;
   }
-  createInstance = reinterpret_cast<DxcCreateInstanceProc>(
-      GetProcAddress(library, "DxcCreateInstance"));
-  return createInstance != nullptr;
+  createInstance = entry;
+  createValidator =
+      signer ? reinterpret_cast<DxcCreateInstanceProc>(
+                   GetProcAddress(signer, "DxcCreateInstance"))
+             : nullptr;
+  return true;
 }
 
 // The directory of the addon, where the prebuilt addons bring DXC
@@ -120,11 +137,74 @@ std::wstring wide(const char *text) {
 std::string option(const char *const *arguments, uint32_t count,
                    const char *name) {
   for (uint32_t i = 0; i + 1 < count; i++) {
-    if (std::strcmp(arguments[i], name) == 0) {
+    if (arguments[i] && arguments[i + 1] &&
+        std::strcmp(arguments[i], name) == 0) {
       return arguments[i + 1];
     }
   }
   return "";
+}
+
+// The arguments are all given (no NULL among them).
+int checkArguments(const char *const *arguments, uint32_t count) {
+  for (uint32_t i = 0; i < count; i++) {
+    if (!arguments || !arguments[i]) {
+      return fail("A DXC argument is missing");
+    }
+  }
+  return 0;
+}
+
+// The version of a DXC component (compiler or validator), with its commit
+// when it tells it.
+std::string componentVersion(IUnknown *component) {
+  ComPtr<IDxcVersionInfo> info;
+  UINT32 major = 0, minor = 0;
+  if (!component || FAILED(component->QueryInterface(IID_PPV_ARGS(&info))) ||
+      FAILED(info->GetVersion(&major, &minor))) {
+    return "";
+  }
+  std::string version = std::to_string(major) + "." + std::to_string(minor);
+  ComPtr<IDxcVersionInfo2> commit;
+  UINT32 commits = 0;
+  char *hash = nullptr;
+  if (SUCCEEDED(info.As(&commit)) &&
+      SUCCEEDED(commit->GetCommitInfo(&commits, &hash)) && hash) {
+    version += std::string(" ") + hash;
+    CoTaskMemFree(hash);
+  }
+  return version;
+}
+
+// Whether code is a whole DXIL container: its magic ("DXBC"), its size, and
+// its parts inside it. A corrupt entry of a cache is refused here, not by
+// the driver.
+bool dxilContainer(const uint8_t *code, size_t size) {
+  constexpr size_t HeaderSize = 32;
+  if (size < HeaderSize || std::memcmp(code, "DXBC", 4) != 0) {
+    return false;
+  }
+  uint32_t total = 0;
+  uint32_t parts = 0;
+  std::memcpy(&total, code + 24, 4);
+  std::memcpy(&parts, code + 28, 4);
+  if (total != size || parts > (size - HeaderSize) / 4) {
+    return false;
+  }
+  for (uint32_t part = 0; part < parts; part++) {
+    uint32_t offset = 0;
+    std::memcpy(&offset, code + HeaderSize + part * 4, 4);
+    // A part: its fourcc, its size, then its data.
+    uint32_t length = 0;
+    if (offset > size || size - offset < 8) {
+      return false;
+    }
+    std::memcpy(&length, code + offset + 4, 4);
+    if (length > size - offset - 8) {
+      return false;
+    }
+  }
+  return true;
 }
 
 } // namespace
@@ -133,7 +213,7 @@ namespace fdw {
 
 int compileHlsl(const char *hlsl, const char *const *arguments,
                 uint32_t count, std::vector<uint8_t> *bytecode) {
-  if (loadDxc() != 0) {
+  if (checkArguments(arguments, count) != 0 || loadDxc() != 0) {
     return -1;
   }
   ComPtr<IDxcCompiler3> compiler;
@@ -200,21 +280,24 @@ const char *fdw_dx_dxc_version(void) {
   if (loadDxc() != 0) {
     return nullptr;
   }
-  ComPtr<IDxcVersionInfo> info;
-  ComPtr<IDxcVersionInfo2> commit;
-  UINT32 major = 0, minor = 0, commits = 0;
-  char *hash = nullptr;
-  if (FAILED(createInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&info))) ||
-      FAILED(info->GetVersion(&major, &minor))) {
+  ComPtr<IUnknown> compiler;
+  std::string compilerVersion;
+  if (SUCCEEDED(createInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)))) {
+    compilerVersion = componentVersion(compiler.Get());
+  }
+  if (compilerVersion.empty()) {
     fail("The version of DXC is unknown");
     return nullptr;
   }
-  version = std::to_string(major) + "." + std::to_string(minor);
-  if (SUCCEEDED(info.As(&commit)) &&
-      SUCCEEDED(commit->GetCommitInfo(&commits, &hash)) && hash) {
-    version += std::string(" ") + hash;
-    CoTaskMemFree(hash);
+  // The validator signs the DXIL: another one, another program.
+  ComPtr<IUnknown> validator;
+  std::string validatorVersion;
+  if (createValidator &&
+      SUCCEEDED(createValidator(CLSID_DxcValidator, IID_PPV_ARGS(&validator)))) {
+    validatorVersion = componentVersion(validator.Get());
   }
+  version = compilerVersion + " dxil " +
+            (validatorVersion.empty() ? "none" : validatorVersion);
   return version.c_str();
 }
 
@@ -238,6 +321,13 @@ fdw_dx_shader *fdw_dx_shader_create_from_code(fdw_dx_context *context,
                                               uint32_t count, const char *) {
   if (size == 0) {
     fail("No DXIL");
+    return nullptr;
+  }
+  if (!dxilContainer(code, size)) {
+    fail("The code is not a DXIL container (DXBC): compile it again");
+    return nullptr;
+  }
+  if (checkArguments(arguments, count) != 0) {
     return nullptr;
   }
   auto *shader = new fdw_dx_shader();

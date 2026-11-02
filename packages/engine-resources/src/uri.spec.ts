@@ -42,6 +42,11 @@ describe('uri', () => {
     expect(normalizePath('a/./b/../c//d')).toBe('a/c/d');
     expect(normalizePath('a\\b\\c')).toBe('a/b/c');
     expect(normalizePath('../a')).toBe('../a');
+    // Rooted (the path of a scheme): `..` stops at the root.
+    expect(normalizePath('../../a/../../b', true)).toBe('b');
+    expect(normalizePath('https://h.com/../../b', true)).toBe(
+      'https://h.com/b',
+    );
     expect(normalizePath('/a/../../b')).toBe('/b');
     expect(normalizePath('https://h.com/a/../b/c.png')).toBe(
       'https://h.com/b/c.png',
@@ -51,6 +56,9 @@ describe('uri', () => {
   it('resolves relative paths against a resource', () => {
     expect(resolvePath('models/oak.gltf', 'textures/bark.png')).toBe(
       'models/textures/bark.png',
+    );
+    expect(resolvePath('models/oak.gltf', '../../../x.png', true)).toBe(
+      'x.png',
     );
     expect(resolvePath('models/oak.gltf', '../shared/x.png')).toBe(
       'shared/x.png',

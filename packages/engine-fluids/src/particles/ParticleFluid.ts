@@ -102,6 +102,8 @@ export class ParticleFluid {
   private readonly _readback: boolean;
   private _reading = false;
   private _destroyed = false;
+  // Counts the clears: a read started before one is dropped.
+  private _generation = 0;
   private _columns?: Float32Array;
 
   constructor(backend: RenderBackend, options: ParticleFluidOptions) {
@@ -239,6 +241,7 @@ export class ParticleFluid {
   clear(): void {
     this._active = 0;
     this._columns = undefined;
+    this._generation++;
   }
 
   /**
@@ -291,12 +294,17 @@ export class ParticleFluid {
         active,
       });
       let entries = 0;
+      // One object for the stages of the sort (read as they are recorded).
+      const sort = {
+        stage: this._stages[0],
+        entries: this._entries[0],
+        sorted: this._entries[1],
+      };
       for (const stage of this._stages) {
-        dispatch(this._programs.sort, particles, {
-          stage,
-          entries: this._entries[entries],
-          sorted: this._entries[1 - entries],
-        });
+        sort.stage = stage;
+        sort.entries = this._entries[entries];
+        sort.sorted = this._entries[1 - entries];
+        dispatch(this._programs.sort, particles, sort);
         entries = 1 - entries;
       }
       const ranges = { cellStarts: this._starts, cellEnds: this._ends };
@@ -378,7 +386,9 @@ export class ParticleFluid {
 
   /** The height of the liquid above (x, z), from its columns read back: the bottom of the box where it is dry. */
   heightAt(x: number, z: number): number {
-    return this.column(x, z)?.[0] ?? this.layout.min[1];
+    const at = this.column(x, z);
+    const columns = this._columns;
+    return at < 0 || !columns ? this.layout.min[1] : columns[at];
   }
 
   /** The velocity of the liquid at the surface above (x, z), in m/s. */
@@ -387,9 +397,11 @@ export class ParticleFluid {
     z: number,
     out: { x: number; z: number } = { x: 0, z: 0 },
   ): { x: number; z: number } {
-    const column = this.column(x, z);
-    out.x = column?.[1] ?? 0;
-    out.z = column?.[2] ?? 0;
+    const at = this.column(x, z);
+    const columns = this._columns;
+    const wet = at >= 0 && columns !== undefined;
+    out.x = wet ? columns[at + 1] : 0;
+    out.z = wet ? columns[at + 2] : 0;
     return out;
   }
 
@@ -426,29 +438,32 @@ export class ParticleFluid {
     }
   }
 
-  // The column under (x, z), if it holds liquid.
-  private column(x: number, z: number): Float32Array | undefined {
+  // Where the column under (x, z) is in the columns read back, if it holds
+  // liquid; -1 otherwise.
+  private column(x: number, z: number): number {
     const columns = this._columns;
     if (!columns) {
-      return undefined;
+      return -1;
     }
     const { min, h, cells } = this.layout;
     const i = Math.floor((x - min[0]) / h);
     const k = Math.floor((z - min[2]) / h);
     if (i < 0 || k < 0 || i >= cells[0] || k >= cells[2]) {
-      return undefined;
+      return -1;
     }
     const at = (k * cells[0] + i) * 4;
-    return columns[at + 3] > 0.5 ? columns.subarray(at, at + 4) : undefined;
+    return columns[at + 3] > 0.5 ? at : -1;
   }
 
   private readColumns(): void {
     this._reading = true;
+    const generation = this._generation;
     this.columns
       .read()
       .then((data) => {
         this._reading = false;
-        if (!this._destroyed) {
+        // Not the liquid of before a clear: the floaters would jump.
+        if (!this._destroyed && generation === this._generation) {
           this._columns = new Float32Array(data);
         }
       })

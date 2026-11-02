@@ -42,17 +42,6 @@ engine-webgpu    ← concrete backend (this package)
 | `Texture`                                    | class              | Implements `GpuTexture`, wraps a `GPUTexture`                                                                          |
 | `Sampler`                                    | class              | Implements `GpuSampler`, wraps a `GPUSampler`                                                                          |
 
-### WGSL data layout (`gpu/`)
-
-Implementations of the abstract layout API following WGSL alignment rules:
-
-| Export                                                     | Description                                              |
-| ---------------------------------------------------------- | -------------------------------------------------------- |
-| `uniformLayout`, `uniformWriters`, `uniformSerializers`    | Layout, binary writer and WGSL declaration per primitive |
-| `uniformPrimitives`, `uniformArrays`                       | Ready-to-use `GpuType`s and `GpuArray`s                  |
-| `uniformStructBuildStrategy`, `storageStructBuildStrategy` | Struct rules for uniform and storage buffers             |
-| `uniformStructBuilder()`, `storageStruct()`                | Build a `GpuStruct` for a uniform / storage buffer       |
-
 ### Math (`math/`)
 
 | Export                                         | Description                                                        |
@@ -71,14 +60,7 @@ Implementations of the abstract layout API following WGSL alignment rules:
 ## Usage
 
 ```ts
-import { Transform } from '@fdw/engine-core';
-import { TransformAdapter } from '@fdw/engine-backend';
-import {
-  WebGpuEngine,
-  WebGpuSurface,
-  BufferFactory,
-  transformMath,
-} from '@fdw/engine-webgpu';
+import { WebGpuEngine, WebGpuSurface, BufferFactory } from '@fdw/engine-webgpu';
 
 const engine = new WebGpuEngine();
 await engine.init();
@@ -95,12 +77,6 @@ const vertexBuffer = bufferFactory.create({
   usage: ['vertex', 'copy-dst'],
   initialData: vertices,
   label: 'vertices',
-});
-
-const transformAdapter = new TransformAdapter({
-  transform: new Transform(),
-  transformMath,
-  bufferFactory,
 });
 
 // In the render pass:

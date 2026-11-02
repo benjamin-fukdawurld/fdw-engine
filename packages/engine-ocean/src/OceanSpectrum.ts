@@ -72,6 +72,9 @@ export class OceanSpectrum {
   // The heights on the CPU: read back, or computed until the first read.
   private _cpu?: OceanFields;
   private _cpuTime = 0;
+  // Without readback: whether the fields of the CPU are behind the last
+  // update, evaluated again once when asked.
+  private _cpuStale = false;
   private readonly _zeros: Float32Array;
   private readonly _sample = waveSample();
   private _destroyed = false;
@@ -82,6 +85,12 @@ export class OceanSpectrum {
     }
     this._backend = backend;
     this.data = createSpectrum(options);
+    if (this.data.resolution < 8) {
+      // The graphs run in workgroups of 8 × 8 points.
+      throw new Error(
+        `The ocean spectrum needs a resolution of 8 or more, not ${this.data.resolution}`,
+      );
+    }
     this.choppiness = options.choppiness ?? 1;
     this._readback = options.readback ?? true;
     const { resolution: n, cascades } = this.data;
@@ -144,6 +153,7 @@ export class OceanSpectrum {
    */
   update(time: number): void {
     this._time = time;
+    this._cpuStale = true;
     const { resolution: n, cascades } = this.data;
     const workgroups = [n / 8, n / 8, cascades.length] as const;
     const encoder = this._backend.createCommandEncoder();
@@ -219,9 +229,10 @@ export class OceanSpectrum {
    * the time of the waves.
    */
   get fields(): OceanFields {
-    if (!this._cpu || (!this._readback && this._cpuTime !== this._time)) {
+    if (!this._cpu || (!this._readback && this._cpuStale)) {
       this._cpu = evaluateSpectrum(this.data, this._time, this.choppiness);
       this._cpuTime = this._time;
+      this._cpuStale = false;
     }
     return this._cpu;
   }

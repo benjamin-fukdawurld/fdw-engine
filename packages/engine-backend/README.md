@@ -55,22 +55,6 @@ An abstract rendering API modelled on WebGPU, which maps almost directly onto Vu
 | `GpuSamplerConfiguration`                                                                   | type      | Wrap / filter modes, anisotropy, `compare` (comparison samplers)                                                                                                                                                               |
 | `GpuShaderStageName`                                                                        | type      | `vertex` · `fragment` · `compute`                                                                                                                                                                                              |
 
-### GPU data layout (`gpu/`)
-
-Describes how CPU-side values are laid out in GPU memory and how they are declared in shader code. Alignment rules depend on the backend and buffer kind (e.g. WGSL uniform vs storage), so the concrete rules are injected by the backend.
-
-| Export                                              | Kind             | Description                                                                                              |
-| --------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| `GpuType<T>`                                        | interface        | Typed value: `size`, `alignment`, `write()`, `serialize()`                                               |
-| `GpuArray<T>`                                       | interface        | Fixed or runtime-sized array of a `GpuType`                                                              |
-| `GpuStruct<T>` / `GpuStructField`                   | interface        | Struct made of named, offset fields                                                                      |
-| `GpuLayout`, `GpuWriter`, `GpuSerializer`           | interface        | Building blocks: memory layout, binary writer, shader declaration                                        |
-| `LayoutApi`, `WriterApi`, `SerializerApi`           | type             | One layout / writer / serializer per primitive (`bool`, `int32`, `float32`, `vec2…4`, `quat`, `mat2…4`…) |
-| `PrimitiveApi` / `primitiveApi()` / `primitiveOf()` | type / function  | Combine layouts, writers and serializers into `GpuType`s                                                 |
-| `ArrayApi` / `arrayApi()` / `arrayOf()`             | type / function  | Same for `GpuArray`s                                                                                     |
-| `StructBuildStrategy`                               | interface        | Backend-specific alignment and serialization rules for structs                                           |
-| `StructBuilder` / `struct()`                        | class / function | Build a `GpuStruct` from fields and a strategy                                                           |
-
 ### Math (`math/`)
 
 | Export                                                  | Kind  | Description                                                                         |
@@ -82,15 +66,13 @@ Describes how CPU-side values are laid out in GPU memory and how they are declar
 
 ### Scene data
 
-| Export                                                              | Kind         | Description                                                                                             |
-| ------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
-| `TransformData`, `TransformSnapshot`, `TransformParentProvider`     | type         | Position / rotation / scale, versioned                                                                  |
-| `TransformCache`, `TransformAdapter`                                | class        | Cached local / world / normal matrices and their GPU buffers                                            |
-| `CameraData`, `CameraSnapshot`, `ProjectionData`                    | type         | Camera transform and perspective / orthographic projection                                              |
-| `CameraCache`, `CameraAdapter`                                      | class        | Cached view / projection matrices and their GPU buffers                                                 |
-| `LightData`, `*LightSnapshot`, `LightType`                          | type         | Directional, point and spot lights                                                                      |
-| `Material`, `MaterialDescription`, `MaterialBinding*`               | class / type | Material made of uniform, storage and texture bindings grouped in slots (`frame`, `material`, `object`) |
-| `MeshDescription`, `MeshInputData`, `Mesh`, `VertexAttributeFormat` | type         | Vertex buffer layout, attributes and index buffer                                                       |
+| Export                                                              | Kind  | Description                                                |
+| ------------------------------------------------------------------- | ----- | ---------------------------------------------------------- |
+| `TransformData`, `TransformSnapshot`                                | type  | Position / rotation / scale, versioned                     |
+| `CameraData`, `CameraSnapshot`, `ProjectionData`                    | type  | Camera transform and perspective / orthographic projection |
+| `CameraCache`                                                       | class | Cached view / projection matrices                          |
+| `LightData`, `*LightSnapshot`, `LightType`                          | type  | Directional, point and spot lights                         |
+| `MeshDescription`, `MeshInputData`, `Mesh`, `VertexAttributeFormat` | type  | Vertex buffer layout, attributes and index buffer          |
 
 ### Shaders (`shader/`)
 
@@ -142,17 +124,12 @@ viewMatrix.value; // recomputed only if the camera moved
 The abstract API is used with a concrete backend that provides the factories and math implementations:
 
 ```ts
-import { TransformAdapter } from '@fdw/engine-backend';
-import { Transform } from '@fdw/engine-core';
-import { BufferFactory, transformMath } from '@fdw/engine-webgpu';
+import { CameraCache } from '@fdw/engine-backend';
+import { Camera } from '@fdw/engine-core';
 
-const adapter = new TransformAdapter({
-  transform: new Transform({ position: { x: 0, y: 1, z: 0 } }),
-  transformMath,
-  bufferFactory: new BufferFactory(device),
-});
+const cache = new CameraCache(new Camera(), backend.cameraMath);
 
-const worldMatrixBuffer = adapter.worldMatrixBuffer.value; // GpuBuffer
+const viewProjection = cache.viewProjectionMatrix.value; // recomputed when the camera changes
 ```
 
 ## Implementing a new backend
@@ -163,7 +140,6 @@ A backend must provide:
 - a `Surface` implementation for its windowing system;
 - `GpuBufferFactory`, `GpuTextureFactory` and `GpuSamplerFactory`;
 - a `PrimitivesAdapter` (math primitives), used to build `TransformMath` and `CameraMath`;
-- the `LayoutApi` / `WriterApi` / `SerializerApi` and `StructBuildStrategy` matching its shading language;
 - a `ShaderCodegen` and a `PhysicalLayoutStrategy` (binding numbers, uniform offsets, `writeUniform`);
 - a `RenderBackend`, with its `GpuPipelineFactory` and command encoding.
 
