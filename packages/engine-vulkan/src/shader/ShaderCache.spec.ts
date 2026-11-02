@@ -5,11 +5,13 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addonPath,
   loadVulkanAddon,
@@ -19,7 +21,13 @@ import {
 } from '../addon';
 import { VulkanPipelineFactory } from '../render/VulkanPipelineFactory';
 import { dxcArguments } from './HlslCodegen';
-import { FileShaderCache, LayeredShaderCache, shaderKey } from './ShaderCache';
+import {
+  defaultShaderCacheMaxSize,
+  FileShaderCache,
+  LayeredShaderCache,
+  parseByteSize,
+  shaderKey,
+} from './ShaderCache';
 
 describe('shaderKey', () => {
   const args = ['-T', 'cs_6_0', '-E', 'main'];
@@ -134,6 +142,143 @@ describe('FileShaderCache', () => {
       if (previous === undefined) delete process.env['FDW_SHADER_CACHE'];
       else process.env['FDW_SHADER_CACHE'] = previous;
     }
+  });
+});
+
+describe('the eviction of FileShaderCache', () => {
+  let directory = '';
+  afterEach(() => {
+    if (directory) rmSync(directory, { recursive: true, force: true });
+    directory = '';
+  });
+  // An entry of spirv(1): its header, 36 bytes, then 8 bytes.
+  const entrySize = 44;
+  // Two versions of DXC, as Vulkan and D3D12 write them side by side.
+  const keys = ['dxc-vulkan-0/x', 'dxc-d3d12-1/y', 'dxc-d3d12-1/z'] as const;
+  const file = (key: string) => join(directory, ...key.split('/')) + '.bin';
+  // Sets the time of an entry, `age` seconds ago.
+  const age = (key: string, seconds: number) => {
+    const time = new Date(Date.now() - seconds * 1000);
+    utimesSync(file(key), time, time);
+  };
+  const fill = async (cache: FileShaderCache) => {
+    for (const key of keys) cache.set(key, spirv(1));
+    await cache.evict();
+    keys.forEach((key, i) => age(key, 300 - i * 100));
+  };
+
+  it('removes the entries least recently used, across the versions of DXC', async () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const cache = new FileShaderCache(directory, { maxSize: 2 * entrySize });
+    await fill(cache);
+    // x, the oldest written, read now: y is the least recently used.
+    expect(cache.get(keys[0])).toEqual(spirv(1));
+    await cache.evict();
+    expect(keys.map((key) => existsSync(file(key)))).toEqual([
+      true,
+      false,
+      true,
+    ]);
+  });
+
+  it('removes the directories of a version left empty, and old temporary files', async () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const cache = new FileShaderCache(directory, { maxSize: entrySize });
+    await fill(cache);
+    age(keys[0], 0);
+    // Left by a process that stopped, and by one still writing.
+    const stale = `${file(keys[0])}.1.tmp`;
+    const fresh = `${file(keys[0])}.2.tmp`;
+    writeFileSync(stale, '');
+    writeFileSync(fresh, '');
+    const old = new Date(Date.now() - 2 * 3600 * 1000);
+    utimesSync(stale, old, old);
+    await cache.evict();
+    expect(readdirSync(directory)).toEqual(['dxc-vulkan-0']);
+    expect(readdirSync(join(directory, 'dxc-vulkan-0')).sort()).toEqual([
+      'x.bin',
+      'x.bin.2.tmp',
+    ]);
+  });
+
+  it('evicts after the first write, then every 64 writes', async () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    // Another process filled it past the size.
+    const other = new FileShaderCache(directory, { maxSize: 0 });
+    for (let i = 0; i < 10; i++) other.set(`dxc-a-0/${i}`, spirv(1));
+    const cache = new FileShaderCache(directory, { maxSize: 5 * entrySize });
+    cache.set('dxc-a-0/first', spirv(1));
+    await cache.evict();
+    expect(readdirSync(join(directory, 'dxc-a-0'))).toHaveLength(5);
+    // Not before the 64th write.
+    for (let i = 0; i < 63; i++) other.set(`dxc-a-0/o${i}`, spirv(1));
+    for (let i = 1; i < 64; i++) cache.set(`dxc-a-0/${i}`, spirv(1));
+    expect(readdirSync(join(directory, 'dxc-a-0')).length).toBeGreaterThan(5);
+    cache.set('dxc-a-0/64', spirv(1));
+    await cache.evict();
+    expect(readdirSync(join(directory, 'dxc-a-0'))).toHaveLength(5);
+  });
+
+  it('is safe with processes evicting the same directory', async () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const writer = new FileShaderCache(directory, { maxSize: 0 });
+    for (let i = 0; i < 50; i++) writer.set(`dxc-a-${i % 2}/${i}`, spirv(1));
+    const caches = [1, 2, 3].map(
+      () => new FileShaderCache(directory, { maxSize: 10 * entrySize }),
+    );
+    await Promise.all(caches.map((cache) => cache.evict()));
+    const left = readdirSync(directory).flatMap((version) =>
+      readdirSync(join(directory, version)),
+    );
+    // None fails; racing, they may remove more than needed (on Windows, a
+    // file another one is removing is in use), which only costs compiles.
+    expect(left.length).toBeLessThanOrEqual(10);
+  });
+
+  it('neither evicts nor touches when unbounded (programs shipped)', async () => {
+    directory = mkdtempSync(join(tmpdir(), 'fdw-shaders-'));
+    const cache = new FileShaderCache(directory, { maxSize: 0 });
+    expect(cache.maxSize).toBe(Infinity);
+    await fill(cache);
+    const before = statSync(file(keys[0])).mtimeMs;
+    expect(cache.get(keys[0])).toEqual(spirv(1));
+    expect(statSync(file(keys[0])).mtimeMs).toBe(before);
+    expect(keys.every((key) => existsSync(file(key)))).toBe(true);
+  });
+
+  it('takes its size from FDW_SHADER_CACHE_MAX_SIZE, in bytes or with a unit', () => {
+    const previous = process.env['FDW_SHADER_CACHE_MAX_SIZE'];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      delete process.env['FDW_SHADER_CACHE_MAX_SIZE'];
+      expect(new FileShaderCache('unused').maxSize).toBe(
+        defaultShaderCacheMaxSize,
+      );
+      process.env['FDW_SHADER_CACHE_MAX_SIZE'] = '64MB';
+      expect(new FileShaderCache('unused').maxSize).toBe(64 * 2 ** 20);
+      // The option comes first.
+      expect(new FileShaderCache('unused', { maxSize: 10 }).maxSize).toBe(10);
+      process.env['FDW_SHADER_CACHE_MAX_SIZE'] = '0';
+      expect(new FileShaderCache('unused').maxSize).toBe(Infinity);
+      // Not a size: reported, the default kept.
+      process.env['FDW_SHADER_CACHE_MAX_SIZE'] = 'big';
+      expect(new FileShaderCache('unused').maxSize).toBe(
+        defaultShaderCacheMaxSize,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/FDW_SHADER_CACHE_MAX_SIZE="big"/),
+      );
+    } finally {
+      warn.mockRestore();
+      if (previous === undefined)
+        delete process.env['FDW_SHADER_CACHE_MAX_SIZE'];
+      else process.env['FDW_SHADER_CACHE_MAX_SIZE'] = previous;
+    }
+    expect(parseByteSize('1.5GiB')).toBe(1.5 * 2 ** 30);
+    expect(parseByteSize('2048')).toBe(2048);
+    expect(parseByteSize('1 kb')).toBe(1024);
+    expect(parseByteSize('-1')).toBeUndefined();
+    expect(parseByteSize('12 parsecs')).toBeUndefined();
   });
 });
 

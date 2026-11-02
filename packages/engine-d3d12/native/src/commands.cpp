@@ -816,7 +816,8 @@ int queryCommand(Replay &replay, uint32_t opcode) {
   if (!pool) {
     return status;
   }
-  if (first + count > pool->count) {
+  // Without overflow: first + count could wrap around.
+  if (first > pool->count || count > pool->count - first) {
     return fail("Queries out of the pool");
   }
   if (opcode == FDW_DX_CMD_RESET_QUERIES) {

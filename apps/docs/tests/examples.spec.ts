@@ -86,7 +86,10 @@ const framesOf: Record<string, number> = {
   // The rays of the reflections, slow on SwiftShader: the same image.
   'ray-reflections': 3,
 };
-// Longer for the examples loading many files.
+// Longer for the examples loading many files. Measured on 24 cores (two
+// workers): tps 8.6 s, occlusion-culling, levels-of-detail and coast 5 to
+// 6 s, the others under 7 s; SwiftShader spreads on the cores, the 4 vCPU of
+// the CI are several times slower: kept until its durations say otherwise.
 const timeouts: Record<string, number> = {
   tps: 120_000,
   'occlusion-culling': 60_000,

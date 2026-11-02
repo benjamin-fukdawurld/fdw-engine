@@ -66,6 +66,22 @@ export interface GltfOptions {
   readonly workers?: DecodePool;
   /** Receives the warnings (an optional extension ignored, a primitive of lines skipped). */
   readonly warn?: (message: string) => void;
+  /**
+   * The largest array, in bytes, an accessor may be read into (and a meshopt
+   * buffer view decoded into); a larger one fails the load before it is
+   * allocated. An accessor without a buffer view declares its size by its
+   * `count` alone, so a few bytes of a hostile file could ask for gigabytes.
+   * Default: `FDW_GLTF_MAX_ACCESSOR_BYTES` where there is a `process`
+   * (bytes, or `512MB`), else `defaultMaxAccessorBytes` (256 MiB: 22
+   * million VEC3 floats, 67 million uint32 indices). 0 removes the bound.
+   */
+  readonly maxAccessorBytes?: number;
+  /**
+   * The bytes all the accessors of a file may be read into. Default:
+   * `FDW_GLTF_MAX_TOTAL_ACCESSOR_BYTES`, else
+   * `defaultMaxTotalAccessorBytes` (2 GiB). 0 removes the bound.
+   */
+  readonly maxTotalAccessorBytes?: number;
 }
 
 /** The configuration of the glTF loader, provided by `installGltf`. */

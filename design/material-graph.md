@@ -154,7 +154,7 @@ Ce que chaque package expose :
 
 ### 5.1 Types logiques
 
-Le système de types décrit **ce que manipule le shader**, pas sa représentation en mémoire. Il est distinct de `GpuType`, qui existe déjà dans engine-backend et qui décrit la disposition en mémoire propre à chaque backend (§7.7).
+Le système de types décrit **ce que manipule le shader**, pas sa représentation en mémoire. La disposition en mémoire, propre à chaque backend, n'est pas dans le type : c'est `PhysicalLayoutStrategy` d'engine-backend qui la calcule (§7.7).
 
 ```ts
 export type ScalarKind = 'f32' | 'f16' | 'i32' | 'u32' | 'bool';
@@ -618,18 +618,21 @@ export type LogicalBinding =
   | { kind: 'sampler'; name: string; comparison: boolean };
 ```
 
-Les **offsets en mémoire** sont calculés ensuite par le backend, parce que les règles diffèrent d'un langage à l'autre (WGSL uniform, std140, packing des cbuffers HLSL, Metal). C'est le rôle de `PhysicalLayoutStrategy`, qui réutilise directement les `StructBuildStrategy` et `PrimitiveApi` existants :
+Les **offsets en mémoire** sont calculés ensuite par le backend, parce que les règles diffèrent d'un langage à l'autre (WGSL uniform, std140, packing des cbuffers HLSL, Metal). C'est le rôle de `PhysicalLayoutStrategy` (`engine-backend/src/shader/PhysicalLayout.ts`), implémentée par `std140LayoutStrategy` (engine-backend : WebGL2, Vulkan et D3D12) et `wgslLayoutStrategy` (engine-webgpu). Elle travaille directement sur les `ShaderType` : il n'y a pas de types mémoire intermédiaires.
 
 ```ts
 // engine-backend
 export interface PhysicalLayoutStrategy {
-  // ShaderType logique → GpuType avec taille et alignement réels
-  typeOf(
-    type: ShaderType,
-    addressSpace: 'uniform' | 'storage',
-  ): GpuType<unknown> | GpuStruct<unknown>;
-  // ProgramLayout logique → numéros de binding concrets, offsets, tailles de buffers
+  // ProgramLayout logique → numéros de binding concrets, offsets et tailles
+  // des membres des blocs uniform, pas des storage buffers, lignes des tables d'objets
   resolve(layout: ProgramLayout): PhysicalProgramLayout;
+  // Écrit une valeur à l'offset d'un membre, dans la disposition du backend
+  // (les écritures par type sont partagées par `uniformWriter`)
+  writeUniform(
+    target: DataView,
+    member: PhysicalUniformMember,
+    value: UniformValue,
+  ): void;
 }
 ```
 
@@ -929,16 +932,16 @@ Ce découpage reprend le principe de la classe `Material` actuelle : un **`shape
 
 Côté backend, un **`MaterialBinding`** (un par couple matériau et programme) possède :
 
-- le **buffer uniform du slot `material`**, écrit avec le `GpuStruct` produit par `PhysicalLayoutStrategy`. Il est réécrit seulement quand `material.version` change, grâce à `CachedValue` ;
+- le **buffer uniform du slot `material`**, écrit membre par membre par `PhysicalLayoutStrategy.writeUniform`, aux offsets de son `PhysicalUniformBlock`. Il est réécrit seulement quand `material.version` change, grâce à `CachedValue` ;
 - le **bind group du groupe 1**, recréé seulement quand une texture ou un sampler change.
 
 ### 11.2 Fréquences de mise à jour
 
-| Groupe | Slot       | Contenu                                                             | Mis à jour                 | Lié                             |
-| ------ | ---------- | ------------------------------------------------------------------- | -------------------------- | ------------------------------- |
-| 0      | `frame`    | caméra (view, projection, position), lumières, temps                | une fois par frame         | une fois par passe              |
-| 1      | `material` | uniforms, textures et samplers du matériau                          | quand les valeurs changent | à chaque changement de matériau |
-| 2      | `object`   | matrice monde, normal matrix (déjà fournies par `TransformAdapter`) | quand le transform change  | à chaque objet                  |
+| Groupe | Slot       | Contenu                                                     | Mis à jour                 | Lié                             |
+| ------ | ---------- | ----------------------------------------------------------- | -------------------------- | ------------------------------- |
+| 0      | `frame`    | caméra (view, projection, position), lumières, temps        | une fois par frame         | une fois par passe              |
+| 1      | `material` | uniforms, textures et samplers du matériau                  | quand les valeurs changent | à chaque changement de matériau |
+| 2      | `object`   | matrice monde, normal matrix (les blocs du `TransformPool`) | quand le transform change  | à chaque objet                  |
 
 Plus tard, on pourra regrouper les données `object` de tous les objets dans **un seul grand buffer avec des offsets dynamiques** : un seul bind group au lieu d'un par objet. L'interface `setBindGroup(index, group, dynamicOffsets)` le permet déjà.
 
@@ -1049,17 +1052,17 @@ Le graphe, l'IR et le layout logique sont identiques. Seuls le générateur et l
 
 ## 13. Intégration avec l'existant
 
-| Élément existant                                                                               | Devenir                                                                                                |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `MaterialBindingSlot`, `getMaterialBindingSlotOrder()` (engine-backend)                        | **Réutilisés** : ils définissent les groupes et leur ordre                                             |
-| `MeshDescription`, `MeshAttributeSemantic` (engine-backend)                                    | **Réutilisés** : sémantiques des nœuds `input.attribute` et correspondance des vertex layouts          |
-| `GpuType`, `GpuStruct`, `StructBuildStrategy`, `PrimitiveApi` (engine-backend / engine-webgpu) | **Réutilisés** par `PhysicalLayoutStrategy` pour calculer les offsets                                  |
-| `CachedValue`, `SnapshotValue` (engine-backend)                                                | **Réutilisés** pour les mises à jour versionnées des buffers et les caches                             |
-| `CameraAdapter`, `TransformAdapter`                                                            | **Réutilisés** pour les slots `frame` et `object`                                                      |
-| Concept de `shapeKey` de l'ancien `Material`                                                   | **Repris** sous la forme `programKey` / `stateKey`                                                     |
-| `ShaderWritter` et les templates Eta                                                           | **Remplacés** par `WgslCodegen`. Le Phong des templates devient la macro `lighting.phong`              |
-| `GpuSerializer.serialize(): string` (engine-backend)                                           | **Supprimé** de l'API abstraite : la génération de code passe aux générateurs (point de l'audit, §3.1) |
-| `apps/demo/src/utils3d` (Scene, Material, RenderPipeline, Mesh)                                | **Remplacés** par `Material`, `Renderer` et les pipelines du moteur                                    |
+| Élément existant                                                                               | Devenir                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `MaterialBindingSlot`, `getMaterialBindingSlotOrder()` (engine-backend)                        | **Réutilisés** : ils définissent les groupes et leur ordre                                               |
+| `MeshDescription`, `MeshAttributeSemantic` (engine-backend)                                    | **Réutilisés** : sémantiques des nœuds `input.attribute` et correspondance des vertex layouts            |
+| `GpuType`, `GpuStruct`, `StructBuildStrategy`, `PrimitiveApi` (engine-backend / engine-webgpu) | **Supprimés** : `PhysicalLayoutStrategy` calcule les offsets directement depuis les `ShaderType`         |
+| `CachedValue`, `SnapshotValue` (engine-backend)                                                | **Réutilisés** pour les mises à jour versionnées des buffers et les caches                               |
+| `CameraAdapter`, `TransformAdapter`                                                            | **Supprimés** : `CameraCache` (engine-backend) pour `frame`, `TransformPool` (engine-core) pour `object` |
+| Concept de `shapeKey` de l'ancien `Material`                                                   | **Repris** sous la forme `programKey` / `stateKey`                                                       |
+| `ShaderWritter` et les templates Eta                                                           | **Remplacés** par `WgslCodegen`. Le Phong des templates devient la macro `lighting.phong`                |
+| `GpuSerializer`, structs, tableaux, writers et `material/*` (engine-backend)                   | **Supprimés** : la génération de code passe aux générateurs (point de l'audit, §3.1)                     |
+| `apps/demo/src/utils3d` (Scene, Material, RenderPipeline, Mesh)                                | **Remplacés** par `Material`, `Renderer` et les pipelines du moteur                                      |
 
 ---
 

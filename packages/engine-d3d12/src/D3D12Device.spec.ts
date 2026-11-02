@@ -2,10 +2,12 @@ import { existsSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   BufferUsageFlags,
+  Commands,
   TextureUsageFlags,
   dxcArguments,
+  type ContextHandle,
 } from '@fdw/engine-vulkan';
-import { addonPath, loadD3D12Addon } from './addon';
+import { addonPath, loadD3D12Addon, type D3D12Addon } from './addon';
 import { D3D12Device } from './D3D12Device';
 import { canRun } from '@fdw/engine-backend/testing';
 
@@ -16,6 +18,14 @@ const built = canRun(
   existsSync(addonPath()),
   'the Direct3D 12 addon is not built (Windows only)',
 );
+
+// The failures of fdw_dx_test_fail (native/include/fdw/d3d12.h), that the
+// drivers seldom give: a hook of the addon for the tests only.
+const TestFailures = { close: 1, signal: 2 } as const;
+const testing = () =>
+  loadD3D12Addon() as D3D12Addon & {
+    testFail(context: ContextHandle, failures: number): void;
+  };
 
 describe.skipIf(!built)('D3D12Device', () => {
   let device: D3D12Device;
@@ -154,6 +164,128 @@ describe.skipIf(!built)('D3D12Device', () => {
     const ticket = addon.readTexture(small, 0, 0, 2, 2);
     expect([...take(ticket, 16)]).toEqual(new Array(16).fill(9));
     for (const texture of [large, small, other]) addon.destroyTexture(texture);
+  });
+
+  it('drops a command list that fails to close, and runs the next ones', () => {
+    const addon = testing();
+    const usage = BufferUsageFlags['copy-src'] | BufferUsageFlags['copy-dst'];
+    const source = addon.createBuffer(device.context, 16, usage, 'source');
+    const target = addon.createBuffer(device.context, 16, usage, 'target');
+    addon.writeBuffer(source, 0, new Uint32Array([1, 2, 3, 4]));
+    const textures = [0, 1].map(() =>
+      addon.createTexture(
+        device.context,
+        'rgba8unorm',
+        '2d',
+        2,
+        2,
+        1,
+        1,
+        1,
+        TextureUsageFlags['copy-src'] | TextureUsageFlags['copy-dst'],
+      ),
+    );
+    addon.writeTexture(textures[0], new Uint8Array(16).fill(9));
+    addon.waitIdle(device.context);
+    const [from, to] = [addon.bufferId(source), addon.bufferId(target)];
+    const [a, b] = textures.map((t) => addon.textureId(t));
+    // The list fails to close (audit §4.2): its copies never run, and the
+    // textures it used are back in their states before it.
+    addon.testFail(device.context, TestFailures.close);
+    expect(() =>
+      addon.submit(
+        device.context,
+        new Uint32Array([
+          ...copyBuffer(from, to, 0, 16),
+          ...copyTexture(a, b, 2, 2),
+        ]),
+      ),
+    ).toThrow(/Closing a command list failed/);
+    // The debug layer reports the invalid copy of the failure.
+    device.takeMessages();
+    // The context is not wedged: three valid copies run, and the textures
+    // copied without wrong states.
+    for (let i = 0; i < 3; i++) {
+      addon.submit(device.context, copyBuffer(from, to, 4 * i, 4));
+    }
+    addon.submit(device.context, copyTexture(a, b, 2, 2));
+    const buffer = addon.readBuffer(target, 0, 16);
+    expect([...new Uint32Array(take(buffer, 16).buffer)]).toEqual([1, 2, 3, 0]);
+    const pixels = addon.readTexture(textures[1], 0, 0, 2, 2);
+    expect([...take(pixels, 16)]).toEqual(new Array(16).fill(9));
+    addon.destroyBuffer(source);
+    addon.destroyBuffer(target);
+    for (const texture of textures) addon.destroyTexture(texture);
+  });
+
+  it('is lost once a submission cannot be signalled', () => {
+    const addon = testing();
+    // A context of its own: it stays lost.
+    const context = addon.createContext(false, 'tests', false);
+    try {
+      const buffer = addon.createBuffer(
+        context,
+        16,
+        BufferUsageFlags['copy-dst'],
+      );
+      addon.writeBuffer(buffer, 0, new Uint32Array(4));
+      addon.testFail(context, TestFailures.signal);
+      expect(() => addon.submit(context, new Uint32Array())).toThrow(
+        /Signal failed/,
+      );
+      // Nothing is recorded or recycled any more, the allocators of the
+      // lists may still be in use.
+      expect(() => addon.submit(context, new Uint32Array())).toThrow(
+        /device is lost/,
+      );
+      expect(() => addon.writeBuffer(buffer, 0, new Uint32Array(4))).toThrow(
+        /device is lost/,
+      );
+      expect(() => addon.waitIdle(context)).toThrow();
+      addon.destroyBuffer(buffer);
+    } finally {
+      addon.destroyContext(context);
+    }
+  });
+
+  it('refuses the queries out of the pool, without overflow', (test) => {
+    const addon = loadD3D12Addon();
+    if (!addon.timestampsSupported(device.context)) {
+      test.skip();
+    }
+    const pool = addon.createQueryPool(device.context, 4);
+    const id = addon.queryPoolId(pool);
+    // first + count wraps around to 0 in 32 bits.
+    for (const words of [
+      [Commands.writeTimestamp, id, 0xffffffff],
+      [Commands.writeTimestamp, id, 4],
+      [Commands.resetQueries, id, 1, 0xffffffff],
+      [Commands.resetQueries, id, 3, 2],
+    ]) {
+      expect(() =>
+        addon.submit(device.context, new Uint32Array(words)),
+      ).toThrow(/Queries out of the pool/);
+    }
+    expect(() =>
+      addon.readQueryPool(pool, 0xffffffff, 1, new Float64Array(1)),
+    ).toThrow(/Queries out of the pool/);
+    // Inside: written and read.
+    addon.submit(
+      device.context,
+      new Uint32Array([
+        Commands.resetQueries,
+        id,
+        0,
+        4,
+        Commands.writeTimestamp,
+        id,
+        3,
+      ]),
+    );
+    addon.waitIdle(device.context);
+    const nanoseconds = new Float64Array(1);
+    expect(addon.readQueryPool(pool, 3, 1, nanoseconds)).toBe(true);
+    addon.destroyQueryPool(pool);
   });
 
   it('copies depth24plus-stencil8 by planes, 4 bytes of depth a pixel', () => {

@@ -26,6 +26,7 @@ describePrograms(programs, ready);
 describeRays('Rays on WebGPU (Dawn)', createFixture, { skip: !ready });
 
 describe.skipIf(!ready)('WebGPU validation (Dawn)', () => {
+  // Measured alone on 24 cores: 1.2 to 3 s, its own device of Dawn.
   it('reports no validation error', async () => {
     const fixture = await createFixture();
     const { engine, backend, surface } = fixture;
@@ -93,5 +94,5 @@ describe.skipIf(!ready)('WebGPU validation (Dawn)', () => {
     expect((await device.popErrorScope())?.message).toBeUndefined();
     renderer.destroy();
     await fixture.destroy();
-  });
+  }, 15_000);
 });

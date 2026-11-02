@@ -19,6 +19,7 @@ import {
   createTpsScene,
   SceneFactory,
   TpsLevelPath,
+  TpsMinimal,
 } from '@fdw/demo-scenes';
 import { bitmapCodec, installAssets } from '@fdw/engine-assets';
 import { installGltf } from '@fdw/engine-gltf';
@@ -26,10 +27,22 @@ import { createRapierPhysics } from '@fdw/engine-physics-rapier';
 import { HttpSource, ResourceStore } from '@fdw/engine-resources';
 import { createImageBitmapDecoder } from '@fdw/engine-resources-web';
 
+/** What the page may choose of the scenes. */
+export interface SceneOptions {
+  /**
+   * The level of the game (?level=): `minimal`, the smallest one
+   * (TpsMinimal), for the tests of its graphs; the forest by default.
+   */
+  readonly level?: string | null;
+}
+
 // The scenes the viewport can show: those of the desktop editor, by the
 // same names. Loaded when chosen: some load something first (Rapier, a
 // WebAssembly module; models).
-export const scenes: Record<string, () => Promise<SceneFactory>> = {
+export const createScenes = ({ level }: SceneOptions = {}): Record<
+  string,
+  () => Promise<SceneFactory>
+> => ({
   shadows: async () => createShadowsScene,
   pbr: async () => createPbrScene,
   // The game: its last step, and the steps before.
@@ -60,7 +73,9 @@ export const scenes: Record<string, () => Promise<SceneFactory>> = {
     return createTpsScene({
       physics: await createRapierPhysics(),
       resources: () => store,
-      level: TpsLevelPath,
+      ...(level === 'minimal' ? TpsMinimal : { level: TpsLevelPath }),
     });
   },
-};
+});
+
+export const scenes = createScenes();

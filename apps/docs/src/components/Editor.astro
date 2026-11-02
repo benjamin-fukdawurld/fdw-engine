@@ -2,7 +2,9 @@
 // The web editor, live, in a frame: the one of apps/editor-web, built into
 // the site under /editor-app/ (editor-web:build-docs), its engine on WebGPU or
 // WebGL2 as the live examples (?backend=webgl2 forces it). Nothing is kept
-// from a visit to the next (?embed): the default layout each time.
+// from a visit to the next (?embed): the default layout each time. For the
+// tests, ?level=minimal gives the game its smallest level (a terrain
+// without forest, one orc): its graphs without loading the whole game.
 interface Props {
   // The scene shown first: the level by default.
   scene?: string;
@@ -40,9 +42,11 @@ if (docks) query.set('docks', docks.join(','));
 </div>
 
 <script>
-  // The backend of the page given to the frame; loaded once near the
-  // screen.
-  const forced = new URLSearchParams(window.location.search).get('backend');
+  // The backend and the level of the page given to the frame; loaded once
+  // near the screen.
+  const page = new URLSearchParams(window.location.search);
+  const forced = page.get('backend');
+  const level = page.get('level');
   const frames = document.querySelectorAll<HTMLIFrameElement>(
     '[data-editor] iframe'
   );
@@ -53,6 +57,7 @@ if (docks) query.set('docks', docks.join(','));
         if (!entry.isIntersecting || frame.src) continue;
         const url = new URL(frame.dataset['src'] ?? '', window.location.href);
         if (forced) url.searchParams.set('backend', forced);
+        if (level) url.searchParams.set('level', level);
         frame.src = url.href;
         observer.unobserve(frame);
       }

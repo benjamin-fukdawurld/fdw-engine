@@ -5014,6 +5014,8 @@ export function describeRenderer(
       });
 
       for (const nz of [6, 1]) {
+        // The slowest on Dawn, measured alone on 24 cores: 2.3 s in a
+        // volume; the software GPUs of the CI are several times slower.
         it(`steps the smoke of the CPU, ${nz === 1 ? 'in a plane' : 'in a volume'}`, async () => {
           if (backend.capabilities?.compute === false) {
             return;
@@ -5085,7 +5087,7 @@ export function describeRenderer(
           );
           bodies.destroy();
           smoke.destroy();
-        });
+        }, 15_000);
       }
 
       it('steps the particles of the CPU, sorted by cell', async () => {
@@ -5203,6 +5205,8 @@ export function describeRenderer(
         sky.destroy();
       });
 
+      // The slowest on Dawn, measured alone on 24 cores: 2.3 s; the
+      // software GPUs of the CI are several times slower.
       it('draws smoke over the scene, dimming what is behind', async () => {
         const formats = backend.capabilities?.renderableFormats ?? [];
         if (
@@ -5269,7 +5273,7 @@ export function describeRenderer(
         );
         smokeRenderer.destroy();
         smoke.destroy();
-      });
+      }, 15_000);
 
       it('draws a liquid of particles where they are', async () => {
         const formats = backend.capabilities?.renderableFormats ?? [];

@@ -211,6 +211,8 @@ export function describeRays(
       return result;
     };
 
+    // The slowest on Dawn, measured alone on 24 cores: 2.7 s; the
+    // software GPUs of the CI are several times slower.
     it('traces rays in a scene of instances as the CPU does', async () => {
       const meshes = [soup(1, 300, 2, 0.4), soup(2, 500, 3, 0.5)];
       const bottoms: GpuBottomLevel[] = meshes.map((positions, i) =>
@@ -323,8 +325,71 @@ export function describeRays(
       ).toBe(true);
       top.destroy();
       bottoms.forEach((bottom) => bottom.destroy());
+    }, 20_000);
+
+    it('keeps the bottom levels destroyed while a top level holds them, and grows', async () => {
+      const create = (positions: ReturnType<typeof soup>, label: string) =>
+        (
+          backend.createBottomLevel as NonNullable<
+            RenderBackend['createBottomLevel']
+          >
+        )({ positions, indices: sequence(positions.length / 3), label });
+      const meshes = [soup(5, 200, 2, 0.4), soup(6, 300, 2, 0.4)];
+      const first = create(meshes[0], 'first');
+      const top = (
+        backend.createTopLevel as NonNullable<RenderBackend['createTopLevel']>
+      )({ capacity: 1 });
+      const at = (x: number, y: number) =>
+        compose([x, y, 0], [0, 0, 0, 1], [1, 1, 1]);
+      top.update([{ bottom: first, transform: at(0, 0) }]);
+      const input = rays(7, 512);
+      const before = await trace(top, 'closest', input);
+      expect(
+        [...before].filter((x, k) => k % 4 === 0 && x === 0).length,
+      ).toBeGreaterThan(20);
+      // Destroyed while the top level holds it (audit §4.2): it stays
+      // until an update without it, the rebuilds trace it still.
+      first.destroy();
+      // Once the GPU is done with it, a bottom level of the same size is
+      // created: in its memory, were it freed.
+      const idle = storage(new Uint32Array(4), true);
+      await idle.read();
+      idle.destroy();
+      const decoy = create(soup(8, 200, 2, 0.4), 'decoy');
+      expect([...(await trace(top, 'closest', input))]).toEqual([...before]);
+      decoy.destroy();
+      // Grown past its capacity after builds: the hits of every instance,
+      // as the CPU finds them.
+      const second = create(meshes[1], 'second');
+      const worlds = [at(-6, 0), at(0, 0), at(6, 0), at(0, 6), at(0, -6)];
+      top.update(worlds.map((transform) => ({ bottom: second, transform })));
+      expect(top.instanceCount).toBe(5);
+      const bvh = buildTriangleBvh(meshes[1]);
+      const cpu: BvhInstance[] = worlds.map((world) => ({ bvh, world }));
+      const cpuTop = buildInstanceBvh(cpu);
+      const hits = await trace(top, 'closest', input);
+      let hitCount = 0;
+      for (let i = 0; i < 512; i++) {
+        const expected = intersectInstances(
+          cpuTop,
+          cpu,
+          input.origins.subarray(i * 4, i * 4 + 3),
+          input.directions.subarray(i * 4, i * 4 + 3),
+          { tMin: 0.001, tMax: 1000 },
+        );
+        expect(hits[i * 4]).toBe(expected ? expected.instance : 0xffffffff);
+        if (expected) {
+          hitCount++;
+          expect(hits[i * 4 + 1] & 0x7fffffff).toBe(expected.triangle);
+        }
+      }
+      expect(hitCount).toBeGreaterThan(20);
+      top.destroy();
+      second.destroy();
     });
 
+    // The slowest on Dawn, measured alone on 24 cores: 1.5 s; the
+    // software GPUs of the CI are several times slower.
     it('follows the vertices moved on the GPU and traces the ray meshes', async () => {
       // A program writing the point hit by each ray (w: whether it hit).
       const g = new GraphBuilder('points hit');
@@ -447,8 +512,10 @@ export function describeRays(
       expect(hits[1][3]).toBe(1);
       scene.destroy();
       vertices.destroy();
-    });
+    }, 10_000);
 
+    // The slowest on Dawn, measured alone on 24 cores: 1.4 s; the
+    // software GPUs of the CI are several times slower.
     it('reads the points hit: positions, normals, uvs, objects, materials', async () => {
       const materials = [white(), white()];
       // A square turned a quarter around y (facing +x), scaled, moved; and
@@ -578,8 +645,10 @@ export function describeRays(
       buffers.forEach((buffer) => buffer.destroy());
       output.destroy();
       scene.destroy();
-    });
+    }, 10_000);
 
+    // The slowest on Dawn, measured alone on 24 cores: 5.2 s; the
+    // software GPUs of the CI are several times slower.
     it('converges to the light of the scene with the path tracer', async () => {
       const renderer = new Renderer(backend, {
         output: { encoding: 'linear', toneMapping: 'none' },
@@ -671,7 +740,7 @@ export function describeRays(
       tracer.destroy();
       renderer.destroy();
       scene.destroy();
-    });
+    }, 30_000);
 
     it('lights the scene by its environment with the path tracer', async () => {
       const renderer = new Renderer(backend, {
@@ -740,6 +809,8 @@ export function describeRays(
       scene.destroy();
     });
 
+    // The slowest on Dawn, measured alone on 24 cores: 1.2 s; the
+    // software GPUs of the CI are several times slower.
     it('keeps the history of the points seen when the camera moves', async () => {
       const renderer = new Renderer(backend, {
         output: { encoding: 'linear', toneMapping: 'none' },
@@ -821,7 +892,7 @@ export function describeRays(
       fresh.destroy();
       renderer.destroy();
       scene.destroy();
-    });
+    }, 10_000);
 
     // A camera above the floor (y = 0), looking down at 45° towards -z.
     const tilted = () =>
@@ -884,6 +955,8 @@ export function describeRays(
       ];
     };
 
+    // The slowest on Dawn, measured alone on 24 cores: 3.0 s; the
+    // software GPUs of the CI are several times slower.
     it('reflects the scene in the smooth surfaces', async () => {
       const renderer = new Renderer(backend, {
         output: { encoding: 'linear', toneMapping: 'none' },
@@ -920,7 +993,9 @@ export function describeRays(
         },
       });
       const render = async (reflected: boolean) => {
-        const graph = new RenderGraph({ size: { width: size, height: size } });
+        const graph = new RenderGraph({
+          size: { width: size, height: size },
+        });
         const passes = gbufferPasses(renderer, graph, items, camera, []);
         const image = reflected
           ? reflections.addPasses(graph, {
@@ -942,8 +1017,10 @@ export function describeRays(
       reflections.destroy();
       renderer.destroy();
       scene.destroy();
-    });
+    }, 20_000);
 
+    // The slowest on Dawn, measured alone on 24 cores: 2.9 s; the
+    // software GPUs of the CI are several times slower.
     it('darkens the ambient light where the scene hides the sky', async () => {
       const renderer = new Renderer(backend, {
         output: { encoding: 'linear', toneMapping: 'none' },
@@ -980,104 +1057,104 @@ export function describeRays(
       expect(Math.min(...foot)).toBeLessThan(200);
       renderer.destroy();
       scene.destroy();
-    });
+    }, 20_000);
 
-    it(
-      'traces the shadows of the lights in the materials',
-      { timeout: 60_000 },
-      async () => {
-        const renderer = new Renderer(backend, {
-          output: { encoding: 'linear', toneMapping: 'none' },
+    // The slowest on Dawn, measured alone on 24 cores: 24 to 27 s (14 s
+    // beside the other files).
+    it('traces the shadows of the lights in the materials', async () => {
+      const renderer = new Renderer(backend, {
+        output: { encoding: 'linear', toneMapping: 'none' },
+      });
+      const camera = new Camera({
+        position: { x: 0, y: 0, z: 5 },
+        projection: {
+          type: 'orthographic',
+          left: -1,
+          right: 1,
+          bottom: -1,
+          top: 1,
+          near: 0.1,
+          far: 100,
+        },
+      });
+      const ambient = 0.1;
+      const sun = new DirectionalLight({
+        direction: { x: 1, y: 0, z: -1 },
+        ambient: { x: ambient, y: ambient, z: ambient },
+        diffuse: { x: 1, y: 1, z: 1 },
+        specular: { x: 0, y: 0, z: 0 },
+        castShadow: true,
+      });
+      // A ground, and a blocker 0.5 in front of it, left of the center:
+      // its shadow falls 0.5 to the right, on the center.
+      const blocker = {
+        mesh: square(0.25, 0.5),
+        material: white(),
+        transform: new Transform({ position: { x: -0.5 } }),
+      };
+      const items = [
+        { mesh: square(1), material: white(), transform: new Transform() },
+        blocker,
+      ];
+      const scene = new RayScene(backend).update({ items });
+      const render = async (shadows: boolean | { samples: number }) => {
+        renderer.render({
+          items,
+          camera,
+          surface: fixture.surface,
+          lights: [sun],
+          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          rays: { scene, shadows },
         });
-        const camera = new Camera({
-          position: { x: 0, y: 0, z: 5 },
-          projection: {
-            type: 'orthographic',
-            left: -1,
-            right: 1,
-            bottom: -1,
-            top: 1,
-            near: 0.1,
-            far: 100,
-          },
-        });
-        const ambient = 0.1;
-        const sun = new DirectionalLight({
-          direction: { x: 1, y: 0, z: -1 },
-          ambient: { x: ambient, y: ambient, z: ambient },
-          diffuse: { x: 1, y: 1, z: 1 },
-          specular: { x: 0, y: 0, z: 0 },
-          castShadow: true,
-        });
-        // A ground, and a blocker 0.5 in front of it, left of the center:
-        // its shadow falls 0.5 to the right, on the center.
-        const blocker = {
-          mesh: square(0.25, 0.5),
-          material: white(),
-          transform: new Transform({ position: { x: -0.5 } }),
-        };
-        const items = [
-          { mesh: square(1), material: white(), transform: new Transform() },
-          blocker,
+        const pixels = await fixture.readPixels();
+        return (x: number, y: number) => [
+          ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
         ];
-        const scene = new RayScene(backend).update({ items });
-        const render = async (shadows: boolean | { samples: number }) => {
-          renderer.render({
-            items,
-            camera,
-            surface: fixture.surface,
-            lights: [sun],
-            clearColor: { r: 0, g: 0, b: 0, a: 1 },
-            rays: { scene, shadows },
-          });
-          const pixels = await fixture.readPixels();
-          return (x: number, y: number) => [
-            ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
-          ];
-        };
-        const byte = (value: number) => Math.round(Math.min(value, 1) * 255);
-        const gray = (value: number) => [
-          byte(value),
-          byte(value),
-          byte(value),
-          255,
-        ];
-        const lit = gray(ambient + Math.SQRT1_2);
-        const shadowed = gray(ambient);
-        let pixel = await render(true);
-        expectColor(pixel(32, 32), shadowed);
-        expectColor(pixel(28, 36), shadowed);
-        for (const [x, y] of [
-          [16, 32],
-          [48, 32],
-          [32, 8],
-          [56, 56],
-        ]) {
-          expectColor(pixel(x, y), lit);
-        }
-        // The blocker moved: the shadow follows at the next update.
-        blocker.transform.position = { x: 0.5 };
-        scene.update({ items });
-        pixel = await render(true);
-        expectColor(pixel(32, 32), lit);
-        expectColor(pixel(60, 32), shadowed);
-        // Soft: several rays, the edge of the shadow in between.
-        sun.shadow = { softness: 0.05 };
-        pixel = await render({ samples: 4 });
-        expectColor(pixel(62, 32), shadowed);
-        // The edge of the shadow at x = 0.75 (pixel 56), blurred over a few
-        // pixels: values in between.
-        const between = [53, 54, 55, 56, 57, 58].map((x) => pixel(x, 32)[0]);
-        expect(
-          between.filter(
-            (value) => value > shadowed[0] + 10 && value < lit[0] - 10,
-          ).length,
-        ).toBeGreaterThan(0);
-        renderer.destroy();
-        scene.destroy();
-      },
-    );
+      };
+      const byte = (value: number) => Math.round(Math.min(value, 1) * 255);
+      const gray = (value: number) => [
+        byte(value),
+        byte(value),
+        byte(value),
+        255,
+      ];
+      const lit = gray(ambient + Math.SQRT1_2);
+      const shadowed = gray(ambient);
+      let pixel = await render(true);
+      expectColor(pixel(32, 32), shadowed);
+      expectColor(pixel(28, 36), shadowed);
+      for (const [x, y] of [
+        [16, 32],
+        [48, 32],
+        [32, 8],
+        [56, 56],
+      ]) {
+        expectColor(pixel(x, y), lit);
+      }
+      // The blocker moved: the shadow follows at the next update.
+      blocker.transform.position = { x: 0.5 };
+      scene.update({ items });
+      pixel = await render(true);
+      expectColor(pixel(32, 32), lit);
+      expectColor(pixel(60, 32), shadowed);
+      // Soft: several rays, the edge of the shadow in between.
+      sun.shadow = { softness: 0.05 };
+      pixel = await render({ samples: 4 });
+      expectColor(pixel(62, 32), shadowed);
+      // The edge of the shadow at x = 0.75 (pixel 56), blurred over a few
+      // pixels: values in between.
+      const between = [53, 54, 55, 56, 57, 58].map((x) => pixel(x, 32)[0]);
+      expect(
+        between.filter(
+          (value) => value > shadowed[0] + 10 && value < lit[0] - 10,
+        ).length,
+      ).toBeGreaterThan(0);
+      renderer.destroy();
+      scene.destroy();
+    }, 60_000);
 
+    // The slowest on Dawn, measured alone on 24 cores: 12.7 s; the
+    // software GPUs of the CI are several times slower.
     it('lets the rays through the cut parts of the masked materials', async () => {
       const renderer = new Renderer(backend, {
         output: { encoding: 'linear', toneMapping: 'none' },
@@ -1184,8 +1261,10 @@ export function describeRays(
             workgroups: [1],
           });
           const found = new Uint32Array(await hits.read());
+          // An `any` ray on the kept half crosses the leaf and the ground:
+          // either is a hit, in the order the driver walks its BVH.
           expect(
-            [found[0], found[4]],
+            [found[0], mode === 'any' && found[4] === 0 ? 1 : found[4]],
             `${mode}, pipeline ${rayTracing}`,
           ).toEqual([0, 1]);
           hits.destroy();
@@ -1213,6 +1292,6 @@ export function describeRays(
       }
       renderer.destroy();
       scene.destroy();
-    });
+    }, 60_000);
   });
 }

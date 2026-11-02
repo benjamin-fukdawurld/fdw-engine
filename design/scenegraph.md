@@ -154,7 +154,7 @@ Le point qui décide : **l'index doit être à jour avant toute requête, y comp
 
 **A. Phase explicite `scene.update()`.** L'application appelle `update()` entre la logique et le rendu ; la scène recalcule tout ce qui a changé.
 
-**B. Paresseuse, à la demande (comme `CachedValue`).** Chaque valeur dérivée garde les versions de ce dont elle dépend, et se recalcule à la lecture si l'une a changé. C'est ce que fait `TransformCache` aujourd'hui avec son parent.
+**B. Paresseuse, à la demande (comme `CachedValue`).** Chaque valeur dérivée garde les versions de ce dont elle dépend, et se recalcule à la lecture si l'une a changé. C'est ce que faisait le `TransformCache` du renderer avec son parent (supprimé depuis, §16) ; `CameraCache` fonctionne encore ainsi.
 
 **C. Invalidation, puis recalcul à la demande ou au moment des requêtes** (proposée) :
 
@@ -619,11 +619,11 @@ Un **`TransformPool`** : un `Float32Array` de N blocs, un par transform, agrandi
 - Les 112 premiers octets d'un bloc sont **l'uniform `object`** : le renderer l'envoie d'une copie quand la disposition du programme y correspond (le cas de tous les backends), et garde l'écriture champ par champ sinon. Plus tard, le pool entier pourra partir d'un bloc vers un storage buffer (rendu piloté par le GPU).
 - C'est un compromis avec l'orientation données : un bloc par transform (tableau de structures) plutôt qu'une colonne par champ, parce que ce que l'on lit ensemble (matrices de l'uniform, valeurs locales d'un transform) est contigu.
 
-**`Transform` devient un proxy** sur un bloc d'un pool (le pool par défaut, ou un autre) : même nom, même constructeur, mêmes accesseurs (valeurs partielles, `position.x`, `version`). Ses vecteurs lisent et écrivent dans le pool, et leurs écritures invalident le bloc comme les autres. La matrice monde et celle des normales sont recalculées à la lecture si le bloc est périmé. `TransformSnapshot` n'exige plus les classes `Vec3View` et `QuatView`, mais une interface (les composantes et `asArray()`) : `TransformCache` et `TransformAdapter` fonctionnent avec les deux.
+**`Transform` devient un proxy** sur un bloc d'un pool (le pool par défaut, ou un autre) : même nom, même constructeur, mêmes accesseurs (valeurs partielles, `position.x`, `version`). Ses vecteurs lisent et écrivent dans le pool, et leurs écritures invalident le bloc comme les autres. La matrice monde et celle des normales sont recalculées à la lecture si le bloc est périmé. `TransformSnapshot` n'exige plus les classes `Vec3View` et `QuatView`, mais une interface (`ArrayVec3`, `ArrayQuat` : les composantes et `asArray()`).
 
 **Libération** : `transform.dispose()` rend le bloc tout de suite ; à défaut, un `FinalizationRegistry` le rend quand le ramasse-miettes récupère le proxy. Un oubli ne fuit pas : il est libéré plus tard.
 
-**Le renderer** ne passe plus par `TransformCache` pour les `Transform` : il lit la version monde et le bloc dans le pool.
+**Le renderer** lit la version monde et le bloc dans le pool, et copie le bloc dans la ligne de l'objet (`ObjectRows`). `TransformCache`, `TransformAdapter`, `TransformParentProvider` et `CameraAdapter` ont été supprimés d'engine-backend : la caméra passe par `CameraCache`.
 
 **La scène** (T4) range ses transforms dans son propre pool, indexé par entité, à la place de ses colonnes `Transform` et `WorldMatrix` : `node.transform` est un vrai `Transform`, le renderer n'a qu'un chemin, et les systèmes écrivent `data[e * stride + offset]`.
 

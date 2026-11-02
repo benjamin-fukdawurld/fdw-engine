@@ -299,6 +299,29 @@ instance garde le modèle en vie jusqu'à son `dispose()`.
   le backend sait les échantillonner (`capabilities.compressedFormats`),
   Basis Universal par un transcodeur donné par l'application.
 
+### Les limites d'allocation de glTF
+
+Un accessor déclare son nombre d'éléments ; sans buffer view (des zéros, puis
+des valeurs sparse), rien dans le fichier ne porte ses octets : quelques
+octets de JSON pourraient demander des gigaoctets. Le chargeur vérifie chaque
+tableau avant de l'allouer :
+
+| Option                  | Variable d'environnement            | Défaut  | Borne                                    |
+| ----------------------- | ----------------------------------- | ------- | ---------------------------------------- |
+| `maxAccessorBytes`      | `FDW_GLTF_MAX_ACCESSOR_BYTES`       | 256 Mio | un accessor (et une buffer view meshopt) |
+| `maxTotalAccessorBytes` | `FDW_GLTF_MAX_TOTAL_ACCESSOR_BYTES` | 2 Gio   | tous les accessors d'un fichier          |
+
+256 Mio contiennent 22 millions de VEC3 flottants ou 67 millions d'indices
+`uint32` : les vrais maillages de dizaines de millions de sommets se chargent,
+un fichier hostile échoue avec une erreur qui nomme la limite. Les options
+d'`installGltf` passent d'abord ; les variables sont lues là où il y a un
+`process` (Node, Electron), en octets ou avec une unité (`512MB`, `1GiB`).
+0 retire une borne :
+
+```ts
+installGltf(resources, { maxAccessorBytes: 1024 * 2 ** 20 }); // 1 Gio
+```
+
 ## Le décodage dans des workers
 
 Le décodage lourd peut tourner dans les workers d'un pool plutôt que sur le

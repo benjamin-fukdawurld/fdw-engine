@@ -290,6 +290,9 @@ struct fdw_dx_context {
   // A submission could not be signalled: what the GPU still runs is
   // unknown, so nothing is recorded or recycled any more.
   bool lost = false;
+  // For the tests (fdw_dx_test_fail): the FDW_DX_TEST_FAIL_* failures to
+  // come.
+  uint32_t testFailures = 0;
 
   // The command lists, recycled. Each list recorded starts a new epoch:
   // the buffers are back in the common state.

@@ -12,6 +12,7 @@ import {
   type PackedAccessors,
 } from './accessors';
 import type { GltfAttributeData, GltfDecodedPrimitive } from './extension';
+import { AccessorBudget, type GltfLimits } from './limits';
 import { readPrimitive, type PrimitiveSource } from './geometry';
 import type { DracoDecoder, MeshoptDecoder } from './options';
 import type { GltfJson } from './types';
@@ -31,6 +32,8 @@ export const gltfTasks = {
 interface PrimitiveJob {
   readonly source: PrimitiveSource;
   readonly accessors: PackedAccessors;
+  // The limits of the loader, checked again by the worker.
+  readonly limits?: GltfLimits;
 }
 
 export interface MeshoptJob {
@@ -82,6 +85,7 @@ export async function readPrimitiveInWorker(
   source: PrimitiveSource,
   json: GltfJson,
   bufferView: (index: number) => Promise<Uint8Array<ArrayBuffer>>,
+  budget: AccessorBudget = new AccessorBudget(),
   signal?: AbortSignal,
 ): Promise<MeshData> {
   const { decoded } = source;
@@ -110,10 +114,12 @@ export async function readPrimitiveInWorker(
         : []),
     ],
     bufferView,
+    budget,
   );
   const job: PrimitiveJob = {
     source: { ...source, decoded: copied },
     accessors,
+    limits: budget.limits,
   };
   return runTask<MeshData>(pool, gltfTasks.primitive, job, {
     transfer: buffersOf([...accessors.views, ...decodedViews(copied)]),
@@ -147,10 +153,15 @@ export function gltfWorkerTasks({
   draco,
 }: GltfWorkerOptions = {}): WorkerTasks {
   return {
-    [gltfTasks.primitive]: async ({ source, accessors }: PrimitiveJob) => {
+    [gltfTasks.primitive]: async ({
+      source,
+      accessors,
+      limits,
+    }: PrimitiveJob) => {
       const read = accessorReader(
         accessors.json as GltfJson,
         async (index) => accessors.views[index],
+        new AccessorBudget(limits),
       );
       const mesh = await readPrimitive(source, read);
       const result: MeshData = {

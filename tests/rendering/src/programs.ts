@@ -178,6 +178,8 @@ export function describePrograms(
   describe.skipIf(skipHlsl)(
     'The programs of the rendering suite in HLSL',
     () => {
+      // The slowest on Dawn, measured alone on 24 cores: 5.6 s; the
+      // software GPUs of the CI are several times slower.
       it('compile to valid SPIR-V, with the offsets of the layout', async () => {
         // Surfaces, raw stages, full screen passes, compute kernels, shadows…
         expect(programs.size).toBeGreaterThan(30);
@@ -204,13 +206,15 @@ export function describePrograms(
           (program) => program.name,
         );
         expect(failures).toEqual([]);
-      });
+      }, 30_000);
     },
   );
 
   describe.skipIf(skipGlsl)(
     'The programs of the rendering suite in GLSL ES',
     () => {
+      // The slowest on Dawn, measured alone on 24 cores: 1.7 s; the
+      // software GPUs of the CI are several times slower.
       it('are valid GLSL ES 3.00, their stages linked', async () => {
         const codegen = new GlslEsCodegen();
         let validated = 0;
@@ -254,7 +258,7 @@ export function describePrograms(
         );
         expect(failures).toEqual([]);
         expect(validated).toBeGreaterThan(30);
-      });
+      }, 10_000);
     },
   );
 }

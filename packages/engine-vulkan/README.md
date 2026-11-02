@@ -56,6 +56,10 @@ console.log(engine.device!.takeMessages());
 - **Writes and reads**: `buffer.write` and texture uploads follow `queue.writeBuffer`: copied at once, applied in the order of the queue before the next commands; a level (or a layer of it) is written alone with a buffer to image copy, the other levels kept. Reads wait for the last write of the resource, submitted before.
 - **Conventions**: the viewport has a negative height, so that y points up in clip space as in WebGPU; matrices are column-major; images are stored from the top row.
 
+## The cache of the programs
+
+`FileShaderCache` keeps the SPIR-V and DXIL compiled by DXC between runs, a file per program in a directory per version of DXC (`dxc-<version>-<hash8>/<sha256>.bin`); Vulkan and Direct3D 12 share the directory, each with its version. Its size is bounded: `maxSize` (option), else `FDW_SHADER_CACHE_MAX_SIZE` (bytes, or `512MB`, `1GiB`), else 512 MiB (`defaultShaderCacheMaxSize`); 0 removes the bound. A hit sets the time of its file; after the first write of a cache, then every 64 writes, an eviction in the background removes the least recently used files of the whole directory until it holds no more than `maxSize`, then the version directories left empty and the temporary files older than an hour. Processes can share it: a file removed by another one is skipped, and an evicted program is only compiled again. The programs an application ships (`FileShaderCache.fromEnvironment(shipped)`) are never evicted nor touched.
+
 ## HLSL conventions
 
 - Matrices are column-major (`#pragma pack_matrix(column_major)`): a product with a matrix is `mul(m, v)`, matrix constants are written by rows, as HLSL constructors take them.

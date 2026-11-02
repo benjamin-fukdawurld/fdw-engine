@@ -10,7 +10,9 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.ts'],
     // No tests yet: don't fail the test target until they are written.
     passWithNoTests: true,
-    reporters: ['default'],
+    // On CI, the durations in a JUnit report too (tools/ci/durations.mjs).
+    reporters: process.env['CI'] ? ['default', 'junit'] : ['default'],
+    outputFile: { junit: 'test-output/junit.xml' },
     coverage: {
       reportsDirectory: '../../coverage/packages/engine-webgpu',
       provider: 'v8' as const,

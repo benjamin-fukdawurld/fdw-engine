@@ -174,6 +174,10 @@ struct fdw_vk_bottom_level {
   VkBuffer updateScratch = VK_NULL_HANDLE;
   VmaAllocation updateScratchAllocation = nullptr;
   VkDeviceAddress updateScratchAddress = 0;
+  // The top levels whose last update holds it: once destroyed, it is freed
+  // when none does any more.
+  uint32_t holders = 0;
+  bool destroyed = false;
 };
 
 struct fdw_vk_top_level {
@@ -191,6 +195,9 @@ struct fdw_vk_top_level {
   uint32_t capacity = 0;
   // The instances of the last update.
   uint32_t count = 0;
+  // The bottom levels of the last update: kept while the structure points
+  // to them, even when they are destroyed.
+  std::vector<fdw_vk_bottom_level *> bottomLevels;
   // The last use of the structure (and of its scratch memory).
   fdw::Access last;
 };

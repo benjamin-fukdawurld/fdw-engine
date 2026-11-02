@@ -348,6 +348,30 @@ ID3D12GraphicsCommandList *transfers(fdw_dx_context *context) {
   return context->transfers ? context->transfers->list.Get() : nullptr;
 }
 
+namespace {
+
+// Closes a list. For the tests (FDW_DX_TEST_FAIL_CLOSE), after a copy out
+// of a buffer, which the runtime refuses: a failure as the driver gives it.
+// It fails even if the runtime lets it pass, never to run that copy.
+HRESULT closeList(fdw_dx_context *context, CommandList *entry) {
+  if ((context->testFailures & FDW_DX_TEST_FAIL_CLOSE) == 0) {
+    return entry->list->Close();
+  }
+  context->testFailures &= ~FDW_DX_TEST_FAIL_CLOSE;
+  ComPtr<ID3D12Resource> source;
+  ComPtr<ID3D12Resource> destination;
+  if (createBuffer(context, 256, D3D12_HEAP_TYPE_DEFAULT,
+                   D3D12_RESOURCE_STATE_COMMON, &source) == 0 &&
+      createBuffer(context, 256, D3D12_HEAP_TYPE_DEFAULT,
+                   D3D12_RESOURCE_STATE_COMMON, &destination) == 0) {
+    entry->list->CopyBufferRegion(destination.Get(), 0, source.Get(), 0, 512);
+  }
+  const HRESULT result = entry->list->Close();
+  return FAILED(result) ? result : E_FAIL;
+}
+
+} // namespace
+
 uint64_t submit(fdw_dx_context *context, CommandList *list) {
   // Each list in its own execution: the buffers decay to the common state
   // between them, as the tracking expects.
@@ -364,7 +388,7 @@ uint64_t submit(fdw_dx_context *context, CommandList *list) {
   std::vector<CommandList *> dropped;
   for (CommandList *entry : executed) {
     entry->recording = false;
-    const HRESULT result = entry->list->Close();
+    const HRESULT result = closeList(context, entry);
     if (FAILED(result) || !dropped.empty()) {
       if (dropped.empty()) {
         fail("Closing a command list", result);
@@ -395,7 +419,14 @@ uint64_t submit(fdw_dx_context *context, CommandList *list) {
     }
   }
   const uint64_t value = context->submitted + 1;
-  const HRESULT result = context->queue->Signal(context->fence.Get(), value);
+  HRESULT result = context->queue->Signal(context->fence.Get(), value);
+  if (SUCCEEDED(result) && (context->testFailures & FDW_DX_TEST_FAIL_SIGNAL)) {
+    // For the tests: a device removed, once the GPU is done (the context
+    // destroyed does not wait for it).
+    context->testFailures &= ~FDW_DX_TEST_FAIL_SIGNAL;
+    waitFor(context, value);
+    result = DXGI_ERROR_DEVICE_REMOVED;
+  }
   takeDebugMessages(context);
   if (FAILED(result)) {
     // The allocators of the lists executed may still be in use, and will
@@ -626,6 +657,10 @@ int fdw_dx_wait_idle(fdw_dx_context *context) {
   }
   collect(context);
   return last == 0 ? -1 : 0;
+}
+
+void fdw_dx_test_fail(fdw_dx_context *context, uint32_t failures) {
+  context->testFailures |= failures;
 }
 
 int fdw_dx_flush(fdw_dx_context *context) {

@@ -27,11 +27,13 @@ export interface TpsLoading {
 /**
  * Loads the files of the demo from `folder` of the store (glTF models and
  * JPEG textures, see tools/assets): the store needs the glTF loader and an
- * image codec, and the render backend.
+ * image codec, and the render backend. Without `plants`, the models of the
+ * firs, ferns and grass are not loaded (a forest without plants).
  */
 export function loadTpsAssets(
   resources: ResourceStore,
   folder = 'forest/',
+  { plants = true }: { readonly plants?: boolean } = {},
 ): TpsLoading {
   const scope = resources.scope('tps');
   const model = (name: string) =>
@@ -42,10 +44,11 @@ export function loadTpsAssets(
       `${folder}forest_ground_${name}.jpg`,
       { options: { colorSpace } },
     );
+  const plant = (name: string) => (plants ? model(name) : undefined);
   const handles = {
-    fir: model('fir'),
-    fern: model('fern'),
-    grass: model('grass'),
+    fir: plant('fir'),
+    fern: plant('fern'),
+    grass: plant('grass'),
     hero: model('hero'),
     orc: model('orc'),
     demon: model('demon'),
@@ -53,14 +56,16 @@ export function loadTpsAssets(
     normal: texture('nor_gl', 'linear'),
     roughness: texture('rough', 'linear'),
   };
-  const all = Object.values(handles) as ResourceHandle<unknown>[];
+  const all = Object.values(handles).filter(
+    (handle) => handle !== undefined,
+  ) as ResourceHandle<unknown>[];
   const group = resources.group(all);
   return {
     progress: () => group.progress.value,
     ready: group.ready.then(() => ({
-      fir: handles.fir.require(),
-      fern: handles.fern.require(),
-      grass: handles.grass.require(),
+      fir: handles.fir?.require(),
+      fern: handles.fern?.require(),
+      grass: handles.grass?.require(),
       hero: handles.hero.require(),
       orc: handles.orc.require(),
       demon: handles.demon.require(),

@@ -17,11 +17,9 @@ export default defineConfig({
     // Each file drives a software GPU (Dawn, lavapipe, WARP, SwiftShader)
     // that spreads on every core: two at a time, not one per core.
     maxWorkers: 2,
-    // Measured on 24 cores: the HLSL programs take 4 s (13 s before they
-    // ran side by side), but the rays and fluids on Dawn still take 3 to
-    // 16 s under load, past the default 5 s. Follow the JUnit durations
-    // before lowering it again.
-    testTimeout: 30_000,
+    // The default timeout of 5 s: the tests measured over 1 s alone on 24
+    // cores (the rays, the fluids and the programs, on Dawn) have their own,
+    // beside their measure. The JUnit durations tell when one grows.
     projects: [
       {
         extends: true,

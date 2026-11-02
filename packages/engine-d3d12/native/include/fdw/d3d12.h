@@ -570,6 +570,16 @@ enum {
 FDW_DX_API int fdw_dx_submit(fdw_dx_context *context, const uint32_t *words,
                              size_t count);
 
+// --- For the tests only ----------------------------------------------------------
+
+// Not a part of the API: failures the drivers seldom give, to check that
+// the context recovers from them. FDW_DX_TEST_FAIL_CLOSE: the next command
+// list closed records an invalid copy first, and fails to close;
+// FDW_DX_TEST_FAIL_SIGNAL: the next signal of a submission fails (once the
+// GPU is done with it), as with a device removed.
+enum { FDW_DX_TEST_FAIL_CLOSE = 1, FDW_DX_TEST_FAIL_SIGNAL = 2 };
+FDW_DX_API void fdw_dx_test_fail(fdw_dx_context *context, uint32_t failures);
+
 #ifdef __cplusplus
 }
 #endif
