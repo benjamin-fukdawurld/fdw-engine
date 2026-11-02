@@ -2,16 +2,26 @@ import type { IVec3, Mat4 } from '@fdw/engine-backend';
 import { Material, Mesh } from '@fdw/engine-core';
 import type {
   DirectionalLight,
-  MaterialValue,
   WorldRenderItem,
   WorldTransform,
 } from '@fdw/engine-core';
 import { Aabb } from '@fdw/engine-geometry';
 import { clipmapGrid, ClipmapGrid, ClipmapOptions } from './clipmap';
 import { GerstnerWaves } from './gerstner';
-import { defaultWaterLook, oceanGraph, WaterLook } from './material';
+import {
+  defaultWaterLook,
+  oceanGraph,
+  WaterLook,
+  waterLookValues,
+} from './material';
 import type { OceanSpectrum } from './OceanSpectrum';
-import { sampleJacobian, sampleNormal, waveSample, WaveSample } from './sample';
+import {
+  heightAbove,
+  sampleJacobian,
+  sampleNormal,
+  waveSample,
+  WaveSample,
+} from './sample';
 import { gerstnerShader, spectrumShader, WaveShader } from './shader';
 import type { SkyEnvironment } from './sky';
 
@@ -103,7 +113,7 @@ export class Ocean implements WorldRenderItem {
       label: 'ocean',
       values: {
         ...this.shader.values(),
-        ...lookValues(look),
+        ...waterLookValues(look),
         environment: environment.texture,
         environmentSampler: environment.sampler,
         environmentLevels: Math.max(environment.levels - 1, 0),
@@ -144,7 +154,7 @@ export class Ocean implements WorldRenderItem {
 
   /** Changes how the water looks: any uniform of {@link WaterLook}. */
   setLook(look: Partial<WaterLook>): this {
-    for (const [name, value] of Object.entries(lookValues(look))) {
+    for (const [name, value] of Object.entries(waterLookValues(look))) {
       this.material.setValue(name, value);
     }
     return this;
@@ -207,14 +217,7 @@ export class Ocean implements WorldRenderItem {
     jacobian: number;
   } {
     const sample = waveSample();
-    let x0 = x;
-    let z0 = z;
-    for (let i = 0; i < 6; i++) {
-      this.waves.sample(x0, z0, sample);
-      x0 = x - sample.dx;
-      z0 = z - sample.dz;
-    }
-    this.waves.sample(x0, z0, sample);
+    heightAbove((px, pz, out) => this.waves.sample(px, pz, out), x, z, sample);
     return {
       sample,
       normal: sampleNormal(sample),
@@ -237,15 +240,4 @@ export class Ocean implements WorldRenderItem {
       [x + reach + horizontal, this.level + height, z + reach + horizontal],
     );
   }
-}
-
-// The uniforms of a look.
-function lookValues(look: Partial<WaterLook>): Record<string, MaterialValue> {
-  const values: Record<string, MaterialValue> = {};
-  for (const [name, value] of Object.entries(look)) {
-    if (value !== undefined) {
-      values[name] = typeof value === 'number' ? value : [...value];
-    }
-  }
-  return values;
 }

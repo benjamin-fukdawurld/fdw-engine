@@ -176,7 +176,11 @@ export class GraphWorkspace {
       }
       case 'save': {
         const open = this.#sessions.get(request.session);
-        if (!open) return;
+        if (!open) {
+          // Answered all the same, or the page waits forever.
+          this.#options.post({ op: 'closed', session: request.session });
+          return;
+        }
         const { session } = open;
         const name =
           request.name ??
@@ -185,6 +189,7 @@ export class GraphWorkspace {
         this.#options.post({
           op: 'file',
           session: session.id,
+          ...(request.request !== undefined && { request: request.request }),
           name,
           text: session.kind.serialize(session.document),
         });

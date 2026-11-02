@@ -16,9 +16,22 @@ const repeat: GpuSamplerConfiguration = {
 };
 
 /**
+ * A path of an OBJ or MTL file, with `/` separators. An absolute path (`/…`,
+ * `C:/…`, `file:…`), written on the machine of the exporter, is reduced to
+ * its file name: it is looked for next to the file, never outside of it.
+ */
+export function localPath(path: string): string {
+  const slashed = path.replace(/\\/g, '/');
+  return /^(\/|[a-z][a-z0-9+.-]*:)/i.test(slashed)
+    ? slashed.slice(slashed.lastIndexOf('/') + 1)
+    : slashed;
+}
+
+/**
  * A texture statement: `map_Kd -s 2 2 1 -o 0.5 0 0 -clamp on textures/a.png`.
  * The options of scale, offset and clamping are kept; the others are
- * skipped. `resolve` makes the path a URI, relative to the MTL file.
+ * skipped. `resolve` makes the path a URI, relative to the MTL file (an
+ * absolute path is reduced to its file name, see `localPath`).
  */
 export function parseMtlTexture(
   value: string,
@@ -62,7 +75,7 @@ export function parseMtlTexture(
     scale[0] !== 1 || scale[1] !== 1 || offset[0] !== 0 || offset[1] !== 0;
   return {
     // A file name may hold spaces.
-    image: resolve(parts.slice(i).join(' ').replace(/\\/g, '/')),
+    image: resolve(localPath(parts.slice(i).join(' '))),
     texCoord: 0,
     sampler: clamp
       ? { ...repeat, wrapModeS: 'clamp-to-edge', wrapModeT: 'clamp-to-edge' }

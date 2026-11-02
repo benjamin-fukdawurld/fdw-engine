@@ -147,6 +147,11 @@ abstract class RuntimeNode {
 class ClipNode extends RuntimeNode {
   private _time = 0;
   private readonly _base: Pose;
+  // The weight of the move under way, read by the event visitor: one
+  // closure per clip node, not one per move.
+  private _weight = 0;
+  private readonly _visit = (event: AnimationEvent) =>
+    this.ctx.emit(event, this._clip.name, this._weight);
 
   constructor(
     ctx: Context,
@@ -169,25 +174,44 @@ class ClipNode extends RuntimeNode {
       : Infinity;
   }
 
+  // A phase played backwards runs from 1 down to 0: mirrored.
   phase(): number {
-    return this._clip.duration > 0 ? this._time / this._clip.duration : 0;
+    const p = this._clip.duration > 0 ? this._time / this._clip.duration : 0;
+    return this.backwards() && p > 0 ? 1 - p : p;
   }
 
   reset(): void {
     this._time = 0;
   }
 
+  private backwards(): boolean {
+    return this._speed * this._rate() < 0;
+  }
+
   protected doAdvance(dt: number, weight: number, emit: boolean): void {
     this.moveTo(this._time + dt * this._speed * this._rate(), weight, emit);
   }
 
+  // A negative speed plays the phase mirrored: the clip backwards.
   protected doSetPhase(phase: number, weight: number, emit: boolean): void {
     const length = this._clip.duration;
+    const backwards = this.backwards();
     if (!this._loop) {
-      this.moveTo(Math.min(Math.max(phase, 0), 1) * length, weight, emit);
+      const p = Math.min(Math.max(phase, 0), 1);
+      this.moveTo((backwards ? 1 - p : p) * length, weight, emit);
       return;
     }
-    let target = (phase - Math.floor(phase)) * length;
+    const p = phase - Math.floor(phase);
+    if (backwards) {
+      let target = (p > 0 ? 1 - p : 0) * length;
+      if (target > this._time) {
+        // Backwards, through the start of the cycle.
+        target -= length;
+      }
+      this.moveTo(target, weight, emit);
+      return;
+    }
+    let target = p * length;
     if (target < this._time) {
       // Forward, through the end of the cycle.
       target += length;
@@ -199,8 +223,8 @@ class ClipNode extends RuntimeNode {
     const clip = this._clip;
     const length = clip.duration;
     let from = this._time;
-    const visit = (event: AnimationEvent) =>
-      this.ctx.emit(event, clip.name, weight);
+    const visit = this._visit;
+    this._weight = weight;
     if (!this._loop || length <= 0) {
       const time = Math.min(Math.max(to, 0), length);
       if (emit && time > from) {
@@ -341,7 +365,8 @@ class BlendNode extends BlendBase {
   }
 
   protected choose(): void {
-    [this.a, this.b] = this._inputs;
+    this.a = this._inputs[0];
+    this.b = this._inputs[1];
     this.weight = Math.min(Math.max(this._weight(), 0), 1);
   }
 
@@ -520,6 +545,18 @@ class StateMachineNode extends RuntimeNode {
     }
   }
 
+  // Every condition, without a closure per transition and frame.
+  private holdAll(conditions: TransitionDescription['conditions']): boolean {
+    if (conditions) {
+      for (const condition of conditions) {
+        if (!this.holds(condition)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   private findTransition(): TransitionDescription | undefined {
     const current = this._states[this._current];
     for (const transition of this._transitions) {
@@ -528,7 +565,7 @@ class StateMachineNode extends RuntimeNode {
           !(transition.from === '*' && transition.to !== current.name)) ||
         (transition.trigger !== undefined &&
           this._parameters.get(transition.trigger) !== true) ||
-        !(transition.conditions ?? []).every((c) => this.holds(c))
+        !this.holdAll(transition.conditions)
       ) {
         continue;
       }
@@ -663,6 +700,10 @@ class Parameters {
         `Parameter "${name}" is a ${type}, not a ${typeof value}`,
       );
     }
+    if (typeof value === 'number' && Number.isNaN(value)) {
+      // NaN would spread to every weight and time it reaches.
+      throw new Error(`Parameter "${name}" cannot be NaN`);
+    }
     this._values.set(name, value);
   }
 }
@@ -715,7 +756,9 @@ export class Animator {
       emit(event, clip, weight) {
         const fired = { ...event, clip, weight };
         events.push(fired);
-        listeners.forEach((listener) => listener(fired));
+        for (const listener of listeners) {
+          listener(fired);
+        }
       },
     };
     const built = this.build(graph);

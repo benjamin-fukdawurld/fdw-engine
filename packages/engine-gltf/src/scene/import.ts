@@ -21,9 +21,9 @@ import {
   type SceneNodeData,
 } from '@fdw/engine-scene-io';
 import { accessorReader, toFloat32 } from '../accessors';
-import { BufferType } from '../buffers';
-import { decodeDataUri, isGlb, parseGlb } from '../glb';
-import { rootNodes, type Trs } from '../nodes';
+import { fileBuffers } from '../buffers';
+import { isGlb, parseGlb } from '../glb';
+import { nodeTree, rootNodes, type Trs } from '../nodes';
 import type { GltfJson, GltfNode } from '../types';
 import { decodeBinary } from './binary';
 import { importBodies } from './physics';
@@ -110,47 +110,17 @@ export function cameraProjection(camera: CameraData): ProjectionData {
       };
 }
 
-const decodeUri = (uri: string): string => {
-  try {
-    return decodeURIComponent(uri);
-  } catch {
-    return uri;
-  }
-};
-
 /** The accessors of a file read outside the model loader (colliders, instances). */
 function fileAccessors(
   ctx: LoadContext<unknown>,
   json: GltfJson,
   bin: Uint8Array<ArrayBuffer> | undefined,
 ) {
-  const buffers = new Map<number, Promise<Uint8Array<ArrayBuffer>>>();
-  const buffer = (index: number) => {
-    let promise = buffers.get(index);
-    if (!promise) {
-      const b = json.buffers?.[index];
-      if (!b) throw new Error(`Missing buffer ${index}`);
-      promise =
-        b.uri === undefined
-          ? bin
-            ? Promise.resolve(bin)
-            : Promise.reject(new Error(`Buffer ${index} has no data`))
-          : Promise.resolve(
-              decodeDataUri(b.uri) ??
-                ctx.use(BufferType, ctx.resolve(decodeUri(b.uri))).ready,
-            );
-      buffers.set(index, promise);
-    }
-    return promise;
-  };
+  const buffers = fileBuffers(ctx, json, bin);
   const bufferView = async (index: number) => {
-    const view = json.bufferViews?.[index];
-    if (!view) throw new Error(`Missing buffer view ${index}`);
-    if (view.extensions?.['EXT_meshopt_compression'])
+    if (json.bufferViews?.[index]?.extensions?.['EXT_meshopt_compression'])
       throw new Error(`Buffer view ${index} is compressed (meshopt)`);
-    const bytes = await buffer(view.buffer);
-    const start = view.byteOffset ?? 0;
-    return bytes.subarray(start, start + view.byteLength);
+    return buffers.bufferView(index);
   };
   return { accessor: accessorReader(json, bufferView), bufferView };
 }
@@ -211,10 +181,9 @@ export async function sceneData(
   const decode = <T>(value: T): Promise<T> =>
     decodeBinary(value, bufferView) as Promise<T>;
   const gltfNodes = json.nodes ?? [];
-  const parents = new Map<number, number>();
-  gltfNodes.forEach((node, i) =>
-    (node.children ?? []).forEach((child) => parents.set(child, i)),
-  );
+  // The hierarchy made a forest; the model loader warned of what it left out.
+  const tree = nodeTree(json, () => undefined);
+  const { parents } = tree;
   const trs = (i: number): Trs => {
     const n = model.nodes[i];
     return {
@@ -226,12 +195,18 @@ export async function sceneData(
 
   // The nodes of the default scene, parents first: in the order of the file
   // when it is (the files of the engine), else depth first.
+  // Each node once (the tree has no cycles, the roots no parents), with a
+  // stack rather than recursion: a deep chain does not overflow.
   const reached: number[] = [];
-  const visit = (i: number) => {
+  const visited = new Set<number>();
+  const stack = rootNodes(json, tree).reverse();
+  while (stack.length > 0) {
+    const i = stack.pop()!;
+    if (visited.has(i)) continue;
+    visited.add(i);
     reached.push(i);
-    for (const child of gltfNodes[i]?.children ?? []) visit(child);
-  };
-  for (const root of rootNodes(json)) visit(root);
+    stack.push(...[...(tree.children[i] ?? [])].reverse());
+  }
   const inOrder = reached.every((i) => !parents.has(i) || parents.get(i)! < i);
   const order = inOrder ? [...reached].sort((a, b) => a - b) : reached;
   const kept = order.filter((i) => {
@@ -432,12 +407,21 @@ async function meshShape(
     }
     const base = positions.length / 3;
     const points = toFloat32(await accessor(position));
+    const triangles =
+      !convexHull && primitive.indices !== undefined
+        ? (await accessor(primitive.indices)).array
+        : undefined;
+    if (triangles && triangles.some((i) => i >= points.length / 3 || i < 0)) {
+      warn(
+        `collider mesh ${meshIndex}: an index past its vertices; primitive left out`,
+      );
+      continue;
+    }
     for (let k = 0; k < points.length; k++)
       positions.push(points[k] * Math.abs(scale[k % 3]));
     if (convexHull) continue;
-    if (primitive.indices !== undefined) {
-      const { array } = await accessor(primitive.indices);
-      for (const i of array) indices.push(base + i);
+    if (triangles) {
+      for (const i of triangles) indices.push(base + i);
     } else {
       for (let i = 0; i < points.length / 3; i++) indices.push(base + i);
     }

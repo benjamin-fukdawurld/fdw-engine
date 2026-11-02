@@ -3,6 +3,7 @@ import { fakeBackend, surface } from '@fdw/engine-core/testing';
 import { BuiltinTypes, compile, GraphBuilder } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
 import { patchVertex, PatchValues } from './graph';
+import { patchMesh } from './patchMesh';
 import { patchGrid } from './patches';
 import { PatchSurface } from './PatchSurface';
 
@@ -179,5 +180,55 @@ describe('PatchSurface', () => {
     expect(
       () => new PatchSurface(backend, { ...options, minLevel: 3, maxLevel: 2 }),
     ).toThrow();
+  });
+});
+
+describe('patchMesh', () => {
+  it('cuts its quads along the diagonal of patchVertex', () => {
+    // A saddle: the two diagonals of a quad give different surfaces.
+    const mesh = patchMesh(
+      patchGrid({ width: 2, depth: 2, columns: 1, rows: 1 }),
+      { level: 1, displacement: { height: (u, v) => u * v, scale: 1 } },
+    );
+    const indices = mesh.indices as Uint32Array;
+    // The corners of the vertices of a quad in patchVertex, (i, j) by
+    // vertex: (0, 0) (0, 1) (1, 1), (0, 0) (1, 1) (1, 0).
+    const corners = [
+      [0, 0],
+      [0, 1],
+      [1, 1],
+      [0, 0],
+      [1, 1],
+      [1, 0],
+    ];
+    const side = 3;
+    const vertices = mesh.vertices[0] as Float32Array;
+    const at = (vertex: number, k: number) => vertices[vertex * 8 + k];
+    for (let quad = 0; quad < 4; quad++) {
+      const qx = quad % 2;
+      const qy = Math.floor(quad / 2);
+      expect([...indices.subarray(quad * 6, quad * 6 + 6)]).toEqual(
+        corners.map(([i, j]) => (qy + j) * side + qx + i),
+      );
+      // Their front on the side of the normal of the surface.
+      for (let triangle = 0; triangle < 2; triangle++) {
+        const [a, b, c] = indices.subarray(
+          quad * 6 + triangle * 3,
+          quad * 6 + triangle * 3 + 3,
+        );
+        const e1 = [0, 1, 2].map((k) => at(b, k) - at(a, k));
+        const e2 = [0, 1, 2].map((k) => at(c, k) - at(a, k));
+        const cross = [
+          e1[1] * e2[2] - e1[2] * e2[1],
+          e1[2] * e2[0] - e1[0] * e2[2],
+          e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+        const facing = [0, 1, 2].reduce(
+          (sum, k) => sum + cross[k] * at(a, 3 + k),
+          0,
+        );
+        expect(facing).toBeGreaterThan(0);
+      }
+    }
   });
 });

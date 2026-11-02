@@ -20,11 +20,18 @@ export class DataUriSource implements ResourceSource {
     const meta = path.slice(0, comma);
     const payload = path.slice(comma + 1);
     let bytes: Uint8Array;
-    if (/;base64$/i.test(meta)) {
-      const bin = atob(decodeURIComponent(payload));
-      bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-    } else {
-      bytes = new TextEncoder().encode(decodeURIComponent(payload));
+    try {
+      if (/;base64$/i.test(meta)) {
+        const bin = atob(decodeURIComponent(payload));
+        bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+      } else {
+        bytes = new TextEncoder().encode(decodeURIComponent(payload));
+      }
+    } catch (e) {
+      // A bad escape or base64 character: a decode error, not a throw.
+      return Promise.reject(
+        new ResourceError('decode', path, 'Malformed data URI', { cause: e }),
+      );
     }
     options.onProgress?.(bytes.byteLength, bytes.byteLength);
     return Promise.resolve(bytes as ResourceBytes);

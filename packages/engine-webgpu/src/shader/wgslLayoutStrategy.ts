@@ -3,8 +3,7 @@ import {
   PhysicalLayoutStrategy,
   PhysicalProgramLayout,
   PhysicalUniformBlock,
-  PhysicalUniformMember,
-  UniformValue,
+  uniformWriter,
 } from '@fdw/engine-backend';
 import { LogicalBinding, ShaderType, typeToString } from '@fdw/engine-shader';
 
@@ -80,113 +79,55 @@ function uniformBlock(
   return { size: roundUp(Math.max(offset, 1), blockAlign), members };
 }
 
-function writeScalar(
-  target: DataView,
-  offset: number,
-  scalar: string,
-  value: number | boolean,
-): void {
-  const number = typeof value === 'boolean' ? Number(value) : value;
-  switch (scalar) {
-    case 'i32':
-      target.setInt32(offset, number, true);
-      return;
-    case 'u32':
-      target.setUint32(offset, number, true);
-      return;
-    default:
-      target.setFloat32(offset, number, true);
+// Array elements at their uniform stride; the columns of a matrix aligned
+// like vectors: 8 bytes for 2 rows, 16 for 3 or 4.
+const writeUniform = uniformWriter({
+  arrayStride,
+  matrixColumnStride: (rows) => (rows === 2 ? 8 : 16),
+});
+
+// The layout of a struct in the storage address space: as in the uniform
+// one, without rounding the array elements up to 16 bytes.
+function storageLayoutOf(type: ShaderType): { align: number; size: number } {
+  if (type.kind === 'array' && type.length !== undefined) {
+    return {
+      align: uniformLayoutOf(type.element).align,
+      size: storageStride(type.element) * type.length,
+    };
   }
+  return uniformLayoutOf(type);
 }
 
-function writeUniform(
-  target: DataView,
-  { name, type, offset }: PhysicalUniformMember,
-  value: UniformValue,
-): void {
-  const components = (count: number): ArrayLike<number> => {
-    if (
-      typeof value === 'number' ||
-      typeof value === 'boolean' ||
-      value.length < count
-    ) {
+/**
+ * The row of an object table: laid out as a std140 block (objectRowLayout,
+ * the layout of the rows written by the renderer), but read by the programs
+ * as a struct of a storage array (WgslCodegen). Both must match, member
+ * offsets and row size (the stride of the array), or the rows are misread.
+ */
+function objectRow(
+  resource: Extract<LogicalBinding, { kind: 'object-table' }>,
+): PhysicalUniformBlock {
+  const row = objectRowLayout(resource.members);
+  let offset = 0;
+  let structAlign = 1;
+  resource.members.forEach((member, i) => {
+    const { align, size } = storageLayoutOf(member.type);
+    offset = roundUp(offset, align);
+    structAlign = Math.max(structAlign, align);
+    if (offset !== row.members[i].offset) {
       throw new Error(
-        `Uniform "${name}" expects ${count} components (${typeToString(type)})`,
+        `Object table "${resource.name}": member "${member.name}" is at ${row.members[i].offset} in the rows written, at ${offset} in the WGSL struct`,
       );
     }
-    return value;
-  };
-
-  switch (type.kind) {
-    case 'scalar':
-      if (typeof value !== 'number' && typeof value !== 'boolean') {
-        throw new Error(
-          `Uniform "${name}" expects a number (${typeToString(type)})`,
-        );
-      }
-      writeScalar(target, offset, type.scalar, value);
-      return;
-    case 'vector': {
-      const source = components(type.size);
-      for (let i = 0; i < type.size; i++) {
-        writeScalar(target, offset + i * 4, type.scalar, source[i]);
-      }
-      return;
-    }
-    case 'matrix': {
-      // Columns are aligned like vectors: 8 bytes for 2 rows, 16 for 3 or 4.
-      const columnStride = type.rows === 2 ? 8 : 16;
-      const source = components(type.columns * type.rows);
-      // Packed (9 floats for a mat3) or with padded columns (12 floats, as
-      // produced by wgpu-matrix).
-      const sourceStride =
-        source.length >= type.columns * 4 && type.rows === 3 ? 4 : type.rows;
-      for (let column = 0; column < type.columns; column++) {
-        for (let row = 0; row < type.rows; row++) {
-          target.setFloat32(
-            offset + column * columnStride + row * 4,
-            source[column * sourceStride + row],
-            true,
-          );
-        }
-      }
-      return;
-    }
-    case 'array': {
-      // Elements one after the other in the value, each written at its
-      // stride; a shorter value fills the first elements.
-      const source = Array.from(value as ArrayLike<number>);
-      const element = type.element;
-      const count =
-        element.kind === 'scalar'
-          ? 1
-          : element.kind === 'vector'
-            ? element.size
-            : element.kind === 'matrix'
-              ? element.columns * element.rows
-              : 0;
-      if (count === 0 || typeof value !== 'object') {
-        throw new Error(
-          `Uniform "${name}": ${typeToString(type)} values are not supported`,
-        );
-      }
-      const stride = arrayStride(element);
-      const length = Math.min(
-        type.length ?? 0,
-        Math.floor(source.length / count),
-      );
-      for (let i = 0; i < length; i++) {
-        writeUniform(
-          target,
-          { name, type: element, offset: offset + i * stride, size: stride },
-          source.slice(i * count, (i + 1) * count),
-        );
-      }
-      return;
-    }
-    default:
-      throw new Error(`${typeToString(type)} uniforms are not supported`);
+    offset += size;
+  });
+  const size = roundUp(offset, structAlign);
+  if (size !== row.size) {
+    throw new Error(
+      `Object table "${resource.name}": rows of ${row.size} bytes written, of ${size} bytes in the WGSL struct`,
+    );
   }
+  return row;
 }
 
 // WGSL: one bind group per slot, bindings numbered in layout order, uniform
@@ -218,7 +159,7 @@ export const wgslLayoutStrategy: PhysicalLayoutStrategy = {
                 ? {
                     binding,
                     resource,
-                    objectRow: objectRowLayout(resource.members),
+                    objectRow: objectRow(resource),
                   }
                 : resource.kind === 'storage-buffer'
                   ? {

@@ -222,6 +222,12 @@ export class HandleImpl<T> implements ResourceHandle<T> {
     this.host.releaseHandle(this);
   }
 
+  /** Runs `listener` when the handle is released (at once if it already is). */
+  onReleased(listener: () => void): void {
+    if (this.state.released) listener();
+    else this.releaseListeners.push(listener);
+  }
+
   /** Called by the store once released. */
   notifyReleased(): void {
     const listeners = this.releaseListeners;

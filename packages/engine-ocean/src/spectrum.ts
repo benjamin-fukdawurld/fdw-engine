@@ -142,7 +142,11 @@ export function spectrumDensity(
     );
   }
   // JONSWAP in frequency, S(ω) = α g² / ω⁵ e^(-5/4 (ωp/ω)⁴) γ^r, turned into
-  // wave numbers (dω/dk / k) and spread around the wind.
+  // wave numbers (dω/dk / k) and spread around the wind. Without wind or
+  // fetch, no sea (its peak at an infinite frequency would give NaN).
+  if (!(o.windSpeed > 0) || !(o.fetch > 0)) {
+    return 0;
+  }
   const omega = Math.sqrt(g * k * Math.tanh(Math.min(k * o.depth, 20)));
   const dimensionless = (o.windSpeed * o.windSpeed) / (o.fetch * g);
   const alpha = 0.076 * Math.pow(dimensionless, 0.22);

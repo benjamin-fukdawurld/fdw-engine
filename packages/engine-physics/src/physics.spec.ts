@@ -364,6 +364,41 @@ describe('ScenePhysics', () => {
     expect(node.transform.position.x).toBeCloseTo(0.1);
   });
 
+  it('writes the last pose after several steps between two syncs', () => {
+    const scene = new Scene();
+    const world = fakeEngine.createWorld();
+    world.gravity = { x: 0, y: 0, z: 0 };
+    const physics = new ScenePhysics(scene, world);
+    const node = scene.root.add();
+    const body = physics.add(node, { type: 'dynamic' });
+    // A frame of two steps: moving, then stopped.
+    body.linearVelocity = { x: 1, y: 0, z: 0 };
+    physics.step(0.1);
+    physics.sync(0.5);
+    expect(node.transform.position.x).toBeCloseTo(0.05);
+    body.linearVelocity = { x: 0, y: 0, z: 0 };
+    physics.step(0.1);
+    physics.step(0.1);
+    physics.sync(0.5);
+    expect(body.position.x).toBeCloseTo(0.1);
+    expect(node.transform.position.x).toBeCloseTo(0.1);
+  });
+
+  it('gives a character to a node that had a body', () => {
+    const scene = new Scene();
+    const world = fakeEngine.createWorld() as FakeWorld;
+    const physics = new ScenePhysics(scene, world);
+    const node = scene.root.add();
+    const first = physics.add(node, { type: 'dynamic' });
+    const character = physics.addCharacter(node, {
+      shape: Shapes.capsule(0.5, 0.3),
+    });
+    expect(world.removed).toEqual([first]);
+    expect(world.bodies.has(character.body as FakeBody)).toBe(true);
+    expect(physics.characterOf(node)).toBe(character);
+    expect(physics.bodyOf(node)).toBe(character.body);
+  });
+
   it('moves the kinematic bodies to their nodes', () => {
     const scene = new Scene();
     const physics = new ScenePhysics(scene, fakeEngine.createWorld());
@@ -430,6 +465,19 @@ describe('ScenePhysics', () => {
     physics.sync(0.5);
     expect(position()).toEqual([3, 1, 0]);
     expect(() => physics.teleport(scene.root.add(), {})).toThrow('no body');
+  });
+
+  it('teleports a kinematic body under a parent, leaving its node', () => {
+    const scene = new Scene();
+    const physics = new ScenePhysics(scene, fakeEngine.createWorld());
+    const parent = scene.root.add({ position: { x: 10 } });
+    const platform = parent.add();
+    const body = physics.add(platform, { type: 'kinematic' });
+    physics.teleport(platform, { x: 10, y: 1, z: 0 });
+    expect(body.position).toEqual({ x: 10, y: 1, z: 0 });
+    // Not the pose in the world written as the local one (x = 20).
+    expect(platform.worldMatrix[12]).toBe(10);
+    expect(platform.transform.position.x).toBe(0);
   });
 
   it('writes the pose in the transform pool', () => {

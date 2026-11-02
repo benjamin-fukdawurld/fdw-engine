@@ -13,10 +13,11 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 if (await fetchPrebuilt(root)) process.exit(0);
 if (!process.env.VULKAN_SDK) {
-  // Not an error: the tests needing the addon are skipped without it.
-  console.warn(
-    'VULKAN_SDK is not set: the Vulkan addon is not built (install the Vulkan SDK and source its setup-env.sh)',
+  // An error, not an empty success: Nx would cache it, and replay it once a
+  // prebuilt addon of these sources is published.
+  console.error(
+    'VULKAN_SDK is not set and there is no prebuilt Vulkan addon for these sources: install the Vulkan SDK and source its setup-env.sh',
   );
-  process.exit(0);
+  process.exit(1);
 }
 buildAddon(root, [`-DVULKAN_SDK=${process.env.VULKAN_SDK}`]);

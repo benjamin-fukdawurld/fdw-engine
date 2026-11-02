@@ -1323,3 +1323,186 @@ describe('glTF hierarchy, skins and animations', () => {
     await expect(data('bad.gltf')).rejects.toMatchObject({ code: 'decode' });
   });
 });
+
+// Malformed files, made by the tests: each fails with a clear error, or is
+// read with what is invalid left out, and none allocates what it claims.
+describe('malformed glTF files', () => {
+  /** A file of one unlit primitive: positions, with the accessor `extra` and indices. */
+  function primitive(
+    extra: Record<string, unknown> = {},
+    options: {
+      indices?: Uint8Array | Int16Array | Uint16Array | Uint32Array;
+      mode?: number;
+    } = {},
+  ) {
+    const b = new GltfBuilder();
+    const position = b.accessor(
+      new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      'VEC3',
+      extra,
+    );
+    positionsNode(b, position, options);
+    return b;
+  }
+  function positionsNode(
+    b: GltfBuilder,
+    position: number,
+    {
+      indices,
+      mode,
+    }: {
+      indices?: Uint8Array | Int16Array | Uint16Array | Uint32Array;
+      mode?: number;
+    },
+  ) {
+    b.meshNode({
+      attributes: { POSITION: position },
+      material: unlit(b),
+      ...(indices ? { indices: b.accessor(indices, 'SCALAR') } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+    });
+  }
+
+  it('fails on an accessor out of its buffer view before allocating it', async () => {
+    const { data } = setup({
+      'far.glb': primitive({ byteOffset: 4 }).glb(),
+      // 2^29 VEC3 floats: 6 GiB, were they allocated before the check.
+      'huge.glb': primitive({ count: 2 ** 29 }).glb(),
+      'negative.glb': primitive({ byteOffset: -12 }).glb(),
+      'fraction.glb': primitive({ count: 1.5 }).glb(),
+    });
+    await expect(data('far.glb')).rejects.toThrow(/out of the bounds/);
+    await expect(data('huge.glb')).rejects.toThrow(/out of the bounds/);
+    await expect(data('negative.glb')).rejects.toThrow(/byteOffset -12/);
+    await expect(data('fraction.glb')).rejects.toThrow(/Invalid count/);
+  });
+
+  it('fails on a buffer view out of its buffer, or a negative offset', async () => {
+    const b = primitive();
+    b.json.bufferViews[0].byteOffset = -12;
+    const c = primitive();
+    c.json.bufferViews[0].byteLength = 1000;
+    const { data } = setup({ 'neg.glb': b.glb(), 'long.glb': c.glb() });
+    await expect(data('neg.glb')).rejects.toThrow(/invalid range/);
+    await expect(data('long.glb')).rejects.toThrow(/out of its buffer/);
+  });
+
+  it('fails on a stride shorter than the elements (overlapping)', async () => {
+    const b = primitive();
+    b.json.bufferViews[0].byteStride = 4;
+    const { data } = setup({ 'stride.glb': b.glb() });
+    await expect(data('stride.glb')).rejects.toThrow(/overlaps/);
+  });
+
+  it('fails on sparse accessors out of range or with signed indices', async () => {
+    const sparse = (
+      indices: Uint8Array | Int8Array,
+      count = indices.length,
+    ) => {
+      const b = new GltfBuilder();
+      const position = b.add('accessors', {
+        componentType: 5126,
+        type: 'VEC3',
+        count: 3,
+        sparse: {
+          count,
+          indices: {
+            bufferView: b.bufferView(indices),
+            componentType: indices instanceof Int8Array ? 5120 : 5121,
+          },
+          values: {
+            bufferView: b.bufferView(new Float32Array(count * 3).fill(1)),
+          },
+        },
+      });
+      positionsNode(b, position, {});
+      return b.glb();
+    };
+    const { data } = setup({
+      'index.glb': sparse(new Uint8Array([7])),
+      'signed.glb': sparse(new Int8Array([-1])),
+      'count.glb': sparse(new Uint8Array([0, 1, 2, 0]), 4),
+      'short.glb': sparse(new Uint8Array([0]), 2),
+    });
+    await expect(data('index.glb')).rejects.toThrow(/Sparse index 7/);
+    await expect(data('signed.glb')).rejects.toThrow(/not unsigned/);
+    await expect(data('count.glb')).rejects.toThrow(/Invalid sparse count/);
+    await expect(data('short.glb')).rejects.toThrow(/out of the bounds/);
+  });
+
+  it('fails on indices past the vertices, or signed, in lists, strips and fans', async () => {
+    const { data } = setup({
+      'list.glb': primitive({}, { indices: new Uint16Array([0, 1, 3]) }).glb(),
+      // 70 000 would be cut to 4 464 in uint16, drawing a wrong vertex.
+      'strip.glb': primitive(
+        {},
+        { indices: new Uint32Array([0, 1, 70000]), mode: 5 },
+      ).glb(),
+      'fan.glb': primitive(
+        {},
+        { indices: new Uint8Array([0, 1, 2, 9]), mode: 6 },
+      ).glb(),
+      'signed.glb': primitive({}, { indices: new Int16Array([0, 1, 2]) }).glb(),
+    });
+    await expect(data('list.glb')).rejects.toThrow(/Index 3 out of the 3/);
+    await expect(data('strip.glb')).rejects.toThrow(/Index 70000/);
+    await expect(data('fan.glb')).rejects.toThrow(/Index 9/);
+    await expect(data('signed.glb')).rejects.toThrow(/unsigned/);
+  });
+
+  it('picks the index type of a strip from its largest index', async () => {
+    const count = 70000;
+    const b = new GltfBuilder();
+    positionsNode(b, b.accessor(new Float32Array(count * 3), 'VEC3'), {
+      indices: new Uint32Array([0, 1, count - 1]),
+      mode: 5,
+    });
+    const { data, mesh } = setup({ 'strip.glb': b.glb() });
+    await data('strip.glb');
+    const strip = mesh('strip.glb#mesh/0/0')!;
+    expect(strip.indices).toBeInstanceOf(Uint32Array);
+    expect([...strip.indices!]).toEqual([0, 1, count - 1]);
+    expect(strip.description.indexBuffer?.format).toBe('uint32');
+  });
+
+  it('leaves out the children that would make a cycle or a second parent', async () => {
+    const b = new GltfBuilder();
+    b.add('nodes', { children: [1] });
+    b.add('nodes', { children: [0, 1, 2, 9] }); // a cycle, itself, then 2, then not a node
+    b.add('nodes', {});
+    b.add('nodes', { children: [2] }); // 2 has a parent already
+    b.add('scenes', { nodes: [0, 0, 3, 2, 42] });
+    b.json.scene = 0;
+    const { data, warnings } = setup({ 'cycle.gltf': JSON.stringify(b.json) });
+    const model = await data('cycle.gltf');
+    expect(model.nodes.map((n) => n.children)).toEqual([[1], [2], [], []]);
+    // Each root once, a node of the scene under another left out.
+    expect(model.roots).toEqual([0, 3]);
+    expect(warnings.filter((w) => /left out/.test(w))).toHaveLength(4);
+  });
+
+  it('reads the base64 data URIs of buffers, and fails on a malformed one', async () => {
+    const b = primitive();
+    const good = b.gltf();
+    const bad = JSON.parse(good);
+    bad.buffers[0].uri = 'data:application/octet-stream;base64';
+    const { data, mesh } = setup({
+      'data.gltf': good,
+      'bad.gltf': JSON.stringify(bad),
+    });
+    await data('data.gltf');
+    expect(mesh('data.gltf#mesh/0/0')?.description.vertexCount).toBe(3);
+    await expect(data('bad.gltf')).rejects.toThrow(/Malformed data URI/);
+  });
+
+  it('decomposes a matrix of scale 0 without NaNs', () => {
+    const trs = decomposeMatrix([
+      0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1,
+    ]);
+    expect(trs).toEqual({
+      translation: [1, 2, 3],
+      rotation: [0, 0, 0, 1],
+      scale: [0, 1, 1],
+    });
+  });
+});

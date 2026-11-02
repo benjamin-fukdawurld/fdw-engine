@@ -7,6 +7,7 @@ import {
   isCompressedFormat,
   levelDimensions,
   samplerAnisotropy,
+  texelBytes,
   GpuSampler,
   GpuSamplerFactory,
   GpuSamplerConfiguration,
@@ -124,6 +125,14 @@ export class TextureFactory
         `Texture format ${format} is not supported by the device`,
       );
     }
+    // Before the texture is created, not to leak it.
+    const gpuFormat = TextureFactory.textureFormatToGPUTextureFormat(format);
+    if (source && !isImageBitmap(source) && !ArrayBuffer.isView(source)) {
+      throw new Error(`Unsupported source type: ${source}`);
+    }
+    if ((source || levels) && !isImageBitmap(source)) {
+      TextureFactory.blockOf(format);
+    }
 
     const textureDescriptor: GPUTextureDescriptor = {
       size: {
@@ -131,7 +140,9 @@ export class TextureFactory
         height,
         depthOrArrayLayers: layers,
       },
-      format: TextureFactory.textureFormatToGPUTextureFormat(format),
+      // The depth of a 3d texture, the layers of the others.
+      dimension: type === '3d' ? '3d' : '2d',
+      format: gpuFormat,
       sampleCount,
       mipLevelCount,
       usage:
@@ -242,11 +253,7 @@ export class TextureFactory
     layers: number,
   ): void {
     const { width, height } = levelDimensions(dimensions, level);
-    const block = compressedBlock(format) ?? {
-      width: 1,
-      height: 1,
-      bytes: TextureFactory.textureFormatToBytesPerPixel(format),
-    };
+    const block = TextureFactory.blockOf(format);
     const columns = Math.ceil(width / block.width);
     const rows = Math.ceil(height / block.height);
     this.device.queue.writeTexture(
@@ -290,6 +297,7 @@ export class TextureFactory
         MaxAnisotropy,
       ),
       ...(descriptor?.compare ? { compare: descriptor.compare } : {}),
+      ...(descriptor?.label ? { label: descriptor.label } : {}),
     };
 
     return new Sampler({
@@ -309,49 +317,21 @@ export class TextureFactory
     throw new Error(`Unsupported texture format: ${format}`);
   }
 
-  private static textureFormatToBytesPerPixel(format: string): number {
-    switch (format) {
-      case 'r8unorm':
-      case 'r8snorm':
-      case 'r8uint':
-      case 'r8sint':
-        return 1;
-      case 'rg8unorm':
-      case 'rg8snorm':
-      case 'rg8uint':
-      case 'rg8sint':
-        return 2;
-      case 'rgba8unorm':
-      case 'rgba8unorm-srgb':
-      case 'rgba8snorm':
-      case 'rgba8uint':
-      case 'rgba8sint':
-      case 'r32float':
-      case 'r32uint':
-      case 'r32sint':
-      case 'rg16float':
-      case 'rg16uint':
-      case 'rg16sint':
-      case 'rgb10a2unorm':
-        return 4;
-      case 'r16float':
-      case 'r16uint':
-      case 'r16sint':
-        return 2;
-      case 'rgba16float':
-      case 'rgba16uint':
-      case 'rgba16sint':
-      case 'rg32float':
-      case 'rg32uint':
-      case 'rg32sint':
-        return 8;
-      case 'rgba32float':
-      case 'rgba32uint':
-      case 'rgba32sint':
-        return 16;
-
-      default:
-        throw new Error(`Unsupported texture format: ${format}`);
+  // The block of the rows written: a texel for the uncompressed formats.
+  private static blockOf(format: GpuTextureFormat): {
+    width: number;
+    height: number;
+    bytes: number;
+  } {
+    const block = compressedBlock(format);
+    if (block) {
+      return block;
     }
+    // Undefined for the depth formats, which cannot be written.
+    const bytes = texelBytes(format);
+    if (bytes === undefined) {
+      throw new Error(`The texels of ${format} cannot be written`);
+    }
+    return { width: 1, height: 1, bytes };
   }
 }

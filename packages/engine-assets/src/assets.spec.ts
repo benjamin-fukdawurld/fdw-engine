@@ -39,7 +39,7 @@ import {
 import { installAssets } from './install';
 import { instantiate } from './instantiate';
 import { MeshType } from './meshes';
-import { ModelType, type Model } from './models';
+import { Model, ModelType } from './models';
 import { RenderBackendService } from './services';
 
 const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
@@ -313,6 +313,48 @@ describe('models', () => {
     store.trim(0);
     expect(mesh.destroyed).toBe(true);
     expect(scene.find('tri')).toBeUndefined();
+  });
+
+  it('does not keep a model that is not ready when instantiated', async () => {
+    const { store } = setup({
+      'm.model': JSON.stringify({ material: defaultPbrMaterial }),
+    });
+    const handle = store.load<Model>(ModelType, 'm.model');
+    const scene = new Scene();
+    const before = scene.world.count;
+    expect(() => instantiate(handle, scene)).toThrow();
+    expect(scene.world.count).toBe(before);
+    // No clone left behind: the last handle released cancels the load.
+    handle.release();
+    await expect(handle.ready).rejects.toMatchObject({ code: 'aborted' });
+  });
+
+  it('makes each node once, in a cycle or shared by two parents', () => {
+    const node = (name: string, children: number[]) => ({ name, children });
+    const model = new Model(
+      {
+        nodes: [
+          node('a', [1, 2]),
+          node('b', [0, 2]),
+          node('c', [3, 9]),
+          node('d', [2]),
+        ],
+        roots: [0, 0],
+        meshes: [],
+        skins: [],
+        animations: [],
+        cameras: [],
+        lights: [],
+      },
+      [],
+    );
+    const scene = new Scene();
+    const instance = instantiate(model, scene);
+    expect(instance.nodes.map((n) => n.name)).toEqual(['a', 'b', 'c', 'd']);
+    expect(instance.root.children.map((n) => n.name)).toEqual(['a']);
+    // Depth first: c is made under b, the first to reach it.
+    expect(scene.find('c')?.parent?.name).toBe('b');
+    instance.dispose();
   });
 
   it('updates meshes and materials in place on reload', async () => {

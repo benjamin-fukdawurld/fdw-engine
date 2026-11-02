@@ -53,11 +53,18 @@ export class Interpreter<H = unknown> implements BehaviorExecutor<H> {
   hooks: BreakHooks<H> | undefined;
   // The arguments of each node, reused: the call, then the inputs.
   private readonly _args: unknown[][];
+  // The frame of the next turn of each loop, made once: the exits of the
+  // nodes are frames already, so running a node allocates none.
+  private readonly _turns: readonly Frame[];
 
   constructor(readonly program: BehaviorProgram) {
     this._args = program.nodes.map((node) =>
       new Array<unknown>(node.inputs.length + 1).fill(undefined),
     );
+    this._turns = program.nodes.map((node) => ({
+      node: node.index,
+      entry: LoopEntry,
+    }));
   }
 
   dispatch(
@@ -129,13 +136,7 @@ export class Interpreter<H = unknown> implements BehaviorExecutor<H> {
         instance.resumed = false;
         instance.trace?.push(node.id);
       }
-      if (++instance.steps > instance.maxSteps) {
-        throw new BehaviorError(
-          `Behavior graph "${this.program.graph.name}": more than ${instance.maxSteps} nodes in a chain (a loop of the flow?)`,
-          node.id,
-          instance.entity,
-        );
-      }
+      this.count(instance, node);
       instance.epoch++;
       call.runs++;
       call.time = instance.time;
@@ -159,6 +160,19 @@ export class Interpreter<H = unknown> implements BehaviorExecutor<H> {
         continue;
       }
       this.flow(instance, node, frame.entry);
+    }
+  }
+
+  // One more node run in the chain; too many is a loop of the flow. The
+  // compiled code counts the same: every node entered, the event nodes and
+  // every turn of a loop.
+  private count(instance: BehaviorInstance<H>, node: ProgramNode): void {
+    if (++instance.steps > instance.maxSteps) {
+      throw new BehaviorError(
+        `Behavior graph "${this.program.graph.name}": more than ${instance.maxSteps} nodes in a chain (a loop of the flow?)`,
+        node.id,
+        instance.entity,
+      );
     }
   }
 
@@ -205,7 +219,7 @@ export class Interpreter<H = unknown> implements BehaviorExecutor<H> {
         state['last'] = last;
         if (first <= last) {
           call.outputs['index'] = first;
-          instance.stack.push({ node: node.index, entry: LoopEntry });
+          instance.stack.push(this._turns[node.index]);
           this.push(instance, node.exits[0]);
         } else {
           this.push(instance, node.exits[1]);
@@ -235,9 +249,11 @@ export class Interpreter<H = unknown> implements BehaviorExecutor<H> {
     const call = instance.calls[node.index];
     const index = (call.state['index'] as number) + 1;
     if (index <= (call.state['last'] as number)) {
+      // A turn counts as a node run, the loop's body be empty or not.
+      this.count(instance, node);
       call.state['index'] = index;
       call.outputs['index'] = index;
-      instance.stack.push({ node: node.index, entry: LoopEntry });
+      instance.stack.push(this._turns[node.index]);
       this.push(instance, node.exits[0]);
     } else {
       this.push(instance, node.exits[1]);
@@ -249,7 +265,8 @@ export class Interpreter<H = unknown> implements BehaviorExecutor<H> {
     target: ExecTarget | undefined,
   ): void {
     if (target) {
-      instance.stack.push({ node: target.node, entry: target.entry });
+      // A target is a frame without payload: pushed as it is.
+      instance.stack.push(target);
     }
   }
 

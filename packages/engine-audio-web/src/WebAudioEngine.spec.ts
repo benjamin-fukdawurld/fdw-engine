@@ -217,6 +217,45 @@ describe('WebAudioEngine', () => {
     );
   });
 
+  it('leaves a context it was given, its buses disconnected', async () => {
+    const context = new OfflineAudioContext(2, Math.round(0.1 * rate), rate);
+    const e = new WebAudioEngine({ context });
+    const sfx = e.createBus('sfx');
+    e.destroy();
+    // What still reaches the old buses no longer reaches the speakers.
+    const buffer = context.createBuffer(1, rate, rate);
+    buffer.copyToChannel(constant(0.5, 1), 0);
+    for (const bus of [e.master, sfx]) {
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect((bus as unknown as { input: AudioNode }).input);
+      source.start();
+    }
+    const out = await context.startRendering();
+    expect(energy(out, 0, 0, 0.1)).toBe(0);
+  });
+
+  it('stops listening to the signal once the stream is open', async () => {
+    const e = (engine = new WebAudioEngine());
+    const controller = new AbortController();
+    const added: unknown[] = [];
+    const removed: unknown[] = [];
+    const signal = controller.signal;
+    const add = signal.addEventListener.bind(signal);
+    const remove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = ((type: string, listener: () => void) => {
+      added.push(listener);
+      add(type, listener);
+    }) as typeof signal.addEventListener;
+    signal.removeEventListener = ((type: string, listener: () => void) => {
+      removed.push(listener);
+      remove(type, listener);
+    }) as typeof signal.removeEventListener;
+    await e.createStream(await fixture(oggUrl), { signal });
+    expect(added).toHaveLength(1);
+    expect(removed).toEqual(added);
+  });
+
   it('stops the voices of a bus and of the buses under it', () => {
     const e = (engine = offline(0.1));
     const clip = e.createClip([constant(0.5, 1)], rate);

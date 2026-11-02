@@ -15,6 +15,9 @@ struct fdw_vk_swapchain {
   const char *formatName = "bgra8unorm";
   VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
   VkExtent2D extent{};
+  // The size asked for at the last (re)creation: the extent is clamped to
+  // what the surface allows, the size to compare is this one.
+  VkExtent2D requested{};
   std::vector<fdw_vk_texture *> images;
   // Signaled by the acquisitions, waited by the next submission: a ring,
   // reused once the frame waiting for it is done.
@@ -184,10 +187,12 @@ int build(fdw_vk_context *context, fdw_vk_swapchain *swapchain, uint32_t width,
   info.clipped = VK_TRUE;
   info.oldSwapchain = swapchain->swapchain;
 
-  // Nothing may use the old images any more.
+  // Nothing may use the old images any more. Without images, the swapchain
+  // is out of date until a creation succeeds.
   vkDeviceWaitIdle(context->device);
   collect(context);
   releaseImages(context, swapchain);
+  swapchain->outdated = true;
   VkSwapchainKHR created = VK_NULL_HANDLE;
   const VkResult result =
       vkCreateSwapchainKHR(context->device, &info, nullptr, &created);
@@ -199,8 +204,12 @@ int build(fdw_vk_context *context, fdw_vk_swapchain *swapchain, uint32_t width,
     return fail("vkCreateSwapchainKHR", result);
   }
   swapchain->extent = extent;
+  swapchain->requested = {width, height};
+  if (wrapImages(context, swapchain) != 0) {
+    return -1;
+  }
   swapchain->outdated = false;
-  return wrapImages(context, swapchain);
+  return 0;
 }
 
 void destroy(fdw_vk_context *context, fdw_vk_swapchain *swapchain) {
@@ -355,8 +364,8 @@ int fdw_vk_swapchain_acquire(fdw_vk_context *context,
   }
   collect(context);
 
-  const bool resized = swapchain->extent.width != width ||
-                       swapchain->extent.height != height;
+  const bool resized = swapchain->requested.width != width ||
+                       swapchain->requested.height != height;
   for (int attempt = 0; attempt < 3; attempt++) {
     if (swapchain->outdated || (attempt == 0 && resized)) {
       if (build(context, swapchain, width, height) != 0) {

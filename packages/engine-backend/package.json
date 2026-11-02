@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "dependencies": {
     "@fdw/engine-shader": "0.0.1",
-    "tslib": "^2.3.0"
+    "@preact/signals-core": "^1.14.2",
+    "tslib": "^2.3.0",
+    "wgpu-matrix": "^3.4.2"
   },
   "type": "module",
   "main": "./src/index.ts",

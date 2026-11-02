@@ -25,10 +25,15 @@ function fakeDevice(features: string[] = []) {
       layout: GPUTexelCopyBufferLayout;
       size: number[];
     }[],
+    samplers: [] as GPUSamplerDescriptor[],
     submits: 0,
   };
   const device = {
     features: new Set(features),
+    createSampler: (descriptor: GPUSamplerDescriptor) => {
+      log.samplers.push(descriptor);
+      return { label: descriptor.label ?? '' };
+    },
     createTexture: (descriptor: GPUTextureDescriptor) => {
       log.textures.push(descriptor);
       return {
@@ -147,6 +152,72 @@ describe('TextureFactory', () => {
     expect(log.writes[2].destination.mipLevel).toBe(0);
     expect(log.writes[2].size).toEqual([4, 4, 6]);
     expect(log.submits).toBe(1);
+  });
+
+  it('creates the 3d textures in 3d, their depth written whole', () => {
+    const { factory, log } = fakeDevice();
+    factory.createTexture({
+      type: '3d',
+      format: 'r8unorm',
+      dimensions: { width: 4, height: 2, layers: 3 },
+      source: new Uint8Array(24),
+    });
+    factory.createTexture({
+      type: '2d-array',
+      format: 'r8unorm',
+      dimensions: { width: 4, height: 2, layers: 3 },
+    });
+    expect(log.textures.map((texture) => texture.dimension)).toEqual([
+      '3d',
+      '2d',
+    ]);
+    expect(log.textures[0].size).toEqual({
+      width: 4,
+      height: 2,
+      depthOrArrayLayers: 3,
+    });
+    expect(log.writes[0].size).toEqual([4, 2, 3]);
+  });
+
+  it('writes the texels of bgra8unorm', () => {
+    const { factory, log } = fakeDevice();
+    factory.createTexture({
+      type: '2d',
+      format: 'bgra8unorm',
+      dimensions: { width: 2, height: 2 },
+      source: new Uint8Array(16),
+    });
+    expect(log.writes[0].layout).toEqual({ bytesPerRow: 8, rowsPerImage: 2 });
+  });
+
+  it('rejects the data of a format that cannot be written before creating the texture', () => {
+    const { factory, log } = fakeDevice();
+    expect(() =>
+      factory.createTexture({
+        type: '2d',
+        format: 'depth32float',
+        dimensions: { width: 1, height: 1 },
+        source: new Uint8Array(4),
+      }),
+    ).toThrow(/depth32float cannot be written/);
+    expect(log.textures).toEqual([]);
+    // Without data, the depth textures are created.
+    factory.createTexture({
+      type: '2d',
+      format: 'depth32float',
+      dimensions: { width: 1, height: 1 },
+      usage: ['render-attachment'],
+    });
+    expect(log.textures).toHaveLength(1);
+  });
+
+  it('labels the samplers', () => {
+    const { factory, log } = fakeDevice();
+    factory.createSampler({ label: 'shadows', compare: 'less' });
+    expect(log.samplers[0]).toMatchObject({
+      label: 'shadows',
+      compare: 'less',
+    });
   });
 
   it('writes the levels of formats whose levels cannot be computed', () => {

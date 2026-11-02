@@ -30,6 +30,9 @@ export function useSurface(
     setCanvasReady(true);
   };
 
+  // The surface made, released with the component.
+  const surfaceRef = useRef<Surface | null>(null);
+
   useEffect(() => {
     if (
       !engine ||
@@ -37,7 +40,7 @@ export function useSurface(
       engine.state.value !== 'ready' ||
       !canvasReady ||
       !canvasRef.current ||
-      isSurfaceReady
+      surfaceRef.current
     ) {
       return;
     }
@@ -46,18 +49,34 @@ export function useSurface(
       engine instanceof WebGl2Engine
         ? new WebGl2CanvasSurface(canvasRef.current)
         : new WebGpuSurface(canvasRef.current);
+    surfaceRef.current = surfaceInstance;
     surfaceInstance
       .init(engine)
       .then(() => {
+        // Released meanwhile: the component is gone.
+        if (surfaceRef.current !== surfaceInstance) return;
         setSurface(surfaceInstance);
         setIsSurfaceReady(true);
         console.log('Surface initialized');
       })
       .catch((err) => {
+        if (surfaceRef.current !== surfaceInstance) return;
         console.error('Failed to initialize surface:', err);
         setSurfaceError(err);
       });
   }, [engine, engineError, canvasReady, engine?.state.value]);
+
+  // Made again when mounted again (StrictMode).
+  useEffect(
+    () => () => {
+      const released = surfaceRef.current;
+      surfaceRef.current = null;
+      if (released) releaseSurface(released);
+      setSurface(null);
+      setIsSurfaceReady(false);
+    },
+    [],
+  );
 
   return {
     surface,
@@ -66,4 +85,14 @@ export function useSurface(
     canvasRef,
     onCanvasReady,
   };
+}
+
+// What a surface holds: the configuration of the WebGPU context of its
+// canvas, the framebuffer of a WebGL2 one.
+function releaseSurface(surface: Surface): void {
+  if (surface instanceof WebGpuSurface) {
+    surface.context.unconfigure();
+  } else if (surface instanceof WebGl2CanvasSurface) {
+    surface.destroy();
+  }
 }

@@ -245,38 +245,55 @@ export function sampleLatticeCpu(
       return out.fill(0);
     }
   }
-  const p = [x - grid.origin.x, y - grid.origin.y, z - grid.origin.z];
-  const uvw = [0, 1, 2].map((a) =>
-    Math.min(
-      Math.max(p[a] / grid.cell - lattice.offset[a], 0),
-      lattice.last[a],
-    ),
+  // Scalars all along: this runs for each cell and face of a CPU step.
+  const { offset, last, size } = lattice;
+  const u = Math.min(
+    Math.max((x - grid.origin.x) / grid.cell - offset[0], 0),
+    last[0],
   );
-  const base = [0, 1, 2].map((a) =>
-    Math.min(Math.floor(uvw[a]), Math.max(lattice.last[a] - 1, 0)),
+  const v = Math.min(
+    Math.max((y - grid.origin.y) / grid.cell - offset[1], 0),
+    last[1],
   );
-  const t = [0, 1, 2].map((a) => uvw[a] - base[a]);
-  const third = flat || lattice.last[2] === 0;
-  out.fill(0);
+  const w = Math.min(
+    Math.max((z - grid.origin.z) / grid.cell - offset[2], 0),
+    last[2],
+  );
+  const bi = Math.min(Math.floor(u), Math.max(last[0] - 1, 0));
+  const bj = Math.min(Math.floor(v), Math.max(last[1] - 1, 0));
+  const bk = Math.min(Math.floor(w), Math.max(last[2] - 1, 0));
+  const tx = u - bi;
+  const ty = v - bj;
+  const tz = w - bk;
+  const third = flat || last[2] === 0;
+  // Sums in single precision, as `out` would (the results do not depend on
+  // where they are summed).
+  let r0 = 0;
+  let r1 = 0;
+  let r2 = 0;
+  let r3 = 0;
   for (let dk = 0; dk <= (third ? 0 : 1); dk++) {
+    const wk = third ? 1 : dk ? tz : 1 - tz;
     for (let dj = 0; dj <= 1; dj++) {
+      const wj = dj ? ty : 1 - ty;
+      const row = ((bk + dk) * size[1] + bj + dj) * size[0] + bi;
       for (let di = 0; di <= 1; di++) {
-        const weight =
-          (di ? t[0] : 1 - t[0]) *
-          (dj ? t[1] : 1 - t[1]) *
-          (third ? 1 : dk ? t[2] : 1 - t[2]);
+        const weight = (di ? tx : 1 - tx) * wj * wk;
         if (weight === 0) {
           continue;
         }
-        const at =
-          latticeIndex(lattice.size, base[0] + di, base[1] + dj, base[2] + dk) *
-          4;
-        for (let c = 0; c < 4; c++) {
-          out[c] += values[at + c] * weight;
-        }
+        const at = (row + di) * 4;
+        r0 = Math.fround(r0 + values[at] * weight);
+        r1 = Math.fround(r1 + values[at + 1] * weight);
+        r2 = Math.fround(r2 + values[at + 2] * weight);
+        r3 = Math.fround(r3 + values[at + 3] * weight);
       }
     }
   }
+  out[0] = r0;
+  out[1] = r1;
+  out[2] = r2;
+  out[3] = r3;
   return out;
 }
 

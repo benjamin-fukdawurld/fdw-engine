@@ -48,15 +48,34 @@ struct PendingRead {
 
 namespace fdw {
 
+// Whether an access writes.
+bool writes(VkAccessFlags2 access);
+
 // How a resource was last used, in the order of the queue: what the next
 // use must wait for (option A of design/native-backends.md, §8.1).
 struct Access {
+  Access() = default;
+  // A use after which the next ones wait: a write, unless `access` reads.
+  Access(VkPipelineStageFlags2 stages, VkAccessFlags2 access)
+      : stages(stages), access(access) {
+    if (writes(access)) {
+      write = {stages, access};
+    }
+  }
+
+  // Every use since the last barrier (a write: the uses after it too): what
+  // the next write waits for.
   VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_NONE;
   VkAccessFlags2 access = VK_ACCESS_2_NONE;
+  // The last write (or barrier): the reads after it wait for it, once per
+  // stage and access. `synced`: those that already wait for it.
+  struct Uses {
+    VkPipelineStageFlags2 stages = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 access = VK_ACCESS_2_NONE;
+  };
+  Uses write;
+  Uses synced;
 };
-
-// Whether an access writes.
-bool writes(VkAccessFlags2 access);
 
 } // namespace fdw
 

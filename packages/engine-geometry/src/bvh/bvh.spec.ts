@@ -201,6 +201,30 @@ describe('intersectTriangleBvh', () => {
     ).toBeUndefined();
   });
 
+  it('hits a floor in a grid with a ray along the edge of its cells', () => {
+    // A floor of 8 × 8 squares of 1 m around the origin, two triangles each.
+    const positions: number[] = [];
+    for (let j = -4; j < 4; j++) {
+      for (let i = -4; i < 4; i++) {
+        positions.push(i, 0, j, i, 0, j + 1, i + 1, 0, j + 1);
+        positions.push(i, 0, j, i + 1, 0, j + 1, i + 1, 0, j);
+      }
+    }
+    const bvh = buildTriangleBvh(new Float32Array(positions));
+    // Straight down, on the planes of the boxes (x = 0, z = 0 or 0.5).
+    for (const [x, z] of [
+      [0, 0.5],
+      [0, 0],
+      [0.5, 0],
+      [-1, 2],
+    ]) {
+      const hit = intersectTriangleBvh(bvh, [x, 5, z], [0, -1, 0]);
+      expect(hit?.t).toBeCloseTo(5, 6);
+    }
+    // Beside the floor: no hit.
+    expect(intersectTriangleBvh(bvh, [4.5, 5, 0], [0, -1, 0])).toBeUndefined();
+  });
+
   it('stops at any hit for shadows', () => {
     const positions = soup(8, 200);
     const bvh = buildTriangleBvh(positions);
@@ -292,6 +316,30 @@ describe('intersectInstances', () => {
     expect(
       intersectInstances(top, instances, ...ray, { mask: 4 }),
     ).toBeUndefined();
+  });
+
+  it('gives the face seen in the world, through a mirrored instance', () => {
+    // A counterclockwise triangle seen from +z, mirrored along x: in the
+    // world, clockwise from +z, its front faces -z.
+    const bvh = buildTriangleBvh(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+    const instances: BvhInstance[] = [
+      { bvh, world: compose([0, 0, 0], [0, 0, 0, 1], [-1, 1, 1]) },
+    ];
+    const top = buildInstanceBvh(instances);
+    const fromAbove = intersectInstances(
+      top,
+      instances,
+      [-0.25, 0.5, 2],
+      [0, 0, -1],
+    );
+    expect(fromAbove?.frontFace).toBe(false);
+    const fromBelow = intersectInstances(
+      top,
+      instances,
+      [-0.25, 0.5, -2],
+      [0, 0, 1],
+    );
+    expect(fromBelow?.frontFace).toBe(true);
   });
 
   it('inverts affine matrices', () => {

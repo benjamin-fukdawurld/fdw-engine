@@ -8,6 +8,7 @@ import {
   rotationOf,
   upOf,
   Vec3Like,
+  viewHeight,
   viewOf,
 } from './target';
 
@@ -123,6 +124,7 @@ export class OrbitOperator {
   private readonly _forward = { x: 0, y: 0, z: 0 };
   private readonly _right = { x: 0, y: 0, z: 0 };
   private readonly _up = { x: 0, y: 0, z: 0 };
+  private readonly _view = { fov: 0, aspect: 0 };
 
   constructor(
     private readonly _target: CameraTarget,
@@ -164,7 +166,7 @@ export class OrbitOperator {
     const actions = this._actions;
     const names = this._names;
     const flip = this.invertY ? -1 : 1;
-    const { fov, aspect } = viewOf(this._target);
+    const { aspect } = viewOf(this._target, this._view);
 
     // Turning: to the right, the view turns right (the camera goes left
     // around the pivot); up, it looks up (the camera goes down).
@@ -182,8 +184,9 @@ export class OrbitOperator {
     const pivot = this.pivot;
     const right = rightOf(this.yaw, this._right);
     if (actions.button(names.panDrag).down) {
-      // The pivot follows the pointer: the height of the view at the pivot.
-      const height = 2 * this.distance * Math.tan(fov / 2);
+      // The pivot follows the pointer: the height of the view at the pivot
+      // (that of the projection when orthographic).
+      const height = viewHeight(this._target, this.distance);
       const up = upOf(this.yaw, this.pitch, this._up);
       const x = pointer.x * aspect * height;
       const y = pointer.y * height;

@@ -1,5 +1,10 @@
 import { composeMatrix, multiplyMatrix, multiplyQuat, nlerp } from './math';
 
+// Scratch values of the static operations, reused: no allocation per call.
+const identityQuat: readonly number[] = [0, 0, 0, 1];
+const scratchQuat = new Float64Array(4);
+const scratchMatrix = new Float32Array(16);
+
 /**
  * The local transforms of the joints of a skeleton: a translation, a
  * rotation (a quaternion x y z w) and a scale per joint, relative to its
@@ -103,8 +108,7 @@ export class Pose {
     out: Pose,
     mask?: ArrayLike<number>,
   ): Pose {
-    const identity = [0, 0, 0, 1];
-    const delta = [0, 0, 0, 1];
+    const delta = scratchQuat;
     for (let joint = 0; joint < out.count; joint++) {
       const w = mask ? weight * mask[joint] : weight;
       const t3 = joint * 3;
@@ -121,7 +125,7 @@ export class Pose {
         out.scales[t3 + k] =
           base.scales[t3 + k] * (1 + (additive.scales[t3 + k] - 1) * w);
       }
-      nlerp(identity, 0, additive.rotations, r4, Math.min(w, 1), delta, 0);
+      nlerp(identityQuat, 0, additive.rotations, r4, Math.min(w, 1), delta, 0);
       multiplyQuat(base.rotations, r4, delta, 0, out.rotations, r4);
     }
     return out;
@@ -133,7 +137,7 @@ export class Pose {
    * the rotations, pose / reference for the scales.
    */
   static difference(pose: Pose, reference: Pose, out: Pose): Pose {
-    const inverse = [0, 0, 0, 1];
+    const inverse = scratchQuat;
     for (let joint = 0; joint < out.count; joint++) {
       const t3 = joint * 3;
       const r4 = joint * 4;
@@ -179,7 +183,7 @@ export class Pose {
     parents: ArrayLike<number>,
     out = new Float32Array(this.count * 16),
   ): Float32Array {
-    const local = new Float32Array(16);
+    const local = scratchMatrix;
     for (let joint = 0; joint < this.count; joint++) {
       const parent = parents[joint];
       const target = parent < 0 ? out : local;

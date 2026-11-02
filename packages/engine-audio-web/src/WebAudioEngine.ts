@@ -616,6 +616,8 @@ export class WebAudioEngine implements AudioEngine {
     // The metadata, from an element: the duration, and whether it plays.
     const probe = new Audio();
     probe.preload = 'metadata';
+    // Removed once the metadata come: the signal may outlive the load.
+    let onAbort: (() => void) | undefined;
     try {
       const duration = await new Promise<number>((resolve, reject) => {
         probe.addEventListener('loadedmetadata', () => resolve(probe.duration));
@@ -626,7 +628,8 @@ export class WebAudioEngine implements AudioEngine {
             ),
           ),
         );
-        signal?.addEventListener('abort', () => reject(signal.reason));
+        onAbort = () => reject(signal?.reason);
+        signal?.addEventListener('abort', onAbort);
         probe.src = url;
       });
       return new WebStream(
@@ -638,6 +641,9 @@ export class WebAudioEngine implements AudioEngine {
       URL.revokeObjectURL(url);
       throw e;
     } finally {
+      if (onAbort) {
+        signal?.removeEventListener('abort', onAbort);
+      }
       probe.removeAttribute('src');
       probe.load();
     }
@@ -691,6 +697,10 @@ export class WebAudioEngine implements AudioEngine {
     }
     this._voices.length = 0;
     this._closed = true;
+    // A context given by the application lives on: the buses leave it.
+    for (const bus of this._buses.values()) {
+      bus.input.disconnect();
+    }
     if (this._ownsContext && this.context instanceof AudioContext) {
       void this.context.close();
     }

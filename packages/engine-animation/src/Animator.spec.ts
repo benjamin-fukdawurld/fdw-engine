@@ -152,6 +152,36 @@ describe('Animator', () => {
     expect(synced.events.map((e) => e.name)).toEqual(['run-step']);
   });
 
+  it('plays the clips of a synchronized blend backwards at a negative speed', () => {
+    const g = new AnimationGraphBuilder('back');
+    g.output(
+      g.blend(
+        g.clip('Walk', { speed: -1 }),
+        g.clip('Run', { speed: -1 }),
+        0.5,
+        { sync: true },
+      ),
+    );
+    const animator = new Animator(g.build(), { skeleton, clips });
+    // A cycle of 0.75 s: the phase 0.4, mirrored to 0.6 in both clips.
+    animator.update(0.3);
+    expect(legX(animator)).toBeCloseTo(0.6);
+    animator.update(0.3);
+    expect(legX(animator)).toBeCloseTo(0.2);
+    // Through the start: the phase 1.2, mirrored to 0.8.
+    animator.update(0.3);
+    expect(legX(animator)).toBeCloseTo(0.8);
+  });
+
+  it('refuses a NaN parameter', () => {
+    const g = new AnimationGraphBuilder('nan');
+    g.parameter('speed', 'number');
+    g.output(g.clip('Walk'));
+    const animator = new Animator(g.build(), { skeleton, clips });
+    expect(() => animator.set('speed', Number.NaN)).toThrow('cannot be NaN');
+    expect(animator.get('speed')).toBe(0);
+  });
+
   it('blends two poses by a weight', () => {
     const g = new AnimationGraphBuilder('blend');
     g.output(g.blend(g.clip('Walk'), g.clip('Run'), 0.25));

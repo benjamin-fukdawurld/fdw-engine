@@ -65,6 +65,7 @@ import {
 } from './environment';
 import { lightReaches } from './lightVolumes';
 import { Material, MaterialValue } from './Material';
+import { IterableWeakSet } from './IterableWeakSet';
 import { Mesh } from './Mesh';
 import { MaxObjectId, ObjectRows, RowSource } from './ObjectRows';
 import type { OcclusionCuller } from './occlusion';
@@ -714,6 +715,11 @@ export class Renderer {
     readonly outputEncoding: 'srgb' | 'linear';
   };
   private readonly _meshes = new WeakMap<Mesh, GpuMesh>();
+  // The meshes with buffers and the material groups with a uniform buffer,
+  // whose buffers destroy() frees (_meshes and _materials cannot be
+  // iterated).
+  private readonly _uploadedMeshes = new IterableWeakSet<Mesh>();
+  private readonly _materialStates = new IterableWeakSet<MaterialGroupState>();
   // By Transform, or by the world transform of the items that give one.
   private readonly _objects = new WeakMap<object, ObjectState>();
   private _lastObjectKey?: object;
@@ -750,6 +756,7 @@ export class Renderer {
   // The keys of the material bind groups, by program and group index.
   private readonly _groupKeys = new WeakMap<CompiledProgram, string[]>();
   private _toneMapping?: Material;
+  private _toneMappingSampler?: GpuSampler;
   // The frame values of the last scene: what the full screen passes read.
   private _frameValues: Record<string, UniformValue> = writeLightValues(
     { exposure: 1, lightClusters: [1, 1, 1, 0], lightClusterDepth: zero4 },
@@ -1532,6 +1539,7 @@ export class Renderer {
       return;
     }
     this._meshes.delete(mesh);
+    this._uploadedMeshes.delete(mesh);
     gpu.unsubscribe();
     gpu.vertexBuffers.forEach((buffer) => buffer.destroy());
     gpu.indexBuffer?.destroy();
@@ -1565,6 +1573,21 @@ export class Renderer {
       texture.destroy();
     }
     this._environmentTextures.length = 0;
+    // The buffers of the meshes (the full screen one among them) and the
+    // uniforms of the materials drawn.
+    for (const mesh of this._uploadedMeshes) {
+      this.releaseMesh(mesh);
+    }
+    for (const state of this._materialStates) {
+      state.buffer?.destroy();
+      state.buffer = undefined;
+      state.bindGroup = undefined;
+      state.version = -1;
+    }
+    this._materialStates.clear();
+    this._toneMappingSampler?.destroy();
+    this._toneMappingSampler = undefined;
+    this._toneMapping = undefined;
     this._runner.destroy();
     this._objectRows.destroy();
     this._objectGroups.clear();
@@ -2594,18 +2617,17 @@ export class Renderer {
         rgb = g.call('color.linearToSrgb', { color: rgb });
       }
       g.fullscreen({ color: g.call(std.extend, { xyz: rgb, w: 1 }) });
+      this._toneMappingSampler = this.backend.textures.createSampler({
+        minFilter: 'nearest',
+        magFilter: 'nearest',
+        mipmapFilter: 'nearest',
+        wrapModeS: 'clamp-to-edge',
+        wrapModeT: 'clamp-to-edge',
+      });
       this._toneMapping = new Material({
         graph: g.build(),
         label: 'tone mapping',
-        values: {
-          hdrSampler: this.backend.textures.createSampler({
-            minFilter: 'nearest',
-            magFilter: 'nearest',
-            mipmapFilter: 'nearest',
-            wrapModeS: 'clamp-to-edge',
-            wrapModeT: 'clamp-to-edge',
-          }),
-        },
+        values: { hdrSampler: this._toneMappingSampler },
       });
     }
     return this._toneMapping;
@@ -2943,6 +2965,7 @@ export class Renderer {
     if (!state) {
       state = { version: -1, resources: [] };
       groups.set(key, state);
+      this._materialStates.add(state);
     }
     if (state.bindGroup && state.version === material.version) {
       return state.bindGroup;
@@ -3056,6 +3079,7 @@ export class Renderer {
         : {}),
     };
     this._meshes.set(mesh, gpu);
+    this._uploadedMeshes.add(mesh);
     // On the GPU now: a mesh that can make its data again gives it back.
     if (mesh.releasable) {
       mesh.releaseData();

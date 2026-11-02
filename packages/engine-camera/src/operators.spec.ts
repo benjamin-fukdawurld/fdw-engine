@@ -265,6 +265,39 @@ describe('OrbitOperator', () => {
     // went a quarter of each to the right and up: the scene follows it.
     expectClose(orbit.pivot, { x: -1, y: -0.5, z: 0 });
   });
+
+  it('pans an orthographic view by the extents of its projection', () => {
+    const { source, input } = setup();
+    const target = {
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      projection: {
+        type: 'orthographic',
+        left: -10,
+        right: 10,
+        bottom: -5,
+        top: 5,
+      },
+    };
+    // Far away: the distance does not change what the view shows.
+    const orbit = new OrbitOperator(
+      target,
+      new ActionMap(input, OrbitActions),
+      {
+        distance: 50,
+        yaw: 0,
+        pitch: 0,
+      },
+    );
+    source.sink?.pointerMove(0.5, 0.5);
+    source.sink?.pointerButton(2, true);
+    input.update();
+    source.sink?.pointerMove(0.75, 0.25);
+    input.update();
+    orbit.update(0.016);
+    // 20 wide, 10 high: a quarter of each.
+    expectClose(orbit.pivot, { x: -5, y: -2.5, z: 0 });
+  });
 });
 
 describe('ThirdPersonOperator', () => {

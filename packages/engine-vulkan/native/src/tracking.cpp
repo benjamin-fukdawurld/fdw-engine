@@ -27,6 +27,57 @@ ptrdiff_t pending(const std::vector<T *> &resources, const T *resource) {
   return found == resources.end() ? -1 : found - resources.begin();
 }
 
+// Whether a use needs no barrier: a read, after no write, or in stages and
+// accesses that already wait for the last write. A read waiting only for
+// the previous reads would not wait for the write (a copy, a uniform read
+// in a fragment shader, then a storage read in a compute one).
+bool synchronised(const Access &last, VkPipelineStageFlags2 stages,
+                  VkAccessFlags2 access) {
+  if (writes(access)) {
+    return false;
+  }
+  if (last.write.stages == VK_PIPELINE_STAGE_2_NONE &&
+      last.write.access == VK_ACCESS_2_NONE) {
+    return true;
+  }
+  return (stages & ~last.synced.stages) == 0 &&
+         (access & ~last.synced.access) == 0;
+}
+
+// A use without barrier: the next write waits for it too.
+void add(Access &last, VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
+  last.stages |= stages;
+  last.access |= access;
+}
+
+// A use joining a barrier gathered for the same pass. The reads joining the
+// barrier of a write do not wait for it (the same pass).
+void join(Access &last, VkPipelineStageFlags2 stages, VkAccessFlags2 access,
+          bool barrierWrites) {
+  add(last, stages, access);
+  if (writes(access)) {
+    last.write.stages |= stages;
+    last.write.access |= access;
+    last.synced = {};
+  } else if (!barrierWrites) {
+    last.synced.stages |= stages;
+    last.synced.access |= access;
+  }
+}
+
+// A use after its barrier (from every use before): a write, or a read that
+// waits for everything before it; the next reads in other stages wait for
+// this barrier.
+Access after(VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
+  if (writes(access)) {
+    return {stages, access};
+  }
+  Access last{stages, access};
+  last.write = {stages, VK_ACCESS_2_NONE};
+  last.synced = {stages, access};
+  return last;
+}
+
 } // namespace
 
 void Barriers::place() {
@@ -63,23 +114,22 @@ void useTexture(Barriers &barriers, fdw_vk_texture *texture,
   // with the others of the pass. The content is kept if a use needs it.
   const ptrdiff_t index = pending(barriers.textures, texture);
   if (index >= 0 && barriers.images[index].newLayout == layout) {
+    const bool barrierWrites = writes(barriers.images[index].dstAccessMask);
     barriers.images[index].dstStageMask |= stages;
     barriers.images[index].dstAccessMask |= access;
     barriers.discards[index] = barriers.discards[index] && discard;
-    texture->last.stages |= stages;
-    texture->last.access |= access;
+    join(texture->last, stages, access, barrierWrites);
     return;
   }
   // To another layout: after the transition gathered.
   if (index >= 0) {
     barriers.place();
   }
-  // Reads after reads, in the same layout, need no barrier: the next write
-  // will wait for all of them.
-  if (texture->layout == layout && !writes(texture->last.access) &&
-      !writes(access)) {
-    texture->last.stages |= stages;
-    texture->last.access |= access;
+  // Reads after reads, in the same layout, need no barrier once they wait
+  // for the last write: the next write will wait for all of them.
+  if (texture->layout == layout &&
+      synchronised(texture->last, stages, access)) {
+    add(texture->last, stages, access);
     return;
   }
   VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -98,22 +148,21 @@ void useTexture(Barriers &barriers, fdw_vk_texture *texture,
   barriers.textures.push_back(texture);
   barriers.discards.push_back(discard);
   texture->layout = layout;
-  texture->last = {stages, access};
+  texture->last = after(stages, access);
 }
 
 void useBuffer(Barriers &barriers, fdw_vk_buffer *buffer,
                VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
   const ptrdiff_t index = pending(barriers.buffers, buffer);
   if (index >= 0) {
+    const bool barrierWrites = writes(barriers.bufferBarriers[index].dstAccessMask);
     barriers.bufferBarriers[index].dstStageMask |= stages;
     barriers.bufferBarriers[index].dstAccessMask |= access;
-    buffer->last.stages |= stages;
-    buffer->last.access |= access;
+    join(buffer->last, stages, access, barrierWrites);
     return;
   }
-  if (!writes(buffer->last.access) && !writes(access)) {
-    buffer->last.stages |= stages;
-    buffer->last.access |= access;
+  if (synchronised(buffer->last, stages, access)) {
+    add(buffer->last, stages, access);
     return;
   }
   // Never used: nothing to wait for.
@@ -131,22 +180,21 @@ void useBuffer(Barriers &barriers, fdw_vk_buffer *buffer,
     barriers.bufferBarriers.push_back(barrier);
     barriers.buffers.push_back(buffer);
   }
-  buffer->last = {stages, access};
+  buffer->last = after(stages, access);
 }
 
 void useTopLevel(Barriers &barriers, fdw_vk_top_level *top,
                  VkPipelineStageFlags2 stages, VkAccessFlags2 access) {
   const ptrdiff_t index = pending(barriers.tops, top);
   if (index >= 0) {
+    const bool barrierWrites = writes(barriers.memory[index].dstAccessMask);
     barriers.memory[index].dstStageMask |= stages;
     barriers.memory[index].dstAccessMask |= access;
-    top->last.stages |= stages;
-    top->last.access |= access;
+    join(top->last, stages, access, barrierWrites);
     return;
   }
-  if (!writes(top->last.access) && !writes(access)) {
-    top->last.stages |= stages;
-    top->last.access |= access;
+  if (synchronised(top->last, stages, access)) {
+    add(top->last, stages, access);
     return;
   }
   if (top->last.stages != VK_PIPELINE_STAGE_2_NONE) {
@@ -158,7 +206,7 @@ void useTopLevel(Barriers &barriers, fdw_vk_top_level *top,
     barriers.memory.push_back(barrier);
     barriers.tops.push_back(top);
   }
-  top->last = {stages, access};
+  top->last = after(stages, access);
 }
 
 void useTexture(VkCommandBuffer commands, fdw_vk_texture *texture,

@@ -16,23 +16,32 @@ function RouteComponent() {
   const frameRef = useRef<number | undefined>(undefined);
   const rendererRef = useRef<Renderer | undefined>(undefined);
   const scopeRef = useRef<ResourceScope | undefined>(undefined);
+  // The route left: what is still being loaded starts nothing.
+  const disposedRef = useRef(false);
 
   // Stop rendering and release the model when leaving the route.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    disposedRef.current = false;
+    return () => {
+      disposedRef.current = true;
       if (frameRef.current !== undefined) {
         cancelAnimationFrame(frameRef.current);
       }
       rendererRef.current?.destroy();
+      rendererRef.current = undefined;
       scopeRef.current?.dispose();
-    },
-    [],
-  );
+      scopeRef.current = undefined;
+    };
+  }, []);
 
   const onSurfaceReady = async (engine: Engine, surface: Surface) => {
     const backend = engine.backend;
     if (!backend) {
       throw new Error('The engine is not ready');
+    }
+    // One renderer per surface, even if called again.
+    if (disposedRef.current || rendererRef.current) {
+      return;
     }
     const renderer = new Renderer(backend);
     rendererRef.current = renderer;
@@ -43,8 +52,13 @@ function RouteComponent() {
     const scope = resources.scope('loading-model');
     scopeRef.current = scope;
     const sphere = scope.load<Model>(ModelType, 'sphere.obj');
+    const model = await sphere.ready;
+    // Left while loading: the renderer and the scope are gone already.
+    if (disposedRef.current) {
+      return;
+    }
     const scene = new Scene();
-    instantiate(await sphere.ready, scene);
+    instantiate(model, scene);
 
     // The light of the former scene: a white point light, without
     // attenuation, placed by its node.

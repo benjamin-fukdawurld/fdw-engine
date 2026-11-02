@@ -12,9 +12,9 @@
 typedef struct decode_job {
   napi_async_work work;
   napi_deferred deferred;
-  // Keeps the input alive while the pool reads it.
-  napi_ref input;
-  const unsigned char *bytes;
+  // A copy of the input: the input can be detached (transferred) while the
+  // pool reads it.
+  unsigned char *bytes;
   size_t length;
   // The result: 4 channels, unsigned bytes or floats (HDR).
   void *pixels;
@@ -168,8 +168,8 @@ static void complete_decode(napi_env env, napi_status status, void *data) {
   if (job->pixels) {
     stbi_image_free(job->pixels);
   }
-  napi_delete_reference(env, job->input);
   napi_delete_async_work(env, job->work);
+  free(job->bytes);
   free(job);
 }
 
@@ -183,27 +183,56 @@ static napi_value js_decode_image(napi_env env, napi_callback_info info) {
     napi_throw_type_error(env, NULL, "decodeImage(bytes) needs the bytes");
     return NULL;
   }
-  decode_job *job = (decode_job *)calloc(1, sizeof(decode_job));
-  if (!job) {
-    napi_throw_error(env, NULL, "Out of memory");
-    return NULL;
-  }
-  if (!bytes_of(env, argv[0], &job->bytes, &job->length)) {
-    free(job);
+  const unsigned char *bytes = NULL;
+  size_t length = 0;
+  if (!bytes_of(env, argv[0], &bytes, &length)) {
     napi_throw_type_error(env, NULL, "decodeImage expects a Uint8Array");
     return NULL;
   }
+  // A copy, read by the pool: the input can be detached (transferred) once
+  // this call returns.
+  decode_job *job = (decode_job *)calloc(1, sizeof(decode_job));
+  if (job) {
+    job->bytes = malloc(length > 0 ? length : 1);
+  }
+  if (!job || !job->bytes) {
+    free(job);
+    napi_throw_error(env, NULL, "Out of memory");
+    return NULL;
+  }
+  if (length > 0) {
+    memcpy(job->bytes, bytes, length);
+  }
+  job->length = length;
   napi_value promise;
   napi_value name;
-  if (napi_create_reference(env, argv[0], 1, &job->input) != napi_ok ||
-      napi_create_promise(env, &job->deferred, &promise) != napi_ok ||
-      napi_create_string_utf8(env, "fdw:decodeImage", NAPI_AUTO_LENGTH,
-                              &name) != napi_ok ||
+  if (napi_create_string_utf8(env, "fdw:decodeImage", NAPI_AUTO_LENGTH, &name) !=
+          napi_ok ||
       napi_create_async_work(env, NULL, name, execute_decode, complete_decode,
-                             job, &job->work) != napi_ok ||
-      napi_queue_async_work(env, job->work) != napi_ok) {
+                             job, &job->work) != napi_ok) {
+    free(job->bytes);
+    free(job);
     napi_throw_error(env, NULL, "Cannot start the decoding");
     return NULL;
+  }
+  if (napi_create_promise(env, &job->deferred, &promise) != napi_ok) {
+    napi_delete_async_work(env, job->work);
+    free(job->bytes);
+    free(job);
+    napi_throw_error(env, NULL, "Cannot start the decoding");
+    return NULL;
+  }
+  if (napi_queue_async_work(env, job->work) != napi_ok) {
+    // The promise is given: rejected.
+    napi_value message;
+    napi_value error;
+    napi_create_string_utf8(env, "Cannot start the decoding",
+                            NAPI_AUTO_LENGTH, &message);
+    napi_create_error(env, NULL, message, &error);
+    napi_reject_deferred(env, job->deferred, error);
+    napi_delete_async_work(env, job->work);
+    free(job->bytes);
+    free(job);
   }
   return promise;
 }

@@ -15,7 +15,7 @@ import {
   type LoadContext,
   type ResourceLoader,
 } from '@fdw/engine-resources';
-import { MtlType, type MtlLibrary } from './mtl';
+import { localPath, MtlType, type MtlLibrary } from './mtl';
 
 export interface ObjOptions {
   /**
@@ -102,21 +102,33 @@ export function parseObj(
         normals.push(+parts[1], +parts[2], +parts[3]);
         break;
       case 'f': {
-        const b = builder();
+        const counts = [
+          positions.length / 3,
+          uvs.length / 2,
+          normals.length / 3,
+        ];
+        // 1-based, negative from the end; -1 for none, NaN when invalid.
+        const at = (text: string | undefined, count: number) => {
+          if (!text) return -1;
+          const n = Number(text);
+          const i = n < 0 ? count + n : n - 1;
+          return Number.isInteger(n) && n !== 0 && i >= 0 && i < count
+            ? i
+            : NaN;
+        };
         const corners = parts.slice(1).map((corner) => {
           const [v, vt, vn] = corner.split('/');
-          // 1-based, negative from the end; -1 for none.
-          const at = (text: string | undefined, count: number) => {
-            if (!text) return -1;
-            const n = parseInt(text, 10);
-            return n < 0 ? count + n : n - 1;
-          };
           return [
-            at(v, positions.length / 3),
-            at(vt, uvs.length / 2),
-            at(vn, normals.length / 3),
+            v ? at(v, counts[0]) : NaN,
+            at(vt, counts[1]),
+            at(vn, counts[2]),
           ] as const;
         });
+        if (corners.some((c) => c.some(Number.isNaN))) {
+          warn(`OBJ: line ${l + 1}: invalid face index, the face is skipped`);
+          break;
+        }
+        const b = builder();
         for (let i = 1; i + 1 < corners.length; i++) {
           for (const c of [corners[0], corners[i], corners[i + 1]])
             b.add(c[0], c[1], c[2]);
@@ -136,7 +148,7 @@ export function parseObj(
         material = parts.slice(1).join(' ');
         break;
       case 'mtllib':
-        mtllibs.push(parts.slice(1).join(' '));
+        mtllibs.push(localPath(parts.slice(1).join(' ')));
         break;
       case 's':
       case 'p':

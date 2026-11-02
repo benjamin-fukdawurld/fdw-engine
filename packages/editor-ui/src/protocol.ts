@@ -126,6 +126,12 @@ export type LevelCommand =
       readonly id: string;
       readonly parent: string;
     }
+  // Several commands, one entry of the history.
+  | {
+      readonly command: 'batch';
+      readonly label: string;
+      readonly commands: readonly LevelCommand[];
+    }
   // Not in the history (as in most editors).
   | { readonly command: 'select'; readonly ids: readonly string[] }
   // Puts the camera in front of the selection.

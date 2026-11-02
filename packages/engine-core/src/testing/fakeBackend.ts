@@ -227,6 +227,8 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     dispatches: [] as { pipeline: string; workgroups: readonly number[] }[],
     // The bind groups destroyed.
     destroyedGroups: 0,
+    // The samplers created, destroyed or not.
+    samplers: [] as { destroyed: boolean }[],
     // The descriptors of the render passes, with their attachments.
     passes: [] as RenderPassDescriptor[],
     viewports: [] as number[][],
@@ -266,10 +268,17 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
         );
       },
       defaultMaxAnisotropy: 1,
-      createSampler: (descriptor?: GpuSamplerConfiguration) => ({
-        ...descriptor,
-        destroy: () => undefined,
-      }),
+      createSampler: (descriptor?: GpuSamplerConfiguration) => {
+        const sampler = {
+          ...descriptor,
+          destroyed: false,
+          destroy: () => {
+            sampler.destroyed = true;
+          },
+        };
+        log.samplers.push(sampler);
+        return sampler;
+      },
     } as RenderBackend['textures'],
     pipelines: {
       codegen: {} as RenderBackend['pipelines']['codegen'],
@@ -291,6 +300,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
             descriptor.program.vertexInputs,
             descriptor.vertex,
           ).map((b) => b.buffer),
+          destroy: () => undefined,
         };
       },
       createRenderPipelineAsync: async (descriptor) => {
@@ -301,6 +311,7 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
             descriptor.program.vertexInputs,
             descriptor.vertex,
           ).map((b) => b.buffer),
+          destroy: () => undefined,
         };
       },
       createComputePipeline: ({ program, label }) => ({

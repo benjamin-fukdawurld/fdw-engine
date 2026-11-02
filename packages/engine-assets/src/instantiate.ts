@@ -142,6 +142,8 @@ export function instantiate(
   scene: Scene,
   options: InstantiateOptions = {},
 ): ModelInstance {
+  // Required before cloned: a model not ready throws without a handle to leak.
+  if ('require' in model) model.require();
   const handle = 'require' in model ? model.clone() : undefined;
   const target = (): Model => (handle ? handle.require() : (model as Model));
   const { parent, castShadow = true, lights = true, ...nodeOptions } = options;
@@ -166,8 +168,13 @@ export function instantiate(
     const members = new Map<number, number>();
     const member = (entity: number) =>
       members.set(entity, scene.world.generation(entity));
+    // A node is made once: a cycle, or a node shared by two parents, would
+    // otherwise recurse forever or be made twice.
+    const made = new Set<number>();
     const make = (index: number, parentNode: Node) => {
       const n = data.nodes[index];
+      if (!n || made.has(index)) return;
+      made.add(index);
       const node = scene.node(
         scene.create(parentNode.entity, {
           name: n.name ?? `node ${index}`,
@@ -215,7 +222,13 @@ export function instantiate(
     };
     root.attach(modelInstanceComponent(scene), { record });
   };
-  build();
+  try {
+    build();
+  } catch (e) {
+    if (root.alive) scene.destroy(root.entity);
+    handle?.release();
+    throw e;
+  }
 
   return {
     root,

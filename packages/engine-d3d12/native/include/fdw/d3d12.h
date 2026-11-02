@@ -146,6 +146,10 @@ fdw_dx_texture_create(fdw_dx_context *context,
 FDW_DX_API void fdw_dx_texture_destroy(fdw_dx_context *context,
                                        fdw_dx_texture *texture);
 FDW_DX_API uint32_t fdw_dx_texture_id(const fdw_dx_texture *texture);
+// The texture of an id, NULL once it is destroyed (the images of a
+// swapchain, when it is resized): the handles keep ids, not pointers.
+FDW_DX_API fdw_dx_texture *fdw_dx_texture_find(fdw_dx_context *context,
+                                               uint32_t id);
 // Bytes per pixel of the format of a texture.
 FDW_DX_API uint32_t fdw_dx_texture_pixel_size(const fdw_dx_texture *texture);
 // Writes the whole first level (every layer), as queue.writeTexture: rows
@@ -234,12 +238,14 @@ FDW_DX_API int fdw_dx_compile_hlsl(const char *hlsl,
                                    size_t *size);
 FDW_DX_API void fdw_dx_free_code(uint8_t *code);
 // Creates a shader from DXIL compiled before (fdw_dx_compile_hlsl, or a
-// cache): the arguments give its stage.
+// cache): the arguments give its stage. Fails on code that is not a whole
+// DXIL container (a corrupt entry of a cache).
 FDW_DX_API fdw_dx_shader *fdw_dx_shader_create_from_code(
     fdw_dx_context *context, const uint8_t *code, size_t size,
     const char *const *arguments, uint32_t count, const char *label);
-// The version of the DXC library, with its commit when it tells it: a key
-// of the cache of the programs. NULL when DXC is missing.
+// The version of the DXC library, with its commit when it tells it, and
+// that of its validator (dxil.dll), which signs the DXIL: a key of the
+// cache of the programs. NULL when DXC is missing.
 FDW_DX_API const char *fdw_dx_dxc_version(void);
 
 // --- Groups of resources -------------------------------------------------------

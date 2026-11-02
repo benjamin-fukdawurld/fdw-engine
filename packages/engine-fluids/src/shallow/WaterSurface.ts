@@ -1,11 +1,12 @@
 import { Material, Mesh } from '@fdw/engine-core';
-import type {
-  DirectionalLight,
-  MaterialValue,
-  WorldTransform,
-} from '@fdw/engine-core';
+import type { DirectionalLight, WorldTransform } from '@fdw/engine-core';
 import { Aabb } from '@fdw/engine-geometry';
-import { defaultWaterLook, oceanGraph, Ops } from '@fdw/engine-ocean';
+import {
+  defaultWaterLook,
+  oceanGraph,
+  Ops,
+  waterLookValues,
+} from '@fdw/engine-ocean';
 import type {
   SkyEnvironment,
   WaterItem,
@@ -181,7 +182,7 @@ export class WaterSurface implements WaterItem {
       renderState: { alphaMode: 'mask' },
       values: {
         ...this.shader.values(),
-        ...lookValues(look),
+        ...waterLookValues(look),
         environment: environment.texture,
         environmentSampler: environment.sampler,
         environmentLevels: Math.max(environment.levels - 1, 0),
@@ -207,7 +208,7 @@ export class WaterSurface implements WaterItem {
 
   /** Changes how the water looks: any uniform of `WaterLook`. */
   setLook(look: Partial<WaterLook>): this {
-    for (const [name, value] of Object.entries(lookValues(look))) {
+    for (const [name, value] of Object.entries(waterLookValues(look))) {
       this.material.setValue(name, value);
     }
     return this;
@@ -282,15 +283,4 @@ function gridMesh(grid: ShallowGrid, density: number): Mesh {
     vertices: [positions],
     indices,
   });
-}
-
-// The uniforms of a look.
-function lookValues(look: Partial<WaterLook>): Record<string, MaterialValue> {
-  const values: Record<string, MaterialValue> = {};
-  for (const [name, value] of Object.entries(look)) {
-    if (value !== undefined) {
-      values[name] = typeof value === 'number' ? value : [...value];
-    }
-  }
-  return values;
 }

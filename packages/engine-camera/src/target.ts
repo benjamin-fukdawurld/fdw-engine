@@ -21,19 +21,62 @@ export interface CameraTarget {
     readonly type: string;
     readonly fov?: number;
     readonly aspect?: number;
+    /** The extents of an orthographic projection. */
+    readonly left?: number;
+    readonly right?: number;
+    readonly bottom?: number;
+    readonly top?: number;
   };
 }
 
 /** The field of view (vertical, in degrees) and aspect when not known. */
 export const DefaultView = { fov: 45, aspect: 1 } as const;
 
-/** The vertical field of view in radians, and the aspect, of a target. */
-export function viewOf(target: CameraTarget): { fov: number; aspect: number } {
+/**
+ * The vertical field of view in radians, and the aspect, of a target (the
+ * aspect of its extents when orthographic), into `out`.
+ */
+export function viewOf(
+  target: CameraTarget,
+  out: { fov: number; aspect: number } = { fov: 0, aspect: 0 },
+): { fov: number; aspect: number } {
   const projection = target.projection;
   const perspective = projection?.type === 'perspective';
   const fov = (perspective && projection?.fov) || DefaultView.fov;
-  const aspect = (perspective && projection?.aspect) || DefaultView.aspect;
-  return { fov: (fov * Math.PI) / 180, aspect };
+  let aspect = (perspective && projection?.aspect) || DefaultView.aspect;
+  if (projection?.type === 'orthographic') {
+    const { left = 0, right = 0, bottom = 0, top = 0 } = projection;
+    const width = Math.abs(right - left);
+    const height = Math.abs(top - bottom);
+    if (width > 0 && height > 0) {
+      aspect = width / height;
+    }
+  }
+  out.fov = (fov * Math.PI) / 180;
+  out.aspect = aspect;
+  return out;
+}
+
+/**
+ * The height of the view of a target at `distance` in front of it: what
+ * the pointer crossing the view from bottom to top covers there. The
+ * height of its extents when orthographic, whatever the distance.
+ */
+export function viewHeight(target: CameraTarget, distance: number): number {
+  const p = target.projection;
+  if (
+    p?.type === 'orthographic' &&
+    p.top !== undefined &&
+    p.bottom !== undefined
+  ) {
+    const height = Math.abs(p.top - p.bottom);
+    if (height > 0) {
+      return height;
+    }
+  }
+  const perspective = p?.type === 'perspective';
+  const fov = (perspective && p?.fov) || DefaultView.fov;
+  return 2 * distance * Math.tan((fov * Math.PI) / 360);
 }
 
 /**

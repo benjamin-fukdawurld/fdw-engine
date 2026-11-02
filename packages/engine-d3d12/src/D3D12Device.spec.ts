@@ -1,6 +1,10 @@
 import { existsSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { dxcArguments } from '@fdw/engine-vulkan';
+import {
+  BufferUsageFlags,
+  TextureUsageFlags,
+  dxcArguments,
+} from '@fdw/engine-vulkan';
 import { addonPath, loadD3D12Addon } from './addon';
 import { D3D12Device } from './D3D12Device';
 import { canRun } from '@fdw/engine-backend/testing';
@@ -68,6 +72,122 @@ describe.skipIf(!built)('D3D12Device', () => {
     device.waitIdle();
   });
 
+  // The bytes of a read ticket, once the GPU is idle.
+  const take = (ticket: number, size: number): Uint8Array => {
+    const addon = loadD3D12Addon();
+    addon.waitIdle(device.context);
+    expect(addon.readReady(device.context, ticket)).toBe(true);
+    const target = new Uint8Array(size);
+    addon.readTake(device.context, ticket, target);
+    return target;
+  };
+  const copyBuffer = (
+    source: number,
+    destination: number,
+    offset: number,
+    size: number,
+  ) => new Uint32Array([3, source, offset, 0, destination, offset, 0, size, 0]);
+  const copyTexture = (
+    source: number,
+    destination: number,
+    width: number,
+    height: number,
+  ) => new Uint32Array([4, source, destination, width, height]);
+
+  it('refuses the copies outside of the resources, and runs the next ones', () => {
+    const addon = loadD3D12Addon();
+    const usage = BufferUsageFlags['copy-src'] | BufferUsageFlags['copy-dst'];
+    const source = addon.createBuffer(device.context, 16, usage, 'source');
+    const target = addon.createBuffer(device.context, 16, usage, 'target');
+    addon.writeBuffer(source, 0, new Uint32Array([1, 2, 3, 4]));
+    const [from, to] = [addon.bufferId(source), addon.bufferId(target)];
+    expect(() =>
+      addon.submit(device.context, copyBuffer(from, to, 8, 16)),
+    ).toThrow(/outside of the buffers/);
+    expect(() =>
+      addon.submit(device.context, copyBuffer(from, to, 2, 4)),
+    ).toThrow(/multiples of 4/);
+    // The indirect arguments too, inside a compute pass.
+    expect(() =>
+      addon.submit(device.context, new Uint32Array([12, 15, from, 8, 0, 13])),
+    ).toThrow(/outside of the buffer/);
+    // The context is not wedged: three valid copies run.
+    for (let i = 0; i < 3; i++) {
+      addon.submit(device.context, copyBuffer(from, to, 4 * i, 4));
+    }
+    const ticket = addon.readBuffer(target, 0, 16);
+    expect([...new Uint32Array(take(ticket, 16).buffer)]).toEqual([1, 2, 3, 0]);
+    addon.destroyBuffer(source);
+    addon.destroyBuffer(target);
+  });
+
+  it('refuses the texture copies outside of the textures', () => {
+    const addon = loadD3D12Addon();
+    const usage =
+      TextureUsageFlags['copy-src'] |
+      TextureUsageFlags['copy-dst'] |
+      TextureUsageFlags.sampled;
+    const create = (width: number, format = 'rgba8unorm') =>
+      addon.createTexture(
+        device.context,
+        format,
+        '2d',
+        width,
+        width,
+        1,
+        1,
+        1,
+        usage,
+      );
+    const large = create(4);
+    const small = create(2);
+    const other = create(4, 'rgba16float');
+    const [l, s, o] = [large, small, other].map((t) => addon.textureId(t));
+    expect(() => addon.submit(device.context, copyTexture(l, s, 4, 4))).toThrow(
+      /outside of the textures/,
+    );
+    expect(() => addon.submit(device.context, copyTexture(l, o, 4, 4))).toThrow(
+      /different formats/,
+    );
+    addon.writeTexture(large, new Uint8Array(4 * 4 * 4).fill(9));
+    addon.submit(device.context, copyTexture(l, s, 2, 2));
+    const ticket = addon.readTexture(small, 0, 0, 2, 2);
+    expect([...take(ticket, 16)]).toEqual(new Array(16).fill(9));
+    for (const texture of [large, small, other]) addon.destroyTexture(texture);
+  });
+
+  it('copies depth24plus-stencil8 by planes, 4 bytes of depth a pixel', () => {
+    const addon = loadD3D12Addon();
+    const usage =
+      TextureUsageFlags['copy-src'] |
+      TextureUsageFlags['copy-dst'] |
+      TextureUsageFlags['render-attachment'];
+    const create = () =>
+      addon.createTexture(
+        device.context,
+        'depth24plus-stencil8',
+        '2d',
+        2,
+        2,
+        1,
+        1,
+        1,
+        usage,
+      );
+    const source = create();
+    const target = create();
+    const depths = new Float32Array([0.25, 0.5, 0.75, 1]);
+    addon.writeTexture(source, depths);
+    addon.submit(
+      device.context,
+      copyTexture(addon.textureId(source), addon.textureId(target), 2, 2),
+    );
+    const ticket = addon.readTexture(target, 0, 0, 2, 2);
+    expect([...new Float32Array(take(ticket, 16).buffer)]).toEqual([...depths]);
+    addon.destroyTexture(source);
+    addon.destroyTexture(target);
+  });
+
   it('reports the misuses', () => {
     const buffer = device.buffers.create({ size: 8, usage: ['index'] });
     expect(() => buffer.write(4, new ArrayBuffer(8))).toThrow(
@@ -106,5 +226,42 @@ describe.skipIf(!built)('the compilation for a cache', () => {
     );
     // A DXIL container.
     expect(new TextDecoder().decode(code.subarray(0, 4))).toBe('DXBC');
+    // The validator that signed it is a part of the version.
+    expect(addon.dxcVersion()).toMatch(/ dxil /);
+  });
+
+  it('refuses arguments that are not strings, and too many', () => {
+    const addon = loadD3D12Addon();
+    expect(() =>
+      addon.compileHlsl('x', ['-T', 1 as unknown as string]),
+    ).toThrow(TypeError);
+    expect(() => addon.compileHlsl('x', 'xx' as unknown as string[])).toThrow(
+      TypeError,
+    );
+    expect(() =>
+      addon.compileHlsl('x', new Array<string>(201).fill('-O3')),
+    ).toThrow(RangeError);
+  });
+
+  it('refuses a corrupt DXIL container', () => {
+    const addon = loadD3D12Addon();
+    const context = addon.createContext(false, 'tests', false);
+    try {
+      const hlsl = '[numthreads(1, 1, 1)] void cs_main() {}';
+      const args = dxcArguments('compute', 'cs_main', 'd3d12', hlsl);
+      const code = addon.compileHlsl(hlsl, args);
+      addon.destroyShader(addon.createShaderFromCode(context, code, args));
+      for (const corrupt of [
+        code.subarray(0, code.length - 4),
+        new Uint8Array(code.length),
+        new TextEncoder().encode('DXBC'),
+      ]) {
+        expect(() =>
+          addon.createShaderFromCode(context, corrupt, args),
+        ).toThrow(/not a DXIL container/);
+      }
+    } finally {
+      addon.destroyContext(context);
+    }
   });
 });

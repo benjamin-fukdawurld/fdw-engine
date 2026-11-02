@@ -50,6 +50,11 @@ export function compileFluid(
   return { program: compile(graph, { capabilities }), defaults };
 }
 
+// The values of the last dispatch of each program: the runner reads them
+// as it records, so one object per program serves every dispatch (the
+// fluids record tens of them a frame).
+const merged = new WeakMap<FluidProgram, Record<string, MaterialValue>>();
+
 /** Records a dispatch of a program, its defaults under the values given. */
 export function recordFluid(
   runner: ComputeRunner,
@@ -58,8 +63,17 @@ export function recordFluid(
   values: Readonly<Record<string, MaterialValue>>,
   workgroups: readonly [number, number?, number?],
 ): void {
-  runner.record(pass, fluid.program, {
-    values: { ...fluid.defaults, ...values },
-    workgroups,
-  });
+  let all = merged.get(fluid);
+  if (!all) {
+    all = {};
+    merged.set(fluid, all);
+  }
+  // Nothing left of the last dispatch but what both give.
+  for (const name in all) {
+    if (!(name in values) && !(name in fluid.defaults)) {
+      delete all[name];
+    }
+  }
+  Object.assign(all, fluid.defaults, values);
+  runner.record(pass, fluid.program, { values: all, workgroups });
 }

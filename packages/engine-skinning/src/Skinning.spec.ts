@@ -131,6 +131,11 @@ describe('the skinning graphs', () => {
       'weights',
     ]);
     expect(graph.name).toBe('color (skinned)');
+    // The weights normalized, as the compute pass reads them.
+    const types = graph.nodes.map((node) => node.type);
+    expect(types).toContain('std.dot');
+    expect(types).toContain('std.div');
+    expect(types).toContain('std.select');
   });
 
   it('reads the vertices of the compute pass by their index', () => {

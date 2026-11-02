@@ -415,6 +415,96 @@ describe('ktx2Codec', () => {
   });
 });
 
+describe('malformed KTX2 files', () => {
+  const zlibFile = (levels: Uint8Array[], uncompressed: number[]) =>
+    writeKtx2({
+      vkFormat: R8G8B8A8_UNORM,
+      width: 4,
+      height: 4,
+      scheme: 3,
+      levels,
+      uncompressed,
+    });
+
+  it('rejects a zlib bomb without inflating it whole', async () => {
+    // 64 MiB of zeros deflate to some 64 KiB, declared as the 64 bytes of the level.
+    const bomb = await deflate(new Uint8Array(64 << 20));
+    const error = await rejection(decode(zlibFile([bomb], [64])));
+    expect(error.code).toBe('decode');
+    expect((error.cause as Error).message).toContain('inflates past 64 bytes');
+    // In the workers too.
+    const { workers } = workerPool();
+    const inWorkers = await rejection(
+      decode(zlibFile([bomb], [64]), { workers }),
+    );
+    expect(inWorkers.code).toBe('decode');
+    expect(inWorkers.message).toContain('inflates past 64 bytes');
+  });
+
+  it('rejects zlib data that inflates short of its size', async () => {
+    const short = await deflate(filled(60));
+    const error = await rejection(decode(zlibFile([short], [64])));
+    expect((error.cause as Error).message).toContain('inflates to 60 bytes');
+  });
+
+  it('checks the inflated sizes against the format before inflating', async () => {
+    const calls: number[] = [];
+    const zstd = {
+      decode: (_: Uint8Array, size: number) => {
+        calls.push(size);
+        return new Uint8Array(size);
+      },
+    };
+    const file = writeKtx2({
+      vkFormat: R8G8B8A8_UNORM,
+      width: 4,
+      height: 4,
+      scheme: 2,
+      levels: [filled(8)],
+      uncompressed: [256 << 20],
+    });
+    const error = await rejection(decode(file, { zstd }));
+    expect(error.code).toBe('decode');
+    expect(error.message).toContain('inflates to 268435456 bytes, not 64');
+    expect(calls).toEqual([]);
+  });
+
+  it('rejects a zstd decoder output past its size', async () => {
+    const zstd = { decode: () => new Uint8Array(1 << 20) };
+    const file = writeKtx2({
+      vkFormat: R8G8B8A8_UNORM,
+      width: 4,
+      height: 4,
+      scheme: 2,
+      levels: [filled(8)],
+      uncompressed: [64],
+    });
+    const error = await rejection(decode(file, { zstd }));
+    expect(error.code).toBe('decode');
+    expect((error.cause as Error).message).toContain('not 64');
+  });
+
+  it('rejects an image of width 0 and a cube of faces not square', async () => {
+    const empty = writeKtx2({
+      vkFormat: R8_UNORM,
+      width: 0,
+      height: 4,
+      levels: [new Uint8Array(0)],
+    });
+    expect((await rejection(decode(empty))).message).toContain('width 0');
+    const cube = writeKtx2({
+      vkFormat: R8_UNORM,
+      width: 2,
+      height: 1,
+      faces: 6,
+      levels: [filled(12)],
+    });
+    const error = await rejection(decode(cube));
+    expect(error.code).toBe('decode');
+    expect(error.message).toContain('not square');
+  });
+});
+
 describe('KTX2 in workers', () => {
   it('inflates zstd and zlib levels in the workers, the file left whole', async () => {
     const zstdFile = writeKtx2({

@@ -1,4 +1,5 @@
 import type { IQuat, IVec3 } from '@fdw/engine-backend';
+import { forgetRemovedBodies } from '@fdw/engine-physics';
 import type { PhysicsBody } from '@fdw/engine-physics';
 import type { Scheduler } from '@fdw/engine-scene';
 
@@ -127,18 +128,8 @@ export class Buoyancy {
   step(): void {
     const point = { x: 0, y: 0, z: 0 };
     const force = { x: 0, y: 0, z: 0 };
-    // The bodies of each world, to forget the removed ones.
-    const alive = new Map<PhysicsBody['world'], Set<PhysicsBody>>();
+    forgetRemovedBodies(this._floaters);
     for (const [body, floater] of this._floaters) {
-      let bodies = alive.get(body.world);
-      if (!bodies) {
-        bodies = new Set(body.world.bodies);
-        alive.set(body.world, bodies);
-      }
-      if (!bodies.has(body)) {
-        this._floaters.delete(body);
-        continue;
-      }
       const position = body.position;
       const rotation = body.rotation;
       const velocity = body.linearVelocity;

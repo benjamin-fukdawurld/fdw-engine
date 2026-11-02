@@ -9,6 +9,10 @@ import {
 import { BaseLight } from './BaseLight';
 import type { ShadowCaster, ShadowCasterData, ShadowOptions } from './shadow';
 
+// A cutoff, in degrees, in [0, 90].
+const clampCutoff = (degrees: number): number =>
+  Math.min(Math.max(degrees, 0), 90);
+
 export class SpotLight
   extends BaseLight
   implements SpotLightSnapshot, ShadowCaster
@@ -35,9 +39,9 @@ export class SpotLight
       ),
       data,
     );
-    this._position = new Vec3View(this._buffer, BaseLight.bufferSize);
+    this._position = this.trackedVec3(BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
-    this._direction = new Vec3View(this._buffer, BaseLight.bufferSize + 3 * 4);
+    this._direction = this.trackedVec3(BaseLight.bufferSize + 3 * 4);
     this.direction = data?.direction ?? { x: 0, y: 0, z: -1 };
     this.castShadow = data?.castShadow ?? false;
     this.shadow = data?.shadow ?? {};
@@ -56,28 +60,29 @@ export class SpotLight
     );
     this.innerCutoff = data?.innerCutoff ?? 0.0;
     this.outerCutoff = data?.outerCutoff ?? 17.5;
+
+    // The initial values are version 0, whatever the light type.
+    this._version = 0;
   }
 
   public get position(): Readonly<Vec3View> {
-    return Object.freeze(this._position);
+    return this._position;
   }
 
   public set position(value: Partial<IVec3>) {
     this._position.x = value.x ?? this._position.x;
     this._position.y = value.y ?? this._position.y;
     this._position.z = value.z ?? this._position.z;
-    this._version++;
   }
 
   public get direction(): Readonly<Vec3View> {
-    return Object.freeze(this._direction);
+    return this._direction;
   }
 
   public set direction(value: Partial<IVec3>) {
     this._direction.x = value.x ?? this._direction.x;
     this._direction.y = value.y ?? this._direction.y;
     this._direction.z = value.z ?? this._direction.z;
-    this._version++;
   }
 
   public get constantAttenuation(): number {
@@ -107,23 +112,30 @@ export class SpotLight
     this._version++;
   }
 
+  /**
+   * The half-angle of the cone at full intensity, in degrees: clamped to
+   * [0, 90].
+   */
   public get innerCutoff(): number {
     return this._cutoff.getFloat32(0, true);
   }
 
   public set innerCutoff(value: number) {
-    this._cutoff.setFloat32(0, value, true);
+    this._cutoff.setFloat32(0, clampCutoff(value), true);
     this._version++;
   }
 
+  /**
+   * The half-angle of the cone beyond which the light is off, in degrees:
+   * clamped to [0, 90] (a wider cone would light behind the light, which
+   * its culling volume does not cover).
+   */
   public get outerCutoff(): number {
     return this._cutoff.getFloat32(4, true);
   }
 
   public set outerCutoff(value: number) {
-    this._cutoff.setFloat32(4, value, true);
+    this._cutoff.setFloat32(4, clampCutoff(value), true);
     this._version++;
   }
 }
-
-export default SpotLight;

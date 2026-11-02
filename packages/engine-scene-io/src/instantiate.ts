@@ -71,6 +71,9 @@ export interface SceneInstance {
 
 let memoryScenes = 0;
 
+/** How deep scenes may include scenes. */
+const maxSceneDepth = 32;
+
 /**
  * Makes the nodes of a scene: its nodes and batches, its instances of
  * models with their changes, then the components by their codecs, phase
@@ -78,10 +81,21 @@ let memoryScenes = 0;
  * `dispose()`. A scene in memory (captured, not loaded) has its meshes and
  * materials defined in the store for the time of the instance.
  */
-export async function instantiateScene(
+export function instantiateScene(
   source: SceneData | ResourceHandle<SceneData>,
   scene: Scene,
   options: InstantiateSceneOptions,
+): Promise<SceneInstance> {
+  return instantiateNested(source, scene, options, []);
+}
+
+// `including`: the URIs of the scenes being made around this one, outer
+// first. A scene found in it includes itself, and would never end.
+async function instantiateNested(
+  source: SceneData | ResourceHandle<SceneData>,
+  scene: Scene,
+  options: InstantiateSceneOptions,
+  including: readonly string[],
 ): Promise<SceneInstance> {
   const {
     store,
@@ -125,7 +139,15 @@ export async function instantiateScene(
 
   try {
     const data = handle ? await handle.ready : (source as SceneData);
+    signal?.throwIfAborted();
     const uri = uriOption ?? handle?.uri ?? defineMemory(store, scope, data);
+    if (including.includes(uri))
+      throw new Error(
+        `Scene ${uri} includes itself: ${[...including, uri].join(' -> ')}`,
+      );
+    if (including.length >= maxSceneDepth)
+      throw new Error(`Scene ${uri}: scenes nested over ${maxSceneDepth} deep`);
+    const inside = [...including, uri];
     const entities: number[] = [];
     const ctx = readContext(scene, store, scope, uri, entities, warn, signal);
 
@@ -188,14 +210,12 @@ export async function instantiateScene(
       const model = models[i];
       const sub = scenes[i];
       if (sub) {
-        const instance = await instantiateScene(sub, scene, {
-          store,
-          codecs,
-          parent: at,
-          name: node.name,
-          signal,
-          warn,
-        });
+        const instance = await instantiateNested(
+          sub,
+          scene,
+          { store, codecs, parent: at, name: node.name, signal, warn },
+          inside,
+        );
         nested.push(instance);
         entities[i] = instance.root.entity;
         sceneRecords.set(i, sceneInstanceOf(scene, entities[i])!);

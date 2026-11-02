@@ -15,7 +15,7 @@ import {
   type RenderGraph,
   TransformLayout,
 } from '@fdw/engine-core';
-import { Aabb, invert, maxScale } from '@fdw/engine-geometry';
+import { Aabb, invertAffine, maxScale } from '@fdw/engine-geometry';
 import type { Node } from '@fdw/engine-scene';
 import { compile, type CompiledProgram } from '@fdw/engine-shader';
 import type { MaterialGraphData } from '@fdw/engine-shader';
@@ -189,6 +189,8 @@ export class Skinning {
   private readonly _compute?: Pick<ComputeRunner, 'record'>;
   private readonly _name: string;
   private readonly _matrix = new Float32Array(16);
+  // The inverse of the world matrix of a skinned node, reused.
+  private readonly _inverse = new Float64Array(16);
   private readonly _box = new Aabb();
 
   /** @throws when a skinned mesh has no joints or weights. */
@@ -369,8 +371,10 @@ export class Skinning {
   update(): this {
     const matrix = this._matrix;
     for (const skinned of this._skinned) {
-      const inverse = invert(skinned.node.worldMatrix);
-      if (!inverse) {
+      const inverse = invertAffine(skinned.node.worldMatrix, this._inverse);
+      // A singular matrix inverts to a null 3 × 3 part: its first column
+      // is null, which an invertible one's never is.
+      if (inverse[0] === 0 && inverse[1] === 0 && inverse[2] === 0) {
         continue;
       }
       const { matrices, inverseBinds, joints } = skinned;

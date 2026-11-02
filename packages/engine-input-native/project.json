@@ -3,5 +3,40 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/engine-input-native/src",
   "projectType": "library",
-  "tags": []
+  "tags": ["gpu"],
+  "targets": {
+    "test": {
+      "dependsOn": [
+        {
+          "projects": ["engine-native"],
+          "target": "build-native"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^production",
+        {
+          "json": "{workspaceRoot}/tsconfig.json",
+          "fields": ["compilerOptions"]
+        },
+        {
+          "externalDependencies": ["vitest"]
+        },
+        {
+          "env": "CI"
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.js",
+          "transitive": true
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.node",
+          "transitive": true
+        },
+        {
+          "env": "FDW_REQUIRE_SUITES"
+        }
+      ]
+    }
+  }
 }

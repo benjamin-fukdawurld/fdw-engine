@@ -50,6 +50,22 @@ export const defaultWaterLook: WaterLook = {
   environmentIntensity: 1,
 };
 
+/**
+ * The uniforms of a look (the values given), for the material of a water:
+ * the sea, a basin, a liquid.
+ */
+export function waterLookValues(
+  look: Partial<WaterLook>,
+): Record<string, number | number[]> {
+  const values: Record<string, number | number[]> = {};
+  for (const [name, value] of Object.entries(look)) {
+    if (value !== undefined) {
+      values[name] = typeof value === 'number' ? value : [...value];
+    }
+  }
+  return values;
+}
+
 /** The options of {@link oceanGraph}. */
 export interface OceanGraphOptions {
   /**

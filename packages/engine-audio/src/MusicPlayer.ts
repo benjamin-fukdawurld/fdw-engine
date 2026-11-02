@@ -40,6 +40,8 @@ export class MusicPlayer {
   readonly bus: AudioBus | undefined;
   private _voice?: Voice;
   private _track?: AudioSource;
+  // The voice stop() fades out: the next track rises while it falls.
+  private _fading?: Voice;
 
   constructor(
     readonly engine: AudioEngine,
@@ -69,6 +71,10 @@ export class MusicPlayer {
     }
     const fade = options.crossfade ?? this.crossfade;
     current?.stop(fade);
+    // What falls: the track playing, or the one stopped still fading out.
+    const falling =
+      current ?? (this._fading?.state === 'stopped' ? undefined : this._fading);
+    this._fading = undefined;
     this._track = track;
     this._voice = this.engine.play(track, {
       bus: this.bus,
@@ -76,14 +82,16 @@ export class MusicPlayer {
       loop: options.loop ?? true,
       offset: options.offset,
       // Rises only when another one falls.
-      fadeIn: current ? fade : 0,
+      fadeIn: falling ? fade : 0,
     });
     return this._voice;
   }
 
   /** Fades the music out. */
   stop(fadeOut = this.crossfade): void {
-    this._voice?.stop(fadeOut);
+    const voice = this.voice;
+    voice?.stop(fadeOut);
+    this._fading = fadeOut > 0 ? voice : undefined;
     this._voice = undefined;
     this._track = undefined;
   }

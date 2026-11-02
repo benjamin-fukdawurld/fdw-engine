@@ -4,6 +4,8 @@
 // programs: the renderer uploads them in one copy. See
 // design/scenegraph.md §16.
 
+import { writeNormalMatrix } from '@fdw/engine-backend';
+
 /** Offsets in a block, in floats. */
 export const TransformLayout = {
   // 4 × 4, column-major.
@@ -307,40 +309,5 @@ export function composeBlock(data: Float32Array, o: number): void {
  * transpose of its 3 × 3 part, as 3 columns of 4 floats.
  */
 export function normalBlock(data: Float32Array, o: number): void {
-  const a00 = data[o + W];
-  const a01 = data[o + W + 1];
-  const a02 = data[o + W + 2];
-  const a10 = data[o + W + 4];
-  const a11 = data[o + W + 5];
-  const a12 = data[o + W + 6];
-  const a20 = data[o + W + 8];
-  const a21 = data[o + W + 9];
-  const a22 = data[o + W + 10];
-  // The names are column then row: a01 is column 0, row 1. With B the
-  // matrix whose (i, j) is aij, the 3 × 3 part is Bᵀ, and its inverse
-  // transpose is cofactors(B)ᵀ / determinant: column c holds the cofactors
-  // of row c of B.
-  const c00 = a11 * a22 - a12 * a21;
-  const c01 = a12 * a20 - a10 * a22;
-  const c02 = a10 * a21 - a11 * a20;
-  const c10 = a02 * a21 - a01 * a22;
-  const c11 = a00 * a22 - a02 * a20;
-  const c12 = a01 * a20 - a00 * a21;
-  const c20 = a01 * a12 - a02 * a11;
-  const c21 = a02 * a10 - a00 * a12;
-  const c22 = a00 * a11 - a01 * a10;
-  const determinant = a00 * c00 + a01 * c01 + a02 * c02;
-  const inverse = determinant !== 0 ? 1 / determinant : 0;
-  data[o + N] = c00 * inverse;
-  data[o + N + 1] = c01 * inverse;
-  data[o + N + 2] = c02 * inverse;
-  data[o + N + 3] = 0;
-  data[o + N + 4] = c10 * inverse;
-  data[o + N + 5] = c11 * inverse;
-  data[o + N + 6] = c12 * inverse;
-  data[o + N + 7] = 0;
-  data[o + N + 8] = c20 * inverse;
-  data[o + N + 9] = c21 * inverse;
-  data[o + N + 10] = c22 * inverse;
-  data[o + N + 11] = 0;
+  writeNormalMatrix(data, o + W, data, o + N);
 }

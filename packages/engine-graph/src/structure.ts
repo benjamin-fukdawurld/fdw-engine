@@ -200,32 +200,108 @@ export function topologicalOrder(
     successors.get(edge.from.node)?.push(edge.to.node);
   }
 
-  const ready = [...inDegree.keys()].filter((id) => inDegree.get(id) === 0);
-  const order: NodeId[] = [];
-  while (ready.length > 0) {
-    const id = ready.shift() as NodeId;
-    order.push(id);
-    for (const successor of successors.get(id) ?? []) {
+  // A queue read from an index: shift() would make the sort quadratic.
+  const order = [...inDegree.keys()].filter((id) => inDegree.get(id) === 0);
+  for (let read = 0; read < order.length; read++) {
+    for (const successor of successors.get(order[read]) ?? []) {
       const degree = (inDegree.get(successor) ?? 0) - 1;
       inDegree.set(successor, degree);
       if (degree === 0) {
-        ready.push(successor);
+        order.push(successor);
       }
     }
   }
 
   if (order.length < inDegree.size) {
     const placed = new Set(order);
-    const cycle = [...inDegree.keys()].filter((id) => !placed.has(id));
+    const remaining = [...inDegree.keys()].filter((id) => !placed.has(id));
+    const cyclic = cycleNodes(remaining, successors);
     diagnostics.push({
       severity: 'error',
-      message: `the graph has a cycle involving nodes ${cycle
+      message: `the graph has a cycle involving nodes ${remaining
+        .filter((id) => cyclic.has(id))
         .map((id) => `#${id}`)
         .join(', ')}`,
     });
     return undefined;
   }
   return order;
+}
+
+// The nodes on a cycle, among the nodes Kahn's algorithm could not place:
+// those also hold the nodes downstream of a cycle. The strongly connected
+// components of more than one node, or with a self edge (Tarjan's
+// algorithm, iterative so that long chains do not overflow the stack).
+function cycleNodes(
+  nodes: readonly NodeId[],
+  successors: ReadonlyMap<NodeId, readonly NodeId[]>,
+): Set<NodeId> {
+  const candidates = new Set(nodes);
+  const index = new Map<NodeId, number>();
+  const low = new Map<NodeId, number>();
+  const stack: NodeId[] = [];
+  const onStack = new Set<NodeId>();
+  const cyclic = new Set<NodeId>();
+  let next = 0;
+
+  for (const root of nodes) {
+    if (index.has(root)) {
+      continue;
+    }
+    // Each frame: a node and the position of the next successor to visit.
+    const frames: { id: NodeId; edge: number }[] = [{ id: root, edge: 0 }];
+    index.set(root, next);
+    low.set(root, next++);
+    stack.push(root);
+    onStack.add(root);
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1];
+      const edges = successors.get(frame.id) ?? [];
+      if (frame.edge < edges.length) {
+        const successor = edges[frame.edge++];
+        if (!candidates.has(successor)) {
+          continue;
+        }
+        if (!index.has(successor)) {
+          index.set(successor, next);
+          low.set(successor, next++);
+          stack.push(successor);
+          onStack.add(successor);
+          frames.push({ id: successor, edge: 0 });
+        } else if (onStack.has(successor)) {
+          low.set(
+            frame.id,
+            Math.min(low.get(frame.id) ?? 0, index.get(successor) ?? 0),
+          );
+        }
+        continue;
+      }
+      frames.pop();
+      const parent = frames[frames.length - 1];
+      if (parent) {
+        low.set(
+          parent.id,
+          Math.min(low.get(parent.id) ?? 0, low.get(frame.id) ?? 0),
+        );
+      }
+      if (low.get(frame.id) !== index.get(frame.id)) {
+        continue;
+      }
+      const component: NodeId[] = [];
+      let member: NodeId;
+      do {
+        member = stack.pop() as NodeId;
+        onStack.delete(member);
+        component.push(member);
+      } while (member !== frame.id);
+      if (component.length > 1 || edges.includes(frame.id)) {
+        for (const id of component) {
+          cyclic.add(id);
+        }
+      }
+    }
+  }
+  return cyclic;
 }
 
 /**

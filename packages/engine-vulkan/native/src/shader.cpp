@@ -124,6 +124,19 @@ std::wstring wide(const char *text) {
   return result;
 }
 
+// Fails for a missing argument (a NULL among them).
+int checkArguments(const char *const *arguments, uint32_t count) {
+  if (count > 0 && !arguments) {
+    return fail("The DXC arguments are missing");
+  }
+  for (uint32_t i = 0; i < count; i++) {
+    if (!arguments[i]) {
+      return fail("DXC argument " + std::to_string(i) + " is missing");
+    }
+  }
+  return 0;
+}
+
 // The value following an option in the arguments ("-T vs_6_0").
 std::string option(const char *const *arguments, uint32_t count,
                    const char *name) {
@@ -138,7 +151,7 @@ std::string option(const char *const *arguments, uint32_t count,
 // Compiles HLSL to SPIR-V into `code`.
 int compileHlsl(const char *hlsl, const char *const *arguments, uint32_t count,
                 std::vector<uint8_t> *code) {
-  if (loadDxc() != 0) {
+  if (checkArguments(arguments, count) != 0 || loadDxc() != 0) {
     return -1;
   }
   CComPtr<IDxcCompiler3> compiler;
@@ -217,6 +230,9 @@ int fdw_vk_compile_hlsl(const char *hlsl, const char *const *arguments,
     return -1;
   }
   *code = static_cast<uint8_t *>(std::malloc(compiled.size()));
+  if (!*code) {
+    return fail("Out of memory");
+  }
   std::memcpy(*code, compiled.data(), compiled.size());
   *size = compiled.size();
   return 0;
@@ -229,13 +245,23 @@ fdw_vk_shader *fdw_vk_shader_create_from_code(fdw_vk_context *context,
                                               const char *const *arguments,
                                               uint32_t count,
                                               const char *label) {
-  if (size == 0 || size % 4 != 0) {
+  if (checkArguments(arguments, count) != 0) {
+    return nullptr;
+  }
+  if (!code || size == 0 || size % 4 != 0) {
     fail("SPIR-V is made of 32-bit words");
     return nullptr;
   }
-  // Aligned for vkCreateShaderModule.
+  // Aligned for vkCreateShaderModule. A corrupted program (a cache entry)
+  // fails here, not in the driver: SPIR-V starts with its magic number,
+  // then a header of 5 words.
   std::vector<uint32_t> words(size / 4);
   std::memcpy(words.data(), code, size);
+  constexpr uint32_t magic = 0x07230203;
+  if (words.size() < 5 || words[0] != magic) {
+    fail("The code is not SPIR-V (no magic number)");
+    return nullptr;
+  }
   VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
   info.codeSize = size;
   info.pCode = words.data();

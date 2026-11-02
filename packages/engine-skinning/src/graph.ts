@@ -101,9 +101,21 @@ export function skinInVertexStage(
     sampleType: 'unfilterable-float',
   });
   const f32 = (value: Value) => convert(value, BuiltinTypes.f32);
+  // The weights normalized to a sum of 1, the first joint alone when they
+  // sum to 0: as MeshSkin gives them to the compute pass.
+  const raw = g.meshAttribute('weights', BuiltinTypes.vec4f);
+  const sum = call(std.dot, {
+    a: raw,
+    b: g.constant(BuiltinTypes.vec4f, [1, 1, 1, 1]),
+  });
+  const weights = call(std.select, {
+    ifFalse: g.constant(BuiltinTypes.vec4f, [1, 0, 0, 0]),
+    ifTrue: call(std.div, { a: raw, b: sum }),
+    condition: call(std.greater, { a: sum, b: 0 }),
+  });
   const columns = blend(
     g.meshAttribute('joints', BuiltinTypes.vec4u),
-    g.meshAttribute('weights', BuiltinTypes.vec4f),
+    weights,
     (joint, k) =>
       g.call(std.textureLoad, {
         texture,

@@ -179,7 +179,11 @@ describe('PluginHost', () => {
     expect(runtime.viewComponents.get('acme.view')).toBeUndefined();
     expect(error).toHaveBeenCalled();
     error.mockRestore();
-    // Not activated again until enabled.
+    // Not activated again until enabled, even deactivated.
+    await runtime.plugins.activateByEvent('onView:acme.view');
+    expect(runtime.plugins.info('acme.tools')?.status).toBe('failed');
+    await runtime.plugins.deactivate('acme.tools');
+    expect(runtime.plugins.info('acme.tools')?.status).toBe('failed');
     await runtime.plugins.activateByEvent('onView:acme.view');
     expect(runtime.plugins.info('acme.tools')?.status).toBe('failed');
   });

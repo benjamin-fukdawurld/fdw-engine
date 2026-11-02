@@ -133,7 +133,10 @@ int inactiveInstance(fdw_dx_context *context,
 void releaseTopLevel(fdw_dx_context *context, fdw_dx_top_level *top) {
   ComPtr<ID3D12Resource> storage = std::move(top->storage);
   ComPtr<ID3D12Resource> scratch = std::move(top->scratch);
-  defer(context, [storage, scratch] {});
+  std::vector<ComPtr<ID3D12Resource>> bottomLevels =
+      std::move(top->bottomLevels);
+  top->bottomLevels.clear();
+  defer(context, [storage, scratch, bottomLevels] {});
   fdw_dx_buffer_destroy(context, top->instances);
   top->instances = nullptr;
 }
@@ -400,6 +403,9 @@ fdw_dx_top_level *fdw_dx_top_level_create(fdw_dx_context *context,
 int fdw_dx_top_level_update(fdw_dx_context *context, fdw_dx_top_level *top,
                             const fdw_dx_instance *instances, uint32_t count) {
   std::vector<D3D12_RAYTRACING_INSTANCE_DESC> data(count);
+  // The bottom levels of the instances, kept alive by the structure.
+  std::vector<ComPtr<ID3D12Resource>> bottomLevels;
+  bottomLevels.reserve(count);
   for (uint32_t i = 0; i < count; i++) {
     const fdw_dx_instance &instance = instances[i];
     const auto bottom = context->bottomLevels.find(instance.bottom_level);
@@ -423,14 +429,22 @@ int fdw_dx_top_level_update(fdw_dx_context *context, fdw_dx_top_level *top,
                         : D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE);
     target.AccelerationStructure =
         bottom->second->storage->GetGPUVirtualAddress();
+    bottomLevels.push_back(bottom->second->storage);
   }
   int replaced = 0;
   if (count > top->capacity) {
-    const uint32_t capacity = std::max(count, top->capacity * 2);
-    releaseTopLevel(context, top);
-    if (allocateTopLevel(context, top, capacity, nullptr) != 0) {
+    // The larger memory allocated before the current one is freed: on
+    // failure, the top level stays as it was.
+    fdw_dx_top_level larger;
+    if (allocateTopLevel(context, &larger,
+                         std::max(count, top->capacity * 2), nullptr) != 0) {
       return -1;
     }
+    releaseTopLevel(context, top);
+    top->storage = std::move(larger.storage);
+    top->scratch = std::move(larger.scratch);
+    top->instances = larger.instances;
+    top->capacity = larger.capacity;
     replaced = 1;
   }
   if (count == 0) {
@@ -444,6 +458,11 @@ int fdw_dx_top_level_update(fdw_dx_context *context, fdw_dx_top_level *top,
     return -1;
   }
   top->count = count;
+  // Those of the update before, while the builds and rays recorded may
+  // still use them.
+  std::vector<ComPtr<ID3D12Resource>> previous = std::move(top->bottomLevels);
+  defer(context, [previous] {});
+  top->bottomLevels = std::move(bottomLevels);
   return replaced;
 }
 

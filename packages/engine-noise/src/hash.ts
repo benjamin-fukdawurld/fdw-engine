@@ -106,17 +106,46 @@ export function hashCell(
   seed = 0,
   out: number[] = [],
 ): number[] {
-  const mix = pcg(seed);
-  const key = (i: number) => (cellBits(cell[i]) ^ mix) >>> 0;
-  switch (cell.length) {
+  return hashCellBits(cell, cell.length, pcg(seed), out);
+}
+
+/**
+ * {@link hashCell} of the first `n` coordinates of `cell`, the seed hashed
+ * already (`mix`: pcg(seed)): what the noises call per corner, without
+ * allocating.
+ *
+ * @internal
+ */
+export function hashCellBits(
+  cell: ArrayLike<number>,
+  n: number,
+  mix: number,
+  out: number[],
+): number[] {
+  switch (n) {
     case 2:
-      return pcg2d(key(0), key(1), out);
+      return pcg2d(
+        (cellBits(cell[0]) ^ mix) >>> 0,
+        (cellBits(cell[1]) ^ mix) >>> 0,
+        out,
+      );
     case 3:
-      return pcg3d(key(0), key(1), key(2), out);
+      return pcg3d(
+        (cellBits(cell[0]) ^ mix) >>> 0,
+        (cellBits(cell[1]) ^ mix) >>> 0,
+        (cellBits(cell[2]) ^ mix) >>> 0,
+        out,
+      );
     case 4:
-      return pcg4d(key(0), key(1), key(2), key(3), out);
+      return pcg4d(
+        (cellBits(cell[0]) ^ mix) >>> 0,
+        (cellBits(cell[1]) ^ mix) >>> 0,
+        (cellBits(cell[2]) ^ mix) >>> 0,
+        (cellBits(cell[3]) ^ mix) >>> 0,
+        out,
+      );
     default:
-      throw new Error(`hashCell: 2 to 4 coordinates, got ${cell.length}`);
+      throw new Error(`hashCell: 2 to 4 coordinates, got ${n}`);
   }
 }
 

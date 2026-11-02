@@ -15,6 +15,10 @@ typedef struct handle {
   fdw_window *window;
 } handle;
 
+// Tells the window handles from the other externals (node_audio.c).
+static const napi_type_tag window_tag = {0x66647777696e646fULL,
+                                         0x77696e646f770001ULL};
+
 #define CHECK(call)                                                            \
   do {                                                                         \
     if ((call) != napi_ok) {                                                   \
@@ -42,10 +46,23 @@ static void finalize_handle(napi_env env, void *data, void *hint) {
   free(h);
 }
 
+// The handle of an argument, NULL when it is not a window handle.
+static handle *handle_of(napi_env env, napi_value value) {
+  bool matches = false;
+  handle *h = NULL;
+  if (napi_check_object_type_tag(env, value, &window_tag, &matches) !=
+          napi_ok ||
+      !matches ||
+      napi_get_value_external(env, value, (void **)&h) != napi_ok) {
+    return NULL;
+  }
+  return h;
+}
+
 // The window of a handle argument; throws when destroyed.
 static fdw_window *window_arg(napi_env env, napi_value value) {
-  handle *h = NULL;
-  if (napi_get_value_external(env, value, (void **)&h) != napi_ok || !h) {
+  handle *h = handle_of(env, value);
+  if (!h) {
     napi_throw_type_error(env, NULL, "Expected a window handle");
     return NULL;
   }
@@ -70,6 +87,10 @@ static char *string_arg(napi_env env, napi_value value) {
     return NULL;
   }
   char *text = (char *)malloc(length + 1);
+  if (!text) {
+    napi_throw_error(env, NULL, "Out of memory");
+    return NULL;
+  }
   napi_get_value_string_utf8(env, value, text, length + 1, &length);
   return text;
 }
@@ -105,9 +126,20 @@ static napi_value js_create_window(napi_env env, napi_callback_info info) {
     return throw_last_error(env);
   }
   handle *h = (handle *)malloc(sizeof(handle));
+  if (!h) {
+    fdw_window_destroy(window);
+    napi_throw_error(env, NULL, "Out of memory");
+    return NULL;
+  }
   h->window = window;
   napi_value result;
-  CHECK(napi_create_external(env, h, finalize_handle, NULL, &result));
+  if (napi_create_external(env, h, finalize_handle, NULL, &result) != napi_ok) {
+    finalize_handle(env, h, NULL);
+    napi_throw_error(env, NULL, "Cannot create the window handle");
+    return NULL;
+  }
+  // Untagged, the window is destroyed when the handle is collected.
+  CHECK(napi_type_tag_object(env, result, &window_tag));
   return result;
 }
 
@@ -115,8 +147,8 @@ static napi_value js_destroy_window(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
   CHECK(napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
-  handle *h = NULL;
-  if (napi_get_value_external(env, argv[0], (void **)&h) == napi_ok && h) {
+  handle *h = handle_of(env, argv[0]);
+  if (h) {
     fdw_window_destroy(h->window);
     h->window = NULL;
   }

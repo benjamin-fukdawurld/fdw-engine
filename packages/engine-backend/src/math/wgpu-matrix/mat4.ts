@@ -1,5 +1,22 @@
 import type { Mat4Api as IMat4Api } from '../primitives';
-import { mat3, mat4, quat, vec3 } from 'wgpu-matrix';
+import { mat3, mat4, quat } from 'wgpu-matrix';
+
+// The 3 × 3 part of a matrix with its columns normalized (a column of
+// length 0 is kept): the rotation of a translation × rotation × scale
+// matrix with a positive scale.
+const rotationPart = (mat: ArrayLike<number>): Float32Array => {
+  const out = mat3.fromMat4(mat);
+  for (let c = 0; c < 3; c++) {
+    const o = c * 4;
+    const length = Math.hypot(out[o], out[o + 1], out[o + 2]);
+    if (length > 0) {
+      out[o] /= length;
+      out[o + 1] /= length;
+      out[o + 2] /= length;
+    }
+  }
+  return out;
+};
 
 export const Mat4Api: IMat4Api = {
   identity: (out?: Float32Array): Float32Array => {
@@ -137,8 +154,10 @@ export const Mat4Api: IMat4Api = {
     return mat4.getScaling(mat, out);
   },
 
+  // The rotation of a translation × rotation × scale matrix: the columns
+  // are divided by the scale first (quat.fromMat expects a pure rotation).
   getRotation: (mat: ArrayLike<number>, out?: Float32Array): Float32Array => {
-    return quat.fromMat(mat, out);
+    return quat.fromMat(rotationPart(mat), out);
   },
 
   setTranslation: (
@@ -149,23 +168,44 @@ export const Mat4Api: IMat4Api = {
     return mat4.setTranslation(mat, translation, out);
   },
 
+  // Replaces the scale of a translation × rotation × scale matrix: each of
+  // the first 3 columns gets the length of its scale. A column of length 0
+  // has lost its direction: it becomes the scaled axis.
   setScaling: (
     mat: ArrayLike<number>,
     scale: ArrayLike<number>,
     out?: Float32Array,
   ): Float32Array => {
-    return mat4.scale(mat, vec3.div(scale, mat4.getScaling(mat)), out);
+    out = mat4.copy(mat, out);
+    for (let c = 0; c < 3; c++) {
+      const o = c * 4;
+      const length = Math.hypot(out[o], out[o + 1], out[o + 2]);
+      if (length > 0) {
+        const factor = scale[c] / length;
+        out[o] *= factor;
+        out[o + 1] *= factor;
+        out[o + 2] *= factor;
+      } else {
+        out[o] = c === 0 ? scale[c] : 0;
+        out[o + 1] = c === 1 ? scale[c] : 0;
+        out[o + 2] = c === 2 ? scale[c] : 0;
+      }
+    }
+    return out;
   },
 
+  // Replaces the rotation of a translation × rotation × scale matrix,
+  // keeping its translation and scale.
   setRotation: (
     mat: ArrayLike<number>,
     q: ArrayLike<number>,
     out?: Float32Array,
   ): Float32Array => {
-    const currentRotation = Mat4Api.getRotation(mat) as ArrayLike<number>;
-    const quaternion = quat.mul(q, quat.inverse(currentRotation));
-
-    return mat4.multiply(mat, mat4.fromQuat(quaternion), out);
+    const scale = mat4.getScaling(mat);
+    const translation = mat4.getTranslation(mat);
+    out = mat4.fromQuat(q, out);
+    mat4.scale(out, scale, out);
+    return mat4.setTranslation(out, translation, out);
   },
 
   getMat3: (mat: ArrayLike<number>, out?: Float32Array): Float32Array => {

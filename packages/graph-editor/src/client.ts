@@ -69,8 +69,15 @@ export class GraphClient {
   #messages = 0;
   // The preview asked for: asked again for each graph opened.
   #preview?: { shape: 'sphere' | 'cube' | 'plane'; animate: boolean };
-  // The files asked for, answered by their text.
-  readonly #saving: ((file: { name: string; text: string }) => void)[] = [];
+  // The files asked for, by request, answered by their text.
+  readonly #saving = new Map<
+    number,
+    {
+      resolve: (file: { name: string; text: string }) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  #requests = 0;
 
   constructor(
     connection: EngineConnection,
@@ -134,13 +141,18 @@ export class GraphClient {
     this.#channel.post({ op: 'command', session: this.session, command });
   }
 
-  /** The document as JSON, and the name of its file. */
+  /**
+   * The document as JSON, and the name of its file. Rejected when the session
+   * closes, or the client is disposed, before the engine answers.
+   */
   save(name?: string): Promise<{ name: string; text: string }> {
-    return new Promise((resolve) => {
-      this.#saving.push(resolve);
+    const request = ++this.#requests;
+    return new Promise((resolve, reject) => {
+      this.#saving.set(request, { resolve, reject });
       this.#channel.post({
         op: 'save',
         session: this.session,
+        request,
         ...(name !== undefined && { name }),
       });
     });
@@ -185,6 +197,13 @@ export class GraphClient {
     this.#stops.forEach((stop) => stop());
     this.#channel.post({ op: 'close', session: this.session });
     this.#listeners.clear();
+    this.#rejectSaves('The graph was closed');
+  }
+
+  #rejectSaves(reason: string): void {
+    const saving = [...this.#saving.values()];
+    this.#saving.clear();
+    for (const { reject } of saving) reject(new Error(reason));
   }
 
   #set(state: GraphClientState): void {
@@ -221,11 +240,17 @@ export class GraphClient {
           }),
         });
         if (event.message) this.#source = undefined;
+        // No file to come for the saves asked.
+        this.#rejectSaves(event.message ?? 'The graph was closed');
         return;
       }
-      case 'file':
-        this.#saving.shift()?.({ name: event.name, text: event.text });
+      case 'file': {
+        if (event.request === undefined) return;
+        const saving = this.#saving.get(event.request);
+        this.#saving.delete(event.request);
+        saving?.resolve({ name: event.name, text: event.text });
         return;
+      }
       case 'code':
         this.#set({ ...this.#state, code: event.code });
         return;

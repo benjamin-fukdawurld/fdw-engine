@@ -630,6 +630,26 @@ describe('Renderer, HDR', () => {
     transform: transformAt(0),
   });
 
+  it('frees the buffers and samplers it made when destroyed', () => {
+    const { renderer, render, log } = hdrSetup({
+      output: { toneMapping: 'aces' },
+    });
+    const material = new Material({
+      graph: colorGraph(),
+      values: { color: [0, 1, 0] },
+    });
+    render([item(material)]);
+    expect(log.buffers.some((b) => b.label === 'mesh vertices 0')).toBe(true);
+    expect(log.buffers.some((b) => b.label?.endsWith(' uniforms'))).toBe(true);
+    expect(log.samplers.length).toBeGreaterThan(0);
+
+    renderer.destroy();
+    expect(log.buffers.filter((b) => !b.destroyed).map((b) => b.label)).toEqual(
+      [],
+    );
+    expect(log.samplers.every((sampler) => sampler.destroyed)).toBe(true);
+  });
+
   it('renders linear colors in an HDR target, then tone maps them', () => {
     const { render, log } = hdrSetup({ output: { toneMapping: 'aces' } });
     render([item()]);

@@ -28,8 +28,20 @@ import { SoftwareRefit, SoftwareRefitPipelines } from './SoftwareRefit';
 // vec4 where its instances start, their number), its nodes, then for each
 // instance, in the order of its leaves, 4 vec4: the rows of its world to
 // object matrix, then (as u32) the root of its bottom level (reference and
-// count, see BvhRef), its mask (bit 8: not opaque), and its index in the
-// update.
+// count, see BvhRef), its mask (bit 8: not opaque, bit 9: mirrored), and
+// its index in the update.
+
+// Whether an affine matrix (column-major) mirrors: its 3 × 3 part has a
+// negative determinant. The winding of the triangles of such an instance is
+// turned over in the world (see intersectInstances of engine-geometry).
+function isMirror(m: ArrayLike<number>): boolean {
+  return (
+    m[0] * (m[5] * m[10] - m[6] * m[9]) +
+      m[1] * (m[6] * m[8] - m[4] * m[10]) +
+      m[2] * (m[4] * m[9] - m[5] * m[8]) <
+    0
+  );
+}
 
 /** vec4 of a node and of a triangle in the pool. */
 const NodeVec4s = BvhNodeFloats / 4;
@@ -388,7 +400,8 @@ export class SoftwareTopLevel implements GpuTopLevel {
           root.ref,
           root.count,
           ((instance.mask ?? 0xff) & 0xff) |
-            (instance.opaque === false ? 0x100 : 0),
+            (instance.opaque === false ? 0x100 : 0) |
+            (isMirror(instance.transform) ? 0x200 : 0),
           index,
         ],
         at + 12,

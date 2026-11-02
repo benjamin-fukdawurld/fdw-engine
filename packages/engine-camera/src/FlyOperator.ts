@@ -121,6 +121,7 @@ export class FlyOperator {
   private readonly _vector = { x: 0, y: 0 };
   private readonly _forward = { x: 0, y: 0, z: 0 };
   private readonly _right = { x: 0, y: 0, z: 0 };
+  private readonly _view = { fov: 0, aspect: 0 };
 
   constructor(
     private readonly _target: CameraTarget,
@@ -164,7 +165,7 @@ export class FlyOperator {
     let yaw = -look.x * this.lookSpeed * dt;
     let pitch = look.y * flip * this.lookSpeed * dt;
     if (actions.button(names.drag).down) {
-      const { aspect } = viewOf(this._target);
+      const { aspect } = viewOf(this._target, this._view);
       const pointer = actions.vector(names.pointer, this._vector);
       // To the right: look to the right; the width is aspect heights.
       yaw -= pointer.x * aspect * this.pointerSpeed;

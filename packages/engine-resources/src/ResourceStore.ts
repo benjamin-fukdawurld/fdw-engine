@@ -48,6 +48,11 @@ export interface ResourceStoreOptions {
   concurrency?: number;
   /** Bytes kept for unused entries, 256 MiB by default. */
   budget?: number;
+  /**
+   * Unused entries kept at most, 4096 by default: entries whose loader has
+   * no `sizeOf` weigh 0 bytes, which the budget alone would never evict.
+   */
+  maxIdle?: number;
   /** Quiet time after a source change before reloading, 50 ms by default. */
   debounceMs?: number;
   /** Receives the warnings (leaked handles, failing `dispose`). */
@@ -73,6 +78,7 @@ const noop = () => undefined;
 export class ResourceStore implements HandleHost {
   readonly concurrency: number; // loads under way at once
   readonly budget: number; // bytes kept for unused entries
+  readonly maxIdle: number; // unused entries kept, whatever their size
 
   private readonly debounceMs: number;
   private readonly warn: (message: string, cause?: unknown) => void;
@@ -123,6 +129,7 @@ export class ResourceStore implements HandleHost {
   constructor(options?: ResourceStoreOptions) {
     this.concurrency = Math.max(1, options?.concurrency ?? 8);
     this.budget = options?.budget ?? 256 * 1024 * 1024;
+    this.maxIdle = Math.max(0, options?.maxIdle ?? 4096);
     this.debounceMs = options?.debounceMs ?? 50;
     this.warn =
       options?.warn ??
@@ -217,10 +224,16 @@ export class ResourceStore implements HandleHost {
     const signal = options?.signal;
     if (signal) {
       if (signal.aborted) handle.release();
-      else
-        signal.addEventListener('abort', () => handle.release(), {
-          once: true,
-        });
+      else if (handle.status.peek() !== 'ready') {
+        // The signal cancels the load only: its listener goes once the load
+        // ends or the handle is released, so a long-lived signal shared by
+        // many loads does not pile up listeners.
+        const abort = () => handle.release();
+        const detach = () => signal.removeEventListener('abort', abort);
+        signal.addEventListener('abort', abort, { once: true });
+        handle.onReleased(detach);
+        handle.entry.done.promise.then(detach, detach);
+      }
     }
     return handle;
   }
@@ -371,7 +384,7 @@ export class ResourceStore implements HandleHost {
     }
   }
 
-  // Frees unused entries down to the budget; all of them with 0.
+  // Frees unused entries down to the budget and to maxIdle; all of them with 0.
   trim(budget: number = this.budget): void {
     if (this.trimming) return;
     this.trimming = true;
@@ -379,7 +392,8 @@ export class ResourceStore implements HandleHost {
       while (this.idle.size > 0) {
         let total = 0;
         for (const e of this.idle) total += e.size;
-        if (budget !== 0 && total <= budget) break;
+        if (budget !== 0 && total <= budget && this.idle.size <= this.maxIdle)
+          break;
         // Destroying an entry may make its dependencies idle: the loop goes on.
         this.destroyEntry(this.idle.values().next().value!);
       }
@@ -505,7 +519,8 @@ export class ResourceStore implements HandleHost {
     const p = parseUri(uri, (s) => this.sources.has(s));
     const scheme = p.scheme ?? this.defaultScheme;
     // A data URI is its payload: collapsing its slashes would corrupt it.
-    const path = scheme === 'data' ? p.path : normalizePath(p.path);
+    // Other paths cannot climb above the root of their scheme.
+    const path = scheme === 'data' ? p.path : normalizePath(p.path, true);
     return {
       scheme,
       path,
@@ -558,7 +573,7 @@ export class ResourceStore implements HandleHost {
     const base = parseUri(baseUri, isScheme);
     const path = relative.startsWith('#')
       ? base.path
-      : resolvePath(base.path, rel.path);
+      : resolvePath(base.path, rel.path, true);
     return formatUri({ scheme: base.scheme, path, fragment: rel.fragment });
   }
 
@@ -920,7 +935,9 @@ export class ResourceStore implements HandleHost {
     if (!source || source.value === undefined) return undefined;
     entry.virtual = true;
     run.deps.push(this.newHandle(source));
-    return source.value as ResourceBytes;
+    // A copy: a decoder may transfer its bytes to a worker, which would
+    // detach the parent's buffer for every other reader.
+    return (source.value as ResourceBytes).slice();
   }
 
   private createContext(run: Run): LoadContext<any> {

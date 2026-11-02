@@ -401,12 +401,18 @@ export class RapierCharacter implements PhysicsCharacter {
 
   move(movement: IVec3, filter?: QueryFilter): CharacterMove {
     const query = this.body.world._filter(filter);
+    // The controller takes no body to exclude: in the predicate.
+    const { body, predicate } = query;
     this.raw.computeColliderMovement(
       this._collider.raw,
       movement,
       query.flags,
       query.groups,
-      query.predicate,
+      body
+        ? (raw) =>
+            raw.parent()?.handle !== body.handle &&
+            (!predicate || predicate(raw))
+        : predicate,
     );
     const { x, y, z } = this.raw.computedMovement();
     this._grounded = this.raw.computedGrounded();
@@ -451,6 +457,9 @@ export class RapierWorld implements PhysicsWorld {
   private readonly _characters = new Set<RapierCharacter>();
   private readonly _queue: RAPIER.EventQueue;
   private _events: ContactEvent[] = [];
+  // The `end` events of the colliders removed since the last step: Rapier
+  // reports them by handles already forgotten.
+  private _ended: ContactEvent[] = [];
 
   /** @internal Use engine.createWorld(). */
   constructor(
@@ -526,6 +535,16 @@ export class RapierWorld implements PhysicsWorld {
         this._joints.delete(joint);
       }
     }
+    // The controller of a character goes with its body.
+    for (const character of this._characters) {
+      if (character.body === rapierBody) {
+        this._characters.delete(character);
+        this.raw.removeCharacterController(character.raw);
+      }
+    }
+    for (const collider of rapierBody._colliders) {
+      this.endPairs(collider);
+    }
     for (const collider of rapierBody._colliders) {
       this._colliders.delete(collider.raw.handle);
     }
@@ -586,9 +605,45 @@ export class RapierWorld implements PhysicsWorld {
     if (index < 0) {
       return;
     }
+    this.endPairs(collider);
     colliders.splice(index, 1);
     this._colliders.delete(collider.raw.handle);
     this.raw.removeCollider(collider.raw, true);
+  }
+
+  // The `end` events of the pairs a collider about to be removed is in:
+  // the sensors it is inside (or that are inside it), the contacts it
+  // touches, if they report events.
+  private endPairs(collider: RapierCollider): void {
+    const reports = (raw: RAPIER.Collider) =>
+      (raw.activeEvents() & RAPIER.ActiveEvents.COLLISION_EVENTS) !== 0;
+    const end = (raw: RAPIER.Collider) => {
+      const other = this._colliders.get(raw.handle);
+      if (other && (reports(collider.raw) || reports(raw))) {
+        this._ended.push({
+          type: 'end',
+          a: collider,
+          b: other,
+          sensor: collider.sensor || other.sensor,
+        });
+      }
+    };
+    this.raw.intersectionPairsWith(collider.raw, end);
+    if (collider.sensor) {
+      return;
+    }
+    this.raw.contactPairsWith(collider.raw, (raw) => {
+      if (raw.isSensor()) {
+        return;
+      }
+      let touching = false;
+      this.raw.contactPair(collider.raw, raw, (manifold) => {
+        touching ||= manifold.numContacts() > 0;
+      });
+      if (touching) {
+        end(raw);
+      }
+    });
   }
 
   createJoint(desc: JointDesc): RapierJoint {
@@ -685,7 +740,8 @@ export class RapierWorld implements PhysicsWorld {
       body.raw.resetTorques(false);
     }
     this._forced.clear();
-    const events: ContactEvent[] = [];
+    const events: ContactEvent[] = this._ended;
+    this._ended = [];
     this._queue.drainCollisionEvents((handle1, handle2, started) => {
       const a = this._colliders.get(handle1);
       const b = this._colliders.get(handle2);

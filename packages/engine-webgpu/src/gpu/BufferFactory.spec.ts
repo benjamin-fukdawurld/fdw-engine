@@ -121,11 +121,24 @@ describe('BufferFactory', () => {
       };
     };
 
-    it('pads writes whose size is not a multiple of 4', () => {
-      const { buffer, state } = create();
+    it('pads the writes ending a buffer whose size is not a multiple of 4', () => {
+      const { device, state } = fakeDevice();
+      const buffer = new BufferFactory(device).create({
+        size: 7,
+        usage: ['vertex', 'copy-dst'],
+      });
       buffer.write(4, new Uint8Array([7, 8, 9]).buffer);
       expect(state.errors).toEqual([]);
       expect([...state.bytes.subarray(4, 8)]).toEqual([7, 8, 9, 0]);
+    });
+
+    it('rejects the shorter writes that padding would make overwrite the next bytes', () => {
+      const { buffer, state } = create();
+      buffer.write(0, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer);
+      expect(() => buffer.write(0, new Uint8Array([9, 9]).buffer)).toThrow(
+        /multiple of 4, unless it ends the buffer/,
+      );
+      expect([...state.bytes.subarray(0, 8)]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     });
 
     it('rejects unaligned offsets and out-of-range writes', () => {

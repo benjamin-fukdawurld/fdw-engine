@@ -86,12 +86,23 @@ export class VulkanBindGroup implements GpuBindGroup {
 }
 
 export class VulkanRenderPipeline implements GpuRenderPipeline {
+  private _destroyed = false;
+
   constructor(
+    private readonly _addon: VulkanAddon,
     readonly handle: PipelineHandle,
     readonly id: number,
     readonly vertexBuffers: readonly number[],
     readonly label?: string,
   ) {}
+
+  // The native side destroys it once the submitted frames are done.
+  destroy(): void {
+    if (!this._destroyed) {
+      this._destroyed = true;
+      this._addon.destroyPipeline(this.handle);
+    }
+  }
 }
 
 export class VulkanComputePipeline implements GpuComputePipeline {
@@ -205,6 +216,7 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
       label,
     });
     return new VulkanRenderPipeline(
+      this._addon,
       handle,
       this._addon.pipelineId(handle),
       buffers.map((buffer) => buffer.buffer),
@@ -435,11 +447,22 @@ export class VulkanPipelineFactory implements GpuPipelineFactory {
     }
     this._dxcVersion ??= this._addon.dxcVersion();
     const key = shaderKey(this._dxcVersion, this.target, args, hlsl);
-    let code = cache.get(key);
-    if (!code) {
-      code = this._addon.compileHlsl(hlsl, args);
-      cache.set(key, code);
+    const cached = cache.get(key);
+    if (cached) {
+      try {
+        return this._addon.createShaderFromCode(
+          this._context,
+          cached,
+          args,
+          label,
+        );
+      } catch {
+        // A program the addon or the driver refuses: compiled again, and
+        // replaced in the cache.
+      }
     }
+    const code = this._addon.compileHlsl(hlsl, args);
+    cache.set(key, code);
     return this._addon.createShaderFromCode(this._context, code, args, label);
   }
 }

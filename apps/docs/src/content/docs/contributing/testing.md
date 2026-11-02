@@ -36,12 +36,11 @@ it('computes the functions of screen-uv per pixel', async () => {
 });
 ```
 
-| File                     | Backend                                         | Needs                                                          |
-| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------- |
-| `dawn.spec.ts`           | WebGPU on Dawn, in Node                         | the `webgpu` package (installed)                               |
-| `webgl2.browser.spec.ts` | WebGL2, in headless Chromium                    | `npx playwright install chromium-headless-shell`               |
-| `vulkan.spec.ts`         | Vulkan, with the validation layer               | the Vulkan SDK, and the addon built                            |
-| `programs.spec.ts`       | Every program of the suite, in HLSL and GLSL ES | the Vulkan SDK (DXC, spirv-val, spirv-cross, glslangValidator) |
+| File                     | Backend                                                                      | Needs                                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `dawn.spec.ts`           | WebGPU on Dawn, in Node; then every program of the suite in HLSL and GLSL ES | the `webgpu` package (installed); the Vulkan SDK (DXC, spirv-val, spirv-cross, glslangValidator) for the programs |
+| `webgl2.browser.spec.ts` | WebGL2, in headless Chromium                                                 | `npx playwright install chromium-headless-shell`                                                                  |
+| `vulkan.spec.ts`         | Vulkan, with the validation layer                                            | the Vulkan SDK, and the addon built                                                                               |
 
 ```sh
 source <sdk>/setup-env.sh     # for the Vulkan, HLSL and GLSL tests
@@ -51,7 +50,8 @@ npx nx test rendering-tests
 Without the SDK, the Vulkan, HLSL and GLSL tests are skipped, not failed —
 unless they are required (see [Continuous integration](#continuous-integration)).
 On Vulkan, a test fails if the validation layer reports anything.
-`programs.spec.ts` records the programs compiled by the suite, then:
+`dawn.spec.ts` records the programs compiled by the suite on Dawn, then
+(`programs.ts`, as many programs at a time as there are cores):
 
 - compiles each of them in HLSL with DXC, validates the SPIR-V with
   `spirv-val`, and compares the uniform offsets of the layout with the

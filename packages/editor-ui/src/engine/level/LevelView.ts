@@ -427,6 +427,8 @@ export class LevelView implements ShownScene {
     this.#cancel();
     this.#document.interrupt = undefined;
     this.#stop.forEach((stop) => stop());
+    this.#select.dispose();
+    this.#transform.dispose();
     this.#input.dispose();
     this.#post({ type: 'level.rectangle' });
     this.#document.selection.hovered = undefined;

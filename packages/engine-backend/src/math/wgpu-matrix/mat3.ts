@@ -124,24 +124,15 @@ export const Mat3Api: IMat3Api = {
   },
 
   toArray: (mat: ArrayLike<number>, out?: number[]): number[] => {
-    out = out ?? [];
-    out.push(
-      mat[0],
-      mat[1],
-      mat[2],
-      mat[4],
-      mat[5],
-      mat[6],
-      mat[8],
-      mat[9],
-      mat[10],
-    );
+    out = out ?? new Array(9);
+    // The 3 columns, without the padding of the 4th row.
+    [0, 1, 2, 4, 5, 6, 8, 9, 10].forEach((n, i) => (out[i] = mat[n]));
     return out;
   },
 
   fromArray: (arr: number[], out?: Float32Array): Float32Array => {
     out = out ?? mat3.create();
-    [0, 1, 2, 4, 5, 6, 8, 9, 10].map((n, i) => (out[n] = arr[i]));
+    [0, 1, 2, 4, 5, 6, 8, 9, 10].forEach((n, i) => (out[n] = arr[i]));
     return out;
   },
 

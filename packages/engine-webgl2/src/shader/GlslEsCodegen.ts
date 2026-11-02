@@ -8,10 +8,14 @@ import {
   IrEntryPoint,
   IrInstruction,
   IrStageVariable,
+  memberIdentifier,
+  sanitizeIdentifier,
   ShaderModuleIR,
   ShaderType,
+  structName,
   TextureType,
   typeToString,
+  valueName,
 } from '@fdw/engine-shader';
 import {
   CombinedSampler,
@@ -167,21 +171,9 @@ function declaration(type: ShaderType, name: string): string {
   return `${glslType(type)} ${name}`;
 }
 
-// GLSL reserves the identifiers containing two consecutive underscores.
-const identifier = (text: string) =>
-  text
-    .replace(/[^A-Za-z0-9_]/g, '_')
-    .replace(/^_+/, '')
-    .replace(/_{2,}/g, '_');
-
 // Name of the GLSL block of a uniform block binding: materialUniforms →
 // MaterialUniforms. The pipeline looks the blocks up by this name.
-export const glslBlockName = (name: string) =>
-  name.charAt(0).toUpperCase() + name.slice(1);
-
-// As in WGSL, names chosen by the user are prefixed: they cannot collide
-// with the GLSL keywords and builtin functions.
-const memberIdentifier = (name: string) => identifier(`u_${name}`);
+export const glslBlockName = structName;
 
 const vectorComponents = 'xyzw';
 
@@ -201,11 +193,6 @@ interface BodyState {
   readonly expressions: Map<number, string>;
   readonly instructions: Map<number, IrInstruction>;
 }
-
-const valueName = (instruction: IrInstruction) =>
-  identifier(
-    `v${instruction.id}${instruction.name ? `_${instruction.name}` : ''}`,
-  );
 
 function emitBody(
   entryPoint: IrEntryPoint,
@@ -358,7 +345,7 @@ function emitInstructions(
           // samplers, by the sample instructions.
           expression = op.binding;
         } else if (op.member) {
-          expression = `${identifier(op.binding)}.${memberIdentifier(
+          expression = `${sanitizeIdentifier(op.binding)}.${memberIdentifier(
             op.member,
           )}`;
         } else {
@@ -695,7 +682,7 @@ function declarations(
             (member) =>
               `  ${declaration(member.type, memberIdentifier(member.name))};`,
           ),
-          `} ${identifier(resource.name)};`,
+          `} ${sanitizeIdentifier(resource.name)};`,
         ].join('\n'),
       );
     }
@@ -927,7 +914,7 @@ export class GlslEsCodegen implements ShaderCodegen {
           (target) =>
             `layout(location = ${target.location ?? 0}) out ${glslType(
               target.type,
-            )} o_${identifier(target.name)};`,
+            )} o_${sanitizeIdentifier(target.name)};`,
         ),
       ].join('\n'),
       [
@@ -945,7 +932,7 @@ export class GlslEsCodegen implements ShaderCodegen {
           : []),
         ...targets.map(
           (target) =>
-            `  o_${identifier(target.name)} = ${fragmentBody.expressions.get(
+            `  o_${sanitizeIdentifier(target.name)} = ${fragmentBody.expressions.get(
               fragment.results[target.name],
             )};`,
         ),

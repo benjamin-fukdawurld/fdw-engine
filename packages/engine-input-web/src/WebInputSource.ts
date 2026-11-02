@@ -45,6 +45,8 @@ export class WebInputSource implements InputSource {
   private readonly _document?: Document;
   // Whether a move was seen since the pointer got locked.
   private _movedLocked = false;
+  // The buttons each pointer holds: released when the browser cancels it.
+  private readonly _held = new Map<number, Set<number>>();
 
   constructor(
     private readonly _target: HTMLElement | Window,
@@ -115,8 +117,36 @@ export class WebInputSource implements InputSource {
         );
       }
     });
-    listen('pointerdown', (event) => sink.pointerButton(event.button, true));
-    listen('pointerup', (event) => sink.pointerButton(event.button, false));
+    const held = this._held;
+    listen('pointerdown', (event) => {
+      // Captured: its release comes to the element, even off it.
+      if ('setPointerCapture' in target) {
+        try {
+          target.setPointerCapture(event.pointerId);
+        } catch {
+          // Not an active pointer (a synthetic event): nothing to capture.
+        }
+      }
+      let buttons = held.get(event.pointerId);
+      if (!buttons) {
+        held.set(event.pointerId, (buttons = new Set()));
+      }
+      buttons.add(event.button);
+      sink.pointerButton(event.button, true);
+    });
+    listen('pointerup', (event) => {
+      held.get(event.pointerId)?.delete(event.button);
+      sink.pointerButton(event.button, false);
+    });
+    // Taken by the browser (a scroll, a gesture, the window left): no
+    // pointerup will come, its buttons are released.
+    listen('pointercancel', (event) => {
+      const buttons = held.get(event.pointerId);
+      held.delete(event.pointerId);
+      for (const button of buttons ?? []) {
+        sink.pointerButton(button, false);
+      }
+    });
     listen('wheel', (event) => sink.wheel(notchesOf(event)), {
       passive: true,
     });
@@ -174,6 +204,7 @@ export class WebInputSource implements InputSource {
   detach(): void {
     this._remove.forEach((remove) => remove());
     this._remove.length = 0;
+    this._held.clear();
   }
 
   readGamepads(out: GamepadState[]): number {

@@ -73,6 +73,22 @@ export interface TriangleHit {
   frontFace: boolean;
 }
 
+// The words of the triangles (their indices), a view made once per pool:
+// the leaves of every ray read them.
+const bitViews = new WeakMap<Float32Array, Uint32Array>();
+function bitsOf(triangles: Float32Array): Uint32Array {
+  let bits = bitViews.get(triangles);
+  if (!bits) {
+    bits = new Uint32Array(
+      triangles.buffer,
+      triangles.byteOffset,
+      triangles.length,
+    );
+    bitViews.set(triangles, bits);
+  }
+  return bits;
+}
+
 /**
  * Tests a ray against the triangles of a leaf (Möller-Trumbore): updates
  * `hit` with a closer one, within (tMin, hit.t). Returns whether one was
@@ -88,8 +104,10 @@ export function intersectTriangles(
   hit: TriangleHit,
 ): boolean {
   const triangles = bvh.triangles;
-  const bits = new Uint32Array(triangles.buffer);
-  const [dx, dy, dz] = [direction[0], direction[1], direction[2]];
+  const bits = bitsOf(triangles);
+  const dx = direction[0];
+  const dy = direction[1];
+  const dz = direction[2];
   let found = false;
   for (let i = first; i < first + count; i++) {
     const o = i * TriangleFloats;

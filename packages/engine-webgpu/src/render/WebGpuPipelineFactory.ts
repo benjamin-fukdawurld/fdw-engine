@@ -26,7 +26,16 @@ export class WebGpuRenderPipeline implements GpuRenderPipeline {
     readonly pipeline: GPURenderPipeline,
     readonly vertexBuffers: readonly number[],
     readonly label?: string,
+    // Releases the shader module of the pipeline (see shaderModule).
+    private _release?: () => void,
   ) {}
+
+  // WebGPU pipelines have no destroy: the garbage collector frees them, and
+  // the module once no pipeline uses it.
+  destroy(): void {
+    this._release?.();
+    this._release = undefined;
+  }
 }
 
 export class WebGpuComputePipeline implements GpuComputePipeline {
@@ -149,7 +158,12 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
 
   // Caches by program key, and by layout descriptor.
   private readonly _layouts = new Map<string, PhysicalProgramLayout>();
-  private readonly _modules = new Map<string, GPUShaderModule>();
+  // The modules, with the render pipelines using them: dropped by the last
+  // one destroyed (the compute pipelines, never destroyed, keep theirs).
+  private readonly _modules = new Map<
+    string,
+    { module: GPUShaderModule; users: number }
+  >();
   private readonly _bindGroupLayouts = new Map<string, WebGpuBindGroupLayout>();
 
   constructor(readonly device: GPUDevice) {}
@@ -220,10 +234,12 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
     descriptor: RenderPipelineDescriptor,
   ): GpuRenderPipeline {
     const { gpuDescriptor, vertexBuffers } = this.describe(descriptor);
+    const release = this.acquire(descriptor.program);
     return new WebGpuRenderPipeline(
       this.device.createRenderPipeline(gpuDescriptor),
       vertexBuffers,
       descriptor.label,
+      release,
     );
   }
 
@@ -231,11 +247,18 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
     descriptor: RenderPipelineDescriptor,
   ): Promise<GpuRenderPipeline> {
     const { gpuDescriptor, vertexBuffers } = this.describe(descriptor);
-    return new WebGpuRenderPipeline(
-      await this.device.createRenderPipelineAsync(gpuDescriptor),
-      vertexBuffers,
-      descriptor.label,
-    );
+    const release = this.acquire(descriptor.program);
+    try {
+      return new WebGpuRenderPipeline(
+        await this.device.createRenderPipelineAsync(gpuDescriptor),
+        vertexBuffers,
+        descriptor.label,
+        release,
+      );
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 
   createComputePipeline(
@@ -282,8 +305,25 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
     });
   }
 
+  // Counts a render pipeline using the module of a program, until the
+  // returned function is called.
+  private acquire(program: CompiledProgram): () => void {
+    const key = program.programKey;
+    const entry = this._modules.get(key);
+    if (!entry) {
+      return () => undefined;
+    }
+    entry.users++;
+    return () => {
+      entry.users--;
+      if (entry.users === 0 && this._modules.get(key) === entry) {
+        this._modules.delete(key);
+      }
+    };
+  }
+
   private shaderModule(program: CompiledProgram): GPUShaderModule {
-    let module = this._modules.get(program.programKey);
+    let module = this._modules.get(program.programKey)?.module;
     if (!module) {
       const sources = this.codegen.emit(
         program.module,
@@ -296,7 +336,7 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
         label: program.name,
         code: sources.code,
       });
-      this._modules.set(program.programKey, module);
+      this._modules.set(program.programKey, { module, users: 0 });
     }
     return module;
   }

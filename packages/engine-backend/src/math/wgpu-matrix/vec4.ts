@@ -117,43 +117,41 @@ export const Vec4Api: IVec4Api = {
   },
 
   one: (out?: Float32Array): Float32Array => {
-    out = out ?? vec4.create();
-    out[0] = 1;
-    out[1] = 1;
-    out[2] = 1;
-    return out;
+    return vec4.set(1, 1, 1, 1, out);
   },
 
   toArray: (mat: Float32Array, out?: number[]): number[] => {
-    out = out ?? new Array(3);
-    out[0] = mat[0];
-    out[1] = mat[1];
-    out[2] = mat[2];
+    out = out ?? new Array(4);
+    for (let i = 0; i < 4; i++) {
+      out[i] = mat[i];
+    }
     return out;
   },
 
   fromArray: (arr: number[], out?: Float32Array): Float32Array => {
-    out = out ?? vec4.create();
-    out[0] = arr[0];
-    out[1] = arr[1];
-    out[2] = arr[2];
-    return out;
+    return vec4.set(arr[0], arr[1], arr[2], arr[3], out);
   },
 
   isFinite: (mat: Float32Array): boolean => {
     return (
       Number.isFinite(mat[0]) &&
       Number.isFinite(mat[1]) &&
-      Number.isFinite(mat[2])
+      Number.isFinite(mat[2]) &&
+      Number.isFinite(mat[3])
     );
   },
 
   isNaN: (mat: Float32Array): boolean => {
-    return Number.isNaN(mat[0]) || Number.isNaN(mat[1]) || Number.isNaN(mat[2]);
+    return (
+      Number.isNaN(mat[0]) ||
+      Number.isNaN(mat[1]) ||
+      Number.isNaN(mat[2]) ||
+      Number.isNaN(mat[3])
+    );
   },
 
   str: (mat: Float32Array): string => {
-    return `Vec4(${mat[0]}, ${mat[1]}, ${mat[2]})`;
+    return `Vec4(${mat[0]}, ${mat[1]}, ${mat[2]}, ${mat[3]})`;
   },
 };
 

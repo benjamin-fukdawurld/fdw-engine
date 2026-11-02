@@ -35,7 +35,7 @@ import { simplify, triangleCount } from './mesh.mjs';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const { values } = parseArgs({
   options: {
-    from: { type: 'string', default: root },
+    from: { type: 'string', default: join(root, 'assets') },
     out: {
       type: 'string',
       default: join(root, 'apps/docs/public/models/forest'),

@@ -269,6 +269,22 @@ describe('MusicPlayer', () => {
     engine.advance(1);
     expect(voice.state).toBe('stopped');
   });
+
+  it('crossfades into a track played while the last one fades out', () => {
+    const engine = new FakeAudioEngine();
+    const player = new MusicPlayer(engine, { crossfade: 2 });
+    const first = player.play(silence(engine, 60)) as FakeVoice;
+    player.stop();
+    engine.advance(1);
+    const second = player.play(silence(engine, 60)) as FakeVoice;
+    expect(second.fade).toBe(0);
+    engine.advance(1);
+    expect(first.state).toBe('stopped');
+    expect(second.fade).toBeCloseTo(0.5);
+    // Once it is silent, the next one starts at once.
+    player.stop(0);
+    expect((player.play(silence(engine, 60)) as FakeVoice).fade).toBe(1);
+  });
 });
 
 describe('SceneAudio', () => {

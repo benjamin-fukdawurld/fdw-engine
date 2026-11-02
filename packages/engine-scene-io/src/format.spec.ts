@@ -203,4 +203,53 @@ describe('the fdw-scene format', () => {
     loading.release();
     expect(other.root.children).toEqual([]);
   });
+
+  it('refuses the malformed documents', () => {
+    const doc = (fields: object) => ({
+      format: 'fdw-scene',
+      schemaVersion: 1,
+      ...fields,
+    });
+    const batch = { count: 1, positions: [0, 0, 0] };
+    // A batch whose parent is not a node: never freed by dispose().
+    for (const parent of [1, -1, 0.5, '0'])
+      expect(() =>
+        parseFdwScene(doc({ nodes: [{}], batches: [{ ...batch, parent }] })),
+      ).toThrow(/is not a node/);
+    expect(
+      parseFdwScene(doc({ nodes: [{}], batches: [{ ...batch, parent: 0 }] }))
+        .batches,
+    ).toHaveLength(1);
+    // A count past the arrays: NaN transforms.
+    expect(() =>
+      parseFdwScene(doc({ batches: [{ ...batch, count: 2 }] })),
+    ).toThrow(/"positions" is shorter/);
+    expect(() =>
+      parseFdwScene(doc({ batches: [{ ...batch, count: -1 }] })),
+    ).toThrow(/invalid count/);
+    expect(() =>
+      parseFdwScene(
+        doc({
+          batches: [
+            { ...batch, components: { tag: { version: 1, data: [1, 2] } } },
+          ],
+        }),
+      ),
+    ).toThrow(/too many values/);
+    // The binary arrays: a type read from the prototype, offsets out of range.
+    const buffer = new Uint8Array(16);
+    const binary = (type: string, byteOffset = 0, length = 1) =>
+      doc({ name: { $binary: { type, byteOffset, length } } });
+    for (const type of ['constructor', 'toString', '__proto__'])
+      expect(() => parseFdwScene(binary(type), buffer)).toThrow(
+        /Unknown binary type/,
+      );
+    expect(() => parseFdwScene(binary('u8', -4), buffer)).toThrow(/invalid/);
+    expect(() => parseFdwScene(binary('f32', 0, 1.5), buffer)).toThrow(
+      /invalid/,
+    );
+    expect(() => parseFdwScene(binary('f32', 8, 4), buffer)).toThrow(
+      /past its buffer/,
+    );
+  });
 });

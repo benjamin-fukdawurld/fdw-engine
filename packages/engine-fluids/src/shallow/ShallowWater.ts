@@ -117,6 +117,8 @@ export class ShallowWater {
   private readonly _readback: boolean;
   private _reading = false;
   private _destroyed = false;
+  // Counts the resets: a read started before one is dropped.
+  private _generation = 0;
   // The cells on the CPU: the start, then the last ones read back.
   private _cpu: Float32Array<ArrayBuffer>;
   private readonly _initial: Float32Array<ArrayBuffer>;
@@ -338,6 +340,7 @@ export class ShallowWater {
       new Float32Array(this.grid.nx * this.grid.nz * 4),
     );
     this._cpu = this._initial.slice();
+    this._generation++;
     this.updateSurface();
   }
 
@@ -438,11 +441,13 @@ export class ShallowWater {
 
   private read(): void {
     this._reading = true;
+    const generation = this._generation;
     this._cells[this._current]
       .read()
       .then((data) => {
         this._reading = false;
-        if (!this._destroyed) {
+        // Not the water of before a reset: the floaters would jump.
+        if (!this._destroyed && generation === this._generation) {
           this._cpu = new Float32Array(data);
         }
       })

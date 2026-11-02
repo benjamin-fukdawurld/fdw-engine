@@ -168,23 +168,54 @@ describe('GraphSession', () => {
     ]);
   });
 
-  it('merges the moves of the same nodes, and the typing in a field', () => {
+  it('makes a step of each drag and each rename', () => {
     const session = behavior();
     session.execute({ op: 'move', positions: { hit: { x: 1, y: 1 } } });
     session.execute({ op: 'move', positions: { hit: { x: 2, y: 2 } } });
     session.execute({ op: 'label', node: 'roar', label: 'R' });
     session.execute({ op: 'label', node: 'roar', label: 'Roar' });
-    expect(session.history.undoLabels).toEqual(['Move', 'Rename']);
+    expect(session.history.undoLabels).toEqual([
+      'Move',
+      'Move',
+      'Rename',
+      'Rename',
+    ]);
     expect(session.projection().nodes.find((n) => n.id === 'roar')?.title).toBe(
       'Roar',
     );
     session.execute({ op: 'undo' });
+    expect(session.projection().nodes.find((n) => n.id === 'roar')?.title).toBe(
+      'R',
+    );
     session.execute({ op: 'undo' });
-    expect(session.projection().layout.nodes?.['hit']).not.toEqual({
-      x: 1,
-      y: 1,
-    });
+    session.execute({ op: 'undo' });
+    expect(session.projection().layout.nodes?.['hit']).toEqual({ x: 1, y: 1 });
+    session.execute({ op: 'undo' });
     expect(session.dirty).toBe(false);
+  });
+
+  it('removes nothing without a change', () => {
+    const session = behavior();
+    session.execute({ op: 'remove', ids: [] });
+    session.execute({ op: 'remove', ids: ['nobody'] });
+    expect(session.dirty).toBe(false);
+    expect(session.history.canUndo).toBe(false);
+  });
+
+  it('removes nodes and edges in one step', () => {
+    const session = behavior();
+    const before = session.projection();
+    const edge = before.edges.find(
+      (e) => e.from.node !== 'roar' && e.to.node !== 'roar',
+    );
+    if (!edge) throw new Error('No edge');
+    session.execute({ op: 'remove', ids: ['roar'], edges: [edge] });
+    const after = session.projection();
+    expect(after.nodes.some((n) => n.id === 'roar')).toBe(false);
+    expect(after.edges).not.toContainEqual(edge);
+    expect(session.history.undoLabels).toHaveLength(1);
+    session.execute({ op: 'undo' });
+    expect(session.projection().edges).toEqual(before.edges);
   });
 
   it('removes nodes, pastes copies, groups and notes', () => {

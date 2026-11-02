@@ -14,9 +14,23 @@
       "inputs": [
         "{projectRoot}/native/**/*",
         "{projectRoot}/scripts/**/*",
-        "{workspaceRoot}/tools/native/**/*"
+        "{workspaceRoot}/tools/native/**/*",
+        {
+          "externalDependencies": ["node-api-headers"]
+        },
+        {
+          "env": "FDW_FROM_SOURCE"
+        }
       ],
-      "outputs": ["{projectRoot}/build/fdw_native.node"]
+      "outputs": [
+        "{projectRoot}/build/fdw_native.node",
+        "{projectRoot}/build/.prebuilt"
+      ],
+      "configurations": {
+        "debug": {
+          "args": "--debug"
+        }
+      }
     },
     "test": {
       "dependsOn": [
@@ -44,10 +58,23 @@
           "transitive": true
         },
         {
+          "dependentTasksOutputFiles": "**/*.node",
+          "transitive": true
+        },
+        {
           "env": "VULKAN_SDK"
         },
         {
           "env": "DISPLAY"
+        },
+        {
+          "env": "FDW_REQUIRE_SUITES"
+        },
+        {
+          "env": "FDW_D3D12_ADAPTER"
+        },
+        {
+          "env": "VK_DRIVER_FILES"
         }
       ]
     }

@@ -164,7 +164,9 @@ export class BehaviorInstance<H = unknown> implements BehaviorContext<H> {
 
   /** @internal Wakes a `flow.delay` node after some seconds. */
   wait(seconds: number, node: number): void {
-    const timer = { at: this.time + Math.max(0, seconds), node };
+    // NaN would sort nowhere and block every delay after it: none instead.
+    const delay = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    const timer = { at: this.time + delay, node };
     // Sorted by time, the first added first among equals.
     let i = this.timers.length;
     while (i > 0 && this.timers[i - 1].at > timer.at) {

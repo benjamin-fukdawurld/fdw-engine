@@ -156,6 +156,12 @@ export const DefaultDeadZone = 0.15;
 // Down beyond half of the range: for the analog triggers.
 const ButtonThreshold = 0.5;
 
+// A stick uses the gamepad (Input.lastDevice) when it moves this much out
+// of the dead zone, or is held beyond the second value: a stick that
+// drifts past its dead zone does not take the device from the others.
+const StickMoved = 0.1;
+const StickHeld = 0.5;
+
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /** A gamepad, in the standard layout. */
@@ -169,6 +175,9 @@ export class Gamepad {
   /** @internal: pressed or released between the frames. */
   readonly _pressed = new Uint8Array(GamepadButtons.length);
   readonly _released = new Uint8Array(GamepadButtons.length);
+  // The sticks (x, y left, then right) when they last used the gamepad.
+  private readonly _anchors = new Float32Array(4);
+  private readonly _probe = { x: 0, y: 0 };
 
   /** @internal */
   constructor(private readonly _source?: InputSource) {}
@@ -257,13 +266,28 @@ export class Gamepad {
       this._released[i] = was && !is ? 1 : 0;
       used ||= is;
     }
-    this._state.axes.set(state.axes.subarray(0, this._state.axes.length));
-    const probe = { x: 0, y: 0 };
-    for (const side of ['left', 'right'] as const) {
-      const { x, y } = this.stick(side, probe);
-      used ||= x !== 0 || y !== 0;
+    const axes = this._state.axes;
+    for (let i = 0; i < axes.length; i++) {
+      axes[i] = state.axes[i] ?? 0;
     }
+    used = this.stickUsed('left', 0) || used;
+    used = this.stickUsed('right', 2) || used;
     return used;
+  }
+
+  // Whether a stick is held far, or moved since it last counted.
+  private stickUsed(side: 'left' | 'right', anchor: number): boolean {
+    const { x, y } = this.stick(side, this._probe);
+    const anchors = this._anchors;
+    if (
+      Math.hypot(x, y) < StickHeld &&
+      Math.hypot(x - anchors[anchor], y - anchors[anchor + 1]) < StickMoved
+    ) {
+      return false;
+    }
+    anchors[anchor] = x;
+    anchors[anchor + 1] = y;
+    return true;
   }
 }
 
@@ -292,6 +316,7 @@ export class Input {
   private _liveDevice: InputDevice = 'keyboard';
   private readonly _states: GamepadState[] = [];
   private readonly _byId = new Map<number, Gamepad>();
+  private readonly _connected = new Set<number>();
 
   constructor(private readonly _source: InputSource) {
     const { keyboard, pointer } = this;
@@ -390,7 +415,8 @@ export class Input {
 
   private updateGamepads(): void {
     const count = this._source.readGamepads(this._states);
-    const connected = new Set<number>();
+    const connected = this._connected;
+    connected.clear();
     for (let i = 0; i < count; i++) {
       const state = this._states[i];
       connected.add(state.id);

@@ -75,6 +75,14 @@ const NotPressed: ButtonState = {
   value: 0,
 };
 
+// What readButton() gives, reused: read at once, never kept.
+interface ButtonRead {
+  down: boolean;
+  pressed: boolean;
+  released: boolean;
+  value: number;
+}
+
 /**
  * Named actions, bound to controls: the code of an application reads
  * `move` or `jump`, not `KeyW` or `leftX`, and the user can change the
@@ -104,6 +112,12 @@ export class ActionMap {
   private _enabled: boolean;
   // The frame of the input when the map was enabled.
   private _enabledFrame = -1;
+  // Scratch values of the reads, reused: an action read allocates nothing
+  // (but the state of a button pressed, which it returns).
+  private readonly _read: ButtonRead = { ...NotPressed };
+  private readonly _stick = { x: 0, y: 0 };
+  private readonly _vectorStick = { x: 0, y: 0 };
+  private readonly _oneGamepad: Gamepad[] = [];
 
   constructor(
     private readonly _input: Input,
@@ -232,10 +246,10 @@ export class ActionMap {
     let bestX = 0;
     let bestY = 0;
     let best = 0;
-    const stick = { x: 0, y: 0 };
+    const stick = this._vectorStick;
     const bindings = this.active
       ? (definition.bindings as readonly VectorBinding[])
-      : [];
+      : NoBindings;
     for (const binding of bindings) {
       let x: number;
       let y: number;
@@ -292,54 +306,57 @@ export class ActionMap {
     if (index === undefined) {
       return gamepads;
     }
-    return gamepads[index] ? [gamepads[index]] : [];
+    const one = this._oneGamepad;
+    one.length = 0;
+    if (gamepads[index]) {
+      one.push(gamepads[index]);
+    }
+    return one;
   }
 
+  // The state of a control, in a scratch value: read it before the next.
   private readButton(control: Control): ButtonState {
     const [device, name] = split(control);
     const { keyboard, pointer } = this._input;
+    const read = this._read;
     if (control === 'pointer:locked') {
       const changed = pointer._lockChanged;
-      return {
-        down: pointer.locked,
-        pressed: pointer.locked && changed,
-        released: !pointer.locked && changed,
-        value: pointer.locked ? 1 : 0,
-      };
+      read.down = pointer.locked;
+      read.pressed = pointer.locked && changed;
+      read.released = !pointer.locked && changed;
+      read.value = pointer.locked ? 1 : 0;
+      return read;
     }
     if (device === 'key') {
-      const down = keyboard.isDown(name);
-      return {
-        down,
-        pressed: keyboard.pressed(name),
-        released: keyboard.released(name),
-        value: down ? 1 : 0,
-      };
+      read.down = keyboard.isDown(name);
+      read.pressed = keyboard.pressed(name);
+      read.released = keyboard.released(name);
+      read.value = read.down ? 1 : 0;
+      return read;
     }
     if (device === 'pointer') {
       const button = Number(name);
-      const down = pointer.isDown(button);
-      return {
-        down,
-        pressed: pointer.pressed(button),
-        released: pointer.released(button),
-        value: down ? 1 : 0,
-      };
+      read.down = pointer.isDown(button);
+      read.pressed = pointer.pressed(button);
+      read.released = pointer.released(button);
+      read.value = read.down ? 1 : 0;
+      return read;
     }
     if (device === 'gamepad' && isButton(name)) {
-      let state = NotPressed;
+      read.down = false;
+      read.pressed = false;
+      read.released = false;
+      read.value = 0;
       for (const gamepad of this.gamepads()) {
         const value = gamepad.value(name);
-        if (value > state.value || gamepad.pressed(name)) {
-          state = {
-            down: gamepad.isDown(name),
-            pressed: gamepad.pressed(name) || state.pressed,
-            released: gamepad.released(name),
-            value: Math.max(value, state.value),
-          };
+        if (value > read.value || gamepad.pressed(name)) {
+          read.down = gamepad.isDown(name);
+          read.pressed = gamepad.pressed(name) || read.pressed;
+          read.released = gamepad.released(name);
+          read.value = Math.max(value, read.value);
         }
       }
-      return state;
+      return read;
     }
     throw new Error(`Not a button: "${control}"`);
   }
@@ -358,7 +375,7 @@ export class ActionMap {
     }
     if (device === 'gamepad' && isAxis(name)) {
       let result = 0;
-      const stick = { x: 0, y: 0 };
+      const stick = this._stick;
       for (const gamepad of this.gamepads()) {
         // Through the dead zone of its stick.
         gamepad.stick(name.startsWith('left') ? 'left' : 'right', stick);
@@ -391,7 +408,7 @@ export class ActionMap {
     if (!side) {
       throw new Error(`Not a stick: "${control}"`);
     }
-    const stick = { x: 0, y: 0 };
+    const stick = this._stick;
     for (const gamepad of this.gamepads()) {
       gamepad.stick(side, stick);
       if (Math.hypot(stick.x, stick.y) > Math.hypot(out.x, out.y)) {
@@ -402,12 +419,24 @@ export class ActionMap {
   }
 }
 
-function split(control: Control): [string, string] {
+const NoBindings: readonly VectorBinding[] = [];
+
+// The device and the name of each control, split once: the controls are
+// the few of the bindings, read every frame.
+const splits = new Map<Control, readonly [string, string]>();
+
+function split(control: Control): readonly [string, string] {
+  let parts = splits.get(control);
+  if (parts) {
+    return parts;
+  }
   const colon = control.indexOf(':');
   if (colon < 0) {
     throw new Error(`Not a control: "${control}" (device:name)`);
   }
-  return [control.slice(0, colon), control.slice(colon + 1)];
+  parts = [control.slice(0, colon), control.slice(colon + 1)];
+  splits.set(control, parts);
+  return parts;
 }
 
 const isButton = (name: string): name is (typeof GamepadButtons)[number] =>

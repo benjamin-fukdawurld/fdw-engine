@@ -24,7 +24,17 @@
           "transitive": true
         },
         {
+          "dependentTasksOutputFiles": "**/*.node",
+          "transitive": true
+        },
+        {
           "env": "VULKAN_SDK"
+        },
+        {
+          "env": "FDW_REQUIRE_SUITES"
+        },
+        {
+          "env": "VK_DRIVER_FILES"
         }
       ],
       "dependsOn": ["build-native"]
@@ -40,10 +50,26 @@
         "{projectRoot}/scripts/**/*",
         "{workspaceRoot}/tools/native/**/*",
         {
+          "externalDependencies": ["node-api-headers"]
+        },
+        {
+          "env": "FDW_FROM_SOURCE"
+        },
+        {
           "env": "VULKAN_SDK"
         }
       ],
-      "outputs": ["{projectRoot}/build/fdw_vulkan.node"]
+      "outputs": [
+        "{projectRoot}/build/fdw_vulkan.node",
+        "{projectRoot}/build/.prebuilt",
+        "{projectRoot}/build/dxcompiler.dll",
+        "{projectRoot}/build/libdxcompiler.so"
+      ],
+      "configurations": {
+        "debug": {
+          "args": "--debug"
+        }
+      }
     }
   }
 }

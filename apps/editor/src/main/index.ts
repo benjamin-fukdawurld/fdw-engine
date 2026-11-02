@@ -1,7 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { EngineProcess } from './engine';
-import { allowPopouts, handleHostServices } from './host';
+import {
+  appPages,
+  denyPermissions,
+  fromAppPage,
+  handleHostServices,
+  keepOnAppPages,
+} from './host';
 
 // The native viewport is a child X11 window: under Wayland, Electron runs
 // on XWayland.
@@ -11,6 +17,12 @@ if (process.platform === 'linux') {
 // The tests give the editor a user data of its own: its layout, its storage.
 const userData = process.env['FDW_USER_DATA'];
 if (userData) app.setPath('userData', userData);
+
+// electron-vite sets this variable in dev mode to point at its HMR server.
+const rendererUrl = app.isPackaged
+  ? undefined
+  : process.env['ELECTRON_RENDERER_URL'];
+const pages = appPages(rendererUrl);
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -28,17 +40,21 @@ function createWindow(): void {
   // No menu bar: the page starts at the top of the native window, where the
   // viewport bounds are measured from.
   window.removeMenu();
-  allowPopouts(window);
+  keepOnAppPages(window.webContents, pages);
 
   let engine: EngineProcess | undefined;
   // The page asks for its port once loaded, again after a reload.
   let connectAsked = false;
   const onConnect = (event: Electron.IpcMainEvent) => {
-    if (event.sender !== window.webContents) return;
+    if (event.sender !== window.webContents || !fromAppPage(pages, event)) {
+      return;
+    }
     connectAsked = true;
     engine?.connect(window);
   };
   ipcMain.on('engine:connect', onConnect);
+  // However the window goes (its engine stopped, or never started).
+  window.once('closed', () => ipcMain.off('engine:connect', onConnect));
 
   window.once('ready-to-show', () => {
     window.show();
@@ -56,15 +72,12 @@ function createWindow(): void {
   window.on('close', (event) => {
     if (!engine) return;
     event.preventDefault();
-    ipcMain.off('engine:connect', onConnect);
     const stopping = engine;
     engine = undefined;
     void stopping.quit().then(() => window.destroy());
   });
 
-  // electron-vite sets this variable in dev mode to point at its HMR server.
-  const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (!app.isPackaged && rendererUrl) {
+  if (rendererUrl) {
     void window.loadURL(rendererUrl);
   } else {
     void window.loadFile(join(__dirname, '../renderer/index.html'));
@@ -72,7 +85,8 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
-  handleHostServices();
+  denyPermissions(pages);
+  handleHostServices(pages);
   createWindow();
   // macOS: recreate a window when the dock icon is clicked and none is open.
   app.on('activate', () => {

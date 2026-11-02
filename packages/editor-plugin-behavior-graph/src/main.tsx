@@ -34,7 +34,11 @@ import {
 /** The types of the values of the graphs, for the variables and the signatures. */
 const valueTypes = ['number', 'boolean', 'string', 'vec3', 'entity'] as const;
 
-/** Whether an output may feed an input: the same type, or any value into `any`. */
+/**
+ * Whether an output may feed an input: the same type, or any value into
+ * `any`. The rule of `acceptsBehaviorType` of `@fdw/engine-behavior`, copied
+ * to keep the engine out of the page (a test checks they agree).
+ */
 export const acceptsBehaviorType = (from: string, to: string): boolean =>
   from === to || (to === 'any' && from !== 'exec');
 

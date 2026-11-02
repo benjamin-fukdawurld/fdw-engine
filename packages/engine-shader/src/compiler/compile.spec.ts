@@ -508,6 +508,17 @@ describe('compile', () => {
         (g: GraphBuilder) => g.uniform('materialUniforms', BuiltinTypes.f32),
         /reserved for uniform blocks/,
       ],
+      [
+        'names with two consecutive underscores',
+        (g: GraphBuilder) => g.uniform('base__color', BuiltinTypes.f32),
+        /resource name "base__color" must not contain "__"/,
+      ],
+      [
+        'slots with two consecutive underscores',
+        (g: GraphBuilder) =>
+          g.uniform('exposure', BuiltinTypes.f32, { slot: 'post__fx' }),
+        /slot name "post__fx" must not contain "__"/,
+      ],
     ])('rejects %s', (_, declare, message) => {
       const g = new GraphBuilder('unsupported');
       declare(g);

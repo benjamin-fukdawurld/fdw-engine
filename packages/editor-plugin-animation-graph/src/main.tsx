@@ -23,7 +23,12 @@ import {
   useGraphClient,
 } from '@fdw/graph-editor';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
-import { useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { animationGraphView, showAnimationGraphCommand } from './manifest';
 import {
   addState,
@@ -99,6 +104,9 @@ function StateMachineView({
   const initial =
     (node.params['initial'] as string | undefined) ?? states[0]?.name;
   const [wire, setWire] = useState<{ from: string; x: number; y: number }>();
+  // Removes the listeners of the wire being dragged: at its end, or unmounted.
+  const stopWire = useRef<() => void>(undefined);
+  useEffect(() => () => stopWire.current?.(), []);
   const run = (commands: readonly GraphCommand[]) =>
     commands.forEach((command) => client.command(command));
   const center = (name: string) => {
@@ -113,9 +121,18 @@ function StateMachineView({
     ).getBoundingClientRect();
     const move = (e: PointerEvent) =>
       setWire({ from, x: e.clientX - box.left, y: e.clientY - box.top });
-    const up = (e: PointerEvent) => {
+    const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      if (stopWire.current === stop) stopWire.current = undefined;
+    };
+    const cancel = () => {
+      stop();
+      setWire(undefined);
+    };
+    const up = (e: PointerEvent) => {
+      stop();
       setWire(undefined);
       const to = (e.target as Element | null)
         ?.closest?.('[data-state]')
@@ -127,8 +144,11 @@ function StateMachineView({
         onSelect(`transition:${transitions.length}`);
       }
     };
+    stopWire.current?.();
+    stopWire.current = stop;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
   };
 
   const remove = () => {

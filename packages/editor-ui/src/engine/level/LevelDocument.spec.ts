@@ -216,12 +216,8 @@ describe('LevelDocument', () => {
 
     document.run({ command: 'undo' });
     await settled();
-    // Back from the trash as the last child (P15).
-    expect(names()).toEqual([
-      ...sample.filter((name) => name !== 'table'),
-      'table',
-      'sphere',
-    ]);
+    // Back from the trash at their place among their siblings.
+    expect(names()).toEqual([...sample, 'sphere']);
     expect(named('table')?.id).toBe(table);
     expect(named('leg 1')).toBeDefined();
     document.run({ command: 'undo' });
@@ -243,8 +239,37 @@ describe('LevelDocument', () => {
     expect(page.undo).toBe('Move cube 3 to table');
     document.run({ command: 'undo' });
     await settled();
-    expect(names()).toContain('cube 3');
+    expect(names()).toEqual(sample);
     expect(names(table)).not.toContain('cube 3');
+  });
+
+  it('makes one entry of a batch, and tells the next redo', async () => {
+    const document = LevelDocument.create(files());
+    const { page, named } = connect(document);
+    const ids = ['cube 1', 'cube 2'].map((name) => named(name)?.id ?? '');
+    document.run({
+      command: 'batch',
+      label: 'Isolate',
+      commands: ids.map((id) => ({
+        command: 'edit' as const,
+        id,
+        property: 'visible' as const,
+        value: false,
+      })),
+    });
+    await settled();
+    expect(ids.map((id) => page.nodes.get(id)?.visible)).toEqual([
+      false,
+      false,
+    ]);
+    expect(document.history.undoLabels).toEqual(['Isolate']);
+    document.run({ command: 'add', primitive: 'cube' });
+    document.run({ command: 'undo' });
+    document.run({ command: 'undo' });
+    await settled();
+    expect(ids.map((id) => page.nodes.get(id)?.visible)).toEqual([true, true]);
+    // The next redo, not the farthest.
+    expect(page.redo).toBe('Isolate');
   });
 
   it('edits the numbers of a component saved field by field', async () => {

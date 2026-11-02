@@ -145,25 +145,22 @@ export function activate(context: PluginContext): void {
   let hidden: string[] = [];
   let isolated: IDisposable | undefined;
 
+  // One entry of the history for all the nodes.
   const setVisible = (ids: readonly string[], visible: boolean) => {
-    for (const id of ids) {
-      engine().post({
-        type: 'level.command',
+    if (ids.length === 0) return;
+    engine().post({
+      type: 'level.command',
+      command: 'batch',
+      label: visible ? 'Show everything' : 'Isolate',
+      commands: ids.map((id) => ({
         command: 'edit',
         id,
         property: 'visible',
         value: visible,
-      });
-    }
+      })),
+    });
   };
-
-  context.commands.register(isolateCommand, () => {
-    if (isolated || level().selection.length === 0) return;
-    hidden = nodesToHide(level());
-    setVisible(hidden, false);
-    isolated = context.keys.set(isolatedKey, true);
-  });
-  context.commands.register(showAllCommand, () => {
+  const showAll = () => {
     // Those removed meanwhile are left.
     const { nodes } = level();
     setVisible(
@@ -173,6 +170,21 @@ export function activate(context: PluginContext): void {
     hidden = [];
     isolated?.dispose();
     isolated = undefined;
+  };
+
+  context.commands.register(isolateCommand, () => {
+    if (isolated || level().selection.length === 0) return;
+    hidden = nodesToHide(level());
+    setVisible(hidden, false);
+    isolated = context.keys.set(isolatedKey, true);
+  });
+  context.commands.register(showAllCommand, showAll);
+  // The plugin deactivated: what it hid is shown again (not when the
+  // editor itself goes, its level with it).
+  context.subscriptions.push({
+    dispose: () => {
+      if (isolated && services.has(ILevelStore)) showAll();
+    },
   });
   context.views.registerComponent(statisticsView, () => (
     <StatisticsPanel context={context} />

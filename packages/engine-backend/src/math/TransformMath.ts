@@ -1,4 +1,5 @@
 import { PrimitivesAdapter } from './primitives/PrimitivesAdapter';
+import { writeNormalMatrix } from './normalMatrix';
 
 export class TransformMath {
   primitiveApis: PrimitivesAdapter;
@@ -32,12 +33,12 @@ export class TransformMath {
     return this.primitiveApis.mat4.invert(localMatrix);
   }
 
+  // As 3 columns of 4 floats; zero for a singular matrix (a scale of 0),
+  // as the normal matrices of the transform pools.
   getLocalNormalMatrix(localMatrix: Float32Array): Float32Array {
-    return this.primitiveApis.mat3.transpose(
-      this.primitiveApis.mat3.invert(
-        this.primitiveApis.mat3.fromMat4(localMatrix),
-      ),
-    );
+    const out = new Float32Array(12);
+    writeNormalMatrix(localMatrix, 0, out, 0);
+    return out;
   }
 
   getWorldMatrix(

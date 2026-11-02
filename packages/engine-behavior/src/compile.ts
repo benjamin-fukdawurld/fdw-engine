@@ -81,8 +81,9 @@ export class CompiledBehavior<H = unknown> implements BehaviorExecutor<H> {
     if (!handlers) {
       return;
     }
+    // One count for all the handlers, as the interpreter does.
+    instance.steps = 0;
     for (const handler of handlers) {
-      instance.steps = 0;
       handler(instance as BehaviorInstance, payload);
     }
   }
@@ -162,6 +163,8 @@ export function generate(program: BehaviorProgram): {
         .join(' ');
       lines.push(
         `function h${node.index}(self, payload) {`,
+        '  if (self.stopped) return;',
+        `  if (++self.steps > self.maxSteps) X.overflow(self, ${id});`,
         `  const o = self.calls[${node.index}].outputs; ${body}`,
         `  ${go(node.exits[0])}`,
         '}',
@@ -179,7 +182,7 @@ export function generate(program: BehaviorProgram): {
     }
     node.entries.forEach((_, entry) => {
       const body = new Body();
-      const code = statements(node, entry, body, go);
+      const code = statements(node, entry, body, go, id);
       lines.push(
         `function f${node.index}_${entry}(self) {`,
         '  if (self.stopped) return;',
@@ -217,6 +220,7 @@ function statements(
   entry: number,
   body: { value(source: DataSource): string },
   go: (target: ExecTarget | undefined) => string,
+  id: string,
 ): string[] {
   const i = node.index;
   const exits = node.exits;
@@ -259,6 +263,8 @@ function statements(
         `const first = ${input(0)}, last = ${input(1)};`,
         `const o = C[${i}].outputs;`,
         'for (let k = first; k <= last; k++) {',
+        // Every turn after the first counts, as in the interpreter.
+        `  if (k !== first && ++self.steps > self.maxSteps) X.overflow(self, ${id});`,
         `  o.index = k; ${go(exits[0])}`,
         '  if (self.stopped) return;',
         '}',
@@ -277,7 +283,6 @@ function statements(
   }
   // An action: its run, then the exit it returns.
   const args = [`C[${i}]`, ...node.inputs.map((_, k) => input(k))].join(', ');
-  const id = JSON.stringify(node.id);
   const type = JSON.stringify(node.node.type);
   const wrong = `X.exit(self, ${id}, ${type}, exit);`;
   if (exits.length === 1) {

@@ -61,6 +61,14 @@ struct Replay {
   fdw_vk_pipeline *pipeline = nullptr;
   std::array<fdw_vk_group *, 8> groups{};
   std::array<bool, 8> dirty{};
+
+  // A pass starts without pipeline nor groups, as in WebGPU: a group of a
+  // previous pass would be used without the barriers of this one.
+  void beginPass() {
+    pipeline = nullptr;
+    groups = {};
+    dirty = {};
+  }
 };
 
 template <typename T>
@@ -640,6 +648,7 @@ int replayCommands(Replay &replay) {
       if (replay.inRenderPass || replay.inComputePass) {
         return fail("A pass is already open");
       }
+      replay.beginPass();
       status = beginRenderPass(replay);
       break;
     case FDW_VK_CMD_END_RENDER_PASS:
@@ -653,6 +662,7 @@ int replayCommands(Replay &replay) {
       if (replay.inRenderPass || replay.inComputePass) {
         return fail("A pass is already open");
       }
+      replay.beginPass();
       replay.inComputePass = true;
       break;
     case FDW_VK_CMD_END_COMPUTE_PASS:

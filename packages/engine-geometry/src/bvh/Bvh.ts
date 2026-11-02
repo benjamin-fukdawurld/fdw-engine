@@ -369,24 +369,26 @@ export function rayBoxDistance(
   tMin: number,
   tMax: number,
 ): number {
-  const x0 = (box[offset] - ox) * ix;
-  const x1 = (box[offset + 4] - ox) * ix;
-  const y0 = (box[offset + 1] - oy) * iy;
-  const y1 = (box[offset + 5] - oy) * iy;
-  const z0 = (box[offset + 2] - oz) * iz;
-  const z1 = (box[offset + 6] - oz) * iz;
-  const near = Math.max(
-    Math.min(x0, x1),
-    Math.min(y0, y1),
-    Math.min(z0, z1),
-    tMin,
-  );
-  const far = Math.min(
-    Math.max(x0, x1),
-    Math.max(y0, y1),
-    Math.max(z0, z1),
-    tMax,
-  );
+  let near = tMin;
+  let far = tMax;
+  // A slab per axis. Along an axis the ray does not move (an infinite
+  // inverse), it is in the slab or misses the box: 0 × ∞ would be NaN on
+  // its planes.
+  const slab = (min: number, max: number, o: number, i: number) => {
+    if (i === Infinity || i === -Infinity) {
+      if (o < min || o > max) {
+        near = Infinity;
+      }
+      return;
+    }
+    const t0 = (min - o) * i;
+    const t1 = (max - o) * i;
+    near = Math.max(near, Math.min(t0, t1));
+    far = Math.min(far, Math.max(t0, t1));
+  };
+  slab(box[offset], box[offset + 4], ox, ix);
+  slab(box[offset + 1], box[offset + 5], oy, iy);
+  slab(box[offset + 2], box[offset + 6], oz, iz);
   return near <= far ? near : Infinity;
 }
 
@@ -411,7 +413,9 @@ export function traverseBvh(
   if (bvh.nodeCount === 0) {
     return;
   }
-  const [ox, oy, oz] = [origin[0], origin[1], origin[2]];
+  const ox = origin[0];
+  const oy = origin[1];
+  const oz = origin[2];
   const ix = 1 / direction[0];
   const iy = 1 / direction[1];
   const iz = 1 / direction[2];

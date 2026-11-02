@@ -11,7 +11,8 @@
 //   (Big), with their own clips.
 //
 // The sources are not in the repository (https://quaternius.com,
-// https://polyhaven.com): put their directories, as downloaded, into one.
+// https://polyhaven.com), except the antique estoc (assets/, Git LFS): put
+// their directories, as downloaded, into one (assets/ by default).
 //
 // Usage: node tools/assets/make-characters.mjs [--from <directory>]
 import { mkdirSync } from 'node:fs';
@@ -30,7 +31,7 @@ import {
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const { values } = parseArgs({
   options: {
-    from: { type: 'string', default: root },
+    from: { type: 'string', default: join(root, 'assets') },
     out: {
       type: 'string',
       default: join(root, 'apps/docs/public/models/forest'),

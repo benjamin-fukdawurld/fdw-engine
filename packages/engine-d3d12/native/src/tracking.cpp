@@ -47,6 +47,17 @@ bool barrier(ID3D12Resource *resource, D3D12_RESOURCE_STATES current,
   return true;
 }
 
+// Keeps the state of a texture before a list first changes it.
+void remember(fdw_dx_context *context, ID3D12GraphicsCommandList *list,
+              const fdw_dx_texture *texture) {
+  for (const auto &entry : context->lists) {
+    if (entry->list.Get() == list) {
+      entry->textureStates.emplace(texture->id, texture->state);
+      return;
+    }
+  }
+}
+
 } // namespace
 
 namespace fdw {
@@ -83,6 +94,7 @@ void Barriers::place() {
     if (barrier(texture->resource.Get(), texture->state, state, false,
                 barriers) &&
         barriers.back().Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION) {
+      remember(context, list, texture);
       texture->state = state;
     }
   }

@@ -102,35 +102,35 @@ export function sampleFields(
 ): WaveSample {
   clearSample(out);
   const n = fields.resolution;
-  const { displacement: d, derivatives: s } = fields;
-  fields.cascades.forEach((side, c) => {
+  const { cascades, displacement: d, derivatives: s } = fields;
+  // Called for each point of the floaters, several times a step: nothing
+  // allocated.
+  const add = (p: number, w: number) => {
+    out.dx += d[p] * w;
+    out.h += d[p + 1] * w;
+    out.dz += d[p + 2] * w;
+    out.dxdz += d[p + 3] * w;
+    out.dhdx += s[p] * w;
+    out.dhdz += s[p + 1] * w;
+    out.dxdx += s[p + 2] * w;
+    out.dzdz += s[p + 3] * w;
+  };
+  for (let c = 0; c < cascades.length; c++) {
+    const side = cascades[c];
     const u = (x / side) * n;
     const v = (z / side) * n;
     const i = Math.floor(u);
     const j = Math.floor(v);
     const fu = u - i;
     const fv = v - j;
-    const at = (di: number, dj: number) =>
-      ((c * n + ((j + dj) & (n - 1))) * n + ((i + di) & (n - 1))) * 4;
-    const corners = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
-    const weights = [
-      (1 - fu) * (1 - fv),
-      fu * (1 - fv),
-      (1 - fu) * fv,
-      fu * fv,
-    ];
-    for (let k = 0; k < 4; k++) {
-      const p = corners[k];
-      const w = weights[k];
-      out.dx += d[p] * w;
-      out.h += d[p + 1] * w;
-      out.dz += d[p + 2] * w;
-      out.dxdz += d[p + 3] * w;
-      out.dhdx += s[p] * w;
-      out.dhdz += s[p + 1] * w;
-      out.dxdx += s[p + 2] * w;
-      out.dzdz += s[p + 3] * w;
-    }
-  });
+    const i0 = i & (n - 1);
+    const i1 = (i + 1) & (n - 1);
+    const row0 = (c * n + (j & (n - 1))) * n;
+    const row1 = (c * n + ((j + 1) & (n - 1))) * n;
+    add((row0 + i0) * 4, (1 - fu) * (1 - fv));
+    add((row0 + i1) * 4, fu * (1 - fv));
+    add((row1 + i0) * 4, (1 - fu) * fv);
+    add((row1 + i1) * 4, fu * fv);
+  }
   return out;
 }

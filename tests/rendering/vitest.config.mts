@@ -10,9 +10,17 @@ export default defineConfig({
   cacheDir: '../../node_modules/.vite/tests/rendering',
   test: {
     watch: false,
-    reporters: ['default'],
-    // The fluids and noises run their CPU references and, on CI, software
-    // GPUs: several seconds per test, past the default 5 s.
+    // On CI, the durations in a JUnit report too (an artifact of the run):
+    // to follow them, rather than lengthen the timeouts.
+    reporters: process.env['CI'] ? ['default', 'junit'] : ['default'],
+    outputFile: { junit: 'test-output/junit.xml' },
+    // Each file drives a software GPU (Dawn, lavapipe, WARP, SwiftShader)
+    // that spreads on every core: two at a time, not one per core.
+    maxWorkers: 2,
+    // Measured on 24 cores: the HLSL programs take 4 s (13 s before they
+    // ran side by side), but the rays and fluids on Dawn still take 3 to
+    // 16 s under load, past the default 5 s. Follow the JUnit durations
+    // before lowering it again.
     testTimeout: 30_000,
     projects: [
       {

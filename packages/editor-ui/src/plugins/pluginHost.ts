@@ -284,7 +284,10 @@ export class PluginHost implements IDisposable {
     if (!entry) return;
     await entry.activation?.catch(() => undefined);
     await this.#deactivate(entry);
-    if (entry.status !== 'disabled') entry.status = 'inactive';
+    // A plugin disabled, or that failed, stays so until enabled.
+    if (entry.status !== 'disabled' && entry.status !== 'failed') {
+      entry.status = 'inactive';
+    }
     this.#changed();
   }
 

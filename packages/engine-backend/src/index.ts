@@ -7,7 +7,6 @@ export * from './math';
 export * from './gpu';
 export * from './light';
 export * from './utils';
-export * from './material';
 export * from './mesh';
 export * from './shader';
 export * from './render';

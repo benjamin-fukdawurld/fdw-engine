@@ -58,7 +58,6 @@
     "jiti": "^2.4.2",
     "jsdom": "~22.1.0",
     "jsonc-eslint-parser": "^2.1.0",
-    "node": "^24.8.0",
     "node-api-headers": "^1.9.0",
     "nx": "22.7.2",
     "playwright": "^1.64.0",
@@ -96,14 +95,12 @@
     }
   },
   "dependencies": {
-    "@11ty/nunjucks": "^4.0.0-alpha.1",
     "@preact/signals-core": "^1.14.2",
     "@preact/signals-react": "^3.10.1",
     "@tanstack/react-router": "^1.170.11",
     "lucide-react": "^1.24.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "three": "^0.185.1",
     "wgpu-matrix": "^3.4.2"
   }
 }

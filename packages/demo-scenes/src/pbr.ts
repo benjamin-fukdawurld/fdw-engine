@@ -105,6 +105,11 @@ export const createPbrScene: SceneFactory = (backend, surface) => {
         clearColor: { r: 0.02, g: 0.02, b: 0.025, a: 1 },
       });
     },
-    destroy: () => renderer.destroy(),
+    // The meshes free their buffers in the renderer, before it goes; the
+    // uniforms of the materials are the renderer's.
+    destroy: () => {
+      sphere.destroy();
+      renderer.destroy();
+    },
   };
 };
