@@ -53,7 +53,7 @@ describe.skipIf(!sdk)('The tools of the Vulkan SDK', () => {
   it('validate and reflect a module from one directory', async () => {
     const blocks = await withTemporaryDirectory(async (dir) => {
       const modules = await compileHlsl(sources, { dir });
-      return checkSpirv(modules.get('compute')!, dir);
+      return checkSpirv(modules.get('compute') ?? new Uint8Array(), dir);
     });
     const params = [...blocks.values()][0];
     expect([params.set, params.binding]).toEqual([0, 1]);

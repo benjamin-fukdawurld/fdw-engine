@@ -114,7 +114,7 @@ GPU, d’un SDK ou d’un écran portent le tag `gpu` (`engine-webgpu`,
 
 Sur un poste de travail, une suite dont le GPU, le SDK, l’addon ou l’écran
 manque est ignorée. Dans la CI, `FDW_REQUIRE_SUITES` liste les suites qui
-doivent s’exécuter (`vulkan,dawn,hlsl,glsl,window`) : une suite absente
+doivent s’exécuter (`vulkan,dawn,hlsl,glsl,window,native`) : une suite absente
 échoue au lieu de passer silencieusement. Une nouvelle suite de ce type
 appelle `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`.
 
@@ -123,7 +123,7 @@ Pour exécuter les suites GPU comme la CI, sur lavapipe :
 ```sh
 source <sdk>/setup-env.sh
 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json \
-FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window \
+FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window,native \
 npx nx run-many -t test -p tag:gpu
 ```
 
