@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { canRun, hasDisplay } from '@fdw/engine-backend/testing';
 import { Camera, Material, Mesh, Renderer, Transform } from '@fdw/engine-core';
 import { GraphBuilder } from '@fdw/engine-shader';
-import { addonPath, VulkanEngine } from '@fdw/engine-vulkan';
+import { addonPath, VulkanEngine, VulkanSwapchain } from '@fdw/engine-vulkan';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { NativeWindow } from './NativeWindow';
 import { VulkanWindowSurface } from './VulkanWindowSurface';
@@ -72,6 +72,58 @@ describe.skipIf(!ready)('VulkanWindowSurface', () => {
       const channel = surface.format === 'bgra8unorm' ? 2 : 0;
       expect(pixels[channel]).toBe(Math.round(red * 255));
       surface.present();
+    }
+  });
+
+  it('fails cleanly on the images of a swapchain once it is resized', async () => {
+    const device = engine.device;
+    if (!device) {
+      throw new Error('The engine is not ready');
+    }
+    // A swapchain of its own, resized by the size asked for (audit §4).
+    const other = new NativeWindow({
+      title: 'tests',
+      width: 64,
+      height: 48,
+      hidden: true,
+      vulkan: true,
+    });
+    const swapchain = new VulkanSwapchain(device, other.nativeHandle, 64, 48, {
+      vsync: false,
+    });
+    try {
+      const stale = swapchain.acquire(64, 48);
+      swapchain.present();
+      const image = swapchain.acquire(32, 24);
+      expect(image).not.toBe(stale);
+      // The images before were freed: their handles throw, or do nothing
+      // for a destruction, and do not touch the freed memory.
+      expect(() => stale.read()).toThrow(/The texture was destroyed/);
+      expect(() => stale.destroy()).not.toThrow();
+      // The new ones are rendered into.
+      const backend = engine.backend;
+      if (!backend) {
+        throw new Error('The engine is not ready');
+      }
+      const encoder = backend.createCommandEncoder();
+      encoder
+        .beginRenderPass({
+          colorAttachments: [
+            {
+              target: image,
+              load: 'clear',
+              clearValue: { r: 0, g: 1, b: 0, a: 1 },
+            },
+          ],
+        })
+        .end();
+      backend.submit([encoder.finish()]);
+      expect(new Uint8Array(await image.read())[1]).toBe(255);
+      swapchain.present();
+      device.waitIdle();
+    } finally {
+      swapchain.destroy();
+      other.destroy();
     }
   });
 

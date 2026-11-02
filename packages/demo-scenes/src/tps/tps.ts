@@ -66,6 +66,16 @@ export interface TpsOptions {
   readonly level?: string;
 }
 
+/**
+ * The smallest game, for the tests of what it holds (its graphs in the
+ * editor): a terrain of 64 m without firs nor plants, whose models are not
+ * loaded, and a wave of one orc. Its options, instead of a `level`.
+ */
+export const TpsMinimal = {
+  forest: { size: 64, playRadius: 16, treeRadius: 0, coverDensity: 0 },
+  waves: [{ orcs: 1 }],
+} as const satisfies Partial<TpsOptions>;
+
 // The speeds of the pointer the menu offers, in radians per height of the
 // surface.
 const sensitivities = [
@@ -151,7 +161,12 @@ export function createTpsScene(
     });
     const store = options.resources(backend);
     store.provideService(RenderBackendService, backend);
-    const loading = loadTpsAssets(store, options.folder);
+    // A forest built without plants needs none of their models.
+    const plants =
+      options.level !== undefined ||
+      options.forest?.treeRadius !== 0 ||
+      options.forest?.coverDensity !== 0;
+    const loading = loadTpsAssets(store, options.folder, { plants });
     let game: Game | undefined;
     let failed: string | undefined;
     let destroyed = false;

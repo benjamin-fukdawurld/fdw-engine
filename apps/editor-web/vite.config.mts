@@ -84,7 +84,9 @@ export default defineConfig(() => ({
     name: 'editor-web',
     watch: false,
     include: ['src/**/*.spec.{ts,tsx}'],
-    reporters: ['default'],
+    // On CI, the durations in a JUnit report too (tools/ci/durations.mjs).
+    reporters: process.env['CI'] ? ['default', 'junit'] : ['default'],
+    outputFile: { junit: 'test-output/junit.xml' },
     browser: {
       enabled: true,
       headless: true,

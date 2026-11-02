@@ -107,6 +107,14 @@ It lives in the cache directory of the user (`%LOCALAPPDATA%\fdw-engine\shaders`
 `~/.cache/fdw-engine/shaders`), or in `FDW_SHADER_CACHE`. Deleting it only
 costs one slower start.
 
+The cache is bounded to 512 MiB (`maxSize` of the options, or
+`FDW_SHADER_CACHE_MAX_SIZE`: bytes, or `512MB`, `1GiB`; 0: no bound). Each
+program read is marked as used; from time to time after a write, the programs
+unused for the longest time are removed until the cache fits, whatever the
+version of DXC (Vulkan and Direct3D 12 share the directory), and the folders
+left empty with them. Several processes can share it; a program removed is
+only compiled again.
+
 An application can also ship its programs, compiled ahead of time with the
 DXC it ships: `FileShaderCache.fromEnvironment(directory)` reads them first,
 then the cache of the user, where the programs not shipped (the materials of
@@ -115,16 +123,17 @@ either. The executable of the editor is built this way.
 
 ## Environment variables
 
-| Variable               | Effect                                                            |
-| ---------------------- | ----------------------------------------------------------------- |
-| `VULKAN_SDK`           | Set by the SDK's `setup-env.sh`: needed to build the Vulkan addon |
-| `FDW_DXC_LIBRARY`      | The DXC library to load (`libdxcompiler`)                         |
-| `FDW_NATIVE_ADDON`     | Loads the window addon from another path                          |
-| `FDW_VULKAN_ADDON`     | Loads the Vulkan addon from another path                          |
-| `NODE_API_INCLUDE_DIR` | The Node-API headers used to build the addons                     |
-| `FDW_SHADER_CACHE`     | The directory of the compiled programs; `off`: no cache           |
-| `FDW_D3D12_ADAPTER`    | `warp`: Direct3D 12 on WARP, the software rasterizer of Windows   |
-| `FDW_FROM_SOURCE`      | Builds the addons with CMake rather than fetching prebuilt ones   |
+| Variable                    | Effect                                                            |
+| --------------------------- | ----------------------------------------------------------------- |
+| `VULKAN_SDK`                | Set by the SDK's `setup-env.sh`: needed to build the Vulkan addon |
+| `FDW_DXC_LIBRARY`           | The DXC library to load (`libdxcompiler`)                         |
+| `FDW_NATIVE_ADDON`          | Loads the window addon from another path                          |
+| `FDW_VULKAN_ADDON`          | Loads the Vulkan addon from another path                          |
+| `NODE_API_INCLUDE_DIR`      | The Node-API headers used to build the addons                     |
+| `FDW_SHADER_CACHE`          | The directory of the compiled programs; `off`: no cache           |
+| `FDW_SHADER_CACHE_MAX_SIZE` | The size of the cache of the programs (`512MB`); `0`: unbounded   |
+| `FDW_D3D12_ADAPTER`         | `warp`: Direct3D 12 on WARP, the software rasterizer of Windows   |
+| `FDW_FROM_SOURCE`           | Builds the addons with CMake rather than fetching prebuilt ones   |
 
 ## Further
 

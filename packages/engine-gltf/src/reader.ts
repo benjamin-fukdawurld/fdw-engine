@@ -36,6 +36,7 @@ import {
   rootNodes,
   skinData,
 } from './nodes';
+import { AccessorBudget, gltfLimits } from './limits';
 import type { GltfConfig } from './options';
 import type {
   GltfJson,
@@ -103,6 +104,8 @@ export class GltfReader {
   private readonly active = new Map<string, GltfExtension>();
   private readonly accessor: (index: number) => Promise<GltfAttributeData>;
   private readonly buffers: ReturnType<typeof fileBuffers>;
+  // The allocations of the accessors of the file, against the limits of the options.
+  private readonly budget: AccessorBudget;
 
   constructor(
     private readonly ctx: LoadContext<unknown>,
@@ -122,7 +125,8 @@ export class GltfReader {
       bufferView: memoize((index) => this.readBufferView(index)),
       image: (index) => this.image(index),
     };
-    this.accessor = accessorReader(json, this.context.bufferView);
+    this.budget = new AccessorBudget(gltfLimits(config.options));
+    this.accessor = accessorReader(json, this.context.bufferView, this.budget);
   }
 
   /**
@@ -299,6 +303,7 @@ export class GltfReader {
           source,
           this.json,
           this.context.bufferView,
+          this.budget,
           this.ctx.signal,
         )
       : readPrimitive(source, this.accessor);

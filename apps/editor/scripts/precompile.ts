@@ -46,7 +46,8 @@ const quietFrames = 60;
 const quietTime = 2000;
 const stepTimeout = 60_000;
 
-const cache = new FileShaderCache(directory);
+// The programs shipped: never evicted, whatever their size.
+const cache = new FileShaderCache(directory, { maxSize: 0 });
 let engine: Engine & { device?: { waitIdle(): void } };
 let surface: Surface;
 // The format of a swapchain, as in the viewport.

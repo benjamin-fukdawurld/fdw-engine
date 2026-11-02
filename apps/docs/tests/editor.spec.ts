@@ -8,15 +8,17 @@ const pages: Record<string, string> = {
   'writing-a-plugin': 'editor/writing-a-plugin/',
 };
 
-// The frame of the first editor of the page, once its engine draws.
+// The frame of the first editor of the page, once its engine draws; with
+// the parameters of the page for the tests (Editor.astro: ?level=).
 async function openEditor(
   page: Page,
   path: string,
   backend: string,
+  params: Record<string, string> = {},
 ): Promise<FrameLocator> {
-  await page.goto(
-    `/fdw-engine/${path}${backend === 'webgl2' ? '?backend=webgl2' : ''}`,
-  );
+  const query = new URLSearchParams(params);
+  if (backend === 'webgl2') query.set('backend', 'webgl2');
+  await page.goto(`/fdw-engine/${path}${query.size ? `?${query}` : ''}`);
   const holder = page.locator('[data-editor]').first();
   // The frame loads once near the screen.
   await holder.scrollIntoViewIfNeeded();
@@ -153,8 +155,12 @@ for (const [name, path, graph] of [
   ownBrowser(
     `the ${name} graph of the game, in its tutorial`,
     async ({ page }, info) => {
-      ownBrowser.slow();
-      const frame = await openEditor(page, path, info.project.name);
+      // The smallest level of the game: its graphs are those of the whole
+      // game, without its forest. 5 to 9 s on 24 cores (30 to 36 s with
+      // the forest): the default timeout, no longer slow().
+      const frame = await openEditor(page, path, info.project.name, {
+        level: 'minimal',
+      });
       // Listed once the game has loaded its characters.
       await expect(
         frame
@@ -162,7 +168,7 @@ for (const [name, path, graph] of [
             name: new RegExp(`${name} graph shown`, 'i'),
           })
           .locator('option:checked'),
-      ).toHaveText(graph, { timeout: 120_000 });
+      ).toHaveText(graph, { timeout: 30_000 });
       await expect(frame.getByText('live', { exact: true })).toBeVisible();
       if (name === 'behavior') {
         await frame.getByRole('button', { name: 'Debug' }).click();

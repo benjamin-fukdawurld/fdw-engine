@@ -23,7 +23,9 @@ import {
 import { accessorReader, toFloat32 } from '../accessors';
 import { fileBuffers } from '../buffers';
 import { isGlb, parseGlb } from '../glb';
+import { AccessorBudget, gltfLimits } from '../limits';
 import { nodeTree, rootNodes, type Trs } from '../nodes';
+import { GltfConfigService, type GltfOptions } from '../options';
 import type { GltfJson, GltfNode } from '../types';
 import { decodeBinary } from './binary';
 import { importBodies } from './physics';
@@ -110,19 +112,35 @@ export function cameraProjection(camera: CameraData): ProjectionData {
       };
 }
 
-/** The accessors of a file read outside the model loader (colliders, instances). */
+/**
+ * The accessors of a file read outside the model loader (colliders,
+ * instances), within the limits of the options of `installGltf`.
+ */
 function fileAccessors(
   ctx: LoadContext<unknown>,
   json: GltfJson,
   bin: Uint8Array<ArrayBuffer> | undefined,
 ) {
+  let options: GltfOptions = {};
+  try {
+    options = ctx.service(GltfConfigService).options;
+  } catch (e) {
+    if (!(e instanceof ResourceError && e.code === 'unsupported')) throw e;
+  }
   const buffers = fileBuffers(ctx, json, bin);
   const bufferView = async (index: number) => {
     if (json.bufferViews?.[index]?.extensions?.['EXT_meshopt_compression'])
       throw new Error(`Buffer view ${index} is compressed (meshopt)`);
     return buffers.bufferView(index);
   };
-  return { accessor: accessorReader(json, bufferView), bufferView };
+  return {
+    accessor: accessorReader(
+      json,
+      bufferView,
+      new AccessorBudget(gltfLimits(options)),
+    ),
+    bufferView,
+  };
 }
 
 /**

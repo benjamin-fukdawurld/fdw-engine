@@ -43,11 +43,12 @@ export interface GroundTextures {
 
 /** The models of the forest, loaded. */
 export interface ForestModels {
-  // Nodes fir_<v> with their levels fir_<v>_LOD0..2.
-  readonly fir: Model;
+  // Nodes fir_<v> with their levels fir_<v>_LOD0..2. Not loaded for a
+  // forest without plants (TpsMinimal).
+  readonly fir?: Model;
   // A node per plant.
-  readonly fern: Model;
-  readonly grass: Model;
+  readonly fern?: Model;
+  readonly grass?: Model;
   readonly ground: GroundTextures;
 }
 
@@ -254,6 +255,12 @@ function scatter(
 const nodeIndex = (model: Model, name: string) =>
   model.data.nodes.findIndex((node) => node.name === name);
 
+// A model of plants, needed once a plant of it is planted.
+function plants(model: Model | undefined, name: string): Model {
+  if (!model) throw new Error(`The forest has ${name} but no model of them`);
+  return model;
+}
+
 /**
  * Plants copies of nodes of a model as batches: per kind (a node of the
  * model, or its levels), per primitive, one createBatch of every copy of
@@ -347,7 +354,8 @@ export function buildForest(
     height,
     resolution,
     heights,
-    patches: 32,
+    // Patches of 16 m: 32 along the side of the forest.
+    patches: Math.max(4, Math.round(size / 16)),
     edgePixels: 10,
   };
   const terrain = buildTerrain(backend, {
@@ -404,7 +412,7 @@ export function buildForest(
     const copies = plant(
       scene,
       root.entity,
-      models.fir,
+      plants(models.fir, 'firs'),
       [0, 1, 2].map((level) => `${kind}_LOD${level}`),
       transforms,
       {
@@ -427,7 +435,7 @@ export function buildForest(
   // Ground cover: clumps of grass and ferns in the play area, drawn near
   // the camera only (a single level).
   const cover = (
-    model: Model,
+    model: Model | undefined,
     names: string[],
     density: number,
     near: number,
@@ -453,9 +461,14 @@ export function buildForest(
     }
     names.forEach((name, k) => {
       if (perKind[k].positions.length === 0) return;
-      const copies = plant(scene, root.entity, model, [name], perKind[k], {
-        castShadow: () => false,
-      });
+      const copies = plant(
+        scene,
+        root.entity,
+        plants(model, names[k]),
+        [name],
+        perKind[k],
+        { castShadow: () => false },
+      );
       for (const [level] of copies) {
         lods.add(level[0], [{ nodes: level, maxDistance: near }]);
       }

@@ -290,6 +290,27 @@ MeshoptDecoder })`, or decode in workers (below). The engine does not ship
   backend samples them (`capabilities.compressedFormats`), Basis Universal
   through a transcoder given by the application.
 
+### glTF allocation limits
+
+An accessor declares its number of elements; one without a buffer view (zeros,
+then sparse values) is backed by nothing in the file, so a few bytes of JSON
+could ask for gigabytes. The loader checks each array before allocating it:
+
+| Option                  | Environment variable                | Default | Bounds                            |
+| ----------------------- | ----------------------------------- | ------- | --------------------------------- |
+| `maxAccessorBytes`      | `FDW_GLTF_MAX_ACCESSOR_BYTES`       | 256 MiB | one accessor (and a meshopt view) |
+| `maxTotalAccessorBytes` | `FDW_GLTF_MAX_TOTAL_ACCESSOR_BYTES` | 2 GiB   | all the accessors of a file       |
+
+256 MiB holds 22 million VEC3 floats or 67 million `uint32` indices: real
+meshes of tens of millions of vertices load, a hostile file fails with an
+error naming the limit. The options of `installGltf` come first; the
+variables are read where there is a `process` (Node, Electron), in bytes or
+with a unit (`512MB`, `1GiB`). 0 removes a bound:
+
+```ts
+installGltf(resources, { maxAccessorBytes: 1024 * 2 ** 20 }); // 1 GiB
+```
+
 ## Decoding in workers
 
 The heavy decoding can run in the workers of a pool rather than on the main

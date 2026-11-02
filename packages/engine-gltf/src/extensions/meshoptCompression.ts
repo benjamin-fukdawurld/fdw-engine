@@ -1,5 +1,6 @@
 import { runTask } from '@fdw/engine-resources';
 import type { GltfExtension } from '../extension';
+import { AccessorBudget, gltfLimits } from '../limits';
 import { gltfTasks, type MeshoptJob } from '../workers';
 
 interface MeshoptBufferView {
@@ -38,6 +39,12 @@ export const EXT_meshopt_compression: GltfExtension = {
       mode,
       filter,
     } = ext as MeshoptBufferView;
+    // The decoded size is declared by the file, like the count of an
+    // accessor: bounded the same way before it is allocated.
+    new AccessorBudget(gltfLimits(context.options)).take(
+      count * byteStride,
+      'A meshopt buffer view',
+    );
     const source = (await context.buffer(buffer)).subarray(
       byteOffset,
       byteOffset + byteLength,

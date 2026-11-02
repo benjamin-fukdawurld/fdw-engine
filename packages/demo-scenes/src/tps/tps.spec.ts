@@ -17,7 +17,7 @@ import { EnemyKinds, TrunkGrid } from './enemies';
 import { forestHeights } from './forest';
 import { HeroActions, heroClips, heroGraph } from './hero';
 import { TpsSounds } from './sounds';
-import { createTpsScene } from './tps';
+import { createTpsScene, TpsMinimal } from './tps';
 
 // A world whose overlaps report the colliders given, and record the shapes
 // asked.
@@ -363,6 +363,33 @@ describe('createTpsScene', () => {
     scene.frame(0);
     scene.frame(0.1);
     expect(info).toBe('loading 0 %');
+    scene.destroy();
+  });
+
+  it('loads no model of plants for the smallest level', () => {
+    const { backend } = fakeBackend();
+    const store = new ResourceStore();
+    // The files the game asks for.
+    const asked: string[] = [];
+    const scope = store.scope.bind(store);
+    store.scope = (name) => {
+      const made = scope(name);
+      const load = made.load.bind(made);
+      made.load = ((type, path, options) => {
+        asked.push(path);
+        return load(type, path, options);
+      }) as typeof made.load;
+      return made;
+    };
+    const scene = createTpsScene({
+      physics: {} as PhysicsEngine,
+      resources: () => store,
+      ...TpsMinimal,
+    })(backend, surface);
+    expect(asked).toContain('forest/hero.glb');
+    expect(asked.filter((path) => /(fir|fern|grass)\.glb$/.test(path))).toEqual(
+      [],
+    );
     scene.destroy();
   });
 });

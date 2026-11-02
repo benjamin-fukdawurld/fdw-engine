@@ -1,12 +1,3 @@
-newmtl cube
-  Ns 10.0000
-  Ni 1.5000
-  d 1.0000
-  illum 2
-  Ka 0.0000 0.0000 0.0000
-  Kd 0.5880 0.5880 0.5880
-  Ks 0.0000 0.0000 0.0000
-  Ke 0.0000 0.0000 0.0000
-  map_Ka cube.png
-  map_Kd cube.png
-  map_Ks cube_specular.png
+version https://git-lfs.github.com/spec/v1
+oid sha256:95384242d0c05d665045976bf0b70d77042b0ba3f54eb1d994c98ce8b79eb516
+size 224

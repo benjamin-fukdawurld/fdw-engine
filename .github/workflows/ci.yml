@@ -201,6 +201,32 @@ jobs:
           PROJECTS: ${{ steps.affected.outputs.projects }}
         run: xvfb-run -a npx nx run-many -t test --projects="$PROJECTS" --parallel=1
 
+      # The duration budget (tools/ci/durations.mjs, design/ci.md §3): each
+      # test against the median of its last five durations on main, kept
+      # in the cache of main. Fails a pull request whose test is slower by
+      # more than 50 % and 1 s; main adds its durations and saves them.
+      - name: Durations of main
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' }}
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: test-durations.json
+          key: durations-${{ runner.os }}-main-${{ github.sha }}
+          restore-keys: durations-${{ runner.os }}-main-
+
+      - name: Duration budget
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' }}
+        run: node tools/ci/durations.mjs compare test-durations.json ${{ github.event_name == 'push' && '--no-fail' || '' }}
+
+      - name: Durations of main (update)
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: node tools/ci/durations.mjs update test-durations.json
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        with:
+          path: test-durations.json
+          key: durations-${{ runner.os }}-main-${{ github.sha }}
+
       # The durations of the tests (JUnit, where a project writes it), to
       # follow them rather than lengthen the timeouts.
       - name: Durations of the tests
@@ -332,6 +358,32 @@ jobs:
         env:
           PROJECTS: ${{ steps.affected.outputs.projects }}
         run: npx nx run-many -t test --projects="$PROJECTS" --parallel=1
+
+      # The duration budget (tools/ci/durations.mjs, design/ci.md §3): each
+      # test against the median of its last five durations on main, kept
+      # in the cache of main. Fails a pull request whose test is slower by
+      # more than 50 % and 1 s; main adds its durations and saves them.
+      - name: Durations of main
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' }}
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: test-durations.json
+          key: durations-${{ runner.os }}-main-${{ github.sha }}
+          restore-keys: durations-${{ runner.os }}-main-
+
+      - name: Duration budget
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' }}
+        run: node tools/ci/durations.mjs compare test-durations.json ${{ github.event_name == 'push' && '--no-fail' || '' }}
+
+      - name: Durations of main (update)
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: node tools/ci/durations.mjs update test-durations.json
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: ${{ !cancelled() && steps.affected.outputs.projects != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        with:
+          path: test-durations.json
+          key: durations-${{ runner.os }}-main-${{ github.sha }}
 
       - name: Durations of the tests
         if: always() && steps.affected.outputs.projects != ''

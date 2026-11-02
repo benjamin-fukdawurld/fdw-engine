@@ -54,7 +54,8 @@ uint32_t fdw_vk_query_pool_id(const fdw_vk_query_pool *pool) {
 int fdw_vk_query_pool_read(fdw_vk_context *context, fdw_vk_query_pool *pool,
                            uint32_t first, uint32_t count,
                            double *nanoseconds) {
-  if (first + count > pool->count) {
+  // Without overflow: first + count could wrap around.
+  if (first > pool->count || count > pool->count - first) {
     return fail("Queries out of the pool");
   }
   if (count == 0) {

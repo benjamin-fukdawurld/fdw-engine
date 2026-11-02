@@ -9,7 +9,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WebEngine } from './engine';
 import { createWebHost } from './host';
-import { scenes } from './scenes';
+import { createScenes } from './scenes';
 import { indexedDbStorage, memoryStorage } from './storage';
 
 // FDW_BACKEND chooses the backend, FDW_SCENE the first scene (the level
@@ -17,12 +17,13 @@ import { indexedDbStorage, memoryStorage } from './storage';
 // panel to show at the start (?view=, an editor of graphs) and the docks
 // shown (?docks=); with ?embed,
 // as in the pages of the documentation, nothing is kept: the default
-// layout at each load.
+// layout at each load. ?level=minimal, for the tests: the smallest level
+// of the game (scenes.ts).
 const query = new URLSearchParams(window.location.search);
 const engine = new WebEngine({
   backend: query.get('backend') ?? import.meta.env.FDW_BACKEND,
   scene: query.get('scene') ?? (import.meta.env.FDW_SCENE || levelScene),
-  scenes,
+  scenes: createScenes({ level: query.get('level') }),
 });
 const storage = query.has('embed') ? memoryStorage() : indexedDbStorage();
 const view = query.get('view');

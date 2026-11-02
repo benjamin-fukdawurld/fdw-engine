@@ -196,6 +196,9 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
   private readonly _triangleStart: number;
   private readonly _refit?: SoftwareRefit;
   private _destroyed = false;
+  // The top levels whose last update holds it: destroyed, its memory is
+  // released when none does any more.
+  private _holders = 0;
 
   constructor(
     private readonly pools: SoftwareBvhPools,
@@ -296,8 +299,27 @@ export class SoftwareBottomLevel implements GpuBottomLevel {
     }
     this._destroyed = true;
     this._refit?.destroy();
-    // Rewritten only by later queue writes: the commands submitted before
-    // still read it.
+    if (this._holders === 0) {
+      this.releaseMemory();
+    }
+  }
+
+  /** Held by a top level (its last update): kept until it is let go. */
+  hold(): void {
+    this._holders++;
+  }
+
+  /** Let go by a top level: released if destroyed and held no more. */
+  letGo(): void {
+    this._holders--;
+    if (this._holders === 0 && this._destroyed) {
+      this.releaseMemory();
+    }
+  }
+
+  // Rewritten only by later queue writes: the commands submitted before
+  // still read it.
+  private releaseMemory(): void {
     this.pools.pool.release(this._nodeStart, this._nodeCount * NodeVec4s);
     this.pools.pool.release(
       this._triangleStart,
@@ -312,6 +334,8 @@ export class SoftwareTopLevel implements GpuTopLevel {
   private _capacity: number;
   private _generation = 0;
   private _instanceCount = 0;
+  // The bottom levels of the last update, kept while it points to them.
+  private _bottoms: SoftwareBottomLevel[] = [];
 
   constructor(
     private readonly device: GPUDevice,
@@ -415,10 +439,20 @@ export class SoftwareTopLevel implements GpuTopLevel {
     }
     this.device.queue.writeBuffer(this._buffer, 0, data);
     this._instanceCount = count;
+    this.holdBottoms([...new Set(bottoms)]);
   }
 
   destroy(): void {
     this._buffer.destroy();
+    this.holdBottoms([]);
+  }
+
+  // Holds the bottom levels of an update, and lets go those of the one
+  // before (in this order: those of both stay).
+  private holdBottoms(bottoms: SoftwareBottomLevel[]): void {
+    bottoms.forEach((bottom) => bottom.hold());
+    this._bottoms.forEach((bottom) => bottom.letGo());
+    this._bottoms = bottoms;
   }
 }
 

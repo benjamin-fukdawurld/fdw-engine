@@ -30,6 +30,7 @@ import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
 import { describe, expect, it } from 'vitest';
 import { BufferType } from './buffers';
 import { installGltf } from './install';
+import { gltfLimits, gltfLimitVariables, parseByteSize } from './limits';
 import { decomposeMatrix } from './nodes';
 import type { GltfOptions } from './options';
 import { GltfBuilder, writeGlb } from './testing/GltfBuilder';
@@ -1375,6 +1376,106 @@ describe('malformed glTF files', () => {
     await expect(data('huge.glb')).rejects.toThrow(/out of the bounds/);
     await expect(data('negative.glb')).rejects.toThrow(/byteOffset -12/);
     await expect(data('fraction.glb')).rejects.toThrow(/Invalid count/);
+  });
+
+  /** A primitive whose positions have no buffer view: `count` zeros, and sparse values. */
+  function zeros(count: number, sparse = false) {
+    const b = new GltfBuilder();
+    const position = b.add('accessors', {
+      componentType: 5126,
+      type: 'VEC3',
+      count,
+      ...(sparse && {
+        sparse: {
+          count: 1,
+          indices: {
+            bufferView: b.bufferView(new Uint8Array([2])),
+            componentType: 5121,
+          },
+          values: { bufferView: b.bufferView(new Float32Array([1, 2, 3])) },
+        },
+      }),
+    });
+    positionsNode(b, position, {});
+    return b.glb();
+  }
+
+  it('bounds the arrays of the accessors before allocating them', async () => {
+    const { data } = setup({
+      // 2^29 VEC3 floats: 6 GiB of zeros, asked by a few bytes of JSON.
+      'zeros.glb': zeros(2 ** 29),
+      'sparse.glb': zeros(2 ** 29, true),
+    });
+    await expect(data('zeros.glb')).rejects.toThrow(
+      /Accessor 0 needs 6442450944 bytes, more than the limit of 268435456 per accessor/,
+    );
+    await expect(data('sparse.glb')).rejects.toThrow(/maxAccessorBytes/);
+  });
+
+  it('takes the limits from the options: per accessor, per file, or none', async () => {
+    // 36 bytes of positions and 3 of indices.
+    const file = primitive({}, { indices: new Uint8Array([0, 1, 2]) }).glb();
+    const load = (options: GltfOptions) =>
+      setup({ 'p.glb': file }, options).data('p.glb');
+    await expect(load({ maxAccessorBytes: 35 })).rejects.toThrow(
+      /Accessor 0 needs 36 bytes, more than the limit of 35/,
+    );
+    await expect(load({ maxTotalAccessorBytes: 38 })).rejects.toThrow(
+      /past the limit of 38 for the accessors of a file/,
+    );
+    await expect(
+      load({ maxAccessorBytes: 36, maxTotalAccessorBytes: 39 }),
+    ).resolves.toBeDefined();
+    // 0 is no limit: the zeros are read (3 × 10^6 floats).
+    const { data, mesh } = setup(
+      { 'z.glb': zeros(1e6) },
+      { maxAccessorBytes: 0, maxTotalAccessorBytes: 0 },
+    );
+    await data('z.glb');
+    expect(mesh('z.glb#mesh/0/0')?.description.vertexCount).toBe(1e6);
+  });
+
+  it('takes the limits from the environment when the options have none', async () => {
+    const env = process.env;
+    const file = primitive().glb();
+    try {
+      process.env = { ...env, [gltfLimitVariables.maxAccessorBytes]: '35' };
+      await expect(setup({ 'p.glb': file }).data('p.glb')).rejects.toThrow(
+        /limit of 35 per accessor/,
+      );
+      // The options come first.
+      await expect(
+        setup({ 'p.glb': file }, { maxAccessorBytes: 36 }).data('p.glb'),
+      ).resolves.toBeDefined();
+      process.env = {
+        ...env,
+        [gltfLimitVariables.maxTotalAccessorBytes]: 'lots',
+      };
+      await expect(setup({ 'p.glb': file }).data('p.glb')).rejects.toThrow(
+        /FDW_GLTF_MAX_TOTAL_ACCESSOR_BYTES="lots" is not a size/,
+      );
+    } finally {
+      process.env = env;
+    }
+  });
+
+  it('bounds the accessors read in the workers before posting them', async () => {
+    const { workers, tasks } = workerPool();
+    const { data } = setup({ 'zeros.glb': zeros(2 ** 29) }, { workers });
+    await expect(data('zeros.glb')).rejects.toThrow(/maxAccessorBytes/);
+    expect(tasks).toEqual([]);
+  });
+
+  it('parses the sizes of the environment variables', () => {
+    expect(parseByteSize('268435456')).toBe(268435456);
+    expect(parseByteSize('256MB')).toBe(256 * 2 ** 20);
+    expect(parseByteSize('1.5 GiB')).toBe(1.5 * 2 ** 30);
+    expect(parseByteSize('64k')).toBe(65536);
+    expect(parseByteSize('0')).toBe(0);
+    expect(parseByteSize('-1')).toBeUndefined();
+    expect(parseByteSize('12 parsecs')).toBeUndefined();
+    expect(gltfLimits({ maxAccessorBytes: 0 }).maxAccessorBytes).toBe(Infinity);
+    expect(() => gltfLimits({ maxAccessorBytes: -1 })).toThrow(/Invalid/);
   });
 
   it('fails on a buffer view out of its buffer, or a negative offset', async () => {

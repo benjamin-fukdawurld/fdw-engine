@@ -116,6 +116,37 @@ VkAccelerationStructureGeometryKHR instanceGeometry(VkDeviceAddress data) {
 }
 
 // Frees the memory of a top level (once the GPU no longer uses it).
+// Frees a bottom level now: the GPU no longer uses it.
+void freeBottomLevel(VkDevice device, VmaAllocator allocator,
+                     fdw_vk_bottom_level *bottom) {
+  vkDestroyAccelerationStructureKHR(device, bottom->structure, nullptr);
+  vmaDestroyBuffer(allocator, bottom->storage, bottom->allocation);
+  if (bottom->updateScratch) {
+    vmaDestroyBuffer(allocator, bottom->updateScratch,
+                     bottom->updateScratchAllocation);
+  }
+  delete bottom;
+}
+
+// The bottom levels a top level no longer holds, once the commands
+// recorded so far are done: those destroyed are freed with their last
+// holder.
+void releaseBottomLevels(fdw_vk_context *context,
+                         std::vector<fdw_vk_bottom_level *> bottomLevels) {
+  if (bottomLevels.empty()) {
+    return;
+  }
+  VkDevice device = context->device;
+  VmaAllocator allocator = context->allocator;
+  defer(context, [device, allocator, bottomLevels] {
+    for (fdw_vk_bottom_level *bottom : bottomLevels) {
+      if (--bottom->holders == 0 && bottom->destroyed) {
+        freeBottomLevel(device, allocator, bottom);
+      }
+    }
+  });
+}
+
 void releaseTopLevel(fdw_vk_context *context, fdw_vk_top_level *top) {
   VkDevice device = context->device;
   VmaAllocator allocator = context->allocator;
@@ -260,6 +291,12 @@ int buildTopLevel(fdw_vk_context *context, VkCommandBuffer commands,
 
 void destroyAccelerationStructures(fdw_vk_context *context) {
   for (auto &[id, top] : context->topLevels) {
+    // The GPU is idle: the bottom levels destroyed that it held go now.
+    for (fdw_vk_bottom_level *bottom : top->bottomLevels) {
+      if (--bottom->holders == 0 && bottom->destroyed) {
+        freeBottomLevel(context->device, context->allocator, bottom);
+      }
+    }
     vkDestroyAccelerationStructureKHR(context->device, top->structure, nullptr);
     vmaDestroyBuffer(context->allocator, top->storage, top->allocation);
     vmaDestroyBuffer(context->allocator, top->scratch, top->scratchAllocation);
@@ -267,14 +304,7 @@ void destroyAccelerationStructures(fdw_vk_context *context) {
   }
   context->topLevels.clear();
   for (auto &[id, bottom] : context->bottomLevels) {
-    vkDestroyAccelerationStructureKHR(context->device, bottom->structure,
-                                      nullptr);
-    vmaDestroyBuffer(context->allocator, bottom->storage, bottom->allocation);
-    if (bottom->updateScratch) {
-      vmaDestroyBuffer(context->allocator, bottom->updateScratch,
-                       bottom->updateScratchAllocation);
-    }
-    delete bottom;
+    freeBottomLevel(context->device, context->allocator, bottom);
   }
   context->bottomLevels.clear();
 }
@@ -412,17 +442,17 @@ void fdw_vk_bottom_level_destroy(fdw_vk_context *context,
   if (!bottom || !context->bottomLevels.erase(bottom->id)) {
     return;
   }
+  fdw_vk_buffer_destroy(context, bottom->indices);
+  bottom->indices = nullptr;
+  bottom->destroyed = true;
+  // Held by top levels: freed with the last one (releaseBottomLevels).
+  if (bottom->holders > 0) {
+    return;
+  }
   VkDevice device = context->device;
   VmaAllocator allocator = context->allocator;
-  fdw_vk_buffer_destroy(context, bottom->indices);
   defer(context, [device, allocator, bottom] {
-    vkDestroyAccelerationStructureKHR(device, bottom->structure, nullptr);
-    vmaDestroyBuffer(allocator, bottom->storage, bottom->allocation);
-    if (bottom->updateScratch) {
-      vmaDestroyBuffer(allocator, bottom->updateScratch,
-                       bottom->updateScratchAllocation);
-    }
-    delete bottom;
+    freeBottomLevel(device, allocator, bottom);
   });
 }
 
@@ -461,6 +491,9 @@ static bool mirrors(const float *m) {
 int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
                             const fdw_vk_instance *instances, uint32_t count) {
   std::vector<VkAccelerationStructureInstanceKHR> data(count);
+  // The bottom levels of the instances, held by the structure.
+  std::vector<fdw_vk_bottom_level *> bottomLevels;
+  bottomLevels.reserve(count);
   for (uint32_t i = 0; i < count; i++) {
     const fdw_vk_instance &instance = instances[i];
     const auto bottom = context->bottomLevels.find(instance.bottom_level);
@@ -485,14 +518,27 @@ int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
                         ? VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR
                         : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR);
     target.accelerationStructureReference = bottom->second->address;
+    bottomLevels.push_back(bottom->second);
   }
   int replaced = 0;
   if (count > top->capacity) {
-    const uint32_t capacity = std::max(count, top->capacity * 2);
-    releaseTopLevel(context, top);
-    if (allocateTopLevel(context, top, capacity, nullptr) != 0) {
+    // The larger memory allocated before the current one is freed: on
+    // failure, the top level stays as it was.
+    fdw_vk_top_level larger;
+    if (allocateTopLevel(context, &larger, std::max(count, top->capacity * 2),
+                         nullptr) != 0) {
       return -1;
     }
+    releaseTopLevel(context, top);
+    top->structure = larger.structure;
+    top->storage = larger.storage;
+    top->allocation = larger.allocation;
+    top->instances = larger.instances;
+    top->scratch = larger.scratch;
+    top->scratchAllocation = larger.scratchAllocation;
+    top->scratchAddress = larger.scratchAddress;
+    top->capacity = larger.capacity;
+    top->last = larger.last;
     replaced = 1;
   }
   if (count > 0 &&
@@ -501,6 +547,13 @@ int fdw_vk_top_level_update(fdw_vk_context *context, fdw_vk_top_level *top,
     return -1;
   }
   top->count = count;
+  // Those of the update before, while the builds and rays recorded may
+  // still use them.
+  for (fdw_vk_bottom_level *bottom : bottomLevels) {
+    bottom->holders++;
+  }
+  releaseBottomLevels(context, std::move(top->bottomLevels));
+  top->bottomLevels = std::move(bottomLevels);
   return replaced;
 }
 
@@ -509,6 +562,8 @@ void fdw_vk_top_level_destroy(fdw_vk_context *context, fdw_vk_top_level *top) {
     return;
   }
   releaseTopLevel(context, top);
+  releaseBottomLevels(context, std::move(top->bottomLevels));
+  top->bottomLevels.clear();
   defer(context, [top] { delete top; });
 }
 

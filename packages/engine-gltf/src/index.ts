@@ -1,5 +1,6 @@
 export * from './types';
 export * from './options';
+export * from './limits';
 export * from './extension';
 export * from './extensions';
 export * from './glb';

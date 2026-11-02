@@ -6,6 +6,7 @@ import {
   type GltfBufferView,
   type GltfJson,
 } from './types';
+import { AccessorBudget } from './limits';
 
 type TypedArrayConstructor = {
   new (length: number): GltfTypedArray;
@@ -97,11 +98,13 @@ function copyElements(
 /**
  * Reads the accessors of a file, each once (primitives often share their
  * positions): tightly packed copies, sparse values applied. The arrays are
- * shared between the callers, which must not modify them.
+ * shared between the callers, which must not modify them. Each array is
+ * taken from `budget` before it is allocated (`GltfOptions.maxAccessorBytes`).
  */
 export function accessorReader(
   json: GltfJson,
   bufferView: (index: number) => Promise<Uint8Array<ArrayBuffer>>,
+  budget: AccessorBudget = new AccessorBudget(),
 ): (index: number) => Promise<GltfAttributeData> {
   const cache = new Map<number, Promise<GltfAttributeData>>();
 
@@ -159,6 +162,10 @@ export function accessorReader(
         sparse.count,
       );
     }
+    // The array is the one allocation the file does not back: without a
+    // buffer view, its `count` alone sets its size. The sparse indices and
+    // values copied below are no larger than their buffer views.
+    budget.take(accessor.count * size, `Accessor ${index}`);
     const array = new type(accessor.count * components);
     const bytes = new Uint8Array(array.buffer);
     // Without a buffer view, the values are zeros (and sparse ones).
@@ -212,11 +219,16 @@ export interface PackedAccessors {
   readonly views: Uint8Array<ArrayBuffer>[];
 }
 
-/** Packs accessors of a file for `accessorReader` in a worker (see `PackedAccessors`). */
+/**
+ * Packs accessors of a file for `accessorReader` in a worker (see
+ * `PackedAccessors`). The arrays the worker will allocate are taken from
+ * `budget` here, so that a file past the limits fails before any job.
+ */
 export async function packAccessors(
   json: GltfJson,
   indices: Iterable<number>,
   bufferView: (index: number) => Promise<Uint8Array<ArrayBuffer>>,
+  budget: AccessorBudget = new AccessorBudget(),
 ): Promise<PackedAccessors> {
   const accessors: GltfAccessor[] = [];
   const bufferViews: GltfBufferView[] = [];
@@ -300,6 +312,8 @@ export async function packAccessors(
         },
       };
     }
+    // After the ranges: an accessor out of its buffer view fails as such.
+    budget.take(accessor.count * size, `Accessor ${index}`);
     accessors[index] = packed;
   }
   return { json: { accessors, bufferViews }, views };

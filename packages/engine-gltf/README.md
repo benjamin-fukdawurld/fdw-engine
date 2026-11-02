@@ -52,6 +52,15 @@ The engine bundles no decoder: the application passes them to `installGltf`, and
 - `meshopt`: the `MeshoptDecoder` of the `meshoptimizer` package fits as is.
 - `draco`: a `DracoDecoder` the application writes over `draco3d`. `decode(bytes, attributes)` receives the compressed bytes and the Draco unique ids of the attributes by glTF name (`{ POSITION: 0, TEXCOORD_0: 1 }`), and returns `{ attributes: { POSITION: { array, components, normalized? }, … }, indices? }`.
 
+## Allocation limits
+
+An accessor declares its `count`; one without a buffer view (zeros, then sparse values) is backed by nothing in the file, so a few bytes of JSON could ask for gigabytes (`count: 2^29` of VEC4 floats is 8 GiB). Each array is checked before it is allocated, on the main thread and in the workers, and a file past a limit fails with an error naming it:
+
+- `maxAccessorBytes` (`FDW_GLTF_MAX_ACCESSOR_BYTES`), default 256 MiB (`defaultMaxAccessorBytes`): one accessor, and the decoded size of a meshopt buffer view. Real meshes fit (22 million VEC3 floats, 16 million VEC4 tangents, 67 million `uint32` indices); a hostile file stops long before the memory of a tab or a process runs out.
+- `maxTotalAccessorBytes` (`FDW_GLTF_MAX_TOTAL_ACCESSOR_BYTES`), default 2 GiB (`defaultMaxTotalAccessorBytes`): all the accessors of a file, about a 20-million-vertex mesh with its normals, uvs and indices.
+
+The options of `installGltf` come first, then the environment variables, read where there is a `process` (Node, Electron; never in a browser), in bytes or with a unit (`512MB`, `1.5GiB`; multiples of 1024). 0 removes a bound.
+
 ## Limitations
 
 - Morph targets are not read (a warning says so).
