@@ -51,19 +51,30 @@ export function useViewportBounds(
     const element = ref.current;
     if (!element) return;
     let sent: ViewportBounds | undefined;
-    // Read at each animation frame: the area moves without changing size
-    // (a dock shown, a group moved), or is hidden behind another tab, which
-    // no observer tells.
-    const update = () => {
+    const send = () => {
       const bounds = viewportBounds(element);
       if (!sent || !same(sent, bounds)) {
         sent = bounds;
         engine.post({ type: 'bounds', ...bounds });
       }
+    };
+    // A new size at once, from the layout that made it: the engine draws
+    // its next frame at that size.
+    const resizes =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(send);
+    resizes?.observe(element);
+    // And read at each animation frame: the area moves without changing
+    // size (a dock shown, a group moved), or is hidden behind another tab,
+    // which no observer tells.
+    const update = () => {
+      send();
       frame = requestAnimationFrame(update);
     };
     let frame = requestAnimationFrame(update);
     return () => {
+      resizes?.disconnect();
       cancelAnimationFrame(frame);
       engine.post({ type: 'bounds', ...empty });
     };

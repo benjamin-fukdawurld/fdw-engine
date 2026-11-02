@@ -149,6 +149,9 @@ export class EditorEngine {
   #surface?: Surface;
   #shown?: Shown;
   #running = false;
+  // The viewport changed size since the last frame: the stats tell the new
+  // one after the next frame, not at the end of the second.
+  #resized = false;
   // The scene asked for, and the number of the last request: a scene still
   // loading when another is asked for is dropped.
   #requested: string;
@@ -208,9 +211,14 @@ export class EditorEngine {
   /** A message of the page. */
   receive(message: PageMessage): void {
     switch (message.type) {
-      case 'bounds':
+      case 'bounds': {
+        const { width, height } = this.#platform.viewport.bounds;
         this.#platform.viewport.setBounds(message);
+        if (message.width !== width || message.height !== height) {
+          this.#resized = true;
+        }
         break;
+      }
       case 'holes':
         this.#platform.viewport.setHoles?.(message.holes);
         break;
@@ -318,7 +326,11 @@ export class EditorEngine {
       this.#levelFiles?.store.update();
       const held = this.#runExtensions();
       const shown = this.#shown;
+      // A frame drawn at the new size of the viewport: the stats now.
+      let resized = false;
       if (shown && this.#onScreen() && !held) {
+        resized = this.#resized;
+        this.#resized = false;
         try {
           const begin = performance.now();
           const used = platform.cpuTime?.();
@@ -340,7 +352,7 @@ export class EditorEngine {
         await sleep(16);
       }
       const now = performance.now();
-      if (now - second >= 1000) {
+      if (now - second >= 1000 || resized) {
         this.#post({
           type: 'stats',
           fps: Math.round((frames * 1000) / (now - second)),

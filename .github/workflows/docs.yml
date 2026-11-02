@@ -1,7 +1,10 @@
 # The documentation (design/ci.md §4): built, its links checked and its live
-# examples compared to their reference images on every pull request,
-# published on GitHub Pages from main. Run by hand with update-screenshots,
-# it renders new references on the CI machine, as an artifact.
+# examples compared to their reference images on the pull requests that
+# affect it (`nx affected`: the site, or a package it shows), published on
+# GitHub Pages from main. Run by hand, it always runs; with
+# update-screenshots, it renders new references on the CI machine, as an
+# artifact. The jobs of a change that does not affect the site succeed at
+# once: their statuses stay required to merge.
 name: Documentation
 
 on:
@@ -30,92 +33,140 @@ jobs:
     name: Build the documentation
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      affected: ${{ steps.affected.outputs.affected }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          # nx affected compares with the base of the change.
+          fetch-depth: 0
           lfs: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - run: npm ci
 
-      - uses: actions/cache@v4
+      - uses: nrwl/nx-set-shas@3e9ad7370203c1e93d109be57f3b72eb0eb511b1 # v4.4.0
+
+      # Whether the change affects the site: the docs project or one of the
+      # projects it depends on.
+      - name: Affected
+        id: affected
+        env:
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "$MANUAL" = true ] || npx nx show projects --affected --json | jq -e 'index("docs")' > /dev/null; then
+            echo "affected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "affected=false" >> "$GITHUB_OUTPUT"
+            echo "The documentation is not affected"
+          fi
+
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.affected.outputs.affected == 'true'
         with:
           path: .nx/cache
-          key: nx-docs-${{ runner.os }}-${{ github.sha }}
-          restore-keys: nx-docs-${{ runner.os }}-
+          key: nx-docs-${{ runner.os }}-main-${{ github.sha }}
+          restore-keys: nx-docs-${{ runner.os }}-main-
 
       - name: Build
+        if: steps.affected.outputs.affected == 'true'
         run: npx nx run docs:build
 
       - name: Links
+        if: steps.affected.outputs.affected == 'true'
         run: node tools/docs/check-links.mjs apps/docs/dist
 
+      # Saved by main only (nx.json caps it with maxCacheSize).
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.affected.outputs.affected == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: .nx/cache
+          key: nx-docs-${{ runner.os }}-main-${{ github.sha }}
+
       # The site, for the examples.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.affected.outputs.affected == 'true'
         with:
           name: site
           path: apps/docs/dist
           retention-days: 1
 
       - name: Upload the site
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
+        if: steps.affected.outputs.affected == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: apps/docs/dist
 
   # Each example on WebGL2 and WebGPU (SwiftShader), its clock stopped,
   # compared to apps/docs/tests/screenshots: a job per backend and half of
-  # the examples, too slow on SwiftShader for a single job.
+  # the examples, too slow on SwiftShader for a single job. Their steps are
+  # skipped (the job succeeds) when the site is not affected.
   examples:
     name: Examples (${{ matrix.project }} ${{ matrix.shard }}/2)
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      AFFECTED: ${{ needs.build.outputs.affected }}
     strategy:
       fail-fast: false
       matrix:
         project: [webgl2, webgpu]
         shard: [1, 2]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: env.AFFECTED == 'true'
         with:
           lfs: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: env.AFFECTED == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - run: npm ci
+      - if: env.AFFECTED == 'true'
+        run: npm ci
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: env.AFFECTED == 'true'
         with:
           name: site
           path: apps/docs/dist
 
       - name: Chromium (cache)
-        uses: actions/cache@v4
+        if: env.AFFECTED == 'true'
+        id: playwright
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
+      # The system libraries of Chromium (apt, not cached), then Chromium
+      # itself when the cache has none.
+      - name: Chromium (system libraries)
+        if: env.AFFECTED == 'true'
+        run: npx playwright install-deps chromium
+
       - name: Chromium
-        run: npx playwright install --with-deps chromium
+        if: env.AFFECTED == 'true' && steps.playwright.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
 
       # Playwright directly: docs:visual would build the site again.
       - name: Examples
+        if: env.AFFECTED == 'true'
         working-directory: apps/docs
         env:
           UPDATE: ${{ inputs.update-screenshots && '--update-snapshots' || '' }}
         run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2 $UPDATE
 
       - name: Report of the examples
-        if: failure()
-        uses: actions/upload-artifact@v4
+        if: failure() && env.AFFECTED == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: examples-report-${{ matrix.project }}-${{ matrix.shard }}
           path: |
@@ -123,15 +174,15 @@ jobs:
             apps/docs/out-tsc/playwright
 
       - name: New reference images
-        if: inputs.update-screenshots
-        uses: actions/upload-artifact@v4
+        if: inputs.update-screenshots && env.AFFECTED == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: reference-images-${{ matrix.project }}-${{ matrix.shard }}
           path: apps/docs/tests/screenshots
 
   deploy:
     name: Publish
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.build.outputs.affected == 'true'
     needs: [build, examples]
     runs-on: ubuntu-24.04
     permissions:
@@ -142,4 +193,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

@@ -1591,6 +1591,12 @@ export class Renderer {
     this._runner.destroy();
     this._objectRows.destroy();
     this._objectGroups.clear();
+    // Those being created are destroyed when they are (see ensurePipeline).
+    for (const entry of this._pipelines.values()) {
+      if ('pipeline' in entry) {
+        entry.pipeline.destroy();
+      }
+    }
     this._pipelines.clear();
   }
 
@@ -2283,12 +2289,19 @@ export class Renderer {
   ): boolean {
     if (!this._pipelines.has(key)) {
       if (this._asyncPipelines) {
-        const pending = this.backend.pipelines
-          .createRenderPipelineAsync(descriptor())
-          .then((pipeline) => {
-            this._pipelines.set(key, { pipeline });
-          });
-        this._pipelines.set(key, { pending });
+        const entry: PipelineEntry = {
+          pending: this.backend.pipelines
+            .createRenderPipelineAsync(descriptor())
+            .then((pipeline) => {
+              // Dropped meanwhile (the renderer destroyed): not kept.
+              if (this._pipelines.get(key) === entry) {
+                this._pipelines.set(key, { pipeline });
+              } else {
+                pipeline.destroy();
+              }
+            }),
+        };
+        this._pipelines.set(key, entry);
       } else {
         this._pipelines.set(key, {
           pipeline: this.backend.pipelines.createRenderPipeline(descriptor()),

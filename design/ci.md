@@ -14,16 +14,20 @@ Les limites qui restent sont le temps (un job dure au plus 6 heures, 20 jobs en 
 
 ## 2. Les workflows
 
-| Workflow    | Quand                                       | Ce qu'il fait                                                                                   |
-| ----------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ci.yml`    | Chaque pull request, chaque push sur `main` | Les vérifications (§3) : format, typecheck, lint, tests, suite de rendu                         |
-| `docs.yml`  | Push sur `main` (et à la main)              | Construit la doc, vérifie ses liens, compare les captures des exemples, publie sur GitHub Pages |
-| `bench.yml` | Push sur `main` (et à la main)              | Les benchmarks, comparés à `main` dans le même job (§5)                                         |
+| Workflow     | Quand                                                                                              | Ce qu'il fait                                                                                                   |
+| ------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`     | Chaque pull request, chaque push sur `main`                                                        | Les vérifications (§3) : format, typecheck, lint, tests, suite de rendu, sous Linux et Windows                  |
+| `docs.yml`   | Chaque pull request et push sur `main`, mais ne travaille que si `docs` est affecté (et à la main) | Construit la doc, vérifie ses liens, compare les captures des exemples, publie sur GitHub Pages                 |
+| `bench.yml`  | Push sur `main` hors doc et design ; pull request avec le label `benchmark` (et à la main)         | Les benchmarks, comparés à leur base dans le même job (§5)                                                      |
+| `addons.yml` | Après une CI verte sur un push de `main`, quand une release manque pour l'état des sources natives | Construit les addons précompilés (Linux, Windows), les charge depuis leur archive, les publie avec leur SHA-256 |
 
 Communs à tous :
 
 - `concurrency` : une nouvelle exécution sur la même branche annule la précédente ;
 - des **caches** : `node_modules` (selon `package-lock.json`), le cache de Nx (`.nx/cache`), les dépendances CMake des addons (SDL, volk… récupérées par FetchContent) et `ccache`, le SDK Vulkan ;
+- le cache de Nx est **restauré depuis le dernier run de `main` et sauvé par `main` seulement** : une pull request le lit sans ajouter d'entrée aux 10 Go du dépôt ; `nx.json` le plafonne (`maxCacheSize: 1GB`) ;
+- les actions tierces **épinglées par commit** (la version en commentaire) : `addons.yml` écrit des releases ;
+- la version du SDK Vulkan dans `tools/native/VULKAN_SDK_VERSION`, lue par les workflows et comprise dans le hash des addons précompilés ;
 - Node 24, la version du projet.
 
 ## 3. `ci.yml` : les vérifications
@@ -36,9 +40,9 @@ Deux jobs Linux en parallèle :
    - construit les addons (`engine-native`, `engine-vulkan`) ;
    - lance les tests des packages natifs et la suite de rendu : Vulkan sur lavapipe, Dawn, HLSL (DXC et spirv-val), WebGL2 dans Chromium avec SwiftShader.
 
-**Quels projets.** Les projets qui ont besoin du GPU, d'un SDK ou d'un écran portent le tag `gpu` (`engine-webgpu`, pour ses tests sur Dawn, `engine-native`, `engine-vulkan`, `rendering-tests`, `engine-audio-web`, pour ses tests dans Chromium, `engine-audio-native`, pour l'addon d'`engine-native`) : `check` les exclut (`nx affected --exclude=tag:gpu`), `native` ne lance qu'eux, et seulement s'ils sont touchés par le changement (`nx show projects --affected --projects tag:gpu`). Sinon `native` s'arrête tout de suite, en succès : le statut reste exigible pour fusionner. Les fenêtres tournent dans un écran virtuel (Xvfb).
+**Quels projets.** Les projets qui ont besoin du GPU, d'un SDK ou d'un écran portent le tag `gpu` (`engine-webgpu`, pour ses tests sur Dawn, `engine-native`, `engine-vulkan`, `engine-d3d12`, `rendering-tests`, `engine-audio-web` et `editor-web`, pour leurs tests dans Chromium, `engine-audio-native`, `engine-input-native` et `engine-resources-native`, pour l'addon d'`engine-native`, et `editor`) : `check` les exclut (`nx affected --exclude=tag:gpu`), `native` ne lance qu'eux, et seulement s'ils sont touchés par le changement (`nx show projects --affected --projects tag:gpu`). Sinon `native` s'arrête tout de suite, en succès : le statut reste exigible pour fusionner. Les fenêtres tournent dans un écran virtuel (Xvfb). Les projets `gpu` passent **un à la fois** (`nx run-many --parallel=1`) : chacun fait tourner des GPU logiciels qui s'étalent sur les 4 vCPU du runner. Leurs durées sont publiées (rapport JUnit, artefact `junit-<os>`) : on les suit plutôt que d'allonger les timeouts.
 
-**Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window` fait échouer les tests quand une suite exigée ne peut pas tourner : `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`, appelée par chaque suite. WebGL2 n'en a pas besoin : sans Chromium, sa suite échoue déjà.
+**Pas de saut silencieux.** Aujourd'hui, une suite se désactive quand son SDK, son addon ou son adaptateur manque : c'est pratique sur un poste, mais en CI une suite sautée passerait pour réussie. Une variable `FDW_REQUIRE_SUITES=vulkan,dawn,hlsl,glsl,window,native` fait échouer les tests quand une suite exigée ne peut pas tourner : `canRun(name, ready, reason)` de `@fdw/engine-backend/testing`, appelée par chaque suite. WebGL2 n'en a pas besoin : sans Chromium, sa suite échoue déjà.
 
 **Windows et macOS** ne sont pas dans P0 : les addons n'y sont pas encore construits (c'est la phase P11). Windows s'est ajouté avec P11 : un troisième job, **`windows`**, les projets tagués `gpu` sous Windows, Direct3D 12 compris, à chaque pull request comme `native` ([p11-windows.md §2](p11-windows.md#2-la-ci-sous-windows)). macOS viendra ensuite.
 
@@ -65,7 +69,7 @@ Deux jobs Linux en parallèle :
 
 Plus de commit direct sur `main` : chaque changement passe par une branche (`FDW-P0`, …) et une pull request.
 
-- **Une règle sur `main`** (un ruleset du dépôt) : pas de push direct, pas de force push, pas de suppression ; une pull request obligatoire ; les statuts `Check`, `Native and rendering`, `Build the documentation` et les quatre `Examples (…)` verts pour fusionner ; les conversations résolues.
+- **Une règle sur `main`** (un ruleset du dépôt) : pas de push direct, pas de force push, pas de suppression ; une pull request obligatoire ; les statuts `Check`, `Native and rendering`, `Build the documentation` et les quatre `Examples (…)` verts pour fusionner (ceux de la doc réussissent tout de suite quand elle n'est pas affectée) ; `Windows` n'en fait pas partie aujourd'hui : **à décider**, sachant qu'il est le seul à tester Direct3D 12 ; les conversations résolues.
 - **Fusion par squash** : un commit par pull request sur `main`, un historique linéaire ; les branches supprimées après la fusion.
 - **Le format en local** : `npm run format` formate les fichiers suivis par git, `npm run format:check` vérifie comme la CI.
 

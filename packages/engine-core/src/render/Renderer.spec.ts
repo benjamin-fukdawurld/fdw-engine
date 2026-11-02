@@ -648,6 +648,17 @@ describe('Renderer, HDR', () => {
       [],
     );
     expect(log.samplers.every((sampler) => sampler.destroyed)).toBe(true);
+    expect(log.destroyedPipelines).toBe(log.pipelines.length);
+  });
+
+  it('destroys the pipelines created asynchronously after it', async () => {
+    const { renderer, render, log } = hdrSetup({ asyncPipelines: true });
+    render([item()]);
+    expect(log.pipelines.length).toBeGreaterThan(0);
+    renderer.destroy();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(log.destroyedPipelines).toBe(log.pipelines.length);
   });
 
   it('renders linear colors in an HDR target, then tone maps them', () => {

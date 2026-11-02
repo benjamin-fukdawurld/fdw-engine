@@ -1,5 +1,5 @@
 import type { GpuCommandEncoder } from '@fdw/engine-backend';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { WebGpuPassTimer } from './WebGpuPassTimer';
 
 // GPUBufferUsage and GPUMapMode only exist in a WebGPU context.
@@ -13,7 +13,12 @@ beforeAll(() => {
     },
     GPUMapMode: { READ: 1 },
   });
+  // 10 ms between the reads of the clock.
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => (now += 10));
 });
+
+afterAll(() => vi.restoreAllMocks());
 
 // A fake device whose query set keeps its timestamps from frame to frame,
 // as a GPU does: the passes write theirs when run.
@@ -88,8 +93,15 @@ describe('WebGpuPassTimer', () => {
       NaN,
       NaN,
     ]);
+    // Longer than the frame: garbage.
+    expect(await frame(3, [[0, 1_000_000n, 90_000_000_000n]])).toEqual([
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+    ]);
     // Nothing run: nothing measured.
-    expect(await frame(3, [])).toEqual([NaN, 1, NaN, NaN]);
-    expect(timer.read()?.frame).toBe(2);
+    expect(await frame(4, [])).toEqual([NaN, NaN, NaN, NaN]);
+    expect(timer.read()?.frame).toBe(3);
   });
 });

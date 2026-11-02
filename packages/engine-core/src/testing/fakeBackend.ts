@@ -201,6 +201,8 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     // A view of the rows of the last write: read it right after the frame.
     lastInstances: new Uint32Array() as Uint32Array,
     pipelines: [] as RenderPipelineDescriptor[],
+    // The render pipelines destroyed.
+    destroyedPipelines: 0,
     bindGroups: [] as { key: string; entries: readonly GpuBindGroupEntry[] }[],
     draws: [] as {
       pipeline: string;
@@ -300,7 +302,9 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
             descriptor.program.vertexInputs,
             descriptor.vertex,
           ).map((b) => b.buffer),
-          destroy: () => undefined,
+          destroy: () => {
+            log.destroyedPipelines++;
+          },
         };
       },
       createRenderPipelineAsync: async (descriptor) => {
@@ -311,7 +315,9 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
             descriptor.program.vertexInputs,
             descriptor.vertex,
           ).map((b) => b.buffer),
-          destroy: () => undefined,
+          destroy: () => {
+            log.destroyedPipelines++;
+          },
         };
       },
       createComputePipeline: ({ program, label }) => ({

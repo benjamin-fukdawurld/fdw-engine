@@ -4,6 +4,12 @@
 # (`native`): Vulkan on lavapipe, Dawn, HLSL through DXC, WebGL2 in
 # Chromium with SwiftShader; the same under Windows (`windows`, design/
 # p11-windows.md §2), with Direct3D 12 on WARP.
+#
+# The cache of Nx is restored from the last run of main, and saved by main
+# only (nx.json caps it with maxCacheSize): a pull request reads it, never
+# adds an entry of its own to the 10 GB of the repository.
+#
+# The third-party actions are pinned by commit, their version beside.
 name: CI
 
 on:
@@ -22,7 +28,6 @@ permissions:
 
 env:
   NODE_VERSION: 24
-  VULKAN_SDK_VERSION: 1.4.363.0
 
 jobs:
   check:
@@ -30,13 +35,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # nx affected compares with the base of the change.
           fetch-depth: 0
           lfs: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -45,13 +50,13 @@ jobs:
 
       # NX_BASE and NX_HEAD: the last successful run on main, or the base of
       # the pull request.
-      - uses: nrwl/nx-set-shas@v4
+      - uses: nrwl/nx-set-shas@3e9ad7370203c1e93d109be57f3b72eb0eb511b1 # v4.4.0
 
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .nx/cache
-          key: nx-check-${{ runner.os }}-${{ github.sha }}
-          restore-keys: nx-check-${{ runner.os }}-
+          key: nx-check-${{ runner.os }}-main-${{ github.sha }}
+          restore-keys: nx-check-${{ runner.os }}-main-
 
       - name: Format
         run: npm run format:check
@@ -64,27 +69,37 @@ jobs:
       - name: Tests
         run: npx nx affected -t test --exclude=tag:gpu
 
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: .nx/cache
+          key: nx-check-${{ runner.os }}-main-${{ github.sha }}
+
   native:
     name: Native and rendering
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       # A suite that cannot run fails instead of being skipped.
-      FDW_REQUIRE_SUITES: vulkan,dawn,hlsl,glsl,window
+      FDW_REQUIRE_SUITES: vulkan,dawn,hlsl,glsl,window,native
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           lfs: true
 
-      - uses: actions/setup-node@v4
+      # The version of the SDK the prebuilt addons are built with.
+      - name: Vulkan SDK version
+        run: echo "VULKAN_SDK_VERSION=$(cat tools/native/VULKAN_SDK_VERSION)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - run: npm ci
 
-      - uses: nrwl/nx-set-shas@v4
+      - uses: nrwl/nx-set-shas@3e9ad7370203c1e93d109be57f3b72eb0eb511b1 # v4.4.0
 
       # The affected projects tagged gpu: the rest of the job only runs when
       # there are some.
@@ -112,7 +127,7 @@ jobs:
       - name: Vulkan SDK (cache)
         if: steps.affected.outputs.projects != ''
         id: vulkan-sdk
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/vulkan/${{ env.VULKAN_SDK_VERSION }}
           key: vulkan-sdk-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}
@@ -139,16 +154,16 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "$VULKAN_SDK/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.affected.outputs.projects != ''
         with:
           path: .nx/cache
-          key: nx-native-${{ runner.os }}-${{ github.sha }}
-          restore-keys: nx-native-${{ runner.os }}-
+          key: nx-native-${{ runner.os }}-main-${{ github.sha }}
+          restore-keys: nx-native-${{ runner.os }}-main-
 
       # The CMake builds of the addons (SDL and the other fetched
       # dependencies), and the compiler cache.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.affected.outputs.projects != ''
         with:
           path: |
@@ -160,27 +175,58 @@ jobs:
 
       - name: Chromium (cache)
         if: steps.affected.outputs.projects != ''
-        uses: actions/cache@v4
+        id: playwright
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Chromium
+      # The system libraries of Chromium (apt, not cached), then Chromium
+      # itself when the cache has none.
+      - name: Chromium (system libraries)
         if: steps.affected.outputs.projects != ''
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install-deps chromium
 
-      # In a virtual display, for the windows.
+      - name: Chromium
+        if: steps.affected.outputs.projects != '' && steps.playwright.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
+      # In a virtual display, for the windows. One project at a time: each
+      # drives software GPUs that spread on the 4 vCPU of the runner.
       - name: Tests
         if: steps.affected.outputs.projects != ''
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
           PROJECTS: ${{ steps.affected.outputs.projects }}
-        run: xvfb-run -a npx nx run-many -t test --projects="$PROJECTS"
+        run: xvfb-run -a npx nx run-many -t test --projects="$PROJECTS" --parallel=1
+
+      # The durations of the tests (JUnit, where a project writes it), to
+      # follow them rather than lengthen the timeouts.
+      - name: Durations of the tests
+        if: always() && steps.affected.outputs.projects != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: junit-${{ runner.os }}
+          path: |
+            tests/*/test-output/junit.xml
+            packages/*/test-output/junit.xml
+            apps/*/test-output/junit.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.affected.outputs.projects != '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: .nx/cache
+          key: nx-native-${{ runner.os }}-main-${{ github.sha }}
 
   # The native job under Windows: the addons built by MSVC, Vulkan on
   # lavapipe, Direct3D 12 and Dawn on WARP, Chromium with WARP and
-  # SwiftShader. The windows open on the desktop of the runner.
+  # SwiftShader. The windows open on the desktop of the runner. No compiler
+  # cache: the Visual Studio generator of CMake takes no launcher (sccache
+  # would need Ninja); MSBuild rebuilds only what changed in the cached
+  # build directories.
   windows:
     name: Windows
     runs-on: windows-2025
@@ -189,23 +235,26 @@ jobs:
       run:
         shell: bash
     env:
-      FDW_REQUIRE_SUITES: vulkan,d3d12,dawn,hlsl,glsl,window
+      FDW_REQUIRE_SUITES: vulkan,d3d12,dawn,hlsl,glsl,window,native
       # The software rasterizer of Windows: the runner has no GPU.
       FDW_D3D12_ADAPTER: warp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           lfs: true
 
-      - uses: actions/setup-node@v4
+      - name: Vulkan SDK version
+        run: echo "VULKAN_SDK_VERSION=$(cat tools/native/VULKAN_SDK_VERSION)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - run: npm ci
 
-      - uses: nrwl/nx-set-shas@v4
+      - uses: nrwl/nx-set-shas@3e9ad7370203c1e93d109be57f3b72eb0eb511b1 # v4.4.0
 
       # The affected projects tagged gpu, but the desktop editor: its tests
       # under Windows come with its viewport (design/p11-windows.md §6).
@@ -223,7 +272,7 @@ jobs:
       # bring back an SDK without them.
       - name: Vulkan SDK, loader and lavapipe
         if: steps.affected.outputs.projects != ''
-        uses: jakoch/install-vulkan-sdk-action@v1
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
           optional_components: com.lunarg.vulkan.volk,com.lunarg.vulkan.vma
@@ -245,16 +294,16 @@ jobs:
           echo "VK_DRIVER_FILES=$(cygpath -w "$manifest")" >> "$GITHUB_ENV"
           echo "$VULKAN_SDK/Bin" >> "$GITHUB_PATH"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.affected.outputs.projects != ''
         with:
           path: .nx/cache
-          key: nx-native-${{ runner.os }}-${{ github.sha }}
-          restore-keys: nx-native-${{ runner.os }}-
+          key: nx-native-${{ runner.os }}-main-${{ github.sha }}
+          restore-keys: nx-native-${{ runner.os }}-main-
 
       # The CMake builds of the addons (SDL and the other fetched
       # dependencies): MSBuild rebuilds what changed.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.affected.outputs.projects != ''
         with:
           path: |
@@ -266,7 +315,8 @@ jobs:
 
       - name: Chromium (cache)
         if: steps.affected.outputs.projects != ''
-        uses: actions/cache@v4
+        id: playwright
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/AppData/Local/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -274,11 +324,29 @@ jobs:
       # Chromium and its headless shell: WebGPU needs the first under
       # Windows (apps/editor-web/vite.config.mts).
       - name: Chromium
-        if: steps.affected.outputs.projects != ''
+        if: steps.affected.outputs.projects != '' && steps.playwright.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
       - name: Tests
         if: steps.affected.outputs.projects != ''
         env:
           PROJECTS: ${{ steps.affected.outputs.projects }}
-        run: npx nx run-many -t test --projects="$PROJECTS"
+        run: npx nx run-many -t test --projects="$PROJECTS" --parallel=1
+
+      - name: Durations of the tests
+        if: always() && steps.affected.outputs.projects != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: junit-${{ runner.os }}
+          path: |
+            tests/*/test-output/junit.xml
+            packages/*/test-output/junit.xml
+            apps/*/test-output/junit.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: steps.affected.outputs.projects != '' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: .nx/cache
+          key: nx-native-${{ runner.os }}-main-${{ github.sha }}

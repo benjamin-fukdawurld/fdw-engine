@@ -158,6 +158,13 @@ npm test
 
 Tests use [Vitest](https://vitest.dev/). Each package has its own `vitest.config.mts`, and test files are `src/**/*.spec.ts` or `src/**/*.test.ts`. To test a single package, run `npx nx test engine-shader`, or `npx vitest --watch` from the package directory for watch mode.
 
+On Windows, the tests run by Nx fail with `Cannot read properties of undefined (reading 'config')` when the workspace path has a lowercase drive letter (`c:\…`, as some terminals and editors give it). Run them from a path with an uppercase drive letter, or set it explicitly:
+
+```sh
+export NX_WORKSPACE_ROOT_PATH='C:\path\to\fdw-engine'   # Git Bash
+$env:NX_WORKSPACE_ROOT_PATH = 'C:\path\to\fdw-engine'   # PowerShell
+```
+
 ### Read the documentation
 
 ```sh

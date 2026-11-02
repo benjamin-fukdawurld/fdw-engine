@@ -1,21 +1,24 @@
-# The prebuilt addons (design/p11-windows.md §4): on main, when native
-# sources change, the addons built under Linux and Windows and attached to a
-# GitHub release per addon and per state of its sources
-# (`addons-<name>-<hash>`, tools/native/prebuilt.mjs). The build scripts of
-# the packages fetch them instead of running CMake.
+# The prebuilt addons (design/p11-windows.md §4): once the CI of a push on
+# main has passed, the addons whose sources have no release yet are built
+# under Linux and Windows, loaded from their archives (a smoke test), and
+# attached to a GitHub release per addon and per state of its sources
+# (`addons-<name>-<hash>`, tools/native/prebuilt.mjs), each archive with its
+# SHA-256. The build scripts of the packages fetch them, checked against it,
+# instead of running CMake.
+#
+# The third-party actions are pinned by commit, their version beside: the
+# publish job writes the releases.
 name: Addons
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'packages/*/native/**'
-      - 'apps/editor/native/**'
-      - 'tools/native/**'
   workflow_dispatch:
 
 concurrency:
-  group: addons-${{ github.ref }}
+  group: addons-main
   cancel-in-progress: false
 
 permissions:
@@ -23,13 +26,56 @@ permissions:
 
 env:
   NODE_VERSION: 24
-  VULKAN_SDK_VERSION: 1.4.363.0
   # CMake, not a release of a previous run.
   FDW_FROM_SOURCE: '1'
 
 jobs:
+  # The commit the CI passed on, and whether a release misses one of its
+  # addons (the hash covers the native sources, the build scripts,
+  # tools/native with VULKAN_SDK_VERSION, and node-api-headers).
+  plan:
+    name: Missing releases
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      missing: ${{ steps.plan.outputs.missing }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # `<tag> <archive>` per addon and system.
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          missing=false
+          while read -r tag archive; do
+            assets=$(gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null || true)
+            for name in "$archive" "$archive.sha256"; do
+              if ! grep -qxF "$name" <<< "$assets"; then
+                echo "$tag: $name missing"
+                missing=true
+              fi
+            done
+          done < <(node tools/native/prebuilt.mjs tags)
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.os }})
+    needs: plan
+    if: needs.plan.outputs.missing == 'true'
     strategy:
       matrix:
         os: [ubuntu-24.04, windows-2025]
@@ -39,21 +85,28 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
 
-      - uses: actions/setup-node@v4
+      - name: Vulkan SDK version
+        run: echo "VULKAN_SDK_VERSION=$(cat tools/native/VULKAN_SDK_VERSION)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - run: npm ci
 
-      # The headers SDL builds its X11 video with, and those of the editor.
+      # The headers SDL builds its X11 video with, and those of the editor;
+      # the Vulkan loader, for the smoke test.
       - name: System packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            libvulkan1 \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
             libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev \
             libgbm-dev libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
@@ -63,10 +116,11 @@ jobs:
       # volk and VMA are optional components of the Windows installer; the
       # cache key of the action ignores the components, so no cache there.
       - name: Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@v1
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: ${{ env.VULKAN_SDK_VERSION }}
           optional_components: ${{ runner.os == 'Windows' && 'com.lunarg.vulkan.volk,com.lunarg.vulkan.vma' || '' }}
+          install_runtime: ${{ runner.os == 'Windows' }}
           cache: ${{ runner.os != 'Windows' }}
 
       - name: Build
@@ -79,22 +133,28 @@ jobs:
       - name: Pack
         run: node tools/native/prebuilt.mjs pack dist/addons
 
-      - uses: actions/upload-artifact@v4
+      # Each archive checked against its SHA-256, unpacked alone and its
+      # addon loaded: what a workstation gets.
+      - name: Smoke test
+        run: node tools/native/prebuilt.mjs smoke dist/addons
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: addons-${{ runner.os }}
           path: dist/addons
           retention-days: 7
 
   # One release per addon and state of its sources, the archives of both
-  # systems in it. A release that exists is completed, not replaced.
+  # systems in it, each with its SHA-256. A release that exists is
+  # completed, not replaced.
   publish:
     name: Publish
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: addons
 
@@ -102,16 +162,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          SHA: ${{ needs.plan.outputs.sha }}
         run: |
           for list in addons/*/tags.txt; do
             dir=$(dirname "$list")
             while read -r tag archive; do
               file="$dir/$archive"
               if ! gh release view "$tag" > /dev/null 2>&1; then
-                gh release create "$tag" --target "$GITHUB_SHA" \
+                gh release create "$tag" --target "$SHA" \
                   --title "$tag" \
-                  --notes "Prebuilt addon, for the native sources of $GITHUB_SHA."
+                  --notes "Prebuilt addon, for the native sources of $SHA."
               fi
-              gh release upload "$tag" "$file" --clobber
+              gh release upload "$tag" "$file" "$file.sha256" --clobber
             done < "$list"
           done

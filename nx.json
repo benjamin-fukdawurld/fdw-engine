@@ -98,6 +98,7 @@
       }
     }
   },
+  "maxCacheSize": "1GB",
   "neverConnectToCloud": true,
   "analytics": false
 }
