@@ -20,6 +20,8 @@
     "@astrojs/starlight": "^0.42.6",
     "@babel/core": "^7.14.5",
     "@babel/preset-react": "^7.14.5",
+    "@emnapi/core": "1.11.3",
+    "@emnapi/runtime": "1.11.3",
     "@eslint/js": "^9.8.0",
     "@nx/eslint": "22.7.12",
     "@nx/eslint-plugin": "22.7.12",
