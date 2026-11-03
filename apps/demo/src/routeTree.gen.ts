@@ -9,150 +9,65 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as UniformRouteRouteImport } from './routes/uniform/route'
-import { Route as TriangleVerticesRouteRouteImport } from './routes/triangle-vertices/route'
-import { Route as TriangleStripRouteRouteImport } from './routes/triangle-strip/route'
-import { Route as TriangleHardColorRouteRouteImport } from './routes/triangle-hard-color/route'
-import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
-import { Route as TpsRouteRouteImport } from './routes/tps/route'
-import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
-import { Route as TerrainRouteRouteImport } from './routes/terrain/route'
-import { Route as SsrRouteRouteImport } from './routes/ssr/route'
-import { Route as SplashRouteRouteImport } from './routes/splash/route'
-import { Route as SmokeRouteRouteImport } from './routes/smoke/route'
-import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
-import { Route as PhysicsRouteRouteImport } from './routes/physics/route'
-import { Route as PbrRouteRouteImport } from './routes/pbr/route'
-import { Route as MazeRouteRouteImport } from './routes/maze/route'
-import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
-import { Route as MaterialGraphRouteRouteImport } from './routes/material-graph/route'
-import { Route as LoadingModelRouteRouteImport } from './routes/loading-model/route'
-import { Route as IndexBufferRouteRouteImport } from './routes/index-buffer/route'
-import { Route as FpsRouteRouteImport } from './routes/fps/route'
-import { Route as FaceCullingRouteRouteImport } from './routes/face-culling/route'
-import { Route as DepthTestingRouteRouteImport } from './routes/depth-testing/route'
-import { Route as CullingRouteRouteImport } from './routes/culling/route'
-import { Route as ColoredTriangleInterleavedRouteRouteImport } from './routes/colored-triangle-interleaved/route'
-import { Route as ColoredTriangleRouteRouteImport } from './routes/colored-triangle/route'
-import { Route as CoastRouteRouteImport } from './routes/coast/route'
-import { Route as CityRouteRouteImport } from './routes/city/route'
-import { Route as CameraRouteRouteImport } from './routes/camera/route'
-import { Route as BasinRouteRouteImport } from './routes/basin/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BasinRouteRouteImport } from './routes/basin/route'
+import { Route as CameraRouteRouteImport } from './routes/camera/route'
+import { Route as CityRouteRouteImport } from './routes/city/route'
+import { Route as CoastRouteRouteImport } from './routes/coast/route'
+import { Route as ColoredTriangleRouteRouteImport } from './routes/colored-triangle/route'
+import { Route as ColoredTriangleInterleavedRouteRouteImport } from './routes/colored-triangle-interleaved/route'
+import { Route as CullingRouteRouteImport } from './routes/culling/route'
+import { Route as DepthTestingRouteRouteImport } from './routes/depth-testing/route'
+import { Route as FaceCullingRouteRouteImport } from './routes/face-culling/route'
+import { Route as FpsRouteRouteImport } from './routes/fps/route'
+import { Route as IndexBufferRouteRouteImport } from './routes/index-buffer/route'
+import { Route as LoadingModelRouteRouteImport } from './routes/loading-model/route'
+import { Route as MaterialGraphRouteRouteImport } from './routes/material-graph/route'
+import { Route as MatrixRouteRouteImport } from './routes/matrix/route'
+import { Route as MazeRouteRouteImport } from './routes/maze/route'
+import { Route as PbrRouteRouteImport } from './routes/pbr/route'
+import { Route as PhysicsRouteRouteImport } from './routes/physics/route'
+import { Route as ShadowsRouteRouteImport } from './routes/shadows/route'
+import { Route as SmokeRouteRouteImport } from './routes/smoke/route'
+import { Route as SplashRouteRouteImport } from './routes/splash/route'
+import { Route as SsrRouteRouteImport } from './routes/ssr/route'
+import { Route as TerrainRouteRouteImport } from './routes/terrain/route'
+import { Route as TexturedTriangleRouteRouteImport } from './routes/textured-triangle/route'
+import { Route as TpsRouteRouteImport } from './routes/tps/route'
+import { Route as TriangleRouteRouteImport } from './routes/triangle/route'
+import { Route as TriangleHardColorRouteRouteImport } from './routes/triangle-hard-color/route'
+import { Route as TriangleStripRouteRouteImport } from './routes/triangle-strip/route'
+import { Route as TriangleVerticesRouteRouteImport } from './routes/triangle-vertices/route'
+import { Route as UniformRouteRouteImport } from './routes/uniform/route'
 
-const UniformRouteRoute = UniformRouteRouteImport.update({
-  id: '/uniform',
-  path: '/uniform',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TriangleVerticesRouteRoute = TriangleVerticesRouteRouteImport.update({
-  id: '/triangle-vertices',
-  path: '/triangle-vertices',
+const BasinRouteRoute = BasinRouteRouteImport.update({
+  id: '/basin',
+  path: '/basin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TriangleStripRouteRoute = TriangleStripRouteRouteImport.update({
-  id: '/triangle-strip',
-  path: '/triangle-strip',
+const CameraRouteRoute = CameraRouteRouteImport.update({
+  id: '/camera',
+  path: '/camera',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TriangleHardColorRouteRoute = TriangleHardColorRouteRouteImport.update({
-  id: '/triangle-hard-color',
-  path: '/triangle-hard-color',
+const CityRouteRoute = CityRouteRouteImport.update({
+  id: '/city',
+  path: '/city',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TriangleRouteRoute = TriangleRouteRouteImport.update({
-  id: '/triangle',
-  path: '/triangle',
+const CoastRouteRoute = CoastRouteRouteImport.update({
+  id: '/coast',
+  path: '/coast',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TpsRouteRoute = TpsRouteRouteImport.update({
-  id: '/tps',
-  path: '/tps',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TexturedTriangleRouteRoute = TexturedTriangleRouteRouteImport.update({
-  id: '/textured-triangle',
-  path: '/textured-triangle',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TerrainRouteRoute = TerrainRouteRouteImport.update({
-  id: '/terrain',
-  path: '/terrain',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SsrRouteRoute = SsrRouteRouteImport.update({
-  id: '/ssr',
-  path: '/ssr',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SplashRouteRoute = SplashRouteRouteImport.update({
-  id: '/splash',
-  path: '/splash',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SmokeRouteRoute = SmokeRouteRouteImport.update({
-  id: '/smoke',
-  path: '/smoke',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShadowsRouteRoute = ShadowsRouteRouteImport.update({
-  id: '/shadows',
-  path: '/shadows',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PhysicsRouteRoute = PhysicsRouteRouteImport.update({
-  id: '/physics',
-  path: '/physics',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PbrRouteRoute = PbrRouteRouteImport.update({
-  id: '/pbr',
-  path: '/pbr',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MazeRouteRoute = MazeRouteRouteImport.update({
-  id: '/maze',
-  path: '/maze',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MatrixRouteRoute = MatrixRouteRouteImport.update({
-  id: '/matrix',
-  path: '/matrix',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MaterialGraphRouteRoute = MaterialGraphRouteRouteImport.update({
-  id: '/material-graph',
-  path: '/material-graph',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoadingModelRouteRoute = LoadingModelRouteRouteImport.update({
-  id: '/loading-model',
-  path: '/loading-model',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IndexBufferRouteRoute = IndexBufferRouteRouteImport.update({
-  id: '/index-buffer',
-  path: '/index-buffer',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FpsRouteRoute = FpsRouteRouteImport.update({
-  id: '/fps',
-  path: '/fps',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FaceCullingRouteRoute = FaceCullingRouteRouteImport.update({
-  id: '/face-culling',
-  path: '/face-culling',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DepthTestingRouteRoute = DepthTestingRouteRouteImport.update({
-  id: '/depth-testing',
-  path: '/depth-testing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CullingRouteRoute = CullingRouteRouteImport.update({
-  id: '/culling',
-  path: '/culling',
+const ColoredTriangleRouteRoute = ColoredTriangleRouteRouteImport.update({
+  id: '/colored-triangle',
+  path: '/colored-triangle',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ColoredTriangleInterleavedRouteRoute =
@@ -161,34 +76,119 @@ const ColoredTriangleInterleavedRouteRoute =
     path: '/colored-triangle-interleaved',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ColoredTriangleRouteRoute = ColoredTriangleRouteRouteImport.update({
-  id: '/colored-triangle',
-  path: '/colored-triangle',
+const CullingRouteRoute = CullingRouteRouteImport.update({
+  id: '/culling',
+  path: '/culling',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CoastRouteRoute = CoastRouteRouteImport.update({
-  id: '/coast',
-  path: '/coast',
+const DepthTestingRouteRoute = DepthTestingRouteRouteImport.update({
+  id: '/depth-testing',
+  path: '/depth-testing',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CityRouteRoute = CityRouteRouteImport.update({
-  id: '/city',
-  path: '/city',
+const FaceCullingRouteRoute = FaceCullingRouteRouteImport.update({
+  id: '/face-culling',
+  path: '/face-culling',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CameraRouteRoute = CameraRouteRouteImport.update({
-  id: '/camera',
-  path: '/camera',
+const FpsRouteRoute = FpsRouteRouteImport.update({
+  id: '/fps',
+  path: '/fps',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BasinRouteRoute = BasinRouteRouteImport.update({
-  id: '/basin',
-  path: '/basin',
+const IndexBufferRouteRoute = IndexBufferRouteRouteImport.update({
+  id: '/index-buffer',
+  path: '/index-buffer',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const LoadingModelRouteRoute = LoadingModelRouteRouteImport.update({
+  id: '/loading-model',
+  path: '/loading-model',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaterialGraphRouteRoute = MaterialGraphRouteRouteImport.update({
+  id: '/material-graph',
+  path: '/material-graph',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MatrixRouteRoute = MatrixRouteRouteImport.update({
+  id: '/matrix',
+  path: '/matrix',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MazeRouteRoute = MazeRouteRouteImport.update({
+  id: '/maze',
+  path: '/maze',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PbrRouteRoute = PbrRouteRouteImport.update({
+  id: '/pbr',
+  path: '/pbr',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PhysicsRouteRoute = PhysicsRouteRouteImport.update({
+  id: '/physics',
+  path: '/physics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShadowsRouteRoute = ShadowsRouteRouteImport.update({
+  id: '/shadows',
+  path: '/shadows',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SmokeRouteRoute = SmokeRouteRouteImport.update({
+  id: '/smoke',
+  path: '/smoke',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SplashRouteRoute = SplashRouteRouteImport.update({
+  id: '/splash',
+  path: '/splash',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SsrRouteRoute = SsrRouteRouteImport.update({
+  id: '/ssr',
+  path: '/ssr',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TerrainRouteRoute = TerrainRouteRouteImport.update({
+  id: '/terrain',
+  path: '/terrain',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TexturedTriangleRouteRoute = TexturedTriangleRouteRouteImport.update({
+  id: '/textured-triangle',
+  path: '/textured-triangle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TpsRouteRoute = TpsRouteRouteImport.update({
+  id: '/tps',
+  path: '/tps',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TriangleRouteRoute = TriangleRouteRouteImport.update({
+  id: '/triangle',
+  path: '/triangle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TriangleHardColorRouteRoute = TriangleHardColorRouteRouteImport.update({
+  id: '/triangle-hard-color',
+  path: '/triangle-hard-color',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TriangleStripRouteRoute = TriangleStripRouteRouteImport.update({
+  id: '/triangle-strip',
+  path: '/triangle-strip',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TriangleVerticesRouteRoute = TriangleVerticesRouteRouteImport.update({
+  id: '/triangle-vertices',
+  path: '/triangle-vertices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UniformRouteRoute = UniformRouteRouteImport.update({
+  id: '/uniform',
+  path: '/uniform',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -423,200 +423,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/uniform': {
-      id: '/uniform'
-      path: '/uniform'
-      fullPath: '/uniform'
-      preLoaderRoute: typeof UniformRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/triangle-vertices': {
-      id: '/triangle-vertices'
-      path: '/triangle-vertices'
-      fullPath: '/triangle-vertices'
-      preLoaderRoute: typeof TriangleVerticesRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/triangle-strip': {
-      id: '/triangle-strip'
-      path: '/triangle-strip'
-      fullPath: '/triangle-strip'
-      preLoaderRoute: typeof TriangleStripRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/triangle-hard-color': {
-      id: '/triangle-hard-color'
-      path: '/triangle-hard-color'
-      fullPath: '/triangle-hard-color'
-      preLoaderRoute: typeof TriangleHardColorRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/triangle': {
-      id: '/triangle'
-      path: '/triangle'
-      fullPath: '/triangle'
-      preLoaderRoute: typeof TriangleRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tps': {
-      id: '/tps'
-      path: '/tps'
-      fullPath: '/tps'
-      preLoaderRoute: typeof TpsRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/textured-triangle': {
-      id: '/textured-triangle'
-      path: '/textured-triangle'
-      fullPath: '/textured-triangle'
-      preLoaderRoute: typeof TexturedTriangleRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/terrain': {
-      id: '/terrain'
-      path: '/terrain'
-      fullPath: '/terrain'
-      preLoaderRoute: typeof TerrainRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ssr': {
-      id: '/ssr'
-      path: '/ssr'
-      fullPath: '/ssr'
-      preLoaderRoute: typeof SsrRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/splash': {
-      id: '/splash'
-      path: '/splash'
-      fullPath: '/splash'
-      preLoaderRoute: typeof SplashRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/smoke': {
-      id: '/smoke'
-      path: '/smoke'
-      fullPath: '/smoke'
-      preLoaderRoute: typeof SmokeRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shadows': {
-      id: '/shadows'
-      path: '/shadows'
-      fullPath: '/shadows'
-      preLoaderRoute: typeof ShadowsRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/physics': {
-      id: '/physics'
-      path: '/physics'
-      fullPath: '/physics'
-      preLoaderRoute: typeof PhysicsRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pbr': {
-      id: '/pbr'
-      path: '/pbr'
-      fullPath: '/pbr'
-      preLoaderRoute: typeof PbrRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/maze': {
-      id: '/maze'
-      path: '/maze'
-      fullPath: '/maze'
-      preLoaderRoute: typeof MazeRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/matrix': {
-      id: '/matrix'
-      path: '/matrix'
-      fullPath: '/matrix'
-      preLoaderRoute: typeof MatrixRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/material-graph': {
-      id: '/material-graph'
-      path: '/material-graph'
-      fullPath: '/material-graph'
-      preLoaderRoute: typeof MaterialGraphRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/loading-model': {
-      id: '/loading-model'
-      path: '/loading-model'
-      fullPath: '/loading-model'
-      preLoaderRoute: typeof LoadingModelRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/index-buffer': {
-      id: '/index-buffer'
-      path: '/index-buffer'
-      fullPath: '/index-buffer'
-      preLoaderRoute: typeof IndexBufferRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fps': {
-      id: '/fps'
-      path: '/fps'
-      fullPath: '/fps'
-      preLoaderRoute: typeof FpsRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/face-culling': {
-      id: '/face-culling'
-      path: '/face-culling'
-      fullPath: '/face-culling'
-      preLoaderRoute: typeof FaceCullingRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/depth-testing': {
-      id: '/depth-testing'
-      path: '/depth-testing'
-      fullPath: '/depth-testing'
-      preLoaderRoute: typeof DepthTestingRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/culling': {
-      id: '/culling'
-      path: '/culling'
-      fullPath: '/culling'
-      preLoaderRoute: typeof CullingRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/colored-triangle-interleaved': {
-      id: '/colored-triangle-interleaved'
-      path: '/colored-triangle-interleaved'
-      fullPath: '/colored-triangle-interleaved'
-      preLoaderRoute: typeof ColoredTriangleInterleavedRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/colored-triangle': {
-      id: '/colored-triangle'
-      path: '/colored-triangle'
-      fullPath: '/colored-triangle'
-      preLoaderRoute: typeof ColoredTriangleRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/coast': {
-      id: '/coast'
-      path: '/coast'
-      fullPath: '/coast'
-      preLoaderRoute: typeof CoastRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/city': {
-      id: '/city'
-      path: '/city'
-      fullPath: '/city'
-      preLoaderRoute: typeof CityRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/camera': {
-      id: '/camera'
-      path: '/camera'
-      fullPath: '/camera'
-      preLoaderRoute: typeof CameraRouteRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/basin': {
@@ -626,11 +437,200 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BasinRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/camera': {
+      id: '/camera'
+      path: '/camera'
+      fullPath: '/camera'
+      preLoaderRoute: typeof CameraRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/city': {
+      id: '/city'
+      path: '/city'
+      fullPath: '/city'
+      preLoaderRoute: typeof CityRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/coast': {
+      id: '/coast'
+      path: '/coast'
+      fullPath: '/coast'
+      preLoaderRoute: typeof CoastRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/colored-triangle': {
+      id: '/colored-triangle'
+      path: '/colored-triangle'
+      fullPath: '/colored-triangle'
+      preLoaderRoute: typeof ColoredTriangleRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/colored-triangle-interleaved': {
+      id: '/colored-triangle-interleaved'
+      path: '/colored-triangle-interleaved'
+      fullPath: '/colored-triangle-interleaved'
+      preLoaderRoute: typeof ColoredTriangleInterleavedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/culling': {
+      id: '/culling'
+      path: '/culling'
+      fullPath: '/culling'
+      preLoaderRoute: typeof CullingRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/depth-testing': {
+      id: '/depth-testing'
+      path: '/depth-testing'
+      fullPath: '/depth-testing'
+      preLoaderRoute: typeof DepthTestingRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/face-culling': {
+      id: '/face-culling'
+      path: '/face-culling'
+      fullPath: '/face-culling'
+      preLoaderRoute: typeof FaceCullingRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fps': {
+      id: '/fps'
+      path: '/fps'
+      fullPath: '/fps'
+      preLoaderRoute: typeof FpsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/index-buffer': {
+      id: '/index-buffer'
+      path: '/index-buffer'
+      fullPath: '/index-buffer'
+      preLoaderRoute: typeof IndexBufferRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/loading-model': {
+      id: '/loading-model'
+      path: '/loading-model'
+      fullPath: '/loading-model'
+      preLoaderRoute: typeof LoadingModelRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/material-graph': {
+      id: '/material-graph'
+      path: '/material-graph'
+      fullPath: '/material-graph'
+      preLoaderRoute: typeof MaterialGraphRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/matrix': {
+      id: '/matrix'
+      path: '/matrix'
+      fullPath: '/matrix'
+      preLoaderRoute: typeof MatrixRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/maze': {
+      id: '/maze'
+      path: '/maze'
+      fullPath: '/maze'
+      preLoaderRoute: typeof MazeRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pbr': {
+      id: '/pbr'
+      path: '/pbr'
+      fullPath: '/pbr'
+      preLoaderRoute: typeof PbrRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/physics': {
+      id: '/physics'
+      path: '/physics'
+      fullPath: '/physics'
+      preLoaderRoute: typeof PhysicsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shadows': {
+      id: '/shadows'
+      path: '/shadows'
+      fullPath: '/shadows'
+      preLoaderRoute: typeof ShadowsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/smoke': {
+      id: '/smoke'
+      path: '/smoke'
+      fullPath: '/smoke'
+      preLoaderRoute: typeof SmokeRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/splash': {
+      id: '/splash'
+      path: '/splash'
+      fullPath: '/splash'
+      preLoaderRoute: typeof SplashRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ssr': {
+      id: '/ssr'
+      path: '/ssr'
+      fullPath: '/ssr'
+      preLoaderRoute: typeof SsrRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terrain': {
+      id: '/terrain'
+      path: '/terrain'
+      fullPath: '/terrain'
+      preLoaderRoute: typeof TerrainRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/textured-triangle': {
+      id: '/textured-triangle'
+      path: '/textured-triangle'
+      fullPath: '/textured-triangle'
+      preLoaderRoute: typeof TexturedTriangleRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tps': {
+      id: '/tps'
+      path: '/tps'
+      fullPath: '/tps'
+      preLoaderRoute: typeof TpsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/triangle': {
+      id: '/triangle'
+      path: '/triangle'
+      fullPath: '/triangle'
+      preLoaderRoute: typeof TriangleRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/triangle-hard-color': {
+      id: '/triangle-hard-color'
+      path: '/triangle-hard-color'
+      fullPath: '/triangle-hard-color'
+      preLoaderRoute: typeof TriangleHardColorRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/triangle-strip': {
+      id: '/triangle-strip'
+      path: '/triangle-strip'
+      fullPath: '/triangle-strip'
+      preLoaderRoute: typeof TriangleStripRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/triangle-vertices': {
+      id: '/triangle-vertices'
+      path: '/triangle-vertices'
+      fullPath: '/triangle-vertices'
+      preLoaderRoute: typeof TriangleVerticesRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/uniform': {
+      id: '/uniform'
+      path: '/uniform'
+      fullPath: '/uniform'
+      preLoaderRoute: typeof UniformRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
