@@ -170,7 +170,11 @@ describe('the plugins of the web editor', () => {
     fireEvent.click(
       within(palette).getByRole('option', { name: 'Tool: Mark' }),
     );
-    expect(await screen.findByText('Object mode · Mark')).toBeTruthy();
+    // Once the code of the plugin is loaded: longer than the 1 s of
+    // findByText when the machine is busy.
+    expect(
+      await screen.findByText('Object mode · Mark', {}, { timeout: 10_000 }),
+    ).toBeTruthy();
     fireEvent.keyDown(window, { key: 'm', code: 'KeyM' });
     fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Marks' }), {
       key: 'Enter',

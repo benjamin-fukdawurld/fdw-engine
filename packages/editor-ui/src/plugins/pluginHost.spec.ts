@@ -188,6 +188,21 @@ describe('PluginHost', () => {
     expect(runtime.plugins.info('acme.tools')?.status).toBe('failed');
   });
 
+  it('drops a tool whose plugin loads after the editor is disposed', async () => {
+    const { plugin, load, module } = acmePlugin();
+    let loaded!: () => void;
+    load.mockImplementation(
+      () => new Promise((resolve) => (loaded = () => resolve(module))),
+    );
+    const runtime = startRuntime([{ plugin }]);
+    const run = runtime.commands.execute('acme.tool');
+    await vi.waitFor(() => expect(load).toHaveBeenCalled());
+    runtime.dispose();
+    loaded();
+    // No machine left: the command ends without an error.
+    await expect(run).resolves.toBeUndefined();
+  });
+
   it('disposes what a plugin registered when deactivated, its tool ended', async () => {
     const { plugin, module, service } = acmePlugin();
     const runtime = startRuntime([{ plugin }]);

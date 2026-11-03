@@ -178,6 +178,9 @@ export class PluginHost implements IDisposable {
   readonly #entries = new Map<string, Entry>();
   readonly #invalid: PluginInfo[] = [];
   readonly #listeners = new Set<() => void>();
+  // Disposed with the editor: a tool or a mode whose plugin loads meanwhile
+  // has no machine left to drive.
+  #disposed = false;
   #infos: readonly PluginInfo[] = [];
 
   constructor(registries: PluginRegistries) {
@@ -314,6 +317,7 @@ export class PluginHost implements IDisposable {
 
   /** Deactivates the plugins and removes their contributions. */
   dispose(): void {
+    this.#disposed = true;
     for (const entry of [...this.#entries.values()].reverse()) {
       void this.#deactivate(entry);
       disposeAll(entry.declarations);
@@ -386,6 +390,7 @@ export class PluginHost implements IDisposable {
       add(
         registries.commands.registerHandler(tool.id, async () => {
           await this.activateByEvent(`onTool:${tool.id}`);
+          if (this.#disposed) return;
           const machine = registries.machine();
           if (machine.getSnapshot().context.tools[tool.slot] === tool.id) {
             machine.send({ type: 'TOOL.DEACTIVATE', slot: tool.slot });
@@ -408,6 +413,7 @@ export class PluginHost implements IDisposable {
       add(
         registries.commands.registerHandler(mode.id, async () => {
           await this.activateByEvent(`onMode:${mode.id}`);
+          if (this.#disposed) return;
           const machine = registries.machine();
           const active = machine.getSnapshot().context.mode === mode.id;
           machine.send({ type: 'MODE.SET', mode: active ? 'object' : mode.id });

@@ -499,15 +499,21 @@ describe('EditorShell, with plugins', () => {
     chooseInMenu('View', 'Plugins');
     const item = (await screen.findByText('acme.notes · Active')).closest('li');
     expect(screen.getByText('fdw.workbench · Active · built in')).toBeTruthy();
+    // Waited for: the menu just closed may still hide the rest of the page
+    // from the accessibility tree (aria-hidden) for a moment.
     fireEvent.click(
-      within(item as HTMLElement).getByRole('button', { name: 'Disable' }),
+      await within(item as HTMLElement).findByRole('button', {
+        name: 'Disable',
+      }),
     );
     expect(
       await screen.findByText('The plugin acme.notes is disabled.'),
     ).toBeTruthy();
     expect(runtime.plugins.info('acme.notes')?.status).toBe('disabled');
     fireEvent.click(
-      within(item as HTMLElement).getByRole('button', { name: 'Enable' }),
+      await within(item as HTMLElement).findByRole('button', {
+        name: 'Enable',
+      }),
     );
     // Its panel open, activated again.
     expect(await screen.findByText('Some notes')).toBeTruthy();

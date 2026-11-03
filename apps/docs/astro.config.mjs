@@ -102,6 +102,9 @@ export default defineConfig({
           output: 'api',
           sidebar: { label: apiLabel, collapsed: true },
           typeDoc: {
+            // A readme of its own: without one, starlight-typedoc drops the
+            // overview page of each package that the index links to.
+            readme: './api-readme.md',
             excludePrivate: true,
             excludeInternal: true,
             skipErrorChecking: true,
