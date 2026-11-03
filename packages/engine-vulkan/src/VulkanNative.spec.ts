@@ -171,6 +171,105 @@ describe.skipIf(!built)('the Vulkan addon', () => {
     expect(() => addon.textureId(texture)).toThrow(/destroyed/);
     expect(addon.takeMessages(context)).toEqual([]);
   });
+
+  const copyUsage =
+    TextureUsageFlags['copy-src'] | TextureUsageFlags['copy-dst'];
+  const copyTexture = (source: number, destination: number) =>
+    new Uint32Array([Commands.copyTexture, source, destination, 2, 2]);
+  const take = (ticket: number) => {
+    const pixels = new Uint8Array(16);
+    addon.readTake(context, ticket, pixels);
+    return [...pixels];
+  };
+
+  it('has no views for the textures only copied, which are not bound nor drawn into', () => {
+    const [source, target] = [0, 1].map(() =>
+      addon.createTexture(
+        context,
+        'rgba8unorm',
+        '2d',
+        2,
+        2,
+        1,
+        1,
+        1,
+        copyUsage,
+      ),
+    );
+    const [a, b] = [source, target].map((t) => addon.textureId(t));
+    addon.writeTexture(source, new Uint8Array(16).fill(7));
+    addon.submit(context, copyTexture(a, b));
+    const pixels = addon.readTexture(target, 0, 0, 2, 2);
+    addon.waitIdle(context);
+    expect(take(pixels)).toEqual(new Array(16).fill(7));
+    const layout = addon.createGroupLayout(context, [
+      { binding: 0, kind: BindingKinds.texture },
+    ]);
+    expect(() =>
+      addon.createGroup(context, layout, [{ binding: 0, object: a }]),
+    ).toThrow(/cannot be seen by the shaders/);
+    // A target cleared to black, no resolve target, no depth.
+    expect(() =>
+      addon.submit(
+        context,
+        new Uint32Array([
+          Commands.beginRenderPass,
+          1,
+          b,
+          ...[0, 0, 0, 0, 0, 0],
+          ...[0, 0, 0],
+          Commands.endRenderPass,
+        ]),
+      ),
+    ).toThrow(/cannot be an attachment/);
+    addon.destroyTexture(source);
+    addon.destroyTexture(target);
+    addon.waitIdle(context);
+    expect(addon.takeMessages(context)).toEqual([]);
+  });
+
+  it('recovers from a failed submission', () => {
+    // The failures of fdw_vk_test_fail (native/include/fdw/vulkan.h): a
+    // hook of the addon for the tests only.
+    const testing = addon as typeof addon & {
+      testFail(context: ContextHandle, failures: number): void;
+    };
+    const [source, target] = [0, 1].map(() =>
+      addon.createTexture(
+        context,
+        'rgba8unorm',
+        '2d',
+        2,
+        2,
+        1,
+        1,
+        1,
+        copyUsage,
+      ),
+    );
+    const [a, b] = [source, target].map((t) => addon.textureId(t));
+    addon.writeTexture(source, new Uint8Array(16).fill(9));
+    addon.waitIdle(context);
+    // The transfers and the copy never run: the textures are back in their
+    // layouts before them.
+    testing.testFail(context, 1);
+    addon.writeTexture(target, new Uint8Array(16).fill(1));
+    expect(() => addon.submit(context, copyTexture(a, b))).toThrow(
+      /vkQueueSubmit2 failed/,
+    );
+    // The next transfers and copies run, without wrong layouts.
+    addon.writeTexture(target, new Uint8Array(16).fill(2));
+    const written = addon.readTexture(target, 0, 0, 2, 2);
+    addon.submit(context, copyTexture(a, b));
+    const copied = addon.readTexture(target, 0, 0, 2, 2);
+    addon.waitIdle(context);
+    expect(take(written)).toEqual(new Array(16).fill(2));
+    expect(take(copied)).toEqual(new Array(16).fill(9));
+    addon.destroyTexture(source);
+    addon.destroyTexture(target);
+    addon.waitIdle(context);
+    expect(addon.takeMessages(context)).toEqual([]);
+  });
 });
 
 // The barriers between the uses of a resource (native/src/tracking.cpp),

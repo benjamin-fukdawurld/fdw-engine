@@ -241,6 +241,7 @@ int generateMipmaps(fdw_vk_context *context, VkCommandBuffer commands,
   // Every level in the same layout, as the tracking needs. The next use
   // waits for the blits: their reads, and their writes.
   toSource(texture->levels - 1);
+  recordLayout(texture);
   texture->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
   texture->last = {VK_PIPELINE_STAGE_2_BLIT_BIT,
                    VK_ACCESS_2_TRANSFER_READ_BIT |
@@ -324,6 +325,7 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
   texture->block = format->block;
   texture->samples = info.samples;
   texture->is3d = is3d;
+  texture->submitted = &context->submitted;
   VkResult result = vmaCreateImage(context->allocator, &info, &allocation,
                                    &texture->image, &texture->allocation,
                                    nullptr);
@@ -333,28 +335,38 @@ fdw_vk_texture *fdw_vk_texture_create(fdw_vk_context *context,
     return nullptr;
   }
 
-  VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-  view.image = texture->image;
-  view.viewType = cube   ? VK_IMAGE_VIEW_TYPE_CUBE
-                  : is3d ? VK_IMAGE_VIEW_TYPE_3D
-                  : type == "2d-array" ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
-                                       : VK_IMAGE_VIEW_TYPE_2D;
-  view.format = format->format;
-  // The shaders read the depth of a depth-stencil texture.
-  view.subresourceRange = {format->aspect & ~VK_IMAGE_ASPECT_STENCIL_BIT, 0,
-                           levels, 0, is3d ? 1 : layers};
-  result = vkCreateImageView(context->device, &view, nullptr, &texture->view);
-  if (result == VK_SUCCESS && !is3d) {
-    VkImageViewCreateInfo attachment = view;
-    attachment.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    attachment.subresourceRange = {format->aspect, 0, 1, 0, 1};
-    result = vkCreateImageView(context->device, &attachment, nullptr,
-                               &texture->attachmentView);
-  }
-  if (result != VK_SUCCESS) {
-    destroyTexture(context, texture);
-    fail("vkCreateImageView", result);
-    return nullptr;
+  // The views need a usage besides the copies (VUID-VkImageViewCreateInfo-
+  // image-04441): a texture only copied has none.
+  constexpr VkImageUsageFlags viewUsages =
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+      VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+  if (usage & viewUsages) {
+    VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    view.image = texture->image;
+    view.viewType = cube   ? VK_IMAGE_VIEW_TYPE_CUBE
+                    : is3d ? VK_IMAGE_VIEW_TYPE_3D
+                    : type == "2d-array" ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                                         : VK_IMAGE_VIEW_TYPE_2D;
+    view.format = format->format;
+    // The shaders read the depth of a depth-stencil texture.
+    view.subresourceRange = {format->aspect & ~VK_IMAGE_ASPECT_STENCIL_BIT, 0,
+                             levels, 0, is3d ? 1 : layers};
+    result =
+        vkCreateImageView(context->device, &view, nullptr, &texture->view);
+    if (result == VK_SUCCESS && !is3d) {
+      VkImageViewCreateInfo attachment = view;
+      attachment.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      attachment.subresourceRange = {format->aspect, 0, 1, 0, 1};
+      result = vkCreateImageView(context->device, &attachment, nullptr,
+                                 &texture->attachmentView);
+    }
+    if (result != VK_SUCCESS) {
+      destroyTexture(context, texture);
+      fail("vkCreateImageView", result);
+      return nullptr;
+    }
   }
   setName(context, VK_OBJECT_TYPE_IMAGE,
           reinterpret_cast<uint64_t>(texture->image), options->label);

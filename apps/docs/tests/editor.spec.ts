@@ -27,6 +27,8 @@ async function openEditor(
     timeout: 60_000,
   });
   await expect(frame.locator('footer')).toContainText(backend);
+  // The backend asked for, not the fallback (whose reason names it too).
+  await expect(frame.locator('footer')).not.toContainText('Fallback');
   return frame;
 }
 

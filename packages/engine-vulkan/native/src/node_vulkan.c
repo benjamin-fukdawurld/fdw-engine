@@ -226,6 +226,18 @@ static napi_value js_flush(napi_env env, napi_callback_info info) {
   return undefined(env);
 }
 
+// testFail(context, failures): for the tests only (fdw_vk_test_fail), not a
+// part of VulkanAddon.
+static napi_value js_test_fail(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  fdw_vk_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  fdw_vk_test_fail(context, (uint32_t)number_arg(env, argv[1]));
+  return undefined(env);
+}
+
 // --- Objects -------------------------------------------------------------------
 
 // The kinds of objects behind a handle.
@@ -1511,6 +1523,7 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("takeMessages", js_take_messages),
       EXPORT("waitIdle", js_wait_idle),
       EXPORT("flush", js_flush),
+      EXPORT("testFail", js_test_fail),
       EXPORT("createBuffer", js_create_buffer),
       EXPORT("destroyBuffer", js_destroy_buffer),
       EXPORT("writeBuffer", js_write_buffer),

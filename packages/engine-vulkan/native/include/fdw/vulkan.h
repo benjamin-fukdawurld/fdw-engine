@@ -555,6 +555,15 @@ enum {
 FDW_VK_API int fdw_vk_submit(fdw_vk_context *context, const uint32_t *words,
                              size_t count);
 
+// --- For the tests only ----------------------------------------------------------
+
+// Not a part of the API: failures the drivers seldom give, to check that
+// the context recovers from them. FDW_VK_TEST_FAIL_SUBMIT: the next
+// submission fails (VK_ERROR_OUT_OF_DEVICE_MEMORY) without reaching the
+// queue.
+enum { FDW_VK_TEST_FAIL_SUBMIT = 1 };
+FDW_VK_API void fdw_vk_test_fail(fdw_vk_context *context, uint32_t failures);
+
 #ifdef __cplusplus
 }
 #endif
