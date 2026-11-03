@@ -47,7 +47,7 @@ const idsOf = (file) => {
 
 const broken = [];
 for (const page of pages) {
-  if (page.includes('/api/')) {
+  if (/[/\\]api[/\\]/.test(page)) {
     continue;
   }
   const html = readFileSync(page, 'utf8');
