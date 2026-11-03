@@ -107,6 +107,24 @@ void Barriers::place() {
   tops.clear();
 }
 
+void recordLayout(fdw_vk_texture *texture) {
+  const uint64_t next = *texture->submitted + 1;
+  if (texture->recordedFor != next) {
+    texture->recordedFor = next;
+    texture->submittedLayout = texture->layout;
+  }
+}
+
+void restoreLayouts(fdw_vk_context *context) {
+  const uint64_t next = context->submitted + 1;
+  for (const auto &[id, texture] : context->textures) {
+    if (texture->recordedFor == next) {
+      texture->layout = texture->submittedLayout;
+      texture->recordedFor = 0;
+    }
+  }
+}
+
 void useTexture(Barriers &barriers, fdw_vk_texture *texture,
                 VkImageLayout layout, VkPipelineStageFlags2 stages,
                 VkAccessFlags2 access, bool discard) {
@@ -147,6 +165,7 @@ void useTexture(Barriers &barriers, fdw_vk_texture *texture,
   barriers.images.push_back(barrier);
   barriers.textures.push_back(texture);
   barriers.discards.push_back(discard);
+  recordLayout(texture);
   texture->layout = layout;
   texture->last = after(stages, access);
 }

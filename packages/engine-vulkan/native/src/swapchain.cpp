@@ -98,6 +98,7 @@ int wrapImages(fdw_vk_context *context, fdw_vk_swapchain *swapchain) {
     texture->format = swapchain->format;
     texture->width = swapchain->extent.width;
     texture->height = swapchain->extent.height;
+    texture->submitted = &context->submitted;
     VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     view.image = image;
     view.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -400,6 +401,7 @@ int fdw_vk_swapchain_acquire(fdw_vk_context *context,
     context->pendingWaits.push_back(wait);
     fdw_vk_texture *texture = swapchain->images[index];
     texture->layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    texture->recordedFor = 0;
     texture->last = {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE};
     swapchain->current = static_cast<int32_t>(index);
     return swapchain->current;

@@ -161,9 +161,11 @@ describe('the eviction of FileShaderCache', () => {
     const time = new Date(Date.now() - seconds * 1000);
     utimesSync(file(key), time, time);
   };
+  // Written by an unbounded cache: the eviction that follows the first
+  // write of a bounded one could remove an entry before it is aged.
   const fill = async (cache: FileShaderCache) => {
-    for (const key of keys) cache.set(key, spirv(1));
-    await cache.evict();
+    const writer = new FileShaderCache(cache.directory, { maxSize: 0 });
+    for (const key of keys) writer.set(key, spirv(1));
     keys.forEach((key, i) => age(key, 300 - i * 100));
   };
 

@@ -42,9 +42,11 @@ for (const name of packages) {
   const dir = join(root, 'packages', name);
   const report = join(scratch, `${name}.json`);
   console.log(`Benchmarks of ${name}`);
+  // npx is a .cmd on Windows: run through the shell there.
   execFileSync('npx', ['vitest', 'bench', '--run', '--outputJson', report], {
     cwd: dir,
     stdio: ['ignore', 'ignore', 'inherit'],
+    shell: process.platform === 'win32',
   });
   const { files } = JSON.parse(readFileSync(report, 'utf8'));
   for (const file of files) {

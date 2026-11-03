@@ -226,8 +226,9 @@ describe('WorkerPool', () => {
     const p = pool.run({ n: 7, delay: 5 }, { signal: ctl.signal, discard });
     ctl.abort();
     await expect(p).rejects.toMatchObject({ code: 'aborted' });
-    await sleep(20);
-    expect(discard).toHaveBeenCalledWith(14);
+    // The worker answers after its delay: waited for, not timed (a loaded
+    // machine runs the timers late).
+    await vi.waitFor(() => expect(discard).toHaveBeenCalledWith(14));
     await expect(
       pool.run({ n: 1 }, { signal: ctl.signal }),
     ).rejects.toMatchObject({ code: 'aborted' });
@@ -319,8 +320,7 @@ describe('createWorkerImageDecoder', () => {
     const p = decoder.decode(bytesOf(1), { signal: ctl.signal });
     ctl.abort();
     await expect(p).rejects.toMatchObject({ code: 'aborted' });
-    await sleep(20);
-    expect(bitmap.close).toHaveBeenCalled();
+    await vi.waitFor(() => expect(bitmap.close).toHaveBeenCalled());
   });
 });
 

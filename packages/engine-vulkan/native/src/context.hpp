@@ -113,6 +113,12 @@ struct fdw_vk_texture {
   // The layout of every subresource, and their last use.
   VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
   fdw::Access last;
+  // The layout once the submissions done so far run (the `submitted` of
+  // the context): that before the first change recorded for the next
+  // submission (`recordedFor`), restored if it fails.
+  const uint64_t *submitted = nullptr;
+  uint64_t recordedFor = 0;
+  VkImageLayout submittedLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 
 struct fdw_vk_sampler {
@@ -280,6 +286,10 @@ struct fdw_vk_context {
   bool presentation = false;
   std::set<fdw_vk_swapchain *> swapchains;
   std::vector<VkSemaphoreSubmitInfo> pendingWaits;
+
+  // For the tests (fdw_vk_test_fail): the FDW_VK_TEST_FAIL_* failures to
+  // come.
+  uint32_t testFailures = 0;
 };
 
 namespace fdw {
@@ -356,6 +366,12 @@ struct Barriers {
   std::vector<fdw_vk_top_level *> tops;
 };
 
+// Keeps the layout of a texture before its first change recorded for the
+// next submission, restored if the submission fails (restoreLayouts).
+void recordLayout(fdw_vk_texture *texture);
+// After a failed submission: the textures back in their layouts before the
+// commands recorded for it, which never run.
+void restoreLayouts(fdw_vk_context *context);
 // Makes the next use of a texture wait for the previous one, changing its
 // layout: an image barrier when needed, from the stages and accesses of the
 // last use to those of this one. `discard`: the content can be lost (the

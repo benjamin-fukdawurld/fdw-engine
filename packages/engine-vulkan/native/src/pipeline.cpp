@@ -370,7 +370,16 @@ fdw_vk_group *fdw_vk_group_create(fdw_vk_context *context,
     }
     case FDW_VK_BINDING_TEXTURE: {
       const auto texture = context->textures.find(entry.object);
-      if ((found = texture != context->textures.end())) {
+      if ((found = texture != context->textures.end()) &&
+          !texture->second->view) {
+        // Created without a usage of the shaders: no view to bind.
+        vkFreeDescriptorSets(context->device, group->pool, 1, &group->set);
+        delete group;
+        fail("The texture " + std::to_string(entry.object) + " for binding " +
+             std::to_string(entry.binding) + " cannot be seen by the shaders");
+        return nullptr;
+      }
+      if (found) {
         images[i] = {VK_NULL_HANDLE, texture->second->view,
                      VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL};
         write.pImageInfo = &images[i];

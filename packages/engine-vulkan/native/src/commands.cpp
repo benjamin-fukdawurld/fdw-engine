@@ -460,6 +460,10 @@ int beginRenderPass(Replay &replay) {
     if (!target) {
       return status;
     }
+    if (!target->attachmentView) {
+      return fail("The color target " + std::to_string(target->id) +
+                  " cannot be an attachment");
+    }
     // Integer formats take integer clear values.
     if (isIntegerFormat(target->format)) {
       const bool sint = isSignedIntegerFormat(target->format);
@@ -490,6 +494,10 @@ int beginRenderPass(Replay &replay) {
       if (!resolve) {
         return status;
       }
+      if (!resolve->attachmentView) {
+        return fail("The resolve target " + std::to_string(resolve->id) +
+                    " cannot be an attachment");
+      }
       // Entirely written by the resolve.
       useTexture(barriers, resolve, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -515,6 +523,10 @@ int beginRenderPass(Replay &replay) {
         find(context->textures, depthId, "depth target", &status);
     if (!target) {
       return status;
+    }
+    if (!target->attachmentView) {
+      return fail("The depth target " + std::to_string(target->id) +
+                  " cannot be an attachment");
     }
     useTexture(barriers, target, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |

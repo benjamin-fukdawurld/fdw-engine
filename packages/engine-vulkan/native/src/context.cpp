@@ -98,12 +98,26 @@ uint64_t submit(fdw_vk_context *context,
   info.pCommandBufferInfos = buffers.data();
   info.signalSemaphoreInfoCount = static_cast<uint32_t>(signals.size());
   info.pSignalSemaphoreInfos = signals.data();
-  const VkResult result =
-      vkQueueSubmit2(context->queue, 1, &info, VK_NULL_HANDLE);
+  // For the tests (FDW_VK_TEST_FAIL_SUBMIT): a failure before the queue.
+  VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+  if (context->testFailures & FDW_VK_TEST_FAIL_SUBMIT) {
+    context->testFailures &= ~FDW_VK_TEST_FAIL_SUBMIT;
+  } else {
+    result = vkQueueSubmit2(context->queue, 1, &info, VK_NULL_HANDLE);
+  }
   if (result != VK_SUCCESS) {
     // Not waited for: the next submission waits for the images still.
     context->pendingWaits.insert(context->pendingWaits.begin(), waits.begin(),
                                  waits.end());
+    // The commands never run: the textures are back in their layouts
+    // before them, and the next transfers are recorded into a new command
+    // buffer (this one ended, never submitted).
+    restoreLayouts(context);
+    if (!buffers.empty() && buffers[0].commandBuffer == context->transfers) {
+      vkFreeCommandBuffers(context->device, context->commandPool, 1,
+                           &context->transfers);
+      context->transfers = VK_NULL_HANDLE;
+    }
     fail("vkQueueSubmit2", result);
     return 0;
   }
@@ -675,6 +689,10 @@ const char *fdw_vk_message(const fdw_vk_context *context, size_t index) {
 
 void fdw_vk_clear_messages(fdw_vk_context *context) {
   context->messages.clear();
+}
+
+void fdw_vk_test_fail(fdw_vk_context *context, uint32_t failures) {
+  context->testFailures |= failures;
 }
 
 } // extern "C"
