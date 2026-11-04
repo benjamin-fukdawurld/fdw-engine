@@ -208,5 +208,12 @@ test('Dawn when asked for, copied into the window', async () => {
   const status = await editor.drawing();
   expect(status).toContain('dawn');
   const area = await editor.viewportArea();
-  expect(await editor.differsFromPage(area.centerX, area.centerY)).toBe(true);
+  // Its pipelines compiled while it draws (no programs shipped for Dawn),
+  // slow on lavapipe: its first frames copied are only the clear color,
+  // close to the page.
+  await expect
+    .poll(() => editor.differsFromPage(area.centerX, area.centerY), {
+      timeout: 30_000,
+    })
+    .toBe(true);
 });
