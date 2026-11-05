@@ -75,7 +75,12 @@ import {
   RenderSource,
   WorldTransform,
 } from './RenderSource';
-import { castsShadow, ShadowCameras, ShadowTile } from './shadows';
+import {
+  castsShadow,
+  ShadowCameras,
+  ShadowCastingLight,
+  ShadowTile,
+} from './shadows';
 import { RayTracingOptions, rayShadowsOf, TracedScene } from './rays';
 
 export interface RenderOptions {
@@ -1873,7 +1878,7 @@ export class Renderer {
     name: string,
     source: RenderSource,
     layers: number,
-    lights: readonly (DirectionalLight | SpotLight)[],
+    lights: readonly ShadowCastingLight[],
     receivers: Aabb,
     camera: Camera,
   ): { atlas: TextureHandle; tiles: ShadowTile[]; casters: number } {
@@ -1890,8 +1895,19 @@ export class Renderer {
     const draws = tiles.map((tile, index) => {
       const view = this.view(`${name} ${index}`);
       const casters: Renderable[] = [];
+      const frustum = this.frustum(`${name} ${index}`).setFromMatrix(
+        tile.matrix,
+      );
+      // A face of a point light that sees none of the receivers keeps its
+      // tile, unread, but draws nothing.
+      if (
+        tile.face !== undefined &&
+        frustum.classifyAabb(receivers) === 'outside'
+      ) {
+        return { tile, entries: [] };
+      }
       source.query(
-        this.frustum(`${name} ${index}`).setFromMatrix(tile.matrix),
+        frustum,
         layers,
         (item) => {
           if (

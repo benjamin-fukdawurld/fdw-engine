@@ -1,15 +1,20 @@
 import { CameraCache, CameraMath, IVec3 } from '@fdw/engine-backend';
 import type { Aabb } from '@fdw/engine-geometry';
+import { CubeShadowFaces } from '@fdw/engine-shader';
 import { Camera } from '../Camera';
-import { BaseLight, DirectionalLight, SpotLight } from '../light';
+import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
+import { lightRange } from './lightRange';
 import type { Sphere } from './bounds';
 
 // The shadow maps of the lights: the cameras the lights see the scene with,
 // and their tiles in the shadow atlas.
 
+/** The lights that can cast shadows. */
+export type ShadowCastingLight = DirectionalLight | SpotLight | PointLight;
+
 /** A light with shadows, and where its shadow map is in the atlas. */
 export interface ShadowTile {
-  readonly light: DirectionalLight | SpotLight;
+  readonly light: ShadowCastingLight;
   // In pixels of the atlas, from its top left corner.
   readonly viewport: {
     readonly x: number;
@@ -28,7 +33,21 @@ export interface ShadowTile {
   // where it ends.
   readonly cascade?: number;
   readonly split?: number;
+  // The tiles of a point light: which face (see CubeShadowFaces), and, on
+  // the first, what the shaders read in place of the shadow matrix (see
+  // lightMembers in engine-shader).
+  readonly face?: number;
+  readonly faces?: Float32Array;
 }
+
+/**
+ * The tangent of the half field of view of the faces of a point light
+ * whose tiles are `size` pixels: a little more than 90°, so that the
+ * filter of the shadows (3 × 3 texels) stays inside a face up to its
+ * edges, two texels away from those of the tile.
+ */
+export const cubeFaceTangent = (size: number): number =>
+  1 + 4 / Math.max(size, 8);
 
 /**
  * The view depths where the shadow cascades of a camera end: `count`
@@ -75,10 +94,10 @@ export function sliceSphere(
   return { depth, radius };
 }
 
-export const castsShadow = (
-  light: BaseLight,
-): light is DirectionalLight | SpotLight =>
-  (light instanceof DirectionalLight || light instanceof SpotLight) &&
+export const castsShadow = (light: BaseLight): light is ShadowCastingLight =>
+  (light instanceof DirectionalLight ||
+    light instanceof SpotLight ||
+    light instanceof PointLight) &&
   light.castShadow;
 
 const normalize = ({ x, y, z }: Readonly<IVec3>): [number, number, number] => {
@@ -179,14 +198,14 @@ export class ShadowCameras {
 
   /**
    * The tiles of the lights in a square atlas of `atlasSize` pixels: a grid
-   * of equal tiles, filled row by row, one per light and one per cascade
-   * of the cascaded light. `receivers` is what the camera sees: the shadow
+   * of equal tiles, filled row by row, one per light, one per cascade of
+   * the cascaded light, six in a row for a point light (its faces). `receivers` is what the camera sees: the shadow
    * maps cover it. `scene`, the bounds of everything, says how far towards
    * the light casters can be. `camera` is cut into the cascades of the
    * first directional light with `shadow.cascades` (a perspective camera).
    */
   tiles(
-    lights: readonly (DirectionalLight | SpotLight)[],
+    lights: readonly ShadowCastingLight[],
     receivers: Sphere,
     scene: Aabb | undefined,
     atlasSize: number,
@@ -239,39 +258,58 @@ export class ShadowCameras {
         from = split;
       }
     }
-    const slots = lights.length + Math.max(cascades.length - 1, 0);
+    const points = lights.filter((light) => light instanceof PointLight);
+    const slots =
+      lights.length + 5 * points.length + Math.max(cascades.length - 1, 0);
     const columns = Math.ceil(Math.sqrt(slots));
     const size = Math.floor(atlasSize / columns);
     const texel = 1 / atlasSize;
     const tiles: ShadowTile[] = [];
     const tile = (
-      light: DirectionalLight | SpotLight,
+      light: ShadowCastingLight,
       bounds: Sphere | undefined,
       cascade?: { index: number; split: number },
+      face?: number,
     ) => {
       const index = tiles.length;
       const x = (index % columns) * size;
       const y = Math.floor(index / columns) * size;
-      const { matrix, normalOffset } = this.view(
-        light,
-        bounds ?? receivers,
-        bounds !== undefined,
-        scene,
-        size,
-        cascade?.index ?? 0,
-      );
+      const { matrix, normalOffset } =
+        light instanceof PointLight
+          ? this.faceView(light, receivers, size, face ?? 0)
+          : this.view(
+              light,
+              bounds ?? receivers,
+              bounds !== undefined,
+              scene,
+              size,
+              cascade?.index ?? 0,
+            );
+      const faces =
+        light instanceof PointLight && face === 0
+          ? faceParameters(
+              matrix,
+              light,
+              index,
+              columns,
+              size * texel,
+              cubeFaceTangent(size),
+            )
+          : undefined;
       tiles.push({
         light,
         viewport: { x, y, width: size, height: size },
         matrix,
         shadow: [
-          cascade ? 2 : 1,
+          face !== undefined ? 3 : cascade ? 2 : 1,
           light.shadow.bias ?? 0,
           (light.shadow.normalBias ?? 1) * normalOffset,
           texel,
         ],
         rect: [x * texel, y * texel, size * texel, size * texel],
         ...(cascade ? { cascade: cascade.index, split: cascade.split } : {}),
+        ...(face !== undefined ? { face } : {}),
+        ...(faces ? { faces } : {}),
       });
     };
     for (const light of lights) {
@@ -279,11 +317,69 @@ export class ShadowCameras {
         cascades.forEach(({ bounds, split }, index) =>
           tile(light, bounds, { index, split }),
         );
+      } else if (light instanceof PointLight) {
+        for (let face = 0; face < CubeShadowFaces.length; face++) {
+          tile(light, undefined, undefined, face);
+        }
       } else {
         tile(light, undefined);
       }
     }
     return tiles;
+  }
+
+  // World to clip space of a face of a point light (a perspective camera at
+  // the light, a little wider than 90°, as far as its range and the
+  // receivers go), and the size of a texel at unit distance.
+  private faceView(
+    light: PointLight,
+    receivers: Sphere,
+    size: number,
+    face: number,
+  ): { matrix: Float32Array; normalOffset: number } {
+    const { camera, cache } = this.entry(light, face);
+    const { x, y, z } = light.position;
+    const distance = Math.hypot(
+      receivers.center[0] - x,
+      receivers.center[1] - y,
+      receivers.center[2] - z,
+    );
+    const far = Math.max(
+      Math.min(distance + receivers.radius, lightRange(light)),
+      1e-2,
+    );
+    const tangent = cubeFaceTangent(size);
+    const [fx, fy, fz] = CubeShadowFaces[face].forward;
+    setIfChanged(camera, { x, y, z }, lookRotation({ x: fx, y: fy, z: fz }), {
+      type: 'perspective',
+      fov: (360 / Math.PI) * Math.atan(tangent),
+      aspect: 1,
+      near: far * 0.002,
+      far,
+    });
+    return {
+      matrix: cache.viewProjectionMatrix.value,
+      normalOffset: (2 * tangent) / size,
+    };
+  }
+
+  // The camera of a light, by index: its cascade, or its face.
+  private entry(
+    light: BaseLight,
+    index: number,
+  ): { camera: Camera; cache: CameraCache } {
+    let entries = this._cameras.get(light);
+    if (!entries) {
+      entries = [];
+      this._cameras.set(light, entries);
+    }
+    let entry = entries[index];
+    if (!entry) {
+      const camera = new Camera();
+      entry = { camera, cache: new CameraCache(camera, this._math) };
+      entries[index] = entry;
+    }
+    return entry;
   }
 
   // World to clip space of a light, and the size of a texel of its shadow
@@ -299,18 +395,7 @@ export class ShadowCameras {
     size: number,
     cascade: number,
   ): { matrix: Float32Array; normalOffset: number } {
-    let entries = this._cameras.get(light);
-    if (!entries) {
-      entries = [];
-      this._cameras.set(light, entries);
-    }
-    let entry = entries[cascade];
-    if (!entry) {
-      const camera = new Camera();
-      entry = { camera, cache: new CameraCache(camera, this._math) };
-      entries[cascade] = entry;
-    }
-    const { camera, cache } = entry;
+    const { camera, cache } = this.entry(light, cascade);
     let normalOffset: number;
     if (light instanceof DirectionalLight) {
       const bounds =
@@ -386,6 +471,45 @@ export class ShadowCameras {
     }
     return { matrix: cache.viewProjectionMatrix.value, normalOffset };
   }
+}
+
+/**
+ * What the shaders read in place of the shadow matrix of a point light (see
+ * lightMembers in engine-shader): column 0, the slot of its first face in
+ * the grid of the atlas, the columns of the grid, the size of a tile in uv,
+ * the tangent of the half field of view of a face; column 1, the projected
+ * depth at the distance m along the axis of a face, ndc.z = x + y / m.
+ * The depth is measured with `matrix`, that of a face (the same for all
+ * six): the depth convention of the backend is kept without knowing it.
+ */
+export function faceParameters(
+  matrix: Float32Array,
+  light: PointLight,
+  slot: number,
+  columns: number,
+  tile: number,
+  tangent: number,
+): Float32Array {
+  const [fx, fy, fz] = CubeShadowFaces[0].forward;
+  const { x, y, z } = light.position;
+  const ndcDepth = (m: number) => {
+    const p = [x + fx * m, y + fy * m, z + fz * m, 1];
+    let clipZ = 0;
+    let clipW = 0;
+    for (let i = 0; i < 4; i++) {
+      clipZ += matrix[i * 4 + 2] * p[i];
+      clipW += matrix[i * 4 + 3] * p[i];
+    }
+    return clipZ / clipW;
+  };
+  // The depth of a perspective projection is exactly x + y / m: two
+  // distances give both.
+  const z1 = ndcDepth(1);
+  const z2 = ndcDepth(2);
+  const b = (z1 - z2) * 2;
+  const out = new Float32Array(16);
+  out.set([slot, columns, tile, tangent, z1 - b, b, 0, 0]);
+  return out;
 }
 
 // Updates a camera only where its values change, so that its cached

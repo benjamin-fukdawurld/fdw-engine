@@ -8,6 +8,7 @@ import {
   stdMacros,
   BuiltinTypes,
 } from '@fdw/engine-shader';
+import { CameraMath, wgpuMatrixPrimitives } from '@fdw/engine-backend';
 import { describe, expect, it } from 'vitest';
 import { Camera } from '../Camera';
 import { DirectionalLight, PointLight, SpotLight } from '../light';
@@ -805,7 +806,7 @@ describe('Renderer, shadows', () => {
       surface,
       lights: [
         sun(),
-        // Point lights cast no shadows.
+        // Without castShadow, no shadows.
         new PointLight({ position: { x: 0, y: 1, z: 0 } }),
         new SpotLight({
           position: { x: 0, y: 5, z: 0 },
@@ -839,6 +840,29 @@ describe('Renderer, shadows', () => {
     expect(scene.program.variantKey).toMatchObject({ shadows: true });
     // A draw per light in the shadow pass, then the scene.
     expect(log.draws).toHaveLength(3);
+  });
+
+  it('draws the faces of a point light that see the receivers', () => {
+    const { backend, log } = fakeBackend();
+    // The faces look in six directions: the camera math of the fake
+    // backend has no rotations.
+    Object.assign(backend, {
+      cameraMath: new CameraMath(wgpuMatrixPrimitives),
+    });
+    const renderer = new Renderer(backend, { shadowAtlasSize: 1024 });
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    const lamp = new PointLight({
+      position: { x: 0, y: 0, z: 3 },
+      castShadow: true,
+    });
+    renderer.render({ items: [lit()], camera, surface, lights: [lamp] });
+    // Six faces: a 3 × 3 grid of tiles.
+    expect(log.viewports).toHaveLength(6);
+    expect(log.viewports[5]).toEqual([682, 341, 341, 341]);
+    // Only the face looking along -z sees the triangle: one draw there,
+    // then the scene.
+    expect(log.draws).toHaveLength(2);
+    expect(poolVec4(log, 0, 'shadow')[0]).toBe(3);
   });
 
   it('writes the tiles and matrices of the lights in the frame uniforms', () => {

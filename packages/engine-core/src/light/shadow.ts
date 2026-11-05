@@ -1,7 +1,7 @@
 import type { IVec3 } from '@fdw/engine-backend';
 
 /**
- * How a directional or spot light casts shadows, when its `castShadow` is
+ * How a directional, spot or point light casts shadows, when its `castShadow` is
  * true. The defaults suit most scenes.
  */
 export interface ShadowOptions {
@@ -34,7 +34,7 @@ export interface ShadowOptions {
   /**
    * With shadows traced by rays (RenderOptions.rays): the size of the
    * light, for soft shadows with several rays per pixel. The radius of a
-   * spot light, in world units; for a directional light, the tangent of
+   * spot or point light, in world units; for a directional light, the tangent of
    * its angular radius (the sun: 0.0047). Default 0: hard shadows.
    */
   readonly softness?: number;

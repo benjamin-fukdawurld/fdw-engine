@@ -251,9 +251,13 @@ describe('instantiateScene', () => {
           shadow: { cascades: { count: 3, distance: 80 } },
         }),
       );
-      scene.root
-        .add({ name: 'lamp' })
-        .setLight(new PointLight({ quadraticAttenuation: 1 }));
+      scene.root.add({ name: 'lamp' }).setLight(
+        new PointLight({
+          quadraticAttenuation: 1,
+          castShadow: true,
+          shadow: { normalBias: 1.5 },
+        }),
+      );
       scene.root.add({ name: 'eye' }).setCamera(
         new Camera({
           projection: {
@@ -273,6 +277,9 @@ describe('instantiateScene', () => {
     expect(sun.castShadow).toBe(true);
     expect(sun.shadow.cascades?.count).toBe(3);
     expect(sun.diffuse.y).toBeCloseTo(1.8);
+    const lamp = scene.Light.light[scene.find('lamp')!.entity] as PointLight;
+    expect(lamp.castShadow).toBe(true);
+    expect(lamp.shadow.normalBias).toBe(1.5);
   });
 
   it('makes the batches again, and the levels of detail by their renderers', async () => {
