@@ -1,6 +1,8 @@
 export * from './Material';
 export * from './Mesh';
 export { MeshArena, RangeAllocator } from './MeshArena';
+export { GpuScene } from './GpuScene';
+export type { GpuSceneItemOptions } from './GpuScene';
 export * from './Renderer';
 export * from './picking';
 export * from './RenderSource';

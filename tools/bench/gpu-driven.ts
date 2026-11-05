@@ -3,20 +3,25 @@
 // the city of P3 grown to about 10 000 and 100 000 buildings, seen from its
 // avenue in 1920 × 1080, on the Vulkan of this machine (its GPU, without
 // the validation layer). Compared: the culling on the CPU with the
-// occlusion culling by readback (P3), and the culling on the GPU with the
-// occlusion culling in two phases.
+// occlusion culling by readback (P3), the culling on the GPU with the
+// occlusion culling in two phases, and the same with the buildings kept on
+// the GPU (a GpuScene, step 7).
 //
 // Usage (needs the Vulkan addon, built by nx run engine-vulkan:build-native):
 //   node --import @swc-node/register/esm-register \
 //     --conditions=@fdw-engine/source tools/bench/gpu-driven.ts [frames]
 import {
+  AllLayers,
   Camera,
+  GpuScene,
+  Renderable,
   RenderGraph,
   RenderGraphRunner,
   Renderer,
 } from '@fdw/engine-core';
 import { buildCity } from '@fdw/demo-scenes';
 import { OcclusionCulling } from '@fdw/engine-occlusion';
+import { Frustum } from '@fdw/engine-geometry';
 import { Scene } from '@fdw/engine-scene';
 import { VulkanEngine, VulkanOffscreenSurface } from '@fdw/engine-vulkan';
 
@@ -60,7 +65,16 @@ for (const blocks of cities) {
       far: 4000,
     },
   });
-  for (const mode of ['cpu', 'gpu'] as const) {
+  // Every building, for the GpuScene: a frustum holding everything.
+  const everything = new Frustum();
+  for (let plane = 0; plane < 6; plane++) {
+    everything.planes[plane * 4 + 3] = 1;
+  }
+  const buildings: Renderable[] = [];
+  scene.query(everything, AllLayers, (item) => buildings.push(item), 'shadow');
+  const gpuScene = new GpuScene();
+  buildings.forEach((item) => gpuScene.add(item));
+  for (const mode of ['cpu', 'gpu', 'gpu scene'] as const) {
     const renderer = new Renderer(backend);
     const runner = new RenderGraphRunner(backend, { timing: true });
     const occlusion = new OcclusionCulling();
@@ -72,13 +86,13 @@ for (const blocks of cities) {
       const graph = new RenderGraph({ size: { width, height } });
       const target = graph.importTexture('surface', surface.getCurrentTarget());
       renderer.addScenePasses(graph, {
-        source: scene,
+        ...(mode === 'gpu scene' ? { gpuScene } : { source: scene }),
         camera,
         target,
         format: surface.format,
         shadows: false,
         occlusion,
-        gpuCulling: mode === 'gpu',
+        gpuCulling: mode !== 'cpu',
       });
       runner.execute(graph);
       cpu.push(performance.now() - start);

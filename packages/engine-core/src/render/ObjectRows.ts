@@ -188,6 +188,15 @@ export class ObjectRows {
     this._retired.length = 0;
   }
 
+  /**
+   * The row of an object, allocated on first use, rewritten when its
+   * version changed (written to the table at the next reserve or extend):
+   * for the rows kept on the GPU (a GpuScene).
+   */
+  rowOf(source: RowSource): number {
+    return this.row(source);
+  }
+
   // The row of an object, allocated on first use, updated when its version
   // changed.
   private row(source: RowSource): number {
