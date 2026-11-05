@@ -2487,6 +2487,68 @@ export function describeRenderer(
         expectColor(pixel(52, 32), gray(ambient + nDotL));
       });
 
+      it('casts the shadows of point lights in each of their faces', async () => {
+        // A lamp 0.3 above the center of the ground, five blockers 0.2
+        // above it: one under the lamp (its -z face), four 0.2 to the
+        // sides (its ±x and ±y faces). Their shadows, three times as far
+        // from the center: around it, and 0.6 to each side.
+        const lamp = new PointLight({
+          position: { x: 0, y: 0, z: 0.3 },
+          ambient: { x: ambient, y: ambient, z: ambient },
+          diffuse: { x: 1, y: 1, z: 1 },
+          specular: { x: 0, y: 0, z: 0 },
+          castShadow: true,
+        });
+        const blocker = (x: number, y: number) => ({
+          mesh: square(0.04, 0.2),
+          material: white(),
+          transform: at(x, y),
+        });
+        const items = [
+          { mesh: square(1, 0), material: white(), transform: at(0) },
+          blocker(0, 0),
+          blocker(0.2, 0),
+          blocker(-0.2, 0),
+          blocker(0, 0.2),
+          blocker(0, -0.2),
+        ];
+        const pixel = await render(items, 0, [lamp]);
+        // The ground at (x, y), lit by the lamp: N·L.
+        const litAt = (px: number, py: number) => {
+          const x = (px + 0.5) / 32 - 1;
+          const y = 1 - (py + 0.5) / 32;
+          return gray(ambient + 0.3 / Math.hypot(x, y, 0.3));
+        };
+        // Beside the blocker under the lamp, in its shadow.
+        for (const [x, y] of [
+          [34, 32],
+          [30, 30],
+          [51, 32],
+          [12, 32],
+          [32, 12],
+          [32, 51],
+        ]) {
+          expectColor(pixel(x, y), shadowed);
+        }
+        // Between the shadows, across the edges of the faces (x = ±0.3,
+        // y = ±0.3, and the diagonals): lit, without seams.
+        for (const [x, y] of [
+          [41, 32],
+          [42, 32],
+          [22, 32],
+          [32, 22],
+          [32, 42],
+          [51, 13],
+          [13, 51],
+          [42, 42],
+          [43, 43],
+          [56, 32],
+          [8, 32],
+        ]) {
+          expectColor(pixel(x, y), litAt(x, y));
+        }
+      });
+
       it('only draws the casters in the shadow maps', async () => {
         const pixel = await render(scene(-0.5, 0, false), 0, [
           sun({ x: 1, y: 0, z: -1 }),
