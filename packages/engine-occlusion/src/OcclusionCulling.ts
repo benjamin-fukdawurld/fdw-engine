@@ -8,6 +8,7 @@ import {
   Material,
   OcclusionCuller,
   OcclusionPassContext,
+  OcclusionPyramid,
   OcclusionView,
   Renderable,
   RenderGraph,
@@ -15,6 +16,7 @@ import {
 } from '@fdw/engine-core';
 import type { Aabb } from '@fdw/engine-geometry';
 import {
+  boxVisibility,
   firstLevelGraph,
   levelName,
   nextLevelGraph,
@@ -179,61 +181,14 @@ export class OcclusionCulling implements OcclusionCuller {
     if (!this._testing || !view || items.length === 0) {
       return;
     }
-    const { renderer, name, depth } = context;
-    const size = graph.pixelSize(depth);
-    if (!size) {
-      throw new Error(
-        `"${name}": the occlusion culling needs the size of the depth: create the graph with the size of the frame (new RenderGraph({ size }))`,
-      );
-    }
+    const { renderer, name } = context;
     const backend = renderer.backend;
-    const renderable = backend.capabilities?.renderableFormats;
-    if (renderable && !renderable.includes('rgba16float')) {
-      throw new Error(
-        `"${name}": the occlusion culling renders to ${PyramidFormat} textures, which the backend cannot (EXT_color_buffer_float in WebGL2)`,
-      );
-    }
+    const { levels, size } = this.addLevels(graph, context, view);
     const textures = this.textures(backend, items.length);
     backend.textures.writeTexture(
       textures.bounds,
       this._bounds.subarray(0, textures.rows * SlotsPerRow * 8),
     );
-
-    // The pyramid: each level half the previous one, rounded up.
-    const levels: TextureHandle[] = [];
-    let source = depth;
-    let sourceSize = size;
-    for (
-      let level = 0;
-      level === 0 || sourceSize.width > 1 || sourceSize.height > 1;
-      level++
-    ) {
-      const levelSize = {
-        width: Math.ceil(sourceSize.width / 2),
-        height: Math.ceil(sourceSize.height / 2),
-      };
-      const material = this.levelMaterial(level);
-      material.setValue('size', [levelSize.width, levelSize.height]);
-      material.setValue('sourceSize', [sourceSize.width, sourceSize.height]);
-      if (level === 0) {
-        material.setValue(
-          'inverseProjection',
-          backend.cameraMath.getInverseMatrix(view.projection),
-        );
-      }
-      const passName = `${name} occlusion level ${level}`;
-      source = renderer.addFullscreenPass(graph, passName, {
-        material,
-        inputs: { [level === 0 ? 'depth' : 'source']: source },
-        target: graph.createTexture(passName, {
-          format: PyramidFormat,
-          size: levelSize,
-        }),
-        format: PyramidFormat,
-      });
-      levels.push(source);
-      sourceSize = levelSize;
-    }
 
     // The test of the boxes, then their results read back.
     const test = this.testMaterial(levels.length);
@@ -273,11 +228,101 @@ export class OcclusionCulling implements OcclusionCuller {
     });
   }
 
+  addPyramid(
+    graph: RenderGraph,
+    context: OcclusionPassContext,
+  ): OcclusionPyramid {
+    const view = this._view;
+    if (!view) {
+      throw new Error('The occlusion culling has no view: call begin() first');
+    }
+    // Nothing is tested on the CPU: no result to wait for.
+    this._testing = false;
+    const { levels, size } = this.addLevels(graph, context, view);
+    const backend = context.renderer.backend;
+    const count = levels.length;
+    return {
+      levels,
+      names: levels.map((_, i) => levelName(i)),
+      key: `${count}`,
+      values: {
+        view: view.view,
+        viewProjection: view.viewProjection,
+        depthSize: [size.width, size.height],
+        near: nearOf(view.projection, backend),
+        margin: this._margin,
+      },
+      test: (g, low, high) => boxVisibility(g, low, high, count),
+    };
+  }
+
   destroy(): void {
     this._destroyed = true;
     this._textures?.bounds.destroy();
     this._textures?.visibility.destroy();
     this._textures = undefined;
+  }
+
+  // The passes of the pyramid of a depth buffer: each level half the
+  // previous one, rounded up, down to a texel. Returns the levels and the
+  // size of the depth.
+  private addLevels(
+    graph: RenderGraph,
+    context: OcclusionPassContext,
+    view: OcclusionView,
+  ): {
+    levels: TextureHandle[];
+    size: { readonly width: number; readonly height: number };
+  } {
+    const { renderer, name, depth } = context;
+    const size = graph.pixelSize(depth);
+    if (!size) {
+      throw new Error(
+        `"${name}": the occlusion culling needs the size of the depth: create the graph with the size of the frame (new RenderGraph({ size }))`,
+      );
+    }
+    const backend = renderer.backend;
+    const renderable = backend.capabilities?.renderableFormats;
+    if (renderable && !renderable.includes('rgba16float')) {
+      throw new Error(
+        `"${name}": the occlusion culling renders to ${PyramidFormat} textures, which the backend cannot (EXT_color_buffer_float in WebGL2)`,
+      );
+    }
+    const levels: TextureHandle[] = [];
+    let source = depth;
+    let sourceSize = size;
+    for (
+      let level = 0;
+      level === 0 || sourceSize.width > 1 || sourceSize.height > 1;
+      level++
+    ) {
+      const levelSize = {
+        width: Math.ceil(sourceSize.width / 2),
+        height: Math.ceil(sourceSize.height / 2),
+      };
+      const material = this.levelMaterial(level);
+      material.setValue('size', [levelSize.width, levelSize.height]);
+      material.setValue('sourceSize', [sourceSize.width, sourceSize.height]);
+      if (level === 0) {
+        material.setValue(
+          'inverseProjection',
+          backend.cameraMath.getInverseMatrix(view.projection),
+        );
+      }
+      const passName = `${name} occlusion level ${level}`;
+      source = renderer.addFullscreenPass(graph, passName, {
+        material,
+        inputs: { [level === 0 ? 'depth' : 'source']: source },
+        target: graph.createTexture(passName, {
+          format: PyramidFormat,
+          size: levelSize,
+        }),
+        format: PyramidFormat,
+      });
+      levels.push(source);
+      sourceSize = levelSize;
+    }
+    return { levels, size };
   }
 
   // Keeps the box of an item for the test of this frame, grown by the

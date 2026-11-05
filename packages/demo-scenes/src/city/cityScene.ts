@@ -1,5 +1,6 @@
 import {
   Camera,
+  GpuCulling,
   RenderGraph,
   RenderGraphRunner,
   Renderer,
@@ -23,6 +24,9 @@ export interface CityOptions {
   readonly cullingView?: boolean;
   // The shadows of the sun. Default true.
   readonly shadows?: boolean;
+  // The culling on the GPU at the start, where the backend has it (the
+  // occlusion culling in two phases, without delay). Default false.
+  readonly gpuCulling?: boolean;
 }
 
 function cityActions(input: Input): ActionMap {
@@ -58,6 +62,7 @@ function cityActions(input: Input): ActionMap {
     height: { type: 'axis', bindings: ['pointer:wheel'] },
     occlusion: { type: 'button', bindings: ['key:KeyO', 'gamepad:north'] },
     culling: { type: 'button', bindings: ['key:KeyC', 'gamepad:back'] },
+    gpu: { type: 'button', bindings: ['key:KeyG', 'gamepad:west'] },
   });
 }
 
@@ -70,7 +75,9 @@ function cityActions(input: Input): ActionMap {
  * The camera drives along an avenue, looking around, until a key moves it.
  * Keys: WASD (or the arrows) to move, Q and E to turn, the wheel to rise,
  * Shift to go faster; O switches the occlusion culling, C the view of the
- * culling.
+ * culling, G the culling on the GPU (Vulkan, Direct3D 12, WebGPU: the
+ * occlusion culling in two phases, without delay; the view of the culling
+ * then shows nothing hidden, the CPU not knowing).
  */
 export function createCity(options: CityOptions = {}): SceneFactory {
   return (backend, surface, context = {}) => {
@@ -112,6 +119,7 @@ export function createCity(options: CityOptions = {}): SceneFactory {
     let manual = false;
     let occlusionOn = options.occlusion ?? true;
     let showCulling = options.cullingView ?? true;
+    let gpuOn = options.gpuCulling ?? false;
     let last = 0;
     let frameTime = 1 / 60;
 
@@ -152,6 +160,9 @@ export function createCity(options: CityOptions = {}): SceneFactory {
         if (actions.button('culling').pressed) {
           showCulling = !showCulling;
         }
+        if (actions.button('gpu').pressed) {
+          gpuOn = !gpuOn;
+        }
         move(time, dt);
         cameraNode.transform.position = position;
         // Looking slightly up along the street.
@@ -176,6 +187,7 @@ export function createCity(options: CityOptions = {}): SceneFactory {
           clearColor: { r: 0.55, g: 0.68, b: 0.85, a: 1 },
           shadows: options.shadows ?? true,
           ...(occlusionOn ? { occlusion } : {}),
+          gpuCulling: gpuOn,
         });
         if (showCulling) {
           cullingView.add(
@@ -196,7 +208,9 @@ export function createCity(options: CityOptions = {}): SceneFactory {
             `${stats.visible} drawn of ${inView} in view (${city.buildings.length} buildings), ` +
               `${stats.occluded} hidden — occlusion ${
                 occlusionOn ? 'on' : 'off'
-              } (O) — ` +
+              } (O), on the ${
+                gpuOn && GpuCulling.supported(backend) ? 'GPU' : 'CPU'
+              } (G) — ` +
               `${Math.round(1 / Math.max(frameTime, 1e-3))} fps`,
           );
         }

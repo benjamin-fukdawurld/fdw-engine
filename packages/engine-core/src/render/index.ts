@@ -1,5 +1,6 @@
 export * from './Material';
 export * from './Mesh';
+export { MeshArena, RangeAllocator } from './MeshArena';
 export * from './Renderer';
 export * from './picking';
 export * from './RenderSource';
@@ -12,6 +13,8 @@ export {
   LightClusterCount,
   LightClusters,
   LightClusterTiles,
+  lightSpheres,
+  sliceParameters,
 } from './lightClusters';
 export { LightPoolStride, writeLightPool } from './lightPool';
 export {
@@ -31,4 +34,22 @@ export type { BakeTextureOptions } from './bake';
 export * from './rays';
 export { hasAttribute, readAttribute } from './attributes';
 export { ArgumentWords, GpuCulling } from './gpuCulling';
-export type { CulledDraws, CulledRun } from './gpuCulling';
+export type {
+  CulledDraws,
+  CulledRun,
+  CullingCandidates,
+  CullingPhase,
+} from './gpuCulling';
+export {
+  GpuLightClusters,
+  gpuLightGridSize,
+  MaxGpuClusterLights,
+} from './gpuLightClusters';
+export type { GpuClusterLights } from './gpuLightClusters';
+export {
+  finish as finishComputeGraph,
+  recordPrefixSum,
+  scanGraph,
+  setup as computeGraph,
+  Workgroup as ComputeWorkgroup,
+} from './gpuCulling';

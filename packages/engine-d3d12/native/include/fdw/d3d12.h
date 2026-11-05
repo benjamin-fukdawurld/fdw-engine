@@ -204,6 +204,10 @@ fdw_dx_max_color_attachments(const fdw_dx_context *context);
 FDW_DX_API int32_t fdw_dx_independent_blend(const fdw_dx_context *context);
 // Whether the indirect draws are supported (always).
 FDW_DX_API int32_t fdw_dx_indirect_draw(const fdw_dx_context *context);
+// The multiple indirect draws, with their count read from a buffer: 3
+// (always).
+FDW_DX_API int32_t
+fdw_dx_multi_draw_indirect(const fdw_dx_context *context);
 // The highest max_anisotropy of the samplers (16); higher ones are clamped
 // to it.
 FDW_DX_API float fdw_dx_max_anisotropy(const fdw_dx_context *context);
@@ -571,7 +575,19 @@ enum {
   // In a render pass. buffer (five u32: index count, instance count, first
   // index, base vertex, first instance), offset (64).
   FDW_DX_CMD_DRAW_INDEXED_INDIRECT = 22,
+  // In a render pass. buffer, offset (64), max count (at most
+  // FDW_DX_MAX_MULTI_DRAWS), then the count: a buffer (0: none, max count
+  // draws) and its offset (64). The draws are 20 bytes apart (four u32 of
+  // FDW_DX_CMD_DRAW_INDIRECT and one unused). The count and the arguments
+  // are in different buffers.
+  FDW_DX_CMD_MULTI_DRAW_INDIRECT = 23,
+  // The same, with the five u32 of FDW_DX_CMD_DRAW_INDEXED_INDIRECT.
+  FDW_DX_CMD_MULTI_DRAW_INDEXED_INDIRECT = 24,
 };
+
+// The most draws of a multiple indirect draw: their arguments are copied
+// into the scratch buffer of the submission.
+#define FDW_DX_MAX_MULTI_DRAWS 2048
 
 // Records the commands into a command list, with the barriers the
 // resources need, and submits them after the pending writes.

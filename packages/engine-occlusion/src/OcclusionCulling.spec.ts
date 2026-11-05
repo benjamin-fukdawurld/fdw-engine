@@ -137,6 +137,48 @@ describe('OcclusionCulling', () => {
     expect(moved[4]).toBeCloseTo(still[4] + 10);
   });
 
+  it('gives its pyramid to the culling on the GPU, in two phases', async () => {
+    const { backend, log } = fakeBackend({
+      maxVaryings: 16,
+      storageBuffers: true,
+      compute: true,
+      objectTable: true,
+      indirectDraw: true,
+    });
+    let readbacks = 0;
+    backend.textures.readTexture = async () => {
+      readbacks++;
+      return new ArrayBuffer(0);
+    };
+    const renderer = new Renderer(backend);
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    const occlusion = new OcclusionCulling();
+    const items: RenderItem[] = [-2, 0, 2].map((x) => ({
+      mesh: triangle(),
+      material: new Material({ graph: colorGraph() }),
+      transform: new Transform({ position: { x, y: 0, z: 0 } }),
+    }));
+    renderer.render({ items, camera, surface, occlusion, gpuCulling: true });
+    await new Promise((resolve) => setTimeout(resolve));
+    // The pyramid of the first phase, then the second: no test of its own,
+    // nothing read back.
+    expect(log.renderPasses).toEqual([
+      'scene opaque',
+      'scene occlusion level 0',
+      'scene occlusion level 1',
+      'scene opaque late',
+    ]);
+    expect(log.dispatches.map((dispatch) => dispatch.pipeline)).toContain(
+      'culling late test 2',
+    );
+    expect(readbacks).toBe(0);
+    expect(renderer.stats.get('scene')).toMatchObject({
+      visible: 3,
+      occluded: 0,
+    });
+    expect(occlusion.isHidden(items[1])).toBe(false);
+  });
+
   it('needs the size of the frame', () => {
     const { renderer, camera, occlusion, items } = setup();
     const graph = new RenderGraph();

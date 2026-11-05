@@ -74,6 +74,13 @@ lumières de l'image. `new Renderer(backend, { lightClusters: false })` les
 désactive : chaque pixel somme toutes les lumières, comme l'exemple avec
 **C**.
 
+Avec `gpuCulling: true` (Vulkan, Direct3D 12, WebGPU), le GPU remplit les
+listes : un fil par lumière et par tranche trouve les tuiles que couvre sa
+sphère, un fil par cluster et par lumière garde les paires, et une somme
+préfixe donne sa place à chacune, dans le même ordre que sur le CPU. Le CPU
+n'écrit que les sphères englobantes. Jusqu'à 1 024 lumières ponctuelles et
+spots dans le champ ; au-delà, le CPU les remplit.
+
 ## Dans un shading model personnalisé
 
 `light.sum` utilise les clusters quand il reçoit la **position** du point

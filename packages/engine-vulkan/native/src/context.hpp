@@ -241,6 +241,9 @@ struct fdw_vk_context {
   bool independentBlend = false;
   // drawIndirectFirstInstance: the indirect draws of the object table.
   bool indirectDraw = false;
+  // multiDrawIndirect, and drawIndirectCount (Vulkan 1.2).
+  bool multiDrawIndirect = false;
+  bool drawIndirectCount = false;
   // The bits of the timestamps of the queue (0: none), and nanoseconds per
   // tick.
   uint32_t timestampValidBits = 0;

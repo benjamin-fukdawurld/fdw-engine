@@ -1,2 +1,8 @@
 export * from './OcclusionCulling';
-export { firstLevelGraph, nextLevelGraph, testGraph } from './graphs';
+export {
+  boxVisibility,
+  firstLevelGraph,
+  levelName,
+  nextLevelGraph,
+  testGraph,
+} from './graphs';

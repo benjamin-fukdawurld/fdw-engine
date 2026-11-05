@@ -250,6 +250,26 @@ int prepareRenderPass(Replay &replay, Barriers &barriers) {
       }
       useBuffer(barriers, buffer, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
                 VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+    } else if (opcode == FDW_VK_CMD_MULTI_DRAW_INDIRECT ||
+               opcode == FDW_VK_CMD_MULTI_DRAW_INDEXED_INDIRECT) {
+      // The arguments, then the count, if any.
+      const uint32_t arguments = ahead.word();
+      ahead.wide();
+      ahead.word();
+      const uint32_t count = ahead.word();
+      ahead.wide();
+      for (const uint32_t id : {arguments, count}) {
+        if (id == 0) {
+          continue;
+        }
+        fdw_vk_buffer *buffer =
+            find(replay.context->buffers, id, "buffer", &status);
+        if (!buffer) {
+          return status;
+        }
+        useBuffer(barriers, buffer, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+                  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+      }
     } else {
       for (uint32_t i = operandCount(opcode); i > 0; i--) {
         ahead.word();
@@ -456,6 +476,66 @@ int drawCommand(Replay &replay, uint32_t opcode) {
       vkCmdDrawIndexedIndirect(replay.commands, buffer->buffer, offset, 1, 0);
     } else {
       vkCmdDrawIndirect(replay.commands, buffer->buffer, offset, 1, 0);
+    }
+    return 0;
+  }
+  case FDW_VK_CMD_MULTI_DRAW_INDIRECT:
+  case FDW_VK_CMD_MULTI_DRAW_INDEXED_INDIRECT: {
+    if (!replay.inRenderPass) {
+      return fail("A draw outside of a render pass");
+    }
+    fdw_vk_buffer *buffer =
+        find(context->buffers, reader.word(), "buffer", &status);
+    const uint64_t offset = reader.wide();
+    const uint32_t maxCount = reader.word();
+    const uint32_t countId = reader.word();
+    const uint64_t countOffset = reader.wide();
+    if (!buffer) {
+      return status;
+    }
+    fdw_vk_buffer *count = nullptr;
+    if (countId != 0) {
+      count = find(context->buffers, countId, "buffer", &status);
+      if (!count) {
+        return status;
+      }
+    }
+    const bool indexed = opcode == FDW_VK_CMD_MULTI_DRAW_INDEXED_INDIRECT;
+    constexpr uint32_t stride = 20;
+    if (offset % 4 != 0 || offset > buffer->size ||
+        uint64_t(maxCount) * stride > buffer->size - offset) {
+      return fail("The indirect arguments are outside of the buffer, or "
+                  "their offset is not a multiple of 4");
+    }
+    if (count && (countOffset % 4 != 0 || countOffset > count->size ||
+                  4 > count->size - countOffset)) {
+      return fail("The count of the draws is outside of its buffer, or its "
+                  "offset is not a multiple of 4");
+    }
+    if (!context->indirectDraw || !context->multiDrawIndirect ||
+        (count && !context->drawIndirectCount)) {
+      return fail("The device has no multiDrawIndirect or drawIndirectCount");
+    }
+    if (maxCount == 0) {
+      return 0;
+    }
+    if (flushGroups(replay) != 0) {
+      return -1;
+    }
+    // Their barriers were placed before the pass (prepareRenderPass).
+    if (count && indexed) {
+      vkCmdDrawIndexedIndirectCount(replay.commands, buffer->buffer, offset,
+                                    count->buffer, countOffset, maxCount,
+                                    stride);
+    } else if (count) {
+      vkCmdDrawIndirectCount(replay.commands, buffer->buffer, offset,
+                             count->buffer, countOffset, maxCount, stride);
+    } else if (indexed) {
+      vkCmdDrawIndexedIndirect(replay.commands, buffer->buffer, offset,
+                               maxCount, stride);
+    } else {
+      vkCmdDrawIndirect(replay.commands, buffer->buffer, offset, maxCount,
+                        stride);
     }
     return 0;
   }

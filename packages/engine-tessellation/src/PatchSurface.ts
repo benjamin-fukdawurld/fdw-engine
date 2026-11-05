@@ -1,9 +1,15 @@
 import { CameraCache } from '@fdw/engine-backend';
-import type { GpuTexture, Mat4, RenderBackend } from '@fdw/engine-backend';
-import { Camera, Material, Mesh } from '@fdw/engine-core';
+import type {
+  GpuBuffer,
+  GpuTexture,
+  Mat4,
+  RenderBackend,
+} from '@fdw/engine-backend';
+import { Camera, GpuCulling, Material, Mesh } from '@fdw/engine-core';
 import type { WorldRenderItem, WorldTransform } from '@fdw/engine-core';
 import { Aabb, Frustum, maxScale, transformAabb } from '@fdw/engine-geometry';
-import { PatchValues } from './graph';
+import { DrawHeader, PatchValues } from './graph';
+import { GpuLevels, MaxVertices } from './gpuLevels';
 import { LevelSelection } from './levels';
 import { MaxLevel, Patches, PatchTextureWidth } from './patches';
 
@@ -31,6 +37,14 @@ export interface PatchSurfaceOptions {
   readonly castShadow?: boolean;
   readonly id?: number;
   readonly label?: string;
+  /**
+   * Where the levels are chosen: 'cpu', or 'gpu' in a compute shader at
+   * each update, the vertex count of the draw written there too
+   * (design/p24-gpu-driven.md §3.6): nothing per patch on the CPU, but no
+   * stats. 'gpu' where the backend has compute shaders and indirect draws
+   * (not WebGL2: the CPU chooses there). Default 'cpu'.
+   */
+  readonly levels?: 'cpu' | 'gpu';
 }
 
 /** What the last {@link PatchSurface.update} chose. */
@@ -43,8 +57,6 @@ export interface PatchSurfaceStats {
   readonly levels: readonly number[];
 }
 
-// The vertex index is read as a float in the shader: exact up to 2^24.
-const MaxVertices = 2 ** 24;
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 /**
@@ -90,9 +102,11 @@ export class PatchSurface implements WorldRenderItem {
   private readonly _frustum = new Frustum();
   private readonly _cameras = new WeakMap<Camera, CameraCache>();
   private readonly _patchTexture: GpuTexture;
-  private _drawTexture?: GpuTexture;
-  private _draws = new Float32Array(0);
-  private readonly _retired: GpuTexture[] = [];
+  // The header and the draws, read by the material (see PatchValues.draws).
+  private readonly _drawBuffer: GpuBuffer;
+  private readonly _draws: Float32Array<ArrayBuffer>;
+  // Where the levels are chosen on the GPU.
+  private readonly _gpu?: GpuLevels;
   private _stats: PatchSurfaceStats;
 
   constructor(backend: RenderBackend, options: PatchSurfaceOptions) {
@@ -138,6 +152,23 @@ export class PatchSurface implements WorldRenderItem {
       source: patches.data,
     });
     this.material.setValue(PatchValues.patches, this._patchTexture);
+    // Every patch drawn at most.
+    this._draws = new Float32Array((DrawHeader + patches.count) * 4);
+    this._drawBuffer = backend.buffers.create({
+      label: `${options.label ?? 'patch surface'} draws`,
+      size: this._draws.byteLength,
+      usage: ['storage', 'copy-dst'],
+    });
+    this.material.setValue(PatchValues.draws, this._drawBuffer);
+    if (options.levels === 'gpu' && GpuCulling.supported(backend)) {
+      this._gpu = new GpuLevels(
+        backend,
+        patches,
+        this._drawBuffer,
+        options.label ?? 'patch surface',
+      );
+      this.mesh.setGpuVertexCount({ buffer: this._gpu.counts, offset: 0 });
+    }
     this._stats = {
       drawn: 0,
       patches: patches.count,
@@ -146,6 +177,11 @@ export class PatchSurface implements WorldRenderItem {
     };
     // Nothing drawn before the first update.
     this.writeDraws();
+  }
+
+  /** Whether the levels are chosen on the GPU (option `levels`). */
+  get gpu(): boolean {
+    return this._gpu !== undefined;
   }
 
   get world(): WorldTransform {
@@ -181,10 +217,10 @@ export class PatchSurface implements WorldRenderItem {
    * Chooses the level of each patch for a camera, and the patches drawn:
    * once per frame, before rendering. The shadow maps and the other views
    * of the frame draw the same patches. `viewport`: the size of the image
-   * in pixels.
+   * in pixels. On the GPU (option `levels`), records the choice in a
+   * submission of its own, before those of the frame.
    */
   update(camera: Camera, viewport: { width: number; height: number }): this {
-    this._retired.splice(0).forEach((texture) => texture.destroy());
     const projection = camera.projection;
     const orthographic = projection.type === 'orthographic';
     const pixelScale =
@@ -203,6 +239,19 @@ export class PatchSurface implements WorldRenderItem {
     }
 
     const { position } = camera;
+    if (this._gpu) {
+      this._gpu.dispatch({
+        world: this._world.matrix,
+        camera: [position.x, position.y, position.z],
+        orthographic,
+        perPixel: pixelScale / this._options.edgePixels,
+        minLevel: this._options.minLevel,
+        maxLevel: this._options.maxLevel,
+        grow: this.grow(),
+        ...(frustum ? { planes: frustum.planes } : {}),
+      });
+      return this;
+    }
     const view = {
       position: [position.x, position.y, position.z] as const,
       pixelScale,
@@ -224,45 +273,23 @@ export class PatchSurface implements WorldRenderItem {
     return this;
   }
 
-  /** Destroys the textures of the surface. */
+  /** Destroys the textures and the buffers of the surface. */
   destroy(): void {
     this._patchTexture.destroy();
-    this._drawTexture?.destroy();
-    this._retired.splice(0).forEach((texture) => texture.destroy());
+    this._drawBuffer.destroy();
+    this._gpu?.destroy();
   }
 
   private grow(): number {
     return this._options.displacement * maxScale(this._world.matrix);
   }
 
-  // The draws sorted by level, their texture, the starts of the levels and
-  // the vertex count.
+  // The draws sorted by level, after the header: the first vertex and the
+  // first draw of each level; the vertex count.
   private writeDraws(): void {
     const { counts, levels, edgeLevels } = this._selection;
     const patches = this.patches;
     const drawn = this._selection.drawn;
-
-    const rows = Math.max(Math.ceil(drawn / PatchTextureWidth), 1);
-    if (
-      !this._drawTexture ||
-      this._draws.length < rows * PatchTextureWidth * 4
-    ) {
-      if (this._drawTexture) {
-        this._retired.push(this._drawTexture);
-      }
-      const capacity = Math.max(
-        rows,
-        (this._draws.length / PatchTextureWidth / 4) * 2,
-      );
-      this._draws = new Float32Array(capacity * PatchTextureWidth * 4);
-      this._drawTexture = this._backend.textures.createTexture({
-        label: `${this.mesh.label} draws`,
-        type: '2d',
-        format: 'rgba32float',
-        dimensions: { width: PatchTextureWidth, height: capacity },
-      });
-      this.material.setValue(PatchValues.draws, this._drawTexture);
-    }
 
     // The first draw and the first vertex of each level.
     const drawStarts = new Array<number>(8).fill(0);
@@ -277,16 +304,19 @@ export class PatchSurface implements WorldRenderItem {
     }
     // Past the last level: never reached.
     vertexStarts[7] = 1e30;
+    drawStarts[7] = draw;
+    const draws = this._draws;
+    draws.set(vertexStarts, 0);
+    draws.set(drawStarts, 8);
 
     const cursor = drawStarts.slice(0, MaxLevel + 1);
-    const draws = this._draws;
     const edges = patches.edges;
     for (let patch = 0; patch < levels.length; patch++) {
       const level = levels[patch];
       if (level < 0) {
         continue;
       }
-      const i = cursor[level]++ * 4;
+      const i = (DrawHeader + cursor[level]++) * 4;
       // The step of the grid of each edge on the template of the patch:
       // 2^(level − level of the edge).
       const e = patch * 4;
@@ -299,13 +329,7 @@ export class PatchSurface implements WorldRenderItem {
         128 * (1 << (level - edgeLevels[edges[e + 3]]));
       draws[i + 3] = 0;
     }
-    this._backend.textures.writeTexture(this._drawTexture as GpuTexture, draws);
-
-    const material = this.material;
-    material.setValue(PatchValues.vertexStarts[0], vertexStarts.slice(0, 4));
-    material.setValue(PatchValues.vertexStarts[1], vertexStarts.slice(4, 8));
-    material.setValue(PatchValues.drawStarts[0], drawStarts.slice(0, 4));
-    material.setValue(PatchValues.drawStarts[1], drawStarts.slice(4, 8));
+    this._drawBuffer.write(0, draws.buffer, 0, (DrawHeader + drawn) * 16);
     this.mesh.setVertexCount(vertex);
     this._stats = {
       drawn,

@@ -1,4 +1,5 @@
-import type { MeshDescription } from '@fdw/engine-backend';
+import type { GpuBuffer, MeshDescription } from '@fdw/engine-backend';
+import type { MeshArena } from './MeshArena';
 
 export type IndexData = Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
 
@@ -26,8 +27,17 @@ const MaxUpdates = 64;
 // after each change.
 export class Mesh {
   readonly label?: string;
+  /**
+   * The meshes it shares its GPU buffers with, where the renderer can: see
+   * MeshArena.
+   */
+  readonly arena?: MeshArena;
 
   private _description: MeshDescription;
+  private _gpuVertexCount?: {
+    readonly buffer: GpuBuffer;
+    readonly offset: number;
+  };
   private _vertices: ArrayBufferView<ArrayBuffer>[];
   private _indices?: IndexData;
   private _version = 0;
@@ -45,6 +55,7 @@ export class Mesh {
     indices,
     label,
     regenerate,
+    arena,
   }: {
     description: MeshDescription;
     // One per vertex buffer of the description.
@@ -56,6 +67,9 @@ export class Mesh {
     // again when it is read: for the meshes derived from others (a static
     // batch), whose copy would only take memory.
     regenerate?: () => MeshData;
+    // Shares the GPU buffers of the other meshes of the arena of the same
+    // layout: see MeshArena.
+    arena?: MeshArena;
   }) {
     if (vertices.length !== description.vertexBuffers.length) {
       throw new Error(
@@ -89,6 +103,9 @@ export class Mesh {
     this._vertices = [...vertices];
     this._indices = indices;
     this._regenerate = regenerate;
+    if (arena) {
+      this.arena = arena;
+    }
   }
 
   /** Whether the CPU copy can be given back: the mesh can regenerate it. */
@@ -258,6 +275,30 @@ export class Mesh {
       throw new Error('The vertex count of an indexed mesh cannot change');
     }
     this._description = { ...this._description, vertexCount: count };
+    return this;
+  }
+
+  /**
+   * The number of vertices drawn, written by the GPU: a u32 of a storage
+   * buffer, at `offset` bytes, computed before the passes drawing the mesh
+   * (the levels of a tessellated surface chosen in a compute shader). The
+   * renderer then draws it indirectly, on the backends with indirect draws
+   * (indirectDraw); description.vertexCount stays the count elsewhere.
+   * Undefined to draw `vertexCount` again. For meshes without indices.
+   */
+  get gpuVertexCount():
+    { readonly buffer: GpuBuffer; readonly offset: number } | undefined {
+    return this._gpuVertexCount;
+  }
+
+  /** Sets (or clears) the vertex count written by the GPU: see gpuVertexCount. */
+  setGpuVertexCount(
+    count: { readonly buffer: GpuBuffer; readonly offset: number } | undefined,
+  ): this {
+    if (count && this._description.indexBuffer) {
+      throw new Error('The vertex count of an indexed mesh cannot change');
+    }
+    this._gpuVertexCount = count;
     return this;
   }
 

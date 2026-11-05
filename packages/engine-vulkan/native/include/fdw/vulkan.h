@@ -200,6 +200,11 @@ FDW_VK_API int32_t fdw_vk_independent_blend(const fdw_vk_context *context);
 // Whether the indirect draws can start at a first instance other than 0
 // (drawIndirectFirstInstance): the indirect draws need it.
 FDW_VK_API int32_t fdw_vk_indirect_draw(const fdw_vk_context *context);
+// The multiple indirect draws: 1 with multiDrawIndirect (several draws in
+// one command), plus 2 with drawIndirectCount (their number read from a
+// buffer).
+FDW_VK_API int32_t
+fdw_vk_multi_draw_indirect(const fdw_vk_context *context);
 // The highest max_anisotropy of the samplers (1: no anisotropic filtering);
 // higher ones are clamped to it.
 FDW_VK_API float fdw_vk_max_anisotropy(const fdw_vk_context *context);
@@ -557,6 +562,12 @@ enum {
   // In a render pass. buffer (five u32: index count, instance count, first
   // index, base vertex, first instance), offset (64).
   FDW_VK_CMD_DRAW_INDEXED_INDIRECT = 22,
+  // In a render pass. buffer, offset (64), max count, then the count: a
+  // buffer (0: none, max count draws) and its offset (64). The draws are 20
+  // bytes apart (four u32 of FDW_VK_CMD_DRAW_INDIRECT and one unused).
+  FDW_VK_CMD_MULTI_DRAW_INDIRECT = 23,
+  // The same, with the five u32 of FDW_VK_CMD_DRAW_INDEXED_INDIRECT.
+  FDW_VK_CMD_MULTI_DRAW_INDEXED_INDIRECT = 24,
 };
 
 // Records the commands into a command buffer, with the barriers the

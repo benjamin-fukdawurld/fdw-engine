@@ -77,6 +77,42 @@ reveals may appear a frame or two late. The boxes are grown by the motion
 of the camera to find these objects a little earlier (`motion`, 2 by
 default: twice the distance moved since the last frame).
 
+## Without delay, on the GPU
+
+Where the backend draws indirectly (Vulkan, Direct3D 12, WebGPU with
+`indirect-first-instance`), add `gpuCulling: true`: the occlusion culling
+then runs on the GPU, in **two phases**, and nothing arrives late.
+
+```ts
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  occlusion,
+  gpuCulling: true,
+});
+```
+
+1. **The first phase** draws the objects that were visible at the previous
+   frame: the GPU keeps a flag per object, which the CPU never reads.
+2. **The pyramid** is built from what that phase drew, as above.
+3. **The second phase** tests every object in the frustum against it, in
+   a compute pass: it draws those found visible that the first phase did
+   not draw, and keeps the flags of all for the next frame.
+
+An object that moving reveals is found by the second phase of the frame it
+appears in: no delay, no `motion` margin needed. Nothing is read back, so
+`occlusion.isHidden()` and `stats.occluded` say nothing in this mode: the
+statistics count the objects given to the GPU. WebGL2 keeps the readback.
+
+The CPU no longer knows what is hidden: it prepares every object in the
+frustum, where the readback lets it skip the hidden ones. With a few
+thousand objects the GPU path costs more on the CPU (12 ms against 4 ms
+for the 9801 buildings below); its gain is the image without delay, the
+GPU time of its tests (0.04 ms for 10 000 or 100 000 objects) and what
+comes next: the scenes kept on the GPU (see the
+[backends guide](/fdw-engine/guides/backends-and-surfaces/#culling-on-the-gpu)).
+
 ## What it saves
 
 The city of the demo (`city` in the demo app), 5184 buildings, from a

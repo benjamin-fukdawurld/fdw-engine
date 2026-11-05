@@ -87,6 +87,8 @@ compilateur vérifie les programmes en conséquence :
 | `maxColorAttachmentBytesPerSample` | Octets par pixel des cibles de couleur (WebGPU)                  | —                                              |
 | `independentBlend`                 | Cibles d'un pipeline avec des mélanges différents                | false                                          |
 | `indirectDraw`                     | Des draws dont le GPU écrit les arguments                        | —                                              |
+| `multiDrawIndirect`                | Plusieurs draws indirects en une commande                        | —                                              |
+| `drawIndirectCount`                | Leur nombre écrit par le GPU                                     | —                                              |
 
 Un graphe qui utilise une fonctionnalité absente échoue à la compilation avec
 une erreur explicite ; testez la capacité pour proposer une solution de
@@ -224,6 +226,56 @@ est la même.
   (5 u32 : indices, instances, premier indice, sommet de base, première
   instance). Une passe de calcul peut écrire les instances de la table dans
   `table.instanceBuffer`.
+
+Le culling sur le GPU entraîne le reste de ce que le GPU peut choisir
+lui-même :
+
+- **L'occlusion culling sans retard** : avec un `OcclusionCulling`, les
+  objets visibles à la frame précédente sont dessinés d'abord, puis les
+  autres testés contre la pyramide de profondeur de ce qu'ils ont dessiné,
+  dans la même frame (voir le
+  [tutoriel de l'occlusion culling](/fdw-engine/fr/tutorials/occlusion-culling/#sans-retard-sur-le-gpu)).
+- **Les clusters de lumières** sont remplis par des passes de calcul,
+  jusqu'à 1024 lumières ponctuelles et spots dans le champ
+  (`MaxGpuClusterLights` ; le CPU au-delà) : les mêmes listes que sur le
+  CPU, dans le même ordre.
+- **Les niveaux d'une surface tessellée** : `levels: 'gpu'` de
+  `PatchSurface` (voir le
+  [tutoriel de la tessellation](/fdw-engine/fr/tutorials/tessellation/#les-niveaux-sur-le-gpu)).
+
+### Des meshes qui partagent leurs buffers
+
+Les meshes d'une `MeshArena` de même format partagent un vertex buffer et
+un index buffer : le renderer place chacun à un sommet de base et un
+premier indice à lui (le premier emplacement libre ; les buffers doublent
+quand ils sont pleins, leur contenu recopié par le GPU) et les dessine de
+là, en indirect.
+
+```ts
+const arena = new MeshArena({ label: 'buildings' });
+const tower = new Mesh({ description, vertices, indices, arena });
+const house = new Mesh({ description, vertices, indices, arena });
+renderer.render({ source: city, camera, surface, gpuCulling: true });
+```
+
+Cullés sur le GPU, les draws consécutifs de meshes d'une arène qui
+partagent un pipeline et un matériau deviennent **un draw multiple**
+(`multiDrawIndexedIndirect`, 1024 draws au plus). Avec `drawIndirectCount`,
+le GPU tasse les draws qui ont gardé des instances et écrit leur nombre :
+les draws vides ne sont même pas lancés. Sans arène, ou en WebGL2, rien ne
+change.
+
+- `pass.multiDrawIndirect(buffer, offset, maxCount, count?)` et
+  `pass.multiDrawIndexedIndirect(…)` : `maxCount` draws, à 20 octets
+  d'intervalle (les arguments de `drawIndirect` puis un u32 inutilisé ;
+  ceux de `drawIndexedIndirect`), ou les `count.buffer[count.offset]`
+  premiers. Vulkan (`multiDrawIndirect`, `drawIndirectCount`) et
+  Direct3D 12 (`ExecuteIndirect`, 2048 draws au plus, le nombre dans un
+  autre buffer que les arguments) nativement ; WebGPU par un draw chacun,
+  sans nombre.
+- `mesh.setGpuVertexCount({ buffer, offset })` : le nombre de sommets d'un
+  mesh sans indices écrit par le GPU (une passe de calcul de la frame) ; le
+  renderer le recopie dans les arguments de son draw.
 
 ## Les données des meshes
 

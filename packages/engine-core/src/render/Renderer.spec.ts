@@ -17,6 +17,7 @@ import { Material, RenderState } from './Material';
 import { Mesh } from './Mesh';
 import { RenderGraph } from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
+import type { OcclusionCuller } from './occlusion';
 import { Renderer } from './Renderer';
 import { cascadeSplits, sliceSphere } from './shadows';
 import {
@@ -538,6 +539,136 @@ describe('Renderer, object table', () => {
         visible: 3,
         drawCalls: 1,
       });
+    });
+
+    it('culls in two phases with an occlusion culling that builds a pyramid', () => {
+      const { backend, log } = fakeBackend({
+        maxVaryings: 16,
+        storageBuffers: true,
+        compute: true,
+        objectTable: true,
+        indirectDraw: true,
+      });
+      const renderer = new Renderer(backend);
+      const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+      const mesh = triangle();
+      const opaque = new Material({ graph: colorGraph() });
+      const glass = new Material({
+        graph: colorGraph(),
+        renderState: { alphaMode: 'blend' },
+      });
+      const items = [
+        { mesh, material: opaque, transform: transformAt(-1) },
+        { mesh, material: opaque, transform: transformAt(1) },
+        { mesh, material: glass, transform: transformAt(0) },
+      ];
+      const calls: string[] = [];
+      const occlusion: OcclusionCuller = {
+        begin: () => calls.push('begin'),
+        visible: () => {
+          calls.push('visible');
+          return false;
+        },
+        addPasses: () => calls.push('addPasses'),
+        addPyramid: (_graph, context) => {
+          calls.push(`addPyramid ${context.name}`);
+          return {
+            levels: [],
+            names: [],
+            key: 'none',
+            values: {},
+            // Nothing hidden.
+            test: (g, low) =>
+              g.call(std.greaterEqual, { a: low.swizzle('x'), b: -1e38 }),
+          };
+        },
+      };
+      renderer.render({ items, camera, surface, gpuCulling: true, occlusion });
+      // Nothing left out on the CPU: the GPU tests every item.
+      expect(calls).toEqual(['begin', 'addPyramid scene']);
+      expect(log.computePasses).toEqual([
+        'scene culling',
+        'scene occlusion culling',
+      ]);
+      expect(log.dispatches.map((dispatch) => dispatch.pipeline)).toEqual([
+        // The first phase: the opaque items visible at the previous frame.
+        'culling early test',
+        'culling scan',
+        'culling scatter',
+        'culling arguments',
+        // The second: the opaque items, then the transparent one.
+        'culling late test none',
+        'culling scan',
+        'culling scatter',
+        'culling arguments',
+        'culling late test none',
+        'culling scatter',
+        'culling arguments',
+      ]);
+      expect(log.renderPasses).toEqual([
+        'scene opaque',
+        'scene opaque late',
+        'scene transparent',
+      ]);
+      expect(log.instanceWrites).toEqual([]);
+      expect(log.draws.map((draw) => draw.indirect?.offset)).toEqual([0, 0, 0]);
+      expect(renderer.stats.get('scene')).toMatchObject({
+        visible: 3,
+        occluded: 0,
+        drawCalls: 3,
+      });
+    });
+
+    it('fills the light clusters on the GPU', () => {
+      const { backend, log } = fakeBackend({
+        maxVaryings: 16,
+        storageBuffers: true,
+        compute: true,
+        objectTable: true,
+        indirectDraw: true,
+      });
+      const renderer = new Renderer(backend);
+      const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+      const items = [
+        {
+          mesh: triangle(),
+          material: new Material({ graph: colorGraph() }),
+          transform: transformAt(0),
+        },
+      ];
+      const lamp = (x: number) =>
+        new PointLight({
+          position: { x, y: 0, z: 1 },
+          diffuse: { x: 1, y: 1, z: 1 },
+          quadraticAttenuation: 1,
+        });
+      const sun = new DirectionalLight({ direction: { x: 0, y: 0, z: -1 } });
+      renderer.render({
+        items,
+        camera,
+        surface,
+        lights: [lamp(-1), sun, lamp(1)],
+        gpuCulling: true,
+      });
+      expect(log.computePasses).toEqual([
+        'scene light clusters',
+        'scene culling',
+      ]);
+      const pipelines = log.dispatches.map((dispatch) => dispatch.pipeline);
+      // Two lights: 6912 pairs, a prefix sum of 13 steps.
+      expect(pipelines.slice(0, 2)).toEqual([
+        'light clusters tiles',
+        'light clusters pairs',
+      ]);
+      expect(
+        pipelines.filter((name) => name === 'light clusters scan'),
+      ).toHaveLength(13);
+      expect(pipelines.slice(15, 17)).toEqual([
+        'light clusters lists',
+        'light clusters headers',
+      ]);
+      // The sun first in the pool, then the lamps.
+      expect(renderer.stats.get('scene')).toMatchObject({ lights: 3 });
     });
 
     it('culls on the CPU where the backend has no indirect draws', () => {

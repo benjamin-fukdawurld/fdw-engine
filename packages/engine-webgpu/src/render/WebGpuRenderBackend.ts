@@ -54,6 +54,9 @@ export class WebGpuRenderBackend implements RenderBackend {
       rayQuery: true,
       // The draws of the object table start at their first instance.
       indirectDraw: device.features.has('indirect-first-instance'),
+      // A draw each: no count read by the GPU.
+      multiDrawIndirect: device.features.has('indirect-first-instance'),
+      drawIndirectCount: false,
     };
     this.buffers = new BufferFactory(device);
     this.textures = new TextureFactory(device);

@@ -82,7 +82,7 @@ renderer.render({ items: [terrain, ...others], camera, surface, lights });
    screen, seen from its closest point; each patch gets the finest level of
    its four edges. The patches outside the view are left out.
 3. **The draw**: the patches are sorted by level and written into a
-   texture, one texel each. A single draw, without vertex buffer, generates
+   storage buffer, after the first vertex of each level. A single draw, without vertex buffer, generates
    all their vertices: from its index, a vertex finds its level, its patch,
    its quad, its corner.
 4. **The evaluation**, in the vertex shader: the corners of the patch are
@@ -97,8 +97,10 @@ patch, the points of the edge move to the grid of the edge's level, and the
 two sides have exactly the same points. The patches interpolate their
 corners so that a common edge gives the same positions to the bit.
 
-The same path on WebGPU, Vulkan and WebGL2: only vertex shaders and
-textures, no compute nor hardware tessellation.
+The same path on WebGPU, Vulkan and WebGL2: only vertex shaders, textures
+and a storage buffer (a data texture on WebGL2), no compute nor hardware
+tessellation; where the backend has them, the GPU can choose the levels
+too (below).
 
 ## Computed attributes
 
@@ -115,6 +117,30 @@ g.vertexAttribute('normal', [0, 1, 0]);
 
 The mesh no longer needs these attributes; a mesh without vertex buffers
 draws `setVertexCount(count)` vertices, generated in the shader.
+
+## The levels on the GPU
+
+Where the backend has compute shaders and indirect draws (Vulkan,
+Direct3D 12, WebGPU with `indirect-first-instance`), the GPU can choose the
+levels itself:
+
+```ts
+const terrain = new PatchSurface(backend, { patches, material, levels: 'gpu' });
+terrain.update(camera, { width, height }); // records the choice, nothing per patch
+renderer.render({ items: [terrain], camera, surface });
+```
+
+`update` then dispatches compute passes, in a submission before the frame:
+the level of each edge, the patches in view at each level, sorted by a
+prefix sum, the first vertex of each level and the vertex count of the
+draw (`mesh.gpuVertexCount`), which the renderer copies into the arguments
+of an indirect draw. The same choice as on the CPU: the same image. The
+CPU no longer touches the patches, but `terrain.stats` is no longer
+updated (`terrain.gpu` says which path is taken). On WebGL2, the CPU
+chooses, whatever the option.
+
+Both paths write the patches drawn into the same storage buffer
+(`PatchValues.draws`), read by `patchVertex`: the material is the same.
 
 ## What it costs
 

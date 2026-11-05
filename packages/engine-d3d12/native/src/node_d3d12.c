@@ -753,6 +753,20 @@ static napi_value js_indirect_draw(napi_env env, napi_callback_info info) {
   return result;
 }
 
+// multiDrawIndirect(context): 1 with the multiple indirect draws, plus 2
+// with their count read from a buffer.
+static napi_value js_multi_draw_indirect(napi_env env,
+                                         napi_callback_info info) {
+  ARGS(1);
+  fdw_dx_context *context = context_arg(env, argv[0]);
+  if (!context) {
+    return NULL;
+  }
+  napi_value result;
+  CHECK(napi_create_int32(env, fdw_dx_multi_draw_indirect(context), &result));
+  return result;
+}
+
 // maxAnisotropy(context): the highest anisotropy of the samplers.
 static napi_value js_max_anisotropy(napi_env env, napi_callback_info info) {
   ARGS(1);
@@ -1566,6 +1580,7 @@ static napi_value init_module(napi_env env, napi_value exports) {
       EXPORT("maxColorAttachments", js_max_color_attachments),
       EXPORT("independentBlend", js_independent_blend),
       EXPORT("indirectDraw", js_indirect_draw),
+      EXPORT("multiDrawIndirect", js_multi_draw_indirect),
       EXPORT("formatSupported", js_format_supported),
       EXPORT("destroySampler", js_destroy_sampler),
       EXPORT("samplerId", js_sampler_id),

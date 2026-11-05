@@ -540,6 +540,8 @@ int32_t fdw_dx_independent_blend(const fdw_dx_context *) { return 1; }
 
 int32_t fdw_dx_indirect_draw(const fdw_dx_context *) { return 1; }
 
+int32_t fdw_dx_multi_draw_indirect(const fdw_dx_context *) { return 3; }
+
 int32_t fdw_dx_format_supported(const fdw_dx_context *context,
                                 const char *name) {
   const FormatInfo *format = findFormat(name);

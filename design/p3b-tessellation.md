@@ -100,3 +100,5 @@ Le niveau 6 partout dépasserait les 2^24 sommets que le shader lit exactement (
 ## 10. État
 
 **Faite** (14 octobre 2026) : `engine-tessellation` (`Patches`, `patchGrid`, `LevelSelection`, `patchVertex`, `PatchSurface`), les attributs calculés du material graph, `Mesh.setVertexCount`. La démo `terrain` (web : `/terrain` ; natif : `terrain`, `terrain-uniform`), touches L (les niveaux) et T (tous au niveau le plus fin). Le tutoriel « Tessellation » (EN, FR) avec son exemple vivant et ses captures ; le guide du material graph (les attributs calculés) ; le lien depuis « Détails de surface ». Reste la suite du §8.
+
+_Mis à jour (5 novembre 2026)_ : le point 1 du §8 est fait par P24 ([§3.6](p24-gpu-driven.md#36-les-niveaux-de-tessellation-étape-4)) : `levels: 'gpu'`, les niveaux choisis par un calcul et le nombre de sommets d'un draw indirect (Vulkan, Direct3D 12, WebGPU) ; les tracés passent par un storage buffer sur les deux chemins ; WebGL2 garde A.

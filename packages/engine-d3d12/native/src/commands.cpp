@@ -6,6 +6,7 @@
 #include <array>
 #include <initializer_list>
 #include <cstring>
+#include <vector>
 
 using namespace fdw;
 
@@ -51,7 +52,10 @@ private:
 // The arguments of the indirect dispatches: the workgroups twice, as root
 // constants (the number of workgroups the shaders read) then as the
 // dispatch, copied from the indirect buffer.
+// A multiple draw needs 24 bytes a draw: FDW_DX_MAX_MULTI_DRAWS fit.
 constexpr uint64_t ScratchSize = 64 * 1024;
+static_assert(FDW_DX_MAX_MULTI_DRAWS * 24 <= ScratchSize,
+              "The scratch buffer holds the largest multiple draw");
 constexpr uint64_t ScratchSlot = 32;
 
 // The state of the replay of a submission.
@@ -242,6 +246,31 @@ int prepareRenderPass(Replay &replay, Barriers &barriers) {
       barriers.buffer(buffer,
                       vertex ? D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
                              : D3D12_RESOURCE_STATE_INDEX_BUFFER);
+    } else if (opcode == FDW_DX_CMD_MULTI_DRAW_INDIRECT ||
+               opcode == FDW_DX_CMD_MULTI_DRAW_INDEXED_INDIRECT) {
+      // The arguments are copied at the draw; the count is read there.
+      fdw_dx_buffer *buffer =
+          find(replay.context->buffers, ahead.word(), "buffer", &status);
+      ahead.wide();
+      ahead.word();
+      const uint32_t countId = ahead.word();
+      ahead.wide();
+      if (!buffer) {
+        return status;
+      }
+      barriers.buffer(buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
+      if (countId != 0) {
+        fdw_dx_buffer *count =
+            find(replay.context->buffers, countId, "buffer", &status);
+        if (!count) {
+          return status;
+        }
+        if (count == buffer) {
+          return fail("The count of the draws is in the buffer of their "
+                      "arguments");
+        }
+        barriers.buffer(count, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+      }
     } else if (opcode == FDW_DX_CMD_DRAW_INDIRECT ||
                opcode == FDW_DX_CMD_DRAW_INDEXED_INDIRECT) {
       // Its arguments are copied into the scratch buffer at the draw.
@@ -308,10 +337,19 @@ struct ArgumentCopy {
 // buffer one range after the other: the offset of the slot. The source
 // buffer is in the copy source state.
 int indirectArguments(Replay &replay, fdw_dx_buffer *buffer,
-                      std::initializer_list<ArgumentCopy> copies,
+                      const ArgumentCopy *copies, size_t copyCount,
                       uint64_t *slot) {
   fdw_dx_context *context = replay.context;
-  if (!replay.scratch || replay.scratchUsed + ScratchSlot > ScratchSize) {
+  // Whole slots.
+  uint64_t size = 0;
+  for (size_t i = 0; i < copyCount; i++) {
+    size += copies[i].size;
+  }
+  size = (size + ScratchSlot - 1) / ScratchSlot * ScratchSlot;
+  if (size > ScratchSize) {
+    return fail("Too many indirect arguments for the scratch buffer");
+  }
+  if (!replay.scratch || replay.scratchUsed + size > ScratchSize) {
     if (replay.scratch) {
       ComPtr<ID3D12Resource> previous = replay.scratch;
       defer(context, [previous] {});
@@ -324,7 +362,7 @@ int indirectArguments(Replay &replay, fdw_dx_buffer *buffer,
     replay.scratchState = D3D12_RESOURCE_STATE_COMMON;
   }
   *slot = replay.scratchUsed;
-  replay.scratchUsed += ScratchSlot;
+  replay.scratchUsed += size;
   ID3D12Resource *scratch = replay.scratch.Get();
   auto transition = [&](D3D12_RESOURCE_STATES next) {
     D3D12_RESOURCE_BARRIER barrier{};
@@ -336,13 +374,20 @@ int indirectArguments(Replay &replay, fdw_dx_buffer *buffer,
   };
   transition(D3D12_RESOURCE_STATE_COPY_DEST);
   uint64_t at = *slot;
-  for (const ArgumentCopy &copy : copies) {
+  for (size_t i = 0; i < copyCount; i++) {
     replay.list->CopyBufferRegion(scratch, at, buffer->resource.Get(),
-                                  copy.offset, copy.size);
-    at += copy.size;
+                                  copies[i].offset, copies[i].size);
+    at += copies[i].size;
   }
   transition(D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
   return 0;
+}
+
+int indirectArguments(Replay &replay, fdw_dx_buffer *buffer,
+                      std::initializer_list<ArgumentCopy> copies,
+                      uint64_t *slot) {
+  return indirectArguments(replay, buffer, copies.begin(), copies.size(),
+                           slot);
 }
 
 // The command signature of the indirect dispatches of a root signature:
@@ -648,6 +693,75 @@ int drawCommand(Replay &replay, uint32_t opcode) {
     }
     list->ExecuteIndirect(signature, 1, replay.scratch.Get(), slot, nullptr,
                           0);
+    replay.firstInstance = ~0u;
+    return 0;
+  }
+  case FDW_DX_CMD_MULTI_DRAW_INDIRECT:
+  case FDW_DX_CMD_MULTI_DRAW_INDEXED_INDIRECT: {
+    if (!replay.inRenderPass) {
+      return fail("A draw outside of a render pass");
+    }
+    fdw_dx_buffer *buffer =
+        find(context->buffers, reader.word(), "buffer", &status);
+    const uint64_t offset = reader.wide();
+    const uint32_t maxCount = reader.word();
+    const uint32_t countId = reader.word();
+    const uint64_t countOffset = reader.wide();
+    if (!buffer) {
+      return status;
+    }
+    fdw_dx_buffer *count = nullptr;
+    if (countId != 0) {
+      count = find(context->buffers, countId, "buffer", &status);
+      if (!count) {
+        return status;
+      }
+    }
+    const bool indexed = opcode == FDW_DX_CMD_MULTI_DRAW_INDEXED_INDIRECT;
+    constexpr uint64_t stride = 20;
+    const uint64_t size = indexed ? 20 : 16;
+    const uint64_t first = indexed ? 16 : 12;
+    if (offset % 4 != 0 ||
+        (maxCount > 0 &&
+         !inside(offset, stride * (maxCount - 1) + size, buffer->size))) {
+      return fail("The indirect arguments are outside of the buffer, or "
+                  "their offset is not a multiple of 4");
+    }
+    if (count && (countOffset % 4 != 0 || !inside(countOffset, 4, count->size))) {
+      return fail("The count of the draws is outside of its buffer, or its "
+                  "offset is not a multiple of 4");
+    }
+    if (maxCount > FDW_DX_MAX_MULTI_DRAWS) {
+      return fail("Too many draws in a multiple indirect draw");
+    }
+    if (maxCount == 0) {
+      return 0;
+    }
+    if (indexed && !replay.indexBuffer) {
+      return fail("No index buffer set before drawing");
+    }
+    if (flushGroups(replay) != 0) {
+      return -1;
+    }
+    flushVertexBuffers(replay);
+    // Each draw as the indirect draws: its first instance, as the root
+    // constant the shaders add to SV_InstanceID, then its arguments.
+    std::vector<ArgumentCopy> copies;
+    copies.reserve(maxCount * 2);
+    for (uint32_t i = 0; i < maxCount; i++) {
+      copies.push_back({offset + i * stride + first, 4});
+      copies.push_back({offset + i * stride, size});
+    }
+    uint64_t slot = 0;
+    ID3D12CommandSignature *signature =
+        drawSignature(context, replay.pipeline->root, indexed);
+    if (!signature || indirectArguments(replay, buffer, copies.data(),
+                                        copies.size(), &slot) != 0) {
+      return -1;
+    }
+    list->ExecuteIndirect(signature, maxCount, replay.scratch.Get(), slot,
+                          count ? count->resource.Get() : nullptr,
+                          count ? countOffset : 0);
     replay.firstInstance = ~0u;
     return 0;
   }

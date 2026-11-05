@@ -96,6 +96,12 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   // drawIndexedIndirect), first instance included: Vulkan, Direct3D 12,
   // WebGPU with indirect-first-instance. Not WebGL2.
   readonly indirectDraw?: boolean;
+  // Several indirect draws in one command (multiDrawIndirect of the render
+  // passes): Vulkan and Direct3D 12 natively, WebGPU by a draw each.
+  readonly multiDrawIndirect?: boolean;
+  // Their number read from a buffer written by the GPU (the count of
+  // multiDrawIndirect): Vulkan (drawIndirectCount) and Direct3D 12.
+  readonly drawIndirectCount?: boolean;
   // Ray tracing pipelines (Vulkan, with rayQuery): the compute programs
   // tracing rays can run as their ray generation shaders, the hardware
   // scheduling their hits (ComputePipelineDescriptor.rayTracing).
