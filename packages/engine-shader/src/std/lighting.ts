@@ -8,6 +8,7 @@ import { BuiltinTypes, ShaderType, typeEquals } from '../types/ShaderType';
 import * as functions from './functions';
 import * as environment from './environment';
 import * as lights from './lights';
+import { CubeShadowFaces } from '../compiler/layout';
 import { RayMasks } from '../compiler/layout';
 
 /**
@@ -260,16 +261,129 @@ function shadowMap(registry: NodeRegistry): FunctionDefinition {
     cascades.map((i) => f.engine(`shadow.cascadeRect${i}`)),
   );
 
-  const cascaded = f.call(greater, { a: params.swizzle('x'), b: 1.5 });
+  // A point light (shadow.x = 3): six faces in a row in the atlas (see
+  // CubeShadowFaces). The dominant axis of the point seen from the light
+  // gives the face; its right and up axes, divided by the distance along
+  // the axis, the position in the face. Its parameters are in the columns
+  // of the shadow matrix (see lightMembers).
+  const column = (index: number) =>
+    f.call(functions.transform, {
+      matrix: light['shadowMatrix'],
+      vector: [0, 1, 2, 3].map((i) => (i === index ? 1 : 0)),
+    });
+  const faceGrid = column(0);
+  const faceDepth = column(1);
+  const fromLight = (point: PortHandle) =>
+    f.call(sub, { a: point, b: light['position'].swizzle('xyz') });
+  const d0 = fromLight(position);
+  const a0 = f.call(functions.abs, { x: d0 });
+  // 1 for the dominant axis, 0 for the others (x first, then y, on ties).
+  const xMajor = f.call(mul, {
+    a: f.call(step, { edge: a0.swizzle('y'), x: a0.swizzle('x') }),
+    b: f.call(step, { edge: a0.swizzle('z'), x: a0.swizzle('x') }),
+  });
+  const yMajor = f.call(mul, {
+    a: f.call(sub, { a: 1, b: xMajor }),
+    b: f.call(step, { edge: a0.swizzle('z'), x: a0.swizzle('y') }),
+  });
+  const zMajor = f.call(sub, {
+    a: f.call(sub, { a: 1, b: xMajor }),
+    b: yMajor,
+  });
+  const major = f.call(functions.vec3, { x: xMajor, y: yMajor, z: zMajor });
+  const along = (d: PortHandle) => f.call(functions.dot, { a: d, b: major });
+  // The face: 2 × axis, + 1 on the negative side.
+  const face = f.call(add, {
+    a: f.call(mul, {
+      a: f.call(add, { a: yMajor, b: f.call(mul, { a: zMajor, b: 2 }) }),
+      b: 2,
+    }),
+    b: f.call(sub, { a: 1, b: f.call(step, { edge: 0, x: along(d0) }) }),
+  });
+  // The normal offset grows with the distance, as for a spot.
+  const d = fromLight(
+    offsetBy(
+      f.call(mul, {
+        a: params.swizzle('z'),
+        b: f.call(functions.abs, { x: along(d0) }),
+      }),
+    ),
+  );
+  const m = f.call(functions.max, {
+    a: f.call(functions.abs, { x: along(d) }),
+    b: 1e-6,
+  });
+  const ofFace = (axis: 'right' | 'up') =>
+    CubeShadowFaces.map(
+      (entry) => [...entry[axis]] as unknown as PortHandle,
+    ).reduce((chosen, value, i) =>
+      i === 0
+        ? chosen
+        : f.call(select, {
+            ifFalse: chosen,
+            ifTrue: value,
+            condition: f.call(greater, { a: face, b: i - 0.5 }),
+          }),
+    );
+  const spread = f.call(mul, { a: m, b: faceGrid.swizzle('w') });
+  const faceClip = f.call(functions.vec4, {
+    x: f.call(div, {
+      a: f.call(functions.dot, { a: d, b: ofFace('right') }),
+      b: spread,
+    }),
+    y: f.call(div, {
+      a: f.call(functions.dot, { a: d, b: ofFace('up') }),
+      b: spread,
+    }),
+    z: f.call(add, {
+      a: faceDepth.swizzle('x'),
+      b: f.call(div, { a: faceDepth.swizzle('y'), b: m }),
+    }),
+    w: 1,
+  });
+  // The tile of the face: its slot in the grid of the atlas. Half a slot
+  // added before the division keeps floor exact.
+  const slot = f.call(add, { a: faceGrid.swizzle('x'), b: face });
+  const columns = faceGrid.swizzle('y');
+  const row = f.call(functions.floor, {
+    x: f.call(div, { a: f.call(add, { a: slot, b: 0.5 }), b: columns }),
+  });
+  const tileSize = faceGrid.swizzle('z');
+  const faceRect = f.call(functions.vec4, {
+    x: f.call(mul, {
+      a: f.call(sub, { a: slot, b: f.call(mul, { a: row, b: columns }) }),
+      b: tileSize,
+    }),
+    y: f.call(mul, { a: row, b: tileSize }),
+    z: tileSize,
+    w: tileSize,
+  });
+
+  // 1 for the cascades (shadow.x = 2), 0 otherwise.
+  const kind = params.swizzle('x');
+  const cascadedValue = f.call(sub, {
+    a: f.call(step, { edge: 1.5, x: kind }),
+    b: f.call(step, { edge: 2.5, x: kind }),
+  });
+  const cascaded = f.call(greater, { a: cascadedValue, b: 0.5 });
+  const pointLike = f.call(greater, { a: kind, b: 2.5 });
   const clip = f.call(select, {
-    ifFalse: own,
-    ifTrue: cascadeClip,
-    condition: cascaded,
+    ifFalse: f.call(select, {
+      ifFalse: own,
+      ifTrue: cascadeClip,
+      condition: cascaded,
+    }),
+    ifTrue: faceClip,
+    condition: pointLike,
   });
   const rect = f.call(select, {
-    ifFalse: light['shadowRect'],
-    ifTrue: cascadeRect,
-    condition: cascaded,
+    ifFalse: f.call(select, {
+      ifFalse: light['shadowRect'],
+      ifTrue: cascadeRect,
+      condition: cascaded,
+    }),
+    ifTrue: faceRect,
+    condition: pointLike,
   });
   const ndc = f.call(div, {
     a: clip.swizzle('xyz'),
@@ -332,7 +446,7 @@ function shadowMap(registry: NodeRegistry): FunctionDefinition {
         x: viewDepth,
       }),
     }),
-    t: f.call(step, { edge: 1.5, x: params.swizzle('x') }),
+    t: cascadedValue,
   });
   const inside = [
     f.call(step, { edge: 0, x: uv.swizzle('x') }),
