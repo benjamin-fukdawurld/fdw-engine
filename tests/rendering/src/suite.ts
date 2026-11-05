@@ -42,6 +42,7 @@ import {
   ComputeRunner,
   GpuCulling,
   GpuLightClusters,
+  GpuScene,
   MeshArena,
   gpuLightGridSize,
   LightClusterCount,
@@ -1864,6 +1865,67 @@ export function describeRenderer(
         expect([...args]).toEqual([6, 2, 0, 0, 2, 4, 1, 0, 4, 0]);
         culling.destroy();
         table.destroy();
+      });
+
+      it('draws a GpuScene as the same items given as a list', async () => {
+        const mesh = quad();
+        const colored = (r: number, g: number, b: number, a = 1) =>
+          new Material({
+            graph: colorGraph(),
+            values: { color: [r, g, b, a] },
+            ...(a < 1 ? { renderState: { alphaMode: 'blend' as const } } : {}),
+          });
+        const red = colored(1, 0, 0);
+        const green = colored(0, 1, 0);
+        const items: RenderItem[] = [
+          { mesh, material: red, transform: at(-0.5, 0.5) },
+          { mesh, material: red, transform: at(8, 0) },
+          { mesh, material: green, transform: at(0.5, 0.5) },
+          { mesh, material: green, transform: at(-0.5, -0.5) },
+          {
+            mesh,
+            material: colored(0, 0, 1, 0.5),
+            transform: new Transform({ position: { x: 0.25, y: 0.25, z: 1 } }),
+          },
+        ];
+        const scene = new GpuScene();
+        items.forEach((item) => scene.add(item));
+        const frame = async (options: {
+          items?: Renderable[];
+          gpuScene?: GpuScene;
+          occlusion?: OcclusionCulling;
+        }) => {
+          renderer.render({
+            camera,
+            surface,
+            gpuCulling: true,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+            ...options,
+          });
+          return fixture.readPixels();
+        };
+        const compare = (pixels: Uint8Array, expected: Uint8Array) => {
+          let different = 0;
+          for (let p = 0; p < pixels.length; p++) {
+            if (Math.abs(pixels[p] - expected[p]) > 1) {
+              different++;
+            }
+          }
+          expect(different).toBe(0);
+        };
+        const occlusion = new OcclusionCulling();
+        for (let step = 0; step < 2; step++) {
+          const expected = await frame({ items });
+          compare(await frame({ gpuScene: scene }), expected);
+          compare(await frame({ gpuScene: scene }), expected);
+          for (let i = 0; i < 3; i++) {
+            compare(await frame({ gpuScene: scene, occlusion }), expected);
+          }
+          // A static item moved into view: rewritten once touched.
+          items[1].transform.position = { x: 0.5, y: -0.5 };
+          scene.touch(items[1]);
+        }
+        occlusion.destroy();
       });
 
       it('draws the meshes of an arena, in multiple draws on the GPU', async () => {

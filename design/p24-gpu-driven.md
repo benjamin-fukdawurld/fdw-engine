@@ -104,7 +104,20 @@ Une première part de l'option B (§2), sans changer les matériaux :
 - **L'allocateur de meshes** : `MeshArena` ; les meshes d'une arène de même format placés dans des buffers partagés (`ArenaBuffers` : premier emplacement libre, `RangeAllocator`, fusion des voisins libérés ; les buffers doublent, leur contenu recopié par le GPU, les anciens retirés à la frame suivante). Ils sont toujours dessinés en indirect : `firstIndex` et `baseVertex` dans les arguments (ceux du culling, ou écrits par le CPU dans un emplacement). Ailleurs (WebGL2), une arène ne change rien.
 - **Les groupes** : cullés sur le GPU, les lots consécutifs d'une même arène, pipeline, programme, vue et matériau deviennent un draw multiple (1024 au plus). Avec `drawIndirectCount`, deux graphes de plus tassent les draws non vides de chaque groupe au début de sa plage et écrivent leur nombre (`culling non-empty runs`, le préfixe des lots, `culling pack`).
 
-Reste de B (§8) : les instances persistantes sur le GPU, les matériaux sans changement d'état.
+Reste de B (§8) : les instances persistantes sur le GPU (§3.8), les matériaux sans changement d'état.
+
+### 3.8 La scène gardée sur le GPU (étape 7)
+
+Les mesures (§6) le montrent : avec le culling sur le GPU, le coût du CPU est la préparation de chaque candidat (la requête de l'octree, `prepare`, le tri, les lots, les lignes, les boîtes). Une `GpuScene` garde ses objets sur le GPU d'une frame à l'autre :
+
+- **Les données persistantes** (`GpuSceneLayout`, une par renderer et par scène) : les boîtes (centre, demi-étendues) et les lignes des objets opaques, rangées par lot (un par mesh et matériau, les lots d'un matériau à la suite), dans deux storage buffers. Rangées à nouveau quand des objets sont ajoutés ou retirés ; sinon seuls les objets touchés (`touch`) et dynamiques (`dynamic: true`) sont réécrits, 32 et 4 octets chacun. Leurs lignes dans la table des objets sont mises à jour par `ObjectRows.rowOf`, écrites avec les autres.
+- **Le culling** : `GpuCulling.record` reçoit les candidats déjà sur le GPU (`persistent`) ; rien n'est envoyé, les instances seules sont réservées (`ObjectRows.extend`). Les deux phases de l'occlusion s'appliquent (la seconde reprend les buffers de la première).
+- **Les lots** : préparés une fois par frame (un `prepare` par lot, avec le premier objet), dessinés par un draw indirect chacun, ou par un draw multiple pour les meshes d'une arène.
+- **Ce qui reste sur le CPU** : les objets transparents (triés à chaque frame : la source de la scène les donne à la caméra), les projeteurs d'ombres (la même source les donne aux shadow maps, testés un à un).
+
+Sans culling sur le GPU (WebGL2), la scène est une liste d'objets. Les layers des vues ne s'appliquent pas à elle ; une scène est dessinée par un seul renderer (`takeTouched` consomme les changements).
+
+Reste de B : les matériaux sans changement d'état (bindless), qui feraient un draw multiple par pipeline. WebGPU n'a pas de bindless, et le compilateur devrait lire les valeurs des matériaux dans une table par instance : un chantier à part, pour quand les changements d'état domineront.
 
 ## 4. L'API
 
@@ -143,6 +156,7 @@ pass.multiDrawIndexedIndirect(buffer, offset, maxCount, {
 - Étape 3 : `OcclusionCuller.addPyramid` et `OcclusionPyramid` ; `boxVisibility` d'`engine-occlusion` ; les phases de `GpuCulling` (`CullingPhase`, `history`) ; `ObjectRows.extend`.
 - Étape 5 : `engine-core/src/render/gpuLightClusters.ts` (`GpuLightClusters`, `MaxGpuClusterLights`) ; `lightSpheres`, `sliceParameters`.
 - Étape 4 : `engine-tessellation/src/gpuLevels.ts` (`GpuLevels`) ; `Mesh.setGpuVertexCount` ; le storage buffer des tracés.
+- Étape 7 : `GpuScene` (`add`, `remove`, `touch`, `dynamic`), l'option `gpuScene` des passes de scène, `GpuSceneLayout`, `CullingCandidates.persistent` et `count`, `ObjectRows.rowOf`.
 - Étape 6 : `multiDrawIndirect`, `multiDrawIndexedIndirect`, `IndirectCount`, les capacités ; les commandes `FDW_*_CMD_MULTI_DRAW_INDIRECT` et `FDW_*_CMD_MULTI_DRAW_INDEXED_INDIRECT` des deux bibliothèques natives ; `MeshArena`, `RangeAllocator`, `ArenaBuffers`.
 - Les briques communes de la compaction exportées (`computeGraph`, `scanGraph`, `recordPrefixSum`) ; `log.bufferCopies` du faux backend.
 
@@ -160,6 +174,17 @@ pass.multiDrawIndexedIndirect(buffer, offset, maxCount, {
 | CPU par frame                      | 3,9 ms         | 11,9 ms                 | 25,6 ms          | 67 ms                     |
 
 (Le « test » du CPU est la passe plein écran de P3 ; sa relecture arrive une à trois frames plus tard.)
+
+Avec l'étape 7, la même mesure (le même script, mode `gpu scene` : tous les objets de la ville dans une `GpuScene`, 10 891 et 110 251 candidats avec les rues), médianes de 40 frames :
+
+|                                | 9801, GPU (deux phases) | 9801, `GpuScene` | 99 225, GPU (deux phases) | 99 225, `GpuScene` |
+| ------------------------------ | ----------------------- | ---------------- | ------------------------- | ------------------ |
+| CPU par frame                  | 5,9 ms                  | **1,3 ms**       | 125 ms                    | **1,0 ms**         |
+| GPU, culling (`scene culling`) | 0,036 ms                | 0,038 ms         | 0,045 ms                  | 0,084 ms           |
+| GPU, seconde phase             | 0,036 ms                | 0,039 ms         | 0,047 ms                  | 0,088 ms           |
+| GPU, toutes les passes         | 0,23 ms                 | 0,22 ms          | 0,26 ms                   | 0,59 ms            |
+
+Le CPU ne dépend plus du nombre d'objets : un lot par mesh et matériau. Le GPU teste tous les objets (pas seulement ceux du frustum de l'octree) : le culling double à 110 000 candidats, toujours sous 0,1 ms par phase. Les temps du CPU de ce poste varient d'une exécution à l'autre (de 67 à 160 ms pour le chemin GPU sans scène à 99 225) ; leur ordre de grandeur est stable.
 
 Ce que disent ces mesures :
 
@@ -182,15 +207,15 @@ Ce que disent ces mesures :
 
 ## 8. Les étapes
 
-| Étape                                     | Contenu                                                                                                                                                                      |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1. Les draws indirects**                | L'API, les trois backends, le refus de WebGL2, les tests de rendu                                                                                                            |
-| **2. Le culling des instances**           | La compaction (§3.2), `gpuCulling` dans les passes de scène, `instanceBuffer`                                                                                                |
-| **3. L'occlusion sans retard**            | Les deux phases de P3 : la visibilité de la frame précédente par ligne sur le GPU, la pyramide, le test du reste contre elle dans le même calcul                             |
-| **4. La tessellation en calcul**          | Les niveaux des patchs de P3b choisis par un calcul, le nombre de patchs par draw indirect                                                                                   |
-| **5. Les lumières**                       | Le remplissage des clusters de P2 en calcul                                                                                                                                  |
-| **6. Les tables de la scène** (en partie) | L'option B (§2) : un allocateur de meshes, `multiDrawIndirect` et `drawIndirectCount` faits ; restent les instances persistantes                                             |
-| 7. La scène sur le GPU                    | Les instances persistantes (le CPU n'écrit que ce qui change, plus de préparation par objet), les matériaux sans changement d'état (bindless), un draw multiple par pipeline |
+| Étape                                  | Contenu                                                                                                                                                                    |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Les draws indirects**             | L'API, les trois backends, le refus de WebGL2, les tests de rendu                                                                                                          |
+| **2. Le culling des instances**        | La compaction (§3.2), `gpuCulling` dans les passes de scène, `instanceBuffer`                                                                                              |
+| **3. L'occlusion sans retard**         | Les deux phases de P3 : la visibilité de la frame précédente par ligne sur le GPU, la pyramide, le test du reste contre elle dans le même calcul                           |
+| **4. La tessellation en calcul**       | Les niveaux des patchs de P3b choisis par un calcul, le nombre de patchs par draw indirect                                                                                 |
+| **5. Les lumières**                    | Le remplissage des clusters de P2 en calcul                                                                                                                                |
+| **6. Les tables de la scène**          | L'option B (§2) : un allocateur de meshes, `multiDrawIndirect` et `drawIndirectCount` ; les instances persistantes à l'étape 7                                             |
+| **7. La scène sur le GPU** (en partie) | Les instances persistantes (`GpuScene` : le CPU n'écrit que ce qui change, plus de préparation par objet) faites ; restent les matériaux sans changement d'état (bindless) |
 
 ## 9. Décisions
 
@@ -201,10 +226,12 @@ Ce que disent ces mesures :
 - **Les clusters par paires** (cluster × lumière) plutôt qu'une boucle par cluster : sans écriture dans les boucles ni atomiques, la compaction stable donne les listes du CPU ; la mémoire (trois u32 par paire) limite à 1024 lumières.
 - **Un storage buffer pour les tracés des patchs**, sur les deux chemins : le calcul n'écrit pas de textures, et un seul graphe de matériau.
 - **Le nombre de sommets recopié par le `Renderer`** (une passe de copie) plutôt qu'écrit par le producteur avec la première instance, que seul le `Renderer` connaît, à l'exécution.
+- **Une `GpuScene` explicite** plutôt que la scène graph elle-même : l'application dit ce qui est statique et ce qui bouge (`touch`, `dynamic`), sans balayer les versions de tous les objets à chaque frame ; le scene graph reste la source des transparents et des ombres.
+- **Le bindless remis à plus tard** : ni WebGPU ni le compilateur ne le permettent aujourd'hui ; les lots par matériau suffisent tant que les matériaux sont peu nombreux.
 - **Les meshes d'une arène toujours en indirect** : `drawIndexed` n'a ni premier indice ni sommet de base dans l'API (et WebGL2 n'a pas de sommet de base) ; l'indirect les porte.
 
 ## 10. État
 
-_Étapes 3, 4, 5 et la première part de 6 faites, mesures prises (5 novembre 2026)_ : l'occlusion en deux phases sans retard (`OcclusionCuller.addPyramid`, l'historique par ligne) ; les clusters de lumières remplis par le GPU ; les niveaux de tessellation en calcul (`levels: 'gpu'`, `Mesh.setGpuVertexCount`, le storage buffer des tracés) ; `multiDrawIndirect` et `drawIndirectCount` sur Vulkan, Direct3D 12 et WebGPU (sans nombre), `MeshArena` et les draws multiples ; la touche G et la scène `city-gpu` de la démo ; les guides et tutoriels (backends, occlusion culling, tessellation, nombreuses lumières ; EN, FR). Reste l'étape 7 (la scène persistante sur le GPU).
+_Étapes 3, 4, 5 et la première part de 6 faites, mesures prises (5 novembre 2026)_ : l'occlusion en deux phases sans retard (`OcclusionCuller.addPyramid`, l'historique par ligne) ; les clusters de lumières remplis par le GPU ; les niveaux de tessellation en calcul (`levels: 'gpu'`, `Mesh.setGpuVertexCount`, le storage buffer des tracés) ; `multiDrawIndirect` et `drawIndirectCount` sur Vulkan, Direct3D 12 et WebGPU (sans nombre), `MeshArena` et les draws multiples ; la touche G et la scène `city-gpu` de la démo ; les guides et tutoriels (backends, occlusion culling, tessellation, nombreuses lumières ; EN, FR). Puis l'étape 7, la scène gardée sur le GPU (`GpuScene`, l'option `gpuScene`) : le CPU d'une frame à 1 ms pour 10 000 comme pour 100 000 immeubles. Reste le bindless (§3.8).
 
 _Étapes 1 et 2 faites (4 novembre 2026)_ : `drawIndirect` et `drawIndexedIndirect` sur Vulkan, Direct3D 12 et WebGPU (`indirect-first-instance`), la capacité `indirectDraw` ; la compaction sans atomiques (`engine-core/src/render/gpuCulling.ts`) ; l'option `gpuCulling` des passes de scène ; `GpuObjectTable.instanceBuffer` ; le guide des backends (EN, FR). Reste : les mesures (§6) et les étapes 3 à 6.

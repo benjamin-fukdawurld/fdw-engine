@@ -95,6 +95,8 @@ import { Mesh } from './Mesh';
 import { MaxObjectId, ObjectRows, RowSource } from './ObjectRows';
 import type { OcclusionCuller, OcclusionPyramid } from './occlusion';
 import { ArenaBuffers, ArenaPlacement } from './arenaBuffers';
+import type { GpuScene } from './GpuScene';
+import { GpuSceneLayout } from './gpuSceneLayout';
 import {
   AllLayers,
   Renderable,
@@ -163,6 +165,11 @@ export interface RenderOptions {
   // there). The statistics of the view then count the items given to the
   // GPU. Default false.
   readonly gpuCulling?: boolean;
+  // Items kept on the GPU from frame to frame (a GpuScene), drawn besides
+  // the source and the items: with gpuCulling, the CPU no longer prepares
+  // them one by one (design/p24-gpu-driven.md §3.8). Without the culling
+  // on the GPU, a list of items.
+  readonly gpuScene?: GpuScene;
 }
 
 /** The fog of a view: see RenderOptions.fog. */
@@ -581,6 +588,16 @@ interface CulledList {
   // The runs drawn by each draw, [start, end): several for a multiple draw
   // (the meshes of an arena), found when the culling is recorded.
   groups?: readonly (readonly [number, number])[];
+  // The items of a GpuScene, instead of `entries`.
+  readonly scene?: SceneRuns;
+}
+
+// The runs of the opaque items of a GpuScene in a view: its layout, and
+// the entry of each run (undefined while its pipeline is being created:
+// not drawn).
+interface SceneRuns {
+  readonly layout: GpuSceneLayout;
+  readonly entries: readonly (PreparedItem | undefined)[];
 }
 
 // A list of entries to cull on the GPU (see Renderer.addCullingPass): the
@@ -588,6 +605,8 @@ interface CulledList {
 interface CullingList {
   readonly key: string;
   readonly entries: readonly PreparedItem[];
+  // The items of a GpuScene, instead of `entries`.
+  readonly scene?: SceneRuns;
   readonly phase?:
     | { readonly kind: 'early' }
     | {
@@ -605,6 +624,10 @@ function indirectDraw<T>(draw: T | undefined): T {
   }
   return draw;
 }
+
+// The entries of the runs of a GpuScene whose pipelines are made.
+const definedEntries = (runs: SceneRuns): PreparedItem[] =>
+  runs.entries.filter((entry): entry is PreparedItem => entry !== undefined);
 
 // The object state of an entry: the source of its row in the object table.
 const objectOf = (entry: PreparedItem): ObjectState => entry.object;
@@ -908,6 +931,9 @@ export class Renderer {
   // The buffers of the meshes of arenas, where the backend has multiple
   // indirect draws (see MeshArena).
   private _arenas?: ArenaBuffers;
+  // The layouts of the GpuScenes drawn, on the GPU.
+  private readonly _gpuScenes = new WeakMap<GpuScene, GpuSceneLayout>();
+  private readonly _gpuSceneLayouts = new Set<GpuSceneLayout>();
   // The light clusters filled on the GPU, created on first use.
   private _gpuLightClusters?: GpuLightClusters;
   // The bounding spheres of the lights they are filled from.
@@ -1056,6 +1082,7 @@ export class Renderer {
       rays,
       environment,
       gpuCulling = false,
+      gpuScene,
     }: ScenePassesOptions,
   ): ScenePasses {
     const culling = gpuCulling && GpuCulling.supported(this.backend);
@@ -1079,7 +1106,17 @@ export class Renderer {
     }
     this._objectRows.beginFrame();
     // Culled on the GPU, the lists are not tested here.
-    const from = this.sourceOf(source, items, !culling);
+    // The opaque items of a GpuScene, kept on the GPU where it culls: the
+    // camera queries give only its transparent items.
+    const sceneLayout =
+      gpuScene && culling ? this.gpuSceneLayout(gpuScene) : undefined;
+    const from = this.sourceOf(
+      source,
+      items,
+      !culling,
+      gpuScene && this.gpuSceneSource(gpuScene, sceneLayout),
+    );
+    const sceneOpaque = sceneLayout && include !== 'transparent';
     const cameraCache = this.cameraCache(camera);
     const frustum = this.frustum(name).setFromMatrix(
       cameraCache.viewProjectionMatrix.value,
@@ -1126,6 +1163,9 @@ export class Renderer {
       },
       'camera',
     );
+    if (sceneOpaque && !sceneLayout.bounds.isEmpty()) {
+      receivers.union(sceneLayout.bounds);
+    }
     // What the camera sees of them: a large item (a ground) reaches beyond
     // the frustum, its shadows there are not seen.
     clipToFrustum(receivers, frustum);
@@ -1234,15 +1274,31 @@ export class Renderer {
       }
     }
     this.sort(opaqueEntries, transparentEntries, cameraCache);
+    // A run per mesh and material of the GpuScene, prepared once.
+    const sceneRuns: SceneRuns | undefined = sceneOpaque
+      ? {
+          layout: sceneLayout,
+          entries: sceneLayout.buckets.map((bucket) => {
+            const item = bucket.items[0];
+            return this.prepare(
+              item,
+              variantOf(this.passes(item)[0], false),
+              view,
+            );
+          }),
+        }
+      : undefined;
+    const sceneCount = sceneRuns ? (sceneLayout?.count ?? 0) : 0;
     this._stats.set(name, {
-      visible: list.length,
+      visible: list.length + sceneCount,
       occluded,
-      drawn: opaqueEntries.length + transparentEntries.length,
+      drawn: opaqueEntries.length + transparentEntries.length + sceneCount,
       // No run spans both: a material is opaque or transparent.
       // The opaque runs are drawn in both phases of the occlusion culling
       // on the GPU.
       drawCalls:
-        this.drawCalls(opaqueEntries) * (twoPhases ? 2 : 1) +
+        (this.drawCalls(opaqueEntries) + (sceneRuns?.entries.length ?? 0)) *
+          (twoPhases ? 2 : 1) +
         this.drawCalls(transparentEntries),
       lights: used.length,
       shadowMaps: shadowPass?.tiles.length ?? 0,
@@ -1283,7 +1339,10 @@ export class Renderer {
     // Read by the passes drawing lit items.
     const lightGrid =
       clusterLights && this.addLightClusterPass(graph, name, clusterLights);
-    const first = opaqueEntries[0] ?? transparentEntries[0];
+    const first =
+      opaqueEntries[0] ??
+      sceneRuns?.entries.find((entry) => entry !== undefined) ??
+      transparentEntries[0];
     if (first) {
       this.writeView(view, first.layout, this._frameValues);
     }
@@ -1291,6 +1350,7 @@ export class Renderer {
     // occlusion culling, the opaque ones visible at the previous frame
     // first, then the others and the transparent ones after the pyramid.
     const opaqueKey = `${name} opaque`;
+    const sceneKey = `${name} gpu scene`;
     const transparentList: CullingList = {
       key: `${name} transparent`,
       entries: transparentEntries,
@@ -1308,6 +1368,12 @@ export class Renderer {
                   entries: opaqueEntries,
                   phase: { kind: 'early' },
                 },
+                {
+                  key: sceneKey,
+                  entries: [],
+                  ...(sceneRuns ? { scene: sceneRuns } : {}),
+                  phase: { kind: 'early' },
+                },
               ]
             : [
                 {
@@ -1315,11 +1381,17 @@ export class Renderer {
                   entries: include !== 'transparent' ? opaqueEntries : [],
                 },
                 transparentList,
+                {
+                  key: sceneKey,
+                  entries: [],
+                  ...(sceneRuns ? { scene: sceneRuns } : {}),
+                },
               ],
         )
       : [];
     const opaqueCulled = firstCulled[0];
-    let transparentCulled = firstCulled[1];
+    let transparentCulled = twoPhases ? undefined : firstCulled[1];
+    const sceneCulled = firstCulled[twoPhases ? 1 : 2];
     this.addVertexCountPass(graph, `${name} vertex counts`, [
       {
         entries: include !== 'transparent' ? opaqueEntries : [],
@@ -1417,6 +1489,9 @@ export class Renderer {
         if (opaqueCulled) {
           pass.read(opaqueCulled.handle, 'indirect');
         }
+        if (sceneCulled) {
+          pass.read(sceneCulled.handle, 'indirect');
+        }
         if (lightGrid) {
           pass.read(lightGrid, 'storage-read');
         }
@@ -1454,6 +1529,10 @@ export class Renderer {
             this.bindEnvironment(view, ibl && texture(ibl));
             bindInputs(opaqueEntries, read, texture);
             this.drawEntries(encoder, opaqueEntries, opaqueCulled);
+            if (sceneCulled && sceneRuns) {
+              bindInputs(definedEntries(sceneRuns), read, texture);
+              this.drawEntries(encoder, [], sceneCulled);
+            }
           },
         };
       });
@@ -1471,7 +1550,8 @@ export class Renderer {
           samples,
         });
         let lateCulled: CulledList | undefined;
-        [lateCulled, transparentCulled] = this.addCullingPass(
+        let lateScene: CulledList | undefined;
+        [lateCulled, transparentCulled, lateScene] = this.addCullingPass(
           graph,
           `${name} occlusion culling`,
           name,
@@ -1486,6 +1566,12 @@ export class Renderer {
               ...transparentList,
               phase: { kind: 'late', remember: false },
             },
+            {
+              key: `${sceneKey} late`,
+              entries: [],
+              ...(sceneRuns ? { scene: sceneRuns } : {}),
+              phase: { kind: 'late', early: sceneKey, remember: true },
+            },
           ],
           pyramid,
         );
@@ -1499,15 +1585,20 @@ export class Renderer {
             ...(transparentCulled ? { culled: transparentCulled } : {}),
           },
         ]);
-        if (lateCulled) {
+        if (lateCulled || lateScene) {
           const late = lateCulled;
+          const scene = lateScene;
           const drawn = colorVersion;
           const written = graph.addRasterPass(`${name} opaque late`, (pass) => {
             const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
             const ibl =
               environmentAtlas && pass.read(environmentAtlas, 'sampled');
             const read = readInputs(pass);
-            pass.read(late.handle, 'indirect');
+            for (const list of [late, scene]) {
+              if (list) {
+                pass.read(list.handle, 'indirect');
+              }
+            }
             if (lightGrid) {
               pass.read(lightGrid, 'storage-read');
             }
@@ -1524,8 +1615,14 @@ export class Renderer {
               execute: ({ pass: encoder, texture }) => {
                 this.bindShadowMap(view, atlas && texture(atlas));
                 this.bindEnvironment(view, ibl && texture(ibl));
-                bindInputs(opaqueEntries, read, texture);
-                this.drawEntries(encoder, opaqueEntries, late);
+                if (late) {
+                  bindInputs(opaqueEntries, read, texture);
+                  this.drawEntries(encoder, opaqueEntries, late);
+                }
+                if (scene && sceneRuns) {
+                  bindInputs(definedEntries(sceneRuns), read, texture);
+                  this.drawEntries(encoder, [], scene);
+                }
               },
             };
           });
@@ -1856,6 +1953,10 @@ export class Renderer {
     this._countSlots = undefined;
     this._arenas?.destroy();
     this._arenas = undefined;
+    for (const layout of this._gpuSceneLayouts) {
+      layout.destroy();
+    }
+    this._gpuSceneLayouts.clear();
     this._countSlotOf.clear();
     this._objectRows.destroy();
     this._objectGroups.clear();
@@ -1877,7 +1978,27 @@ export class Renderer {
     source: RenderSource | undefined,
     items: Iterable<Renderable>,
     test = true,
+    // Queried besides (the items of a GpuScene).
+    extra?: RenderSource,
   ): RenderSource {
+    if (extra) {
+      const first = this.sourceOf(source, items, test);
+      return {
+        query: (frustum, layers, visit, view) => {
+          first.query(frustum, layers, visit, view);
+          extra.query(frustum, layers, visit, view);
+        },
+        ...(first.lights
+          ? { lights: () => (first.lights as () => Iterable<BaseLight>)() }
+          : {}),
+        bounds: (out) => {
+          const box = (extra.bounds as (out: Aabb) => Aabb)(this._itemBounds);
+          return first.bounds
+            ? first.bounds(out).union(box)
+            : out.copyFrom(box);
+        },
+      };
+    }
     const empty = Array.isArray(items) && items.length === 0;
     if (!source || empty) {
       return source ?? this.listSource(items, test);
@@ -3484,21 +3605,27 @@ export class Renderer {
     pyramid?: OcclusionPyramid,
   ): (CulledList | undefined)[] {
     const culling = (this._gpuCulling ??= new GpuCulling(this.backend));
-    const culled = lists.map(({ key, entries }): CulledList | undefined => {
-      if (entries.length === 0) {
-        return undefined;
-      }
-      let runs = 0;
-      forEachRun(entries, () => runs++);
-      return {
-        key,
-        entries,
-        handle: graph.importBuffer(
-          `${key} draws`,
-          culling.prepare(key, entries.length, runs),
-        ),
-      };
-    });
+    const culled = lists.map(
+      ({ key, entries, scene }): CulledList | undefined => {
+        const count = scene ? scene.layout.count : entries.length;
+        if (count === 0) {
+          return undefined;
+        }
+        let runs = scene?.layout.buckets.length ?? 0;
+        if (!scene) {
+          forEachRun(entries, () => runs++);
+        }
+        return {
+          key,
+          entries,
+          ...(scene ? { scene } : {}),
+          handle: graph.importBuffer(
+            `${key} draws`,
+            culling.prepare(key, count, runs),
+          ),
+        };
+      },
+    );
     const used = culled.flatMap((list, i) =>
       list ? [{ list, phase: lists[i].phase }] : [],
     );
@@ -3522,37 +3649,47 @@ export class Renderer {
             ) as MaterialValue;
           });
           for (const { list, phase } of used) {
-            // The second phase draws the candidates of the first: their
-            // rows are reserved, only their instances are added.
+            const scene = list.scene;
+            // The second phase draws the candidates of the first, and the
+            // rows of a GpuScene are kept on the GPU: only the instances
+            // are reserved.
             const { first, rows, table } =
-              phase?.kind === 'late' && phase.early
+              scene || (phase?.kind === 'late' && phase.early)
                 ? {
-                    ...this._objectRows.extend(list.entries.length),
-                    rows: new Uint32Array(list.entries.length),
+                    ...this._objectRows.extend(
+                      scene ? scene.layout.count : list.entries.length,
+                    ),
+                    rows: new Uint32Array(0),
                   }
                 : this._objectRows.reserve(list.entries, objectOf);
             const runs: CulledRun[] = [];
-            const starts: number[] = [];
-            forEachRun(list.entries, (start, count) => {
-              const { item } = list.entries[start];
-              const indices = item.mesh.description.indexBuffer;
-              const mesh = this.gpuMesh(item.mesh);
+            const run = (mesh: Mesh, start: number, count: number) => {
+              const indices = mesh.description.indexBuffer;
+              const gpu = this.gpuMesh(mesh);
               const indexed =
-                mesh.indexBuffer !== undefined && indices !== undefined;
-              starts.push(start);
+                gpu.indexBuffer !== undefined && indices !== undefined;
               runs.push({
                 start,
                 count,
                 elements: indexed
                   ? indices.count
-                  : item.mesh.description.vertexCount,
+                  : mesh.description.vertexCount,
                 indexed,
-                firstIndex: mesh.placement?.firstIndex ?? 0,
-                baseVertex: mesh.placement?.baseVertex ?? 0,
+                firstIndex: gpu.placement?.firstIndex ?? 0,
+                baseVertex: gpu.placement?.baseVertex ?? 0,
               });
-            });
+            };
+            if (scene) {
+              for (const bucket of scene.layout.buckets) {
+                run(bucket.mesh, bucket.start, bucket.items.length);
+              }
+            } else {
+              forEachRun(list.entries, (start, count) =>
+                run(list.entries[start].item.mesh, start, count),
+              );
+            }
             // The runs of an arena drawn together.
-            const groups = this.multiDrawGroups(list.entries, starts);
+            const groups = this.multiDrawGroups(this.runEntries(list));
             list.groups = groups;
             for (const group of groups) {
               for (let r = group[0]; r < group[1]; r++) {
@@ -3586,12 +3723,21 @@ export class Renderer {
             list.draws = culling.record(encoder, list.key, {
               first,
               rows,
+              count: scene ? scene.layout.count : list.entries.length,
               table,
               bounds: (index) => this.worldBounds(list.entries[index].item),
               runs,
               planes,
               ...(cullingPhase ? { phase: cullingPhase } : {}),
               ...(pack ? { pack } : {}),
+              ...(scene
+                ? {
+                    persistent: {
+                      ...scene.layout.buffers,
+                      count: scene.layout.count,
+                    },
+                  }
+                : {}),
             });
           }
         },
@@ -3733,19 +3879,23 @@ export class Renderer {
       this.drawAll(pass, entries);
       return;
     }
-    const starts: number[] = [];
-    forEachRun(entries, (start) => starts.push(start));
+    const runEntries = this.runEntries(culled);
     for (const [first, end] of culled.groups ??
-      starts.map((_, r) => [r, r + 1] as const)) {
+      runEntries.map((_, r) => [r, r + 1] as const)) {
+      const entry = runEntries[first];
+      // A run of a GpuScene whose pipeline is being created.
+      if (!entry) {
+        continue;
+      }
       const offset = first * ArgumentWords * 4;
       if (end - first === 1) {
-        this.draw(pass, entries[starts[first]], 0, 0, { draws, offset });
+        this.draw(pass, entry, 0, 0, { draws, offset });
         continue;
       }
       // One multiple draw: the runs with instances packed, and their count
       // (drawIndirectCount), or every run.
       const packed = draws.packed;
-      this.draw(pass, entries[starts[first]], 0, 0, {
+      this.draw(pass, entry, 0, 0, {
         draws,
         offset,
         multi: packed
@@ -3759,21 +3909,76 @@ export class Renderer {
     }
   }
 
-  // The groups of runs of entries (the first entry of each in `starts`)
-  // drawn by one multiple draw, [start, end) in runs: the consecutive runs
-  // of meshes in the same buffers of an arena, with the same pipeline,
-  // material and indices, where the backend has multiple indirect draws.
-  // Each other run alone.
+  // The layout of a GpuScene on the GPU, brought up to date: laid out again
+  // when items were added or removed, else the changed items written.
+  private gpuSceneLayout(scene: GpuScene): GpuSceneLayout {
+    let layout = this._gpuScenes.get(scene);
+    if (!layout) {
+      layout = new GpuSceneLayout(this.backend, (buffer) =>
+        this._objectRows.retire(buffer),
+      );
+      this._gpuScenes.set(scene, layout);
+      this._gpuSceneLayouts.add(layout);
+    }
+    layout.sync(
+      scene,
+      (item) => this.worldBounds(item),
+      (item) => this._objectRows.rowOf(this.objectState(item)),
+    );
+    return layout;
+  }
+
+  // The items of a GpuScene as a source: those of the camera tested on the
+  // CPU (only the transparent ones when the GPU culls the others, `layout`),
+  // the shadow casters always (their culling is the shadow maps').
+  private gpuSceneSource(
+    scene: GpuScene,
+    layout: GpuSceneLayout | undefined,
+  ): RenderSource {
+    const all = () => scene.items();
+    return {
+      query: (frustum, layers, visit, view) => {
+        const items = layout && view === 'camera' ? layout.transparent : all();
+        this.listSource(items).query(frustum, layers, visit, view);
+      },
+      bounds: (out) => {
+        if (layout) {
+          return out.copyFrom(layout.bounds);
+        }
+        return (this.listSource(all()).bounds as (out: Aabb) => Aabb)(out);
+      },
+    };
+  }
+
+  // The entry of each run of a culled list: its first entry, or that of a
+  // run of a GpuScene (undefined while its pipeline is being created).
+  private runEntries(list: CulledList): readonly (PreparedItem | undefined)[] {
+    if (list.scene) {
+      return list.scene.entries;
+    }
+    const entries: PreparedItem[] = [];
+    forEachRun(list.entries, (start) => entries.push(list.entries[start]));
+    return entries;
+  }
+
+  // The groups of runs (the entry of each) drawn by one multiple draw,
+  // [start, end) in runs: the consecutive runs of meshes in the same
+  // buffers of an arena, with the same pipeline, material and indices,
+  // where the backend has multiple indirect draws. Each other run alone.
   private multiDrawGroups(
-    entries: readonly PreparedItem[],
-    starts: readonly number[],
+    runEntries: readonly (PreparedItem | undefined)[],
   ): (readonly [number, number])[] {
     const multi = this.backend.capabilities?.multiDrawIndirect === true;
     const groups: [number, number][] = [];
     let previous: PreparedItem | undefined;
     let previousShared: object | undefined;
-    starts.forEach((start, r) => {
-      const entry = entries[start];
+    runEntries.forEach((entry, r) => {
+      if (!entry) {
+        groups.push([r, r + 1]);
+        previous = undefined;
+        previousShared = undefined;
+        return;
+      }
       const mesh = entry.item.mesh;
       const shared =
         mesh.gpuVertexCount === undefined

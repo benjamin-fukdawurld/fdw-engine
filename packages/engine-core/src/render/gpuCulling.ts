@@ -410,6 +410,9 @@ interface CullingBuffers {
   readonly runData: Uint32Array<ArrayBuffer>;
   // The owners of the dispatches of the steps: their own uniforms.
   readonly steps: object[];
+  // The boxes and the rows tested by its last culling: its own, or those
+  // kept on the GPU (CullingCandidates.persistent).
+  source?: { readonly boxes: GpuBuffer; readonly rows: GpuBuffer };
 }
 
 const destroyBuffers = (list: CullingBuffers) => {
@@ -459,11 +462,22 @@ export interface CullingCandidates {
   // left, right, bottom, top, near, far: (nx, ny, nz, d), inside when
   // n · p + d ≥ 0.
   readonly planes: ArrayLike<number>;
+  // How many candidates, when `rows` is not read (the second phase of the
+  // occlusion culling): rows.length by default.
+  readonly count?: number;
   // The phase of the occlusion culling on the GPU: none without it.
   readonly phase?: CullingPhase;
   // Packs the draws of the groups of runs with instances, for multiple
   // draws whose count the GPU writes (drawIndirectCount).
   readonly pack?: boolean;
+  // Candidates kept on the GPU (a GpuScene): their boxes (center, half
+  // extents, two vec4f each) and rows, `count` of them, in buffers of
+  // whole workgroups (64). `rows` and `bounds` are then not read.
+  readonly persistent?: {
+    readonly boxes: GpuBuffer;
+    readonly rows: GpuBuffer;
+    readonly count: number;
+  };
 }
 
 /**
@@ -547,13 +561,22 @@ export class GpuCulling {
     name: string,
     candidates: CullingCandidates,
   ): CulledDraws {
-    const { first, rows, table, bounds, runs, planes, phase, pack } =
-      candidates;
+    const {
+      first,
+      rows,
+      table,
+      bounds,
+      runs,
+      planes,
+      phase,
+      pack,
+      persistent,
+    } = candidates;
     const instances = table.instanceBuffer;
     if (!instances) {
       throw new Error('The object table has no instance buffer');
     }
-    const count = rows.length;
+    const count = persistent?.count ?? candidates.count ?? rows.length;
     const list = this.list(name, count, runs.length);
     const programs = this.programs();
     const groups = (n: number) =>
@@ -567,11 +590,14 @@ export class GpuCulling {
     if (phase?.kind === 'late' && phase.early && !early) {
       throw new Error(`No first phase "${phase.early}" for "${name}"`);
     }
-    const source = early ?? list;
+    // Uploaded by the CPU, or already on the GPU.
+    const uploaded = !early && !persistent;
+    const source = early?.source ?? persistent ?? list;
+    list.source = source;
 
     // The boxes: center, then half extents (infinite without bounds).
     const boxes = list.boxData;
-    for (let i = 0; i < (early ? 0 : count); i++) {
+    for (let i = 0; i < (uploaded ? count : 0); i++) {
       const box = bounds(i);
       const o = i * 8;
       if (box) {
@@ -586,7 +612,7 @@ export class GpuCulling {
       boxes[o + 3] = 0;
       boxes[o + 7] = 0;
     }
-    if (!early) {
+    if (uploaded) {
       list.boxes.write(0, boxes.buffer, 0, count * 32);
       list.rows.write(0, rows.buffer, rows.byteOffset, count * 4);
     }

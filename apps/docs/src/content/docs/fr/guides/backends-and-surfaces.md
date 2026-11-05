@@ -243,6 +243,39 @@ lui-même :
   `PatchSurface` (voir le
   [tutoriel de la tessellation](/fdw-engine/fr/tutorials/tessellation/#les-niveaux-sur-le-gpu)).
 
+### Une scène gardée sur le GPU
+
+Avec le culling sur le GPU, le CPU prépare encore chaque objet que la
+scène donne pour la caméra. Une `GpuScene` garde ses objets sur le GPU :
+leurs boîtes, leurs lignes dans la table des objets et leurs lots (un par
+mesh et matériau) restent dans des buffers du GPU d'une frame à l'autre,
+et le GPU les teste tous à chaque frame. Le CPU prépare un lot par mesh et
+matériau, et n'écrit que ce qui change.
+
+```ts
+const city = new GpuScene();
+for (const building of buildings) city.add(building);
+city.add(bus, { dynamic: true }); // réécrit à chaque frame
+// À chaque frame :
+renderer.render({ gpuScene: city, camera, surface, gpuCulling: true });
+// Un objet statique a bougé :
+crane.transform.position = { x: 3 };
+city.touch(crane);
+```
+
+Sur 99 225 immeubles, le CPU d'une frame passe de 125 ms (cullés sur le
+GPU, préparés un par un) à 1 ms, quel que soit leur nombre.
+
+- Les objets statiques ne sont réécrits qu'après `touch` ; les objets
+  `dynamic`, à chaque frame. Ajouter ou retirer des objets les range tous
+  à nouveau.
+- Les objets transparents sont dessinés comme d'habitude (triés à chaque
+  frame), et les shadow maps interrogent les objets sur le CPU.
+- Les layers des vues ne s'appliquent pas ; une `GpuScene` est dessinée par
+  un seul renderer. Elle se donne avec une `source` et des `items`.
+- Là où le backend ne culle pas sur le GPU (WebGL2), ses objets sont
+  dessinés comme une liste.
+
 ### Des meshes qui partagent leurs buffers
 
 Les meshes d'une `MeshArena` de même format partagent un vertex buffer et
