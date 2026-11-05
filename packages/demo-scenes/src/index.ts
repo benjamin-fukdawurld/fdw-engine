@@ -4,6 +4,7 @@ export * from './pbr';
 export * from './shadows';
 export * from './maze';
 export * from './ssr';
+export * from './deferred';
 export * from './city';
 export * from './decor';
 export * from './terrain';

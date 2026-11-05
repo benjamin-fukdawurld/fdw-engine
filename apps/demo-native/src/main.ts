@@ -21,7 +21,10 @@
 // switches to Gerstner waves; coast-gerstner starts with them), basin (a
 // pond fed by a stream, its water a field of heights, crates floating on
 // it), smoke (smoke and fire around a ball; F switches to a chimney), splash
-// (a tank of water made of particles: a dam that breaks, crates in it).
+// (a tank of water made of particles: a dam that breaks, crates in it),
+// deferred (forward or deferred rendering, ambient occlusion and selection
+// at the pixel: D, O, V, a click or a drag; deferred-forward starts in
+// forward).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent). --rays draws the scenes that offer it (fps, tps) with rays, on
 // Vulkan and Direct3D 12: the shadows traced, the reflections too, or the
@@ -51,6 +54,8 @@ import {
   createCoastScene,
   createDecor,
   createDecorScene,
+  createDeferred,
+  createDeferredScene,
   createTerrain,
   createTerrainScene,
   createMazeStep1,
@@ -94,6 +99,8 @@ const scenes: Record<string, SceneFactory> = {
   'terrain-uniform': createTerrain({ minLevel: 6 }),
   procedural: createProceduralGallery,
   smoke: createSmokeScene(),
+  deferred: createDeferredScene,
+  'deferred-forward': createDeferred({ deferred: false }),
 };
 // The scenes loading something first: Rapier, the same WebAssembly module
 // as in the browser.

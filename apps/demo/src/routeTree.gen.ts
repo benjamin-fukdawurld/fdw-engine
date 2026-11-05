@@ -17,6 +17,7 @@ import { Route as CoastRouteRouteImport } from './routes/coast/route'
 import { Route as ColoredTriangleRouteRouteImport } from './routes/colored-triangle/route'
 import { Route as ColoredTriangleInterleavedRouteRouteImport } from './routes/colored-triangle-interleaved/route'
 import { Route as CullingRouteRouteImport } from './routes/culling/route'
+import { Route as DeferredRouteRouteImport } from './routes/deferred/route'
 import { Route as DepthTestingRouteRouteImport } from './routes/depth-testing/route'
 import { Route as FaceCullingRouteRouteImport } from './routes/face-culling/route'
 import { Route as FpsRouteRouteImport } from './routes/fps/route'
@@ -79,6 +80,11 @@ const ColoredTriangleInterleavedRouteRoute =
 const CullingRouteRoute = CullingRouteRouteImport.update({
   id: '/culling',
   path: '/culling',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeferredRouteRoute = DeferredRouteRouteImport.update({
+  id: '/deferred',
+  path: '/deferred',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DepthTestingRouteRoute = DepthTestingRouteRouteImport.update({
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/colored-triangle': typeof ColoredTriangleRouteRoute
   '/colored-triangle-interleaved': typeof ColoredTriangleInterleavedRouteRoute
   '/culling': typeof CullingRouteRoute
+  '/deferred': typeof DeferredRouteRoute
   '/depth-testing': typeof DepthTestingRouteRoute
   '/face-culling': typeof FaceCullingRouteRoute
   '/fps': typeof FpsRouteRoute
@@ -233,6 +240,7 @@ export interface FileRoutesByTo {
   '/colored-triangle': typeof ColoredTriangleRouteRoute
   '/colored-triangle-interleaved': typeof ColoredTriangleInterleavedRouteRoute
   '/culling': typeof CullingRouteRoute
+  '/deferred': typeof DeferredRouteRoute
   '/depth-testing': typeof DepthTestingRouteRoute
   '/face-culling': typeof FaceCullingRouteRoute
   '/fps': typeof FpsRouteRoute
@@ -266,6 +274,7 @@ export interface FileRoutesById {
   '/colored-triangle': typeof ColoredTriangleRouteRoute
   '/colored-triangle-interleaved': typeof ColoredTriangleInterleavedRouteRoute
   '/culling': typeof CullingRouteRoute
+  '/deferred': typeof DeferredRouteRoute
   '/depth-testing': typeof DepthTestingRouteRoute
   '/face-culling': typeof FaceCullingRouteRoute
   '/fps': typeof FpsRouteRoute
@@ -300,6 +309,7 @@ export interface FileRouteTypes {
     | '/colored-triangle'
     | '/colored-triangle-interleaved'
     | '/culling'
+    | '/deferred'
     | '/depth-testing'
     | '/face-culling'
     | '/fps'
@@ -332,6 +342,7 @@ export interface FileRouteTypes {
     | '/colored-triangle'
     | '/colored-triangle-interleaved'
     | '/culling'
+    | '/deferred'
     | '/depth-testing'
     | '/face-culling'
     | '/fps'
@@ -364,6 +375,7 @@ export interface FileRouteTypes {
     | '/colored-triangle'
     | '/colored-triangle-interleaved'
     | '/culling'
+    | '/deferred'
     | '/depth-testing'
     | '/face-culling'
     | '/fps'
@@ -397,6 +409,7 @@ export interface RootRouteChildren {
   ColoredTriangleRouteRoute: typeof ColoredTriangleRouteRoute
   ColoredTriangleInterleavedRouteRoute: typeof ColoredTriangleInterleavedRouteRoute
   CullingRouteRoute: typeof CullingRouteRoute
+  DeferredRouteRoute: typeof DeferredRouteRoute
   DepthTestingRouteRoute: typeof DepthTestingRouteRoute
   FaceCullingRouteRoute: typeof FaceCullingRouteRoute
   FpsRouteRoute: typeof FpsRouteRoute
@@ -477,6 +490,13 @@ declare module '@tanstack/react-router' {
       path: '/culling'
       fullPath: '/culling'
       preLoaderRoute: typeof CullingRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deferred': {
+      id: '/deferred'
+      path: '/deferred'
+      fullPath: '/deferred'
+      preLoaderRoute: typeof DeferredRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/depth-testing': {
@@ -645,6 +665,7 @@ const rootRouteChildren: RootRouteChildren = {
   ColoredTriangleRouteRoute: ColoredTriangleRouteRoute,
   ColoredTriangleInterleavedRouteRoute: ColoredTriangleInterleavedRouteRoute,
   CullingRouteRoute: CullingRouteRoute,
+  DeferredRouteRoute: DeferredRouteRoute,
   DepthTestingRouteRoute: DepthTestingRouteRoute,
   FaceCullingRouteRoute: FaceCullingRouteRoute,
   FpsRouteRoute: FpsRouteRoute,
