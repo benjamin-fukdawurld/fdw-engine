@@ -85,7 +85,7 @@ export const lightCodec: ComponentCodec<LightData> = {
       diffuse: tuple(light.diffuse),
       specular: tuple(light.specular),
     };
-    const shadows = (caster: DirectionalLight | SpotLight) =>
+    const shadows = (caster: DirectionalLight | SpotLight | PointLight) =>
       caster.castShadow
         ? { castShadow: true, shadow: caster.shadow }
         : Object.keys(caster.shadow).length > 0
@@ -109,7 +109,7 @@ export const lightCodec: ComponentCodec<LightData> = {
             outerCutoff: light.outerCutoff,
             ...shadows(light),
           }
-        : { type: 'point', ...colors, attenuation };
+        : { type: 'point', ...colors, attenuation, ...shadows(light) };
     }
     ctx.warn(`light of entity ${entity}: unknown kind of light`);
     return undefined;
@@ -139,7 +139,7 @@ export const lightCodec: ComponentCodec<LightData> = {
               innerCutoff: data.innerCutoff,
               outerCutoff: data.outerCutoff,
             })
-          : new PointLight({ ...colors, ...attenuation });
+          : new PointLight({ ...colors, ...attenuation, ...shadows });
     ctx.scene.node(entity).setLight(light);
   },
 };

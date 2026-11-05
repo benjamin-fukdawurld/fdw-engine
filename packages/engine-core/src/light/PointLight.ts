@@ -6,14 +6,23 @@ import {
   Vec3View,
 } from '@fdw/engine-backend';
 import { BaseLight } from './BaseLight';
+import type { ShadowCaster, ShadowCasterData, ShadowOptions } from './shadow';
 
-export class PointLight extends BaseLight implements PointLightSnapshot {
+export class PointLight
+  extends BaseLight
+  implements PointLightSnapshot, ShadowCaster
+{
   private _position: Vec3View;
 
   private _attenuation: DataView<ArrayBuffer>;
 
+  // Draws the items into the six faces of a shadow map around the light
+  // (see ShadowOptions: `bounds` and `cascades` do not apply).
+  castShadow: boolean;
+  shadow: ShadowOptions;
+
   // Plain values: { position: { x, y, z }, ambient: … }.
-  constructor(data?: Partial<Omit<PointLightData, 'type'>>) {
+  constructor(data?: Partial<Omit<PointLightData, 'type'>> & ShadowCasterData) {
     super(
       'point',
       new ArrayBuffer(
@@ -23,6 +32,8 @@ export class PointLight extends BaseLight implements PointLightSnapshot {
     );
     this._position = this.trackedVec3(BaseLight.bufferSize);
     this.position = data?.position ?? { x: 0, y: 0, z: 0 };
+    this.castShadow = data?.castShadow ?? false;
+    this.shadow = data?.shadow ?? {};
     this._attenuation = new DataView(
       this._buffer,
       BaseLight.bufferSize + 3 * 4,

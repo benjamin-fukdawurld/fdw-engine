@@ -133,14 +133,20 @@ export const uniformBlockName = (slot: string): string => `${slot}Uniforms`;
  * - spotDirection: direction the spot shines in.
  * - spotCone: cosines of the inner and outer angles of the cone; (-1, -2)
  *   lights every direction.
- * - shadow: x = 1 when the light has a tile in the shadow atlas (0
- *   otherwise), y = depth bias, z = normal offset (world units per unit of
- *   clip w: per unit of distance for a spot), w = size of a texel of the
- *   atlas in uv.
+ * - shadow: x = 1 when the light has a tile in the shadow atlas, 2 for the
+ *   cascades, 3 for the six faces of a point light (0 otherwise), y =
+ *   depth bias, z = normal offset (world units per unit of clip w: per
+ *   unit of distance for a spot or a point light), w = size of a texel of
+ *   the atlas in uv.
  * - shadowRect: tile of the light in the shadow atlas, uv offset (xy) and
- *   size (zw).
+ *   size (zw); for a point light, that of its first face.
  * - shadowMatrix: world to clip space of the light, for its shadow map
- *   (4 vec4, its columns).
+ *   (4 vec4, its columns). For a point light, the faces instead (see
+ *   CubeShadowFaces): column 0, the slot of the first face in the grid of
+ *   the atlas, the number of columns of the grid, the size of a tile in
+ *   uv, the tangent of the half field of view of a face; column 1, the
+ *   projected depth of a face at the distance m along its axis, as
+ *   ndc.z = x + y / m.
  *
  * The pool has no fixed size: the renderer writes every light of the frame.
  *
@@ -167,6 +173,29 @@ export const lightMembers: Readonly<
  * @group Program layout
  */
 export const LightVec4s = 13;
+
+/**
+ * The six faces of the shadow map of a point light, in their order in the
+ * shadow atlas (+x, -x, +y, -y, +z, -z): the axis each face looks along,
+ * and the right and up axes of its camera. The renderer draws the faces
+ * with these cameras; the shaders pick the face of a point by its dominant
+ * axis and project it with the same axes.
+ *
+ * @group Program layout
+ */
+export const CubeShadowFaces: readonly {
+  readonly forward: readonly [number, number, number];
+  readonly right: readonly [number, number, number];
+  readonly up: readonly [number, number, number];
+}[] = [
+  // Right-handed: right × up = -forward.
+  { forward: [1, 0, 0], right: [0, 0, 1], up: [0, 1, 0] },
+  { forward: [-1, 0, 0], right: [0, 0, -1], up: [0, 1, 0] },
+  { forward: [0, 1, 0], right: [1, 0, 0], up: [0, 0, 1] },
+  { forward: [0, -1, 0], right: [-1, 0, 0], up: [0, 0, 1] },
+  { forward: [0, 0, 1], right: [-1, 0, 0], up: [0, 1, 0] },
+  { forward: [0, 0, -1], right: [1, 0, 0], up: [0, 1, 0] },
+];
 
 /**
  * The light clusters of the frame (clustered forward shading): the view is

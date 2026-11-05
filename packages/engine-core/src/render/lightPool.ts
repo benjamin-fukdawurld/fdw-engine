@@ -99,8 +99,9 @@ export function writeLightPool(
     writeColor(pool, base + ambient, light.ambient);
     writeColor(pool, base + diffuse, light.diffuse);
     writeColor(pool, base + specular, light.specular);
-    // The first tile of the light: its own, or its first cascade (whose
-    // shadow.x of 2 sends the shaders to the cascades).
+    // The first tile of the light: its own, its first cascade (whose
+    // shadow.x of 2 sends the shaders to the cascades), or its first face
+    // (3: the faces of a point light).
     const tile = shadows.find((candidate) => candidate.light === light);
     if (rayOffset !== undefined && castsShadow(light)) {
       pool.set([1, 0, rayOffset, light.shadow.softness ?? 0], base + shadow);
@@ -109,7 +110,8 @@ export function writeLightPool(
     }
     if (tile) {
       pool.set(tile.rect, base + shadowRect);
-      pool.set(tile.matrix, base + shadowMatrix);
+      // A point light: its faces instead of a matrix.
+      pool.set(tile.faces ?? tile.matrix, base + shadowMatrix);
     }
   }
   return pool;
