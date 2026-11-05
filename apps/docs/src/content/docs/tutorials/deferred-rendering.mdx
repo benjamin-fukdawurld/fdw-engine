@@ -148,6 +148,14 @@ orthographic cameras. It uses the engine value
 `camera.inverseViewProjection`, the inverse of the view projection of the
 camera: from the screen back to the world.
 
+The depth in a half float (the `w` of an `rgba16float`) is precise to about
+one part in 2000: a few millimetres at a few metres. Enough here, but not
+for the shadows of point and spot lights close to what they light, whose
+texels are smaller than that: the rebuilt points fall in and out of the
+surface, in lines of acne one row of pixels apart. Write the depth in an
+`r32float` of its own for them (`{ format: 'r32float', value: 'view-depth' }`),
+read with `std.textureLoad`, as the `deferred` scene of the demos does.
+
 ### The lights and the camera of the frame
 
 A full screen pass reads the frame values of the **last scene passes added

@@ -155,6 +155,15 @@ perspective et orthographiques. Elle utilise la valeur du moteur
 `camera.inverseViewProjection`, l'inverse de la projection de la caméra :
 de l'écran vers le monde.
 
+La profondeur en demi-flottant (le `w` d'un `rgba16float`) est précise à
+environ un deux-millième près : quelques millimètres à quelques mètres.
+Assez ici, mais pas pour les ombres des lumières ponctuelles et des spots
+proches de ce qu'ils éclairent, dont les texels sont plus petits : les points
+reconstruits passent sous la surface et en ressortent, en lignes d'acné
+espacées d'une rangée de pixels. Écrivez alors la profondeur dans un
+`r32float` à part (`{ format: 'r32float', value: 'view-depth' }`), lu par
+`std.textureLoad`, comme la scène `deferred` des démos.
+
 ### Les lumières et la caméra de l'image
 
 Une passe plein écran lit les valeurs de l'image des **dernières passes de

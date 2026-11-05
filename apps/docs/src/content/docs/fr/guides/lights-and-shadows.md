@@ -90,12 +90,13 @@ son irradiance, sa radiance préfiltrée × le Fresnel de la somme séparée),
 
 ## Ombres
 
-Avec `castShadow: true`, une lumière directionnelle ou un spot projette des
-ombres. Chaque frame, alors :
+Avec `castShadow: true`, une lumière directionnelle, un spot ou une lumière
+ponctuelle projette des ombres. Chaque frame, alors :
 
 1. **Une passe d'ombres** (`scene shadows`) dessine les objets projetant des
    ombres dans un **atlas**, une texture de profondeur de `shadowAtlasSize`
-   (2048) pixels, découpée en tuiles égales, une par lumière. Elle utilise la
+   (2048) pixels, découpée en tuiles égales, une par lumière (six pour une lumière
+   ponctuelle). Elle utilise la
    variante **profondeur seule** des matériaux : pas de couleur, uniquement
    la position, et le discard des matériaux masqués.
 2. **Les passes de la scène** lisent l'atlas : les modèles `phong` et `pbr`
@@ -112,6 +113,15 @@ Les caméras des lumières :
   lorsque la caméra bouge.
 - Un **spot** voit son cône, jusqu'à ce que voit la caméra, avec une
   projection en perspective.
+- Une **lumière ponctuelle** voit toutes les directions par **six faces**,
+  les côtés d'un cube autour d'elle, dans six tuiles consécutives de
+  l'atlas : six caméras en perspective, jusqu'à sa portée et à ce que voit
+  la caméra. Les shaders choisissent la face d'un point par son axe
+  dominant vu de la lumière. Chaque face est un peu plus large que 90° (deux
+  texels), pour que le filtrage ne lise jamais par-dessus une arête du
+  cube : pas de couture là où deux faces se rejoignent. Une face qui ne voit
+  rien de ce que voit la caméra garde sa tuile mais ne dessine rien : une
+  lampe hors champ ne paie que les faces dont les ombres peuvent se voir.
 
 Les deux s'étendent **vers la lumière** aussi loin que va la scène : un arbre
 hors de la vue dont l'ombre tombe dans la vue la projette ; un objet dont
@@ -124,8 +134,7 @@ Ce qui projette des ombres :
 - les éléments avec `castShadow: false` n'en projettent pas, ni les
   éléments transparents ;
 - `addScenePasses(graph, { shadows: false })` désactive les ombres d'une
-  vue ;
-- les lumières ponctuelles ne projettent pas encore d'ombres.
+  vue.
 
 ### Cascades
 
@@ -214,9 +223,10 @@ embrumé.
 ## Coûts
 
 Chaque lumière avec ombres dessine les objets projetant des ombres une fois
-de plus ; une lumière à cascades, une fois par cascade. Les objets qui
+de plus ; une lumière à cascades, une fois par cascade ; une lumière ponctuelle,
+une fois par face qui voit la vue (jusqu'à six). Les objets qui
 partagent un mesh et un matériau sont instanciés dans les passes d'ombre
 aussi. L'atlas est partagé, donc davantage de lumières donnent des tuiles
 plus petites : 4 lumières dans un atlas de 2048 obtiennent chacune
-1024 × 1024. Augmentez `shadowAtlasSize` pour des ombres plus nettes, au prix
+1024 × 1024 ; un soleil et deux lampes à ombres (13 tuiles), 512 × 512. Augmentez `shadowAtlasSize` pour des ombres plus nettes, au prix
 de la mémoire.

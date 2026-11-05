@@ -103,8 +103,7 @@ export interface RenderOptions {
   // lights of the source. Only those that can light what the camera sees
   // are used, without limit: each pixel sums the directional lights, and
   // the point and spot lights of its cluster (see RendererOptions
-  // .lightClusters). Directional and spot lights with castShadow cast
-  // shadows.
+  // .lightClusters). The lights with castShadow cast shadows.
   readonly lights?: readonly BaseLight[];
   // When the lights of the view are all bounded (point and spot lights),
   // what none of them reaches is black: it is not drawn. Materials without

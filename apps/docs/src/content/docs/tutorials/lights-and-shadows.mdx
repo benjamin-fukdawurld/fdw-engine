@@ -1,14 +1,14 @@
 ---
 title: Lights and shadows
-description: PBR materials, a sun and a spot casting shadows, tone mapping and multisampling.
+description: PBR materials, a sun, a spot and a lamp casting shadows, tone mapping and multisampling.
 sidebar:
   order: 1
 ---
 
 import Example from '../../../components/Example.astro';
 
-A small scene lit by two lights casting shadows: a sun, and a spot sweeping
-the ground. The objects use the PBR shading model, the frame is tone mapped
+A small scene lit by three lights casting shadows: a sun, a spot sweeping
+the ground, and a warm lamp beside the ball. The objects use the PBR shading model, the frame is tone mapped
 and antialiased.
 
 <Example name="lights-and-shadows" />
@@ -69,8 +69,8 @@ values, and the tone mapping brings them back to the screen.
 
 ## Shadows
 
-Directional and spot lights with `castShadow: true` cast shadows. The
-renderer draws a **shadow map** for each of them, before the scene, into an
+Directional, spot and point lights with `castShadow: true` cast shadows.
+The renderer draws a **shadow map** for each of them, before the scene, into an
 atlas shared by the lights (2048 × 2048 by default, `shadowAtlasSize` option
 of the renderer). The `phong` and `pbr` models read it, with a filtered
 comparison over 3 × 3 texels for soft edges.
@@ -78,14 +78,25 @@ comparison over 3 × 3 texels for soft edges.
 - A directional light covers the bounds of the items. For a large scene,
   give it the region that matters: `shadow: { bounds: { center, radius } }`.
 - A spot covers its cone.
+- A point light shines in every direction: its shadow map has six faces,
+  the sides of a cube around it, each a tile of the atlas. It costs up to
+  six times a spot: keep its shadows for the lamps that matter.
+
+```ts
+const lamp = new PointLight({
+  position: { x: -1.3, y: 1.7, z: 0.9 },
+  diffuse: { x: 3.2, y: 1.7, z: 0.6 },
+  quadraticAttenuation: 0.35,
+  castShadow: true,
+});
+```
+
 - `castShadow: false` on a render item keeps it out of the shadow maps;
   transparent items cast none.
 - `shadow: { normalBias, bias }` adjusts the offsets fighting shadow acne (a
   surface shadowing itself): `normalBias` moves the points along their
   normal, in texels of the shadow map (1 by default); `bias` lowers their
   depth (0 by default). The defaults suit most scenes.
-
-Point lights cast no shadows yet.
 
 ## Output: tone mapping and multisampling
 

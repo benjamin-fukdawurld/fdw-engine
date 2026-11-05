@@ -1,14 +1,14 @@
 ---
 title: Lumières et ombres
-description: Matériaux PBR, un soleil et un spot projetant des ombres, tone mapping et multiéchantillonnage.
+description: Matériaux PBR, un soleil, un spot et une lampe projetant des ombres, tone mapping et multiéchantillonnage.
 sidebar:
   order: 1
 ---
 
 import Example from '../../../../components/Example.astro';
 
-Une petite scène éclairée par deux lumières qui projettent des ombres : un
-soleil, et un spot qui balaie le sol. Les objets utilisent le modèle
+Une petite scène éclairée par trois lumières qui projettent des ombres : un
+soleil, un spot qui balaie le sol, et une lampe chaude à côté de la boule. Les objets utilisent le modèle
 d'éclairage PBR, l'image passe par un tone mapping et est anticrénelée.
 
 <Example name="lights-and-shadows" />
@@ -71,8 +71,8 @@ les ramène dans la plage de l'écran.
 
 ## Ombres
 
-Les lumières directionnelles et les spots avec `castShadow: true` projettent
-des ombres. Le renderer dessine une **shadow map** pour chacune d'elles, avant
+Les lumières directionnelles, les spots et les lumières ponctuelles avec
+`castShadow: true` projettent des ombres. Le renderer dessine une **shadow map** pour chacune d'elles, avant
 la scène, dans un atlas partagé par les lumières (2048 × 2048 par défaut,
 option `shadowAtlasSize` du renderer). Les modèles `phong` et `pbr` la
 lisent, avec une comparaison filtrée sur 3 × 3 texels pour des bords doux.
@@ -81,6 +81,20 @@ lisent, avec une comparaison filtrée sur 3 × 3 texels pour des bords doux.
   scène, indiquez-lui la région qui compte :
   `shadow: { bounds: { center, radius } }`.
 - Un spot couvre son cône.
+- Une lumière ponctuelle éclaire dans toutes les directions : sa shadow map a
+  six faces, les côtés d'un cube autour d'elle, chacune une tuile de l'atlas.
+  Elle coûte jusqu'à six fois un spot : gardez ses ombres pour les lampes qui
+  comptent.
+
+```ts
+const lamp = new PointLight({
+  position: { x: -1.3, y: 1.7, z: 0.9 },
+  diffuse: { x: 3.2, y: 1.7, z: 0.6 },
+  quadraticAttenuation: 0.35,
+  castShadow: true,
+});
+```
+
 - `castShadow: false` sur un élément de rendu l'exclut des shadow maps ; les
   éléments transparents n'en projettent pas.
 - `shadow: { normalBias, bias }` ajuste les décalages qui combattent le shadow
@@ -88,8 +102,6 @@ lisent, avec une comparaison filtrée sur 3 × 3 texels pour des bords doux.
   le long de leur normale, en texels de la shadow map (1 par défaut) ; `bias`
   diminue leur profondeur (0 par défaut). Les valeurs par défaut conviennent à
   la plupart des scènes.
-
-Les lumières ponctuelles ne projettent pas encore d'ombres.
 
 ## Sortie : tone mapping et multiéchantillonnage
 
