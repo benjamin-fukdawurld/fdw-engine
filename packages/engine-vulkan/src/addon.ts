@@ -168,6 +168,9 @@ export interface VulkanAddon {
   independentBlend(context: ContextHandle): boolean;
   // Whether the indirect draws are supported, first instance included.
   indirectDraw(context: ContextHandle): boolean;
+  // The multiple indirect draws: 1 with multiDrawIndirect, plus 2 with
+  // drawIndirectCount.
+  multiDrawIndirect(context: ContextHandle): number;
   // Whether the device can write and sample textures of a format.
   formatSupported(context: ContextHandle, format: string): boolean;
   samplerId(sampler: SamplerHandle): number;
@@ -336,6 +339,8 @@ export const Commands = {
   refitBottomLevel: 20,
   drawIndirect: 21,
   drawIndexedIndirect: 22,
+  multiDrawIndirect: 23,
+  multiDrawIndexedIndirect: 24,
 } as const;
 
 /** The flags of createBottomLevel (FDW_VK_BOTTOM_LEVEL_*). */

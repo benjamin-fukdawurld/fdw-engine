@@ -11,7 +11,8 @@
 //   [--rays shadows|reflections|path] [--ray-pipeline]
 // Scenes: shadows (default), pbr, maze (maze-1 to maze-3 for its first steps),
 // fps (the first person shooter; P pauses),
-// city (the occlusion culling; city-no-occlusion to compare), decor (the
+// city (the occlusion culling; city-no-occlusion to compare, city-gpu culled
+// on the GPU in two phases, G switches), decor (the
 // static batching; decor-no-batching to compare), terrain (the
 // tessellation; terrain-uniform: every patch at the finest level), physics
 // (the physics playground, on Rapier), tps (the third-person game in the
@@ -93,6 +94,7 @@ const scenes: Record<string, SceneFactory> = {
   fps: createFpsScene,
   city: createCityScene,
   'city-no-occlusion': createCity({ occlusion: false }),
+  'city-gpu': createCity({ gpuCulling: true }),
   decor: createDecorScene,
   'decor-no-batching': createDecor({ batching: false }),
   terrain: createTerrainScene,

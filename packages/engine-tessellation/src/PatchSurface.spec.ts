@@ -1,8 +1,8 @@
 import { Camera, Material, Renderer } from '@fdw/engine-core';
-import { fakeBackend, surface } from '@fdw/engine-core/testing';
+import { fakeBackend, FakeBuffer, surface } from '@fdw/engine-core/testing';
 import { BuiltinTypes, compile, GraphBuilder } from '@fdw/engine-shader';
 import { describe, expect, it } from 'vitest';
-import { patchVertex, PatchValues } from './graph';
+import { DrawHeader, patchVertex, PatchValues } from './graph';
 import { patchMesh } from './patchMesh';
 import { patchGrid } from './patches';
 import { PatchSurface } from './PatchSurface';
@@ -34,10 +34,6 @@ const terrainGraph = (displaced = true) => {
 
 const setup = (options: { cull?: boolean; displacement?: number } = {}) => {
   const { backend, log } = fakeBackend({ objectTable: true });
-  const writes: Float32Array[] = [];
-  backend.textures.writeTexture = (_texture, data) => {
-    writes.push(new Float32Array((data as Float32Array).slice()));
-  };
   const material = new Material({
     graph: terrainGraph(),
     values: {
@@ -58,7 +54,17 @@ const setup = (options: { cull?: boolean; displacement?: number } = {}) => {
   });
   // Above the first patch; the levels come from its projection data (45°).
   const camera = new Camera({ position: { x: -31, y: 10, z: 0 } });
-  return { backend, log, writes, material, patches, terrain, camera };
+  // The buffer of the draws as last written: its header, then the draws.
+  const written = () => {
+    const data = new Float32Array(
+      (material.getValue(PatchValues.draws) as unknown as FakeBuffer).data,
+    );
+    return {
+      header: data.subarray(0, DrawHeader * 4),
+      draws: data.subarray(DrawHeader * 4),
+    };
+  };
+  return { backend, log, written, material, patches, terrain, camera };
 };
 
 describe('PatchSurface', () => {
@@ -73,7 +79,7 @@ describe('PatchSurface', () => {
   });
 
   it('draws the patches sorted by level, with the steps of their edges', () => {
-    const { writes, material, terrain, camera, patches } = setup();
+    const { written, terrain, camera, patches } = setup();
     terrain.update(camera, { width: 1000, height: 1000 });
     // Fine under the camera, coarser away from it.
     expect(
@@ -81,15 +87,9 @@ describe('PatchSurface', () => {
     ).toBeGreaterThan(1);
     const stats = terrain.stats;
     expect(stats.drawn).toBe(16);
-    const draws = writes[writes.length - 1];
-    const vertexStarts = [
-      ...(material.getValue(PatchValues.vertexStarts[0]) as number[]),
-      ...(material.getValue(PatchValues.vertexStarts[1]) as number[]),
-    ];
-    const drawStarts = [
-      ...(material.getValue(PatchValues.drawStarts[0]) as number[]),
-      ...(material.getValue(PatchValues.drawStarts[1]) as number[]),
-    ];
+    const { header, draws } = written();
+    const vertexStarts = [...header.subarray(0, 8)];
+    const drawStarts = [...header.subarray(8, 16)];
     let vertices = 0;
     let first = 0;
     for (let level = 0; level <= 6; level++) {
@@ -147,7 +147,7 @@ describe('PatchSurface', () => {
     expect(terrain.world.version).toBe(1);
   });
 
-  it('grows the texture of the draws', () => {
+  it('writes its draws into a buffer for every patch', () => {
     const { backend, log } = fakeBackend({ objectTable: true });
     const patches = patchGrid({ width: 64, depth: 64, columns: 30, rows: 30 });
     const material = new Material({ graph: terrainGraph() });
@@ -161,11 +161,53 @@ describe('PatchSurface', () => {
       height: 10,
     });
     expect(terrain.stats.drawn).toBe(900);
-    const draws = log.textures.filter((t) => t.label?.endsWith('draws'));
-    expect(draws.map((t) => t.dimensions.height)).toEqual([1, 4]);
-    expect(material.getValue(PatchValues.draws)).toMatchObject({
-      dimensions: { width: 256, height: 4 },
+    const buffer = material.getValue(
+      PatchValues.draws,
+    ) as unknown as FakeBuffer;
+    expect(buffer.size).toBe((DrawHeader + 900) * 16);
+    expect(buffer.data.byteLength).toBe((DrawHeader + 900) * 16);
+    expect(log.textures.filter((t) => t.label?.endsWith('draws'))).toEqual([]);
+  });
+
+  it('chooses its levels on the GPU, where the backend culls there', () => {
+    const { backend, log } = fakeBackend({
+      objectTable: true,
+      storageBuffers: true,
+      compute: true,
+      indirectDraw: true,
     });
+    const patches = patchGrid({ width: 64, depth: 64, columns: 4, rows: 4 });
+    const terrain = new PatchSurface(backend, {
+      patches,
+      material: new Material({ graph: terrainGraph(false) }),
+      levels: 'gpu',
+    });
+    expect(terrain.gpu).toBe(true);
+    const camera = new Camera({ position: { x: 0, y: 10, z: 0 } });
+    terrain.update(camera, { width: 100, height: 100 });
+    // 16 patches, 7 levels: 112 flags, a prefix sum of 7 steps.
+    expect(log.dispatches.map((dispatch) => dispatch.pipeline)).toEqual([
+      'patch levels edges',
+      'patch levels flags',
+      ...new Array(7).fill('patch levels scan'),
+      'patch levels starts',
+      'patch levels draws',
+    ]);
+    // Drawn indirectly, its vertex count copied from the GPU.
+    log.draws.length = 0;
+    const renderer = new Renderer(backend);
+    renderer.render({ items: [terrain], camera, surface });
+    expect(log.draws).toHaveLength(1);
+    expect(log.draws[0].indirect?.offset).toBe(0);
+    expect(log.bufferCopies).toEqual([
+      {
+        from: 'patch surface counts',
+        fromOffset: 0,
+        to: 'vertex counts',
+        toOffset: 0,
+        size: 4,
+      },
+    ]);
   });
 
   it('refuses levels out of bounds', () => {

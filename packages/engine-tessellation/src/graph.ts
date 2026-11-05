@@ -1,6 +1,6 @@
-import { BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
+import { arrayType, BuiltinTypes, GraphBuilder, std } from '@fdw/engine-shader';
 import type { ConstantValue, PortHandle, ShaderType } from '@fdw/engine-shader';
-import { PatchesPerRow, PatchTextureWidth, TexelsPerPatch } from './patches';
+import { PatchesPerRow, TexelsPerPatch } from './patches';
 
 type Value = PortHandle | ConstantValue;
 
@@ -11,13 +11,15 @@ type Value = PortHandle | ConstantValue;
 export const PatchValues = {
   // The corners of the patches (rgba32float).
   patches: 'patchData',
-  // The patches drawn, sorted by level: a texel each (rgba32float).
+  // The storage buffer of the draws (vec4f): the first vertex of each
+  // level, from 0 to 6, then 1e30 (two vec4f), the first draw of each level
+  // (two vec4f), then the patches drawn, sorted by level, one vec4f each
+  // (see DrawHeader). Written by the CPU, or by a compute shader.
   draws: 'patchDraws',
-  // The first vertex of each level, from 0 to 6, then the vertex count.
-  vertexStarts: ['patchVertexStarts0', 'patchVertexStarts1'],
-  // The first draw of each level.
-  drawStarts: ['patchDrawStarts0', 'patchDrawStarts1'],
 } as const;
+
+/** The vec4f before the first draw in the buffer of the draws. */
+export const DrawHeader = 4;
 
 /** A height map moving the vertices along their normal. */
 export interface PatchDisplacement {
@@ -96,19 +98,16 @@ export function patchVertex(
   let size: PortHandle | undefined;
   // The number of levels reached, level 0 included.
   let reachedLevels: PortHandle | undefined;
+  const draws = g.storage(PatchValues.draws, arrayType(BuiltinTypes.vec4f));
+  const header = (at: number) =>
+    call(std.index, { array: draws, index: uint(at) });
   for (const half of [0, 1] as const) {
-    const starts = g.uniform(
-      PatchValues.vertexStarts[half],
-      BuiltinTypes.vec4f,
-    );
+    const starts = header(half);
     // 1 for the levels starting at or before the vertex.
     const reached = call(std.step, { edge: starts, x: splat });
     const sizes = half === 0 ? [1, 2, 4, 8] : [16, 32, 64, 0];
     const vertex = mul(starts, reached);
-    const draw = mul(
-      g.uniform(PatchValues.drawStarts[half], BuiltinTypes.vec4f),
-      reached,
-    );
+    const draw = mul(header(2 + half), reached);
     const quads = mul(g.constant(BuiltinTypes.vec4f, sizes), reached);
     const count = call(std.dot, { a: reached, b: [1, 1, 1, 1] });
     reachedLevels = reachedLevels ? add(reachedLevels, count) : count;
@@ -144,20 +143,9 @@ export function patchVertex(
   // The draw: the patch, and the step of the grid of each edge (2^(level
   // of the patch − level of the edge)), two by channel.
   const slot = add(u32(largest(drawStart as PortHandle)), inLevel);
-  const draw = g.call(std.textureLoad, {
-    texture: g.texture(PatchValues.draws, { sampleType: 'unfilterable-float' }),
-    coords: convert(
-      call(std.vec2, {
-        x: f32(
-          sub(
-            slot,
-            mul(div(slot, uint(PatchTextureWidth)), uint(PatchTextureWidth)),
-          ),
-        ),
-        y: f32(div(slot, uint(PatchTextureWidth))),
-      }),
-      BuiltinTypes.vec2i,
-    ),
+  const draw = call(std.index, {
+    array: draws,
+    index: add(slot, uint(DrawHeader)),
   });
   const steps = (packed: PortHandle) => {
     const value = u32(packed);

@@ -397,6 +397,18 @@ int createDevice(fdw_vk_context *context) {
   features.features.drawIndirectFirstInstance =
       available.drawIndirectFirstInstance;
   context->indirectDraw = available.drawIndirectFirstInstance;
+  features.features.multiDrawIndirect = available.multiDrawIndirect;
+  context->multiDrawIndirect = available.multiDrawIndirect;
+  {
+    VkPhysicalDeviceVulkan12Features query12{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                    &query12};
+    vkGetPhysicalDeviceFeatures2(context->physicalDevice, &query);
+    features12.drawIndirectCount = query12.drawIndirectCount;
+    context->drawIndirectCount =
+        available.multiDrawIndirect && query12.drawIndirectCount;
+  }
   // The compressed formats, where the device has them (their support is
   // read per format: fdw_vk_format_supported).
   features.features.textureCompressionBC = available.textureCompressionBC;

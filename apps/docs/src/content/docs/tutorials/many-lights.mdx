@@ -72,6 +72,13 @@ of lights of the frame. `new Renderer(backend, { lightClusters: false })`
 turns them off: each pixel sums every light, as the example does with
 **C**.
 
+With `gpuCulling: true` (Vulkan, Direct3D 12, WebGPU), the GPU fills the
+lists: a thread per light and slice finds the tiles its sphere covers, a
+thread per cluster and light keeps the pairs, and a prefix sum gives each
+its place, in the same order as on the CPU. Only the bounding spheres are
+written by the CPU. Up to 1 024 point and spot lights in view; beyond,
+the CPU fills them.
+
 ## In a custom shading model
 
 `light.sum` uses the clusters when it is given the **position** of the

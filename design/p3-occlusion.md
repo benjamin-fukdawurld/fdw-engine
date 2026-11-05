@@ -107,3 +107,5 @@ Ce que disent ces mesures :
 ## 10. État
 
 **Faite** (14 octobre 2026) : `engine-occlusion` (`OcclusionCulling`), `std.textureLoad` et `std.textureLoadDepth` sur les trois backends, `RenderGraph({ size })` et `pixelSize`, l'option `occlusion` et `ViewStats.occluded` du `Renderer`, l'optimisation des variantes de passe. La démo `city` (web : `/city` ; natif : `city`, `city-no-occlusion`), avec la vue du culling en incrustation (`CullingView`) et la touche O. Le tutoriel « Occlusion culling » (EN, FR) avec son exemple vivant et ses captures ; les guides du scene graph, du render graph et du material graph. Reste la suite du §8.
+
+_Mis à jour (5 novembre 2026)_ : le point 1 du §8 est fait par P24 ([§3.4](p24-gpu-driven.md#34-locclusion-en-deux-phases-étape-3)) : avec `gpuCulling`, les deux phases sans retard sur Vulkan, Direct3D 12 et WebGPU (`OcclusionCuller.addPyramid`, `boxVisibility`) ; WebGL2 garde A.

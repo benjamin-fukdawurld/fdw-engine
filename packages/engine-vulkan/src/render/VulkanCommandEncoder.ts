@@ -4,6 +4,7 @@ import type {
   GpuBindGroup,
   GpuBottomLevel,
   GpuBuffer,
+  IndirectCount,
   GpuCommandBuffer,
   GpuCommandEncoder,
   GpuComputePassEncoder,
@@ -152,6 +153,49 @@ class VulkanRenderPassEncoder implements GpuRenderPassEncoder {
       .word(Commands.drawIndexedIndirect)
       .word(unwrap(buffer, VulkanBuffer, 'The indirect buffer').id)
       .wide(offset);
+  }
+
+  multiDrawIndirect(
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count?: IndirectCount,
+  ): void {
+    this.multiDraw(Commands.multiDrawIndirect, buffer, offset, maxCount, count);
+  }
+
+  multiDrawIndexedIndirect(
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count?: IndirectCount,
+  ): void {
+    this.multiDraw(
+      Commands.multiDrawIndexedIndirect,
+      buffer,
+      offset,
+      maxCount,
+      count,
+    );
+  }
+
+  // The arguments, their number, and the buffer of the count (0: none).
+  private multiDraw(
+    command: number,
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count: IndirectCount | undefined,
+  ): void {
+    this._writer
+      .word(command)
+      .word(unwrap(buffer, VulkanBuffer, 'The indirect buffer').id)
+      .wide(offset)
+      .word(maxCount)
+      .word(
+        count ? unwrap(count.buffer, VulkanBuffer, 'The count buffer').id : 0,
+      )
+      .wide(count?.offset ?? 0);
   }
 
   setViewport(x: number, y: number, width: number, height: number): void {

@@ -81,6 +81,47 @@ sont agrandies du mouvement de la caméra pour trouver ces objets un peu plus
 tôt (`motion`, 2 par défaut : deux fois la distance parcourue depuis la
 frame précédente).
 
+## Sans retard, sur le GPU
+
+Là où le backend dessine en indirect (Vulkan, Direct3D 12, WebGPU avec
+`indirect-first-instance`), ajoutez `gpuCulling: true` : l'occlusion
+culling passe alors sur le GPU, en **deux phases**, et plus rien n'arrive
+en retard.
+
+```ts
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  occlusion,
+  gpuCulling: true,
+});
+```
+
+1. **La première phase** dessine les objets visibles à la frame
+   précédente : le GPU garde un drapeau par objet, que le CPU ne lit
+   jamais.
+2. **La pyramide** est construite depuis ce que cette phase a dessiné,
+   comme plus haut.
+3. **La seconde phase** teste contre elle chaque objet du frustum, dans
+   une passe de calcul : elle dessine ceux qu'elle trouve visibles et que
+   la première n'a pas dessinés, et garde les drapeaux de tous pour la
+   frame suivante.
+
+Un objet que le mouvement découvre est trouvé par la seconde phase de la
+frame où il apparaît : aucun retard, plus besoin de la marge `motion`. Rien
+n'est relu : `occlusion.isHidden()` et `stats.occluded` ne disent rien dans
+ce mode, les statistiques comptent les objets donnés au GPU. WebGL2 garde
+la relecture.
+
+Le CPU ne sait plus ce qui est caché : il prépare chaque objet du frustum,
+là où la relecture lui permet d'écarter les objets cachés. Avec quelques
+milliers d'objets, le chemin du GPU coûte plus de CPU (12 ms contre 4 ms
+pour les 9801 immeubles ci-dessous) ; son gain est l'image sans retard, le
+temps GPU de ses tests (0,04 ms pour 10 000 ou 100 000 objets) et la
+suite : les scènes gardées sur le GPU (voir le
+[guide des backends](/fdw-engine/fr/guides/backends-and-surfaces/#le-culling-sur-le-gpu)).
+
 ## Ce qu'il fait gagner
 
 La ville de la démo (`city` dans l'application de démo), 5184 immeubles,

@@ -246,6 +246,14 @@ export interface PassTiming {
   readonly index: number;
 }
 
+/** The number of indirect draws, read from a buffer: see multiDrawIndirect. */
+export interface IndirectCount {
+  // Usage 'indirect'.
+  readonly buffer: GpuBuffer;
+  // A multiple of 4.
+  readonly offset: number;
+}
+
 export interface GpuRenderPassEncoder {
   setPipeline(pipeline: GpuRenderPipeline): void;
   setBindGroup(index: number, group: GpuBindGroup): void;
@@ -271,6 +279,24 @@ export interface GpuRenderPassEncoder {
   // Five u32: indexCount, instanceCount, firstIndex, baseVertex,
   // firstInstance.
   drawIndexedIndirect?(buffer: GpuBuffer, offset: number): void;
+  // Several indirect draws in one command, where the backend has the
+  // multiDrawIndirect capability: `maxCount` draws from `offset`, 20 bytes
+  // apart (the arguments of drawIndirect, then an unused u32; those of
+  // drawIndexedIndirect). With `count` (a u32 written by the GPU, where the
+  // backend has drawIndirectCount), only the first `count` of them, at most
+  // `maxCount`.
+  multiDrawIndirect?(
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count?: IndirectCount,
+  ): void;
+  multiDrawIndexedIndirect?(
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count?: IndirectCount,
+  ): void;
   // The rectangle drawn into, in pixels from the top left corner of the
   // attachments (the whole attachments by default): a tile of an atlas.
   setViewport(x: number, y: number, width: number, height: number): void;

@@ -212,7 +212,13 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       instances?: number;
       firstInstance?: number;
       // Drawn with the arguments of a buffer, at this offset.
-      indirect?: { buffer: GpuBuffer; offset: number };
+      // Drawn indirectly: the arguments; for several draws, how many.
+      indirect?: {
+        buffer: GpuBuffer;
+        offset: number;
+        maxCount?: number;
+        count?: { buffer: GpuBuffer; offset: number };
+      };
     }[],
     submits: 0,
     // The descriptors of the textures created, with their levels.
@@ -229,6 +235,14 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
     // The compute passes, by label, and their dispatches.
     computePasses: [] as string[],
     dispatches: [] as { pipeline: string; workgroups: readonly number[] }[],
+    // The copies between buffers: the labels of the buffers, the offsets.
+    bufferCopies: [] as {
+      from?: string;
+      fromOffset: number;
+      to?: string;
+      toOffset: number;
+      size: number;
+    }[],
     // The bind groups destroyed.
     destroyedGroups: 0,
     // The samplers created, destroyed or not.
@@ -396,7 +410,15 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           end: () => undefined,
         };
       },
-      copyBufferToBuffer: () => undefined,
+      copyBufferToBuffer: (from, fromOffset, to, toOffset, size) => {
+        log.bufferCopies.push({
+          from: (from as { label?: string }).label,
+          fromOffset,
+          to: (to as { label?: string }).label,
+          toOffset,
+          size,
+        });
+      },
       copyTextureToTexture: () => undefined,
       generateMipmaps: () => undefined,
       beginRenderPass: (descriptor) => {
@@ -461,6 +483,36 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
                     count: 0,
                     indexed: true,
                     indirect: { buffer, offset },
+                  }),
+              }
+            : {}),
+          ...(capabilities?.multiDrawIndirect
+            ? {
+                multiDrawIndirect: (
+                  buffer: GpuBuffer,
+                  offset: number,
+                  maxCount: number,
+                  count?: { buffer: GpuBuffer; offset: number },
+                ) =>
+                  log.draws.push({
+                    pipeline: pipelineLabel,
+                    groups: { ...boundGroups },
+                    count: 0,
+                    indexed: false,
+                    indirect: { buffer, offset, maxCount, count },
+                  }),
+                multiDrawIndexedIndirect: (
+                  buffer: GpuBuffer,
+                  offset: number,
+                  maxCount: number,
+                  count?: { buffer: GpuBuffer; offset: number },
+                ) =>
+                  log.draws.push({
+                    pipeline: pipelineLabel,
+                    groups: { ...boundGroups },
+                    count: 0,
+                    indexed: true,
+                    indirect: { buffer, offset, maxCount, count },
                   }),
               }
             : {}),

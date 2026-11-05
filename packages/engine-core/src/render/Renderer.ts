@@ -55,13 +55,26 @@ import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
 import { meshBox } from './bounds';
 import {
+  ArgumentWords,
   CulledDraws,
   CulledRun,
-  ArgumentWords,
+  CullingPhase,
   GpuCulling,
 } from './gpuCulling';
 import { lightRange } from './lightRange';
-import { isGlobalLight, LightClusters } from './lightClusters';
+import {
+  GpuClusterLights,
+  GpuLightClusters,
+  gpuLightGridSize,
+  MaxGpuClusterLights,
+} from './gpuLightClusters';
+import {
+  isGlobalLight,
+  LightClusters,
+  LightClusterTiles,
+  lightSpheres,
+  sliceParameters,
+} from './lightClusters';
 import { LightPoolStride, writeLightPool } from './lightPool';
 import {
   brdfGraph,
@@ -80,7 +93,8 @@ import { Material, MaterialValue } from './Material';
 import { IterableWeakSet } from './IterableWeakSet';
 import { Mesh } from './Mesh';
 import { MaxObjectId, ObjectRows, RowSource } from './ObjectRows';
-import type { OcclusionCuller } from './occlusion';
+import type { OcclusionCuller, OcclusionPyramid } from './occlusion';
+import { ArenaBuffers, ArenaPlacement } from './arenaBuffers';
 import {
   AllLayers,
   Renderable,
@@ -397,9 +411,14 @@ interface GpuMesh {
   version: number;
   // Stops listening to the destruction of the mesh.
   unsubscribe: () => void;
-  vertexBuffers: GpuBuffer[];
-  indexBuffer?: GpuBuffer;
+  readonly vertexBuffers: readonly GpuBuffer[];
+  readonly indexBuffer?: GpuBuffer;
+  // In the buffers of its MeshArena: drawn indirectly, from its place.
+  readonly placement?: ArenaPlacement;
 }
+
+// The most draws of a multiple draw (Direct3D 12 copies their arguments).
+const MaxMultiDraws = 1024;
 
 interface UniformGroup {
   buffer?: GpuBuffer;
@@ -559,6 +578,24 @@ interface CulledList {
   readonly entries: readonly PreparedItem[];
   handle: BufferHandle;
   draws?: CulledDraws;
+  // The runs drawn by each draw, [start, end): several for a multiple draw
+  // (the meshes of an arena), found when the culling is recorded.
+  groups?: readonly (readonly [number, number])[];
+}
+
+// A list of entries to cull on the GPU (see Renderer.addCullingPass): the
+// name of its buffers, and its phase of the occlusion culling, if any.
+interface CullingList {
+  readonly key: string;
+  readonly entries: readonly PreparedItem[];
+  readonly phase?:
+    | { readonly kind: 'early' }
+    | {
+        readonly kind: 'late';
+        // The list of the first phase (the same entries).
+        readonly early?: string;
+        readonly remember: boolean;
+      };
 }
 
 // A draw of the arguments of a buffer, which the backend must have.
@@ -858,6 +895,23 @@ export class Renderer {
   >();
   // The culling on the GPU, created on first use.
   private _gpuCulling?: GpuCulling;
+  // The arguments of the draws of the meshes whose vertex count the GPU
+  // writes (Mesh.gpuVertexCount), outside of the culling on the GPU: five
+  // u32 a run, the count copied by a pass before those drawing them, the
+  // instances written when they are drawn. The slots start over each frame;
+  // the run drawn with each.
+  private _countSlots?: { buffer: GpuBuffer; used: number; frame: number };
+  private readonly _countSlotOf = new Map<
+    PreparedItem,
+    { readonly buffer: GpuBuffer; readonly offset: number }
+  >();
+  // The buffers of the meshes of arenas, where the backend has multiple
+  // indirect draws (see MeshArena).
+  private _arenas?: ArenaBuffers;
+  // The light clusters filled on the GPU, created on first use.
+  private _gpuLightClusters?: GpuLightClusters;
+  // The bounding spheres of the lights they are filled from.
+  private _lightSpheres?: Float32Array<ArrayBuffer>;
 
   constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
@@ -1047,6 +1101,11 @@ export class Renderer {
         viewProjection: cameraCache.viewProjectionMatrix.value,
       });
     }
+    // The occlusion culling on the GPU, in two phases (see addCullingPass):
+    // nothing is left out here. The transparent passes (with a depth of
+    // earlier passes) are only culled by the frustum.
+    const gpuOcclusion = culling && occlusion?.addPyramid !== undefined;
+    const twoPhases = gpuOcclusion && testing;
     // What the camera sees, and the bounds of these receivers.
     const list: Renderable[] = [];
     let occluded = 0;
@@ -1056,7 +1115,7 @@ export class Renderer {
       layers,
       (item) => {
         const bounds = this.worldBounds(item);
-        if (occlusion && !occlusion.visible(item, bounds)) {
+        if (occlusion && !gpuOcclusion && !occlusion.visible(item, bounds)) {
           occluded++;
           return;
         }
@@ -1180,20 +1239,25 @@ export class Renderer {
       occluded,
       drawn: opaqueEntries.length + transparentEntries.length,
       // No run spans both: a material is opaque or transparent.
+      // The opaque runs are drawn in both phases of the occlusion culling
+      // on the GPU.
       drawCalls:
-        this.drawCalls(opaqueEntries) + this.drawCalls(transparentEntries),
+        this.drawCalls(opaqueEntries) * (twoPhases ? 2 : 1) +
+        this.drawCalls(transparentEntries),
       lights: used.length,
       shadowMaps: shadowPass?.tiles.length ?? 0,
       casters: shadowPass?.casters ?? 0,
     });
     const position = camera.position;
-    const lightValues = this.writeLights(
+    // With the culling on the GPU, the light clusters are filled there too.
+    const { values: lightValues, gpu: clusterLights } = this.writeLights(
       name,
       used,
       cameraCache,
       camera,
       shadowPass?.tiles,
       shadows ? rayShadows?.offset : undefined,
+      culling,
     );
     this._frameValues = writeLightValues(
       {
@@ -1216,17 +1280,62 @@ export class Renderer {
     );
     this.bindLights(view, this._frameLights);
     this.bindRays(view, rays?.scene);
+    // Read by the passes drawing lit items.
+    const lightGrid =
+      clusterLights && this.addLightClusterPass(graph, name, clusterLights);
     const first = opaqueEntries[0] ?? transparentEntries[0];
     if (first) {
       this.writeView(view, first.layout, this._frameValues);
     }
-    // The entries culled on the GPU, opaque then transparent.
-    const [opaqueCulled, transparentCulled] = culling
-      ? this.addCullingPass(graph, name, frustum, [
-          include !== 'transparent' ? opaqueEntries : [],
-          transparentEntries,
-        ])
+    // The entries culled on the GPU, opaque then transparent; with the
+    // occlusion culling, the opaque ones visible at the previous frame
+    // first, then the others and the transparent ones after the pyramid.
+    const opaqueKey = `${name} opaque`;
+    const transparentList: CullingList = {
+      key: `${name} transparent`,
+      entries: transparentEntries,
+    };
+    const firstCulled = culling
+      ? this.addCullingPass(
+          graph,
+          `${name} culling`,
+          name,
+          frustum,
+          twoPhases
+            ? [
+                {
+                  key: opaqueKey,
+                  entries: opaqueEntries,
+                  phase: { kind: 'early' },
+                },
+              ]
+            : [
+                {
+                  key: opaqueKey,
+                  entries: include !== 'transparent' ? opaqueEntries : [],
+                },
+                transparentList,
+              ],
+        )
       : [];
+    const opaqueCulled = firstCulled[0];
+    let transparentCulled = firstCulled[1];
+    this.addVertexCountPass(graph, `${name} vertex counts`, [
+      {
+        entries: include !== 'transparent' ? opaqueEntries : [],
+        ...(opaqueCulled ? { culled: opaqueCulled } : {}),
+      },
+      // With the occlusion culling on the GPU, culled in its second phase:
+      // see below.
+      ...(twoPhases
+        ? []
+        : [
+            {
+              entries: transparentEntries,
+              ...(transparentCulled ? { culled: transparentCulled } : {}),
+            },
+          ]),
+    ]);
     // The textures of the graph read by the materials, and the materials
     // that have them.
     const readInputs = (pass: {
@@ -1308,6 +1417,9 @@ export class Renderer {
         if (opaqueCulled) {
           pass.read(opaqueCulled.handle, 'indirect');
         }
+        if (lightGrid) {
+          pass.read(lightGrid, 'storage-read');
+        }
         let written: TextureHandle | undefined;
         let resolvedColor: TextureHandle | undefined;
         if (color && target) {
@@ -1347,7 +1459,80 @@ export class Renderer {
       });
       colorVersion = last ? opaque.resolved : opaque.color;
       depthVersion = opaque.depth;
-      if (testing) {
+      if (twoPhases) {
+        // The second phase: the others tested against the pyramid of what
+        // the first drew, and drawn over it (without multisampling).
+        const pyramid = (
+          occlusion.addPyramid as NonNullable<OcclusionCuller['addPyramid']>
+        ).call(occlusion, graph, {
+          renderer: this,
+          name,
+          depth: opaque.depth,
+          samples,
+        });
+        let lateCulled: CulledList | undefined;
+        [lateCulled, transparentCulled] = this.addCullingPass(
+          graph,
+          `${name} occlusion culling`,
+          name,
+          frustum,
+          [
+            {
+              key: `${name} opaque late`,
+              entries: opaqueEntries,
+              phase: { kind: 'late', early: opaqueKey, remember: true },
+            },
+            {
+              ...transparentList,
+              phase: { kind: 'late', remember: false },
+            },
+          ],
+          pyramid,
+        );
+        this.addVertexCountPass(graph, `${name} late vertex counts`, [
+          {
+            entries: opaqueEntries,
+            ...(lateCulled ? { culled: lateCulled } : {}),
+          },
+          {
+            entries: transparentEntries,
+            ...(transparentCulled ? { culled: transparentCulled } : {}),
+          },
+        ]);
+        if (lateCulled) {
+          const late = lateCulled;
+          const drawn = colorVersion;
+          const written = graph.addRasterPass(`${name} opaque late`, (pass) => {
+            const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+            const ibl =
+              environmentAtlas && pass.read(environmentAtlas, 'sampled');
+            const read = readInputs(pass);
+            pass.read(late.handle, 'indirect');
+            if (lightGrid) {
+              pass.read(lightGrid, 'storage-read');
+            }
+            // The color, then the outputs, as in the first phase.
+            const color = drawn && pass.writeColor(drawn, { load: 'load' });
+            for (const { output } of outputTargets) {
+              results[output.name] = pass.writeColor(results[output.name], {
+                load: 'load',
+              });
+            }
+            return {
+              color,
+              depth: pass.writeDepth(depthVersion, { load: 'load' }),
+              execute: ({ pass: encoder, texture }) => {
+                this.bindShadowMap(view, atlas && texture(atlas));
+                this.bindEnvironment(view, ibl && texture(ibl));
+                bindInputs(opaqueEntries, read, texture);
+                this.drawEntries(encoder, opaqueEntries, late);
+              },
+            };
+          });
+          colorVersion = written.color;
+          depthVersion = written.depth;
+        }
+      } else if (testing) {
         occlusion.addPasses(graph, {
           renderer: this,
           name,
@@ -1374,6 +1559,9 @@ export class Renderer {
       const read = readInputs(pass);
       if (transparentCulled) {
         pass.read(transparentCulled.handle, 'indirect');
+      }
+      if (lightGrid) {
+        pass.read(lightGrid, 'storage-read');
       }
       const written = pass.writeColor(over, {
         load: include === 'transparent' ? load : 'load',
@@ -1607,6 +1795,11 @@ export class Renderer {
     this._meshes.delete(mesh);
     this._uploadedMeshes.delete(mesh);
     gpu.unsubscribe();
+    if (gpu.placement) {
+      // Its place in the buffers of its arena, given back.
+      this._arenas?.release(mesh);
+      return;
+    }
     gpu.vertexBuffers.forEach((buffer) => buffer.destroy());
     gpu.indexBuffer?.destroy();
   }
@@ -1657,6 +1850,13 @@ export class Renderer {
     this._runner.destroy();
     this._gpuCulling?.destroy();
     this._gpuCulling = undefined;
+    this._gpuLightClusters?.destroy();
+    this._gpuLightClusters = undefined;
+    this._countSlots?.buffer.destroy();
+    this._countSlots = undefined;
+    this._arenas?.destroy();
+    this._arenas = undefined;
+    this._countSlotOf.clear();
     this._objectRows.destroy();
     this._objectGroups.clear();
     // Those being created are destroyed when they are (see ensurePipeline).
@@ -1807,7 +2007,9 @@ export class Renderer {
 
   // Writes the lights of scene passes into their light pool, and assigns
   // them to the clusters of the camera (the global ones first, `lights`
-  // gives them first). Returns the frame values of the clusters.
+  // gives them first). Returns the frame values of the clusters; with
+  // `gpu`, what the GPU assigns them from instead (see addLightClusterPass),
+  // when they are not too many.
   private writeLights(
     name: string,
     lights: readonly BaseLight[],
@@ -1815,7 +2017,11 @@ export class Renderer {
     camera: Camera,
     shadows: readonly ShadowTile[] | undefined,
     rayOffset: number | undefined,
-  ): Record<string, UniformValue> {
+    gpu = false,
+  ): {
+    values: Record<string, UniformValue>;
+    gpu?: GpuClusterLights & { readonly grid: GpuBuffer };
+  } {
     let frameLights = this._lights.get(name);
     if (!frameLights) {
       frameLights = {};
@@ -1837,9 +2043,50 @@ export class Renderer {
     );
     let values: Record<string, UniformValue>;
     let grid: Uint32Array<ArrayBuffer>;
+    const global = lights.findIndex((light) => !isGlobalLight(light));
+    const first = global < 0 ? lights.length : global;
+    const bounded = lights.length - first;
+    if (
+      this._lightClusters &&
+      gpu &&
+      bounded > 0 &&
+      bounded <= MaxGpuClusterLights
+    ) {
+      const { near, far, scale, bias } = sliceParameters(
+        camera.projection.near,
+        camera.projection.far,
+      );
+      this._lightSpheres = lightSpheres(
+        lights.slice(first),
+        this._lightSpheres,
+      );
+      // Filled on the GPU: only its size here.
+      this.uploadLights(
+        frameLights,
+        'grid',
+        `${name} light grid`,
+        new ArrayBuffer(0),
+        gpuLightGridSize(bounded),
+      );
+      this._frameLights = frameLights;
+      const { x, y, slices } = LightClusterTiles;
+      return {
+        values: {
+          lightClusters: [x, y, slices, first],
+          lightClusterDepth: [scale, bias, 0, 0],
+        },
+        gpu: {
+          spheres: this._lightSpheres,
+          count: bounded,
+          first,
+          view: cameraCache.viewMatrix.value,
+          projection: cameraCache.projectionMatrix.value,
+          depths: [near, far, scale, bias],
+          grid: frameLights.grid as GpuBuffer,
+        },
+      };
+    }
     if (this._lightClusters) {
-      const global = lights.findIndex((light) => !isGlobalLight(light));
-      const first = global < 0 ? lights.length : global;
       const { near, far } = camera.projection;
       const assigned = this._lightClusters.assign(
         lights.slice(first),
@@ -1871,7 +2118,7 @@ export class Renderer {
       grid.byteOffset,
     );
     this._frameLights = frameLights;
-    return values;
+    return { values };
   }
 
   // Writes the data of the pool or the grid of scene passes, in a buffer
@@ -1902,7 +2149,10 @@ export class Renderer {
         }
       }
     }
-    buffer.write(0, data, dataOffset, size);
+    // Nothing to write for a grid filled on the GPU.
+    if (data.byteLength > 0) {
+      buffer.write(0, data, dataOffset, size);
+    }
   }
 
   // The lights of the last scene passes; none before the first.
@@ -2017,6 +2267,11 @@ export class Renderer {
       format,
       size: { width: this._shadowAtlasSize, height: this._shadowAtlasSize },
     });
+    this.addVertexCountPass(
+      graph,
+      `${name} vertex counts`,
+      draws.map(({ entries }) => ({ entries })),
+    );
     const written = graph.addRasterPass(name, (pass) => ({
       depth: pass.writeDepth(atlas, { load: 'clear', clearValue: 1 }),
       execute: ({ pass: encoder }) => {
@@ -3136,6 +3391,33 @@ export class Renderer {
     }
     // Parts of its vertices rewritten (Mesh.updateVertices): only them.
     const updates = gpu && mesh.updatesSince(gpu.version);
+    const arenas = mesh.arena && this.arenaBuffers();
+    if (arenas) {
+      if (gpu?.placement && updates) {
+        arenas.update(mesh, updates);
+        gpu.version = mesh.version;
+        return gpu;
+      }
+      const placement = arenas.place(mesh);
+      gpu = {
+        version: mesh.version,
+        unsubscribe:
+          gpu?.unsubscribe ?? mesh.onDestroy(() => this.releaseMesh(mesh)),
+        get vertexBuffers() {
+          return placement.vertexBuffers;
+        },
+        get indexBuffer() {
+          return placement.indexBuffer;
+        },
+        placement,
+      };
+      this._meshes.set(mesh, gpu);
+      this._uploadedMeshes.add(mesh);
+      if (mesh.releasable) {
+        mesh.releaseData();
+      }
+      return gpu;
+    }
     if (gpu && updates) {
       for (const { buffer, byteOffset, data } of updates) {
         gpu.vertexBuffers[buffer].write(
@@ -3148,8 +3430,10 @@ export class Renderer {
       gpu.version = mesh.version;
       return gpu;
     }
-    gpu?.vertexBuffers.forEach((buffer) => buffer.destroy());
-    gpu?.indexBuffer?.destroy();
+    if (gpu && !gpu.placement) {
+      gpu.vertexBuffers.forEach((buffer) => buffer.destroy());
+      gpu.indexBuffer?.destroy();
+    }
     const unsubscribe =
       gpu?.unsubscribe ?? mesh.onDestroy(() => this.releaseMesh(mesh));
 
@@ -3185,22 +3469,25 @@ export class Renderer {
     return gpu;
   }
 
-  // The compute pass culling lists of entries on the GPU, before the passes
+  // A compute pass culling lists of entries on the GPU, before the passes
   // drawing them: for each list (none when empty), the buffer of the
   // arguments of its draws, as the graph knows it, and what its pass
-  // records.
+  // records. `view`: the name of the scene passes, whose history the phases
+  // of the occlusion culling share; `pyramid`: what the second phase tests
+  // against.
   private addCullingPass(
     graph: RenderGraph,
-    name: string,
+    passName: string,
+    view: string,
     frustum: Frustum,
-    lists: readonly (readonly PreparedItem[])[],
+    lists: readonly CullingList[],
+    pyramid?: OcclusionPyramid,
   ): (CulledList | undefined)[] {
     const culling = (this._gpuCulling ??= new GpuCulling(this.backend));
-    const culled = lists.map((entries, i): CulledList | undefined => {
+    const culled = lists.map(({ key, entries }): CulledList | undefined => {
       if (entries.length === 0) {
         return undefined;
       }
-      const key = `${name} ${i === 0 ? 'opaque' : 'transparent'}`;
       let runs = 0;
       forEachRun(entries, () => runs++);
       return {
@@ -3212,29 +3499,47 @@ export class Renderer {
         ),
       };
     });
-    const used = culled.filter((list) => list !== undefined);
+    const used = culled.flatMap((list, i) =>
+      list ? [{ list, phase: lists[i].phase }] : [],
+    );
     if (used.length === 0) {
       return culled;
     }
     const planes = Array.from(frustum.planes);
-    graph.addComputePass(`${name} culling`, (pass) => {
-      for (const list of used) {
+    graph.addComputePass(passName, (pass) => {
+      for (const { list } of used) {
         list.handle = pass.write(list.handle, 'storage-write');
       }
+      const levels = pyramid?.levels.map((level) =>
+        pass.read(level, 'sampled'),
+      );
       return {
-        execute: ({ pass: encoder }) => {
-          for (const list of used) {
-            const { first, rows, table } = this._objectRows.reserve(
-              list.entries,
-              objectOf,
-            );
+        execute: ({ pass: encoder, texture }) => {
+          const textures: Record<string, MaterialValue> = {};
+          pyramid?.names.forEach((levelName, i) => {
+            textures[levelName] = texture(
+              (levels as TextureHandle[])[i],
+            ) as MaterialValue;
+          });
+          for (const { list, phase } of used) {
+            // The second phase draws the candidates of the first: their
+            // rows are reserved, only their instances are added.
+            const { first, rows, table } =
+              phase?.kind === 'late' && phase.early
+                ? {
+                    ...this._objectRows.extend(list.entries.length),
+                    rows: new Uint32Array(list.entries.length),
+                  }
+                : this._objectRows.reserve(list.entries, objectOf);
             const runs: CulledRun[] = [];
+            const starts: number[] = [];
             forEachRun(list.entries, (start, count) => {
               const { item } = list.entries[start];
               const indices = item.mesh.description.indexBuffer;
+              const mesh = this.gpuMesh(item.mesh);
               const indexed =
-                this.gpuMesh(item.mesh).indexBuffer !== undefined &&
-                indices !== undefined;
+                mesh.indexBuffer !== undefined && indices !== undefined;
+              starts.push(start);
               runs.push({
                 start,
                 count,
@@ -3242,8 +3547,42 @@ export class Renderer {
                   ? indices.count
                   : item.mesh.description.vertexCount,
                 indexed,
+                firstIndex: mesh.placement?.firstIndex ?? 0,
+                baseVertex: mesh.placement?.baseVertex ?? 0,
               });
             });
+            // The runs of an arena drawn together.
+            const groups = this.multiDrawGroups(list.entries, starts);
+            list.groups = groups;
+            for (const group of groups) {
+              for (let r = group[0]; r < group[1]; r++) {
+                runs[r] = { ...runs[r], group };
+              }
+            }
+            const pack =
+              this.backend.capabilities?.drawIndirectCount === true &&
+              groups.some(([start, end]) => end - start > 1);
+            let cullingPhase: CullingPhase | undefined;
+            if (phase?.kind === 'early') {
+              // Sized for every row: the second phase writes them.
+              cullingPhase = {
+                kind: 'early',
+                history: culling.history(view, this._objectRows.rowCount),
+              };
+            } else if (phase?.kind === 'late') {
+              if (!pyramid) {
+                throw new Error(`"${passName}": no depth pyramid to test`);
+              }
+              cullingPhase = {
+                kind: 'late',
+                // The one of the first phase: still recorded.
+                history: culling.history(view),
+                pyramid,
+                textures,
+                ...(phase.early ? { early: phase.early } : {}),
+                remember: phase.remember,
+              };
+            }
             list.draws = culling.record(encoder, list.key, {
               first,
               rows,
@@ -3251,12 +3590,135 @@ export class Renderer {
               bounds: (index) => this.worldBounds(list.entries[index].item),
               runs,
               planes,
+              ...(cullingPhase ? { phase: cullingPhase } : {}),
+              ...(pack ? { pack } : {}),
             });
           }
         },
       };
     });
     return culled;
+  }
+
+  // The copy pass giving the draws of entries their vertex count written by
+  // the GPU (Mesh.gpuVertexCount), before the passes drawing them: in the
+  // arguments of the culling on the GPU (`culled`, written by its pass), or
+  // in a slot of their own. Nothing without such meshes, or without
+  // indirect draws (their vertexCount is drawn).
+  private addVertexCountPass(
+    graph: RenderGraph,
+    name: string,
+    lists: readonly {
+      readonly entries: readonly PreparedItem[];
+      readonly culled?: CulledList;
+    }[],
+  ): void {
+    if (!this.backend.capabilities?.indirectDraw) {
+      return;
+    }
+    const copies: {
+      readonly from: { readonly buffer: GpuBuffer; readonly offset: number };
+      readonly list?: CulledList;
+      readonly to: { readonly buffer?: GpuBuffer; readonly offset: number };
+    }[] = [];
+    for (const { entries, culled } of lists) {
+      let run = 0;
+      forEachRun(entries, (start) => {
+        const mesh = entries[start].item.mesh;
+        const from = mesh.gpuVertexCount;
+        if (from && !mesh.description.indexBuffer) {
+          if (culled) {
+            copies.push({
+              from,
+              list: culled,
+              to: { offset: run * ArgumentWords * 4 },
+            });
+          } else {
+            const slot = this.countSlot();
+            this._countSlotOf.set(entries[start], slot);
+            copies.push({ from, to: slot });
+          }
+        }
+        run++;
+      });
+    }
+    if (copies.length === 0) {
+      return;
+    }
+    graph.addCopyPass(name, (pass) => {
+      for (const list of new Set(copies.map((copy) => copy.list))) {
+        if (list) {
+          list.handle = pass.write(list.handle, 'copy-dst');
+        }
+      }
+      // The slots are read by the passes declared after it.
+      pass.hasSideEffects();
+      return {
+        execute: ({ encoder }) => {
+          for (const { from, list, to } of copies) {
+            encoder.copyBufferToBuffer(
+              from.buffer,
+              from.offset,
+              (list?.draws?.arguments ?? to.buffer) as GpuBuffer,
+              to.offset,
+              4,
+            );
+          }
+        },
+      };
+    });
+  }
+
+  // A slot of the arguments of a draw whose vertex count the GPU writes:
+  // valid until the next frame.
+  private countSlot(): { readonly buffer: GpuBuffer; readonly offset: number } {
+    const frame = this._objectRows.frame;
+    let slots = this._countSlots;
+    if (slots && slots.frame !== frame) {
+      slots.used = 0;
+      slots.frame = frame;
+      this._countSlotOf.clear();
+    }
+    const size = ArgumentWords * 4;
+    if (!slots || (slots.used + 1) * size > slots.buffer.size) {
+      if (slots) {
+        // Still drawn from by the passes of the frame.
+        this._objectRows.retire(slots.buffer);
+      }
+      slots = {
+        buffer: this.backend.buffers.create({
+          label: 'vertex counts',
+          size: Math.max(((slots?.used ?? 0) + 1) * size * 2, 256),
+          usage: ['indirect', 'copy-dst'],
+        }),
+        used: 0,
+        frame,
+      };
+      this._countSlots = slots;
+    }
+    return { buffer: slots.buffer, offset: slots.used++ * size };
+  }
+
+  // The compute pass filling the light grid of scene passes (see
+  // GpuLightClusters), before the passes reading it: the buffer as the
+  // graph knows it.
+  private addLightClusterPass(
+    graph: RenderGraph,
+    name: string,
+    lights: GpuClusterLights & { readonly grid: GpuBuffer },
+  ): BufferHandle {
+    const clusters = (this._gpuLightClusters ??= new GpuLightClusters(
+      this.backend,
+    ));
+    const imported = graph.importBuffer(`${name} light grid`, lights.grid);
+    return graph.addComputePass(`${name} light clusters`, (pass) => {
+      const grid = pass.write(imported, 'storage-write');
+      return {
+        grid,
+        execute: ({ pass: encoder }) =>
+          clusters.record(encoder, name, lights, lights.grid),
+      };
+    }).grid;
   }
 
   // Draws entries in order: culled on the GPU (indirect draws), or with
@@ -3271,13 +3733,74 @@ export class Renderer {
       this.drawAll(pass, entries);
       return;
     }
-    let run = 0;
-    forEachRun(entries, (start) =>
-      this.draw(pass, entries[start], 0, 0, {
+    const starts: number[] = [];
+    forEachRun(entries, (start) => starts.push(start));
+    for (const [first, end] of culled.groups ??
+      starts.map((_, r) => [r, r + 1] as const)) {
+      const offset = first * ArgumentWords * 4;
+      if (end - first === 1) {
+        this.draw(pass, entries[starts[first]], 0, 0, { draws, offset });
+        continue;
+      }
+      // One multiple draw: the runs with instances packed, and their count
+      // (drawIndirectCount), or every run.
+      const packed = draws.packed;
+      this.draw(pass, entries[starts[first]], 0, 0, {
         draws,
-        offset: run++ * ArgumentWords * 4,
-      }),
-    );
+        offset,
+        multi: packed
+          ? {
+              buffer: packed.arguments,
+              count: { buffer: packed.counts, offset: first * 4 },
+              maxCount: end - first,
+            }
+          : { buffer: draws.arguments, maxCount: end - first },
+      });
+    }
+  }
+
+  // The groups of runs of entries (the first entry of each in `starts`)
+  // drawn by one multiple draw, [start, end) in runs: the consecutive runs
+  // of meshes in the same buffers of an arena, with the same pipeline,
+  // material and indices, where the backend has multiple indirect draws.
+  // Each other run alone.
+  private multiDrawGroups(
+    entries: readonly PreparedItem[],
+    starts: readonly number[],
+  ): (readonly [number, number])[] {
+    const multi = this.backend.capabilities?.multiDrawIndirect === true;
+    const groups: [number, number][] = [];
+    let previous: PreparedItem | undefined;
+    let previousShared: object | undefined;
+    starts.forEach((start, r) => {
+      const entry = entries[start];
+      const mesh = entry.item.mesh;
+      const shared =
+        mesh.gpuVertexCount === undefined
+          ? this.gpuMesh(mesh).placement?.shared
+          : undefined;
+      const last = groups[groups.length - 1];
+      if (
+        multi &&
+        shared !== undefined &&
+        previous !== undefined &&
+        shared === previousShared &&
+        entry.pipelineKey === previous.pipelineKey &&
+        entry.program === previous.program &&
+        entry.view === previous.view &&
+        entry.item.material === previous.item.material &&
+        !!mesh.description.indexBuffer ===
+          !!previous.item.mesh.description.indexBuffer &&
+        last[1] - last[0] < MaxMultiDraws
+      ) {
+        last[1] = r + 1;
+      } else {
+        groups.push([r, r + 1]);
+      }
+      previous = entry;
+      previousShared = shared;
+    });
+    return groups;
   }
 
   // Draws entries in order: with an object table, their instances first.
@@ -3301,12 +3824,25 @@ export class Renderer {
 
   private draw(
     pass: GpuRenderPassEncoder,
-    { item, program, layout, pipelineKey, view }: PreparedItem,
+    entry: PreparedItem,
     instance: number,
     instances: number,
-    // Drawn with the arguments written by the culling on the GPU.
-    indirect?: { readonly draws: CulledDraws; readonly offset: number },
+    // Drawn with the arguments written by the culling on the GPU: those at
+    // `offset`, or several draws from `multi`.
+    indirect?: {
+      readonly draws: CulledDraws;
+      readonly offset: number;
+      readonly multi?: {
+        readonly buffer: GpuBuffer;
+        readonly maxCount: number;
+        readonly count?: {
+          readonly buffer: GpuBuffer;
+          readonly offset: number;
+        };
+      };
+    },
   ): void {
+    const { item, program, layout, pipelineKey, view } = entry;
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
     ).pipeline;
@@ -3354,24 +3890,90 @@ export class Renderer {
         state.indexBuffer = mesh.indexBuffer;
         state.indexFormat = format;
       }
-      if (indirect) {
+      if (indirect?.multi) {
+        const { buffer, maxCount, count } = indirect.multi;
+        indirectDraw(pass.multiDrawIndexedIndirect).call(
+          pass,
+          buffer,
+          indirect.offset,
+          maxCount,
+          count,
+        );
+      } else if (indirect) {
         indirectDraw(pass.drawIndexedIndirect).call(
           pass,
           indirect.draws.arguments,
           indirect.offset,
         );
+      } else if (mesh.placement) {
+        // From its place in the buffers of its arena.
+        const slot = this.countSlot();
+        slot.buffer.write(
+          slot.offset,
+          new Uint32Array([
+            indices.count,
+            instances,
+            mesh.placement.firstIndex,
+            mesh.placement.baseVertex,
+            instance,
+          ]).buffer,
+        );
+        indirectDraw(pass.drawIndexedIndirect).call(
+          pass,
+          slot.buffer,
+          slot.offset,
+        );
       } else {
         pass.drawIndexed(indices.count, instances, instance);
       }
+    } else if (indirect?.multi) {
+      const { buffer, maxCount, count } = indirect.multi;
+      indirectDraw(pass.multiDrawIndirect).call(
+        pass,
+        buffer,
+        indirect.offset,
+        maxCount,
+        count,
+      );
     } else if (indirect) {
       indirectDraw(pass.drawIndirect).call(
         pass,
         indirect.draws.arguments,
         indirect.offset,
       );
+    } else if (this._countSlotOf.has(entry) || mesh.placement) {
+      // Its vertex count copied by the GPU (the instances, the first vertex
+      // and the first instance after it), or from its place in its arena.
+      const copied = this._countSlotOf.get(entry);
+      const slot = copied ?? this.countSlot();
+      const words = [instances, mesh.placement?.baseVertex ?? 0, instance, 0];
+      slot.buffer.write(
+        copied ? slot.offset + 4 : slot.offset,
+        new Uint32Array(
+          copied ? words : [item.mesh.description.vertexCount, ...words],
+        ).buffer,
+      );
+      indirectDraw(pass.drawIndirect).call(pass, slot.buffer, slot.offset);
     } else {
       pass.draw(item.mesh.description.vertexCount, instances, instance);
     }
+  }
+
+  // The buffers of the meshes of arenas, where the backend can draw them
+  // (multiple indirect draws): undefined elsewhere.
+  private arenaBuffers(): ArenaBuffers | undefined {
+    const capabilities = this.backend.capabilities;
+    if (
+      !this._arenas &&
+      capabilities?.indirectDraw === true &&
+      capabilities.multiDrawIndirect === true &&
+      !capabilities.emulatedCompute
+    ) {
+      this._arenas = new ArenaBuffers(this.backend, (buffer) =>
+        this._objectRows.retire(buffer),
+      );
+    }
+    return this._arenas;
   }
 
   // The bind group of the object table, for a layout of the 'object' group:

@@ -564,6 +564,13 @@ int32_t fdw_vk_indirect_draw(const fdw_vk_context *context) {
   return context->indirectDraw ? 1 : 0;
 }
 
+int32_t fdw_vk_multi_draw_indirect(const fdw_vk_context *context) {
+  if (!context->indirectDraw || !context->multiDrawIndirect) {
+    return 0;
+  }
+  return 1 | (context->drawIndirectCount ? 2 : 0);
+}
+
 int32_t fdw_vk_format_supported(const fdw_vk_context *context,
                                 const char *name) {
   const FormatInfo *format = findFormat(name);

@@ -83,8 +83,8 @@ renderer.render({ items: [terrain, ...autres], camera, surface, lights });
    pixels à l'écran, vue depuis son point le plus proche ; chaque patch
    prend le niveau le plus fin de ses quatre arêtes. Les patchs hors de la
    vue sont retirés.
-3. **Le draw** : les patchs sont triés par niveau et écrits dans une
-   texture, un texel chacun. Un seul draw, sans vertex buffer, génère tous
+3. **Le draw** : les patchs sont triés par niveau et écrits dans un
+   storage buffer, après le premier sommet de chaque niveau. Un seul draw, sans vertex buffer, génère tous
    leurs sommets : depuis son numéro, un sommet trouve son niveau, son
    patch, son quad, son coin.
 4. **L'évaluation**, dans le vertex shader : les coins du patch sont lus
@@ -101,7 +101,9 @@ patchs interpolent leurs coins de sorte qu'une arête commune donne les mêmes
 positions au bit près.
 
 Le même chemin en WebGPU, en Vulkan et en WebGL2 : seulement des vertex
-shaders et des textures, ni calcul ni tessellation matérielle.
+shaders, des textures et un storage buffer (une texture de données en
+WebGL2), ni calcul ni tessellation matérielle ; là où le backend les a, le
+GPU peut aussi choisir les niveaux (plus bas).
 
 ## Les attributs calculés
 
@@ -118,6 +120,30 @@ g.vertexAttribute('normal', [0, 1, 0]);
 
 Le mesh n'a plus besoin de ces attributs ; un mesh sans vertex buffer
 dessine `setVertexCount(count)` sommets, générés dans le shader.
+
+## Les niveaux sur le GPU
+
+Là où le backend a des compute shaders et des draws indirects (Vulkan,
+Direct3D 12, WebGPU avec `indirect-first-instance`), le GPU peut choisir
+les niveaux lui-même :
+
+```ts
+const terrain = new PatchSurface(backend, { patches, material, levels: 'gpu' });
+terrain.update(camera, { width, height }); // enregistre le choix, rien par patch
+renderer.render({ items: [terrain], camera, surface });
+```
+
+`update` lance alors des passes de calcul, dans une soumission avant la
+frame : le niveau de chaque arête, les patchs dans le champ à chaque niveau,
+rangés par une somme préfixe, le premier sommet de chaque niveau et le
+nombre de sommets du draw (`mesh.gpuVertexCount`), que le renderer recopie
+dans les arguments d'un draw indirect. Le même choix que sur le CPU : la
+même image. Le CPU ne touche plus les patchs, mais `terrain.stats` n'est
+plus mis à jour (`terrain.gpu` dit quel chemin est pris). En WebGL2, le CPU
+choisit, quelle que soit l'option.
+
+Les deux chemins écrivent les patchs dessinés dans le même storage buffer
+(`PatchValues.draws`), lu par `patchVertex` : le matériau est le même.
 
 ## Ce que ça coûte
 

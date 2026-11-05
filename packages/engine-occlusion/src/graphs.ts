@@ -96,10 +96,13 @@ export function nextLevelGraph(): MaterialGraphData {
 export const levelName = (level: number) => `level${level}`;
 
 /**
- * The test of the boxes against a pyramid of `levels` levels: a texel per
- * box, 1 where it may be visible, 0 where the opaque items hide it. The
- * boxes are in 'bounds', two texels each (min, max: x, y, z in the world),
- * the box of the texel (x, y) at (2x, y) and (2x + 1, y).
+ * The test of a box against a pyramid of `levels` levels, added to a graph
+ * (a fragment of the test pass, or a compute graph testing the candidates
+ * of the culling on the GPU): true where the box may be visible, false
+ * where the opaque items hide it. `low` and `high` are its corners in the
+ * world (vec3f). Reads the uniforms view, viewProjection, depthSize (the
+ * size of the depth buffer, in pixels), near (the distance of the near
+ * plane) and margin, and the textures of the levels (levelName).
  *
  * The box is projected (its 8 corners) to a rectangle of pixels of the depth
  * buffer, and its nearest point to a distance along the axis of the camera.
@@ -107,32 +110,17 @@ export const levelName = (level: number) => `level${level}`;
  * farthest depth of the opaque items over it: the box is hidden when its
  * nearest point is farther. Boxes crossing the near plane are visible.
  */
-export function testGraph(levels: number): MaterialGraphData {
-  const g = new GraphBuilder(`occlusion test, ${levels} levels`);
+export function boxVisibility(
+  g: GraphBuilder,
+  low: PortHandle,
+  high: PortHandle,
+  levels: number,
+): PortHandle {
   const view = g.uniform('view', BuiltinTypes.mat4f);
   const viewProjection = g.uniform('viewProjection', BuiltinTypes.mat4f);
   const depthSize = g.uniform('depthSize', BuiltinTypes.vec2f);
   const near = g.uniform('near', BuiltinTypes.f32);
   const margin = g.uniform('margin', BuiltinTypes.f32);
-  const bounds = g.texture('bounds', { sampleType: 'unfilterable-float' });
-
-  const texel = pixelOf(g, g.uniform('slots', BuiltinTypes.vec2f));
-  const corner = (dx: number) =>
-    g
-      .call(std.textureLoad, {
-        texture: bounds,
-        coords: toInt(
-          g,
-          g.call(std.vec2, {
-            x: call(g, add, call(g, mul, texel.swizzle('x'), 2), dx),
-            y: texel.swizzle('y'),
-          }),
-        ),
-      })
-      .swizzle('xyz');
-  const low = corner(0);
-  const high = corner(1);
-
   let nearest: PortHandle | undefined;
   let lowNdc: PortHandle | undefined;
   let highNdc: PortHandle | undefined;
@@ -239,11 +227,44 @@ export function testGraph(levels: number): MaterialGraphData {
     a: nearest as PortHandle,
     b: near,
   });
-  const visible = g.call(std.select, {
-    ifFalse: g.call(std.select, { ifFalse: 1, ifTrue: 0, condition: hidden }),
-    ifTrue: 1,
+  // Visible across the near plane, else where not hidden.
+  return g.call(std.select, {
+    ifFalse: g.call(std.select, {
+      ifFalse: true,
+      ifTrue: false,
+      condition: hidden,
+    }),
+    ifTrue: true,
     condition: crossesNear,
   });
-  write(g, visible);
+}
+
+/**
+ * The test of the boxes against a pyramid of `levels` levels: a texel per
+ * box, 1 where it may be visible, 0 where the opaque items hide it (see
+ * boxVisibility). The boxes are in 'bounds', two texels each (min, max: x,
+ * y, z in the world), the box of the texel (x, y) at (2x, y) and (2x + 1,
+ * y).
+ */
+export function testGraph(levels: number): MaterialGraphData {
+  const g = new GraphBuilder(`occlusion test, ${levels} levels`);
+  const bounds = g.texture('bounds', { sampleType: 'unfilterable-float' });
+
+  const texel = pixelOf(g, g.uniform('slots', BuiltinTypes.vec2f));
+  const corner = (dx: number) =>
+    g
+      .call(std.textureLoad, {
+        texture: bounds,
+        coords: toInt(
+          g,
+          g.call(std.vec2, {
+            x: call(g, add, call(g, mul, texel.swizzle('x'), 2), dx),
+            y: texel.swizzle('y'),
+          }),
+        ),
+      })
+      .swizzle('xyz');
+  const visible = boxVisibility(g, corner(0), corner(1), levels);
+  write(g, g.call(std.select, { ifFalse: 0, ifTrue: 1, condition: visible }));
   return g.build();
 }

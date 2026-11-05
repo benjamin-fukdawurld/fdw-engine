@@ -53,6 +53,48 @@ function boundingSphere(
 }
 
 /**
+ * The slices of the clusters between the near and far planes of a camera:
+ * the planes (kept apart), and the scale and bias of the slice of a view
+ * depth d, floor(log2(d) × scale + bias): 0 at the near plane, `slices` at
+ * the far one.
+ */
+export function sliceParameters(
+  near: number,
+  far: number,
+): { near: number; far: number; scale: number; bias: number } {
+  near = Math.max(near, 1e-6);
+  far = Math.max(far, near * 1.0001);
+  const scale = LightClusterTiles.slices / Math.log2(far / near);
+  return { near, far, scale, bias: -Math.log2(near) * scale };
+}
+
+/**
+ * The bounding spheres of lights, four floats each (x, y, z in the world,
+ * radius): see the clusters filled on the GPU (GpuLightClusters). A radius
+ * of 0 for the lights that reach nothing or everything (no range).
+ */
+export function lightSpheres(
+  lights: readonly BaseLight[],
+  out?: Float32Array<ArrayBuffer>,
+): Float32Array<ArrayBuffer> {
+  const spheres =
+    out && out.length >= lights.length * 4
+      ? out
+      : new Float32Array(Math.max(lights.length, 1) * 8);
+  const sphere = new Float64Array(4);
+  lights.forEach((light, i) => {
+    const range = lightRange(light);
+    if (!(range > 0) || range === Infinity) {
+      spheres.fill(0, i * 4, i * 4 + 4);
+      return;
+    }
+    boundingSphere(light as PointLight | SpotLight, range, sphere);
+    spheres.set(sphere, i * 4);
+  });
+  return spheres;
+}
+
+/**
  * Assigns the bounded lights of a view to its clusters, on the CPU: the
  * light grid read by the clustered light.sum (two u32 per cluster, the
  * first element of its list and its length, then the lists).
@@ -91,12 +133,9 @@ export class LightClusters {
     lightClusterDepth: number[];
   } {
     const { x: tilesX, y: tilesY, slices } = LightClusterTiles;
-    near = Math.max(near, 1e-6);
-    far = Math.max(far, near * 1.0001);
-    // slice = floor(log2(depth) × scale + bias): 0 at the near plane,
-    // `slices` at the far one.
-    const scale = slices / Math.log2(far / near);
-    const bias = -Math.log2(near) * scale;
+    let scale: number;
+    let bias: number;
+    ({ near, far, scale, bias } = sliceParameters(near, far));
     const depthOf = (slice: number) => near * (far / near) ** (slice / slices);
     const sliceOf = (depth: number) =>
       Math.min(

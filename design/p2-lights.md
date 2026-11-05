@@ -117,3 +117,5 @@ Le CPU des lumières d'une image (le pool et les clusters), des lampes de porté
 ## 10. État
 
 Fait (27 octobre 2026) : le pool, les clusters sur le CPU, l'environnement et son préfiltrage, le path tracer et les reflets sur le pool et l'environnement, leurs tests sur les quatre backends.
+
+_Mis à jour (5 novembre 2026)_ : les clusters remplis sur le GPU, avec `gpuCulling`, par P24 ([§3.5](p24-gpu-driven.md#35-les-clusters-de-lumières-étape-5)) : les mêmes listes, jusqu'à 1024 lumières bornées dans le champ.

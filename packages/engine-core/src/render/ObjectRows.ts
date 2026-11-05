@@ -63,6 +63,7 @@ export class ObjectRows {
   private _instances = new Uint32Array(256);
   private _cursor = 0;
   private _executed = false;
+  private _frame = 0;
   // Destroyed at the next frame: the tables replaced, and what the renderer
   // retires (see retire).
   private readonly _retired: { destroy?(): void }[] = [];
@@ -72,6 +73,16 @@ export class ObjectRows {
   /** Changes when the GPU table is replaced: its bind groups too. */
   get version(): number {
     return this._version;
+  }
+
+  /** Changes when a new frame starts (see beginFrame). */
+  get frame(): number {
+    return this._frame;
+  }
+
+  /** The rows given to objects so far: the size of a table holding them. */
+  get rowCount(): number {
+    return this._count;
   }
 
   /** The GPU table, created on first use. */
@@ -89,6 +100,7 @@ export class ObjectRows {
     }
     this._executed = false;
     this._cursor = 0;
+    this._frame++;
     for (const resource of this._retired) {
       resource.destroy?.();
     }
@@ -144,6 +156,27 @@ export class ObjectRows {
       rows: this._instances.subarray(first, first + count),
       table,
     };
+  }
+
+  /**
+   * Reserves `count` more instances, for the rows of entries reserved
+   * before (the second phase of the occlusion culling on the GPU, which
+   * draws the same candidates): the first instance and the table.
+   */
+  extend(count: number): { first: number; table: GpuObjectTable } {
+    this._executed = true;
+    const first = this._cursor;
+    this._cursor += count;
+    if (this._cursor > this._instances.length) {
+      const grown = new Uint32Array(
+        Math.max(this._instances.length * 2, this._cursor),
+      );
+      grown.set(this._instances.subarray(0, first));
+      this._instances = grown;
+    }
+    const table = this.ensure(this._count, this._cursor);
+    this.writeDirty(table);
+    return { first, table };
   }
 
   destroy(): void {

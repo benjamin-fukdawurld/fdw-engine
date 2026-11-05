@@ -83,6 +83,8 @@ the programs against it:
 | `maxColorAttachmentBytesPerSample` | Bytes per pixel of the color targets (WebGPU)       | —                                             |
 | `independentBlend`                 | Targets of a pipeline with different blend states   | false                                         |
 | `indirectDraw`                     | Draws whose arguments the GPU writes                | —                                             |
+| `multiDrawIndirect`                | Several indirect draws in one command               | —                                             |
+| `drawIndirectCount`                | Their number written by the GPU                     | —                                             |
 
 A graph using a missing feature fails to compile with an explicit error;
 test the capability to offer a fallback.
@@ -213,6 +215,53 @@ the first one). The passes then draw with `drawIndexedIndirect` and
   (5 u32: indices, instances, first index, base vertex, first instance).
   A compute pass can write the instances of the table in
   `table.instanceBuffer`.
+
+The culling on the GPU brings along the rest of what the GPU can choose
+itself:
+
+- **The occlusion culling without delay**: with an `OcclusionCulling`,
+  the objects visible at the previous frame are drawn first, then the
+  others are tested against the depth pyramid of what they drew, in the
+  same frame (see the
+  [occlusion culling tutorial](/fdw-engine/tutorials/occlusion-culling/#without-delay-on-the-gpu)).
+- **The light clusters** are filled by compute passes, up to 1024 point
+  and spot lights in view (`MaxGpuClusterLights`; the CPU beyond): the
+  same lists as on the CPU, in the same order.
+- **The levels of a tessellated surface**: `levels: 'gpu'` of
+  `PatchSurface` (see the
+  [tessellation tutorial](/fdw-engine/tutorials/tessellation/#the-levels-on-the-gpu)).
+
+### Meshes sharing their buffers
+
+The meshes of a `MeshArena` with the same layout share one vertex buffer
+and one index buffer: the renderer places each at a base vertex and a
+first index of its own (first fit; the buffers double when full, their
+content copied by the GPU) and draws them indirectly from there.
+
+```ts
+const arena = new MeshArena({ label: 'buildings' });
+const tower = new Mesh({ description, vertices, indices, arena });
+const house = new Mesh({ description, vertices, indices, arena });
+renderer.render({ source: city, camera, surface, gpuCulling: true });
+```
+
+Culled on the GPU, the consecutive draws of meshes of an arena sharing a
+pipeline and a material become **one multiple draw**
+(`multiDrawIndexedIndirect`, at most 1024 draws). With `drawIndirectCount`,
+the GPU packs the draws that kept instances and writes their number: the
+empty ones are not even issued. Without an arena, or on WebGL2, nothing
+changes.
+
+- `pass.multiDrawIndirect(buffer, offset, maxCount, count?)` and
+  `pass.multiDrawIndexedIndirect(…)`: `maxCount` draws, 20 bytes apart
+  (the arguments of `drawIndirect` then an unused u32; those of
+  `drawIndexedIndirect`), or the first `count.buffer[count.offset]` of
+  them. Vulkan (`multiDrawIndirect`, `drawIndirectCount`) and Direct3D 12
+  (`ExecuteIndirect`, at most 2048 draws, the count in another buffer than
+  the arguments) natively; WebGPU by a draw each, without count.
+- `mesh.setGpuVertexCount({ buffer, offset })`: the vertex count of a mesh
+  without indices written by the GPU (a compute pass of the frame); the
+  renderer copies it into the arguments of its draw.
 
 ## Mesh data
 

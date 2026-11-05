@@ -6,6 +6,7 @@ import type {
   GpuComputePassEncoder,
   GpuComputePipeline,
   GpuBuffer,
+  IndirectCount,
   GpuCommandBuffer,
   GpuCommandEncoder,
   GpuRenderPassEncoder,
@@ -29,6 +30,18 @@ import {
   SoftwareTopLevel,
 } from './SoftwareAccelerationStructures';
 import { WebGpuRenderTarget } from './WebGpuRenderTarget';
+
+// The bytes between the draws of a multiple indirect draw.
+const MultiDrawStride = 20;
+
+// WebGPU reads no count of draws from a buffer.
+function noCount(count: IndirectCount | undefined): void {
+  if (count) {
+    throw new Error(
+      'WebGPU has no indirect count of draws (drawIndirectCount)',
+    );
+  }
+}
 
 function unwrap<T>(
   value: unknown,
@@ -119,6 +132,32 @@ class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
       unwrap(buffer, Buffer, 'The indirect buffer').buffer,
       offset,
     );
+  }
+
+  // WebGPU has no multiple draws: a draw each (the draws without instance
+  // cost little), and no count read by the GPU (drawIndirectCount).
+  multiDrawIndirect(
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count?: IndirectCount,
+  ): void {
+    noCount(count);
+    for (let i = 0; i < maxCount; i++) {
+      this.drawIndirect(buffer, offset + i * MultiDrawStride);
+    }
+  }
+
+  multiDrawIndexedIndirect(
+    buffer: GpuBuffer,
+    offset: number,
+    maxCount: number,
+    count?: IndirectCount,
+  ): void {
+    noCount(count);
+    for (let i = 0; i < maxCount; i++) {
+      this.drawIndexedIndirect(buffer, offset + i * MultiDrawStride);
+    }
   }
 
   end(): void {

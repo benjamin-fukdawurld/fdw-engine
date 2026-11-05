@@ -41,6 +41,13 @@ import {
   ArgumentWords,
   ComputeRunner,
   GpuCulling,
+  GpuLightClusters,
+  MeshArena,
+  gpuLightGridSize,
+  LightClusterCount,
+  LightClusters,
+  lightSpheres,
+  sliceParameters,
   RenderGraph,
   RenderGraphRunner,
   DirectionalLight,
@@ -1736,6 +1743,66 @@ export function describeRenderer(
         expectColor(pixel(24, 32), [0, 255, 0, 255]);
         occlusion.destroy();
       });
+
+      it('culls in two phases on the GPU, without delay', async () => {
+        if (!GpuCulling.supported(backend)) {
+          // WebGL2: the readback above.
+          return;
+        }
+        const mesh = quad();
+        const wall = {
+          mesh,
+          material: colored(1, 0, 0),
+          transform: placed(-1, 0, 2, 3),
+        };
+        // Drawn over everything when it is drawn: what the culling keeps
+        // shows.
+        const hidden = {
+          mesh,
+          material: new Material({
+            graph: colorGraph(),
+            values: { color: [0, 1, 0, 1] },
+            renderState: { depthTest: false, depthWrite: false },
+          }),
+          transform: placed(-1, -2, 0.5),
+        };
+        const seen = {
+          mesh,
+          material: colored(0, 0, 1),
+          transform: placed(1, -2, 0.5),
+        };
+        const items = [wall, hidden, seen];
+        const occlusion = new OcclusionCulling();
+        const frame = async () => {
+          renderer.render({
+            items,
+            camera: perspective,
+            surface,
+            occlusion,
+            gpuCulling: true,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          const pixels = await fixture.readPixels();
+          return (x: number, y: number) => [
+            ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+          ];
+        };
+        // The first frame draws everything in the second phase (nothing
+        // was visible before); the second finds the quad hidden; the third
+        // leaves it out.
+        let pixel = await frame();
+        expectColor(pixel(24, 32), [0, 255, 0, 255]);
+        await frame();
+        pixel = await frame();
+        expectColor(pixel(24, 32), [255, 0, 0, 255]);
+        expectColor(pixel(40, 32), [0, 0, 255, 255]);
+        // The wall out of view: the quad is drawn in that very frame.
+        wall.transform.position = { x: -20 };
+        pixel = await frame();
+        expectColor(pixel(24, 32), [0, 255, 0, 255]);
+        expectColor(pixel(40, 32), [0, 0, 255, 255]);
+        occlusion.destroy();
+      });
     });
 
     describe('culling on the GPU', () => {
@@ -1797,6 +1864,91 @@ export function describeRenderer(
         expect([...args]).toEqual([6, 2, 0, 0, 2, 4, 1, 0, 4, 0]);
         culling.destroy();
         table.destroy();
+      });
+
+      it('draws the meshes of an arena, in multiple draws on the GPU', async () => {
+        // 1100 small squares, each its own mesh: the buffers of the arena
+        // grow (4096 vertices at first), the runs make two multiple draws,
+        // with runs out of view (no instance) among them.
+        const square = (k: number, arena?: MeshArena) => {
+          const x = ((k % 40) / 40) * 2 - 1;
+          const y = (Math.floor(k / 40) / 40) * 2 - 1;
+          // Every fifth one far out of view.
+          const z = k % 5 === 4 ? 100 : 0;
+          const s = 0.03 + (k % 3) * 0.005;
+          return new Mesh({
+            description: {
+              vertexBuffers: [
+                {
+                  stride: 12,
+                  stepMode: 'vertex',
+                  attributes: [
+                    { semantic: 'position', format: 'float32x3', offset: 0 },
+                  ],
+                },
+              ],
+              vertexCount: 4,
+              indexBuffer: { format: 'uint16', count: 6 },
+            },
+            vertices: [
+              new Float32Array([
+                x,
+                y,
+                z,
+                x + s,
+                y,
+                z,
+                x + s,
+                y + s,
+                z,
+                x,
+                y + s,
+                z,
+              ]),
+            ],
+            indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+            ...(arena ? { arena } : {}),
+          });
+        };
+        const material = new Material({
+          graph: colorGraph(),
+          values: { color: [1, 0.5, 0, 1] },
+        });
+        const itemsOf = (arena?: MeshArena) =>
+          Array.from({ length: 1100 }, (_, k) => ({
+            mesh: square(k, arena),
+            material,
+            transform: new Transform(),
+          }));
+        const frame = async (
+          items: Renderable[],
+          gpuCulling: boolean,
+        ): Promise<Uint8Array> => {
+          renderer.render({
+            items,
+            camera,
+            surface,
+            gpuCulling,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          return fixture.readPixels();
+        };
+        const expected = await frame(itemsOf(), false);
+        const arenaItems = itemsOf(new MeshArena({ label: 'squares' }));
+        for (const gpuCulling of [false, true, true]) {
+          const pixels = await frame(arenaItems, gpuCulling);
+          let different = 0;
+          for (let p = 0; p < pixels.length; p++) {
+            if (Math.abs(pixels[p] - expected[p]) > 1) {
+              different++;
+            }
+          }
+          expect(different).toBe(0);
+        }
+        // Something drawn.
+        expect(expected.some((value, i) => i % 4 === 0 && value > 200)).toBe(
+          true,
+        );
       });
 
       it('draws the same image with the culling on the GPU', async () => {
@@ -2014,6 +2166,83 @@ export function describeRenderer(
         }
         expect(holes).toBe(0);
         terrain.destroy();
+      });
+
+      it('chooses the levels on the GPU as on the CPU', async () => {
+        const g = new GraphBuilder('rough normals');
+        const vertex = patchVertex(g, {
+          displacement: {
+            texture: g.texture('heightMap'),
+            sampler: g.sampler('heightSampler'),
+            scale: 1.5,
+            texel: 1 / 64,
+          },
+        });
+        g.surface({
+          baseColor: g.call(std.add, {
+            a: g.call(std.mul, { a: vertex.normal, b: 0.5 }),
+            b: 0.5,
+          }),
+        });
+        let seed = 7;
+        const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        const values = {
+          heightMap: heightMap(64, () => random()),
+          heightSampler: linear(),
+        };
+        const above = new Camera({
+          position: { x: 3, y: 12, z: 12 },
+          rotation: {
+            x: -Math.sin(Math.PI / 8),
+            y: 0,
+            z: 0,
+            w: Math.cos(Math.PI / 8),
+          },
+          projection: {
+            type: 'perspective',
+            fov: 40,
+            aspect: 1,
+            near: 0.1,
+            far: 100,
+          },
+        });
+        const draw = async (levels: 'cpu' | 'gpu') => {
+          const terrain = new PatchSurface(backend, {
+            patches: patchGrid({ width: 40, depth: 40, columns: 10, rows: 10 }),
+            material: new Material({ graph: g.build(), values }),
+            edgePixels: 8,
+            displacement: 1.5,
+            levels,
+          });
+          terrain.update(above, { width: size, height: size });
+          renderer.render({
+            items: [terrain],
+            camera: above,
+            surface,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          return { terrain, pixels: await fixture.readPixels() };
+        };
+        const cpu = await draw('cpu');
+        const gpu = await draw('gpu');
+        // The CPU where the backend has no indirect draws (WebGL2).
+        expect(gpu.terrain.gpu).toBe(GpuCulling.supported(backend));
+        let different = 0;
+        for (let p = 0; p < cpu.pixels.length; p++) {
+          if (Math.abs(cpu.pixels[p] - gpu.pixels[p]) > 2) {
+            different++;
+          }
+        }
+        expect(different).toBe(0);
+        if (gpu.terrain.gpu) {
+          const counts = gpu.terrain.mesh.gpuVertexCount;
+          const vertices = new Uint32Array(
+            await (counts as { buffer: GpuBuffer }).buffer.read(0, 4),
+          )[0];
+          expect(vertices).toBe(cpu.terrain.mesh.description.vertexCount);
+        }
+        cpu.terrain.destroy();
+        gpu.terrain.destroy();
       });
 
       it('computes the normal of the displaced surface', async () => {
@@ -4388,139 +4617,246 @@ export function describeRenderer(
         }
       });
 
-      it('sums hundreds of lights by clusters, those that reach each pixel', async () => {
-        // A floor seen from above and in front: its pixels span many
-        // tiles and depth slices.
-        const floor = new Mesh({
-          description: {
-            vertexBuffers: [
-              {
-                stride: 24,
-                stepMode: 'vertex',
-                attributes: [
-                  { semantic: 'position', format: 'float32x3', offset: 0 },
-                  { semantic: 'normal', format: 'float32x3', offset: 12 },
-                ],
-              },
+      it.each([
+        ['on the CPU', false],
+        // Where the backend culls on the GPU, the clusters are filled there.
+        ['on the GPU', true],
+      ])(
+        'sums hundreds of lights by clusters filled %s, those that reach each pixel',
+        async (_, gpuCulling) => {
+          // A floor seen from above and in front: its pixels span many
+          // tiles and depth slices.
+          const floor = new Mesh({
+            description: {
+              vertexBuffers: [
+                {
+                  stride: 24,
+                  stepMode: 'vertex',
+                  attributes: [
+                    { semantic: 'position', format: 'float32x3', offset: 0 },
+                    { semantic: 'normal', format: 'float32x3', offset: 12 },
+                  ],
+                },
+              ],
+              vertexCount: 4,
+              indexBuffer: { format: 'uint16', count: 6 },
+            },
+            vertices: [
+              new Float32Array([
+                -8, 0, 4, 0, 1, 0, 8, 0, 4, 0, 1, 0, 8, 0, -12, 0, 1, 0, -8, 0,
+                -12, 0, 1, 0,
+              ]),
             ],
-            vertexCount: 4,
-            indexBuffer: { format: 'uint16', count: 6 },
-          },
-          vertices: [
-            new Float32Array([
-              -8, 0, 4, 0, 1, 0, 8, 0, 4, 0, 1, 0, 8, 0, -12, 0, 1, 0, -8, 0,
-              -12, 0, 1, 0,
-            ]),
-          ],
-          indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
-        });
-        const g = new GraphBuilder('floor');
-        g.surface({ shadingModel: 'phong', baseColor: [1, 1, 1] });
-        const material = new Material({ graph: g.build() });
-        const angle = -0.5;
-        const view = new Camera({
-          position: { x: 0, y: 2.5, z: 4 },
-          rotation: {
-            x: Math.sin(angle / 2),
-            y: 0,
-            z: 0,
-            w: Math.cos(angle / 2),
-          },
+            indices: new Uint16Array([0, 1, 2, 0, 2, 3]),
+          });
+          const g = new GraphBuilder('floor');
+          g.surface({ shadingModel: 'phong', baseColor: [1, 1, 1] });
+          const material = new Material({ graph: g.build() });
+          const angle = -0.5;
+          const view = new Camera({
+            position: { x: 0, y: 2.5, z: 4 },
+            rotation: {
+              x: Math.sin(angle / 2),
+              y: 0,
+              z: 0,
+              w: Math.cos(angle / 2),
+            },
+            projection: {
+              type: 'perspective',
+              fov: 60,
+              aspect: 1,
+              near: 0.1,
+              far: 50,
+            },
+          });
+          // 300 colored lamps just above the floor, reaching about 0.8.
+          let seed = 11;
+          const next = () => {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            return seed / 2 ** 32;
+          };
+          const lamps = Array.from(
+            { length: 300 },
+            () =>
+              new PointLight({
+                position: {
+                  x: (next() - 0.5) * 12,
+                  y: 0.2,
+                  z: -next() * 14 + 2,
+                },
+                ambient: { x: 0, y: 0, z: 0 },
+                diffuse: { x: next() * 0.3, y: next() * 0.3, z: next() * 0.3 },
+                specular: { x: 0, y: 0, z: 0 },
+                quadraticAttenuation: 30,
+              }),
+          );
+          renderer.render({
+            items: [{ mesh: floor, material, transform: at(0) }],
+            camera: view,
+            surface,
+            lights: lamps,
+            gpuCulling,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          // Those in front of the camera.
+          expect(renderer.stats.get('scene')?.lights).toBeGreaterThan(200);
+          const pixels = await fixture.readPixels();
+
+          // The point of the floor under a pixel, through the inverse of the
+          // view projection.
+          const cache = new CameraCache(view, backend.cameraMath);
+          const inverse = cache.inverseViewProjectionMatrix.value;
+          const unproject = (x: number, y: number): Vec3 => {
+            const ndc = [
+              ((x + 0.5) / size) * 2 - 1,
+              1 - ((y + 0.5) / size) * 2,
+              0.5,
+              1,
+            ];
+            const p = [0, 1, 2, 3].map((r) =>
+              ndc.reduce(
+                (sum, value, c) => sum + inverse[c * 4 + r] * value,
+                0,
+              ),
+            );
+            const direction = sub(
+              [p[0] / p[3], p[1] / p[3], p[2] / p[3]],
+              [0, 2.5, 4],
+            );
+            const t = -2.5 / direction[1];
+            return [direction[0] * t, 0, 4 + direction[2] * t];
+          };
+          let lit = 0;
+          for (let y = size / 2; y < size; y += 3) {
+            for (let x = 1; x < size; x += 3) {
+              // The lights reaching the point: diffuse × N·L × attenuation.
+              const point = unproject(x, y);
+              const color = [0, 0, 0];
+              for (const lamp of lamps) {
+                const { x: lx, y: ly, z: lz } = lamp.position;
+                const toLight = sub([lx, ly, lz], point);
+                const d = Math.hypot(...toLight);
+                if (d >= lightRange(lamp)) {
+                  continue;
+                }
+                const factor = toLight[1] / d / (1 + 30 * d * d);
+                color[0] += lamp.diffuse.x * factor;
+                color[1] += lamp.diffuse.y * factor;
+                color[2] += lamp.diffuse.z * factor;
+              }
+              const expected = color
+                .map((value) => Math.round(Math.min(value, 1) * 255))
+                .concat(255);
+              const actual = [
+                ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+              ];
+              expect(
+                actual.every((value, i) => Math.abs(value - expected[i]) <= 2),
+                `pixel (${x}, ${y}): ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`,
+              ).toBe(true);
+              if (expected.some((value, i) => i < 3 && value > 10)) {
+                lit++;
+              }
+            }
+          }
+          expect(lit).toBeGreaterThan(30);
+        },
+      );
+
+      it('fills the light clusters on the GPU as on the CPU', async () => {
+        if (!GpuCulling.supported(backend)) {
+          return;
+        }
+        const camera = new Camera({
+          position: { x: 3, y: 2, z: 10 },
+          rotation: { x: 0, y: Math.sin(0.1), z: 0, w: Math.cos(0.1) },
           projection: {
             type: 'perspective',
             fov: 60,
-            aspect: 1,
-            near: 0.1,
-            far: 50,
+            aspect: 16 / 9,
+            near: 0.5,
+            far: 200,
           },
         });
-        // 300 colored lamps just above the floor, reaching about 0.8.
-        let seed = 11;
+        const cache = new CameraCache(camera, backend.cameraMath);
+        let seed = 5;
         const next = () => {
           seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
           return seed / 2 ** 32;
         };
-        const lamps = Array.from(
-          { length: 300 },
-          () =>
-            new PointLight({
-              position: {
-                x: (next() - 0.5) * 12,
-                y: 0.2,
-                z: -next() * 14 + 2,
-              },
-              ambient: { x: 0, y: 0, z: 0 },
-              diffuse: { x: next() * 0.3, y: next() * 0.3, z: next() * 0.3 },
-              specular: { x: 0, y: 0, z: 0 },
-              quadraticAttenuation: 30,
-            }),
-        );
-        renderer.render({
-          items: [{ mesh: floor, material, transform: at(0) }],
-          camera: view,
-          surface,
-          lights: lamps,
-          clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        // Points and spots of all sizes, around and behind the camera.
+        const lights = Array.from({ length: 150 }, (_, i) => {
+          const options = {
+            position: {
+              x: (next() - 0.5) * 60,
+              y: (next() - 0.5) * 30,
+              z: 12 - next() * 80,
+            },
+            diffuse: { x: 1, y: 1, z: 1 },
+            quadraticAttenuation: 0.01 + next() * 10,
+          };
+          return i % 3 === 0
+            ? new SpotLight({
+                ...options,
+                direction: { x: next() - 0.5, y: next() - 0.5, z: -1 },
+                outerCutoff: 10 + next() * 70,
+              })
+            : new PointLight(options);
         });
-        // Those in front of the camera.
-        expect(renderer.stats.get('scene')?.lights).toBeGreaterThan(200);
-        const pixels = await fixture.readPixels();
-
-        // The point of the floor under a pixel, through the inverse of the
-        // view projection.
-        const cache = new CameraCache(view, backend.cameraMath);
-        const inverse = cache.inverseViewProjectionMatrix.value;
-        const unproject = (x: number, y: number): Vec3 => {
-          const ndc = [
-            ((x + 0.5) / size) * 2 - 1,
-            1 - ((y + 0.5) / size) * 2,
-            0.5,
-            1,
+        const { near, far, scale, bias } = sliceParameters(0.5, 200);
+        const view = cache.viewMatrix.value;
+        const projection = cache.projectionMatrix.value;
+        const expected = new LightClusters().assign(
+          lights,
+          2,
+          view,
+          projection,
+          near,
+          far,
+        ).grid;
+        const grid = backend.buffers.create({
+          size: gpuLightGridSize(lights.length),
+          usage: ['storage', 'copy-src'],
+        });
+        const clusters = new GpuLightClusters(backend);
+        const encoder = backend.createCommandEncoder();
+        const pass = encoder.beginComputePass('light clusters');
+        clusters.record(
+          pass,
+          'test',
+          {
+            spheres: lightSpheres(lights),
+            count: lights.length,
+            first: 2,
+            view,
+            projection,
+            depths: [near, far, scale, bias],
+          },
+          grid,
+        );
+        pass.end();
+        backend.submit([encoder.finish()]);
+        const actual = new Uint32Array(await grid.read());
+        // Each list of the CPU, in the same order, within that of the GPU,
+        // which may list a light more at the edges of its tiles (rounded
+        // up in f32).
+        let listed = 0;
+        let extra = 0;
+        for (let cluster = 0; cluster < LightClusterCount; cluster++) {
+          const list = (data: Uint32Array, at: number) => [
+            ...data.subarray(data[at * 2], data[at * 2] + data[at * 2 + 1]),
           ];
-          const p = [0, 1, 2, 3].map((r) =>
-            ndc.reduce((sum, value, c) => sum + inverse[c * 4 + r] * value, 0),
-          );
-          const direction = sub(
-            [p[0] / p[3], p[1] / p[3], p[2] / p[3]],
-            [0, 2.5, 4],
-          );
-          const t = -2.5 / direction[1];
-          return [direction[0] * t, 0, 4 + direction[2] * t];
-        };
-        let lit = 0;
-        for (let y = size / 2; y < size; y += 3) {
-          for (let x = 1; x < size; x += 3) {
-            // The lights reaching the point: diffuse × N·L × attenuation.
-            const point = unproject(x, y);
-            const color = [0, 0, 0];
-            for (const lamp of lamps) {
-              const { x: lx, y: ly, z: lz } = lamp.position;
-              const toLight = sub([lx, ly, lz], point);
-              const d = Math.hypot(...toLight);
-              if (d >= lightRange(lamp)) {
-                continue;
-              }
-              const factor = toLight[1] / d / (1 + 30 * d * d);
-              color[0] += lamp.diffuse.x * factor;
-              color[1] += lamp.diffuse.y * factor;
-              color[2] += lamp.diffuse.z * factor;
-            }
-            const expected = color
-              .map((value) => Math.round(Math.min(value, 1) * 255))
-              .concat(255);
-            const actual = [
-              ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
-            ];
-            expect(
-              actual.every((value, i) => Math.abs(value - expected[i]) <= 2),
-              `pixel (${x}, ${y}): ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`,
-            ).toBe(true);
-            if (expected.some((value, i) => i < 3 && value > 10)) {
-              lit++;
-            }
-          }
+          const cpu = list(expected, cluster);
+          const gpu = list(actual, cluster);
+          expect(gpu).toEqual([...gpu].sort((a, b) => a - b));
+          expect(gpu).toEqual(expect.arrayContaining(cpu));
+          listed += cpu.length;
+          extra += gpu.length - cpu.length;
         }
-        expect(lit).toBeGreaterThan(30);
+        expect(listed).toBeGreaterThan(1000);
+        expect(extra).toBeLessThan(listed * 0.02);
+        clusters.destroy();
+        grid.destroy();
       });
 
       // Reference implementation of lighting.pbr, at the center of a pixel,
