@@ -109,7 +109,7 @@ Le CPU des lumières d'une image (le pool et les clusters), des lampes de porté
 ## 9. Reportés
 
 - **Le culling sur le GPU** : à faire quand le CPU ne suit plus (au-delà de quelques milliers de lumières). Sans atomiques dans l'IR : une passe de masques de bits (un fil par cluster et par mot de 32 lumières), puis une passe qui range le n-ième bit (un fil par place de liste) ; les mêmes buffers, lus par les mêmes shaders.
-- **Les ombres des lumières ponctuelles** (six faces), et le culling des projeteurs par tuile.
+- ~~Les ombres des lumières ponctuelles~~ (_faites le 4 novembre 2026_ : [p2-point-shadows.md](p2-point-shadows.md)), et le culling des projeteurs par tuile (fait pour les faces des lumières ponctuelles).
 - **Le chargement des panoramas HDR dans le navigateur** : le décodeur natif (`stb_image`) les lit en `rgba16float` ; il manque un décodeur RGBE en TypeScript pour le web.
 - **L'échantillonnage des lumières par importance dans le path tracer** (une lumière tirée au hasard parmi toutes : bruité avec des centaines) et de l'environnement (ses texels brillants).
 - **La compensation de l'énergie des rebonds multiples** (Fdez-Agüera 2019) : les métaux rugueux un peu trop sombres.

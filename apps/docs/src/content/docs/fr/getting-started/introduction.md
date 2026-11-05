@@ -28,8 +28,7 @@ npm : les applications sont construites dans le monorepo (voir
   glTF) sont fournis avec le moteur. Un modèle personnalisé est lui aussi un
   graphe.
 - **Éclairage et ombres.** Lumières directionnelles, ponctuelles et spots ;
-  shadow maps pour les lumières directionnelles et les spots, dans un atlas,
-  filtrées (PCF).
+  shadow maps pour les trois, dans un atlas, filtrées (PCF).
 - **Couleurs et HDR.** Couleurs linéaires, textures sRGB, une cible HDR avec
   tone mapping (Reinhard, ACES, Khronos PBR Neutral), multisampling.
 - **Render graph.** Une image est un graphe de passes qui déclarent ce

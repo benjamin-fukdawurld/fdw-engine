@@ -23,8 +23,8 @@
 // it), smoke (smoke and fire around a ball; F switches to a chimney), splash
 // (a tank of water made of particles: a dam that breaks, crates in it),
 // deferred (forward or deferred rendering, ambient occlusion and selection
-// at the pixel: D, O, V, a click or a drag; deferred-forward starts in
-// forward).
+// at the pixel, lamp shadows: D, O, S, V, a click or a drag;
+// deferred-forward starts in forward).
 // The sounds play on the default device, through miniaudio (--no-audio:
 // silent). --rays draws the scenes that offer it (fps, tps) with rays, on
 // Vulkan and Direct3D 12: the shadows traced, the reflections too, or the

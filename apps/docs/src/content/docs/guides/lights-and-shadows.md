@@ -86,12 +86,13 @@ irradiance, its prefiltered radiance × the Fresnel of the split sum),
 
 ## Shadows
 
-With `castShadow: true`, a directional or spot light casts shadows. Each
+With `castShadow: true`, a directional, spot or point light casts
+shadows. Each
 frame then:
 
 1. **A shadow pass** (`scene shadows`) draws the casters into an **atlas**,
    a depth texture of `shadowAtlasSize` (2048) pixels, split into equal
-   tiles, one per light. It uses the **depth-only** variant of the materials:
+   tiles, one per light (six for a point light). It uses the **depth-only** variant of the materials:
    no color, only the position, and the discard of masked materials.
 2. **The scene passes** read the atlas: the `phong` and `pbr` models multiply
    the direct light of each light by its visibility, from a comparison with
@@ -105,6 +106,15 @@ The cameras of the lights:
   texels, so the shadows do not shimmer as the camera moves.
 - A **spot light** sees its cone, as far as what the camera sees, with a
   perspective projection.
+- A **point light** sees every direction through **six faces**, the sides
+  of a cube around it, in six consecutive tiles of the atlas: six
+  perspective cameras, as far as its range and what the camera sees. The
+  shaders pick the face of a point by its dominant axis from the light.
+  Each face is a little wider than 90° (two texels), so that the filter
+  never reads across an edge of the cube: no seam where two faces meet. A
+  face that sees nothing of what the camera sees keeps its tile but draws
+  nothing: a lamp out of view only pays for the faces whose shadows can be
+  seen.
 
 Both reach **towards the light** as far as the scene goes: a tree out of
 view whose shadow falls in view casts it; an object whose shadow falls out
@@ -114,8 +124,7 @@ it is used, and if something is visible.
 What casts shadows:
 
 - items with `castShadow: false` do not, nor transparent items;
-- `addScenePasses(graph, { shadows: false })` turns the shadows of a view off;
-- point lights do not cast shadows yet.
+- `addScenePasses(graph, { shadows: false })` turns the shadows of a view off.
 
 ### Cascades
 
@@ -197,7 +206,8 @@ without it cost nothing more. The background is not fogged.
 ## Costs
 
 Each light with shadows draws the casters once more; a light with
-cascades, once per cascade. The casters sharing a mesh and a material are
+cascades, once per cascade; a point light, once per face that sees the
+view (up to six). The casters sharing a mesh and a material are
 instanced in the shadow passes too. The atlas is shared,
 so more lights make smaller tiles: 4 lights in a 2048 atlas get 1024 × 1024
-each. Raise `shadowAtlasSize` for sharper shadows, at the cost of memory.
+each; a sun and two lamps with shadows (13 tiles) get 512 × 512. Raise `shadowAtlasSize` for sharper shadows, at the cost of memory.

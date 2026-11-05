@@ -2,6 +2,7 @@ import {
   Camera,
   DirectionalLight,
   Material,
+  PointLight,
   Renderer,
   SpotLight,
   Transform,
@@ -11,7 +12,7 @@ import { BuiltinTypes, GraphBuilder } from '@fdw/engine-shader';
 import { axisAngle, createCube, createSphere } from '@fdw/demo-scenes';
 import type { Example } from './runtime';
 
-// A sun and a sweeping spot casting shadows on a few PBR objects.
+// A sun, a sweeping spot and a lamp casting shadows on a few PBR objects.
 const example: Example = ({ backend, surface, onFrame }) => {
   // Linear lighting, tone mapped for display; 4 samples per pixel.
   const renderer = new Renderer(backend, {
@@ -74,6 +75,16 @@ const example: Example = ({ backend, surface, onFrame }) => {
     castShadow: true,
   });
 
+  // A warm lamp beside the ball: its shadows fall in every direction.
+  const lamp = new PointLight({
+    position: { x: -1.3, y: 1.7, z: 0.9 },
+    ambient: { x: 0, y: 0, z: 0 },
+    diffuse: { x: 3.2, y: 1.7, z: 0.6 },
+    specular: { x: 3.2, y: 1.7, z: 0.6 },
+    quadraticAttenuation: 0.35,
+    castShadow: true,
+  });
+
   const camera = new Camera({
     position: { x: 0, y: 4, z: 8 },
     rotation: axisAngle(1, 0, 0, -0.45),
@@ -100,7 +111,7 @@ const example: Example = ({ backend, surface, onFrame }) => {
       camera,
       surface,
       time,
-      lights: [sun, spot],
+      lights: [sun, spot, lamp],
       clearColor: { r: 0.05, g: 0.06, b: 0.08, a: 1 },
     });
   });

@@ -35,6 +35,8 @@ import type { Scene, SceneContext, SceneFactory } from './scene';
 // - the selection at the pixel: the passes write the identifier of each
 //   object; hovering one highlights it, a click selects it, a drag selects
 //   the objects in the rectangle (C clears the selection).
+// - two of the lamps cast shadows, in the six faces of their shadow maps
+//   (S turns them on and off).
 // Right drag turns the camera, the wheel zooms. V (or 1 to 3) shows the
 // image, the occlusion alone, the normals.
 
@@ -337,6 +339,20 @@ function deferredScene(
     });
   const geometry = sample('normalDepth');
   const material = sample('properties');
+  // The depth in full precision, for the position: rebuilt from the half
+  // floats of normalDepth, it is off by a few millimetres at a few metres,
+  // more than the normal offset of the shadows near a lamp (lines of acne,
+  // a row of pixels each).
+  const viewDepth = l
+    .call(std.textureLoad, {
+      texture: l.texture('viewDepth', { sampleType: 'unfilterable-float' }),
+      coords: l.call(
+        std.convert,
+        { value: l.builtin('frag-coord').swizzle('xy') },
+        { params: { to: BuiltinTypes.vec2i } },
+      ),
+    })
+    .swizzle('x');
   const lit = l.call('lighting.pbr', {
     baseColor: sample('baseColor').swizzle('rgb'),
     normal: geometry.swizzle('xyz'),
@@ -344,10 +360,7 @@ function deferredScene(
     metallic: material.swizzle('y'),
     occlusion: sample('occlusion').swizzle('x'),
     worldPosition: l.call(std.extend, {
-      xyz: l.call('camera.positionFromDepth', {
-        uv: at,
-        viewDepth: geometry.swizzle('w'),
-      }),
+      xyz: l.call('camera.positionFromDepth', { uv: at, viewDepth }),
       w: 1,
     }),
   });
@@ -562,7 +575,8 @@ function deferredScene(
   const litItems = [...itemsWith((object) => object.lit), glass];
 
   // The light: a sun casting shadows, enough ambient light for the
-  // occlusion to show, and 12 lamps turning close to the floor.
+  // occlusion to show, and 12 lamps turning close to the floor, two of them
+  // casting shadows.
   const sun = new DirectionalLight({
     direction: { x: 0.5, y: -1, z: -0.4 },
     ambient: { x: 0.3, y: 0.31, z: 0.34 },
@@ -574,15 +588,25 @@ function deferredScene(
     const channel = (offset: number) =>
       0.5 + 0.5 * Math.cos(2 * Math.PI * (i / 12 + offset));
     const color = { x: channel(0), y: channel(1 / 3), z: channel(2 / 3) };
+    // The two lamps casting shadows (0 and 6) brighter, and reaching
+    // further: their shadows show.
+    const strong = i % 6 === 0;
+    const scaled = strong
+      ? { x: color.x * 2, y: color.y * 2, z: color.z * 2 }
+      : color;
     return new PointLight({
       ambient: { x: 0, y: 0, z: 0 },
-      diffuse: color,
-      specular: color,
+      diffuse: scaled,
+      specular: scaled,
       constantAttenuation: 1,
       linearAttenuation: 0,
-      quadraticAttenuation: 6,
+      quadraticAttenuation: strong ? 1.5 : 6,
     });
   });
+  const shadowLamps = [lamps[0], lamps[6]];
+  const castLampShadows = (on: boolean) =>
+    shadowLamps.forEach((lamp) => (lamp.castShadow = on));
+  castLampShadows(true);
   const lights = [sun, ...lamps];
 
   const camera = new Camera({
@@ -594,7 +618,9 @@ function deferredScene(
       far: 60,
     },
   });
-  const renderer = new Renderer(backend);
+  // The sun and the twelve faces of the two lamps share the shadow atlas:
+  // twice the default size, for tiles of 1024 pixels.
+  const renderer = new Renderer(backend, { shadowAtlasSize: 4096 });
   const runner = new RenderGraphRunner(backend);
 
   // --- The state.
@@ -679,6 +705,9 @@ function deferredScene(
     if (k.pressed('KeyO')) {
       occlusionOn = !occlusionOn;
       ssao.setValue('strength', occlusionOn ? 1 : 0);
+    }
+    if (k.pressed('KeyS')) {
+      castLampShadows(!shadowLamps[0].castShadow);
     }
     if (k.pressed('KeyV')) {
       viewIndex = (viewIndex + 1) % views.length;
@@ -774,7 +803,8 @@ function deferredScene(
   const show = () =>
     context.info?.(
       `${deferred ? 'deferred' : 'forward'} (D) · occlusion ` +
-        `${occlusionOn ? 'on' : 'off'} (O) · ${views[viewIndex]} (V) · ` +
+        `${occlusionOn ? 'on' : 'off'} (O) · lamp shadows ` +
+        `${shadowLamps[0].castShadow ? 'on' : 'off'} (S) · ${views[viewIndex]} (V) · ` +
         `hover ${hover || '—'} · selected ` +
         `${[...selection].sort((a, b) => a - b).join(', ') || '—'} (C)`,
     );
@@ -823,6 +853,7 @@ function deferredScene(
             outputs: {
               baseColor: { format: 'rgba8unorm', value: 'base-color' },
               normalDepth: { format: 'rgba16float', value: normalDepth },
+              viewDepth: { format: 'r32float', value: 'view-depth' },
               properties: { format: 'rgba8unorm', value: properties },
               id,
             },
@@ -862,6 +893,7 @@ function deferredScene(
           inputs: {
             baseColor: outputs['baseColor'],
             normalDepth: normals,
+            viewDepth: outputs['viewDepth'],
             properties: outputs['properties'],
             occlusion,
           },

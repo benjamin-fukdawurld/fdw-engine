@@ -25,7 +25,7 @@ yet: applications are built inside the monorepo (see
 - **Shading models.** Unlit, Phong and PBR (metallic/roughness, as in glTF)
   come with the engine. A custom model is a graph too.
 - **Lights and shadows.** Directional, point and spot lights; shadow maps
-  for directional and spot lights, in an atlas, filtered (PCF).
+  for all three, in an atlas, filtered (PCF).
 - **Colors and HDR.** Linear colors, sRGB textures, an HDR target with tone
   mapping (Reinhard, ACES, Khronos PBR Neutral), multisampling.
 - **Render graph.** A frame is a graph of passes declaring what they read
