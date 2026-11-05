@@ -82,6 +82,7 @@ the programs against it:
 | `maxColorAttachments`              | Color targets of a pass                             | `MAX_DRAW_BUFFERS` (at least 4)               |
 | `maxColorAttachmentBytesPerSample` | Bytes per pixel of the color targets (WebGPU)       | —                                             |
 | `independentBlend`                 | Targets of a pipeline with different blend states   | false                                         |
+| `indirectDraw`                     | Draws whose arguments the GPU writes                | —                                             |
 
 A graph using a missing feature fails to compile with an explicit error;
 test the capability to offer a fallback.
@@ -184,6 +185,34 @@ the renderer sorts by pipeline, material, then mesh to gather them.
 The `Renderer` needs `createObjectTable`: a backend of your own implements
 it (a `GpuObjectTable`: `writeRows`, `writeInstances`), and the
 `object-table` binding of the programs.
+
+## Culling on the GPU
+
+With `gpuCulling: true`, the scene passes leave the test of each item
+against the frustum to the GPU:
+
+```ts
+renderer.render({ items, camera, surface, gpuCulling: true });
+```
+
+The CPU still gathers the items into draws (by pipeline, material and
+mesh), but no longer writes their instances: a compute pass tests the box
+of each one, writes the rows of those in view into the instances of the
+table, in their order, and the arguments of each draw (how many instances,
+the first one). The passes then draw with `drawIndexedIndirect` and
+`drawIndirect`, one per draw as before. The image is the same.
+
+- The lists of items are no longer tested on the CPU; a source (a scene)
+  still culls what it holds with its octree. The statistics of the view
+  count the items given to the GPU.
+- Where the backend has `indirectDraw` and compute shaders: Vulkan,
+  Direct3D 12, WebGPU with `indirect-first-instance`. Ignored on WebGL2.
+- The draws read their arguments from a buffer with the `indirect` usage:
+  `pass.drawIndirect(buffer, offset)` (4 u32: vertices, instances, first
+  vertex, first instance) and `pass.drawIndexedIndirect(buffer, offset)`
+  (5 u32: indices, instances, first index, base vertex, first instance).
+  A compute pass can write the instances of the table in
+  `table.instanceBuffer`.
 
 ## Mesh data
 

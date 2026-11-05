@@ -107,6 +107,20 @@ class WebGpuRenderPassEncoder implements GpuRenderPassEncoder {
     this._pass.drawIndexed(indexCount, instanceCount, 0, 0, firstInstance);
   }
 
+  drawIndirect(buffer: GpuBuffer, offset: number): void {
+    this._pass.drawIndirect(
+      unwrap(buffer, Buffer, 'The indirect buffer').buffer,
+      offset,
+    );
+  }
+
+  drawIndexedIndirect(buffer: GpuBuffer, offset: number): void {
+    this._pass.drawIndexedIndirect(
+      unwrap(buffer, Buffer, 'The indirect buffer').buffer,
+      offset,
+    );
+  }
+
   end(): void {
     this._pass.end();
   }

@@ -92,6 +92,10 @@ export interface BackendCapabilities extends Partial<CompilerCapabilities> {
   // shaders: no indirect dispatch, and slower. The features with another
   // path there prefer it (the skinning in the vertex stage).
   readonly emulatedCompute?: boolean;
+  // Draws reading their arguments from a buffer (drawIndirect,
+  // drawIndexedIndirect), first instance included: Vulkan, Direct3D 12,
+  // WebGPU with indirect-first-instance. Not WebGL2.
+  readonly indirectDraw?: boolean;
   // Ray tracing pipelines (Vulkan, with rayQuery): the compute programs
   // tracing rays can run as their ray generation shaders, the hardware
   // scheduling their hits (ComputePipelineDescriptor.rayTracing).

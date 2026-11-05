@@ -86,6 +86,7 @@ compilateur vérifie les programmes en conséquence :
 | `maxColorAttachments`              | Cibles de couleur d'une passe                                    | `MAX_DRAW_BUFFERS` (au moins 4)                |
 | `maxColorAttachmentBytesPerSample` | Octets par pixel des cibles de couleur (WebGPU)                  | —                                              |
 | `independentBlend`                 | Cibles d'un pipeline avec des mélanges différents                | false                                          |
+| `indirectDraw`                     | Des draws dont le GPU écrit les arguments                        | —                                              |
 
 Un graphe qui utilise une fonctionnalité absente échoue à la compilation avec
 une erreur explicite ; testez la capacité pour proposer une solution de
@@ -194,6 +195,35 @@ les regrouper. `renderer.stats.get('scene')` donne `drawn` (les objets) et
 Le `Renderer` a besoin de `createObjectTable` : un backend personnalisé
 l'implémente (un `GpuObjectTable` : `writeRows`, `writeInstances`), ainsi que
 le binding `object-table` des programmes.
+
+## Le culling sur le GPU
+
+Avec `gpuCulling: true`, les passes de scène laissent au GPU le test de
+chaque objet contre le frustum :
+
+```ts
+renderer.render({ items, camera, surface, gpuCulling: true });
+```
+
+Le CPU regroupe toujours les objets en draws (par pipeline, matériau et
+mesh), mais n'écrit plus leurs instances : une passe de calcul teste la boîte
+de chacun, écrit les lignes de ceux qui sont dans le champ dans les instances
+de la table, dans leur ordre, et les arguments de chaque draw (le nombre
+d'instances, la première). Les passes dessinent ensuite par
+`drawIndexedIndirect` et `drawIndirect`, un par draw comme avant. L'image
+est la même.
+
+- Les listes d'objets ne sont plus testées sur le CPU ; une source (une
+  scène) culle toujours ce qu'elle contient avec son octree. Les
+  statistiques de la vue comptent les objets donnés au GPU.
+- Là où le backend a `indirectDraw` et des compute shaders : Vulkan,
+  Direct3D 12, WebGPU avec `indirect-first-instance`. Ignoré en WebGL2.
+- Les draws lisent leurs arguments dans un buffer d'usage `indirect` :
+  `pass.drawIndirect(buffer, offset)` (4 u32 : sommets, instances, premier
+  sommet, première instance) et `pass.drawIndexedIndirect(buffer, offset)`
+  (5 u32 : indices, instances, premier indice, sommet de base, première
+  instance). Une passe de calcul peut écrire les instances de la table dans
+  `table.instanceBuffer`.
 
 ## Les données des meshes
 

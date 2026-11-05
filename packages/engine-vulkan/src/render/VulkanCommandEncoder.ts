@@ -140,6 +140,20 @@ class VulkanRenderPassEncoder implements GpuRenderPassEncoder {
       .word(firstInstance);
   }
 
+  drawIndirect(buffer: GpuBuffer, offset: number): void {
+    this._writer
+      .word(Commands.drawIndirect)
+      .word(unwrap(buffer, VulkanBuffer, 'The indirect buffer').id)
+      .wide(offset);
+  }
+
+  drawIndexedIndirect(buffer: GpuBuffer, offset: number): void {
+    this._writer
+      .word(Commands.drawIndexedIndirect)
+      .word(unwrap(buffer, VulkanBuffer, 'The indirect buffer').id)
+      .wide(offset);
+  }
+
   setViewport(x: number, y: number, width: number, height: number): void {
     this._writer
       .word(Commands.setViewport)

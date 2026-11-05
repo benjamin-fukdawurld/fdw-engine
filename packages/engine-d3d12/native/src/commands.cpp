@@ -4,6 +4,7 @@
 #include "context.hpp"
 
 #include <array>
+#include <initializer_list>
 #include <cstring>
 
 using namespace fdw;
@@ -167,6 +168,8 @@ uint32_t operandCount(uint32_t opcode) {
   case FDW_DX_CMD_DISPATCH:
     return 3;
   case FDW_DX_CMD_DISPATCH_INDIRECT:
+  case FDW_DX_CMD_DRAW_INDIRECT:
+  case FDW_DX_CMD_DRAW_INDEXED_INDIRECT:
     return 3;
   default:
     return 0;
@@ -239,6 +242,16 @@ int prepareRenderPass(Replay &replay, Barriers &barriers) {
       barriers.buffer(buffer,
                       vertex ? D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
                              : D3D12_RESOURCE_STATE_INDEX_BUFFER);
+    } else if (opcode == FDW_DX_CMD_DRAW_INDIRECT ||
+               opcode == FDW_DX_CMD_DRAW_INDEXED_INDIRECT) {
+      // Its arguments are copied into the scratch buffer at the draw.
+      fdw_dx_buffer *buffer =
+          find(replay.context->buffers, ahead.word(), "buffer", &status);
+      ahead.wide();
+      if (!buffer) {
+        return status;
+      }
+      barriers.buffer(buffer, D3D12_RESOURCE_STATE_COPY_SOURCE);
     } else {
       for (uint32_t i = operandCount(opcode); i > 0; i--) {
         ahead.word();
@@ -284,9 +297,18 @@ int flushGroups(Replay &replay) {
   return 0;
 }
 
-// The arguments of an indirect dispatch, copied twice into the scratch
-// buffer: its offset there.
-int indirectArguments(Replay &replay, fdw_dx_buffer *buffer, uint64_t offset,
+// A range of the arguments of an indirect command, copied into the scratch
+// buffer.
+struct ArgumentCopy {
+  uint64_t offset;
+  uint64_t size;
+};
+
+// The arguments of an indirect command, copied into a slot of the scratch
+// buffer one range after the other: the offset of the slot. The source
+// buffer is in the copy source state.
+int indirectArguments(Replay &replay, fdw_dx_buffer *buffer,
+                      std::initializer_list<ArgumentCopy> copies,
                       uint64_t *slot) {
   fdw_dx_context *context = replay.context;
   if (!replay.scratch || replay.scratchUsed + ScratchSlot > ScratchSize) {
@@ -313,10 +335,12 @@ int indirectArguments(Replay &replay, fdw_dx_buffer *buffer, uint64_t offset,
     replay.scratchState = next;
   };
   transition(D3D12_RESOURCE_STATE_COPY_DEST);
-  replay.list->CopyBufferRegion(scratch, *slot, buffer->resource.Get(),
-                                offset, 12);
-  replay.list->CopyBufferRegion(scratch, *slot + 12, buffer->resource.Get(),
-                                offset, 12);
+  uint64_t at = *slot;
+  for (const ArgumentCopy &copy : copies) {
+    replay.list->CopyBufferRegion(scratch, at, buffer->resource.Get(),
+                                  copy.offset, copy.size);
+    at += copy.size;
+  }
   transition(D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
   return 0;
 }
@@ -339,6 +363,30 @@ ID3D12CommandSignature *dispatchSignature(fdw_dx_context *context,
     }
   }
   return root->dispatch.Get();
+}
+
+// The command signature of the indirect draws of a root signature: the
+// first instance as the root constant the shaders add to SV_InstanceID,
+// then the draw.
+ID3D12CommandSignature *drawSignature(fdw_dx_context *context,
+                                      RootSignature *root, bool indexed) {
+  ComPtr<ID3D12CommandSignature> &signature =
+      indexed ? root->drawIndexed : root->draw;
+  if (!signature) {
+    D3D12_INDIRECT_ARGUMENT_DESC arguments[2]{};
+    arguments[0].Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
+    arguments[0].Constant = {0, 0, 1};
+    arguments[1].Type = indexed ? D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED
+                                : D3D12_INDIRECT_ARGUMENT_TYPE_DRAW;
+    D3D12_COMMAND_SIGNATURE_DESC desc{indexed ? 24u : 20u, 2, arguments, 0};
+    const HRESULT result = context->device->CreateCommandSignature(
+        &desc, root->signature.Get(), IID_PPV_ARGS(&signature));
+    if (FAILED(result)) {
+      fail("CreateCommandSignature", result);
+      return nullptr;
+    }
+  }
+  return signature.Get();
 }
 
 // A dispatch: the barriers of the groups bound and of the indirect buffer,
@@ -418,7 +466,10 @@ int dispatch(Replay &replay, bool indirect) {
   uint64_t slot = 0;
   ID3D12CommandSignature *signature =
       dispatchSignature(replay.context, replay.pipeline->root);
-  if (!signature || indirectArguments(replay, buffer, offset, &slot) != 0) {
+  // The workgroups twice: as the root constants, then as the dispatch.
+  if (!signature ||
+      indirectArguments(replay, buffer, {{offset, 12}, {offset, 12}}, &slot) !=
+          0) {
     return -1;
   }
   replay.list->ExecuteIndirect(signature, 1, replay.scratch.Get(), slot,
@@ -556,6 +607,48 @@ int drawCommand(Replay &replay, uint32_t opcode) {
     } else {
       list->DrawIndexedInstanced(count, instances, 0, 0, firstInstance);
     }
+    return 0;
+  }
+  case FDW_DX_CMD_DRAW_INDIRECT:
+  case FDW_DX_CMD_DRAW_INDEXED_INDIRECT: {
+    if (!replay.inRenderPass) {
+      return fail("A draw outside of a render pass");
+    }
+    fdw_dx_buffer *buffer =
+        find(context->buffers, reader.word(), "buffer", &status);
+    const uint64_t offset = reader.wide();
+    if (!buffer) {
+      return status;
+    }
+    const bool indexed = opcode == FDW_DX_CMD_DRAW_INDEXED_INDIRECT;
+    // The arguments, and the offset of the first instance among them.
+    const uint64_t size = indexed ? 20 : 16;
+    const uint64_t first = indexed ? 16 : 12;
+    if (offset % 4 != 0 || !inside(offset, size, buffer->size)) {
+      return fail("The indirect arguments are outside of the buffer, or "
+                  "their offset is not a multiple of 4");
+    }
+    if (indexed && !replay.indexBuffer) {
+      return fail("No index buffer set before drawing");
+    }
+    if (flushGroups(replay) != 0) {
+      return -1;
+    }
+    flushVertexBuffers(replay);
+    // SV_InstanceID starts at 0: the first instance, as the root constant
+    // the shaders add, then the draw (its buffer was made a copy source
+    // before the pass, see prepareRenderPass).
+    uint64_t slot = 0;
+    ID3D12CommandSignature *signature =
+        drawSignature(context, replay.pipeline->root, indexed);
+    if (!signature ||
+        indirectArguments(replay, buffer,
+                          {{offset + first, 4}, {offset, size}}, &slot) != 0) {
+      return -1;
+    }
+    list->ExecuteIndirect(signature, 1, replay.scratch.Get(), slot, nullptr,
+                          0);
+    replay.firstInstance = ~0u;
     return 0;
   }
   case FDW_DX_CMD_SET_VIEWPORT: {

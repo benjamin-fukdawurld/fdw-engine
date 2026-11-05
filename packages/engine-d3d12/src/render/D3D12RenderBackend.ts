@@ -64,6 +64,7 @@ export class D3D12RenderBackend implements RenderBackend {
       maxAnisotropy: addon.maxAnisotropy(device.context),
       maxColorAttachments: addon.maxColorAttachments(device.context),
       independentBlend: addon.independentBlend(device.context),
+      indirectDraw: addon.indirectDraw(device.context),
       // Ray queries in every stage and the ray tracing pipelines, where the
       // GPU has DXR 1.1.
       rayQuery: addon.rayQuerySupported(device.context),

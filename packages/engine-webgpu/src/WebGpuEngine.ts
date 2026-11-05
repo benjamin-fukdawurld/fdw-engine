@@ -76,9 +76,14 @@ export class WebGpuEngine extends EventTarget implements Engine {
       if (!adapter) {
         throw new Error('Failed to get GPU adapter');
       }
-      // Timestamps, to measure the passes, and the compressed formats,
+      // Timestamps, to measure the passes, the first instance of the
+      // indirect draws (the object table needs it), and the compressed formats,
       // where the adapter has them.
-      const features = ['timestamp-query', ...Object.keys(CompressionFeatures)];
+      const features = [
+        'timestamp-query',
+        'indirect-first-instance',
+        ...Object.keys(CompressionFeatures),
+      ];
       // The storage buffers of the adapter: the programs tracing rays bind
       // the buffers of the scene besides their own, and large BVHs.
       const { limits } = adapter;

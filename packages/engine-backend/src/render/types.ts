@@ -168,6 +168,9 @@ export interface GpuObjectTable {
   writeRows(firstRow: number, data: ArrayBufferView<ArrayBuffer>): void;
   // Writes the rows of instances from `firstInstance`.
   writeInstances(firstInstance: number, rows: Uint32Array<ArrayBuffer>): void;
+  // The instances as a storage buffer of u32, which compute passes can
+  // write (the culling on the GPU), on the backends keeping them in one.
+  readonly instanceBuffer?: GpuBuffer;
   destroy(): void;
 }
 
@@ -260,6 +263,14 @@ export interface GpuRenderPassEncoder {
     instanceCount?: number,
     firstInstance?: number,
   ): void;
+  // Draws whose arguments are read from a buffer (usage 'indirect'),
+  // written by the GPU, where the backend has the indirectDraw capability:
+  // four u32 (vertexCount, instanceCount, firstVertex, firstInstance) at
+  // `offset`, a multiple of 4.
+  drawIndirect?(buffer: GpuBuffer, offset: number): void;
+  // Five u32: indexCount, instanceCount, firstIndex, baseVertex,
+  // firstInstance.
+  drawIndexedIndirect?(buffer: GpuBuffer, offset: number): void;
   // The rectangle drawn into, in pixels from the top left corner of the
   // attachments (the whole attachments by default): a tile of an atlas.
   setViewport(x: number, y: number, width: number, height: number): void;

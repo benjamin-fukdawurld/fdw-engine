@@ -211,6 +211,8 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
       indexed: boolean;
       instances?: number;
       firstInstance?: number;
+      // Drawn with the arguments of a buffer, at this offset.
+      indirect?: { buffer: GpuBuffer; offset: number };
     }[],
     submits: 0,
     // The descriptors of the textures created, with their levels.
@@ -365,6 +367,10 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
           log.instanceWrites.push({ first, count: rows.length });
           log.lastInstances = rows;
         },
+        // Where compute passes write the instances (indirectDraw).
+        ...(capabilities?.indirectDraw
+          ? { instanceBuffer: new FakeBuffer(instances * 4, 'instances') }
+          : {}),
         destroy: () => undefined,
       };
     },
@@ -438,6 +444,26 @@ export function fakeBackend(capabilities?: BackendCapabilities) {
             };
             log.draws.push(current);
           },
+          ...(capabilities?.indirectDraw
+            ? {
+                drawIndirect: (buffer: GpuBuffer, offset: number) =>
+                  log.draws.push({
+                    pipeline: pipelineLabel,
+                    groups: { ...boundGroups },
+                    count: 0,
+                    indexed: false,
+                    indirect: { buffer, offset },
+                  }),
+                drawIndexedIndirect: (buffer: GpuBuffer, offset: number) =>
+                  log.draws.push({
+                    pipeline: pipelineLabel,
+                    groups: { ...boundGroups },
+                    count: 0,
+                    indexed: true,
+                    indirect: { buffer, offset },
+                  }),
+              }
+            : {}),
           end: () => undefined,
         };
       },

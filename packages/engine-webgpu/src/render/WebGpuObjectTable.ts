@@ -2,16 +2,18 @@ import type {
   GpuObjectTable,
   ObjectTableDescriptor,
 } from '@fdw/engine-backend';
+import { Buffer } from '../gpu/BufferFactory';
 
 /**
- * The object table of WebGPU: two read-only storage buffers, the rows and
- * the row of each instance, bound at two consecutive bindings.
+ * The object table of WebGPU: two storage buffers, the rows and the row of
+ * each instance, bound read-only at two consecutive bindings. Compute
+ * passes can write the instances (instanceBuffer).
  */
 export class WebGpuObjectTable implements GpuObjectTable {
   readonly rows: number;
   readonly instances: number;
   readonly rowBuffer: GPUBuffer;
-  readonly instanceBuffer: GPUBuffer;
+  readonly instanceBuffer: Buffer;
   private readonly _rowStride: number;
 
   constructor(
@@ -27,10 +29,16 @@ export class WebGpuObjectTable implements GpuObjectTable {
       size: this.rows * rowStride,
       usage,
     });
-    this.instanceBuffer = _device.createBuffer({
-      label: `${label ?? 'object table'} instances`,
-      size: this.instances * 4,
-      usage,
+    const size = this.instances * 4;
+    this.instanceBuffer = new Buffer({
+      device: _device,
+      buffer: _device.createBuffer({
+        label: `${label ?? 'object table'} instances`,
+        size,
+        // Read back by the tests of the culling on the GPU.
+        usage: usage | GPUBufferUsage.COPY_SRC,
+      }),
+      size,
     });
   }
 
@@ -46,7 +54,7 @@ export class WebGpuObjectTable implements GpuObjectTable {
 
   writeInstances(firstInstance: number, rows: Uint32Array<ArrayBuffer>): void {
     this._device.queue.writeBuffer(
-      this.instanceBuffer,
+      this.instanceBuffer.buffer,
       firstInstance * 4,
       rows.buffer,
       rows.byteOffset,

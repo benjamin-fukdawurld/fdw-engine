@@ -495,6 +495,59 @@ describe('Renderer, object table', () => {
     expect(log.draws.map((draw) => draw.instances)).toEqual([300]);
   });
 
+  describe('culling on the GPU', () => {
+    const culled = (indirectDraw: boolean) => {
+      const { backend, log } = fakeBackend({
+        maxVaryings: 16,
+        storageBuffers: true,
+        compute: true,
+        objectTable: true,
+        indirectDraw,
+      });
+      const renderer = new Renderer(backend);
+      const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+      const material = new Material({ graph: colorGraph() });
+      const mesh = triangle();
+      // Two in view, one far out of it.
+      const items = [-1, 1, 5000].map((x) => ({
+        mesh,
+        material,
+        transform: transformAt(x),
+      }));
+      renderer.render({ items, camera, surface, gpuCulling: true });
+      return { renderer, log };
+    };
+
+    it('tests the items on the GPU and draws them indirectly', () => {
+      const { renderer, log } = culled(true);
+      expect(log.computePasses).toContain('scene culling');
+      // The test, the prefix sum (2 steps for 3 candidates), the scatter,
+      // the arguments.
+      expect(log.dispatches.map((dispatch) => dispatch.pipeline)).toEqual([
+        'culling test',
+        'culling scan',
+        'culling scan',
+        'culling scatter',
+        'culling arguments',
+      ]);
+      // Every item given to the GPU; its instances not written by the CPU.
+      expect(log.instanceWrites).toEqual([]);
+      expect(log.draws).toHaveLength(1);
+      expect(log.draws[0].indirect?.offset).toBe(0);
+      expect(renderer.stats.get('scene')).toMatchObject({
+        visible: 3,
+        drawCalls: 1,
+      });
+    });
+
+    it('culls on the CPU where the backend has no indirect draws', () => {
+      const { renderer, log } = culled(false);
+      expect(log.computePasses).toEqual([]);
+      expect(log.draws.map((draw) => draw.instances)).toEqual([2]);
+      expect(renderer.stats.get('scene')).toMatchObject({ visible: 2 });
+    });
+  });
+
   it('instances the items sharing a mesh and a material, sorted together', () => {
     const { renderer, render, log } = tabled();
     const red = new Material({ graph: colorGraph() });

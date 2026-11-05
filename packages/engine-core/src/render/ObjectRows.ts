@@ -108,6 +108,21 @@ export class ObjectRows {
    * changed, then the rows of the instances. Returns the first instance.
    */
   instances<T>(entries: readonly T[], source: (entry: T) => RowSource): number {
+    const { first, rows, table } = this.reserve(entries, source);
+    table.writeInstances(first, rows);
+    return first;
+  }
+
+  /**
+   * Reserves the instances of a pass whose list the GPU writes (the culling
+   * on the GPU): the row of each object, written if it changed, and the
+   * place of the instances. Returns the first instance, the rows of the
+   * entries (valid until the next call), and the table they are in.
+   */
+  reserve<T>(
+    entries: readonly T[],
+    source: (entry: T) => RowSource,
+  ): { first: number; rows: Uint32Array<ArrayBuffer>; table: GpuObjectTable } {
     this._executed = true;
     const first = this._cursor;
     const count = entries.length;
@@ -124,8 +139,11 @@ export class ObjectRows {
     this._cursor += count;
     const table = this.ensure(this._count, this._cursor);
     this.writeDirty(table);
-    table.writeInstances(first, this._instances.subarray(first, first + count));
-    return first;
+    return {
+      first,
+      rows: this._instances.subarray(first, first + count),
+      table,
+    };
   }
 
   destroy(): void {

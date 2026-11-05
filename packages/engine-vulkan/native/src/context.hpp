@@ -239,6 +239,8 @@ struct fdw_vk_context {
   // blend states can differ.
   uint32_t maxColorAttachments = 4;
   bool independentBlend = false;
+  // drawIndirectFirstInstance: the indirect draws of the object table.
+  bool indirectDraw = false;
   // The bits of the timestamps of the queue (0: none), and nanoseconds per
   // tick.
   uint32_t timestampValidBits = 0;

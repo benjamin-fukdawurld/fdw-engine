@@ -221,7 +221,7 @@ export class WebGpuPipelineFactory implements GpuPipelineFactory {
                   },
                   {
                     binding: entry.binding + 1,
-                    resource: { buffer: entry.resource.instanceBuffer },
+                    resource: { buffer: entry.resource.instanceBuffer.buffer },
                   },
                 ]
               : [{ binding: entry.binding, resource: bindingResource(entry) }],
