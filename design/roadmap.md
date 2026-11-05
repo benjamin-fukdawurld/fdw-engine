@@ -51,7 +51,7 @@ Les numéros sont des identifiants stables : le tableau donne l'ordre prévu, qu
 
 1. **P11, Windows d'abord** : le développement se fait maintenant sous Windows, mais la CI ne tourne que sous Linux et le viewport natif de l'éditeur ne connaît que X11. Un job Windows en CI (les addons, la suite de rendu sur Direct3D 12 par WARP et sur Vulkan), le viewport de l'éditeur dans une fenêtre `WS_CHILD` transparente aux entrées, les addons précompilés, le démarrage (cache de pipelines, précompilation) ; macOS et Wayland ensuite.
 2. **La consolidation** : un nouvel audit du code ([audit.md](../audit.md) date du 2 octobre, avant presque toutes les phases), et la stabilité des tests : chercher pourquoi les tests de rendu, de fumée, de graph et de layout demandent des timeouts toujours plus longs, plutôt que de les allonger encore.
-3. **Les restes du rendu** : les ombres des lumières ponctuelles ([p2-lights §9](p2-lights.md#9-reportés)), la démo de P2b (occlusion ambiante, sélection au pixel, rendu différé).
+3. **Les restes du rendu** : les ombres des lumières ponctuelles ([p2-lights §9](p2-lights.md#9-reportés)), la démo de P2b (occlusion ambiante, sélection au pixel, rendu différé ; _faite le 4 novembre 2026_).
 4. **Les draws indirects et le rendu piloté par le GPU** ([évolutions §3](evolutions.md#3-le-rendu-piloté-par-le-gpu)), en Vulkan et Direct3D 12 : ils débloquent les deux phases sans retard de l'occlusion (P3), le choix des niveaux de tessellation en calcul (P3b) et le culling des lumières sur le GPU (P2).
 5. **Le gameplay** : le root motion, la recherche de chemin, le contrôleur de personnage contre les volumes de la scène, les ragdolls ; utiles ensuite à l'éditeur de jeu.
 
@@ -101,7 +101,7 @@ _Faite_ (27 octobre 2026), sauf les ombres des lumières ponctuelles et le culli
 
 ### P2b. Cibles de rendu multiples, rendu différé et détails de surface
 
-_Étapes 1 à 7 faites_ (13 octobre 2026), avec leurs tutoriels ; reste la démo. Insérée après P2 sans renuméroter les phases suivantes. Design : [p2b-targets.md](p2b-targets.md). Le principe : **le moteur ne fixe aucune liste de cibles**. L'utilisateur choisit ce que ses passes écrivent (couleur, normales, identifiants, toute sortie de la surface) et compose les textures obtenues comme il veut dans le render graph ; le rendu différé n'est qu'une façon de les composer, jamais imposée.
+_Faite_ : étapes 1 à 7 (13 octobre 2026), avec leurs tutoriels ; la démo (4 novembre 2026), la scène `deferred` de `demo-scenes`. Insérée après P2 sans renuméroter les phases suivantes. Design : [p2b-targets.md](p2b-targets.md). Le principe : **le moteur ne fixe aucune liste de cibles**. L'utilisateur choisit ce que ses passes écrivent (couleur, normales, identifiants, toute sortie de la surface) et compose les textures obtenues comme il veut dans le render graph ; le rendu différé n'est qu'une façon de les composer, jamais imposée.
 
 - **Les cibles de rendu multiples (MRT) sur tous les backends.** L'API (`colorAttachments`, `targets` des pipelines) et les encodeurs WebGPU et Vulkan acceptent déjà plusieurs attachments ; **WebGL2 les refuse** aujourd'hui (« renders to one color target ») alors que WebGL2 les supporte : `drawBuffers` et un framebuffer à plusieurs attachments, la résolution du multi-échantillonnage attachment par attachment (`readBuffer` et `blitFramebuffer`). À traiter : une sortie par attachment dans le material graph et les trois générateurs, la limite du nombre d'attachments en capacité (`maxColorAttachments` : 8 en WebGPU, au moins 4 en WebGL2), le mélange par attachment (WebGL2 n'a qu'un état de mélange sans `OES_draw_buffers_indexed`), et `pass.writeColor` répété dans le render graph.
 - **Des sorties de surface au choix.** `addScenePasses` reçoit les cibles voulues, chacune avec son format et la valeur écrite, prise dans la surface du matériau ou dans le moteur. Le graphe du matériau ne change pas : c'est la cible de compilation `gbuffer` prévue au [render graph §8](render-graph.md#8-les-matériaux-dans-les-passes), généralisée à une liste de sorties choisie par l'utilisateur.
@@ -118,6 +118,14 @@ _Étapes 1 à 7 faites_ (13 octobre 2026), avec leurs tutoriels ; reste la démo
 Ordre suggéré : les MRT en WebGL2 et les sorties de surface (normales, identifiants), puis la SSAO et la sélection, le rendu différé, les détails de surface ; les exemples suivent chaque brique. Les MRT, les normales et les identifiants ne dépendent pas de P2 et peuvent commencer avant.
 
 Démo : une scène avec occlusion ambiante et sélection au pixel, éclairée en rendu différé ou en forward au choix.
+
+**À étudier : l'identifiant attaché au transform.** Le renderer range `RenderItem.id` dans la ligne de l'objet, et cette ligne est indexée par le `Transform`, pas par l'item. Si deux listes d'items partagent les mêmes transforms (un G-buffer et une passe forward, des matériaux différents par passe) et qu'une seule porte l'`id`, la dernière passe dessinée remet l'identifiant à 0. La sélection ne renvoie alors plus rien, sans erreur ni avertissement (rencontré dans la démo, le 4 novembre 2026, voir [p2b §7](p2b-targets.md#7-les-étapes)). Pistes :
+
+- un identifiant par item plutôt que par transform, au prix d'une ligne par couple (item, transform) ;
+- l'identifiant porté par le `Transform` lui-même, ou par l'objet de scène ;
+- au minimum, un avertissement en mode développement quand le même transform reçoit deux identifiants différents dans une frame.
+
+À trancher avant la sélection de l'éditeur (P15), qui multipliera les passes sur les mêmes objets (contours, gizmos, vues).
 
 ### P3. Occlusion culling
 
