@@ -207,6 +207,9 @@ struct RootSignature {
   std::vector<int32_t> samplerTables;
   // For the indirect dispatches: sets the root constants, then dispatches.
   ComPtr<ID3D12CommandSignature> dispatch;
+  // For the indirect draws: sets the first instance, then draws.
+  ComPtr<ID3D12CommandSignature> draw;
+  ComPtr<ID3D12CommandSignature> drawIndexed;
 };
 
 struct fdw_dx_pipeline {

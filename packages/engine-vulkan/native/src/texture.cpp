@@ -560,6 +560,10 @@ int32_t fdw_vk_independent_blend(const fdw_vk_context *context) {
   return context->independentBlend ? 1 : 0;
 }
 
+int32_t fdw_vk_indirect_draw(const fdw_vk_context *context) {
+  return context->indirectDraw ? 1 : 0;
+}
+
 int32_t fdw_vk_format_supported(const fdw_vk_context *context,
                                 const char *name) {
   const FormatInfo *format = findFormat(name);

@@ -394,6 +394,9 @@ int createDevice(fdw_vk_context *context) {
   }
   features.features.independentBlend = available.independentBlend;
   context->independentBlend = available.independentBlend;
+  features.features.drawIndirectFirstInstance =
+      available.drawIndirectFirstInstance;
+  context->indirectDraw = available.drawIndirectFirstInstance;
   // The compressed formats, where the device has them (their support is
   // read per format: fdw_vk_format_supported).
   features.features.textureCompressionBC = available.textureCompressionBC;

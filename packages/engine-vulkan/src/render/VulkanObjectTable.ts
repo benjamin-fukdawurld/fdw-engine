@@ -7,7 +7,8 @@ import { VulkanBuffer } from '../gpu/VulkanBuffer';
 
 /**
  * The object table of Vulkan: two storage buffers, the rows and the row of
- * each instance, bound at two consecutive bindings.
+ * each instance, bound at two consecutive bindings. Compute passes can
+ * write the instances (instanceBuffer).
  */
 export class VulkanObjectTable implements GpuObjectTable {
   readonly rows: number;
@@ -26,7 +27,8 @@ export class VulkanObjectTable implements GpuObjectTable {
     const create = (size: number, name: string) =>
       buffers.create({
         size,
-        usage: ['storage', 'copy-dst'],
+        // Read back by the tests of the culling on the GPU.
+        usage: ['storage', 'copy-src', 'copy-dst'],
         label: `${label ?? 'object table'} ${name}`,
       }) as VulkanBuffer;
     this.rowBuffer = create(this.rows * rowStride, 'rows');

@@ -30,3 +30,5 @@ export { bakeTexture } from './bake';
 export type { BakeTextureOptions } from './bake';
 export * from './rays';
 export { hasAttribute, readAttribute } from './attributes';
+export { ArgumentWords, GpuCulling } from './gpuCulling';
+export type { CulledDraws, CulledRun } from './gpuCulling';

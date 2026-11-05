@@ -6,6 +6,7 @@ import {
   GpuBindGroupEntry,
   GpuBindGroupLayout,
   GpuBuffer,
+  GpuObjectTable,
   GpuRenderPassEncoder,
   GpuSampler,
   GpuTexture,
@@ -44,10 +45,21 @@ import {
 import type { Camera } from '../Camera';
 import { Transform } from '../Transform';
 import { ObjectBlockSize, TransformLayout } from '../TransformPool';
-import { RenderGraph, TextureHandle, TextureSize } from '../graph/RenderGraph';
+import {
+  BufferHandle,
+  RenderGraph,
+  TextureHandle,
+  TextureSize,
+} from '../graph/RenderGraph';
 import { RenderGraphRunner } from '../graph/RenderGraphRunner';
 import { BaseLight, DirectionalLight, PointLight, SpotLight } from '../light';
 import { meshBox } from './bounds';
+import {
+  CulledDraws,
+  CulledRun,
+  ArgumentWords,
+  GpuCulling,
+} from './gpuCulling';
 import { lightRange } from './lightRange';
 import { isGlobalLight, LightClusters } from './lightClusters';
 import { LightPoolStride, writeLightPool } from './lightPool';
@@ -129,6 +141,14 @@ export interface RenderOptions {
   // pbr and phong shading models, besides the lights. Prefiltered on its
   // first frame, and after its update().
   readonly environment?: Environment;
+  // Tests the items against the frustum on the GPU, which writes the
+  // instances drawn and the arguments of indirect draws
+  // (design/p24-gpu-driven.md): the lists of items are no longer tested
+  // one by one on the CPU (a source still culls what it holds). Where the
+  // backend has indirectDraw and compute shaders (not WebGL2: ignored
+  // there). The statistics of the view then count the items given to the
+  // GPU. Default false.
+  readonly gpuCulling?: boolean;
 }
 
 /** The fog of a view: see RenderOptions.fog. */
@@ -531,6 +551,24 @@ function forEachRun(
   }
 }
 
+// A list of entries culled on the GPU (see Renderer.addCullingPass): the
+// buffer of the arguments of its draws in the graph, and what the culling
+// recorded, once it ran.
+interface CulledList {
+  readonly key: string;
+  readonly entries: readonly PreparedItem[];
+  handle: BufferHandle;
+  draws?: CulledDraws;
+}
+
+// A draw of the arguments of a buffer, which the backend must have.
+function indirectDraw<T>(draw: T | undefined): T {
+  if (!draw) {
+    throw new Error('The backend has no indirect draws (indirectDraw)');
+  }
+  return draw;
+}
+
 // The object state of an entry: the source of its row in the object table.
 const objectOf = (entry: PreparedItem): ObjectState => entry.object;
 
@@ -812,6 +850,14 @@ export class Renderer {
     string,
     { version: number; bindGroup: GpuBindGroup }
   >();
+  // The bind groups of the tables replaced during a frame, still drawn by
+  // the passes culled on the GPU before (see drawCulled).
+  private readonly _staleObjectGroups = new WeakMap<
+    GpuObjectTable,
+    Map<string, GpuBindGroup>
+  >();
+  // The culling on the GPU, created on first use.
+  private _gpuCulling?: GpuCulling;
 
   constructor(backend: RenderBackend, options: RendererOptions = {}) {
     this.backend = backend;
@@ -955,8 +1001,10 @@ export class Renderer {
       fog,
       rays,
       environment,
+      gpuCulling = false,
     }: ScenePassesOptions,
   ): ScenePasses {
+    const culling = gpuCulling && GpuCulling.supported(this.backend);
     const rayShadows = rayShadowsOf(rays);
     if (rays && !this.backend.capabilities?.rayQuery) {
       throw new Error(
@@ -976,7 +1024,8 @@ export class Renderer {
       );
     }
     this._objectRows.beginFrame();
-    const from = this.sourceOf(source, items);
+    // Culled on the GPU, the lists are not tested here.
+    const from = this.sourceOf(source, items, !culling);
     const cameraCache = this.cameraCache(camera);
     const frustum = this.frustum(name).setFromMatrix(
       cameraCache.viewProjectionMatrix.value,
@@ -1171,6 +1220,13 @@ export class Renderer {
     if (first) {
       this.writeView(view, first.layout, this._frameValues);
     }
+    // The entries culled on the GPU, opaque then transparent.
+    const [opaqueCulled, transparentCulled] = culling
+      ? this.addCullingPass(graph, name, frustum, [
+          include !== 'transparent' ? opaqueEntries : [],
+          transparentEntries,
+        ])
+      : [];
     // The textures of the graph read by the materials, and the materials
     // that have them.
     const readInputs = (pass: {
@@ -1249,6 +1305,9 @@ export class Renderer {
         const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
         const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
         const read = readInputs(pass);
+        if (opaqueCulled) {
+          pass.read(opaqueCulled.handle, 'indirect');
+        }
         let written: TextureHandle | undefined;
         let resolvedColor: TextureHandle | undefined;
         if (color && target) {
@@ -1282,7 +1341,7 @@ export class Renderer {
             this.bindShadowMap(view, atlas && texture(atlas));
             this.bindEnvironment(view, ibl && texture(ibl));
             bindInputs(opaqueEntries, read, texture);
-            this.drawAll(encoder, opaqueEntries);
+            this.drawEntries(encoder, opaqueEntries, opaqueCulled);
           },
         };
       });
@@ -1313,6 +1372,9 @@ export class Renderer {
       const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
       const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
       const read = readInputs(pass);
+      if (transparentCulled) {
+        pass.read(transparentCulled.handle, 'indirect');
+      }
       const written = pass.writeColor(over, {
         load: include === 'transparent' ? load : 'load',
         clearValue: clearColor,
@@ -1323,7 +1385,7 @@ export class Renderer {
           this.bindShadowMap(view, atlas && texture(atlas));
           this.bindEnvironment(view, ibl && texture(ibl));
           bindInputs(transparentEntries, read, texture);
-          this.drawAll(encoder, transparentEntries);
+          this.drawEntries(encoder, transparentEntries, transparentCulled);
         },
       };
     });
@@ -1593,6 +1655,8 @@ export class Renderer {
     this._toneMappingSampler = undefined;
     this._toneMapping = undefined;
     this._runner.destroy();
+    this._gpuCulling?.destroy();
+    this._gpuCulling = undefined;
     this._objectRows.destroy();
     this._objectGroups.clear();
     // Those being created are destroyed when they are (see ensurePipeline).
@@ -1612,12 +1676,13 @@ export class Renderer {
   private sourceOf(
     source: RenderSource | undefined,
     items: Iterable<Renderable>,
+    test = true,
   ): RenderSource {
     const empty = Array.isArray(items) && items.length === 0;
     if (!source || empty) {
-      return source ?? this.listSource(items);
+      return source ?? this.listSource(items, test);
     }
-    const list = this.listSource(items);
+    const list = this.listSource(items, test);
     return {
       query: (frustum, layers, visit, view) => {
         source.query(frustum, layers, visit, view);
@@ -1635,8 +1700,9 @@ export class Renderer {
   }
 
   // A list of items as a source: each item tested against the frustum with
-  // its world bounds. Items without positions are always drawn.
-  private listSource(items: Iterable<Renderable>): RenderSource {
+  // its world bounds, unless `test` is false (culled on the GPU). Items
+  // without positions are always drawn.
+  private listSource(items: Iterable<Renderable>, test = true): RenderSource {
     // Arrays as they are: they are only read while the passes are added.
     const list = Array.isArray(items)
       ? (items as readonly Renderable[])
@@ -1646,7 +1712,11 @@ export class Renderer {
         try {
           for (const item of list) {
             const bounds = this.worldBounds(item);
-            if (!bounds || frustum.classifyAabb(bounds) !== 'outside') {
+            if (
+              !test ||
+              !bounds ||
+              frustum.classifyAabb(bounds) !== 'outside'
+            ) {
               // Its bounds, found again while it is visited.
               this._visiting = item;
               this._visitingBounds = bounds;
@@ -3115,6 +3185,101 @@ export class Renderer {
     return gpu;
   }
 
+  // The compute pass culling lists of entries on the GPU, before the passes
+  // drawing them: for each list (none when empty), the buffer of the
+  // arguments of its draws, as the graph knows it, and what its pass
+  // records.
+  private addCullingPass(
+    graph: RenderGraph,
+    name: string,
+    frustum: Frustum,
+    lists: readonly (readonly PreparedItem[])[],
+  ): (CulledList | undefined)[] {
+    const culling = (this._gpuCulling ??= new GpuCulling(this.backend));
+    const culled = lists.map((entries, i): CulledList | undefined => {
+      if (entries.length === 0) {
+        return undefined;
+      }
+      const key = `${name} ${i === 0 ? 'opaque' : 'transparent'}`;
+      let runs = 0;
+      forEachRun(entries, () => runs++);
+      return {
+        key,
+        entries,
+        handle: graph.importBuffer(
+          `${key} draws`,
+          culling.prepare(key, entries.length, runs),
+        ),
+      };
+    });
+    const used = culled.filter((list) => list !== undefined);
+    if (used.length === 0) {
+      return culled;
+    }
+    const planes = Array.from(frustum.planes);
+    graph.addComputePass(`${name} culling`, (pass) => {
+      for (const list of used) {
+        list.handle = pass.write(list.handle, 'storage-write');
+      }
+      return {
+        execute: ({ pass: encoder }) => {
+          for (const list of used) {
+            const { first, rows, table } = this._objectRows.reserve(
+              list.entries,
+              objectOf,
+            );
+            const runs: CulledRun[] = [];
+            forEachRun(list.entries, (start, count) => {
+              const { item } = list.entries[start];
+              const indices = item.mesh.description.indexBuffer;
+              const indexed =
+                this.gpuMesh(item.mesh).indexBuffer !== undefined &&
+                indices !== undefined;
+              runs.push({
+                start,
+                count,
+                elements: indexed
+                  ? indices.count
+                  : item.mesh.description.vertexCount,
+                indexed,
+              });
+            });
+            list.draws = culling.record(encoder, list.key, {
+              first,
+              rows,
+              table,
+              bounds: (index) => this.worldBounds(list.entries[index].item),
+              runs,
+              planes,
+            });
+          }
+        },
+      };
+    });
+    return culled;
+  }
+
+  // Draws entries in order: culled on the GPU (indirect draws), or with
+  // their instances written first.
+  private drawEntries(
+    pass: GpuRenderPassEncoder,
+    entries: readonly PreparedItem[],
+    culled: CulledList | undefined,
+  ): void {
+    const draws = culled?.draws;
+    if (!draws) {
+      this.drawAll(pass, entries);
+      return;
+    }
+    let run = 0;
+    forEachRun(entries, (start) =>
+      this.draw(pass, entries[start], 0, 0, {
+        draws,
+        offset: run++ * ArgumentWords * 4,
+      }),
+    );
+  }
+
   // Draws entries in order: with an object table, their instances first.
   private drawAll(
     pass: GpuRenderPassEncoder,
@@ -3139,6 +3304,8 @@ export class Renderer {
     { item, program, layout, pipelineKey, view }: PreparedItem,
     instance: number,
     instances: number,
+    // Drawn with the arguments written by the culling on the GPU.
+    indirect?: { readonly draws: CulledDraws; readonly offset: number },
   ): void {
     const pipeline = (
       this._pipelines.get(pipelineKey) as { pipeline: GpuRenderPipeline }
@@ -3156,7 +3323,7 @@ export class Renderer {
       if (group.slot === 'frame') {
         bindGroup = this.sharedBindGroup(view, group);
       } else if (group.slot === 'object') {
-        bindGroup = this.objectTableBindGroup(group);
+        bindGroup = this.objectTableBindGroup(group, indirect?.draws.table);
       } else {
         bindGroup = this.materialBindGroup(item.material, program, group);
       }
@@ -3187,18 +3354,54 @@ export class Renderer {
         state.indexBuffer = mesh.indexBuffer;
         state.indexFormat = format;
       }
-      pass.drawIndexed(indices.count, instances, instance);
+      if (indirect) {
+        indirectDraw(pass.drawIndexedIndirect).call(
+          pass,
+          indirect.draws.arguments,
+          indirect.offset,
+        );
+      } else {
+        pass.drawIndexed(indices.count, instances, instance);
+      }
+    } else if (indirect) {
+      indirectDraw(pass.drawIndirect).call(
+        pass,
+        indirect.draws.arguments,
+        indirect.offset,
+      );
     } else {
       pass.draw(item.mesh.description.vertexCount, instances, instance);
     }
   }
 
   // The bind group of the object table, for a layout of the 'object' group:
-  // made again when the table grows.
-  private objectTableBindGroup(group: PhysicalBindGroup): GpuBindGroup {
+  // made again when the table grows. `written`: the table the instances
+  // were written into by the culling on the GPU, which may have been
+  // replaced since (a later pass of the frame added instances): kept until
+  // the next frame, as its bind groups.
+  private objectTableBindGroup(
+    group: PhysicalBindGroup,
+    written?: GpuObjectTable,
+  ): GpuBindGroup {
     const rows = this._objectRows;
     const layout = this.bindGroupLayout(group);
     const table = rows.table;
+    if (written && written !== table) {
+      let groups = this._staleObjectGroups.get(written);
+      if (!groups) {
+        groups = new Map();
+        this._staleObjectGroups.set(written, groups);
+      }
+      let bindGroup = groups.get(layout.key);
+      if (!bindGroup) {
+        bindGroup = this.backend.pipelines.createBindGroup(layout, [
+          { binding: group.bindings[0].binding, resource: written },
+        ]);
+        groups.set(layout.key, bindGroup);
+        rows.retire(bindGroup);
+      }
+      return bindGroup;
+    }
     let cached = this._objectGroups.get(layout.key);
     if (!cached || cached.version !== rows.version) {
       if (cached) {

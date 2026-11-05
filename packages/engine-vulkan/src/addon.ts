@@ -166,6 +166,8 @@ export interface VulkanAddon {
   maxColorAttachments(context: ContextHandle): number;
   // Whether the color targets of a pipeline can blend differently.
   independentBlend(context: ContextHandle): boolean;
+  // Whether the indirect draws are supported, first instance included.
+  indirectDraw(context: ContextHandle): boolean;
   // Whether the device can write and sample textures of a format.
   formatSupported(context: ContextHandle, format: string): boolean;
   samplerId(sampler: SamplerHandle): number;
@@ -332,6 +334,8 @@ export const Commands = {
   generateMipmaps: 18,
   buildTopLevel: 19,
   refitBottomLevel: 20,
+  drawIndirect: 21,
+  drawIndexedIndirect: 22,
 } as const;
 
 /** The flags of createBottomLevel (FDW_VK_BOTTOM_LEVEL_*). */

@@ -38,7 +38,9 @@ import {
   Camera,
   computeTangents,
   lightRange,
+  ArgumentWords,
   ComputeRunner,
+  GpuCulling,
   RenderGraph,
   RenderGraphRunner,
   DirectionalLight,
@@ -1733,6 +1735,155 @@ export function describeRenderer(
         });
         expectColor(pixel(24, 32), [0, 255, 0, 255]);
         occlusion.destroy();
+      });
+    });
+
+    describe('culling on the GPU', () => {
+      it('compacts the visible instances and writes the arguments of their draws', async () => {
+        if (backend.capabilities?.emulatedCompute) {
+          // WebGL2: no indirect draws.
+          expect(GpuCulling.supported(backend)).toBe(false);
+          return;
+        }
+        expect(GpuCulling.supported(backend)).toBe(true);
+        const createTable = backend.createObjectTable?.bind(backend);
+        const table = createTable?.({
+          rows: 16,
+          instances: 16,
+          rowStride: 112,
+          label: 'culling test',
+        });
+        if (!table?.instanceBuffer) {
+          throw new Error('The backend has no instance buffer');
+        }
+        const instanceBuffer = table.instanceBuffer;
+        // The cube [-1, 1]³.
+        const planes = [
+          [1, 0, 0, 1],
+          [-1, 0, 0, 1],
+          [0, 1, 0, 1],
+          [0, -1, 0, 1],
+          [0, 0, 1, 1],
+          [0, 0, -1, 1],
+        ].flat();
+        const box = (x: number, half = 0.1) =>
+          new Aabb([x - half, -half, -half], [x + half, half, half]);
+        // Inside, outside, across a plane | outside, without bounds.
+        const bounds = [box(0), box(5), box(1, 0.2), box(-5), undefined];
+        const culling = new GpuCulling(backend);
+        const encoder = backend.createCommandEncoder();
+        const pass = encoder.beginComputePass('culling');
+        const draws = culling.record(pass, 'test', {
+          first: 2,
+          rows: new Uint32Array([10, 11, 12, 13, 14]),
+          table,
+          bounds: (i) => bounds[i],
+          runs: [
+            { start: 0, count: 3, elements: 6, indexed: true },
+            { start: 3, count: 2, elements: 4, indexed: false },
+          ],
+          planes,
+        });
+        pass.end();
+        backend.submit([encoder.finish()]);
+        const instances = new Uint32Array(await instanceBuffer.read());
+        expect([...instances.subarray(2, 5)]).toEqual([10, 12, 14]);
+        const args = new Uint32Array(
+          await draws.arguments.read(0, 2 * ArgumentWords * 4),
+        );
+        // drawIndexedIndirect: indices, instances, first index, base
+        // vertex, first instance; drawIndirect: vertices, instances, first
+        // vertex, first instance.
+        expect([...args]).toEqual([6, 2, 0, 0, 2, 4, 1, 0, 4, 0]);
+        culling.destroy();
+        table.destroy();
+      });
+
+      it('draws the same image with the culling on the GPU', async () => {
+        const mesh = quad();
+        // A triangle without indices: drawIndirect.
+        const triangle = new Mesh({
+          description: {
+            vertexBuffers: [
+              {
+                stride: 12,
+                stepMode: 'vertex',
+                attributes: [
+                  { semantic: 'position', format: 'float32x3', offset: 0 },
+                ],
+              },
+            ],
+            vertexCount: 3,
+          },
+          vertices: [
+            new Float32Array([-0.3, -0.3, 0, 0.3, -0.3, 0, 0, 0.3, 0]),
+          ],
+        });
+        const colored = (r: number, g: number, b: number, a = 1) =>
+          new Material({
+            graph: colorGraph(),
+            values: { color: [r, g, b, a] },
+            ...(a < 1 ? { renderState: { alphaMode: 'blend' as const } } : {}),
+          });
+        const red = colored(1, 0, 0);
+        const green = colored(0, 1, 0);
+        const glass = colored(0, 0, 1, 0.5);
+        const items: Renderable[] = [
+          // Instances of one draw, two of them out of view.
+          { mesh, material: red, transform: at(-0.5, 0.5) },
+          { mesh, material: red, transform: at(8, 0) },
+          { mesh, material: red, transform: at(0.5, 0.5) },
+          { mesh, material: red, transform: at(0, -9) },
+          { mesh: triangle, material: green, transform: at(-0.5, -0.5) },
+          { mesh: triangle, material: green, transform: at(-7, -0.5) },
+          // Transparent, over the others, and out of view.
+          {
+            mesh,
+            material: glass,
+            transform: new Transform({ position: { x: 0.25, y: 0.25, z: 1 } }),
+          },
+          { mesh, material: glass, transform: at(0, 12) },
+          // A draw left without instances.
+          { mesh, material: colored(1, 1, 0), transform: at(20, 20) },
+        ];
+        const frame = async (gpuCulling: boolean) => {
+          renderer.render({
+            items,
+            camera,
+            surface,
+            gpuCulling,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+          });
+          return fixture.readPixels();
+        };
+        const expected = await frame(false);
+        // Drawn by the CPU: what the camera sees.
+        expect(renderer.stats.get('scene')).toMatchObject({ visible: 4 });
+        // Twice: the second frame reuses the buffers of the first.
+        for (let i = 0; i < 2; i++) {
+          const pixels = await frame(true);
+          let different = 0;
+          for (let p = 0; p < pixels.length; p++) {
+            if (Math.abs(pixels[p] - expected[p]) > 1) {
+              different++;
+            }
+          }
+          expect(different).toBe(0);
+        }
+        if (GpuCulling.supported(backend)) {
+          // Every item given to the GPU, a draw each run, empty or not.
+          expect(renderer.stats.get('scene')).toMatchObject({
+            visible: 9,
+            drawCalls: 4,
+          });
+        }
+        // The pixels: red, green, the glass over red.
+        const at2 = (x: number, y: number) => [
+          ...expected.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+        ];
+        expectColor(at2(10, 10), [255, 0, 0, 255]);
+        expectColor(at2(16, 50), [0, 255, 0, 255]);
+        expectColor(at2(40, 24), [128, 0, 128, 255]);
       });
     });
 

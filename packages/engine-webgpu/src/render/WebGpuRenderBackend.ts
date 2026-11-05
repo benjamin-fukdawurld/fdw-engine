@@ -52,6 +52,8 @@ export class WebGpuRenderBackend implements RenderBackend {
       independentBlend: true,
       // Rays traced by the code of the backend (softwareRays.ts).
       rayQuery: true,
+      // The draws of the object table start at their first instance.
+      indirectDraw: device.features.has('indirect-first-instance'),
     };
     this.buffers = new BufferFactory(device);
     this.textures = new TextureFactory(device);

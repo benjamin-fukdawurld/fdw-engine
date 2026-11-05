@@ -157,6 +157,8 @@ uint32_t operandCount(uint32_t opcode) {
   case FDW_VK_CMD_DISPATCH:
     return 3;
   case FDW_VK_CMD_DISPATCH_INDIRECT:
+  case FDW_VK_CMD_DRAW_INDIRECT:
+  case FDW_VK_CMD_DRAW_INDEXED_INDIRECT:
     return 3;
   default:
     return 0;
@@ -238,6 +240,16 @@ int prepareRenderPass(Replay &replay, Barriers &barriers) {
                        : VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT,
                 vertex ? VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
                        : VK_ACCESS_2_INDEX_READ_BIT);
+    } else if (opcode == FDW_VK_CMD_DRAW_INDIRECT ||
+               opcode == FDW_VK_CMD_DRAW_INDEXED_INDIRECT) {
+      fdw_vk_buffer *buffer =
+          find(replay.context->buffers, ahead.word(), "buffer", &status);
+      ahead.wide();
+      if (!buffer) {
+        return status;
+      }
+      useBuffer(barriers, buffer, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+                VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
     } else {
       for (uint32_t i = operandCount(opcode); i > 0; i--) {
         ahead.word();
@@ -412,6 +424,38 @@ int drawCommand(Replay &replay, uint32_t opcode) {
       vkCmdDraw(replay.commands, count, instances, 0, firstInstance);
     } else {
       vkCmdDrawIndexed(replay.commands, count, instances, 0, 0, firstInstance);
+    }
+    return 0;
+  }
+  case FDW_VK_CMD_DRAW_INDIRECT:
+  case FDW_VK_CMD_DRAW_INDEXED_INDIRECT: {
+    if (!replay.inRenderPass) {
+      return fail("A draw outside of a render pass");
+    }
+    fdw_vk_buffer *buffer =
+        find(context->buffers, reader.word(), "buffer", &status);
+    const uint64_t offset = reader.wide();
+    if (!buffer) {
+      return status;
+    }
+    const bool indexed = opcode == FDW_VK_CMD_DRAW_INDEXED_INDIRECT;
+    const uint64_t size = indexed ? 20 : 16;
+    if (offset % 4 != 0 || offset > buffer->size ||
+        size > buffer->size - offset) {
+      return fail("The indirect arguments are outside of the buffer, or "
+                  "their offset is not a multiple of 4");
+    }
+    if (!context->indirectDraw) {
+      return fail("The device has no drawIndirectFirstInstance");
+    }
+    if (flushGroups(replay) != 0) {
+      return -1;
+    }
+    // Its barrier was placed before the pass (prepareRenderPass).
+    if (indexed) {
+      vkCmdDrawIndexedIndirect(replay.commands, buffer->buffer, offset, 1, 0);
+    } else {
+      vkCmdDrawIndirect(replay.commands, buffer->buffer, offset, 1, 0);
     }
     return 0;
   }

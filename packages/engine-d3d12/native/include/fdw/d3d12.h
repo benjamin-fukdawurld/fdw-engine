@@ -202,6 +202,8 @@ fdw_dx_sampler_create(fdw_dx_context *context,
 FDW_DX_API uint32_t
 fdw_dx_max_color_attachments(const fdw_dx_context *context);
 FDW_DX_API int32_t fdw_dx_independent_blend(const fdw_dx_context *context);
+// Whether the indirect draws are supported (always).
+FDW_DX_API int32_t fdw_dx_indirect_draw(const fdw_dx_context *context);
 // The highest max_anisotropy of the samplers (16); higher ones are clamped
 // to it.
 FDW_DX_API float fdw_dx_max_anisotropy(const fdw_dx_context *context);
@@ -563,6 +565,12 @@ enum {
   // float32 of the vertex v at offset + v × stride), before the builds of
   // the top levels holding it.
   FDW_DX_CMD_REFIT_BOTTOM_LEVEL = 20,
+  // In a render pass. buffer (four u32: vertex count, instance count, first
+  // vertex, first instance), offset (64).
+  FDW_DX_CMD_DRAW_INDIRECT = 21,
+  // In a render pass. buffer (five u32: index count, instance count, first
+  // index, base vertex, first instance), offset (64).
+  FDW_DX_CMD_DRAW_INDEXED_INDIRECT = 22,
 };
 
 // Records the commands into a command list, with the barriers the
