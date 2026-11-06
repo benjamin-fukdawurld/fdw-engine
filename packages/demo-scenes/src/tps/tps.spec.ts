@@ -1,3 +1,9 @@
+import {
+  AnimationClip,
+  AnimationGraphBuilder,
+  Animator,
+  Skeleton,
+} from '@fdw/engine-animation';
 import { FakeAudioEngine } from '@fdw/engine-audio';
 import { fakeBackend, surface } from '@fdw/engine-core/testing';
 import { FakeInputSource, Input } from '@fdw/engine-input';
@@ -13,9 +19,9 @@ import { Blow, strikeCapsule, strikeSphere } from './combat';
 import { tpsControls } from './controls';
 import { BehaviorSystem } from '@fdw/engine-behavior';
 import { type EnemyHost, enemyGraph, enemyRegistry } from './brain';
-import { EnemyKinds, TrunkGrid } from './enemies';
+import { EnemyKinds, monsterBones } from './enemies';
 import { forestHeights } from './forest';
-import { HeroActions, heroClips, heroGraph } from './hero';
+import { HeroActions, heroClips, heroGraph, HeroRoot, Lunges } from './hero';
 import { TpsSounds } from './sounds';
 import { createTpsScene, TpsMinimal } from './tps';
 
@@ -70,24 +76,6 @@ describe('forestHeights', () => {
       expect(height).toBeGreaterThanOrEqual(0);
       expect(height).toBeLessThanOrEqual(1);
     }
-  });
-});
-
-describe('TrunkGrid', () => {
-  it('finds the trunks near a point, their radius counted', () => {
-    const grid = new TrunkGrid(
-      Float32Array.from([0, 0, 0.5, 3, 0, 0.5, 20, 20, 0.5, -9, 0, 0.5]),
-    );
-    const found: number[][] = [];
-    grid.near(0.5, 0, 2.5, (x, z) => found.push([x, z]));
-    expect(found.sort()).toEqual([
-      [0, 0],
-      [3, 0],
-    ]);
-    // Across the cells of the grid.
-    found.length = 0;
-    grid.near(-8, 0, 1, (x, z) => found.push([x, z]));
-    expect(found).toEqual([[-9, 0]]);
   });
 });
 
@@ -192,6 +180,75 @@ describe('the hero', () => {
     expect(
       out['AttackC'].events.filter((e) => e.name === 'strike'),
     ).toHaveLength(2);
+  });
+});
+
+describe('the lunges of the hero', () => {
+  it('step forward by root motion, whatever the armature', () => {
+    // An armature of Blender: turned a quarter around x, in centimeters.
+    const s = Math.SQRT1_2;
+    const skeleton = new Skeleton([
+      {
+        name: 'Armature',
+        rotation: [-s, 0, 0, s],
+        scale: [0.01, 0.01, 0.01],
+      },
+      { name: HeroRoot, parent: 0 },
+      { name: 'pelvis', parent: 1, translation: [0, 0, 90] },
+    ]);
+    // A blow in place: the root still.
+    const still = new AnimationClip({
+      name: 'AttackA',
+      duration: 0.5,
+      tracks: [
+        {
+          joint: 1,
+          path: 'translation',
+          interpolation: 'LINEAR',
+          times: new Float32Array([0, 0.5]),
+          values: new Float32Array(6),
+        },
+      ],
+      events: [{ time: 0.1, name: 'swing' }],
+    });
+    const clips = heroClips({ AttackA: still }, skeleton);
+    const clip = clips['AttackA'];
+    expect(clip.tracks).toHaveLength(1);
+    const g = new AnimationGraphBuilder('blow');
+    g.output(g.clip('AttackA', { loop: false }));
+    const animator = new Animator(g.build(), {
+      skeleton,
+      clips,
+      rootMotion: { joint: HeroRoot },
+    });
+    let z = 0;
+    let x = 0;
+    for (let t = 0; t < 0.5; t += 0.05) {
+      animator.update(0.05);
+      z += animator.rootMotion.z;
+      x += animator.rootMotion.x;
+    }
+    // Forward along +z of the model, as far as the lunge.
+    const [[, , distance]] = Lunges['AttackA'];
+    expect(z).toBeCloseTo(distance, 2);
+    expect(x).toBeCloseTo(0, 4);
+    // The pose kept in place.
+    expect(animator.pose.translation(1)[1]).toBeCloseTo(0, 4);
+  });
+});
+
+describe('monsterBones', () => {
+  it('hold the limbs in cones, the feet on the legs, larger for the demon', () => {
+    const orc = monsterBones(EnemyKinds.orc);
+    const joints = orc.map((bone) => bone.joint);
+    expect(new Set(joints).size).toBe(joints.length);
+    for (const bone of orc.filter((b) => b.joint !== 'Hips')) {
+      expect(bone.link ?? 'ball').toBe('ball');
+      expect(bone.cone).toBeGreaterThan(0);
+    }
+    expect(orc.find((b) => b.joint === 'Foot.L')?.attach).toBe('LowerLeg.L');
+    const demon = monsterBones(EnemyKinds.demon);
+    expect(demon[0].radius).toBeGreaterThan(orc[0].radius * 1.4);
   });
 });
 

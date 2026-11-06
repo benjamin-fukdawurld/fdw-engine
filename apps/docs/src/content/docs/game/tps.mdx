@@ -161,9 +161,13 @@ this.character = physics.addCharacter(this.body, {
 });
 ```
 
-`move(step, velocity)` adds the gravity and moves the controller at the
-fixed step; `face(direction, step)` turns the model; `animate(dt)`, at each
-frame, plays the animator and poses the skin.
+`move(step, velocity, offset)` adds the gravity and moves the controller
+at the fixed step, by an `offset` more (what the animation moved it);
+`face(direction, step)` turns the model; `animate(dt)`, at each frame,
+plays the animator and poses the skin, `applyPose(pose)` poses it as given
+(a ragdoll). The characters are in their own collision group (4), the
+level in group 1: the ragdolls (group 2) fall on the level, and the
+characters and the camera go through them.
 
 ## 4. The ranger: one action at a time
 
@@ -196,6 +200,14 @@ The rules stay in code, where they are easy to read and to test:
   blow ends in its recovery, which moving or striking cuts short.
 - **Facing the enemy.** As a blow starts, the ranger turns towards the
   enemy nearest in front within 4.5 m, else where the camera looks.
+- **The lunge.** A blow carries the ranger forward by **root motion**: the
+  clips of the library strike in place, so `withLunges` writes a step
+  forward in the track of their `root` joint (35 to 70 cm, eased), and the
+  animator takes it out of the pose (`rootMotion: { joint: 'root' }`, see
+  [Root motion](/fdw-engine/tutorials/root-motion/)). The movement of each
+  frame, turned where the ranger faces, is added to the next move of the
+  controller: the lunge follows the blend of the clips, their speed, their
+  cross-fades.
 - **The roll** carries the ranger 4 m; for most of it, nothing hurts it.
 - **The parry** takes 85 % of a blow off, from the front only.
 
@@ -251,7 +263,7 @@ At each fixed step, `event.update` advances its clocks, then a switch on
 its `state` variable decides: `spawn` (a roar), `chase`, `attack`,
 `recover`, `hurt`, `dead`. It goes to `attack` when the hero is within
 reach, its cooldown over, and fewer than two strike already; the others
-wait. Then it moves (`enemy.steer`), and strikes during the window of its
+wait. Then it steers (`enemy.steer`), and strikes during the window of its
 blow (`enemy.strike`). A blow of the ranger is an event, `hit`, with its
 damage: the health drops, the enemy falls, or staggers if the blow beats
 its `poise` — the orcs at every blow, the demon at the heavy ones.
@@ -268,14 +280,43 @@ The graph decides; the game does the work its nodes ask for (`brain.ts`
 declares them, `Enemies` implements them):
 
 - `enemy.steer`: towards the hero, or for those waiting, towards their own
-  place on a ring around it; apart from each other; around the trunks
-  ahead of them, by a push sideways (a grid of the trunks answers which
-  are near). No path finding: the forest is open ground.
+  place on a ring around it, along a **path** on the navigation mesh of
+  the forest (a `NavAgent` each, a new path when the goal moved by 75 cm,
+  three times a second at most); the velocity it would like, given to the
+  **crowd**. Those striking hold their ground (`avoids: false`): the others
+  go around them.
+- `enemy.die`: the body leaves the physics, and a **ragdoll** takes over
+  from the animation, pushed away from the blow: 13 bodies on the rig of
+  the monsters, the limbs held in cones, the feet (moved by inverse
+  kinematics, under the root of the rig) hung on the lower legs.
 - `enemy.strike`: the blow, a sphere in front of the enemy, against the
   hero.
-- `enemy.heroDistance`, `enemy.canAttack`, `enemy.swing`, `enemy.die`,
-  `enemy.sink`, `enemy.remove`: the distance, the place among those
-  striking, the sounds, the fallen sinking into the ground, then gone.
+- `enemy.heroDistance`, `enemy.canAttack`, `enemy.swing`, `enemy.sink`,
+  `enemy.remove`: the distance, the place among those striking, the
+  sounds, the fallen sinking into the ground, then gone.
+
+After the graph, a system moves them all: `crowd.update(step)` gives each
+a velocity that runs into no other, as close as can be to the one it
+wanted (see [Crowds and obstacles](/fdw-engine/tutorials/crowds/)), and
+the controllers move.
+
+```ts title="tps/navigation.ts"
+buildNavMesh({
+  bounds, // the play area
+  volumes: trunks, // a capsule per trunk
+  ground: forest.heightAt,
+  cellSize: 0.5,
+  agentRadius: 0.55, // the demon
+  heightTolerance: 0.3,
+});
+```
+
+The navigation mesh is built once, when the forest is ready: the ground of
+the terrain (its height function), the trunks of the play area as
+capsules, the floors of a polygon within 30 cm of each other — some 16 000
+polygons for the play area of 100 m, in about 0.4 s. A path across it
+takes about a millisecond. The waves come from places on the mesh, not in
+a trunk.
 
 The graph is compiled to JavaScript; `createTpsScene({ behavior:
 'interpret' })` has it interpreted, for its debugger. Both cost about
@@ -293,11 +334,16 @@ ranger itself.
 ## 8. The frame
 
 ```ts title="tps/tps.ts"
-// fixed: the ranger and its blows, the enemies, the physics, the waves.
+// fixed: the ranger and its blows, the enemies, the crowd, the physics,
+// the waves.
 scheduler.add('hero', heroStep, { phase: 'fixed' });
 // The graph of the enemies is a system.
 enemies.behavior.install(scheduler, { name: 'enemies', after: ['hero'] });
-physics.install(scheduler, { after: ['enemies'] });
+scheduler.add('crowd', (step) => enemies.move(step), {
+  phase: 'fixed',
+  after: ['enemies'],
+});
+physics.install(scheduler, { after: ['crowd'] });
 scheduler.add('waves', waves, { phase: 'fixed', after: ['physics'] });
 
 // update: the bodies drawn between two steps, animated; the camera.
@@ -323,11 +369,13 @@ calm, crossfaded to a music when enemies are around.
 ## Testing it
 
 `tps/tps.spec.ts` tests the parts without a GPU: the heights of the forest
-(a flat clearing, a rim), the grid of the trunks, the blows (struck once,
-the capsule along the blade), the graph and the clips of the ranger, the
-actions, the graph of the enemies on a fake game (the roar, the chase, the
-blow in its window, two striking at once, the `poise`, the fall), the
-sounds on a `FakeAudioEngine`, and the progress shown while loading.
+(a flat clearing, a rim), the blows (struck once, the capsule along the
+blade), the graph and the clips of the ranger, its lunges (taken out as
+root motion under an armature turned and scaled), the bones of the
+ragdolls of the monsters, the actions, the graph of the enemies on a fake
+game (the roar, the chase, the blow in its window, two striking at once,
+the `poise`, the fall), the sounds on a `FakeAudioEngine`, and the
+progress shown while loading.
 
 ## What we have
 
@@ -340,10 +388,11 @@ sounds on a `FakeAudioEngine`, and the progress shown while loading.
 - A ranger whose actions are decided by code and followed by its
   animation graph; blows as volumes, struck once per blow.
 - Enemies decided by a behavior graph, compiled to JavaScript:
-  surrounding the hero, striking two at a time, going around the trees.
+  surrounding the hero, striking two at a time, walking their paths on a
+  navigation mesh around the trees, making way for each other.
+- Blows that carry the ranger by root motion, and enemies falling as
+  ragdolls where the blow sends them.
 
-Some ideas left for later: root motion for blows that carry the ranger
-(see [Root motion](/fdw-engine/tutorials/root-motion/)); path finding for a
-level with walls (see [Navigation](/fdw-engine/tutorials/navigation/));
-enemies falling as [ragdolls](/fdw-engine/tutorials/ragdolls/); an editor
-for the graph of the enemies (P13).
+Some ideas left for later: getting up from a ragdoll (`Pose.blend` back to
+an animation), a ragdoll for the ranger, obstacles placed in the forest
+(a [tiled mesh](/fdw-engine/tutorials/crowds/)).

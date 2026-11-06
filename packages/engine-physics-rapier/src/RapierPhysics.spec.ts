@@ -422,6 +422,82 @@ describe('RapierPhysics', () => {
     world.destroy();
   });
 
+  it('keeps a ball joint within its cone, whichever way it leans', () => {
+    const world = engine.createWorld();
+    // A pendulum hanging from a static point, the axis of the cone down,
+    // thrown sideways then diagonally: it leans no further than the cone.
+    const swing = 0.6;
+    const lean = (velocity: { x: number; z: number }) => {
+      const pivot = world.createBody({ type: 'static', position: { y: 5 } });
+      const bob = world.createBody({
+        type: 'dynamic',
+        position: { y: 4 },
+        linearVelocity: { x: velocity.x, z: velocity.z },
+        colliders: [{ shape: Shapes.sphere(0.1) }],
+      });
+      const joint = world.createJoint({
+        type: 'ball',
+        bodyA: pivot,
+        bodyB: bob,
+        anchorB: { y: 1 },
+        axis: { x: 0, y: -1, z: 0 },
+        cone: { swing },
+      });
+      let most = 0;
+      for (let i = 0; i < 240; i++) {
+        world.step(1 / 60);
+        const p = bob.position;
+        most = Math.max(most, Math.acos(Math.min(1, (5 - p.y) / 1)));
+      }
+      return { most, joint, pivot, bob };
+    };
+    expect(lean({ x: 3, z: 0 }).most).toBeLessThan(swing + 0.05);
+    const { most, joint, bob } = lean({ x: 2, z: 2 });
+    // Diagonally too: a cone, not the square of two axes (0.85 rad).
+    expect(most).toBeGreaterThan(swing - 0.1);
+    expect(most).toBeLessThan(swing + 0.08);
+    // Freed, it swings up past it.
+    joint.setCone(undefined);
+    bob.linearVelocity = { x: 6, y: 0, z: 0 };
+    let free = 0;
+    for (let i = 0; i < 60; i++) {
+      world.step(1 / 60);
+      free = Math.max(free, Math.acos(Math.min(1, 5 - bob.position.y)));
+    }
+    expect(free).toBeGreaterThan(swing + 0.5);
+    expect(() =>
+      world
+        .createJoint({ type: 'hinge', bodyA: bob, bodyB: bob })
+        .setCone({ swing: 1 }),
+    ).toThrow('no cone');
+    world.destroy();
+  });
+
+  it('measures the cone from the bodies as they were joined, its twist too', () => {
+    const world = engine.createWorld({ gravity: { x: 0, y: 0, z: 0 } });
+    const a = world.createBody({ type: 'static' });
+    // B turned a quarter around y when joined: its rest.
+    const b = world.createBody({
+      type: 'dynamic',
+      rotation: quarter,
+      colliders: [{ shape: Shapes.box(0.2) }],
+    });
+    world.createJoint({
+      type: 'ball',
+      bodyA: a,
+      bodyB: b,
+      axis: { x: 0, y: 1, z: 0 },
+      cone: { swing: 0.3, twist: [-0.2, 0.2] },
+    });
+    // Spun around the axis of the cone (y): stopped by the twist.
+    b.angularVelocity = { x: 0, y: 3, z: 0 };
+    run(world, 1);
+    const twist = (q: { y: number; w: number }) => 2 * Math.atan2(q.y, q.w);
+    expect(twist(b.rotation) - twist(quarter)).toBeLessThan(0.3);
+    expect(twist(b.rotation) - twist(quarter)).toBeGreaterThan(0.1);
+    world.destroy();
+  });
+
   it('welds bodies as they are with a fixed joint', () => {
     const world = engine.createWorld();
     const a = world.createBody({

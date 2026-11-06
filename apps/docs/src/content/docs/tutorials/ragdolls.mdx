@@ -2,7 +2,7 @@
 title: Ragdolls
 description: Put bodies on the bones of a skeleton, linked by joints, and let the physics take over from the animation — from the pose of the moment.
 sidebar:
-  order: 50
+  order: 51
 ---
 
 import Example from '../../../components/Example.astro';
@@ -24,9 +24,15 @@ import { Ragdoll, type RagdollBone } from '@fdw/engine-ragdoll';
 
 const bones: RagdollBone[] = [
   { joint: 'hips', to: 'spine', radius: 0.13 },
-  { joint: 'spine', to: 'neck', radius: 0.13 },
-  { joint: 'head', radius: 0.12 },
-  { joint: 'upperArm.L', to: 'lowerArm.L', radius: 0.05 },
+  { joint: 'spine', to: 'neck', radius: 0.13, cone: 0.6, twist: [-0.4, 0.4] },
+  { joint: 'head', radius: 0.12, cone: 0.7, twist: [-0.6, 0.6] },
+  {
+    joint: 'upperArm.L',
+    to: 'lowerArm.L',
+    radius: 0.05,
+    cone: 1.4,
+    twist: [-0.8, 0.8],
+  },
   {
     joint: 'lowerArm.L',
     to: 'hand.L',
@@ -34,7 +40,13 @@ const bones: RagdollBone[] = [
     link: 'hinge',
     limits: [-2.4, 0.2],
   },
-  { joint: 'upperLeg.L', to: 'lowerLeg.L', radius: 0.075 },
+  {
+    joint: 'upperLeg.L',
+    to: 'lowerLeg.L',
+    radius: 0.075,
+    cone: 1,
+    twist: [-0.4, 0.4],
+  },
   {
     joint: 'lowerLeg.L',
     to: 'foot.L',
@@ -54,11 +66,34 @@ needs one: the chest and the neck here follow the spine, the hands their
 forearms, as they were when the ragdoll took over.
 
 Each body hangs on the body of its nearest ancestor: by a **ball** joint (a
-shoulder, a hip) or a **hinge** (an elbow, a knee), its `axis` in the space
-of the joint (x by default) and its `limits` in radians, around its angle
-at the activation. The collision groups keep the bodies of the ragdoll
-from colliding with each other: group 2, colliding with group 1 only (the
-ground).
+shoulder, a hip) or a **hinge** (an elbow, a knee). The collision groups
+keep the bodies of the ragdoll from colliding with each other: group 2,
+colliding with group 1 only (the ground).
+
+## Limits
+
+A joint without limits lets a limb turn all the way round: a leg folded
+along the back, a head facing behind. Each link has its own:
+
+- A **hinge** turns around its `axis`, in the space of the joint (x by
+  default), within `limits` in radians, around its angle at the
+  activation.
+- A **ball** stays in a **cone**: `cone` is its half-angle in radians,
+  around the bone as it pointed at the activation (from its joint to `to`,
+  or from the joint of the ancestor; `axis` to give another); `twist`
+  bounds how far it turns around it. A shoulder leans 80° whichever way,
+  and twists 45°.
+
+The cones are an addition of this page to the [physics
+API](/fdw-engine/guides/physics/#joints): `cone` on a joint of type
+`ball`, `setCone` to change it. Rapier limits each axis of a joint on its
+own, a square rather than a circle; before each step, the binding fits the
+square to the circle where the joint is.
+
+A rig whose feet are not under its legs — moved by inverse kinematics,
+under the root — hangs them on the lower legs with `attach: 'lowerLeg.L'`:
+the body of a bone then hangs on the body of that joint rather than on its
+ancestor's.
 
 The ragdoll is written against the [abstract physics
 API](/fdw-engine/tutorials/physics/): any engine behind it, Rapier here.
@@ -66,8 +101,9 @@ API](/fdw-engine/tutorials/physics/): any engine behind it, Rapier here.
 ## Taking over
 
 ```ts
-// The node of the skeleton: the parent of its root joint.
-const frame = character.nodes[0].worldMatrix;
+// The node of the skeleton: the parent of its root joint, the root of
+// the instance of the model.
+const frame = character.root.worldMatrix;
 ragdoll.activate(animator.pose, frame, { x: 0.5, y: 1.5, z: -4 });
 ```
 
@@ -98,5 +134,7 @@ ragdoll back to an animation, for a character getting up.
 
 - [Physics](/fdw-engine/tutorials/physics/): bodies, joints, collision
   groups.
+- [The third-person game](/fdw-engine/game/tps/): orcs falling as
+  ragdolls where the blow sends them.
 - [An animated character](/fdw-engine/tutorials/character-animation/): the
   skeleton, the clips and the skinning under the ragdoll.

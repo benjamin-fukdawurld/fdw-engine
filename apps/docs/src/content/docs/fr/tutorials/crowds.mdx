@@ -1,0 +1,129 @@
+---
+title: Les foules et les obstacles
+description: Changer un maillage de navigation en cours de jeu — des obstacles découpés tuile par tuile — et laisser les agents s'écarter les uns pour les autres par l'évitement réciproque.
+sidebar:
+  order: 50
+---
+
+import Example from '../../../../components/Example.astro';
+
+Deux groupes traversent une place, aller et retour, les uns à travers les
+autres. Un chariot va et vient au milieu : le **maillage de navigation**
+est découpé là où il se tient, quelques tuiles reconstruites à chaque
+déplacement, et les marcheurs le contournent. Ils s'écartent les uns pour
+les autres, et pour le chariot, comme une **foule** : chacun fait la
+moitié de l'effort pour éviter l'autre, et ils se croisent par un côté au
+lieu de se pousser.
+
+Cliquez sur le sol pour poser une caisse, ou sur une caisse pour la
+retirer. **N** cache ou montre le maillage de navigation, en bleu.
+
+<Example name="crowds" />
+
+Cette page fait suite à [La navigation](/fdw-engine/fr/tutorials/navigation/) :
+le maillage, ses chemins et ses agents.
+
+## Un maillage en tuiles
+
+```ts
+import { Aabb } from '@fdw/engine-geometry';
+import { TiledNavMesh } from '@fdw/engine-navigation';
+
+const tiles = new TiledNavMesh({
+  bounds: new Aabb([-12, -1, -8], [12, 3, 8]),
+  volumes: solids,
+  cellSize: 0.25,
+  agentRadius: 0.3,
+  tileCells: 16, // des tuiles de 16 × 16 cellules : 4 m
+});
+const navMesh = tiles.navMesh; // un NavMesh, comme celui de buildNavMesh
+```
+
+Un `TiledNavMesh` prend les options de `buildNavMesh`, et construit la
+région par **tuiles** de `tileCells` cellules. Chaque tuile lit aussi les
+solides d'une marge autour d'elle, aussi large que le rayon des agents :
+les sols de ses bords restent loin d'un mur de la tuile voisine comme ils
+le seraient dans un maillage construit d'un coup. Les polygones de chaque
+tuile sont reliés à ceux de ses voisines à travers leurs bords. Une tuile
+peut alors être reconstruite **seule**.
+
+## Les obstacles
+
+```ts
+const crate = tiles.addObstacle(new Aabb([2, 0, 2], [3.2, 1.2, 3.2]));
+tiles.moveObstacle(cart, cartBox(z)); // là où il est maintenant
+tiles.removeObstacle(crate);
+
+// Une fois par pas :
+if (tiles.update()) {
+  for (const walker of walkers) walker.agent.navMesh = tiles.navMesh;
+}
+```
+
+Un **obstacle** est un volume — une boîte, une capsule, tout `Volume` — qui
+**découpe** le maillage : pas de sol là où il se tient, et les sols autour
+de lui érodés du rayon des agents, comme près d'un mur. Il n'est pas
+lui-même un sol : rien ne marche sur une caisse. En ajouter, en déplacer ou
+en retirer un marque les tuiles qu'il touche ; `update()` les reconstruit,
+fait un nouveau `NavMesh`, et dit s'il a changé. `update(maxTiles)`
+construit quelques tuiles par appel, le reste au suivant : un grand
+changement réparti sur plusieurs images.
+
+Avec le nouveau maillage, un `NavAgent` trouve un nouveau chemin à son
+prochain `update`. Ici le chariot déplace son obstacle dix fois par
+seconde : environ quatre tuiles de 4 m à chaque fois, moins de 2 ms
+avec le nouveau maillage.
+
+Quand les solides eux-mêmes changent (une porte s'ouvre, un pont tombe),
+`invalidate(box)` reconstruit les tuiles d'une boîte à partir de
+`volumes`.
+
+## Une foule
+
+```ts
+import { NavCrowd } from '@fdw/engine-navigation';
+
+const crowd = new NavCrowd({ timeHorizon: 1.5 });
+const member = crowd.add({ radius: 0.32, maxSpeed: 2, position: start });
+
+// À chaque pas : où chacun est, où il irait…
+member.moveTo(position.x, position.z);
+const step = agent.update(position, dt); // le long de son chemin
+member.prefer(step.x / dt, step.z / dt);
+// …puis les vitesses de tous, d'un coup.
+crowd.update(dt);
+move(member.velocity);
+```
+
+Un `NavCrowd` donne à chaque agent une vitesse proche de celle qu'il
+voudrait (le long de son chemin), qui ne le jette sur aucun de ses voisins
+pendant `timeHorizon` secondes : l'**évitement réciproque optimal des
+collisions** (ORCA, van den Berg et al.), l'algorithme de la bibliothèque
+RVO2. Chaque voisin interdit un demi-plan de vitesses ; la vitesse gardée
+est la plus proche de la préférée dans tous, trouvée par un petit
+programme linéaire — et quand ils sont trop nombreux pour être tous
+respectés, celle qui enfreint le moins le pire d'entre eux.
+
+Chaque agent suppose que l'autre fait la moitié du travail : ils se
+croisent par un côté, sans la bousculade des poussées. Un agent avec
+`avoids: false` suit son chemin, et les autres font tout l'effort : le
+chariot ici, un attaquant qui tient sa position, une statue.
+
+La foule ne connaît pas les murs : les chemins s'en tiennent loin, et un
+contrôleur de personnage les heurte. Cette page n'en a pas — ses marcheurs
+sont gardés sur le maillage par `closestPoint` après chaque déplacement.
+
+## Dans un jeu
+
+Le [jeu à la troisième personne](/fdw-engine/fr/game/tps/) fait marcher
+ses orcs sur le maillage de navigation de sa forêt (les troncs comme
+volumes, le sol du terrain à `heightTolerance` près), et les déplace comme
+une foule : ceux qui frappent tiennent leur position, les autres les
+contournent.
+
+## La suite
+
+- [Les ragdolls](/fdw-engine/fr/tutorials/ragdolls/) : des personnages qui
+  tombent, leurs membres tenus dans des cônes.
+- [Le guide de la navigation](/fdw-engine/fr/guides/navigation/) : les
+  tuiles, les obstacles et la foule en détail.

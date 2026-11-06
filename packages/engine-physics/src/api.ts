@@ -127,7 +127,8 @@ export interface PhysicsCollider {
 
 /**
  * - `fixed`: the two bodies welded;
- * - `ball`: turning freely around a common point (a chain, a shoulder);
+ * - `ball`: turning around a common point (a chain, a shoulder), freely or
+ *   within a cone;
  * - `hinge`: turning around an axis (a door, a wheel), with limits in
  *   radians and a motor;
  * - `slider`: sliding along an axis (a piston), with limits in meters and
@@ -145,6 +146,19 @@ export interface JointMotor {
   readonly damping?: number;
 }
 
+/**
+ * The limits of a `ball` joint: how far B leans away from the axis of the
+ * joint (a cone), and how far it twists around it. Measured from how the
+ * two bodies are turned when the joint is created: a shoulder created at
+ * rest leans `swing` from its rest, whichever way.
+ */
+export interface ConeLimits {
+  /** The half-angle of the cone, in radians, from 0 to π. */
+  readonly swing: number;
+  /** The range of the twist around the axis, in radians. Default free. */
+  readonly twist?: readonly [number, number];
+}
+
 export interface JointDesc {
   readonly type: JointType;
   readonly bodyA: PhysicsBody;
@@ -152,10 +166,15 @@ export interface JointDesc {
   /** The point joined, in the space of each body. Default their origin. */
   readonly anchorA?: Partial<IVec3>;
   readonly anchorB?: Partial<IVec3>;
-  /** Hinge and slider: the axis, in the space of each body (the same for both). Default y. */
+  /**
+   * Hinge and slider: the axis, in the space of each body (the same for
+   * both). Ball: the axis of its cone, in the space of A. Default y.
+   */
   readonly axis?: IVec3;
   /** Hinge and slider: the range of the angle or the position. */
   readonly limits?: readonly [number, number];
+  /** Ball: a cone around `axis`, and the range of the twist around it. */
+  readonly cone?: ConeLimits;
   readonly motor?: JointMotor;
   /** Whether the two bodies still collide. Default false. */
   readonly collide?: boolean;
@@ -167,7 +186,10 @@ export interface PhysicsJoint {
   readonly bodyB: PhysicsBody;
   /** The anchors in the world, for the debug view. */
   readAnchors(out: Float32Array | number[], offset?: number): void;
+  /** Hinge and slider: the range of the angle or the position. */
   setLimits(limits: readonly [number, number] | undefined): void;
+  /** Ball: the cone and the twist; undefined turns freely. */
+  setCone(cone: ConeLimits | undefined): void;
   setMotor(motor: JointMotor | undefined): void;
 }
 

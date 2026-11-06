@@ -28,12 +28,29 @@ export interface RagdollBone {
    * a hip, the spine) or `hinge` (an elbow, a knee). Default `ball`.
    */
   readonly link?: 'ball' | 'hinge';
-  /** The axis of a hinge, in the space of the joint. Default x. */
+  /**
+   * The axis of a hinge, in the space of the joint. Default x. The axis of
+   * the cone of a ball; default along the bone (from its joint to `to`, or
+   * from the joint of the ancestor to its own).
+   */
   readonly axis?: IVec3;
   /**
    * The range of a hinge, in radians, around its angle at the activation.
    */
   readonly limits?: readonly [number, number];
+  /**
+   * A ball: how far the bone leans from where it pointed at the activation,
+   * the half-angle of a cone around its axis, in radians. Default free.
+   */
+  readonly cone?: number;
+  /** A ball: the range of the twist around its axis, in radians. */
+  readonly twist?: readonly [number, number];
+  /**
+   * The joint whose body it hangs on, when not its nearest ancestor with
+   * one: the feet of a rig whose feet are not under its legs (moved by
+   * inverse kinematics), hung on the lower legs. Default the ancestor.
+   */
+  readonly attach?: string;
 }
 
 /** Options of a {@link Ragdoll}. */
@@ -139,6 +156,8 @@ const toQuat = (a: ArrayLike<number>): IQuat => ({
 export class Ragdoll {
   private readonly _joints: number[];
   private readonly _ends: number[];
+  // The joint each bone hangs on, or -1 for its nearest ancestor.
+  private readonly _attach: number[];
   // The bone of each joint of the skeleton, or -1.
   private readonly _boneOf: Int32Array;
   private _bodies: PhysicsBody[] = [];
@@ -167,6 +186,9 @@ export class Ragdoll {
     this._joints = options.bones.map((bone) => index(bone.joint));
     this._ends = options.bones.map((bone) =>
       bone.to !== undefined ? index(bone.to) : -1,
+    );
+    this._attach = options.bones.map((bone) =>
+      bone.attach !== undefined ? index(bone.attach) : -1,
     );
     this._boneOf = new Int32Array(skeleton.count).fill(-1);
     this._joints.forEach((joint, bone) => {
@@ -313,7 +335,7 @@ export class Ragdoll {
     const { parents } = this.skeleton;
     options.bones.forEach((bone, b) => {
       const joint = this._joints[b];
-      let ancestor = parents[joint];
+      let ancestor = this._attach[b] >= 0 ? this._attach[b] : parents[joint];
       while (ancestor >= 0 && this._boneOf[ancestor] < 0) {
         ancestor = parents[ancestor];
       }
@@ -329,17 +351,22 @@ export class Ragdoll {
         new Float64Array(3),
       );
       const hinge = bone.link === 'hinge';
+      const limited =
+        !hinge && (bone.cone !== undefined || bone.twist !== undefined);
       let axis: IVec3 | undefined;
-      if (hinge) {
-        const local = bone.axis ?? { x: 1, y: 0, z: 0 };
-        // The axis of the joint, in the world, then in the bodies.
-        const world = rotate(
-          this._frames[joint].q,
-          local.x,
-          local.y,
-          local.z,
-          new Float64Array(3),
-        );
+      if (hinge || bone.axis || limited) {
+        const world = new Float64Array(3);
+        if (bone.axis || hinge) {
+          // The axis of the joint, in the world.
+          const local = bone.axis ?? { x: 1, y: 0, z: 0 };
+          rotate(this._frames[joint].q, local.x, local.y, local.z, world);
+        } else {
+          // Along the bone, or from the ancestor to the joint.
+          const end = this._ends[b];
+          const [p, q] = end >= 0 ? [at, this._frames[end].p] : [from, at];
+          for (let c = 0; c < 3; c++) world[c] = q[c] - p[c];
+        }
+        // Then in the bodies.
         const inBody = rotate(inverse, world[0], world[1], world[2], world);
         const length = Math.hypot(inBody[0], inBody[1], inBody[2]) || 1;
         axis = {
@@ -357,6 +384,14 @@ export class Ragdoll {
           anchorB: { x: 0, y: 0, z: 0 },
           ...(axis ? { axis } : {}),
           ...(hinge && bone.limits ? { limits: bone.limits } : {}),
+          ...(limited
+            ? {
+                cone: {
+                  swing: bone.cone ?? Math.PI,
+                  ...(bone.twist ? { twist: bone.twist } : {}),
+                },
+              }
+            : {}),
         }),
       );
     });

@@ -19,11 +19,14 @@ import { seededRandom } from '../maze/maze';
 import { followAspect, type Scene, type SceneFactory } from '../scene';
 import { loadTpsAssets, type TpsAssets } from './assets';
 import { tpsControls } from './controls';
-import { Enemies, EnemyKinds, TrunkGrid, type EnemyKind } from './enemies';
+import { Enemies, EnemyKinds, type EnemyKind } from './enemies';
 import { bakeRockTexture } from '../procedural/materials';
 import { buildForest, type Forest, type ForestOptions } from './forest';
 import { defineRock, loadTpsLevel } from './level';
 import { Hero, type HeroIntent } from './hero';
+import { forestNavMesh } from './navigation';
+import { SolidMask } from './actor';
+import type { NavMesh } from '@fdw/engine-navigation';
 import { TpsSounds } from './sounds';
 import { RayView } from '../rays';
 
@@ -99,6 +102,7 @@ export interface TpsScene extends Scene {
 /** What the game does with the assets loaded. */
 interface Game {
   readonly forest: Forest;
+  readonly navMesh: NavMesh;
   readonly physics: ScenePhysics;
   readonly hero: Hero;
   readonly enemies: Enemies;
@@ -112,7 +116,9 @@ interface Game {
  * trunks), the third-person camera and the character controller (P4,
  * P7b), the models and their animations (P5, P6), the sounds (P7); blows
  * as volumes tested while the animations strike, enemies decided by a
- * behavior graph (P9).
+ * behavior graph (P9); the paths of the enemies on a navigation mesh of
+ * the forest, a crowd making way, the blows of the hero stepping forward
+ * by root motion, the fallen falling as ragdolls (P25).
  */
 export function createTpsScene(
   options: TpsOptions,
@@ -248,8 +254,6 @@ export function createTpsScene(
     ];
     scheduler.paused = true;
 
-    const trunksOf = new WeakMap<Forest, TrunkGrid>();
-
     // The buttons pressed since the last fixed step: a frame may run no
     // step, or several.
     const pressed = { jump: false, roll: false, attack: false, heavy: false };
@@ -267,14 +271,14 @@ export function createTpsScene(
         forest.destroy();
         return;
       }
-      const trunks = new TrunkGrid(forest.trees);
-      trunksOf.set(forest, trunks);
+      // Where the enemies walk: built once, around the trunks.
+      const navMesh = forestNavMesh(forest);
       const enemies = new Enemies(
         backend,
         scene,
         physics,
         { orc: assets.orc, demon: assets.demon },
-        trunks,
+        navMesh,
         options.behavior ? { mode: options.behavior } : {},
       );
       const hero = new Hero(
@@ -301,7 +305,7 @@ export function createTpsScene(
         },
       };
       // The camera stops at the trunks, the ground and the enemies: never
-      // inside an orc standing behind the hero.
+      // inside an orc standing behind the hero. The fallen do not stop it.
       const body = hero.actor.character.body;
       operator.probe = (from, to, radius) => {
         const d = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
@@ -313,22 +317,22 @@ export function createTpsScene(
           { x: 0, y: 0, z: 0, w: 1 },
           { x: d.x / length, y: d.y / length, z: d.z / length },
           length,
-          { exclude: body },
+          { exclude: body, mask: SolidMask },
         );
         return hit?.distance;
       };
       operator.focus = hero.actor.feet;
       operator.snap();
-      game = { forest, physics, hero, enemies, sounds };
+      game = { forest, navMesh, physics, hero, enemies, sounds };
       installSystems(game);
       if (options.autoplay) play();
     };
 
     // Where an enemy comes from: out of sight around the hero, on the
-    // ground of the play area, not in a trunk.
+    // navigation mesh of the play area (not in a trunk).
     const spawnPoint = (
       forest: Forest,
-      trunks: TrunkGrid | undefined,
+      navMesh: NavMesh,
       around: IVec3,
     ): IVec3 => {
       for (let attempt = 0; attempt < 30; attempt++) {
@@ -342,9 +346,11 @@ export function createTpsScene(
           x *= max / r;
           z *= max / r;
         }
-        let free = true;
-        trunks?.near(x, z, 1.5, () => (free = false));
-        if (free) return { x, y: forest.heightAt(x, z), z };
+        const y = forest.heightAt(x, z);
+        const on = navMesh.closestPoint({ x, y, z }, 0.5);
+        if (on && Math.hypot(on.point.x - x, on.point.z - z) < 0.05) {
+          return { x, y, z };
+        }
       }
       return {
         x: around.x + 20,
@@ -355,12 +361,12 @@ export function createTpsScene(
 
     const installSystems = ({
       forest,
+      navMesh,
       physics,
       hero,
       enemies,
       sounds,
     }: Game) => {
-      const trunks = trunksOf.get(forest);
       const target = {
         get position() {
           return hero.actor.body.worldPosition;
@@ -427,7 +433,7 @@ export function createTpsScene(
           for (const strike of hero.step(step, intent)) {
             const enemy = enemies.enemyOf(strike.collider);
             if (enemy !== undefined) {
-              enemies.hit(enemy, strike.damage);
+              enemies.hit(enemy, strike.damage, hero.actor.body.worldPosition);
               actions.rumble(0.3, 0.6, 0.08);
             }
           }
@@ -437,14 +443,18 @@ export function createTpsScene(
         },
         { phase: 'fixed' },
       );
-      // The graph of the enemies is a system: it decides, moves and
-      // strikes for each enemy.
+      // The graph of the enemies is a system: it decides, steers and
+      // strikes for each enemy; then they move as a crowd.
       enemies.target = target;
       enemies.behavior.install(scheduler, {
         name: 'enemies',
         after: ['hero'],
       });
-      physics.install(scheduler, { after: ['enemies'] });
+      scheduler.add('crowd', (step) => enemies.move(step), {
+        phase: 'fixed',
+        after: ['enemies'],
+      });
+      physics.install(scheduler, { after: ['crowd'] });
       scheduler.add(
         'waves',
         (step) => {
@@ -465,7 +475,7 @@ export function createTpsScene(
           const { orcs, demons = 0 } = waves[wave];
           const around = hero.actor.body.worldPosition;
           const spawn = (kind: EnemyKind) =>
-            enemies.spawn(kind, spawnPoint(forest, trunks, around), around);
+            enemies.spawn(kind, spawnPoint(forest, navMesh, around), around);
           for (let i = 0; i < demons; i++) spawn(EnemyKinds.demon);
           for (let i = 0; i < orcs; i++) spawn(EnemyKinds.orc);
         },

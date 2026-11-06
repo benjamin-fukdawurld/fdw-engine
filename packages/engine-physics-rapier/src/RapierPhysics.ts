@@ -8,6 +8,7 @@ import type {
   ColliderDesc,
   CombineRule,
   ContactEvent,
+  ConeLimits,
   ContactPoint,
   JointDesc,
   JointMotor,
@@ -99,6 +100,25 @@ function multiply(a: IQuat, b: IQuat): IQuat {
 }
 
 const conjugate = (q: IQuat): IQuat => ({ x: -q.x, y: -q.y, z: -q.z, w: q.w });
+
+// The rotation taking +x to the direction `axis` (normalized here): the
+// frame of a joint, whose first axis is the axis of the joint.
+function fromX(axis: IVec3): IQuat {
+  const length = Math.hypot(axis.x, axis.y, axis.z) || 1;
+  const x = axis.x / length;
+  const y = axis.y / length;
+  const z = axis.z / length;
+  if (x < -0.999999) return { x: 0, y: 1, z: 0, w: 0 };
+  // The half-way quaternion: (x × d, 1 + x · d), normalized.
+  const q = { x: 0, y: -z, z: y, w: 1 + x };
+  const n = Math.hypot(q.y, q.z, q.w);
+  return { x: 0, y: q.y / n, z: q.z / n, w: q.w / n };
+}
+
+// The angular axes of a joint, as Rapier numbers them.
+const AngX = 3 as RAPIER.JointAxis;
+const AngY = 4 as RAPIER.JointAxis;
+const AngZ = 5 as RAPIER.JointAxis;
 
 /** The collider description of Rapier for a shape. */
 function shapeDesc(shape: Shape): RAPIER.ColliderDesc {
@@ -327,6 +347,8 @@ export class RapierCollider implements PhysicsCollider {
 }
 
 export class RapierJoint implements PhysicsJoint {
+  private _cone?: ConeLimits;
+
   /** @internal */
   constructor(
     readonly type: JointType,
@@ -334,7 +356,14 @@ export class RapierJoint implements PhysicsJoint {
     readonly bodyB: RapierBody,
     /** The joint of Rapier. */
     readonly raw: RAPIER.ImpulseJoint,
+    // Ball: its frame in each body, the axis of the cone along their x.
+    private readonly _frames?: readonly [IQuat, IQuat],
   ) {}
+
+  /** The limits of a ball joint, if any. */
+  get cone(): ConeLimits | undefined {
+    return this._cone;
+  }
 
   readAnchors(out: Float32Array | number[], offset = 0): void {
     const anchors: [RapierBody, IVec3][] = [
@@ -374,6 +403,70 @@ export class RapierJoint implements PhysicsJoint {
     } else {
       joint.configureMotorVelocity(motor.velocity ?? 0, motor.damping ?? 10);
     }
+  }
+
+  setCone(cone: ConeLimits | undefined): void {
+    if (this.type !== 'ball') {
+      throw new Error(`A ${this.type} joint has no cone`);
+    }
+    this._cone = cone;
+    // A range of ±π leaves an angular axis free: Rapier compares the sines
+    // of the half-angles.
+    const [min, max] = cone?.twist ?? [-Math.PI, Math.PI];
+    this.setAngularLimits(AngX, min, max);
+    this.updateCone();
+    this.bodyA.raw.wakeUp();
+    this.bodyB.raw.wakeUp();
+  }
+
+  /**
+   * @internal Rapier limits each angular axis on its own: the swing within
+   * a square of the two axes across the cone. Before each step, the square
+   * is fitted to the cone where the joint is: each axis limited to what
+   * the other leaves of the circle, a cone up to the error of a step.
+   */
+  updateCone(): void {
+    const cone = this._cone;
+    const frames = this._frames;
+    if (!frames) return;
+    if (!cone || cone.swing >= Math.PI) {
+      this.setAngularLimits(AngY, -Math.PI, Math.PI);
+      this.setAngularLimits(AngZ, -Math.PI, Math.PI);
+      return;
+    }
+    // The rotation of the frame of B in the frame of A, as Rapier measures
+    // it (its real part positive).
+    const a = multiply(this.bodyA.rotation, frames[0]);
+    const b = multiply(this.bodyB.rotation, frames[1]);
+    const r = multiply(conjugate(a), b);
+    const sign = r.w < 0 ? -1 : 1;
+    const s = Math.sin(Math.max(cone.swing, 0) / 2);
+    const limit = (other: number) =>
+      2 * Math.asin(Math.sqrt(Math.max(s * s - other * other, 1e-8)));
+    const y = limit(sign * r.z);
+    const z = limit(sign * r.y);
+    this.setAngularLimits(AngY, -y, y);
+    this.setAngularLimits(AngZ, -z, z);
+  }
+
+  private setAngularLimits(
+    axis: RAPIER.JointAxis,
+    min: number,
+    max: number,
+  ): void {
+    // The spherical joints of Rapier.js have no limits of their own: those
+    // of its joint set, which its unit joints call.
+    const { rawSet } = this.raw as unknown as {
+      rawSet: {
+        jointSetLimits(
+          handle: number,
+          axis: RAPIER.JointAxis,
+          min: number,
+          max: number,
+        ): void;
+      };
+    };
+    rawSet.jointSetLimits(this.raw.handle, axis, min, max);
   }
 
   private unit(): RAPIER.UnitImpulseJoint {
@@ -676,13 +769,28 @@ export class RapierWorld implements PhysicsWorld {
     }
     const raw = this.raw.createImpulseJoint(data, bodyA.raw, bodyB.raw, true);
     raw.setContactsEnabled(desc.collide ?? false);
-    const joint = new RapierJoint(desc.type, bodyA, bodyB, raw);
+    let frames: [IQuat, IQuat] | undefined;
+    if (desc.type === 'ball') {
+      // The frames of the cone: its axis along x in A, and in B where it
+      // is now (the bodies as they are count as the rest).
+      const frame = fromX(axis);
+      frames = [
+        frame,
+        multiply(multiply(conjugate(bodyB.rotation), bodyA.rotation), frame),
+      ];
+      raw.setFrameX1(frames[0]);
+      raw.setFrameX2(frames[1]);
+    }
+    const joint = new RapierJoint(desc.type, bodyA, bodyB, raw, frames);
     // Set on the joint: those of the JointData are ignored.
     if (desc.limits) {
       joint.setLimits(desc.limits);
     }
     if (desc.motor) {
       joint.setMotor(desc.motor);
+    }
+    if (desc.cone) {
+      joint.setCone(desc.cone);
     }
     this._joints.add(joint);
     return joint;
@@ -732,6 +840,9 @@ export class RapierWorld implements PhysicsWorld {
   }
 
   step(dt: number): void {
+    for (const joint of this._joints) {
+      if (joint.cone) joint.updateCone();
+    }
     this.raw.timestep = dt;
     this.raw.step(this._queue);
     for (const body of this._forced) {
