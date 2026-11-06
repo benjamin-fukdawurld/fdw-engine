@@ -9,7 +9,7 @@ import {
 
 // The mind of the enemies of the TPS, as a behavior graph: what they decide
 // at each fixed step, and how they take a blow. The graph decides; the
-// game does the work its nodes ask for (moving around the trunks, testing a
+// game does the work its nodes ask for (a path around the trunks, testing a
 // blow against the hero): the nodes below.
 
 /** What the graph of an enemy asks the game, for its entity. */
@@ -26,7 +26,10 @@ export interface EnemyHost {
   swing(entity: number): void;
   /** Tests the blow in front of the enemy against the hero. */
   strike(entity: number): void;
-  /** Moves for a step: to the hero or around it, turned towards it, or not at all. */
+  /**
+   * Steers for a step: to the hero or around it, turned towards it, or
+   * not at all (the game then moves the enemies, as a crowd).
+   */
   steer(
     entity: number,
     step: number,

@@ -2,7 +2,7 @@
 title: Les ragdolls
 description: Mettre des corps sur les os d'un squelette, reliés par des articulations, et laisser la physique prendre la suite de l'animation — depuis la pose du moment.
 sidebar:
-  order: 50
+  order: 51
 ---
 
 import Example from '../../../../components/Example.astro';
@@ -24,9 +24,15 @@ import { Ragdoll, type RagdollBone } from '@fdw/engine-ragdoll';
 
 const bones: RagdollBone[] = [
   { joint: 'hips', to: 'spine', radius: 0.13 },
-  { joint: 'spine', to: 'neck', radius: 0.13 },
-  { joint: 'head', radius: 0.12 },
-  { joint: 'upperArm.L', to: 'lowerArm.L', radius: 0.05 },
+  { joint: 'spine', to: 'neck', radius: 0.13, cone: 0.6, twist: [-0.4, 0.4] },
+  { joint: 'head', radius: 0.12, cone: 0.7, twist: [-0.6, 0.6] },
+  {
+    joint: 'upperArm.L',
+    to: 'lowerArm.L',
+    radius: 0.05,
+    cone: 1.4,
+    twist: [-0.8, 0.8],
+  },
   {
     joint: 'lowerArm.L',
     to: 'hand.L',
@@ -34,7 +40,13 @@ const bones: RagdollBone[] = [
     link: 'hinge',
     limits: [-2.4, 0.2],
   },
-  { joint: 'upperLeg.L', to: 'lowerLeg.L', radius: 0.075 },
+  {
+    joint: 'upperLeg.L',
+    to: 'lowerLeg.L',
+    radius: 0.075,
+    cone: 1,
+    twist: [-0.4, 0.4],
+  },
   {
     joint: 'lowerLeg.L',
     to: 'foot.L',
@@ -56,10 +68,36 @@ et le cou suivent ici la colonne, les mains leurs avant-bras, tels qu'ils
 
 Chaque corps est accroché au corps de son plus proche ancêtre : par une
 **rotule** (`ball` : une épaule, une hanche) ou une **charnière** (`hinge`
-: un coude, un genou), son `axis` dans l'espace de l'articulation (x par
-défaut) et ses `limits` en radians, autour de son angle à l'activation. Les
-groupes de collision empêchent les corps du ragdoll de se heurter entre
-eux : le groupe 2, qui ne touche que le groupe 1 (le sol).
+: un coude, un genou). Les groupes de collision empêchent les corps du
+ragdoll de se heurter entre eux : le groupe 2, qui ne touche que le
+groupe 1 (le sol).
+
+## Les limites
+
+Une articulation sans limites laisse un membre faire le tour complet : une
+jambe repliée le long du dos, une tête tournée vers l'arrière. Chaque lien
+a les siennes :
+
+- Une **charnière** tourne autour de son `axis`, dans l'espace de
+  l'articulation (x par défaut), dans ses `limits` en radians, autour de
+  son angle à l'activation.
+- Une **rotule** reste dans un **cône** : `cone` est son demi-angle en
+  radians, autour de l'os tel qu'il pointait à l'activation (de son
+  articulation jusqu'à `to`, ou depuis l'articulation de l'ancêtre ;
+  `axis` pour en donner un autre) ; `twist` borne sa **torsion** autour de
+  lui. Une épaule s'incline de 80° dans tous les sens, et tourne de 45° sur
+  elle-même.
+
+Les cônes sont un ajout de cette page à l'[API
+physique](/fdw-engine/fr/guides/physics/#les-articulations) : `cone` sur une
+articulation de type `ball`, `setCone` pour le changer. Rapier limite
+chaque axe d'une articulation à part, un carré plutôt qu'un cercle ; avant
+chaque pas, la liaison ajuste le carré au cercle là où est l'articulation.
+
+Un rig dont les pieds ne sont pas sous ses jambes — déplacés par
+cinématique inverse, sous la racine — les accroche aux tibias avec
+`attach: 'lowerLeg.L'` : le corps d'un os est alors accroché au corps de
+cette articulation plutôt qu'à celui de son ancêtre.
 
 Le ragdoll est écrit contre l'[API physique abstraite](/fdw-engine/fr/tutorials/physics/) :
 n'importe quel moteur derrière, Rapier ici.
@@ -67,8 +105,9 @@ n'importe quel moteur derrière, Rapier ici.
 ## Prendre la suite
 
 ```ts
-// Le nœud du squelette : le parent de son articulation racine.
-const frame = character.nodes[0].worldMatrix;
+// Le nœud du squelette : le parent de son articulation racine, la racine
+// de l'instance du modèle.
+const frame = character.root.worldMatrix;
 ragdoll.activate(animator.pose, frame, { x: 0.5, y: 1.5, z: -4 });
 ```
 
@@ -99,5 +138,7 @@ fondu du ragdoll à une animation, pour un personnage qui se relève.
 
 - [La physique](/fdw-engine/fr/tutorials/physics/) : les corps, les
   articulations, les groupes de collision.
+- [Le jeu à la troisième personne](/fdw-engine/fr/game/tps/) : des orcs qui
+  tombent en ragdolls là où le coup les envoie.
 - [Un personnage animé](/fdw-engine/fr/tutorials/character-animation/) : le
   squelette, les clips et le skinning sous le ragdoll.

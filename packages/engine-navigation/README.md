@@ -24,5 +24,7 @@ const step = agent.update(position, dt); // give it to a character controller
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NavMesh`      | Convex polygons linked by portals: `findPath(start, end, { partial })`, `closestPoint`, `neighbors`, `lines()` (debug), `toData()`; `NavMesh.fromTriangles(...)` |
 | `buildNavMesh` | A navigation mesh of the volumes of a region: columns of floors with room above them, linked within a step, eroded by the radius of the agent, in rectangles     |
+| `TiledNavMesh` | The same by tiles: obstacles carved while the game runs (`addObstacle`, `moveObstacle`, `removeObstacle`), the tiles they touch built again at `update()`        |
 | `sceneVolumes` | The volumes of the renderers of a scene in the world (the volume of `setMesh`, or the bounds of the mesh)                                                        |
-| `NavAgent`     | Follows the paths: the movement of each step toward the next corner, at its speed; a new path when pushed away                                                   |
+| `NavAgent`     | Follows the paths: the movement of each step toward the next corner, at its speed; a new path when pushed away, or given a new mesh                              |
+| `NavCrowd`     | Agents making way for each other: optimal reciprocal collision avoidance (ORCA), the velocity of each closest to the one it would like                           |

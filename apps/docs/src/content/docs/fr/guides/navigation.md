@@ -16,8 +16,13 @@ réunit le tout.
 | -------------- | ------------------------------------------------------------------------------------- |
 | `NavMesh`      | Des polygones convexes reliés par des portails : `findPath`, `closestPoint`, `toData` |
 | `buildNavMesh` | Un maillage de navigation des volumes d'une région (et d'une fonction du sol)         |
+| `TiledNavMesh` | Le même par tuiles, reconstruites seules : des obstacles posés en cours de jeu        |
 | `sceneVolumes` | Les volumes des renderers d'une scène, dans le monde                                  |
 | `NavAgent`     | Suit les chemins : le déplacement de chaque pas vers le prochain coin                 |
+| `NavCrowd`     | Des agents qui s'écartent les uns pour les autres : l'évitement réciproque (ORCA)     |
+
+Le tutoriel [Les foules et les obstacles](/fdw-engine/fr/tutorials/crowds/)
+montre les tuiles, les obstacles et la foule.
 
 ## Construire à partir de volumes
 
@@ -31,6 +36,7 @@ const navMesh = buildNavMesh({
   agentHeight: 1.8,
   maxClimb: 0.4,
   maxSlope: Math.PI / 4,
+  heightTolerance: 0.01, // plus sur un terrain
 });
 ```
 
@@ -56,9 +62,14 @@ Les étapes, toutes sur le CPU :
    les sols plus proches que `agentRadius` sont écartés. Les agents restent
    ainsi loin des murs et des vides quel que soit leur chemin, et les
    chemins n'ont besoin d'aucun décalage.
-5. **Les polygones.** Les sols plats sont rassemblés en rectangles, selon x
-   puis z ; chaque rectangle est un polygone, relié à ses voisins par un
-   **portail** : la partie de leur bord commun où leurs sols sont reliés.
+5. **Les polygones.** Les sols sont rassemblés en rectangles, selon x puis
+   z, tant qu'ils restent à `heightTolerance` du premier (1 cm par défaut :
+   des sols plats) ; chaque rectangle est un polygone à leur hauteur
+   moyenne, relié à ses voisins par un **portail** : la partie de leur bord
+   commun où leurs sols sont reliés. Sur un terrain, une tolérance de
+   quelques dizaines de centimètres fait des rectangles de plusieurs mètres
+   au lieu d'un polygone par cellule : les chemins sont posés sur le sol
+   par le dessus, leurs hauteurs à la tolérance près.
 
 Le coût croît avec le nombre de colonnes : des cellules de 0,25 m sur
 100 × 100 m font 160 000 colonnes. À construire une fois, au chargement du
@@ -105,6 +116,40 @@ const nearest = navMesh.closestPoint(point); // { polygon, point }
   tendu à travers eux ; ses coins sont des bouts de portails : les coins de
   la zone praticable, à `agentRadius` des murs.
 
+## Les tuiles et les obstacles
+
+```ts
+const tiles = new TiledNavMesh({ ...options, tileCells: 64 });
+const crate = tiles.addObstacle(new Aabb([2, 0, 2], [3, 1, 3]));
+tiles.moveObstacle(crate, volume);
+tiles.removeObstacle(crate);
+tiles.invalidate(box); // les volumes ont changé là : à relire
+if (tiles.update(maxTiles)) agent.navMesh = tiles.navMesh;
+```
+
+- **Les tuiles.** Les colonnes sont découpées en tuiles de `tileCells` ×
+  `tileCells` cellules, chacune construite par les étapes ci-dessus à
+  partir des solides de la tuile et d'une marge de
+  `agentRadius / cellSize + 2` cellules autour d'elle : ses sols sont
+  érodés comme dans un maillage construit d'un coup (les côtés de la marge
+  ne sont pas des bords). Ses rectangles restent à l'intérieur. Un sol d'un
+  côté relié à un sol de l'autre côté est noté avec les hauteurs des deux ;
+  quand les tuiles sont rassemblées, deux de ces notes face à face font un
+  portail.
+- **Les obstacles** découpent : un sol est écarté quand un obstacle remplit
+  la colonne d'une marche sous lui jusqu'à la hauteur de l'agent au-dessus,
+  avant l'érosion. Un obstacle n'est pas un sol : rien ne marche dessus.
+- **Les mises à jour.** Un obstacle ajouté, déplacé ou retiré, ou
+  `invalidate(box)`, marque les tuiles dans ses bornes élargies du rayon
+  des agents ; `update` les reconstruit (au plus `maxTiles`), et rassemble
+  toutes les tuiles dans un nouveau `NavMesh` (`version` les compte). Les
+  polygones sont renumérotés : un `NavAgent` à qui l'on donne le nouveau
+  maillage (`agent.navMesh = …`) trouve un nouveau chemin à son prochain
+  `update`.
+
+Le coût d'une tuile est celui de ses colonnes, marge comprise : une tuile
+de 64 × 64 cellules se construit en quelques millisecondes.
+
 ## Les agents
 
 ```ts
@@ -121,12 +166,51 @@ agent.remaining(position); // les mètres le long du chemin
 
 `update` dépense `speed × dt` le long des coins, passe ceux qu'il atteint,
 et ne va jamais au-delà du dernier. Le y du déplacement vaut 0 : la gravité
-est l'affaire du contrôleur.
+est l'affaire du contrôleur. Avec un autre maillage (`agent.navMesh`), il
+trouve un nouveau chemin à son prochain `update`.
+
+## Les foules
+
+```ts
+const crowd = new NavCrowd({
+  timeHorizon: 1.5, // secondes d'avance
+  neighborDistance: 6,
+  maxNeighbors: 8,
+});
+const member = crowd.add({ radius: 0.4, maxSpeed: 3, position });
+member.moveTo(x, z); // là où il est
+member.prefer(vx, vz); // la vitesse qu'il voudrait
+crowd.update(dt); // tous les member.velocity, d'un coup
+member.avoids = false; // suit son chemin ; les autres s'écartent
+crowd.remove(member);
+```
+
+L'**évitement réciproque optimal des collisions** (ORCA, van den Berg, Guy,
+Lin et Manocha, 2011), comme le fait la bibliothèque RVO2, sur le sol :
+
+- Pour chaque voisin à moins de `neighborDistance` (les `maxNeighbors` les
+  plus proches), les vitesses qui le heurteraient avant `timeHorizon`
+  forment un cône coupé par un disque ; l'agent prend la moitié du
+  changement qui l'en fait sortir (tout, face à un voisin qui n'évite pas) :
+  un **demi-plan** de vitesses permises. Deux agents qui se chevauchent
+  déjà se séparent dans le pas.
+- La vitesse gardée est la plus proche de la préférée dans `maxSpeed` et
+  dans tous les demi-plans : un programme linéaire en deux dimensions, les
+  demi-plans ajoutés un à un. Quand aucune ne les respecte tous, celle qui
+  enfreint le moins le pire d'entre eux.
+- `update` calcule toutes les vitesses à partir des positions et des
+  vitesses de la dernière mise à jour, puis les écrit : l'ordre des agents
+  n'importe pas.
+
+La foule ne connaît pas les murs : les chemins s'en tiennent loin, et les
+contrôleurs de personnage les heurtent. Son coût croît avec les agents et
+leurs voisins : quelques dizaines d'agents prennent une fraction de
+milliseconde.
 
 ## Limites
 
-- Le maillage de navigation est statique : pas d'obstacles découpés en
-  cours de jeu, pas de tuiles reconstruites seules.
-- Pas d'évitement entre agents : ils se traversent (un contrôleur de la
-  physique les écarte).
 - Pas encore de liens hors du maillage (un saut, une échelle).
+- La foule évite les agents, pas les murs : une foule pressée contre un mur
+  compte sur les chemins et les contrôleurs.
+- Les rectangles ne sont pas des régions triangulées comme celles de
+  Recast : un niveau irrégulier fait plus de polygones qu'il n'en faut.

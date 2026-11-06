@@ -3,14 +3,22 @@ import {
   AnimationGraphBuilder,
   type AnimationClip,
   type AnimationGraphData,
+  type Pose,
 } from '@fdw/engine-animation';
 import { animatorsTarget, type GraphTarget } from '@fdw/engine-graph-editing';
 import type { Model } from '@fdw/engine-assets';
 import type { RenderGraph } from '@fdw/engine-core';
 import type { PhysicsCollider, ScenePhysics } from '@fdw/engine-physics';
 import { type BehaviorMode, BehaviorSystem } from '@fdw/engine-behavior';
+import {
+  type CrowdAgent,
+  NavAgent,
+  NavCrowd,
+  type NavMesh,
+} from '@fdw/engine-navigation';
+import { Ragdoll, type RagdollBone } from '@fdw/engine-ragdoll';
 import type { Scene } from '@fdw/engine-scene';
-import { Actor } from './actor';
+import { Actor, Groups } from './actor';
 import {
   type EnemyActivity,
   enemyGraph,
@@ -124,58 +132,63 @@ const actionOf: Record<string, number> = {
   dead: 3,
 };
 
-/** The trunks of the forest in a grid, to steer around them. */
-export class TrunkGrid {
-  private readonly _cells = new Map<number, number[]>();
-  constructor(
-    // x, z, radius per trunk.
-    readonly trunks: Float32Array,
-    readonly cell = 8,
-  ) {
-    for (let i = 0; i < trunks.length; i += 3) {
-      const key = this.key(
-        Math.floor(trunks[i] / cell),
-        Math.floor(trunks[i + 1] / cell),
-      );
-      let list = this._cells.get(key);
-      if (!list) this._cells.set(key, (list = []));
-      list.push(i);
-    }
-  }
-
-  private key(i: number, j: number): number {
-    return (i + 512) * 1024 + (j + 512);
-  }
-
-  /** Calls `visit` with the trunks within `radius` of (x, z). */
-  near(
-    x: number,
-    z: number,
-    radius: number,
-    visit: (tx: number, tz: number, r: number) => void,
-  ): void {
-    const c = this.cell;
-    for (
-      let j = Math.floor((z - radius) / c);
-      j <= Math.floor((z + radius) / c);
-      j++
-    ) {
-      for (
-        let i = Math.floor((x - radius) / c);
-        i <= Math.floor((x + radius) / c);
-        i++
-      ) {
-        for (const t of this._cells.get(this.key(i, j)) ?? []) {
-          const [tx, tz, r] = [
-            this.trunks[t],
-            this.trunks[t + 1],
-            this.trunks[t + 2],
-          ];
-          if (Math.hypot(tx - x, tz - z) < radius + r) visit(tx, tz, r);
-        }
-      }
-    }
-  }
+/**
+ * The bodies of a monster when it falls (the rig of Ultimate Monsters):
+ * capsules from joint to joint in meters for the orc, scaled with the
+ * kind; the limbs held in cones, the feet (moved by inverse kinematics,
+ * under the root of the rig) hung on the lower legs.
+ */
+export function monsterBones(kind: EnemyKind): RagdollBone[] {
+  const k = kind.scale / EnemyKinds.orc.scale;
+  const side = (s: 'L' | 'R'): RagdollBone[] => [
+    {
+      joint: `UpperArm.${s}`,
+      to: `LowerArm.${s}`,
+      radius: 0.08 * k,
+      cone: 1.3,
+      twist: [-0.6, 0.6],
+    },
+    {
+      joint: `LowerArm.${s}`,
+      to: `Middle1.${s}`,
+      radius: 0.07 * k,
+      cone: 1.2,
+      twist: [-0.3, 0.3],
+    },
+    {
+      joint: `UpperLeg.${s}`,
+      to: `LowerLeg.${s}`,
+      radius: 0.1 * k,
+      cone: 0.9,
+      twist: [-0.3, 0.3],
+    },
+    {
+      joint: `LowerLeg.${s}`,
+      to: `Foot.${s}`,
+      radius: 0.08 * k,
+      cone: 1.1,
+      twist: [-0.2, 0.2],
+    },
+    {
+      joint: `Foot.${s}`,
+      radius: 0.07 * k,
+      attach: `LowerLeg.${s}`,
+      cone: 0.6,
+    },
+  ];
+  return [
+    { joint: 'Hips', to: 'Abdomen', radius: 0.17 * k },
+    {
+      joint: 'Abdomen',
+      to: 'Neck',
+      radius: 0.2 * k,
+      cone: 0.5,
+      twist: [-0.3, 0.3],
+    },
+    { joint: 'Head', radius: 0.16 * k, cone: 0.6, twist: [-0.5, 0.5] },
+    ...side('L'),
+    ...side('R'),
+  ];
 }
 
 // The objects of an enemy.
@@ -183,6 +196,20 @@ interface Agent {
   readonly kind: EnemyKind;
   readonly actor: Actor;
   blow?: Blow;
+  // Its path on the navigation mesh, its place in the crowd.
+  readonly nav: NavAgent;
+  readonly crowd: CrowdAgent;
+  // Where its path goes, and when it may look for another.
+  goal?: { x: number; z: number };
+  repath: number;
+  // Where it turns while it moves (towards where it goes, by default).
+  facing?: { x: number; z: number };
+  turn: number;
+  // Where the last blow came from, on the ground.
+  struck: { x: number; z: number };
+  // Its bodies once fallen.
+  ragdoll?: Ragdoll;
+  pose?: Pose;
 }
 
 /** What the enemies need of the hero. */
@@ -199,11 +226,11 @@ export interface Target {
  * component (its kind, its place around the hero), and a behavior graph
  * deciding what each one does (`enemyGraph`, in `brain.ts`): the graph is
  * the system of the fixed step, its instances the enemies. This class is
- * the host of the graph: it does what the nodes of the game ask (steering
- * towards the hero, around the trunks and apart from each other; the blows
- * as volumes), and animates the enemies at each frame.
- *
- * No path finding: the forest is open ground with trunks to go around.
+ * the host of the graph: it does what the nodes of the game ask (a path on
+ * the navigation mesh of the forest towards the hero or a place around it;
+ * the blows as volumes), moves them as a crowd that makes way (`move`,
+ * after the graph), and animates them at each frame. The fallen fall as
+ * ragdolls.
  */
 export class Enemies implements EnemyHost {
   readonly Enemy;
@@ -219,13 +246,16 @@ export class Enemies implements EnemyHost {
   private readonly _graphs = new Map<string, AnimationGraphData>();
   private readonly _bodies = new Set<PhysicsCollider>();
   private _targets?: readonly GraphTarget[];
+  /** The enemies, as agents making way for each other. */
+  readonly crowd = new NavCrowd({ timeHorizon: 1, neighborDistance: 5 });
 
   constructor(
     readonly backend: RenderBackend,
     readonly scene: Scene,
     readonly physics: ScenePhysics,
     readonly models: Readonly<Record<string, Model>>,
-    readonly trunks: TrunkGrid,
+    /** Where they walk: the ground of the forest, around the trunks. */
+    readonly navMesh: NavMesh,
     options: { readonly mode?: BehaviorMode } = {},
   ) {
     this.Enemy = scene.world.defineComponent('enemy', {
@@ -347,7 +377,24 @@ export class Enemies implements EnemyHost {
       attackLength: actor.clips['Weapon'].duration,
     });
     actor.character.body.colliders.forEach((c) => this._bodies.add(c));
-    const agent: Agent = { kind, actor };
+    const agent: Agent = {
+      kind,
+      actor,
+      nav: new NavAgent(this.navMesh, {
+        speed: kind.run,
+        partial: true,
+        maxDistance: 4,
+        maxDeviation: 1.5,
+      }),
+      crowd: this.crowd.add({
+        radius: kind.radius,
+        maxSpeed: kind.run,
+        position: at,
+      }),
+      repath: 0,
+      turn: 8,
+      struck: { x: 0, z: 0 },
+    };
     this._agents.set(entity, agent);
     actor.animator.onEvent((event) => {
       if (
@@ -362,8 +409,14 @@ export class Enemies implements EnemyHost {
     return entity;
   }
 
-  /** A blow of the hero: the `hit` event of its graph. */
-  hit(entity: number, damage: number): void {
+  /** A blow of the hero, from a point: the `hit` event of its graph. */
+  hit(entity: number, damage: number, from?: IVec3): void {
+    const agent = this._agents.get(entity);
+    if (agent && from) {
+      const p = agent.actor.body.worldPosition;
+      const d = Math.hypot(p.x - from.x, p.z - from.z) || 1;
+      agent.struck = { x: (p.x - from.x) / d, z: (p.z - from.z) / d };
+    }
     this.behavior.emit(entity, 'hit', { damage });
   }
 
@@ -421,9 +474,9 @@ export class Enemies implements EnemyHost {
   }
 
   /**
-   * Moves an enemy for a step: chasing, to the hero or its place around it,
-   * apart from the others, around the trunks ahead; turned towards the hero
-   * while it strikes; still otherwise.
+   * How an enemy would move for a step: chasing, along its path to the
+   * hero or its place around it; turned towards the hero while it
+   * strikes; still otherwise. The crowd moves them all after ({@link move}).
    */
   steer(
     entity: number,
@@ -434,12 +487,17 @@ export class Enemies implements EnemyHost {
   ): void {
     const agent = this._agents.get(entity);
     const hero = this.target;
-    if (!agent || !hero) return;
-    const { kind, actor } = agent;
+    if (!agent || !hero || agent.ragdoll) return;
+    const { kind, actor, nav, crowd } = agent;
     const p = actor.body.worldPosition;
+    crowd.moveTo(p.x, p.z);
+    // The strikers hold their ground: the others go around them.
+    crowd.avoids = state === 'chase';
+    agent.repath -= step;
+    agent.facing = undefined;
     const to = { x: hero.position.x - p.x, z: hero.position.z - p.z };
-    const distance = Math.hypot(to.x, to.z) || 1;
-    let velocity = { x: 0, z: 0 };
+    let vx = 0;
+    let vz = 0;
     if (state === 'chase' && hero.alive) {
       // Its own place around the hero while others strike; the hero
       // itself when its turn comes.
@@ -451,54 +509,71 @@ export class Enemies implements EnemyHost {
             x: hero.position.x + Math.cos(around) * ring,
             z: hero.position.z + Math.sin(around) * ring,
           }
-        : hero.position;
+        : { x: hero.position.x, z: hero.position.z };
       const g = { x: goal.x - p.x, z: goal.z - p.z };
       const gd = Math.hypot(g.x, g.z);
       const near = waiting ? 0.5 : kind.reach * 0.7;
       if (gd > near) {
         const pace =
-          distance > 10 ? kind.run : waiting ? kind.walk : kind.run * 0.8;
-        velocity = { x: (g.x / gd) * pace, z: (g.z / gd) * pace };
-      }
-      // Apart from the others.
-      for (const [other, { actor: neighbour }] of this._agents) {
-        if (other === entity) continue;
-        const q = neighbour.body.worldPosition;
-        const away = { x: p.x - q.x, z: p.z - q.z };
-        const d = Math.hypot(away.x, away.z);
-        if (d > 0 && d < 1.8) {
-          velocity.x += (away.x / d) * (1.8 - d) * 3;
-          velocity.z += (away.z / d) * (1.8 - d) * 3;
+          Math.hypot(to.x, to.z) > 10
+            ? kind.run
+            : waiting
+              ? kind.walk
+              : kind.run * 0.8;
+        nav.speed = pace;
+        crowd.maxSpeed = pace;
+        // A new path when the goal moved, a few times a second at most.
+        const moved =
+          !agent.goal ||
+          Math.hypot(goal.x - agent.goal.x, goal.z - agent.goal.z) > 0.75;
+        const feet = actor.feet;
+        if ((moved || nav.idle) && agent.repath <= 0) {
+          agent.goal = goal;
+          agent.repath = 0.3;
+          nav.setDestination(feet, {
+            x: goal.x,
+            y: hero.position.y - 0.9,
+            z: goal.z,
+          });
         }
+        if (nav.idle) {
+          // No path (a goal off the mesh, on a slope): straight there.
+          vx = (g.x / gd) * pace;
+          vz = (g.z / gd) * pace;
+        } else {
+          const along = nav.update(feet, step);
+          vx = along.x / step;
+          vz = along.z / step;
+        }
+      } else {
+        nav.stop();
+        agent.goal = undefined;
       }
-      // Around the trunks ahead: a push sideways.
-      const speed = Math.hypot(velocity.x, velocity.z);
-      if (speed > 0.1) {
-        const dir = { x: velocity.x / speed, z: velocity.z / speed };
-        this.trunks.near(p.x, p.z, 2.5, (tx, tz, r) => {
-          const t = { x: tx - p.x, z: tz - p.z };
-          const ahead = t.x * dir.x + t.z * dir.z;
-          if (ahead <= 0) return;
-          const side = t.x * dir.z - t.z * dir.x;
-          const clearance = kind.radius + r + 0.3;
-          if (Math.abs(side) < clearance) {
-            // Steer to the side the trunk is not on: (-dir.z, dir.x)
-            // points away from a trunk on the side > 0.
-            const sign = side >= 0 ? 1 : -1;
-            const push =
-              ((clearance - Math.abs(side)) / clearance) * speed * 1.5;
-            velocity.x += -dir.z * sign * push;
-            velocity.z += dir.x * sign * push;
-          }
-        });
-      }
-      actor.face(waiting && gd < 1 ? to : velocity, step, 8);
+      if (waiting && gd < 1) agent.facing = to;
+      agent.turn = 8;
     } else if (state === 'attack' || state === 'recover' || state === 'spawn') {
       // Turned towards the hero, slower once the blow is on its way.
-      actor.face(to, step, state === 'attack' && time > kind.strike[0] ? 1 : 6);
+      agent.facing = to;
+      agent.turn = state === 'attack' && time > kind.strike[0] ? 1 : 6;
+      nav.stop();
+      agent.goal = undefined;
     }
-    actor.move(step, velocity);
-    if (state !== 'dead') {
+    crowd.prefer(vx, vz);
+  }
+
+  /**
+   * Moves the enemies for a step, as a crowd: each makes way for the
+   * others, as close to the way it would go as they let it. After the
+   * graph, before the physics.
+   */
+  move(step: number): void {
+    this.crowd.update(step);
+    for (const [entity, agent] of this._agents) {
+      if (agent.ragdoll || this.state(entity) === 'dead') continue;
+      const { actor, crowd } = agent;
+      const velocity = crowd.velocity;
+      actor.face(agent.facing ?? velocity, step, agent.turn);
+      actor.move(step, velocity);
       actor.animator.set('speed', Math.hypot(velocity.x, velocity.z));
     }
   }
@@ -511,9 +586,27 @@ export class Enemies implements EnemyHost {
   die(entity: number): void {
     const agent = this._agents.get(entity);
     if (!agent) return;
-    // The body no longer blocks the way, nor takes blows.
-    agent.actor.character.body.colliders.forEach((c) => this._bodies.delete(c));
-    this.events.death?.(agent.actor.body.worldPosition, agent.kind);
+    const { actor, kind } = agent;
+    this.events.death?.(actor.body.worldPosition, kind);
+    // The body no longer blocks the way, nor takes blows; it falls as a
+    // ragdoll from its pose, pushed away from the blow.
+    actor.character.body.colliders.forEach((c) => this._bodies.delete(c));
+    this.physics.remove(actor.body);
+    this.crowd.remove(agent.crowd);
+    agent.nav.stop();
+    const skeleton = actor.skinning.skeleton;
+    agent.ragdoll = new Ragdoll(this.physics.world, skeleton, {
+      bones: monsterBones(kind),
+      groups: Groups.ragdolls,
+      mask: Groups.level,
+      material: { friction: 0.9 },
+    });
+    agent.pose = skeleton.rest.clone();
+    agent.ragdoll.activate(
+      actor.animator.pose,
+      actor.instance.root.worldMatrix,
+      { x: agent.struck.x * 3, y: 1.5, z: agent.struck.z * 3 },
+    );
   }
 
   sink(entity: number, time: number): void {
@@ -527,9 +620,13 @@ export class Enemies implements EnemyHost {
 
   // --- The frame ---------------------------------------------------------
 
-  /** A frame: the animations and the skins. */
+  /** A frame: the animations and the skins; the poses of the fallen. */
   animate(dt: number): void {
-    for (const [entity, { actor }] of this._agents) {
+    for (const [entity, { actor, ragdoll, pose }] of this._agents) {
+      if (ragdoll && pose) {
+        actor.applyPose(ragdoll.readPose(pose));
+        continue;
+      }
       actor.animator.set('action', actionOf[this.state(entity)] ?? 0);
       actor.animate(dt);
     }
@@ -546,6 +643,8 @@ export class Enemies implements EnemyHost {
     if (!agent) return;
     this.behavior.detach(entity);
     agent.actor.character.body.colliders.forEach((c) => this._bodies.delete(c));
+    agent.ragdoll?.deactivate();
+    this.crowd.remove(agent.crowd);
     this._agents.delete(entity);
     this.physics.remove(agent.actor.body);
     agent.actor.destroy();

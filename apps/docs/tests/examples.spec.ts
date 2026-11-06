@@ -63,6 +63,7 @@ const examples: Record<string, string> = {
   'root-motion': 'tutorials/root-motion/',
   navigation: 'tutorials/navigation/',
   ragdolls: 'tutorials/ragdolls/',
+  crowds: 'tutorials/crowds/',
 };
 
 // The clock of the examples, stopped: the same image at every run.

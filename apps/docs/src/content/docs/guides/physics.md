@@ -111,15 +111,36 @@ world.createJoint({
   bodyB: door,
   anchorA: { x: 0.5 }, // in the space of each body
   anchorB: { x: -0.5 },
-  axis: { x: 0, y: 1, z: 0 }, // hinge and slider
+  axis: { x: 0, y: 1, z: 0 }, // hinge and slider; the cone of a ball
   limits: [0, Math.PI / 2], // radians, or meters for a slider
   motor: { velocity: 1 }, // or { target, stiffness, damping }: a spring
   collide: false,
+});
+
+// A shoulder: a ball within a cone around its axis.
+world.createJoint({
+  type: 'ball',
+  bodyA: chest,
+  bodyB: arm,
+  anchorA: { x: 0.2, y: 0.4 },
+  axis: { x: 1, y: 0, z: 0 }, // in the space of A
+  cone: { swing: 1.4, twist: [-0.8, 0.8] }, // radians
 });
 ```
 
 A `fixed` joint welds the bodies as they are when it is created. Removing a
 body removes its joints.
+
+A `ball` joint turns freely, or within **cone limits**: B leans at most
+`swing` from the axis (a cone), and turns around it within `twist`; both
+measured from how the bodies are turned when the joint is created (the
+rest). `setCone(cone)` changes them, `setCone(undefined)` frees the joint;
+`setLimits` is for the hinges and the sliders. On Rapier, a spherical joint
+limits each angular axis on its own — the swing within a square of the two
+axes across the cone, 41 % wider along the diagonals; before each step,
+the binding fits the square to the circle where the joint is (each axis
+bounded by what the other leaves of it): a cone, up to what a step
+moves.
 
 ### Queries
 
@@ -289,10 +310,13 @@ ragdoll.deactivate();
 
 - A **bone** is a capsule from its joint to the joint `to`, or a sphere on
   its joint; `density` gives its mass (1000 kg/m³ by default).
-- Each body hangs on the body of its **nearest ancestor** with one: a
-  `ball` joint at the joint, or a `hinge` around `axis` (in the space of
-  the joint, x by default) within `limits` (radians, around the angle at
-  the activation).
+- Each body hangs on the body of its **nearest ancestor** with one (or on
+  the body of the joint `attach`: the feet of a rig moved by inverse
+  kinematics, not under their legs): a `ball` joint at the joint, within a
+  `cone` (its half-angle around the bone as it pointed at the activation)
+  and a `twist`, or a `hinge` around `axis` (in the space of the joint, x
+  by default) within `limits` (radians, around the angle at the
+  activation).
 - All the bodies are created **turned as the node** of the skeleton, the
   rotation of each joint kept as an offset: a hinge axis is the same in
   the two bodies it links, as the API asks.

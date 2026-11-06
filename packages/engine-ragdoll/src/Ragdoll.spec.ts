@@ -100,6 +100,86 @@ describe('Ragdoll', () => {
     expect(Math.hypot(x, y, z)).toBeCloseTo(0.45, 1);
   });
 
+  it('keeps a limb within its cone', async () => {
+    const swingOf = async (cone?: number) => {
+      const w = await world();
+      const sk = skeleton();
+      const ragdoll = new Ragdoll(w, sk, {
+        bones: [
+          { joint: 'hips', to: 'spine', radius: 0.12 },
+          {
+            joint: 'upperLeg.L',
+            to: 'lowerLeg.L',
+            radius: 0.07,
+            ...(cone !== undefined ? { cone, twist: [-0.2, 0.2] } : {}),
+          },
+        ],
+      });
+      ragdoll.activate(sk.rest, matrix);
+      const hips = ragdoll.bodyOf('hips');
+      const leg = ragdoll.bodyOf('upperLeg.L');
+      if (!hips || !leg) throw new Error('no bodies');
+      // Kicked forward and sideways.
+      leg.applyImpulse({ x: 1.5, y: 0, z: 1.5 }, leg.position);
+      let most = 0;
+      for (let i = 0; i < 60; i++) {
+        w.step(1 / 60);
+        // The leg in the frame of the hips: down at the activation.
+        const a = hips.rotation;
+        const b = leg.rotation;
+        const r = {
+          x: a.w * b.x - a.x * b.w - a.y * b.z + a.z * b.y,
+          y: a.w * b.y + a.x * b.z - a.y * b.w - a.z * b.x,
+          z: a.w * b.z - a.x * b.y + a.y * b.x - a.z * b.w,
+          w: a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z,
+        };
+        // (0, -1, 0) turned by r: its y.
+        const down = -(1 - 2 * (r.x * r.x + r.z * r.z));
+        most = Math.max(most, Math.acos(Math.min(1, -down)));
+      }
+      return most;
+    };
+    expect(await swingOf()).toBeGreaterThan(0.8);
+    const limited = await swingOf(0.4);
+    expect(limited).toBeLessThan(0.5);
+  });
+
+  it('hangs a bone on another joint than its ancestor', async () => {
+    const w = await world();
+    // A foot moved by inverse kinematics: under the root, not the leg.
+    const sk = new Skeleton([
+      { name: 'root' },
+      { name: 'hips', parent: 0, translation: [0, 1, 0] },
+      { name: 'upperLeg', parent: 1, translation: [0.1, -0.05, 0] },
+      { name: 'lowerLeg', parent: 2, translation: [0, -0.45, 0] },
+      { name: 'foot', parent: 0, translation: [0.1, 0.05, 0] },
+    ]);
+    const ragdoll = new Ragdoll(w, sk, {
+      bones: [
+        { joint: 'hips', radius: 0.12 },
+        { joint: 'upperLeg', to: 'lowerLeg', radius: 0.07 },
+        { joint: 'lowerLeg', to: 'foot', radius: 0.06 },
+        { joint: 'foot', radius: 0.05, attach: 'lowerLeg' },
+      ],
+    });
+    ragdoll.activate(sk.rest, matrix, { x: 1 });
+    expect([...w.joints]).toHaveLength(3);
+    for (let i = 0; i < 120; i++) w.step(1 / 60);
+    // Still at the end of the lower leg.
+    const foot = ragdoll.bodyOf('foot')?.position;
+    const knee = ragdoll.bodyOf('lowerLeg')?.position;
+    if (!foot || !knee) throw new Error('no bodies');
+    expect(
+      Math.hypot(foot.x - knee.x, foot.y - knee.y, foot.z - knee.z),
+    ).toBeCloseTo(0.45, 1);
+    expect(
+      () =>
+        new Ragdoll(w, sk, {
+          bones: [{ joint: 'foot', radius: 0.05, attach: 'toe' }],
+        }),
+    ).toThrow(/no joint "toe"/);
+  });
+
   it('leaves the world when deactivated', async () => {
     const w = await world();
     const sk = skeleton();

@@ -1,8 +1,11 @@
 import type { IVec3, RenderBackend } from '@fdw/engine-backend';
 import {
+  AnimationClip,
   AnimationGraphBuilder,
-  type AnimationClip,
   type AnimationEvent,
+  rootMotionToWorld,
+  type Skeleton,
+  type Track,
 } from '@fdw/engine-animation';
 import type { Model } from '@fdw/engine-assets';
 import type { PhysicsCollider, ScenePhysics } from '@fdw/engine-physics';
@@ -94,20 +97,116 @@ const strikes: Record<string, { windows: [number, number][]; damage: number }> =
     HeavyAttack: { windows: [[0.3, 0.5]], damage: 55 },
   };
 
-/** The events of the clips of the hero: steps, swings, the blade striking. */
+/**
+ * The steps of the blows: the clips of the library strike in place; each
+ * blow carries the hero forward, from a time to another of its clip (in
+ * seconds), by a distance (in meters).
+ */
+export const Lunges: Readonly<
+  Record<string, readonly (readonly [number, number, number])[]>
+> = {
+  AttackA: [[0, 0.2, 0.35]],
+  AttackB: [[0, 0.24, 0.4]],
+  AttackC: [
+    [0, 0.3, 0.4],
+    [0.45, 0.7, 0.5],
+  ],
+  HeavyAttack: [[0.1, 0.5, 0.7]],
+};
+
+/** The joint of the skeleton of the hero carrying its movement. */
+export const HeroRoot = 'root';
+
+/**
+ * A clip with the steps of its lunges written in the track of the root
+ * joint (the joint under the armature, at the feet): forward along +z of
+ * the model, eased in and out. What the animator takes out as root
+ * motion, for the controller to move.
+ */
+export function withLunges(
+  clip: AnimationClip,
+  skeleton: Skeleton,
+  lunges: readonly (readonly [number, number, number])[],
+): AnimationClip {
+  const joint = skeleton.indexOf(HeroRoot);
+  if (joint < 0) return clip;
+  // +z of the model in the space of the parent of the root.
+  const parent = skeleton.parents[joint];
+  let forward = [0, 0, 1];
+  if (parent >= 0) {
+    const m = skeleton.rest.modelMatrices(skeleton.parents);
+    const o = parent * 16;
+    // The inverse of the 3×3 of the parent, applied to (0, 0, 1): the
+    // third row of its inverse, its cofactors over its determinant.
+    const [a, b, c] = [m[o], m[o + 1], m[o + 2]];
+    const [d, e, f] = [m[o + 4], m[o + 5], m[o + 6]];
+    const [g, h, i] = [m[o + 8], m[o + 9], m[o + 10]];
+    const det = a * (e * i - f * h) - d * (b * i - c * h) + g * (b * f - c * e);
+    forward = [
+      (d * h - g * e) / det,
+      (g * b - a * h) / det,
+      (a * e - d * b) / det,
+    ];
+  }
+  const rest = skeleton.rest.translation(joint);
+  const keys = Math.max(2, Math.ceil(clip.duration * 30) + 1);
+  const times = new Float32Array(keys);
+  const values = new Float32Array(keys * 3);
+  for (let k = 0; k < keys; k++) {
+    const time = (clip.duration * k) / (keys - 1);
+    let distance = 0;
+    for (const [start, end, length] of lunges) {
+      const t = Math.min(Math.max((time - start) / (end - start), 0), 1);
+      distance += length * t * t * (3 - 2 * t);
+    }
+    times[k] = time;
+    for (let c = 0; c < 3; c++) {
+      values[k * 3 + c] = rest[c] + forward[c] * distance;
+    }
+  }
+  const tracks: Track[] = clip.tracks.filter(
+    (track) => !(track.joint === joint && track.path === 'translation'),
+  );
+  tracks.push({
+    joint,
+    path: 'translation',
+    interpolation: 'LINEAR',
+    times,
+    values,
+  });
+  return new AnimationClip({
+    name: clip.name,
+    duration: clip.duration,
+    tracks,
+    events: clip.events,
+  });
+}
+
+/**
+ * The events of the clips of the hero: steps, swings, the blade striking;
+ * with its skeleton, the lunges of the blows.
+ */
 export function heroClips(
   clips: Record<string, AnimationClip>,
+  skeleton?: Skeleton,
 ): Record<string, AnimationClip> {
   const out = { ...clips };
+  if (skeleton) {
+    for (const [name, lunges] of Object.entries(Lunges)) {
+      if (out[name]) out[name] = withLunges(out[name], skeleton, lunges);
+    }
+  }
   const steps = (name: string) => {
+    if (!clips[name]) return;
     const d = clips[name].duration;
-    out[name] = clips[name].withEvents([
+    out[name] = out[name].withEvents([
       { time: d * 0.25, name: 'step' },
       { time: d * 0.75, name: 'step' },
     ]);
   };
   ['Walk', 'Jog', 'Sprint'].forEach(steps);
   for (const [name, { windows }] of Object.entries(strikes)) {
+    if (!out[name]) continue;
     const events: AnimationEvent[] = [];
     for (const [start, end] of windows) {
       events.push(
@@ -116,7 +215,7 @@ export function heroClips(
         { time: end, name: 'strikeEnd' },
       );
     }
-    out[name] = clips[name].withEvents(events);
+    out[name] = out[name].withEvents(events);
   }
   return out;
 }
@@ -162,7 +261,8 @@ const sprint = 7;
  * The hero: a ranger with an estoc, on a character controller. Moves
  * where the player asks, relative to the camera; jumps, rolls (unhurt for
  * most of it), chains three blows, strikes hard, parries. The blade is a
- * capsule tested while the animation strikes.
+ * capsule tested while the animation strikes; the blows step forward by
+ * root motion (their lunges, in the clips).
  */
 export class Hero {
   readonly actor: Actor;
@@ -182,6 +282,9 @@ export class Hero {
   private _durations: Record<string, number> = {};
   private readonly _tip = { x: 0, y: 0, z: 0 };
   private _hasTip = false;
+  // The movement of the animation since the last step, in the world.
+  private readonly _lunge = { x: 0, y: 0, z: 0 };
+  private readonly _frame = { x: 0, y: 0, z: 0 };
 
   constructor(
     backend: RenderBackend,
@@ -198,6 +301,7 @@ export class Hero {
       halfHeight: 0.6,
       graph: heroGraph(),
       clips: heroClips,
+      rootMotion: { joint: HeroRoot },
     });
     // Facing away from a camera looking along -z.
     this.actor.yaw = Math.PI;
@@ -304,10 +408,8 @@ export class Hero {
       case 'attackB':
       case 'attackC':
       case 'heavy': {
-        // A step forward as the blow starts, turned towards the aim.
-        const f = actor.forward;
-        const lunge = this.time < duration * 0.45 ? 1.6 : 0;
-        target = { x: f.x * lunge, z: f.z * lunge };
+        // Turned towards the aim as the blow starts; the step forward is
+        // the lunge of its clip (root motion).
         if (this.time < duration * 0.3) {
           actor.face(intent.aim, dt, 14);
         }
@@ -365,7 +467,8 @@ export class Hero {
       : 1 - Math.exp(-dt * 2);
     this._velocity.x += (target.x - this._velocity.x) * rate;
     this._velocity.z += (target.z - this._velocity.z) * rate;
-    actor.move(dt, this._velocity);
+    actor.move(dt, this._velocity, this._lunge);
+    this._lunge.x = this._lunge.z = 0;
     this.speed = Math.hypot(this._velocity.x, this._velocity.z);
     return this.strike();
   }
@@ -429,6 +532,7 @@ export class Hero {
     this.enter('move');
     this.actor.yaw = Math.PI;
     this._velocity = { x: 0, z: 0 };
+    this._lunge.x = this._lunge.z = 0;
     this.actor.fall = 0;
     this.physics.teleport(this.actor.body, {
       x: position.x,
@@ -443,6 +547,12 @@ export class Hero {
     animator.set('speed', this.action === 'move' ? this.speed : 0);
     animator.set('action', HeroActions.indexOf(this.action));
     this.actor.animate(dt);
+    // The steps of the blows, for the next fixed step.
+    if (this.alive) {
+      rootMotionToWorld(animator.rootMotion, this.actor.yaw, 1, this._frame);
+      this._lunge.x += this._frame.x;
+      this._lunge.z += this._frame.z;
+    }
   }
 
   destroy(): void {

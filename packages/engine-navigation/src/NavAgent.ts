@@ -37,15 +37,30 @@ export class NavAgent {
   private _path: NavPoint[] = [];
   private _corner = 0;
   private _destination?: NavPoint;
+  private _stale = false;
   private readonly _step: NavPoint = { x: 0, y: 0, z: 0 };
 
   constructor(
-    readonly navMesh: NavMesh,
+    private _navMesh: NavMesh,
     private readonly _options: NavAgentOptions = {},
   ) {
     this.speed = _options.speed ?? 3;
     this.tolerance = _options.tolerance ?? 0.1;
     this.maxDeviation = _options.maxDeviation ?? 1;
+  }
+
+  /**
+   * The mesh it walks on. Given a new one (a {@link TiledNavMesh} updated:
+   * an obstacle placed), it finds a new path at its next update.
+   */
+  get navMesh(): NavMesh {
+    return this._navMesh;
+  }
+
+  set navMesh(navMesh: NavMesh) {
+    if (navMesh === this._navMesh) return;
+    this._navMesh = navMesh;
+    this._stale = this._destination !== undefined;
   }
 
   /** The corners of the path followed, from where it started. */
@@ -79,6 +94,7 @@ export class NavAgent {
 
   /** Stops where it is. */
   stop(): void {
+    this._stale = false;
     this._path = [];
     this._corner = 0;
     this._destination = undefined;
@@ -86,8 +102,9 @@ export class NavAgent {
 
   private repath(from: NavPoint): boolean {
     const destination = this._destination;
+    this._stale = false;
     const path = destination
-      ? this.navMesh.findPath(from, destination, this._options)
+      ? this._navMesh.findPath(from, destination, this._options)
       : undefined;
     if (!path) {
       this.stop();
@@ -106,6 +123,9 @@ export class NavAgent {
    */
   update(position: NavPoint, dt: number, out: NavPoint = this._step): NavPoint {
     out.x = out.y = out.z = 0;
+    if (this._stale && !this.repath(position)) {
+      return out;
+    }
     const path = this._path;
     if (this._corner >= path.length) {
       return out;
@@ -127,11 +147,17 @@ export class NavAgent {
         this._corner++;
         continue;
       }
-      const t = Math.min(budget / d, 1);
-      x += (corner.x - x) * t;
-      z += (corner.z - z) * t;
-      budget -= d * t;
-      if (t >= 1) this._corner++;
+      if (budget < d) {
+        // Short of the corner: the whole budget spent (computed, what is
+        // left may not reach 0).
+        x += ((corner.x - x) * budget) / d;
+        z += ((corner.z - z) * budget) / d;
+        break;
+      }
+      x = corner.x;
+      z = corner.z;
+      budget -= d;
+      this._corner++;
     }
     out.x = x - position.x;
     out.z = z - position.z;

@@ -114,15 +114,37 @@ world.createJoint({
   bodyB: door,
   anchorA: { x: 0.5 }, // dans l'espace de chaque corps
   anchorB: { x: -0.5 },
-  axis: { x: 0, y: 1, z: 0 }, // hinge et slider
+  axis: { x: 0, y: 1, z: 0 }, // hinge et slider ; le cône d'une rotule
   limits: [0, Math.PI / 2], // en radians, ou en mètres pour un slider
   motor: { velocity: 1 }, // ou { target, stiffness, damping } : un ressort
   collide: false,
+});
+
+// Une épaule : une rotule dans un cône autour de son axe.
+world.createJoint({
+  type: 'ball',
+  bodyA: chest,
+  bodyB: arm,
+  anchorA: { x: 0.2, y: 0.4 },
+  axis: { x: 1, y: 0, z: 0 }, // dans l'espace de A
+  cone: { swing: 1.4, twist: [-0.8, 0.8] }, // en radians
 });
 ```
 
 Une articulation `fixed` soude les corps tels qu'ils sont à sa création.
 Retirer un corps retire ses articulations.
+
+Une rotule (`ball`) tourne librement, ou dans des **limites de cône** : B
+s'incline d'au plus `swing` depuis l'axe (un cône), et tourne autour de lui
+dans `twist` (la **torsion**) ; les deux sont mesurés depuis la façon dont
+les corps sont tournés à la création de l'articulation (le repos).
+`setCone(cone)` les change, `setCone(undefined)` libère l'articulation ;
+`setLimits` est pour les charnières et les sliders. Sur Rapier, une
+articulation sphérique limite chaque axe angulaire à part — le `swing` dans
+un carré des deux axes en travers du cône, 41 % plus large selon les
+diagonales ; avant chaque pas, la liaison ajuste le carré au cercle là où
+est l'articulation (chaque axe borné par ce que l'autre lui laisse) : un
+cône, à ce que déplace un pas près.
 
 ### Les requêtes
 
@@ -301,9 +323,13 @@ de `@fdw/engine-animation`, contre l'API abstraite :
   `to`, ou une sphère sur son articulation ; `density` donne sa masse
   (1000 kg/m³ par défaut).
 - Chaque corps est accroché au corps de son **plus proche ancêtre** qui en
-  a un : une rotule (`ball`) à l'articulation, ou une charnière (`hinge`)
-  autour de `axis` (dans l'espace de l'articulation, x par défaut) dans ses
-  `limits` (en radians, autour de l'angle à l'activation).
+  a un (ou au corps de l'articulation `attach` : les pieds d'un rig
+  déplacés par cinématique inverse, pas sous leurs jambes) : une rotule
+  (`ball`) à l'articulation, dans un `cone` (son demi-angle autour de l'os
+  tel qu'il pointait à l'activation) et un `twist`, ou une charnière
+  (`hinge`) autour de `axis` (dans l'espace de l'articulation, x par
+  défaut) dans ses `limits` (en radians, autour de l'angle à
+  l'activation).
 - Tous les corps sont créés **tournés comme le nœud** du squelette, la
   rotation de chaque articulation gardée comme un décalage : l'axe d'une
   charnière est le même dans les deux corps qu'elle relie, comme l'API le

@@ -3,6 +3,9 @@ import {
   Animator,
   type AnimationClip,
   type AnimationGraphData,
+  type Pose,
+  type RootMotionOptions,
+  type Skeleton,
 } from '@fdw/engine-animation';
 import {
   instantiate,
@@ -30,10 +33,27 @@ export interface ActorOptions {
   // The clips of the model, with their events added.
   readonly clips?: (
     clips: Record<string, AnimationClip>,
+    skeleton: Skeleton,
   ) => Record<string, AnimationClip>;
+  // The joint whose movement the animations give (see Animator).
+  readonly rootMotion?: RootMotionOptions;
 }
 
 const gravity = 22;
+
+/**
+ * The collision groups of the game: the level (the ground, the trunks),
+ * the ragdolls of the fallen, the characters. The ragdolls fall on the
+ * level only, and the characters walk through them.
+ */
+export const Groups = {
+  level: 1,
+  ragdolls: 2,
+  characters: 4,
+} as const;
+
+/** What the characters walk against, and the camera stops at. */
+export const SolidMask = Groups.level | Groups.characters;
 
 /**
  * A character of the game: a body moved by a character controller (a
@@ -79,10 +99,13 @@ export class Actor {
     this.instance = instantiate(options.model, scene, { parent: this.visual });
     this.skinning = new Skinning(backend, this.instance, options.model);
     const all = clipsOf(options.model, this.skinning.skeleton);
-    this.clips = options.clips ? options.clips(all) : all;
+    this.clips = options.clips
+      ? options.clips(all, this.skinning.skeleton)
+      : all;
     this.animator = new Animator(options.graph, {
       skeleton: this.skinning.skeleton,
       clips: this.clips,
+      ...(options.rootMotion ? { rootMotion: options.rootMotion } : {}),
     });
     this.character = physics.addCharacter(this.body, {
       shape: Shapes.capsule(options.halfHeight, options.radius),
@@ -90,6 +113,8 @@ export class Actor {
       stepHeight: 0.4,
       snapToGround: 0.4,
       pushBodies: false,
+      groups: Groups.characters,
+      mask: SolidMask,
     });
   }
 
@@ -105,18 +130,26 @@ export class Actor {
   }
 
   /**
-   * Moves the body by a horizontal velocity (m/s) for a step, falling or
-   * held by the ground: a fixed step system.
+   * Moves the body by a horizontal velocity (m/s) for a step, and by
+   * `offset` (meters: what its animation moved it), falling or held by the
+   * ground: a fixed step system. The ragdolls are not in its way.
    */
-  move(step: number, velocity: { x: number; z: number }): void {
+  move(
+    step: number,
+    velocity: { x: number; z: number },
+    offset?: { x: number; z: number },
+  ): void {
     this.fall = this.grounded
       ? Math.min(this.fall, 0) - gravity * step
       : this.fall - gravity * step;
-    const done = this.character.move({
-      x: velocity.x * step,
-      y: this.fall * step,
-      z: velocity.z * step,
-    });
+    const done = this.character.move(
+      {
+        x: velocity.x * step + (offset?.x ?? 0),
+        y: this.fall * step,
+        z: velocity.z * step + (offset?.z ?? 0),
+      },
+      { mask: SolidMask },
+    );
     this.grounded = done.grounded;
     if (this.grounded && this.fall < 0) {
       // Held by the ground: a small push down keeps it on slopes.
@@ -144,6 +177,11 @@ export class Actor {
    * where it faces. Then draw with addPass in the graph of the frame.
    */
   animate(dt: number): void {
+    this.applyPose(this.animator.update(dt));
+  }
+
+  /** Poses its skin as given (a ragdoll), the model turned where it faces. */
+  applyPose(pose: Pose): void {
     const half = this.yaw / 2;
     this.visual.transform.rotation = {
       x: 0,
@@ -151,7 +189,7 @@ export class Actor {
       z: 0,
       w: Math.cos(half),
     };
-    this.skinning.applyPose(this.animator.update(dt)).update();
+    this.skinning.applyPose(pose).update();
   }
 
   /** Skins its vertices in the graph of the frame (the compute pass). */

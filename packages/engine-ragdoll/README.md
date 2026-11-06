@@ -28,8 +28,8 @@ skinning.applyPose(ragdoll.readPose(pose));
 
 ## Public API
 
-| Export           | Description                                                                                                                 |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `Ragdoll`        | `activate(pose, matrix, velocity)`, `deactivate()`, `readPose(out)`, `active`, `bodies`, `bodyOf(joint)`                    |
-| `RagdollBone`    | A body on a joint: a capsule to the joint `to` or a sphere, its radius and density, a `ball` or `hinge` link (axis, limits) |
-| `RagdollOptions` | The bones, the collision groups, the material, the damping                                                                  |
+| Export           | Description                                                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Ragdoll`        | `activate(pose, matrix, velocity)`, `deactivate()`, `readPose(out)`, `active`, `bodies`, `bodyOf(joint)`                                                                      |
+| `RagdollBone`    | A body on a joint: a capsule to the joint `to` or a sphere, its radius and density, a `ball` link (cone, twist) or a `hinge` (axis, limits), the joint it hangs on (`attach`) |
+| `RagdollOptions` | The bones, the collision groups, the material, the damping                                                                                                                    |

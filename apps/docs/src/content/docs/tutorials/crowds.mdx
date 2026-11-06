@@ -1,0 +1,122 @@
+---
+title: Crowds and obstacles
+description: Change a navigation mesh while the game runs — obstacles carved tile by tile — and let agents make way for each other with reciprocal avoidance.
+sidebar:
+  order: 50
+---
+
+import Example from '../../../components/Example.astro';
+
+Two groups cross a square, back and forth, through each other. A cart goes
+to and fro across the middle: the **navigation mesh** is carved where it
+stands, a few tiles built again at each move, and the walkers find their
+way around it. They make way for each other, and for the cart, as a
+**crowd**: each takes half of the effort to avoid the other, and they pass
+by a side instead of pushing.
+
+Click the ground to drop a crate, or click a crate to take it away. **N**
+hides or shows the navigation mesh, in blue.
+
+<Example name="crowds" />
+
+This page follows [Navigation](/fdw-engine/tutorials/navigation/): the
+mesh, its paths and its agents.
+
+## A mesh in tiles
+
+```ts
+import { Aabb } from '@fdw/engine-geometry';
+import { TiledNavMesh } from '@fdw/engine-navigation';
+
+const tiles = new TiledNavMesh({
+  bounds: new Aabb([-12, -1, -8], [12, 3, 8]),
+  volumes: solids,
+  cellSize: 0.25,
+  agentRadius: 0.3,
+  tileCells: 16, // tiles of 16 × 16 cells: 4 m
+});
+const navMesh = tiles.navMesh; // a NavMesh, as buildNavMesh gives
+```
+
+A `TiledNavMesh` takes the options of `buildNavMesh`, and builds the region
+by **tiles** of `tileCells` cells. Each tile reads the solids of a margin
+around it too, as wide as the radius of the agents: the floors at its sides
+are kept away from a wall of the next tile as they would be in a mesh built
+at once. The polygons of each tile are linked to those of its neighbors
+across their sides. A tile can then be built again **alone**.
+
+## Obstacles
+
+```ts
+const crate = tiles.addObstacle(new Aabb([2, 0, 2], [3.2, 1.2, 3.2]));
+tiles.moveObstacle(cart, cartBox(z)); // where it is now
+tiles.removeObstacle(crate);
+
+// Once a step:
+if (tiles.update()) {
+  for (const walker of walkers) walker.agent.navMesh = tiles.navMesh;
+}
+```
+
+An **obstacle** is a volume — a box, a capsule, any `Volume` — that
+**carves** the mesh: no floor where it stands, and the floors around it
+eroded by the radius of the agents, as near a wall. It is not a floor
+itself: nothing walks on a crate. Adding, moving or removing one marks the
+tiles it touches; `update()` builds them again, makes a new `NavMesh`, and
+tells whether it changed. `update(maxTiles)` builds a few tiles at a call,
+the rest at the next: a large change spread over frames.
+
+Given the new mesh, a `NavAgent` finds a new path at its next `update`.
+Here the cart moves its obstacle ten times a second: about four tiles of
+4 m each time, under 2 ms with the new mesh.
+
+When the solids themselves change (a door opens, a bridge falls),
+`invalidate(box)` builds the tiles of a box again from `volumes`.
+
+## A crowd
+
+```ts
+import { NavCrowd } from '@fdw/engine-navigation';
+
+const crowd = new NavCrowd({ timeHorizon: 1.5 });
+const member = crowd.add({ radius: 0.32, maxSpeed: 2, position: start });
+
+// Each step: where each is, where it would go…
+member.moveTo(position.x, position.z);
+const step = agent.update(position, dt); // along its path
+member.prefer(step.x / dt, step.z / dt);
+// …then the velocities of all, at once.
+crowd.update(dt);
+move(member.velocity);
+```
+
+A `NavCrowd` gives each agent a velocity close to the one it would like
+(along its path), that runs into none of its neighbors for `timeHorizon`
+seconds: **optimal reciprocal collision avoidance** (ORCA, van den Berg et
+al.), the algorithm of the RVO2 library. Each neighbor forbids a half-plane
+of velocities; the velocity kept is the one closest to the preferred in all
+of them, found by a small linear program — and when they are too many to
+satisfy, the one that breaks the worst of them the least.
+
+Each agent assumes the other does half of the work: they pass each other
+by a side, without the jostle of pushes. An agent with `avoids: false`
+goes its way, and the others take the whole effort: the cart here, a
+striker standing its ground, a statue.
+
+The crowd knows no walls: the paths keep away from them, and a character
+controller collides. This page has none — its walkers are kept on the mesh
+by `closestPoint` after each move.
+
+## In a game
+
+The [third-person game](/fdw-engine/game/tps/) walks its orcs on the
+navigation mesh of its forest (the trunks as volumes, the ground of the
+terrain within `heightTolerance`), and moves them as a crowd: those
+striking hold their ground, the others go around them.
+
+## Next
+
+- [Ragdolls](/fdw-engine/tutorials/ragdolls/): characters that fall, their
+  limbs held in cones.
+- [The navigation guide](/fdw-engine/guides/navigation/): the tiles, the
+  obstacles and the crowd in detail.

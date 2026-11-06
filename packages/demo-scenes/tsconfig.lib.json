@@ -7,9 +7,6 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../engine-raytracing/tsconfig.lib.json"
-    },
-    {
       "path": "../engine-tessellation/tsconfig.lib.json"
     },
     {
@@ -28,6 +25,12 @@
       "path": "../engine-resources/tsconfig.lib.json"
     },
     {
+      "path": "../engine-raytracing/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-ragdoll/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-physics/tsconfig.lib.json"
     },
     {
@@ -38,6 +41,9 @@
     },
     {
       "path": "../engine-noise/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-navigation/tsconfig.lib.json"
     },
     {
       "path": "../engine-input/tsconfig.lib.json"

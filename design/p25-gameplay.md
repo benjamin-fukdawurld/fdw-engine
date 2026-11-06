@@ -139,12 +139,13 @@ La construction du maillage est à faire au chargement d'un niveau, pas à chaqu
 
 ## 8. La suite
 
-1. **La démo TPS** : les orcs sur le maillage de navigation de la forêt (les troncs en volumes), les coups qui avancent par root motion, les ennemis qui tombent en ragdoll.
-2. **Les obstacles dynamiques et les tuiles** : reconstruire une région du maillage, découper les obstacles posés en cours de jeu.
-3. **L'évitement entre agents** (RVO), les liens hors du maillage (sauts, échelles).
-4. **Les ragdolls** : des limites de cône aux rotules (à ajouter à l'API de P7b), le retour à l'animation (se relever, par `Pose.blend`), le ragdoll partiel (un bras touché, le reste animé), les moteurs des articulations vers une pose (le ragdoll actif).
+1. ~~**La démo TPS** : les orcs sur le maillage de navigation de la forêt (les troncs en volumes), les coups qui avancent par root motion, les ennemis qui tombent en ragdoll.~~ _Fait_ (§11.4).
+2. ~~**Les obstacles dynamiques et les tuiles** : reconstruire une région du maillage, découper les obstacles posés en cours de jeu.~~ _Fait_ (§11.2).
+3. ~~**L'évitement entre agents** (RVO)~~ _fait_ (§11.3) ; les liens hors du maillage (sauts, échelles).
+4. **Les ragdolls** : ~~des limites de cône aux rotules (à ajouter à l'API de P7b)~~ _faites_ (§11.1) ; le retour à l'animation (se relever, par `Pose.blend`), le ragdoll partiel (un bras touché, le reste animé), les moteurs des articulations vers une pose (le ragdoll actif).
 5. **Le root motion** : les rotations autour d'autres axes, les clips qui démarrent ailleurs qu'à l'origine.
 6. **L'éditeur de jeu (P20)** : le maillage affiché et reconstruit dans l'éditeur, les os d'un ragdoll édités sur le squelette.
+7. **La foule contre les murs** : l'évitement ne voit que les agents ; les bords du maillage en obstacles de l'ORCA (les segments de RVO2) garderaient une foule pressée contre un mur sur le maillage.
 
 ## 9. Décisions
 
@@ -157,4 +158,66 @@ La construction du maillage est à faire au chargement d'un niveau, pas à chaqu
 
 ## 10. État
 
-**Faite** (5 novembre 2026) : le root motion de `engine-animation` (`rootMotion`, `rootMotionToWorld`, `AnimationClip.sampleJoint`) ; `engine-navigation` (`NavMesh`, `buildNavMesh`, `sceneVolumes`, `NavAgent`) ; `SceneCharacter` et `CharacterController` d'`engine-physics`, `signedDistance` d'`engine-geometry` ; `engine-ragdoll` (`Ragdoll`) ; les clips `Walk_RM` et `TurnLeft_RM` du personnage de la documentation ; les tutoriels « Le root motion », « La navigation » et « Les ragdolls » (EN, FR) avec leurs exemples vivants et leurs captures, le guide « La navigation », les guides « Animation » et « La physique » complétés. Reste la suite du §8.
+**Faite** (5 novembre 2026), sa suite le 6 novembre (§11) : le root motion de `engine-animation` (`rootMotion`, `rootMotionToWorld`, `AnimationClip.sampleJoint`) ; `engine-navigation` (`NavMesh`, `buildNavMesh`, `sceneVolumes`, `NavAgent`) ; `SceneCharacter` et `CharacterController` d'`engine-physics`, `signedDistance` d'`engine-geometry` ; `engine-ragdoll` (`Ragdoll`) ; les clips `Walk_RM` et `TurnLeft_RM` du personnage de la documentation ; les tutoriels « Le root motion », « La navigation » et « Les ragdolls » (EN, FR) avec leurs exemples vivants et leurs captures, le guide « La navigation », les guides « Animation » et « La physique » complétés. Le 6 novembre : les limites de cône des rotules (l'API de P7b étendue, `ConeLimits`, `setCone`), `TiledNavMesh` (les tuiles, les obstacles), `NavCrowd` (l'évitement réciproque), `heightTolerance`, et la démo TPS qui s'en sert ; le tutoriel « Les foules et les obstacles » (EN, FR) avec son exemple vivant et ses captures, les tutoriels « La navigation » et « Les ragdolls », les guides « La navigation » et « La physique » et la page du jeu à la troisième personne complétés. Reste le §8.
+
+## 11. La suite, faite
+
+Le 6 novembre 2026 : les points 1 à 4 du §8 qui touchent la démo, sans rien de neuf dans le cœur.
+
+### 11.1 Les limites de cône des rotules
+
+L'API de P7b n'avait de limites que pour les charnières et les glissières. **Ajouté** : `JointDesc.cone` (`ConeLimits` : `swing`, le demi-angle du cône autour de `axis`, et `twist`, l'intervalle de la torsion autour de lui) et `PhysicsJoint.setCone`. Le repos est la façon dont les corps sont tournés à la création de l'articulation (comme `fixed`) : `axis` est donné dans l'espace de A, celui de B s'en déduit. Un ragdoll crée ses corps tournés comme le nœud : le repos est la pose de l'activation, comme pour ses charnières.
+
+| Option sur Rapier                                                  | Pour                                     | Contre                                                                           |
+| ------------------------------------------------------------------ | ---------------------------------------- | -------------------------------------------------------------------------------- |
+| Une articulation générique (`JointData.generic`), ses axes limités | Dans l'API de Rapier.js                  | Les mêmes limites par axe ; pas de moteurs par axe exposés                       |
+| **La rotule, ses axes angulaires limités, ajustés à chaque pas**   | Un cône, la torsion à part ; peu de code | Les limites passent par le jeu d'articulations de Rapier.js (`rawSet`, non typé) |
+| Une contrainte maison (une impulsion à chaque pas)                 | Exact                                    | Hors du solveur : elle se bat avec lui, instable dans une chaîne                 |
+
+**Retenu : la rotule.** Rapier.js ne donne pas de limites aux rotules, mais son jeu d'articulations les prend (`jointSetLimits` sur `AngX`, `AngY`, `AngZ`, ce qu'appellent ses charnières) ; les repères des deux corps (`setFrameX1`, `setFrameX2`) mettent l'axe du cône sur x. Rapier limite chaque axe à part, en comparant les composantes de la rotation relative au sinus du demi-angle : les deux axes du swing font un **carré**, 41 % plus large en diagonale (mesuré : 0,85 rad pour un cône de 0,6). Avant chaque pas, la liaison ajuste le carré au **cercle** là où est l'articulation : chaque axe borné à ce que l'autre laisse du cercle (`√(s² − q²)`) ; mesuré : 0,63 rad pour 0,6, l'erreur d'un pas. Libre, un axe est borné à ±π (sin(π/2) = 1 : aucune limite) : Rapier n'a pas de quoi retirer une limite.
+
+`engine-ragdoll` s'en sert : `cone` et `twist` sur un os lié par une rotule, autour de l'os tel qu'il pointait à l'activation (de son articulation à `to`, ou de l'ancêtre à elle ; `axis` pour un autre). Et `attach` : le corps d'un os pendu à celui d'une autre articulation que son ancêtre ; les pieds des monstres d'Ultimate Monsters sont sous la racine du rig (de la cinématique inverse), pas sous les jambes.
+
+### 11.2 Les tuiles et les obstacles
+
+`TiledNavMesh` : le maillage par tuiles de `tileCells` cellules (64 par défaut), chacune construite à part par les étapes de `buildNavMesh` (le code partagé, `voxels.ts`), sur les solides de la tuile et d'une **marge** de `agentRadius / cellSize + 2` cellules : les bords de la marge ne sont pas des bords (le sol continue au-delà), l'érosion des sols de la tuile est celle d'un maillage construit d'un coup. Les rectangles restent dans la tuile. Un sol du bord lié à un sol au-delà est noté (sa hauteur, celle d'en face) ; à l'assemblage, deux notes face à face font un portail. Le même maillage qu'en un coup, en plus de polygones (testé : la même aire).
+
+Les **obstacles** découpent : un sol est retiré quand un obstacle remplit sa colonne d'une marche sous lui à la hauteur de l'agent au-dessus, avant l'érosion. Un obstacle n'est pas un sol (une caisse ne se marche pas). Ajouté, déplacé ou retiré, il marque les tuiles de ses bornes élargies du rayon ; `update(maxTiles)` les reconstruit et assemble un nouveau `NavMesh` (les polygones renumérotés). Un `NavAgent` à qui l'on donne le nouveau (`agent.navMesh = …`) cherche un nouveau chemin à sa prochaine mise à jour. Écartés : garder les numéros des polygones des tuiles intactes (des agents sans nouveau chemin), au prix d'un maillage à trous ; reconstruire le `NavMesh` reste peu coûteux.
+
+`heightTolerance` (1 cm par défaut, comme avant) : les sols d'un rectangle à cette distance du premier, sa hauteur leur moyenne. Sur le terrain de la forêt, 30 cm donnent quelques milliers de polygones au lieu d'un par cellule.
+
+### 11.3 L'évitement entre agents
+
+`NavCrowd` : **ORCA** (van den Berg, Guy, Lin et Manocha, 2011), comme la bibliothèque RVO2 le fait, au sol. Chaque voisin (les `maxNeighbors` plus proches dans `neighborDistance`) interdit un demi-plan de vitesses : celles qui le heurteraient dans `timeHorizon` forment un cône coupé d'un disque, l'agent prend la moitié du changement qui en sort (tout, face à un agent qui n'évite pas : `avoids: false`). La vitesse gardée est la plus proche de la préférée dans tous les demi-plans et la vitesse maximale : un programme linéaire en 2D, puis, quand aucun point ne les satisfait tous, celle qui viole le moins le pire. Écartés : des forces de séparation (ce que faisait la démo : des agents qui se bousculent et oscillent) ; RVO (le premier, sans demi-plans : des oscillations entre deux agents).
+
+Ni murs ni obstacles dans la foule : les chemins s'en écartent, les contrôleurs les heurtent (§8, point 7).
+
+### 11.4 La démo TPS
+
+- **La navigation** : le maillage de la forêt construit une fois, quand la forêt est prête (`forestNavMesh` : le terrain par sa fonction de hauteur, les troncs de la zone de jeu en capsules, des cellules de 50 cm, le rayon du démon, `heightTolerance` de 30 cm). Chaque ennemi a un `NavAgent` (un nouveau chemin quand le but a bougé de 75 cm, trois fois par seconde au plus) ; les vagues naissent sur le maillage. La grille des troncs et sa poussée de côté sont retirées.
+- **La foule** : `enemy.steer` ne déplace plus, il donne la vitesse voulue ; un système `crowd`, après le graphe et avant la physique, calcule les vitesses de tous (`NavCrowd`) et déplace les contrôleurs. Ceux qui frappent tiennent leur place (`avoids: false`), les autres les contournent.
+- **Les coups qui avancent** : les clips d'épée de la bibliothèque frappent sur place, et leurs sources (les `_RM` des packs) ne sont pas dans le dépôt. `withLunges` écrit le pas de chaque coup dans la piste de translation de l'articulation `root` (35 à 70 cm, lissés), le long de +z du modèle à travers l'armature ; l'animateur l'en retire (`rootMotion: { joint: 'root' }`). Le déplacement de chaque image, tourné du cap, s'ajoute au prochain pas fixe du contrôleur (`Actor.move(step, velocity, offset)`). Le pas en code (1,6 m/s pendant 45 % du coup) est retiré.
+- **Les ragdolls** : `enemy.die` retire le corps de la physique et active un ragdoll de 13 corps (`monsterBones` : le rig d'Ultimate Monsters, les membres dans des cônes, les pieds pendus aux jambes), poussé à l'opposé du coup ; chaque image, la pose lue des corps est donnée au skinning (`Actor.applyPose`). Les **groupes de collision** du jeu : le niveau (1), les ragdolls (2), les personnages (4) ; les ragdolls tombent sur le niveau, les personnages et la caméra les traversent (`CharacterDesc.groups`, le filtre des `move` et du `shapeCast` de la caméra).
+- **Un bogue trouvé en jouant** : `NavAgent.update` pouvait boucler sans fin, ce qui restait du budget d'un pas (un résidu de flottants, `budget − d × budget / d`) ne tombant pas à 0. Le budget est maintenant dépensé d'un coup quand il ne mène pas au coin.
+
+### 11.5 Mesures
+
+Node 24, un thread (scripts hors du dépôt) :
+
+| Mesure                                                                                           | Temps               |
+| ------------------------------------------------------------------------------------------------ | ------------------- |
+| `forestNavMesh`, la zone de jeu de 212 × 212 m, 1 200 troncs : 16 300 polygones                  | 0,35 à 0,45 s       |
+| `findPath` à travers la forêt (jusqu'à 100 m)                                                    | 1,2 ms              |
+| `TiledNavMesh`, la place de l'exemple (24 × 16 m, tuiles de 4 m) : un obstacle déplacé, `update` | 1,7 ms (3,5 tuiles) |
+| `TiledNavMesh`, 100 × 100 m en tuiles de 64 cellules : un obstacle déplacé, `update`             | 7,5 ms              |
+| `NavCrowd.update`, 10 puis 50 agents                                                             | 19 µs, 125 µs       |
+
+Un chemin à travers la forêt coûte une milliseconde : les ennemis n'en cherchent un nouveau que quand leur but bouge.
+
+### 11.6 Tests
+
+- **`engine-physics-rapier`** : un pendule lancé de côté puis en diagonale reste dans son cône (le cône, pas le carré), libre au-delà sans lui, `setCone` refusé à une charnière ; le cône et la torsion mesurés depuis les corps tels qu'ils étaient joints (un quart de tour).
+- **`engine-ragdoll`** : une jambe dans son cône (libre, elle part au-delà), un pied pendu à la jambe et non à la racine, une articulation `attach` inconnue.
+- **`engine-navigation`** : les sols d'un terrain dans la tolérance (dix fois moins de polygones) ; les tuiles, le même maillage qu'en un coup (la même aire, le même tour du mur) ; les obstacles découpés (une caisse, une capsule), seules leurs tuiles reconstruites, déplacés, retirés ; quelques tuiles par appel ; un agent qui change de chemin quand le maillage change ; deux agents qui se croisent de face, un agent qui contourne un autre qui n'évite pas, la vitesse voulue gardée sans voisin.
+- **`demo-scenes`** : les pas des coups pris en root motion sous une armature tournée et mise à l'échelle, la pose gardée sur place ; les os des ragdolls des monstres. La partie jouée sans GPU (un script hors du dépôt : le jeu, Rapier, les modèles, un backend factice) : les orcs suivent leurs chemins jusqu'au héros, frappent, tombent en ragdoll sur le sol.
+- **Documentation** : le tutoriel « Les foules et les obstacles » (EN, FR), son exemple vivant et ses captures (WebGPU, WebGL2) ; les captures des ragdolls inchangées (leurs cônes ne changent pas l'image de 1,5 s au-delà de la tolérance).

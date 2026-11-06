@@ -70,9 +70,16 @@ const example: Example = async ({
   );
 
   // The bodies of the character: capsules from joint to joint, spheres
-  // for the head; hinges at the elbows and the knees.
+  // for the head; hinges at the elbows and the knees, the shoulders, the
+  // hips, the spine and the neck held in cones.
   const limb = (side: 'L' | 'R'): RagdollBone[] => [
-    { joint: `upperArm.${side}`, to: `lowerArm.${side}`, radius: 0.05 },
+    {
+      joint: `upperArm.${side}`,
+      to: `lowerArm.${side}`,
+      radius: 0.05,
+      cone: 1.4,
+      twist: [-0.8, 0.8],
+    },
     {
       joint: `lowerArm.${side}`,
       to: `hand.${side}`,
@@ -80,7 +87,13 @@ const example: Example = async ({
       link: 'hinge',
       limits: [-2.4, 0.2],
     },
-    { joint: `upperLeg.${side}`, to: `lowerLeg.${side}`, radius: 0.075 },
+    {
+      joint: `upperLeg.${side}`,
+      to: `lowerLeg.${side}`,
+      radius: 0.075,
+      cone: 1,
+      twist: [-0.4, 0.4],
+    },
     {
       joint: `lowerLeg.${side}`,
       to: `foot.${side}`,
@@ -91,8 +104,14 @@ const example: Example = async ({
   ];
   const bones: RagdollBone[] = [
     { joint: 'hips', to: 'spine', radius: 0.13 },
-    { joint: 'spine', to: 'neck', radius: 0.13 },
-    { joint: 'head', radius: 0.12 },
+    {
+      joint: 'spine',
+      to: 'neck',
+      radius: 0.13,
+      cone: 0.6,
+      twist: [-0.4, 0.4],
+    },
+    { joint: 'head', radius: 0.12, cone: 0.7, twist: [-0.6, 0.6] },
     ...limb('L'),
     ...limb('R'),
   ];
@@ -135,9 +154,9 @@ const example: Example = async ({
     const person = people[knocked % people.length];
     knocked++;
     if (person.ragdoll.active) return;
-    // The node of the skeleton (the parent of its root joint), and a
-    // blow from the camera side, upward.
-    const frame = person.character.nodes[0].worldMatrix;
+    // The node of the skeleton (the parent of its root joint: the root
+    // of the instance), and a blow from the camera side, upward.
+    const frame = person.character.root.worldMatrix;
     person.ragdoll.activate(person.animator.pose, frame, {
       x: 0.5,
       y: 1.5,

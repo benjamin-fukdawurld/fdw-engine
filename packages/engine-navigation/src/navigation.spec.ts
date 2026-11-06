@@ -1,10 +1,12 @@
-import { Aabb, Obb } from '@fdw/engine-geometry';
+import { Aabb, Capsule, Obb } from '@fdw/engine-geometry';
 import { Scene } from '@fdw/engine-scene';
 import { describe, expect, it } from 'vitest';
 import { buildNavMesh } from './buildNavMesh';
 import { NavAgent } from './NavAgent';
+import { type CrowdAgent, NavCrowd } from './NavCrowd';
 import { NavMesh, type NavPoint } from './NavMesh';
 import { sceneVolumes } from './sceneVolumes';
+import { TiledNavMesh } from './TiledNavMesh';
 
 const p = (x: number, y: number, z: number): NavPoint => ({ x, y, z });
 
@@ -203,6 +205,28 @@ describe('buildNavMesh', () => {
     expect(point?.point.y).toBeCloseTo(0.5, 1);
   });
 
+  it('gathers the floors of a terrain within the tolerance', () => {
+    const ground = (x: number, z: number) => Math.sin(x / 3) * Math.cos(z / 4);
+    const options = {
+      bounds: new Aabb([0, -5, 0], [20, 5, 20]),
+      ground,
+      cellSize: 0.25,
+    };
+    const fine = buildNavMesh(options);
+    const coarse = buildNavMesh({ ...options, heightTolerance: 0.25 });
+    expect(coarse.polygonCount).toBeLessThan(fine.polygonCount / 10);
+    // The heights of the mesh within the tolerance of the ground.
+    for (const [x, z] of [
+      [3, 4],
+      [10, 15],
+      [17, 2],
+    ]) {
+      const point = coarse.closestPoint(p(x, 0, z));
+      expect(Math.abs((point?.point.y ?? 0) - ground(x, z))).toBeLessThan(0.3);
+    }
+    expect(coarse.findPath(p(1, 0, 1), p(19, 0, 19))).toBeDefined();
+  });
+
   it('reads the volumes of a scene', () => {
     const scene = new Scene();
     scene.root.add({ name: 'wall' });
@@ -248,5 +272,199 @@ describe('NavAgent', () => {
     expect(agent.remaining(p(1, 0, 5))).toBeCloseTo(Math.hypot(8, 4), 1);
     expect(agent.setDestination(p(1, 0, 1), p(50, 0, 50))).toBe(false);
     expect(agent.idle).toBe(true);
+  });
+});
+
+describe('TiledNavMesh', () => {
+  it('is the mesh built at once, cut in tiles', () => {
+    const options = {
+      bounds: region,
+      volumes: [floor, wall],
+      agentRadius: 0.5,
+      tileCells: 12,
+    };
+    const tiles = new TiledNavMesh(options);
+    expect(tiles.tilesX).toBe(4);
+    expect(tiles.pending).toBe(0);
+    const whole = buildNavMesh(options);
+    const a = tiles.navMesh.findPath(p(2, 0, 2), p(2, 0, 8)) as NavPoint[];
+    const b = whole.findPath(p(2, 0, 2), p(2, 0, 8)) as NavPoint[];
+    // The same way around the wall, through the sides of the tiles (the
+    // corridors of other polygons, the corners a little apart).
+    expect(Math.abs(pathLength(a) - pathLength(b))).toBeLessThan(0.25);
+    // The same floor: as far from the wall, the tiles eroded as one.
+    const area = (mesh: NavMesh) => {
+      let total = 0;
+      const v = mesh.vertices;
+      for (let i = 0; i < mesh.polygonCount; i++) {
+        const [v0, , v2] = mesh.polygonVertices(i);
+        total += Math.abs(
+          (v[v2 * 3] - v[v0 * 3]) * (v[v2 * 3 + 2] - v[v0 * 3 + 2]),
+        );
+      }
+      return total;
+    };
+    expect(area(tiles.navMesh)).toBeCloseTo(area(whole), 5);
+  });
+
+  it('carves the obstacles placed, builds again their tiles only', () => {
+    const tiles = new TiledNavMesh({
+      bounds: region,
+      volumes: [floor],
+      agentRadius: 0.4,
+      tileCells: 8,
+    });
+    const before = tiles.navMesh;
+    expect(before.findPath(p(5, 0, 1), p(5, 0, 9))).toHaveLength(2);
+    // A crate across the way, and a pillar: built at the update.
+    const crate = tiles.addObstacle(new Aabb([3, 0, 4.5], [7, 1, 5.5]));
+    const pillar = tiles.addObstacle(new Capsule([8, 0, 2], [8, 2, 2], 0.5));
+    expect(tiles.pending).toBeGreaterThan(0);
+    expect(tiles.pending).toBeLessThan(tiles.tilesX * tiles.tilesZ);
+    expect(tiles.navMesh).toBe(before);
+    expect(tiles.update()).toBe(true);
+    expect(tiles.update()).toBe(false);
+    const around = tiles.navMesh.findPath(p(5, 0, 1), p(5, 0, 9)) as NavPoint[];
+    expect(around.length).toBeGreaterThan(2);
+    for (const corner of around) {
+      const inside =
+        corner.x > 3 - 0.3 &&
+        corner.x < 7 + 0.3 &&
+        Math.abs(corner.z - 5) < 0.8;
+      expect(inside).toBe(false);
+    }
+    expect(tiles.navMesh.closestPoint(p(8, 0, 2), 0.1)).toBeUndefined();
+    // Moved out of the way, then gone.
+    tiles.moveObstacle(crate, new Aabb([0, 0, 8], [1, 1, 9]));
+    tiles.removeObstacle(pillar);
+    tiles.update();
+    expect(tiles.navMesh.findPath(p(5, 0, 1), p(5, 0, 9))).toHaveLength(2);
+    expect([...tiles.obstacles]).toHaveLength(1);
+  });
+
+  it('builds a few tiles a call when asked', () => {
+    const tiles = new TiledNavMesh({
+      bounds: region,
+      volumes: [floor],
+      tileCells: 8,
+    });
+    tiles.invalidate(region);
+    const count = tiles.pending;
+    tiles.update(3);
+    expect(tiles.pending).toBe(count - 3);
+  });
+
+  it('sends its agents another way when it changes', () => {
+    const tiles = new TiledNavMesh({
+      bounds: region,
+      volumes: [floor],
+      agentRadius: 0.4,
+      tileCells: 8,
+    });
+    const agent = new NavAgent(tiles.navMesh, { speed: 1 });
+    agent.setDestination(p(5, 0, 1), p(5, 0, 9));
+    expect(agent.path).toHaveLength(2);
+    tiles.addObstacle(new Aabb([3, 0, 4.5], [7, 1, 5.5]));
+    tiles.update();
+    agent.navMesh = tiles.navMesh;
+    agent.update(p(5, 0, 1), 0.1);
+    expect(agent.path.length).toBeGreaterThan(2);
+  });
+});
+
+describe('NavCrowd', () => {
+  // Agents walking to their goals; the closest the first two came.
+  const run = (
+    crowd: NavCrowd,
+    seconds: number,
+    goals: Map<CrowdAgent, { x: number; z: number }>,
+  ) => {
+    let closest = Infinity;
+    const dt = 0.05;
+    for (let t = 0; t < seconds; t += dt) {
+      for (const [agent, goal] of goals) {
+        const gx = goal.x - agent.position.x;
+        const gz = goal.z - agent.position.z;
+        const d = Math.hypot(gx, gz);
+        const speed = Math.min(agent.maxSpeed, d / dt);
+        if (d > 1e-6) agent.prefer((gx / d) * speed, (gz / d) * speed);
+        else agent.prefer(0, 0);
+      }
+      crowd.update(dt);
+      for (const agent of goals.keys()) {
+        agent.moveTo(
+          agent.position.x + agent.velocity.x * dt,
+          agent.position.z + agent.velocity.z * dt,
+        );
+      }
+      const [a, b] = [...goals.keys()];
+      closest = Math.min(
+        closest,
+        Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z),
+      );
+    }
+    return closest;
+  };
+
+  it('lets two agents pass each other, head on', () => {
+    const crowd = new NavCrowd();
+    const a = crowd.add({ radius: 0.4, maxSpeed: 2, position: { x: 0, z: 0 } });
+    const b = crowd.add({
+      radius: 0.4,
+      maxSpeed: 2,
+      position: { x: 10, z: 0.01 },
+    });
+    const closest = run(
+      crowd,
+      8,
+      new Map([
+        [a, { x: 10, z: 0 }],
+        [b, { x: 0, z: 0 }],
+      ]),
+    );
+    expect(closest).toBeGreaterThan(0.8 - 0.05);
+    // Both arrived.
+    expect(a.position.x).toBeCloseTo(10, 1);
+    expect(b.position.x).toBeCloseTo(0, 1);
+    expect(crowd.size).toBe(2);
+  });
+
+  it('goes around one that does not avoid, which keeps its way', () => {
+    const crowd = new NavCrowd();
+    const walker = crowd.add({
+      radius: 0.4,
+      maxSpeed: 2,
+      position: { x: 0, z: 0 },
+    });
+    const statue = crowd.add({
+      radius: 0.6,
+      maxSpeed: 0,
+      position: { x: 5, z: 0.05 },
+      avoids: false,
+    });
+    const closest = run(
+      crowd,
+      8,
+      new Map([
+        [walker, { x: 10, z: 0 }],
+        [statue, { x: 5, z: 0.05 }],
+      ]),
+    );
+    expect(closest).toBeGreaterThan(1 - 0.05);
+    expect(statue.position).toEqual({ x: 5, z: 0.05 });
+    expect(walker.position.x).toBeCloseTo(10, 1);
+    crowd.remove(statue);
+    expect(crowd.size).toBe(1);
+  });
+
+  it('keeps the velocity wanted when nobody is near', () => {
+    const crowd = new NavCrowd({ neighborDistance: 3 });
+    const a = crowd.add({ radius: 0.4, maxSpeed: 2 });
+    crowd.add({ radius: 0.4, maxSpeed: 2, position: { x: 10, z: 10 } });
+    a.prefer(3, 0);
+    crowd.update(0.1);
+    // Within its speed.
+    expect(a.velocity.x).toBeCloseTo(2);
+    expect(a.velocity.z).toBeCloseTo(0);
   });
 });
