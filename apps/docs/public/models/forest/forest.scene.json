@@ -55660,158 +55660,144 @@
         { "id": "n5", "type": "std.vec4", "params": {} },
         {
           "id": "n6",
-          "type": "input.uniform",
+          "type": "input.storage",
           "params": {
-            "name": "patchVertexStarts0",
-            "type": { "kind": "vector", "size": 4, "scalar": "f32" }
+            "name": "patchDraws",
+            "type": {
+              "kind": "array",
+              "element": { "kind": "vector", "size": 4, "scalar": "f32" }
+            }
           },
-          "label": "patchVertexStarts0"
-        },
-        { "id": "n7", "type": "std.step", "params": {} },
-        { "id": "n8", "type": "std.mul", "params": {} },
-        {
-          "id": "n9",
-          "type": "input.uniform",
-          "params": {
-            "name": "patchDrawStarts0",
-            "type": { "kind": "vector", "size": 4, "scalar": "f32" }
-          },
-          "label": "patchDrawStarts0"
-        },
-        { "id": "n10", "type": "std.mul", "params": {} },
-        {
-          "id": "n11",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "vector", "size": 4, "scalar": "f32" },
-            "value": [1, 2, 4, 8]
-          }
-        },
-        { "id": "n12", "type": "std.mul", "params": {} },
-        {
-          "id": "n13",
-          "type": "std.dot",
-          "params": {},
-          "defaults": { "b": [1, 1, 1, 1] }
+          "label": "patchDraws"
         },
         {
-          "id": "n14",
-          "type": "input.uniform",
-          "params": {
-            "name": "patchVertexStarts1",
-            "type": { "kind": "vector", "size": 4, "scalar": "f32" }
-          },
-          "label": "patchVertexStarts1"
-        },
-        { "id": "n15", "type": "std.step", "params": {} },
-        { "id": "n16", "type": "std.mul", "params": {} },
-        {
-          "id": "n17",
-          "type": "input.uniform",
-          "params": {
-            "name": "patchDrawStarts1",
-            "type": { "kind": "vector", "size": 4, "scalar": "f32" }
-          },
-          "label": "patchDrawStarts1"
-        },
-        { "id": "n18", "type": "std.mul", "params": {} },
-        {
-          "id": "n19",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "vector", "size": 4, "scalar": "f32" },
-            "value": [16, 32, 64, 0]
-          }
-        },
-        { "id": "n20", "type": "std.mul", "params": {} },
-        {
-          "id": "n21",
-          "type": "std.dot",
-          "params": {},
-          "defaults": { "b": [1, 1, 1, 1] }
-        },
-        { "id": "n22", "type": "std.add", "params": {} },
-        { "id": "n23", "type": "std.max", "params": {} },
-        { "id": "n24", "type": "std.max", "params": {} },
-        { "id": "n25", "type": "std.max", "params": {} },
-        { "id": "n26", "type": "std.max", "params": {} },
-        { "id": "n27", "type": "std.max", "params": {} },
-        { "id": "n28", "type": "std.max", "params": {} },
-        {
-          "id": "n29",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
-        },
-        { "id": "n30", "type": "std.max", "params": {} },
-        { "id": "n31", "type": "std.max", "params": {} },
-        { "id": "n32", "type": "std.max", "params": {} },
-        { "id": "n33", "type": "std.sub", "params": {} },
-        {
-          "id": "n34",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
-        },
-        {
-          "id": "n35",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 6
-          }
-        },
-        { "id": "n36", "type": "std.mul", "params": {} },
-        { "id": "n37", "type": "std.mul", "params": {} },
-        { "id": "n38", "type": "std.div", "params": {} },
-        { "id": "n39", "type": "std.mul", "params": {} },
-        { "id": "n40", "type": "std.sub", "params": {} },
-        {
-          "id": "n41",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 6
-          }
-        },
-        { "id": "n42", "type": "std.div", "params": {} },
-        {
-          "id": "n43",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 6
-          }
-        },
-        { "id": "n44", "type": "std.mul", "params": {} },
-        { "id": "n45", "type": "std.sub", "params": {} },
-        { "id": "n46", "type": "std.div", "params": {} },
-        { "id": "n47", "type": "std.mul", "params": {} },
-        { "id": "n48", "type": "std.sub", "params": {} },
-        {
-          "id": "n49",
+          "id": "n7",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 0
           }
         },
+        { "id": "n8", "type": "std.index", "params": {} },
+        { "id": "n9", "type": "std.step", "params": {} },
+        { "id": "n10", "type": "std.mul", "params": {} },
         {
-          "id": "n50",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 1
-          }
-        },
-        {
-          "id": "n51",
+          "id": "n11",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 2
           }
         },
-        { "id": "n52", "type": "std.equal", "params": {} },
-        { "id": "n53", "type": "std.select", "params": {} },
+        { "id": "n12", "type": "std.index", "params": {} },
+        { "id": "n13", "type": "std.mul", "params": {} },
+        {
+          "id": "n14",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "vector", "size": 4, "scalar": "f32" },
+            "value": [1, 2, 4, 8]
+          }
+        },
+        { "id": "n15", "type": "std.mul", "params": {} },
+        {
+          "id": "n16",
+          "type": "std.dot",
+          "params": {},
+          "defaults": { "b": [1, 1, 1, 1] }
+        },
+        {
+          "id": "n17",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 1
+          }
+        },
+        { "id": "n18", "type": "std.index", "params": {} },
+        { "id": "n19", "type": "std.step", "params": {} },
+        { "id": "n20", "type": "std.mul", "params": {} },
+        {
+          "id": "n21",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 3
+          }
+        },
+        { "id": "n22", "type": "std.index", "params": {} },
+        { "id": "n23", "type": "std.mul", "params": {} },
+        {
+          "id": "n24",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "vector", "size": 4, "scalar": "f32" },
+            "value": [16, 32, 64, 0]
+          }
+        },
+        { "id": "n25", "type": "std.mul", "params": {} },
+        {
+          "id": "n26",
+          "type": "std.dot",
+          "params": {},
+          "defaults": { "b": [1, 1, 1, 1] }
+        },
+        { "id": "n27", "type": "std.add", "params": {} },
+        { "id": "n28", "type": "std.max", "params": {} },
+        { "id": "n29", "type": "std.max", "params": {} },
+        { "id": "n30", "type": "std.max", "params": {} },
+        { "id": "n31", "type": "std.max", "params": {} },
+        { "id": "n32", "type": "std.max", "params": {} },
+        { "id": "n33", "type": "std.max", "params": {} },
+        {
+          "id": "n34",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
+        },
+        { "id": "n35", "type": "std.max", "params": {} },
+        { "id": "n36", "type": "std.max", "params": {} },
+        { "id": "n37", "type": "std.max", "params": {} },
+        { "id": "n38", "type": "std.sub", "params": {} },
+        {
+          "id": "n39",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
+        },
+        {
+          "id": "n40",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 6
+          }
+        },
+        { "id": "n41", "type": "std.mul", "params": {} },
+        { "id": "n42", "type": "std.mul", "params": {} },
+        { "id": "n43", "type": "std.div", "params": {} },
+        { "id": "n44", "type": "std.mul", "params": {} },
+        { "id": "n45", "type": "std.sub", "params": {} },
+        {
+          "id": "n46",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 6
+          }
+        },
+        { "id": "n47", "type": "std.div", "params": {} },
+        {
+          "id": "n48",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 6
+          }
+        },
+        { "id": "n49", "type": "std.mul", "params": {} },
+        { "id": "n50", "type": "std.sub", "params": {} },
+        { "id": "n51", "type": "std.div", "params": {} },
+        { "id": "n52", "type": "std.mul", "params": {} },
+        { "id": "n53", "type": "std.sub", "params": {} },
         {
           "id": "n54",
           "type": "const.value",
@@ -55833,7 +55819,7 @@
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 4
+            "value": 2
           }
         },
         { "id": "n57", "type": "std.equal", "params": {} },
@@ -55859,16 +55845,13 @@
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 5
+            "value": 4
           }
         },
         { "id": "n62", "type": "std.equal", "params": {} },
         { "id": "n63", "type": "std.select", "params": {} },
-        { "id": "n64", "type": "std.add", "params": {} },
-        { "id": "n65", "type": "std.add", "params": {} },
-        { "id": "n66", "type": "std.add", "params": {} },
         {
-          "id": "n67",
+          "id": "n64",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
@@ -55876,7 +55859,7 @@
           }
         },
         {
-          "id": "n68",
+          "id": "n65",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
@@ -55884,15 +55867,18 @@
           }
         },
         {
-          "id": "n69",
+          "id": "n66",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 1
+            "value": 5
           }
         },
-        { "id": "n70", "type": "std.equal", "params": {} },
-        { "id": "n71", "type": "std.select", "params": {} },
+        { "id": "n67", "type": "std.equal", "params": {} },
+        { "id": "n68", "type": "std.select", "params": {} },
+        { "id": "n69", "type": "std.add", "params": {} },
+        { "id": "n70", "type": "std.add", "params": {} },
+        { "id": "n71", "type": "std.add", "params": {} },
         {
           "id": "n72",
           "type": "const.value",
@@ -55914,7 +55900,7 @@
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 2
+            "value": 1
           }
         },
         { "id": "n75", "type": "std.equal", "params": {} },
@@ -55940,509 +55926,491 @@
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 4
+            "value": 2
           }
         },
         { "id": "n80", "type": "std.equal", "params": {} },
         { "id": "n81", "type": "std.select", "params": {} },
-        { "id": "n82", "type": "std.add", "params": {} },
-        { "id": "n83", "type": "std.add", "params": {} },
-        { "id": "n84", "type": "std.add", "params": {} },
-        { "id": "n85", "type": "std.max", "params": {} },
-        { "id": "n86", "type": "std.max", "params": {} },
-        { "id": "n87", "type": "std.max", "params": {} },
         {
-          "id": "n88",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
-        },
-        { "id": "n89", "type": "std.add", "params": {} },
-        {
-          "id": "n90",
-          "type": "input.texture",
-          "params": {
-            "name": "patchDraws",
-            "sampleType": "unfilterable-float"
-          },
-          "label": "patchDraws"
-        },
-        {
-          "id": "n91",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 256
-          }
-        },
-        { "id": "n92", "type": "std.div", "params": {} },
-        {
-          "id": "n93",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 256
-          }
-        },
-        { "id": "n94", "type": "std.mul", "params": {} },
-        { "id": "n95", "type": "std.sub", "params": {} },
-        {
-          "id": "n96",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        {
-          "id": "n97",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 256
-          }
-        },
-        { "id": "n98", "type": "std.div", "params": {} },
-        {
-          "id": "n99",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n100", "type": "std.vec2", "params": {} },
-        {
-          "id": "n101",
-          "type": "std.convert",
-          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
-        },
-        { "id": "n102", "type": "std.textureLoad", "params": {} },
-        {
-          "id": "n103",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
-        },
-        {
-          "id": "n104",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 128
-          }
-        },
-        { "id": "n105", "type": "std.div", "params": {} },
-        {
-          "id": "n106",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 128
-          }
-        },
-        { "id": "n107", "type": "std.mul", "params": {} },
-        { "id": "n108", "type": "std.sub", "params": {} },
-        {
-          "id": "n109",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
-        },
-        {
-          "id": "n110",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 128
-          }
-        },
-        { "id": "n111", "type": "std.div", "params": {} },
-        {
-          "id": "n112",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 128
-          }
-        },
-        { "id": "n113", "type": "std.mul", "params": {} },
-        { "id": "n114", "type": "std.sub", "params": {} },
-        { "id": "n115", "type": "std.div", "params": {} },
-        { "id": "n116", "type": "std.mul", "params": {} },
-        { "id": "n117", "type": "std.equal", "params": {} },
-        { "id": "n118", "type": "std.select", "params": {} },
-        { "id": "n119", "type": "std.div", "params": {} },
-        { "id": "n120", "type": "std.mul", "params": {} },
-        {
-          "id": "n121",
+          "id": "n82",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 0
           }
         },
-        { "id": "n122", "type": "std.equal", "params": {} },
-        { "id": "n123", "type": "std.select", "params": {} },
-        { "id": "n124", "type": "std.div", "params": {} },
-        { "id": "n125", "type": "std.mul", "params": {} },
-        { "id": "n126", "type": "std.equal", "params": {} },
-        { "id": "n127", "type": "std.select", "params": {} },
-        { "id": "n128", "type": "std.div", "params": {} },
-        { "id": "n129", "type": "std.mul", "params": {} },
         {
-          "id": "n130",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 0
-          }
-        },
-        { "id": "n131", "type": "std.equal", "params": {} },
-        { "id": "n132", "type": "std.select", "params": {} },
-        {
-          "id": "n133",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        {
-          "id": "n134",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n135", "type": "std.div", "params": {} },
-        {
-          "id": "n136",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n137", "type": "std.div", "params": {} },
-        {
-          "id": "n138",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
-        },
-        {
-          "id": "n139",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 32
-          }
-        },
-        { "id": "n140", "type": "std.div", "params": {} },
-        {
-          "id": "n141",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 32
-          }
-        },
-        { "id": "n142", "type": "std.mul", "params": {} },
-        { "id": "n143", "type": "std.sub", "params": {} },
-        {
-          "id": "n144",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 8
-          }
-        },
-        { "id": "n145", "type": "std.mul", "params": {} },
-        {
-          "id": "n146",
-          "type": "input.texture",
-          "params": { "name": "patchData", "sampleType": "unfilterable-float" },
-          "label": "patchData"
-        },
-        {
-          "id": "n147",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 0
-          }
-        },
-        { "id": "n148", "type": "std.add", "params": {} },
-        {
-          "id": "n149",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        {
-          "id": "n150",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n151", "type": "std.vec2", "params": {} },
-        {
-          "id": "n152",
-          "type": "std.convert",
-          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
-        },
-        { "id": "n153", "type": "std.textureLoad", "params": {} },
-        {
-          "id": "n154",
+          "id": "n83",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 1
           }
         },
-        { "id": "n155", "type": "std.add", "params": {} },
         {
-          "id": "n156",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        {
-          "id": "n157",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n158", "type": "std.vec2", "params": {} },
-        {
-          "id": "n159",
-          "type": "std.convert",
-          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
-        },
-        { "id": "n160", "type": "std.textureLoad", "params": {} },
-        {
-          "id": "n161",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 2
-          }
-        },
-        { "id": "n162", "type": "std.add", "params": {} },
-        {
-          "id": "n163",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        {
-          "id": "n164",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n165", "type": "std.vec2", "params": {} },
-        {
-          "id": "n166",
-          "type": "std.convert",
-          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
-        },
-        { "id": "n167", "type": "std.textureLoad", "params": {} },
-        {
-          "id": "n168",
-          "type": "const.value",
-          "params": {
-            "type": { "kind": "scalar", "scalar": "u32" },
-            "value": 3
-          }
-        },
-        { "id": "n169", "type": "std.add", "params": {} },
-        {
-          "id": "n170",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        {
-          "id": "n171",
-          "type": "std.convert",
-          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
-        },
-        { "id": "n172", "type": "std.vec2", "params": {} },
-        {
-          "id": "n173",
-          "type": "std.convert",
-          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
-        },
-        { "id": "n174", "type": "std.textureLoad", "params": {} },
-        {
-          "id": "n175",
+          "id": "n84",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 4
           }
         },
-        { "id": "n176", "type": "std.add", "params": {} },
+        { "id": "n85", "type": "std.equal", "params": {} },
+        { "id": "n86", "type": "std.select", "params": {} },
+        { "id": "n87", "type": "std.add", "params": {} },
+        { "id": "n88", "type": "std.add", "params": {} },
+        { "id": "n89", "type": "std.add", "params": {} },
+        { "id": "n90", "type": "std.max", "params": {} },
+        { "id": "n91", "type": "std.max", "params": {} },
+        { "id": "n92", "type": "std.max", "params": {} },
         {
-          "id": "n177",
+          "id": "n93",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
+        },
+        { "id": "n94", "type": "std.add", "params": {} },
+        {
+          "id": "n95",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 4
+          }
+        },
+        { "id": "n96", "type": "std.add", "params": {} },
+        { "id": "n97", "type": "std.index", "params": {} },
+        {
+          "id": "n98",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
+        },
+        {
+          "id": "n99",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 128
+          }
+        },
+        { "id": "n100", "type": "std.div", "params": {} },
+        {
+          "id": "n101",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 128
+          }
+        },
+        { "id": "n102", "type": "std.mul", "params": {} },
+        { "id": "n103", "type": "std.sub", "params": {} },
+        {
+          "id": "n104",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
+        },
+        {
+          "id": "n105",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 128
+          }
+        },
+        { "id": "n106", "type": "std.div", "params": {} },
+        {
+          "id": "n107",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 128
+          }
+        },
+        { "id": "n108", "type": "std.mul", "params": {} },
+        { "id": "n109", "type": "std.sub", "params": {} },
+        { "id": "n110", "type": "std.div", "params": {} },
+        { "id": "n111", "type": "std.mul", "params": {} },
+        { "id": "n112", "type": "std.equal", "params": {} },
+        { "id": "n113", "type": "std.select", "params": {} },
+        { "id": "n114", "type": "std.div", "params": {} },
+        { "id": "n115", "type": "std.mul", "params": {} },
+        {
+          "id": "n116",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 0
+          }
+        },
+        { "id": "n117", "type": "std.equal", "params": {} },
+        { "id": "n118", "type": "std.select", "params": {} },
+        { "id": "n119", "type": "std.div", "params": {} },
+        { "id": "n120", "type": "std.mul", "params": {} },
+        { "id": "n121", "type": "std.equal", "params": {} },
+        { "id": "n122", "type": "std.select", "params": {} },
+        { "id": "n123", "type": "std.div", "params": {} },
+        { "id": "n124", "type": "std.mul", "params": {} },
+        {
+          "id": "n125",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 0
+          }
+        },
+        { "id": "n126", "type": "std.equal", "params": {} },
+        { "id": "n127", "type": "std.select", "params": {} },
+        {
+          "id": "n128",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
         {
-          "id": "n178",
+          "id": "n129",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
-        { "id": "n179", "type": "std.vec2", "params": {} },
+        { "id": "n130", "type": "std.div", "params": {} },
         {
-          "id": "n180",
+          "id": "n131",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        { "id": "n132", "type": "std.div", "params": {} },
+        {
+          "id": "n133",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "u32" } }
+        },
+        {
+          "id": "n134",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 32
+          }
+        },
+        { "id": "n135", "type": "std.div", "params": {} },
+        {
+          "id": "n136",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 32
+          }
+        },
+        { "id": "n137", "type": "std.mul", "params": {} },
+        { "id": "n138", "type": "std.sub", "params": {} },
+        {
+          "id": "n139",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 8
+          }
+        },
+        { "id": "n140", "type": "std.mul", "params": {} },
+        {
+          "id": "n141",
+          "type": "input.texture",
+          "params": { "name": "patchData", "sampleType": "unfilterable-float" },
+          "label": "patchData"
+        },
+        {
+          "id": "n142",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 0
+          }
+        },
+        { "id": "n143", "type": "std.add", "params": {} },
+        {
+          "id": "n144",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        {
+          "id": "n145",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        { "id": "n146", "type": "std.vec2", "params": {} },
+        {
+          "id": "n147",
           "type": "std.convert",
           "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
         },
-        { "id": "n181", "type": "std.textureLoad", "params": {} },
+        { "id": "n148", "type": "std.textureLoad", "params": {} },
         {
-          "id": "n182",
+          "id": "n149",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 1
+          }
+        },
+        { "id": "n150", "type": "std.add", "params": {} },
+        {
+          "id": "n151",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        {
+          "id": "n152",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        { "id": "n153", "type": "std.vec2", "params": {} },
+        {
+          "id": "n154",
+          "type": "std.convert",
+          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
+        },
+        { "id": "n155", "type": "std.textureLoad", "params": {} },
+        {
+          "id": "n156",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 2
+          }
+        },
+        { "id": "n157", "type": "std.add", "params": {} },
+        {
+          "id": "n158",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        {
+          "id": "n159",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        { "id": "n160", "type": "std.vec2", "params": {} },
+        {
+          "id": "n161",
+          "type": "std.convert",
+          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
+        },
+        { "id": "n162", "type": "std.textureLoad", "params": {} },
+        {
+          "id": "n163",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 3
+          }
+        },
+        { "id": "n164", "type": "std.add", "params": {} },
+        {
+          "id": "n165",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        {
+          "id": "n166",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        { "id": "n167", "type": "std.vec2", "params": {} },
+        {
+          "id": "n168",
+          "type": "std.convert",
+          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
+        },
+        { "id": "n169", "type": "std.textureLoad", "params": {} },
+        {
+          "id": "n170",
+          "type": "const.value",
+          "params": {
+            "type": { "kind": "scalar", "scalar": "u32" },
+            "value": 4
+          }
+        },
+        { "id": "n171", "type": "std.add", "params": {} },
+        {
+          "id": "n172",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        {
+          "id": "n173",
+          "type": "std.convert",
+          "params": { "to": { "kind": "scalar", "scalar": "f32" } }
+        },
+        { "id": "n174", "type": "std.vec2", "params": {} },
+        {
+          "id": "n175",
+          "type": "std.convert",
+          "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
+        },
+        { "id": "n176", "type": "std.textureLoad", "params": {} },
+        {
+          "id": "n177",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 5
           }
         },
-        { "id": "n183", "type": "std.add", "params": {} },
+        { "id": "n178", "type": "std.add", "params": {} },
         {
-          "id": "n184",
+          "id": "n179",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
         {
-          "id": "n185",
+          "id": "n180",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
-        { "id": "n186", "type": "std.vec2", "params": {} },
+        { "id": "n181", "type": "std.vec2", "params": {} },
         {
-          "id": "n187",
+          "id": "n182",
           "type": "std.convert",
           "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
         },
-        { "id": "n188", "type": "std.textureLoad", "params": {} },
+        { "id": "n183", "type": "std.textureLoad", "params": {} },
         {
-          "id": "n189",
+          "id": "n184",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 6
           }
         },
-        { "id": "n190", "type": "std.add", "params": {} },
+        { "id": "n185", "type": "std.add", "params": {} },
         {
-          "id": "n191",
+          "id": "n186",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
         {
-          "id": "n192",
+          "id": "n187",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
-        { "id": "n193", "type": "std.vec2", "params": {} },
+        { "id": "n188", "type": "std.vec2", "params": {} },
         {
-          "id": "n194",
+          "id": "n189",
           "type": "std.convert",
           "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
         },
-        { "id": "n195", "type": "std.textureLoad", "params": {} },
+        { "id": "n190", "type": "std.textureLoad", "params": {} },
         {
-          "id": "n196",
+          "id": "n191",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "u32" },
             "value": 7
           }
         },
-        { "id": "n197", "type": "std.add", "params": {} },
+        { "id": "n192", "type": "std.add", "params": {} },
         {
-          "id": "n198",
+          "id": "n193",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
         {
-          "id": "n199",
+          "id": "n194",
           "type": "std.convert",
           "params": { "to": { "kind": "scalar", "scalar": "f32" } }
         },
-        { "id": "n200", "type": "std.vec2", "params": {} },
+        { "id": "n195", "type": "std.vec2", "params": {} },
         {
-          "id": "n201",
+          "id": "n196",
           "type": "std.convert",
           "params": { "to": { "kind": "vector", "size": 2, "scalar": "i32" } }
         },
-        { "id": "n202", "type": "std.textureLoad", "params": {} },
-        { "id": "n203", "type": "std.vec2", "params": {} },
-        { "id": "n204", "type": "std.vec2", "params": {} },
-        { "id": "n205", "type": "std.vec2", "params": {} },
-        { "id": "n206", "type": "std.vec2", "params": {} },
+        { "id": "n197", "type": "std.textureLoad", "params": {} },
+        { "id": "n198", "type": "std.vec2", "params": {} },
+        { "id": "n199", "type": "std.vec2", "params": {} },
+        { "id": "n200", "type": "std.vec2", "params": {} },
+        { "id": "n201", "type": "std.vec2", "params": {} },
         {
-          "id": "n207",
+          "id": "n202",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n203", "type": "std.mul", "params": {} },
+        { "id": "n204", "type": "std.mul", "params": {} },
+        { "id": "n205", "type": "std.add", "params": {} },
+        {
+          "id": "n206",
+          "type": "std.sub",
+          "params": {},
+          "defaults": { "a": 1 }
+        },
+        { "id": "n207", "type": "std.mul", "params": {} },
         { "id": "n208", "type": "std.mul", "params": {} },
-        { "id": "n209", "type": "std.mul", "params": {} },
-        { "id": "n210", "type": "std.add", "params": {} },
+        { "id": "n209", "type": "std.add", "params": {} },
         {
-          "id": "n211",
+          "id": "n210",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n211", "type": "std.mul", "params": {} },
         { "id": "n212", "type": "std.mul", "params": {} },
-        { "id": "n213", "type": "std.mul", "params": {} },
-        { "id": "n214", "type": "std.add", "params": {} },
+        { "id": "n213", "type": "std.add", "params": {} },
         {
-          "id": "n215",
+          "id": "n214",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n215", "type": "std.mul", "params": {} },
         { "id": "n216", "type": "std.mul", "params": {} },
-        { "id": "n217", "type": "std.mul", "params": {} },
-        { "id": "n218", "type": "std.add", "params": {} },
+        { "id": "n217", "type": "std.add", "params": {} },
         {
-          "id": "n219",
+          "id": "n218",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n219", "type": "std.mul", "params": {} },
         { "id": "n220", "type": "std.mul", "params": {} },
-        { "id": "n221", "type": "std.mul", "params": {} },
-        { "id": "n222", "type": "std.add", "params": {} },
+        { "id": "n221", "type": "std.add", "params": {} },
         {
-          "id": "n223",
+          "id": "n222",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n223", "type": "std.mul", "params": {} },
         { "id": "n224", "type": "std.mul", "params": {} },
-        { "id": "n225", "type": "std.mul", "params": {} },
-        { "id": "n226", "type": "std.add", "params": {} },
+        { "id": "n225", "type": "std.add", "params": {} },
         {
-          "id": "n227",
+          "id": "n226",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n227", "type": "std.mul", "params": {} },
         { "id": "n228", "type": "std.mul", "params": {} },
-        { "id": "n229", "type": "std.mul", "params": {} },
-        { "id": "n230", "type": "std.add", "params": {} },
+        { "id": "n229", "type": "std.add", "params": {} },
         {
-          "id": "n231",
+          "id": "n230",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n231", "type": "std.mul", "params": {} },
         { "id": "n232", "type": "std.mul", "params": {} },
-        { "id": "n233", "type": "std.mul", "params": {} },
-        { "id": "n234", "type": "std.add", "params": {} },
+        { "id": "n233", "type": "std.add", "params": {} },
         {
-          "id": "n235",
+          "id": "n234",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
+        { "id": "n235", "type": "std.mul", "params": {} },
         { "id": "n236", "type": "std.mul", "params": {} },
-        { "id": "n237", "type": "std.mul", "params": {} },
-        { "id": "n238", "type": "std.add", "params": {} },
+        { "id": "n237", "type": "std.add", "params": {} },
+        { "id": "n238", "type": "std.normalize", "params": {} },
         {
           "id": "n239",
-          "type": "std.sub",
-          "params": {},
-          "defaults": { "a": 1 }
-        },
-        { "id": "n240", "type": "std.mul", "params": {} },
-        { "id": "n241", "type": "std.mul", "params": {} },
-        { "id": "n242", "type": "std.add", "params": {} },
-        { "id": "n243", "type": "std.normalize", "params": {} },
-        {
-          "id": "n244",
           "type": "const.value",
           "params": {
             "type": { "kind": "scalar", "scalar": "f32" },
@@ -56450,49 +56418,69 @@
           }
         },
         {
-          "id": "n245",
+          "id": "n240",
           "type": "std.textureSampleLevel",
           "params": {},
           "defaults": { "level": 0 }
         },
         {
-          "id": "n246",
+          "id": "n241",
           "type": "std.add",
           "params": {},
           "defaults": { "b": 0 }
         },
         {
-          "id": "n247",
+          "id": "n242",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 40 }
         },
-        { "id": "n248", "type": "std.mul", "params": {} },
-        { "id": "n249", "type": "std.add", "params": {} },
+        { "id": "n243", "type": "std.mul", "params": {} },
+        { "id": "n244", "type": "std.add", "params": {} },
         {
-          "id": "n250",
+          "id": "n245",
           "type": "std.vec2",
           "params": {},
           "defaults": { "x": 1, "y": 0 }
         },
         {
-          "id": "n251",
+          "id": "n246",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.00390625 }
         },
-        { "id": "n252", "type": "std.add", "params": {} },
+        { "id": "n247", "type": "std.add", "params": {} },
         {
-          "id": "n253",
+          "id": "n248",
           "type": "std.textureSampleLevel",
           "params": {},
           "defaults": { "level": 0 }
         },
         {
-          "id": "n254",
+          "id": "n249",
           "type": "std.vec2",
           "params": {},
           "defaults": { "x": -1, "y": 0 }
+        },
+        {
+          "id": "n250",
+          "type": "std.mul",
+          "params": {},
+          "defaults": { "b": 0.00390625 }
+        },
+        { "id": "n251", "type": "std.add", "params": {} },
+        {
+          "id": "n252",
+          "type": "std.textureSampleLevel",
+          "params": {},
+          "defaults": { "level": 0 }
+        },
+        { "id": "n253", "type": "std.sub", "params": {} },
+        {
+          "id": "n254",
+          "type": "std.vec2",
+          "params": {},
+          "defaults": { "x": 0, "y": 1 }
         },
         {
           "id": "n255",
@@ -56507,210 +56495,190 @@
           "params": {},
           "defaults": { "level": 0 }
         },
-        { "id": "n258", "type": "std.sub", "params": {} },
         {
-          "id": "n259",
-          "type": "std.vec2",
-          "params": {},
-          "defaults": { "x": 0, "y": 1 }
-        },
-        {
-          "id": "n260",
-          "type": "std.mul",
-          "params": {},
-          "defaults": { "b": 0.00390625 }
-        },
-        { "id": "n261", "type": "std.add", "params": {} },
-        {
-          "id": "n262",
-          "type": "std.textureSampleLevel",
-          "params": {},
-          "defaults": { "level": 0 }
-        },
-        {
-          "id": "n263",
+          "id": "n258",
           "type": "std.vec2",
           "params": {},
           "defaults": { "x": 0, "y": -1 }
         },
         {
-          "id": "n264",
+          "id": "n259",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.00390625 }
         },
-        { "id": "n265", "type": "std.add", "params": {} },
+        { "id": "n260", "type": "std.add", "params": {} },
         {
-          "id": "n266",
+          "id": "n261",
           "type": "std.textureSampleLevel",
           "params": {},
           "defaults": { "level": 0 }
         },
-        { "id": "n267", "type": "std.sub", "params": {} },
-        { "id": "n268", "type": "std.vec2", "params": {} },
+        { "id": "n262", "type": "std.sub", "params": {} },
+        { "id": "n263", "type": "std.vec2", "params": {} },
         {
-          "id": "n269",
+          "id": "n264",
           "type": "std.div",
           "params": {},
           "defaults": { "b": 0.0078125 }
         },
-        { "id": "n270", "type": "std.sub", "params": {} },
+        { "id": "n265", "type": "std.sub", "params": {} },
+        { "id": "n266", "type": "std.sub", "params": {} },
+        {
+          "id": "n267",
+          "type": "std.sub",
+          "params": {},
+          "defaults": { "a": 1 }
+        },
+        { "id": "n268", "type": "std.mul", "params": {} },
+        { "id": "n269", "type": "std.mul", "params": {} },
+        { "id": "n270", "type": "std.add", "params": {} },
         { "id": "n271", "type": "std.sub", "params": {} },
+        { "id": "n272", "type": "std.sub", "params": {} },
         {
-          "id": "n272",
+          "id": "n273",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
-        { "id": "n273", "type": "std.mul", "params": {} },
         { "id": "n274", "type": "std.mul", "params": {} },
-        { "id": "n275", "type": "std.add", "params": {} },
-        { "id": "n276", "type": "std.sub", "params": {} },
+        { "id": "n275", "type": "std.mul", "params": {} },
+        { "id": "n276", "type": "std.add", "params": {} },
         { "id": "n277", "type": "std.sub", "params": {} },
+        { "id": "n278", "type": "std.sub", "params": {} },
         {
-          "id": "n278",
+          "id": "n279",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
-        { "id": "n279", "type": "std.mul", "params": {} },
         { "id": "n280", "type": "std.mul", "params": {} },
-        { "id": "n281", "type": "std.add", "params": {} },
-        { "id": "n282", "type": "std.sub", "params": {} },
+        { "id": "n281", "type": "std.mul", "params": {} },
+        { "id": "n282", "type": "std.add", "params": {} },
         { "id": "n283", "type": "std.sub", "params": {} },
+        { "id": "n284", "type": "std.sub", "params": {} },
         {
-          "id": "n284",
+          "id": "n285",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
-        { "id": "n285", "type": "std.mul", "params": {} },
         { "id": "n286", "type": "std.mul", "params": {} },
-        { "id": "n287", "type": "std.add", "params": {} },
-        { "id": "n288", "type": "std.sub", "params": {} },
-        { "id": "n289", "type": "std.sub", "params": {} },
+        { "id": "n287", "type": "std.mul", "params": {} },
+        { "id": "n288", "type": "std.add", "params": {} },
+        { "id": "n289", "type": "std.dot", "params": {} },
         {
           "id": "n290",
-          "type": "std.sub",
+          "type": "std.mul",
           "params": {},
-          "defaults": { "a": 1 }
+          "defaults": { "b": 40 }
         },
         { "id": "n291", "type": "std.mul", "params": {} },
-        { "id": "n292", "type": "std.mul", "params": {} },
-        { "id": "n293", "type": "std.add", "params": {} },
-        { "id": "n294", "type": "std.dot", "params": {} },
+        { "id": "n292", "type": "std.add", "params": {} },
+        { "id": "n293", "type": "std.dot", "params": {} },
         {
-          "id": "n295",
+          "id": "n294",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 40 }
         },
-        { "id": "n296", "type": "std.mul", "params": {} },
-        { "id": "n297", "type": "std.add", "params": {} },
-        { "id": "n298", "type": "std.dot", "params": {} },
+        { "id": "n295", "type": "std.mul", "params": {} },
+        { "id": "n296", "type": "std.add", "params": {} },
+        { "id": "n297", "type": "std.cross", "params": {} },
+        { "id": "n298", "type": "std.normalize", "params": {} },
         {
           "id": "n299",
-          "type": "std.mul",
-          "params": {},
-          "defaults": { "b": 40 }
-        },
-        { "id": "n300", "type": "std.mul", "params": {} },
-        { "id": "n301", "type": "std.add", "params": {} },
-        { "id": "n302", "type": "std.cross", "params": {} },
-        { "id": "n303", "type": "std.normalize", "params": {} },
-        {
-          "id": "n304",
           "type": "output.attribute",
           "params": { "semantic": "position" }
         },
         {
-          "id": "n305",
+          "id": "n300",
           "type": "output.attribute",
           "params": { "semantic": "normal" }
         },
         {
-          "id": "n306",
+          "id": "n301",
           "type": "output.attribute",
           "params": { "semantic": "uv" }
         },
         {
-          "id": "n307",
+          "id": "n302",
           "type": "std.sub",
           "params": {},
           "defaults": { "b": 1 }
         },
         {
-          "id": "n308",
+          "id": "n303",
           "type": "output.attribute",
           "params": { "semantic": "patchLevel" }
         },
         {
-          "id": "n309",
+          "id": "n304",
           "type": "input.attribute",
           "params": {
             "semantic": "uv",
             "type": { "kind": "vector", "size": 2, "scalar": "f32" }
           }
         },
-        { "id": "n310", "type": "std.perFragment", "params": {} },
+        { "id": "n305", "type": "std.perFragment", "params": {} },
         {
-          "id": "n311",
+          "id": "n306",
           "type": "std.add",
           "params": {},
           "defaults": { "b": [-0.00390625, 0] }
         },
-        { "id": "n312", "type": "std.textureSample", "params": {} },
+        { "id": "n307", "type": "std.textureSample", "params": {} },
         {
-          "id": "n313",
+          "id": "n308",
           "type": "std.add",
           "params": {},
           "defaults": { "b": [0.00390625, 0] }
         },
-        { "id": "n314", "type": "std.textureSample", "params": {} },
-        { "id": "n315", "type": "std.sub", "params": {} },
+        { "id": "n309", "type": "std.textureSample", "params": {} },
+        { "id": "n310", "type": "std.sub", "params": {} },
         {
-          "id": "n316",
+          "id": "n311",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 10 }
         },
         {
-          "id": "n317",
+          "id": "n312",
           "type": "std.add",
           "params": {},
           "defaults": { "b": [0, -0.00390625] }
         },
-        { "id": "n318", "type": "std.textureSample", "params": {} },
+        { "id": "n313", "type": "std.textureSample", "params": {} },
         {
-          "id": "n319",
+          "id": "n314",
           "type": "std.add",
           "params": {},
           "defaults": { "b": [0, 0.00390625] }
         },
-        { "id": "n320", "type": "std.textureSample", "params": {} },
-        { "id": "n321", "type": "std.sub", "params": {} },
+        { "id": "n315", "type": "std.textureSample", "params": {} },
+        { "id": "n316", "type": "std.sub", "params": {} },
         {
-          "id": "n322",
+          "id": "n317",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 10 }
         },
         {
-          "id": "n323",
+          "id": "n318",
           "type": "std.vec3",
           "params": {},
           "defaults": { "y": 1 }
         },
-        { "id": "n324", "type": "std.normalize", "params": {} },
+        { "id": "n319", "type": "std.normalize", "params": {} },
         {
-          "id": "n325",
+          "id": "n320",
           "type": "std.add",
           "params": {},
           "defaults": { "b": [0, 0] }
         },
-        { "id": "n326", "type": "std.textureSample", "params": {} },
+        { "id": "n321", "type": "std.textureSample", "params": {} },
         {
-          "id": "n327",
+          "id": "n322",
           "type": "input.attribute",
           "params": {
             "semantic": "patchLevel",
@@ -56718,143 +56686,143 @@
           }
         },
         {
-          "id": "n328",
+          "id": "n323",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 128 }
         },
         {
-          "id": "n329",
+          "id": "n324",
           "type": "input.sampler",
           "params": { "name": "groundSampler" },
           "label": "groundSampler"
         },
-        { "id": "n330", "type": "mapping.worldPosition", "params": {} },
+        { "id": "n325", "type": "mapping.worldPosition", "params": {} },
         {
-          "id": "n331",
+          "id": "n326",
           "type": "std.div",
           "params": {},
           "defaults": { "b": 23 }
         },
         {
-          "id": "n332",
+          "id": "n327",
           "type": "noise.fbm",
           "params": { "noise": "simplex", "octaves": 3 },
           "defaults": { "seed": 11 }
         },
         {
-          "id": "n333",
+          "id": "n328",
           "type": "std.smoothstep",
           "params": {},
           "defaults": { "low": -0.35, "high": 0.45 }
         },
         {
-          "id": "n334",
+          "id": "n329",
           "type": "input.texture",
           "params": { "name": "groundColor" },
           "label": "groundColor"
         },
-        { "id": "n335", "type": "std.textureSample", "params": {} },
+        { "id": "n330", "type": "std.textureSample", "params": {} },
         {
-          "id": "n336",
+          "id": "n331",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.37 }
         },
         {
-          "id": "n337",
+          "id": "n332",
           "type": "input.texture",
           "params": { "name": "groundColor" },
           "label": "groundColor"
         },
-        { "id": "n338", "type": "std.textureSample", "params": {} },
+        { "id": "n333", "type": "std.textureSample", "params": {} },
         {
-          "id": "n339",
+          "id": "n334",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.6 }
         },
-        { "id": "n340", "type": "std.vec3", "params": {} },
-        { "id": "n341", "type": "std.mix", "params": {} },
-        { "id": "n342", "type": "std.vec3", "params": {} },
+        { "id": "n335", "type": "std.vec3", "params": {} },
+        { "id": "n336", "type": "std.mix", "params": {} },
+        { "id": "n337", "type": "std.vec3", "params": {} },
         {
-          "id": "n343",
+          "id": "n338",
           "type": "std.mix",
           "params": {},
           "defaults": { "a": [0.58, 0.68, 0.52], "b": [0.72, 0.66, 0.55] }
         },
-        { "id": "n344", "type": "std.mul", "params": {} },
+        { "id": "n339", "type": "std.mul", "params": {} },
         {
-          "id": "n345",
+          "id": "n340",
           "type": "input.texture",
           "params": { "name": "rock" },
           "label": "rock"
         },
         {
-          "id": "n346",
+          "id": "n341",
           "type": "mapping.triplanarTexture",
           "params": {},
           "defaults": { "scale": 0.16666666666666666, "sharpness": 6 }
         },
         {
-          "id": "n347",
+          "id": "n342",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": 0.08 }
         },
-        { "id": "n348", "type": "std.add", "params": {} },
+        { "id": "n343", "type": "std.add", "params": {} },
         {
-          "id": "n349",
+          "id": "n344",
           "type": "std.smoothstep",
           "params": {},
           "defaults": { "low": 0.68, "high": 0.86 }
         },
         {
-          "id": "n350",
+          "id": "n345",
           "type": "std.sub",
           "params": {},
           "defaults": { "a": 1 }
         },
         {
-          "id": "n351",
+          "id": "n346",
           "type": "input.texture",
           "params": { "name": "groundNormal" },
           "label": "groundNormal"
         },
-        { "id": "n352", "type": "std.textureSample", "params": {} },
-        { "id": "n353", "type": "macro.normalMapping", "params": {} },
+        { "id": "n347", "type": "std.textureSample", "params": {} },
+        { "id": "n348", "type": "macro.normalMapping", "params": {} },
         {
-          "id": "n354",
+          "id": "n349",
           "type": "macro.bumpMapping",
           "params": {},
           "defaults": { "scale": 0.35 }
         },
         {
-          "id": "n355",
+          "id": "n350",
           "type": "std.mul",
           "params": {},
           "defaults": { "b": [0.85, 0.83, 0.8] }
         },
-        { "id": "n356", "type": "std.vec3", "params": {} },
-        { "id": "n357", "type": "std.mix", "params": {} },
+        { "id": "n351", "type": "std.vec3", "params": {} },
+        { "id": "n352", "type": "std.mix", "params": {} },
         {
-          "id": "n358",
+          "id": "n353",
           "type": "input.texture",
           "params": { "name": "groundRoughness" },
           "label": "groundRoughness"
         },
-        { "id": "n359", "type": "std.textureSample", "params": {} },
+        { "id": "n354", "type": "std.textureSample", "params": {} },
         {
-          "id": "n360",
+          "id": "n355",
           "type": "std.mix",
           "params": {},
           "defaults": { "b": 0.8 }
         },
-        { "id": "n361", "type": "std.vec3", "params": {} },
-        { "id": "n362", "type": "std.mix", "params": {} },
-        { "id": "n363", "type": "std.normalize", "params": {} },
+        { "id": "n356", "type": "std.vec3", "params": {} },
+        { "id": "n357", "type": "std.mix", "params": {} },
+        { "id": "n358", "type": "std.normalize", "params": {} },
         {
-          "id": "n364",
+          "id": "n359",
           "type": "output.surface",
           "params": { "shadingModel": "pbr" },
           "defaults": { "metallic": 0 }
@@ -56883,170 +56851,162 @@
         },
         {
           "from": { "node": "n6", "port": "value" },
-          "to": { "node": "n7", "port": "edge" }
+          "to": { "node": "n8", "port": "array" }
         },
         {
-          "from": { "node": "n5", "port": "result" },
-          "to": { "node": "n7", "port": "x" }
-        },
-        {
-          "from": { "node": "n6", "port": "value" },
-          "to": { "node": "n8", "port": "a" }
-        },
-        {
-          "from": { "node": "n7", "port": "result" },
-          "to": { "node": "n8", "port": "b" }
-        },
-        {
-          "from": { "node": "n9", "port": "value" },
-          "to": { "node": "n10", "port": "a" }
-        },
-        {
-          "from": { "node": "n7", "port": "result" },
-          "to": { "node": "n10", "port": "b" }
-        },
-        {
-          "from": { "node": "n11", "port": "value" },
-          "to": { "node": "n12", "port": "a" }
-        },
-        {
-          "from": { "node": "n7", "port": "result" },
-          "to": { "node": "n12", "port": "b" }
-        },
-        {
-          "from": { "node": "n7", "port": "result" },
-          "to": { "node": "n13", "port": "a" }
-        },
-        {
-          "from": { "node": "n14", "port": "value" },
-          "to": { "node": "n15", "port": "edge" }
-        },
-        {
-          "from": { "node": "n5", "port": "result" },
-          "to": { "node": "n15", "port": "x" }
-        },
-        {
-          "from": { "node": "n14", "port": "value" },
-          "to": { "node": "n16", "port": "a" }
-        },
-        {
-          "from": { "node": "n15", "port": "result" },
-          "to": { "node": "n16", "port": "b" }
-        },
-        {
-          "from": { "node": "n17", "port": "value" },
-          "to": { "node": "n18", "port": "a" }
-        },
-        {
-          "from": { "node": "n15", "port": "result" },
-          "to": { "node": "n18", "port": "b" }
-        },
-        {
-          "from": { "node": "n19", "port": "value" },
-          "to": { "node": "n20", "port": "a" }
-        },
-        {
-          "from": { "node": "n15", "port": "result" },
-          "to": { "node": "n20", "port": "b" }
-        },
-        {
-          "from": { "node": "n15", "port": "result" },
-          "to": { "node": "n21", "port": "a" }
-        },
-        {
-          "from": { "node": "n13", "port": "result" },
-          "to": { "node": "n22", "port": "a" }
-        },
-        {
-          "from": { "node": "n21", "port": "result" },
-          "to": { "node": "n22", "port": "b" }
+          "from": { "node": "n7", "port": "value" },
+          "to": { "node": "n8", "port": "index" }
         },
         {
           "from": { "node": "n8", "port": "result" },
-          "to": { "node": "n23", "port": "a" }
+          "to": { "node": "n9", "port": "edge" }
         },
         {
-          "from": { "node": "n16", "port": "result" },
-          "to": { "node": "n23", "port": "b" }
+          "from": { "node": "n5", "port": "result" },
+          "to": { "node": "n9", "port": "x" }
         },
         {
-          "from": { "node": "n10", "port": "result" },
-          "to": { "node": "n24", "port": "a" }
+          "from": { "node": "n8", "port": "result" },
+          "to": { "node": "n10", "port": "a" }
         },
         {
-          "from": { "node": "n18", "port": "result" },
-          "to": { "node": "n24", "port": "b" }
+          "from": { "node": "n9", "port": "result" },
+          "to": { "node": "n10", "port": "b" }
+        },
+        {
+          "from": { "node": "n6", "port": "value" },
+          "to": { "node": "n12", "port": "array" }
+        },
+        {
+          "from": { "node": "n11", "port": "value" },
+          "to": { "node": "n12", "port": "index" }
         },
         {
           "from": { "node": "n12", "port": "result" },
+          "to": { "node": "n13", "port": "a" }
+        },
+        {
+          "from": { "node": "n9", "port": "result" },
+          "to": { "node": "n13", "port": "b" }
+        },
+        {
+          "from": { "node": "n14", "port": "value" },
+          "to": { "node": "n15", "port": "a" }
+        },
+        {
+          "from": { "node": "n9", "port": "result" },
+          "to": { "node": "n15", "port": "b" }
+        },
+        {
+          "from": { "node": "n9", "port": "result" },
+          "to": { "node": "n16", "port": "a" }
+        },
+        {
+          "from": { "node": "n6", "port": "value" },
+          "to": { "node": "n18", "port": "array" }
+        },
+        {
+          "from": { "node": "n17", "port": "value" },
+          "to": { "node": "n18", "port": "index" }
+        },
+        {
+          "from": { "node": "n18", "port": "result" },
+          "to": { "node": "n19", "port": "edge" }
+        },
+        {
+          "from": { "node": "n5", "port": "result" },
+          "to": { "node": "n19", "port": "x" }
+        },
+        {
+          "from": { "node": "n18", "port": "result" },
+          "to": { "node": "n20", "port": "a" }
+        },
+        {
+          "from": { "node": "n19", "port": "result" },
+          "to": { "node": "n20", "port": "b" }
+        },
+        {
+          "from": { "node": "n6", "port": "value" },
+          "to": { "node": "n22", "port": "array" }
+        },
+        {
+          "from": { "node": "n21", "port": "value" },
+          "to": { "node": "n22", "port": "index" }
+        },
+        {
+          "from": { "node": "n22", "port": "result" },
+          "to": { "node": "n23", "port": "a" }
+        },
+        {
+          "from": { "node": "n19", "port": "result" },
+          "to": { "node": "n23", "port": "b" }
+        },
+        {
+          "from": { "node": "n24", "port": "value" },
           "to": { "node": "n25", "port": "a" }
         },
         {
-          "from": { "node": "n20", "port": "result" },
+          "from": { "node": "n19", "port": "result" },
           "to": { "node": "n25", "port": "b" }
         },
         {
-          "from": { "node": "n25", "port": "result" },
-          "to": { "node": "n26", "port": "a" },
-          "swizzle": "x"
+          "from": { "node": "n19", "port": "result" },
+          "to": { "node": "n26", "port": "a" }
         },
         {
-          "from": { "node": "n25", "port": "result" },
-          "to": { "node": "n26", "port": "b" },
-          "swizzle": "y"
-        },
-        {
-          "from": { "node": "n25", "port": "result" },
-          "to": { "node": "n27", "port": "a" },
-          "swizzle": "z"
-        },
-        {
-          "from": { "node": "n25", "port": "result" },
-          "to": { "node": "n27", "port": "b" },
-          "swizzle": "w"
+          "from": { "node": "n16", "port": "result" },
+          "to": { "node": "n27", "port": "a" }
         },
         {
           "from": { "node": "n26", "port": "result" },
+          "to": { "node": "n27", "port": "b" }
+        },
+        {
+          "from": { "node": "n10", "port": "result" },
           "to": { "node": "n28", "port": "a" }
         },
         {
-          "from": { "node": "n27", "port": "result" },
+          "from": { "node": "n20", "port": "result" },
           "to": { "node": "n28", "port": "b" }
         },
         {
-          "from": { "node": "n28", "port": "result" },
-          "to": { "node": "n29", "port": "value" }
+          "from": { "node": "n13", "port": "result" },
+          "to": { "node": "n29", "port": "a" }
         },
         {
           "from": { "node": "n23", "port": "result" },
-          "to": { "node": "n30", "port": "a" },
-          "swizzle": "x"
+          "to": { "node": "n29", "port": "b" }
         },
         {
-          "from": { "node": "n23", "port": "result" },
-          "to": { "node": "n30", "port": "b" },
-          "swizzle": "y"
+          "from": { "node": "n15", "port": "result" },
+          "to": { "node": "n30", "port": "a" }
         },
         {
-          "from": { "node": "n23", "port": "result" },
-          "to": { "node": "n31", "port": "a" },
-          "swizzle": "z"
-        },
-        {
-          "from": { "node": "n23", "port": "result" },
-          "to": { "node": "n31", "port": "b" },
-          "swizzle": "w"
+          "from": { "node": "n25", "port": "result" },
+          "to": { "node": "n30", "port": "b" }
         },
         {
           "from": { "node": "n30", "port": "result" },
-          "to": { "node": "n32", "port": "a" }
+          "to": { "node": "n31", "port": "a" },
+          "swizzle": "x"
+        },
+        {
+          "from": { "node": "n30", "port": "result" },
+          "to": { "node": "n31", "port": "b" },
+          "swizzle": "y"
+        },
+        {
+          "from": { "node": "n30", "port": "result" },
+          "to": { "node": "n32", "port": "a" },
+          "swizzle": "z"
+        },
+        {
+          "from": { "node": "n30", "port": "result" },
+          "to": { "node": "n32", "port": "b" },
+          "swizzle": "w"
         },
         {
           "from": { "node": "n31", "port": "result" },
-          "to": { "node": "n32", "port": "b" }
-        },
-        {
-          "from": { "node": "n4", "port": "result" },
           "to": { "node": "n33", "port": "a" }
         },
         {
@@ -57058,15 +57018,27 @@
           "to": { "node": "n34", "port": "value" }
         },
         {
-          "from": { "node": "n29", "port": "result" },
-          "to": { "node": "n36", "port": "a" }
+          "from": { "node": "n28", "port": "result" },
+          "to": { "node": "n35", "port": "a" },
+          "swizzle": "x"
         },
         {
-          "from": { "node": "n29", "port": "result" },
-          "to": { "node": "n36", "port": "b" }
+          "from": { "node": "n28", "port": "result" },
+          "to": { "node": "n35", "port": "b" },
+          "swizzle": "y"
         },
         {
-          "from": { "node": "n35", "port": "value" },
+          "from": { "node": "n28", "port": "result" },
+          "to": { "node": "n36", "port": "a" },
+          "swizzle": "z"
+        },
+        {
+          "from": { "node": "n28", "port": "result" },
+          "to": { "node": "n36", "port": "b" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n35", "port": "result" },
           "to": { "node": "n37", "port": "a" }
         },
         {
@@ -57074,7 +57046,7 @@
           "to": { "node": "n37", "port": "b" }
         },
         {
-          "from": { "node": "n34", "port": "result" },
+          "from": { "node": "n4", "port": "result" },
           "to": { "node": "n38", "port": "a" }
         },
         {
@@ -57083,38 +57055,42 @@
         },
         {
           "from": { "node": "n38", "port": "result" },
-          "to": { "node": "n39", "port": "a" }
-        },
-        {
-          "from": { "node": "n37", "port": "result" },
-          "to": { "node": "n39", "port": "b" }
+          "to": { "node": "n39", "port": "value" }
         },
         {
           "from": { "node": "n34", "port": "result" },
-          "to": { "node": "n40", "port": "a" }
+          "to": { "node": "n41", "port": "a" }
         },
         {
-          "from": { "node": "n39", "port": "result" },
-          "to": { "node": "n40", "port": "b" }
+          "from": { "node": "n34", "port": "result" },
+          "to": { "node": "n41", "port": "b" }
         },
         {
-          "from": { "node": "n40", "port": "result" },
+          "from": { "node": "n40", "port": "value" },
           "to": { "node": "n42", "port": "a" }
         },
         {
-          "from": { "node": "n41", "port": "value" },
+          "from": { "node": "n41", "port": "result" },
           "to": { "node": "n42", "port": "b" }
         },
         {
+          "from": { "node": "n39", "port": "result" },
+          "to": { "node": "n43", "port": "a" }
+        },
+        {
           "from": { "node": "n42", "port": "result" },
+          "to": { "node": "n43", "port": "b" }
+        },
+        {
+          "from": { "node": "n43", "port": "result" },
           "to": { "node": "n44", "port": "a" }
         },
         {
-          "from": { "node": "n43", "port": "value" },
+          "from": { "node": "n42", "port": "result" },
           "to": { "node": "n44", "port": "b" }
         },
         {
-          "from": { "node": "n40", "port": "result" },
+          "from": { "node": "n39", "port": "result" },
           "to": { "node": "n45", "port": "a" }
         },
         {
@@ -57122,51 +57098,55 @@
           "to": { "node": "n45", "port": "b" }
         },
         {
-          "from": { "node": "n42", "port": "result" },
-          "to": { "node": "n46", "port": "a" }
-        },
-        {
-          "from": { "node": "n29", "port": "result" },
-          "to": { "node": "n46", "port": "b" }
-        },
-        {
-          "from": { "node": "n46", "port": "result" },
+          "from": { "node": "n45", "port": "result" },
           "to": { "node": "n47", "port": "a" }
         },
         {
-          "from": { "node": "n29", "port": "result" },
+          "from": { "node": "n46", "port": "value" },
           "to": { "node": "n47", "port": "b" }
         },
         {
-          "from": { "node": "n42", "port": "result" },
-          "to": { "node": "n48", "port": "a" }
+          "from": { "node": "n47", "port": "result" },
+          "to": { "node": "n49", "port": "a" }
+        },
+        {
+          "from": { "node": "n48", "port": "value" },
+          "to": { "node": "n49", "port": "b" }
+        },
+        {
+          "from": { "node": "n45", "port": "result" },
+          "to": { "node": "n50", "port": "a" }
+        },
+        {
+          "from": { "node": "n49", "port": "result" },
+          "to": { "node": "n50", "port": "b" }
         },
         {
           "from": { "node": "n47", "port": "result" },
-          "to": { "node": "n48", "port": "b" }
+          "to": { "node": "n51", "port": "a" }
         },
         {
-          "from": { "node": "n45", "port": "result" },
+          "from": { "node": "n34", "port": "result" },
+          "to": { "node": "n51", "port": "b" }
+        },
+        {
+          "from": { "node": "n51", "port": "result" },
           "to": { "node": "n52", "port": "a" }
         },
         {
-          "from": { "node": "n51", "port": "value" },
+          "from": { "node": "n34", "port": "result" },
           "to": { "node": "n52", "port": "b" }
         },
         {
-          "from": { "node": "n49", "port": "value" },
-          "to": { "node": "n53", "port": "ifFalse" }
-        },
-        {
-          "from": { "node": "n50", "port": "value" },
-          "to": { "node": "n53", "port": "ifTrue" }
+          "from": { "node": "n47", "port": "result" },
+          "to": { "node": "n53", "port": "a" }
         },
         {
           "from": { "node": "n52", "port": "result" },
-          "to": { "node": "n53", "port": "condition" }
+          "to": { "node": "n53", "port": "b" }
         },
         {
-          "from": { "node": "n45", "port": "result" },
+          "from": { "node": "n50", "port": "result" },
           "to": { "node": "n57", "port": "a" }
         },
         {
@@ -57186,7 +57166,7 @@
           "to": { "node": "n58", "port": "condition" }
         },
         {
-          "from": { "node": "n45", "port": "result" },
+          "from": { "node": "n50", "port": "result" },
           "to": { "node": "n62", "port": "a" }
         },
         {
@@ -57206,51 +57186,51 @@
           "to": { "node": "n63", "port": "condition" }
         },
         {
-          "from": { "node": "n53", "port": "result" },
-          "to": { "node": "n64", "port": "a" }
+          "from": { "node": "n50", "port": "result" },
+          "to": { "node": "n67", "port": "a" }
+        },
+        {
+          "from": { "node": "n66", "port": "value" },
+          "to": { "node": "n67", "port": "b" }
+        },
+        {
+          "from": { "node": "n64", "port": "value" },
+          "to": { "node": "n68", "port": "ifFalse" }
+        },
+        {
+          "from": { "node": "n65", "port": "value" },
+          "to": { "node": "n68", "port": "ifTrue" }
+        },
+        {
+          "from": { "node": "n67", "port": "result" },
+          "to": { "node": "n68", "port": "condition" }
         },
         {
           "from": { "node": "n58", "port": "result" },
-          "to": { "node": "n64", "port": "b" }
-        },
-        {
-          "from": { "node": "n64", "port": "result" },
-          "to": { "node": "n65", "port": "a" }
+          "to": { "node": "n69", "port": "a" }
         },
         {
           "from": { "node": "n63", "port": "result" },
-          "to": { "node": "n65", "port": "b" }
+          "to": { "node": "n69", "port": "b" }
         },
         {
-          "from": { "node": "n48", "port": "result" },
-          "to": { "node": "n66", "port": "a" }
-        },
-        {
-          "from": { "node": "n65", "port": "result" },
-          "to": { "node": "n66", "port": "b" }
-        },
-        {
-          "from": { "node": "n45", "port": "result" },
+          "from": { "node": "n69", "port": "result" },
           "to": { "node": "n70", "port": "a" }
         },
         {
-          "from": { "node": "n69", "port": "value" },
+          "from": { "node": "n68", "port": "result" },
           "to": { "node": "n70", "port": "b" }
         },
         {
-          "from": { "node": "n67", "port": "value" },
-          "to": { "node": "n71", "port": "ifFalse" }
-        },
-        {
-          "from": { "node": "n68", "port": "value" },
-          "to": { "node": "n71", "port": "ifTrue" }
+          "from": { "node": "n53", "port": "result" },
+          "to": { "node": "n71", "port": "a" }
         },
         {
           "from": { "node": "n70", "port": "result" },
-          "to": { "node": "n71", "port": "condition" }
+          "to": { "node": "n71", "port": "b" }
         },
         {
-          "from": { "node": "n45", "port": "result" },
+          "from": { "node": "n50", "port": "result" },
           "to": { "node": "n75", "port": "a" }
         },
         {
@@ -57270,7 +57250,7 @@
           "to": { "node": "n76", "port": "condition" }
         },
         {
-          "from": { "node": "n45", "port": "result" },
+          "from": { "node": "n50", "port": "result" },
           "to": { "node": "n80", "port": "a" }
         },
         {
@@ -57290,217 +57270,229 @@
           "to": { "node": "n81", "port": "condition" }
         },
         {
-          "from": { "node": "n71", "port": "result" },
-          "to": { "node": "n82", "port": "a" }
+          "from": { "node": "n50", "port": "result" },
+          "to": { "node": "n85", "port": "a" }
         },
         {
-          "from": { "node": "n76", "port": "result" },
-          "to": { "node": "n82", "port": "b" }
+          "from": { "node": "n84", "port": "value" },
+          "to": { "node": "n85", "port": "b" }
         },
         {
-          "from": { "node": "n82", "port": "result" },
-          "to": { "node": "n83", "port": "a" }
+          "from": { "node": "n82", "port": "value" },
+          "to": { "node": "n86", "port": "ifFalse" }
         },
         {
-          "from": { "node": "n81", "port": "result" },
-          "to": { "node": "n83", "port": "b" }
-        },
-        {
-          "from": { "node": "n46", "port": "result" },
-          "to": { "node": "n84", "port": "a" }
-        },
-        {
-          "from": { "node": "n83", "port": "result" },
-          "to": { "node": "n84", "port": "b" }
-        },
-        {
-          "from": { "node": "n24", "port": "result" },
-          "to": { "node": "n85", "port": "a" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n24", "port": "result" },
-          "to": { "node": "n85", "port": "b" },
-          "swizzle": "y"
-        },
-        {
-          "from": { "node": "n24", "port": "result" },
-          "to": { "node": "n86", "port": "a" },
-          "swizzle": "z"
-        },
-        {
-          "from": { "node": "n24", "port": "result" },
-          "to": { "node": "n86", "port": "b" },
-          "swizzle": "w"
+          "from": { "node": "n83", "port": "value" },
+          "to": { "node": "n86", "port": "ifTrue" }
         },
         {
           "from": { "node": "n85", "port": "result" },
+          "to": { "node": "n86", "port": "condition" }
+        },
+        {
+          "from": { "node": "n76", "port": "result" },
           "to": { "node": "n87", "port": "a" }
         },
         {
-          "from": { "node": "n86", "port": "result" },
+          "from": { "node": "n81", "port": "result" },
           "to": { "node": "n87", "port": "b" }
         },
         {
           "from": { "node": "n87", "port": "result" },
-          "to": { "node": "n88", "port": "value" }
+          "to": { "node": "n88", "port": "a" }
         },
         {
-          "from": { "node": "n88", "port": "result" },
+          "from": { "node": "n86", "port": "result" },
+          "to": { "node": "n88", "port": "b" }
+        },
+        {
+          "from": { "node": "n51", "port": "result" },
           "to": { "node": "n89", "port": "a" }
         },
         {
-          "from": { "node": "n38", "port": "result" },
+          "from": { "node": "n88", "port": "result" },
           "to": { "node": "n89", "port": "b" }
         },
         {
-          "from": { "node": "n89", "port": "result" },
+          "from": { "node": "n29", "port": "result" },
+          "to": { "node": "n90", "port": "a" },
+          "swizzle": "x"
+        },
+        {
+          "from": { "node": "n29", "port": "result" },
+          "to": { "node": "n90", "port": "b" },
+          "swizzle": "y"
+        },
+        {
+          "from": { "node": "n29", "port": "result" },
+          "to": { "node": "n91", "port": "a" },
+          "swizzle": "z"
+        },
+        {
+          "from": { "node": "n29", "port": "result" },
+          "to": { "node": "n91", "port": "b" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n90", "port": "result" },
           "to": { "node": "n92", "port": "a" }
         },
         {
-          "from": { "node": "n91", "port": "value" },
+          "from": { "node": "n91", "port": "result" },
           "to": { "node": "n92", "port": "b" }
         },
         {
           "from": { "node": "n92", "port": "result" },
+          "to": { "node": "n93", "port": "value" }
+        },
+        {
+          "from": { "node": "n93", "port": "result" },
           "to": { "node": "n94", "port": "a" }
         },
         {
-          "from": { "node": "n93", "port": "value" },
+          "from": { "node": "n43", "port": "result" },
           "to": { "node": "n94", "port": "b" }
         },
         {
-          "from": { "node": "n89", "port": "result" },
-          "to": { "node": "n95", "port": "a" }
-        },
-        {
           "from": { "node": "n94", "port": "result" },
-          "to": { "node": "n95", "port": "b" }
+          "to": { "node": "n96", "port": "a" }
         },
         {
-          "from": { "node": "n95", "port": "result" },
-          "to": { "node": "n96", "port": "value" }
+          "from": { "node": "n95", "port": "value" },
+          "to": { "node": "n96", "port": "b" }
         },
         {
-          "from": { "node": "n89", "port": "result" },
-          "to": { "node": "n98", "port": "a" }
-        },
-        {
-          "from": { "node": "n97", "port": "value" },
-          "to": { "node": "n98", "port": "b" }
-        },
-        {
-          "from": { "node": "n98", "port": "result" },
-          "to": { "node": "n99", "port": "value" }
+          "from": { "node": "n6", "port": "value" },
+          "to": { "node": "n97", "port": "array" }
         },
         {
           "from": { "node": "n96", "port": "result" },
-          "to": { "node": "n100", "port": "x" }
+          "to": { "node": "n97", "port": "index" }
         },
         {
-          "from": { "node": "n99", "port": "result" },
-          "to": { "node": "n100", "port": "y" }
-        },
-        {
-          "from": { "node": "n100", "port": "result" },
-          "to": { "node": "n101", "port": "value" }
-        },
-        {
-          "from": { "node": "n90", "port": "value" },
-          "to": { "node": "n102", "port": "texture" }
-        },
-        {
-          "from": { "node": "n101", "port": "result" },
-          "to": { "node": "n102", "port": "coords" }
-        },
-        {
-          "from": { "node": "n102", "port": "result" },
-          "to": { "node": "n103", "port": "value" },
+          "from": { "node": "n97", "port": "result" },
+          "to": { "node": "n98", "port": "value" },
           "swizzle": "y"
         },
         {
-          "from": { "node": "n103", "port": "result" },
-          "to": { "node": "n105", "port": "a" }
+          "from": { "node": "n98", "port": "result" },
+          "to": { "node": "n100", "port": "a" }
         },
         {
-          "from": { "node": "n104", "port": "value" },
-          "to": { "node": "n105", "port": "b" }
+          "from": { "node": "n99", "port": "value" },
+          "to": { "node": "n100", "port": "b" }
         },
         {
-          "from": { "node": "n105", "port": "result" },
-          "to": { "node": "n107", "port": "a" }
+          "from": { "node": "n100", "port": "result" },
+          "to": { "node": "n102", "port": "a" }
         },
         {
-          "from": { "node": "n106", "port": "value" },
-          "to": { "node": "n107", "port": "b" }
+          "from": { "node": "n101", "port": "value" },
+          "to": { "node": "n102", "port": "b" }
         },
         {
-          "from": { "node": "n103", "port": "result" },
-          "to": { "node": "n108", "port": "a" }
-        },
-        {
-          "from": { "node": "n107", "port": "result" },
-          "to": { "node": "n108", "port": "b" }
+          "from": { "node": "n98", "port": "result" },
+          "to": { "node": "n103", "port": "a" }
         },
         {
           "from": { "node": "n102", "port": "result" },
-          "to": { "node": "n109", "port": "value" },
+          "to": { "node": "n103", "port": "b" }
+        },
+        {
+          "from": { "node": "n97", "port": "result" },
+          "to": { "node": "n104", "port": "value" },
           "swizzle": "z"
         },
         {
+          "from": { "node": "n104", "port": "result" },
+          "to": { "node": "n106", "port": "a" }
+        },
+        {
+          "from": { "node": "n105", "port": "value" },
+          "to": { "node": "n106", "port": "b" }
+        },
+        {
+          "from": { "node": "n106", "port": "result" },
+          "to": { "node": "n108", "port": "a" }
+        },
+        {
+          "from": { "node": "n107", "port": "value" },
+          "to": { "node": "n108", "port": "b" }
+        },
+        {
+          "from": { "node": "n104", "port": "result" },
+          "to": { "node": "n109", "port": "a" }
+        },
+        {
+          "from": { "node": "n108", "port": "result" },
+          "to": { "node": "n109", "port": "b" }
+        },
+        {
+          "from": { "node": "n71", "port": "result" },
+          "to": { "node": "n110", "port": "a" }
+        },
+        {
           "from": { "node": "n109", "port": "result" },
+          "to": { "node": "n110", "port": "b" }
+        },
+        {
+          "from": { "node": "n110", "port": "result" },
           "to": { "node": "n111", "port": "a" }
         },
         {
-          "from": { "node": "n110", "port": "value" },
+          "from": { "node": "n109", "port": "result" },
           "to": { "node": "n111", "port": "b" }
         },
         {
+          "from": { "node": "n89", "port": "result" },
+          "to": { "node": "n112", "port": "a" }
+        },
+        {
+          "from": { "node": "n34", "port": "result" },
+          "to": { "node": "n112", "port": "b" }
+        },
+        {
+          "from": { "node": "n71", "port": "result" },
+          "to": { "node": "n113", "port": "ifFalse" }
+        },
+        {
           "from": { "node": "n111", "port": "result" },
-          "to": { "node": "n113", "port": "a" }
+          "to": { "node": "n113", "port": "ifTrue" }
         },
         {
-          "from": { "node": "n112", "port": "value" },
-          "to": { "node": "n113", "port": "b" }
+          "from": { "node": "n112", "port": "result" },
+          "to": { "node": "n113", "port": "condition" }
         },
         {
-          "from": { "node": "n109", "port": "result" },
+          "from": { "node": "n71", "port": "result" },
           "to": { "node": "n114", "port": "a" }
         },
         {
-          "from": { "node": "n113", "port": "result" },
+          "from": { "node": "n103", "port": "result" },
           "to": { "node": "n114", "port": "b" }
         },
         {
-          "from": { "node": "n66", "port": "result" },
+          "from": { "node": "n114", "port": "result" },
           "to": { "node": "n115", "port": "a" }
         },
         {
-          "from": { "node": "n114", "port": "result" },
+          "from": { "node": "n103", "port": "result" },
           "to": { "node": "n115", "port": "b" }
         },
         {
-          "from": { "node": "n115", "port": "result" },
-          "to": { "node": "n116", "port": "a" }
-        },
-        {
-          "from": { "node": "n114", "port": "result" },
-          "to": { "node": "n116", "port": "b" }
-        },
-        {
-          "from": { "node": "n84", "port": "result" },
+          "from": { "node": "n89", "port": "result" },
           "to": { "node": "n117", "port": "a" }
         },
         {
-          "from": { "node": "n29", "port": "result" },
+          "from": { "node": "n116", "port": "value" },
           "to": { "node": "n117", "port": "b" }
         },
         {
-          "from": { "node": "n66", "port": "result" },
+          "from": { "node": "n113", "port": "result" },
           "to": { "node": "n118", "port": "ifFalse" }
         },
         {
-          "from": { "node": "n116", "port": "result" },
+          "from": { "node": "n115", "port": "result" },
           "to": { "node": "n118", "port": "ifTrue" }
         },
         {
@@ -57508,11 +57500,11 @@
           "to": { "node": "n118", "port": "condition" }
         },
         {
-          "from": { "node": "n66", "port": "result" },
+          "from": { "node": "n89", "port": "result" },
           "to": { "node": "n119", "port": "a" }
         },
         {
-          "from": { "node": "n108", "port": "result" },
+          "from": { "node": "n100", "port": "result" },
           "to": { "node": "n119", "port": "b" }
         },
         {
@@ -57520,59 +57512,59 @@
           "to": { "node": "n120", "port": "a" }
         },
         {
-          "from": { "node": "n108", "port": "result" },
+          "from": { "node": "n100", "port": "result" },
           "to": { "node": "n120", "port": "b" }
         },
         {
-          "from": { "node": "n84", "port": "result" },
-          "to": { "node": "n122", "port": "a" }
+          "from": { "node": "n71", "port": "result" },
+          "to": { "node": "n121", "port": "a" }
         },
         {
-          "from": { "node": "n121", "port": "value" },
-          "to": { "node": "n122", "port": "b" }
+          "from": { "node": "n34", "port": "result" },
+          "to": { "node": "n121", "port": "b" }
         },
         {
-          "from": { "node": "n118", "port": "result" },
-          "to": { "node": "n123", "port": "ifFalse" }
+          "from": { "node": "n89", "port": "result" },
+          "to": { "node": "n122", "port": "ifFalse" }
         },
         {
           "from": { "node": "n120", "port": "result" },
-          "to": { "node": "n123", "port": "ifTrue" }
+          "to": { "node": "n122", "port": "ifTrue" }
         },
         {
-          "from": { "node": "n122", "port": "result" },
-          "to": { "node": "n123", "port": "condition" }
+          "from": { "node": "n121", "port": "result" },
+          "to": { "node": "n122", "port": "condition" }
         },
         {
-          "from": { "node": "n84", "port": "result" },
+          "from": { "node": "n89", "port": "result" },
+          "to": { "node": "n123", "port": "a" }
+        },
+        {
+          "from": { "node": "n106", "port": "result" },
+          "to": { "node": "n123", "port": "b" }
+        },
+        {
+          "from": { "node": "n123", "port": "result" },
           "to": { "node": "n124", "port": "a" }
         },
         {
-          "from": { "node": "n105", "port": "result" },
+          "from": { "node": "n106", "port": "result" },
           "to": { "node": "n124", "port": "b" }
         },
         {
-          "from": { "node": "n124", "port": "result" },
-          "to": { "node": "n125", "port": "a" }
-        },
-        {
-          "from": { "node": "n105", "port": "result" },
-          "to": { "node": "n125", "port": "b" }
-        },
-        {
-          "from": { "node": "n66", "port": "result" },
+          "from": { "node": "n71", "port": "result" },
           "to": { "node": "n126", "port": "a" }
         },
         {
-          "from": { "node": "n29", "port": "result" },
+          "from": { "node": "n125", "port": "value" },
           "to": { "node": "n126", "port": "b" }
         },
         {
-          "from": { "node": "n84", "port": "result" },
+          "from": { "node": "n122", "port": "result" },
           "to": { "node": "n127", "port": "ifFalse" }
         },
         {
-          "from": { "node": "n125", "port": "result" },
+          "from": { "node": "n124", "port": "result" },
           "to": { "node": "n127", "port": "ifTrue" }
         },
         {
@@ -57580,73 +57572,61 @@
           "to": { "node": "n127", "port": "condition" }
         },
         {
-          "from": { "node": "n84", "port": "result" },
-          "to": { "node": "n128", "port": "a" }
+          "from": { "node": "n34", "port": "result" },
+          "to": { "node": "n128", "port": "value" }
         },
         {
-          "from": { "node": "n111", "port": "result" },
-          "to": { "node": "n128", "port": "b" }
-        },
-        {
-          "from": { "node": "n128", "port": "result" },
-          "to": { "node": "n129", "port": "a" }
-        },
-        {
-          "from": { "node": "n111", "port": "result" },
-          "to": { "node": "n129", "port": "b" }
-        },
-        {
-          "from": { "node": "n66", "port": "result" },
-          "to": { "node": "n131", "port": "a" }
-        },
-        {
-          "from": { "node": "n130", "port": "value" },
-          "to": { "node": "n131", "port": "b" }
-        },
-        {
-          "from": { "node": "n127", "port": "result" },
-          "to": { "node": "n132", "port": "ifFalse" }
+          "from": { "node": "n118", "port": "result" },
+          "to": { "node": "n129", "port": "value" }
         },
         {
           "from": { "node": "n129", "port": "result" },
-          "to": { "node": "n132", "port": "ifTrue" }
+          "to": { "node": "n130", "port": "a" }
+        },
+        {
+          "from": { "node": "n128", "port": "result" },
+          "to": { "node": "n130", "port": "b" }
+        },
+        {
+          "from": { "node": "n127", "port": "result" },
+          "to": { "node": "n131", "port": "value" }
         },
         {
           "from": { "node": "n131", "port": "result" },
-          "to": { "node": "n132", "port": "condition" }
+          "to": { "node": "n132", "port": "a" }
         },
         {
-          "from": { "node": "n29", "port": "result" },
-          "to": { "node": "n133", "port": "value" }
+          "from": { "node": "n128", "port": "result" },
+          "to": { "node": "n132", "port": "b" }
         },
         {
-          "from": { "node": "n123", "port": "result" },
-          "to": { "node": "n134", "port": "value" }
+          "from": { "node": "n97", "port": "result" },
+          "to": { "node": "n133", "port": "value" },
+          "swizzle": "x"
         },
         {
-          "from": { "node": "n134", "port": "result" },
+          "from": { "node": "n133", "port": "result" },
           "to": { "node": "n135", "port": "a" }
         },
         {
-          "from": { "node": "n133", "port": "result" },
+          "from": { "node": "n134", "port": "value" },
           "to": { "node": "n135", "port": "b" }
         },
         {
-          "from": { "node": "n132", "port": "result" },
-          "to": { "node": "n136", "port": "value" }
-        },
-        {
-          "from": { "node": "n136", "port": "result" },
+          "from": { "node": "n135", "port": "result" },
           "to": { "node": "n137", "port": "a" }
         },
         {
-          "from": { "node": "n133", "port": "result" },
+          "from": { "node": "n136", "port": "value" },
           "to": { "node": "n137", "port": "b" }
         },
         {
-          "from": { "node": "n102", "port": "result" },
-          "to": { "node": "n138", "port": "value" },
-          "swizzle": "x"
+          "from": { "node": "n133", "port": "result" },
+          "to": { "node": "n138", "port": "a" }
+        },
+        {
+          "from": { "node": "n137", "port": "result" },
+          "to": { "node": "n138", "port": "b" }
         },
         {
           "from": { "node": "n138", "port": "result" },
@@ -57658,687 +57638,697 @@
         },
         {
           "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n142", "port": "a" }
-        },
-        {
-          "from": { "node": "n141", "port": "value" },
-          "to": { "node": "n142", "port": "b" }
-        },
-        {
-          "from": { "node": "n138", "port": "result" },
           "to": { "node": "n143", "port": "a" }
         },
         {
-          "from": { "node": "n142", "port": "result" },
+          "from": { "node": "n142", "port": "value" },
           "to": { "node": "n143", "port": "b" }
         },
         {
           "from": { "node": "n143", "port": "result" },
-          "to": { "node": "n145", "port": "a" }
-        },
-        {
-          "from": { "node": "n144", "port": "value" },
-          "to": { "node": "n145", "port": "b" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n148", "port": "a" }
-        },
-        {
-          "from": { "node": "n147", "port": "value" },
-          "to": { "node": "n148", "port": "b" }
-        },
-        {
-          "from": { "node": "n148", "port": "result" },
-          "to": { "node": "n149", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n150", "port": "value" }
-        },
-        {
-          "from": { "node": "n149", "port": "result" },
-          "to": { "node": "n151", "port": "x" }
-        },
-        {
-          "from": { "node": "n150", "port": "result" },
-          "to": { "node": "n151", "port": "y" }
-        },
-        {
-          "from": { "node": "n151", "port": "result" },
-          "to": { "node": "n152", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n153", "port": "texture" }
-        },
-        {
-          "from": { "node": "n152", "port": "result" },
-          "to": { "node": "n153", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n155", "port": "a" }
-        },
-        {
-          "from": { "node": "n154", "port": "value" },
-          "to": { "node": "n155", "port": "b" }
-        },
-        {
-          "from": { "node": "n155", "port": "result" },
-          "to": { "node": "n156", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n157", "port": "value" }
-        },
-        {
-          "from": { "node": "n156", "port": "result" },
-          "to": { "node": "n158", "port": "x" }
-        },
-        {
-          "from": { "node": "n157", "port": "result" },
-          "to": { "node": "n158", "port": "y" }
-        },
-        {
-          "from": { "node": "n158", "port": "result" },
-          "to": { "node": "n159", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n160", "port": "texture" }
-        },
-        {
-          "from": { "node": "n159", "port": "result" },
-          "to": { "node": "n160", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n162", "port": "a" }
-        },
-        {
-          "from": { "node": "n161", "port": "value" },
-          "to": { "node": "n162", "port": "b" }
-        },
-        {
-          "from": { "node": "n162", "port": "result" },
-          "to": { "node": "n163", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n164", "port": "value" }
-        },
-        {
-          "from": { "node": "n163", "port": "result" },
-          "to": { "node": "n165", "port": "x" }
-        },
-        {
-          "from": { "node": "n164", "port": "result" },
-          "to": { "node": "n165", "port": "y" }
-        },
-        {
-          "from": { "node": "n165", "port": "result" },
-          "to": { "node": "n166", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n167", "port": "texture" }
-        },
-        {
-          "from": { "node": "n166", "port": "result" },
-          "to": { "node": "n167", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n169", "port": "a" }
-        },
-        {
-          "from": { "node": "n168", "port": "value" },
-          "to": { "node": "n169", "port": "b" }
-        },
-        {
-          "from": { "node": "n169", "port": "result" },
-          "to": { "node": "n170", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n171", "port": "value" }
-        },
-        {
-          "from": { "node": "n170", "port": "result" },
-          "to": { "node": "n172", "port": "x" }
-        },
-        {
-          "from": { "node": "n171", "port": "result" },
-          "to": { "node": "n172", "port": "y" }
-        },
-        {
-          "from": { "node": "n172", "port": "result" },
-          "to": { "node": "n173", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n174", "port": "texture" }
-        },
-        {
-          "from": { "node": "n173", "port": "result" },
-          "to": { "node": "n174", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n176", "port": "a" }
-        },
-        {
-          "from": { "node": "n175", "port": "value" },
-          "to": { "node": "n176", "port": "b" }
-        },
-        {
-          "from": { "node": "n176", "port": "result" },
-          "to": { "node": "n177", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n178", "port": "value" }
-        },
-        {
-          "from": { "node": "n177", "port": "result" },
-          "to": { "node": "n179", "port": "x" }
-        },
-        {
-          "from": { "node": "n178", "port": "result" },
-          "to": { "node": "n179", "port": "y" }
-        },
-        {
-          "from": { "node": "n179", "port": "result" },
-          "to": { "node": "n180", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n181", "port": "texture" }
-        },
-        {
-          "from": { "node": "n180", "port": "result" },
-          "to": { "node": "n181", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n183", "port": "a" }
-        },
-        {
-          "from": { "node": "n182", "port": "value" },
-          "to": { "node": "n183", "port": "b" }
-        },
-        {
-          "from": { "node": "n183", "port": "result" },
-          "to": { "node": "n184", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n185", "port": "value" }
-        },
-        {
-          "from": { "node": "n184", "port": "result" },
-          "to": { "node": "n186", "port": "x" }
-        },
-        {
-          "from": { "node": "n185", "port": "result" },
-          "to": { "node": "n186", "port": "y" }
-        },
-        {
-          "from": { "node": "n186", "port": "result" },
-          "to": { "node": "n187", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n188", "port": "texture" }
-        },
-        {
-          "from": { "node": "n187", "port": "result" },
-          "to": { "node": "n188", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n190", "port": "a" }
-        },
-        {
-          "from": { "node": "n189", "port": "value" },
-          "to": { "node": "n190", "port": "b" }
-        },
-        {
-          "from": { "node": "n190", "port": "result" },
-          "to": { "node": "n191", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n192", "port": "value" }
-        },
-        {
-          "from": { "node": "n191", "port": "result" },
-          "to": { "node": "n193", "port": "x" }
-        },
-        {
-          "from": { "node": "n192", "port": "result" },
-          "to": { "node": "n193", "port": "y" }
-        },
-        {
-          "from": { "node": "n193", "port": "result" },
-          "to": { "node": "n194", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n195", "port": "texture" }
-        },
-        {
-          "from": { "node": "n194", "port": "result" },
-          "to": { "node": "n195", "port": "coords" }
-        },
-        {
-          "from": { "node": "n145", "port": "result" },
-          "to": { "node": "n197", "port": "a" }
-        },
-        {
-          "from": { "node": "n196", "port": "value" },
-          "to": { "node": "n197", "port": "b" }
-        },
-        {
-          "from": { "node": "n197", "port": "result" },
-          "to": { "node": "n198", "port": "value" }
-        },
-        {
-          "from": { "node": "n140", "port": "result" },
-          "to": { "node": "n199", "port": "value" }
-        },
-        {
-          "from": { "node": "n198", "port": "result" },
-          "to": { "node": "n200", "port": "x" }
-        },
-        {
-          "from": { "node": "n199", "port": "result" },
-          "to": { "node": "n200", "port": "y" }
-        },
-        {
-          "from": { "node": "n200", "port": "result" },
-          "to": { "node": "n201", "port": "value" }
-        },
-        {
-          "from": { "node": "n146", "port": "value" },
-          "to": { "node": "n202", "port": "texture" }
-        },
-        {
-          "from": { "node": "n201", "port": "result" },
-          "to": { "node": "n202", "port": "coords" }
-        },
-        {
-          "from": { "node": "n153", "port": "result" },
-          "to": { "node": "n203", "port": "x" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n181", "port": "result" },
-          "to": { "node": "n203", "port": "y" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n160", "port": "result" },
-          "to": { "node": "n204", "port": "x" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n188", "port": "result" },
-          "to": { "node": "n204", "port": "y" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n167", "port": "result" },
-          "to": { "node": "n205", "port": "x" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n195", "port": "result" },
-          "to": { "node": "n205", "port": "y" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n174", "port": "result" },
-          "to": { "node": "n206", "port": "x" },
-          "swizzle": "w"
-        },
-        {
-          "from": { "node": "n202", "port": "result" },
-          "to": { "node": "n206", "port": "y" },
-          "swizzle": "w"
+          "to": { "node": "n144", "port": "value" }
         },
         {
           "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n207", "port": "b" }
+          "to": { "node": "n145", "port": "value" }
+        },
+        {
+          "from": { "node": "n144", "port": "result" },
+          "to": { "node": "n146", "port": "x" }
+        },
+        {
+          "from": { "node": "n145", "port": "result" },
+          "to": { "node": "n146", "port": "y" }
+        },
+        {
+          "from": { "node": "n146", "port": "result" },
+          "to": { "node": "n147", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n148", "port": "texture" }
+        },
+        {
+          "from": { "node": "n147", "port": "result" },
+          "to": { "node": "n148", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n150", "port": "a" }
+        },
+        {
+          "from": { "node": "n149", "port": "value" },
+          "to": { "node": "n150", "port": "b" }
+        },
+        {
+          "from": { "node": "n150", "port": "result" },
+          "to": { "node": "n151", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n152", "port": "value" }
+        },
+        {
+          "from": { "node": "n151", "port": "result" },
+          "to": { "node": "n153", "port": "x" }
+        },
+        {
+          "from": { "node": "n152", "port": "result" },
+          "to": { "node": "n153", "port": "y" }
         },
         {
           "from": { "node": "n153", "port": "result" },
+          "to": { "node": "n154", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n155", "port": "texture" }
+        },
+        {
+          "from": { "node": "n154", "port": "result" },
+          "to": { "node": "n155", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n157", "port": "a" }
+        },
+        {
+          "from": { "node": "n156", "port": "value" },
+          "to": { "node": "n157", "port": "b" }
+        },
+        {
+          "from": { "node": "n157", "port": "result" },
+          "to": { "node": "n158", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n159", "port": "value" }
+        },
+        {
+          "from": { "node": "n158", "port": "result" },
+          "to": { "node": "n160", "port": "x" }
+        },
+        {
+          "from": { "node": "n159", "port": "result" },
+          "to": { "node": "n160", "port": "y" }
+        },
+        {
+          "from": { "node": "n160", "port": "result" },
+          "to": { "node": "n161", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n162", "port": "texture" }
+        },
+        {
+          "from": { "node": "n161", "port": "result" },
+          "to": { "node": "n162", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n164", "port": "a" }
+        },
+        {
+          "from": { "node": "n163", "port": "value" },
+          "to": { "node": "n164", "port": "b" }
+        },
+        {
+          "from": { "node": "n164", "port": "result" },
+          "to": { "node": "n165", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n166", "port": "value" }
+        },
+        {
+          "from": { "node": "n165", "port": "result" },
+          "to": { "node": "n167", "port": "x" }
+        },
+        {
+          "from": { "node": "n166", "port": "result" },
+          "to": { "node": "n167", "port": "y" }
+        },
+        {
+          "from": { "node": "n167", "port": "result" },
+          "to": { "node": "n168", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n169", "port": "texture" }
+        },
+        {
+          "from": { "node": "n168", "port": "result" },
+          "to": { "node": "n169", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n171", "port": "a" }
+        },
+        {
+          "from": { "node": "n170", "port": "value" },
+          "to": { "node": "n171", "port": "b" }
+        },
+        {
+          "from": { "node": "n171", "port": "result" },
+          "to": { "node": "n172", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n173", "port": "value" }
+        },
+        {
+          "from": { "node": "n172", "port": "result" },
+          "to": { "node": "n174", "port": "x" }
+        },
+        {
+          "from": { "node": "n173", "port": "result" },
+          "to": { "node": "n174", "port": "y" }
+        },
+        {
+          "from": { "node": "n174", "port": "result" },
+          "to": { "node": "n175", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n176", "port": "texture" }
+        },
+        {
+          "from": { "node": "n175", "port": "result" },
+          "to": { "node": "n176", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n178", "port": "a" }
+        },
+        {
+          "from": { "node": "n177", "port": "value" },
+          "to": { "node": "n178", "port": "b" }
+        },
+        {
+          "from": { "node": "n178", "port": "result" },
+          "to": { "node": "n179", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n180", "port": "value" }
+        },
+        {
+          "from": { "node": "n179", "port": "result" },
+          "to": { "node": "n181", "port": "x" }
+        },
+        {
+          "from": { "node": "n180", "port": "result" },
+          "to": { "node": "n181", "port": "y" }
+        },
+        {
+          "from": { "node": "n181", "port": "result" },
+          "to": { "node": "n182", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n183", "port": "texture" }
+        },
+        {
+          "from": { "node": "n182", "port": "result" },
+          "to": { "node": "n183", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n185", "port": "a" }
+        },
+        {
+          "from": { "node": "n184", "port": "value" },
+          "to": { "node": "n185", "port": "b" }
+        },
+        {
+          "from": { "node": "n185", "port": "result" },
+          "to": { "node": "n186", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n187", "port": "value" }
+        },
+        {
+          "from": { "node": "n186", "port": "result" },
+          "to": { "node": "n188", "port": "x" }
+        },
+        {
+          "from": { "node": "n187", "port": "result" },
+          "to": { "node": "n188", "port": "y" }
+        },
+        {
+          "from": { "node": "n188", "port": "result" },
+          "to": { "node": "n189", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n190", "port": "texture" }
+        },
+        {
+          "from": { "node": "n189", "port": "result" },
+          "to": { "node": "n190", "port": "coords" }
+        },
+        {
+          "from": { "node": "n140", "port": "result" },
+          "to": { "node": "n192", "port": "a" }
+        },
+        {
+          "from": { "node": "n191", "port": "value" },
+          "to": { "node": "n192", "port": "b" }
+        },
+        {
+          "from": { "node": "n192", "port": "result" },
+          "to": { "node": "n193", "port": "value" }
+        },
+        {
+          "from": { "node": "n135", "port": "result" },
+          "to": { "node": "n194", "port": "value" }
+        },
+        {
+          "from": { "node": "n193", "port": "result" },
+          "to": { "node": "n195", "port": "x" }
+        },
+        {
+          "from": { "node": "n194", "port": "result" },
+          "to": { "node": "n195", "port": "y" }
+        },
+        {
+          "from": { "node": "n195", "port": "result" },
+          "to": { "node": "n196", "port": "value" }
+        },
+        {
+          "from": { "node": "n141", "port": "value" },
+          "to": { "node": "n197", "port": "texture" }
+        },
+        {
+          "from": { "node": "n196", "port": "result" },
+          "to": { "node": "n197", "port": "coords" }
+        },
+        {
+          "from": { "node": "n148", "port": "result" },
+          "to": { "node": "n198", "port": "x" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n176", "port": "result" },
+          "to": { "node": "n198", "port": "y" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n155", "port": "result" },
+          "to": { "node": "n199", "port": "x" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n183", "port": "result" },
+          "to": { "node": "n199", "port": "y" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n162", "port": "result" },
+          "to": { "node": "n200", "port": "x" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n190", "port": "result" },
+          "to": { "node": "n200", "port": "y" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n169", "port": "result" },
+          "to": { "node": "n201", "port": "x" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n197", "port": "result" },
+          "to": { "node": "n201", "port": "y" },
+          "swizzle": "w"
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n202", "port": "b" }
+        },
+        {
+          "from": { "node": "n148", "port": "result" },
+          "to": { "node": "n203", "port": "a" },
+          "swizzle": "xyz"
+        },
+        {
+          "from": { "node": "n202", "port": "result" },
+          "to": { "node": "n203", "port": "b" }
+        },
+        {
+          "from": { "node": "n155", "port": "result" },
+          "to": { "node": "n204", "port": "a" },
+          "swizzle": "xyz"
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n204", "port": "b" }
+        },
+        {
+          "from": { "node": "n203", "port": "result" },
+          "to": { "node": "n205", "port": "a" }
+        },
+        {
+          "from": { "node": "n204", "port": "result" },
+          "to": { "node": "n205", "port": "b" }
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n206", "port": "b" }
+        },
+        {
+          "from": { "node": "n162", "port": "result" },
+          "to": { "node": "n207", "port": "a" },
+          "swizzle": "xyz"
+        },
+        {
+          "from": { "node": "n206", "port": "result" },
+          "to": { "node": "n207", "port": "b" }
+        },
+        {
+          "from": { "node": "n169", "port": "result" },
           "to": { "node": "n208", "port": "a" },
           "swizzle": "xyz"
         },
         {
-          "from": { "node": "n207", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n208", "port": "b" }
         },
         {
-          "from": { "node": "n160", "port": "result" },
-          "to": { "node": "n209", "port": "a" },
-          "swizzle": "xyz"
-        },
-        {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n209", "port": "b" }
+          "from": { "node": "n207", "port": "result" },
+          "to": { "node": "n209", "port": "a" }
         },
         {
           "from": { "node": "n208", "port": "result" },
-          "to": { "node": "n210", "port": "a" }
+          "to": { "node": "n209", "port": "b" }
         },
         {
-          "from": { "node": "n209", "port": "result" },
+          "from": { "node": "n132", "port": "result" },
           "to": { "node": "n210", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n211", "port": "b" }
-        },
-        {
-          "from": { "node": "n167", "port": "result" },
-          "to": { "node": "n212", "port": "a" },
-          "swizzle": "xyz"
-        },
-        {
-          "from": { "node": "n211", "port": "result" },
-          "to": { "node": "n212", "port": "b" }
-        },
-        {
-          "from": { "node": "n174", "port": "result" },
-          "to": { "node": "n213", "port": "a" },
-          "swizzle": "xyz"
-        },
-        {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n213", "port": "b" }
-        },
-        {
-          "from": { "node": "n212", "port": "result" },
-          "to": { "node": "n214", "port": "a" }
-        },
-        {
-          "from": { "node": "n213", "port": "result" },
-          "to": { "node": "n214", "port": "b" }
-        },
-        {
-          "from": { "node": "n137", "port": "result" },
-          "to": { "node": "n215", "port": "b" }
+          "from": { "node": "n205", "port": "result" },
+          "to": { "node": "n211", "port": "a" }
         },
         {
           "from": { "node": "n210", "port": "result" },
-          "to": { "node": "n216", "port": "a" }
+          "to": { "node": "n211", "port": "b" }
         },
         {
-          "from": { "node": "n215", "port": "result" },
-          "to": { "node": "n216", "port": "b" }
+          "from": { "node": "n209", "port": "result" },
+          "to": { "node": "n212", "port": "a" }
+        },
+        {
+          "from": { "node": "n132", "port": "result" },
+          "to": { "node": "n212", "port": "b" }
+        },
+        {
+          "from": { "node": "n211", "port": "result" },
+          "to": { "node": "n213", "port": "a" }
+        },
+        {
+          "from": { "node": "n212", "port": "result" },
+          "to": { "node": "n213", "port": "b" }
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n214", "port": "b" }
+        },
+        {
+          "from": { "node": "n198", "port": "result" },
+          "to": { "node": "n215", "port": "a" }
         },
         {
           "from": { "node": "n214", "port": "result" },
+          "to": { "node": "n215", "port": "b" }
+        },
+        {
+          "from": { "node": "n199", "port": "result" },
+          "to": { "node": "n216", "port": "a" }
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n216", "port": "b" }
+        },
+        {
+          "from": { "node": "n215", "port": "result" },
           "to": { "node": "n217", "port": "a" }
         },
         {
-          "from": { "node": "n137", "port": "result" },
+          "from": { "node": "n216", "port": "result" },
           "to": { "node": "n217", "port": "b" }
         },
         {
-          "from": { "node": "n216", "port": "result" },
-          "to": { "node": "n218", "port": "a" }
-        },
-        {
-          "from": { "node": "n217", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n218", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
+          "from": { "node": "n200", "port": "result" },
+          "to": { "node": "n219", "port": "a" }
+        },
+        {
+          "from": { "node": "n218", "port": "result" },
           "to": { "node": "n219", "port": "b" }
         },
         {
-          "from": { "node": "n203", "port": "result" },
+          "from": { "node": "n201", "port": "result" },
           "to": { "node": "n220", "port": "a" }
         },
         {
-          "from": { "node": "n219", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n220", "port": "b" }
         },
         {
-          "from": { "node": "n204", "port": "result" },
+          "from": { "node": "n219", "port": "result" },
           "to": { "node": "n221", "port": "a" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
+          "from": { "node": "n220", "port": "result" },
           "to": { "node": "n221", "port": "b" }
         },
         {
-          "from": { "node": "n220", "port": "result" },
-          "to": { "node": "n222", "port": "a" }
-        },
-        {
-          "from": { "node": "n221", "port": "result" },
+          "from": { "node": "n132", "port": "result" },
           "to": { "node": "n222", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n223", "port": "b" }
-        },
-        {
-          "from": { "node": "n205", "port": "result" },
-          "to": { "node": "n224", "port": "a" }
-        },
-        {
-          "from": { "node": "n223", "port": "result" },
-          "to": { "node": "n224", "port": "b" }
-        },
-        {
-          "from": { "node": "n206", "port": "result" },
-          "to": { "node": "n225", "port": "a" }
-        },
-        {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n225", "port": "b" }
-        },
-        {
-          "from": { "node": "n224", "port": "result" },
-          "to": { "node": "n226", "port": "a" }
-        },
-        {
-          "from": { "node": "n225", "port": "result" },
-          "to": { "node": "n226", "port": "b" }
-        },
-        {
-          "from": { "node": "n137", "port": "result" },
-          "to": { "node": "n227", "port": "b" }
+          "from": { "node": "n217", "port": "result" },
+          "to": { "node": "n223", "port": "a" }
         },
         {
           "from": { "node": "n222", "port": "result" },
-          "to": { "node": "n228", "port": "a" }
+          "to": { "node": "n223", "port": "b" }
         },
         {
-          "from": { "node": "n227", "port": "result" },
-          "to": { "node": "n228", "port": "b" }
+          "from": { "node": "n221", "port": "result" },
+          "to": { "node": "n224", "port": "a" }
+        },
+        {
+          "from": { "node": "n132", "port": "result" },
+          "to": { "node": "n224", "port": "b" }
+        },
+        {
+          "from": { "node": "n223", "port": "result" },
+          "to": { "node": "n225", "port": "a" }
+        },
+        {
+          "from": { "node": "n224", "port": "result" },
+          "to": { "node": "n225", "port": "b" }
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n226", "port": "b" }
+        },
+        {
+          "from": { "node": "n176", "port": "result" },
+          "to": { "node": "n227", "port": "a" },
+          "swizzle": "xyz"
         },
         {
           "from": { "node": "n226", "port": "result" },
+          "to": { "node": "n227", "port": "b" }
+        },
+        {
+          "from": { "node": "n183", "port": "result" },
+          "to": { "node": "n228", "port": "a" },
+          "swizzle": "xyz"
+        },
+        {
+          "from": { "node": "n130", "port": "result" },
+          "to": { "node": "n228", "port": "b" }
+        },
+        {
+          "from": { "node": "n227", "port": "result" },
           "to": { "node": "n229", "port": "a" }
         },
         {
-          "from": { "node": "n137", "port": "result" },
+          "from": { "node": "n228", "port": "result" },
           "to": { "node": "n229", "port": "b" }
         },
         {
-          "from": { "node": "n228", "port": "result" },
-          "to": { "node": "n230", "port": "a" }
-        },
-        {
-          "from": { "node": "n229", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n230", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
+          "from": { "node": "n190", "port": "result" },
+          "to": { "node": "n231", "port": "a" },
+          "swizzle": "xyz"
+        },
+        {
+          "from": { "node": "n230", "port": "result" },
           "to": { "node": "n231", "port": "b" }
         },
         {
-          "from": { "node": "n181", "port": "result" },
+          "from": { "node": "n197", "port": "result" },
           "to": { "node": "n232", "port": "a" },
           "swizzle": "xyz"
         },
         {
-          "from": { "node": "n231", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n232", "port": "b" }
         },
         {
-          "from": { "node": "n188", "port": "result" },
-          "to": { "node": "n233", "port": "a" },
-          "swizzle": "xyz"
-        },
-        {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n233", "port": "b" }
+          "from": { "node": "n231", "port": "result" },
+          "to": { "node": "n233", "port": "a" }
         },
         {
           "from": { "node": "n232", "port": "result" },
-          "to": { "node": "n234", "port": "a" }
+          "to": { "node": "n233", "port": "b" }
         },
         {
-          "from": { "node": "n233", "port": "result" },
+          "from": { "node": "n132", "port": "result" },
           "to": { "node": "n234", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n235", "port": "b" }
-        },
-        {
-          "from": { "node": "n195", "port": "result" },
-          "to": { "node": "n236", "port": "a" },
-          "swizzle": "xyz"
-        },
-        {
-          "from": { "node": "n235", "port": "result" },
-          "to": { "node": "n236", "port": "b" }
-        },
-        {
-          "from": { "node": "n202", "port": "result" },
-          "to": { "node": "n237", "port": "a" },
-          "swizzle": "xyz"
-        },
-        {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n237", "port": "b" }
-        },
-        {
-          "from": { "node": "n236", "port": "result" },
-          "to": { "node": "n238", "port": "a" }
-        },
-        {
-          "from": { "node": "n237", "port": "result" },
-          "to": { "node": "n238", "port": "b" }
-        },
-        {
-          "from": { "node": "n137", "port": "result" },
-          "to": { "node": "n239", "port": "b" }
+          "from": { "node": "n229", "port": "result" },
+          "to": { "node": "n235", "port": "a" }
         },
         {
           "from": { "node": "n234", "port": "result" },
-          "to": { "node": "n240", "port": "a" }
+          "to": { "node": "n235", "port": "b" }
         },
         {
-          "from": { "node": "n239", "port": "result" },
-          "to": { "node": "n240", "port": "b" }
+          "from": { "node": "n233", "port": "result" },
+          "to": { "node": "n236", "port": "a" }
         },
         {
-          "from": { "node": "n238", "port": "result" },
-          "to": { "node": "n241", "port": "a" }
+          "from": { "node": "n132", "port": "result" },
+          "to": { "node": "n236", "port": "b" }
         },
         {
-          "from": { "node": "n137", "port": "result" },
-          "to": { "node": "n241", "port": "b" }
+          "from": { "node": "n235", "port": "result" },
+          "to": { "node": "n237", "port": "a" }
+        },
+        {
+          "from": { "node": "n236", "port": "result" },
+          "to": { "node": "n237", "port": "b" }
+        },
+        {
+          "from": { "node": "n237", "port": "result" },
+          "to": { "node": "n238", "port": "x" }
+        },
+        {
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n240", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n240", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n225", "port": "result" },
+          "to": { "node": "n240", "port": "uv" }
         },
         {
           "from": { "node": "n240", "port": "result" },
-          "to": { "node": "n242", "port": "a" }
-        },
-        {
-          "from": { "node": "n241", "port": "result" },
-          "to": { "node": "n242", "port": "b" }
-        },
-        {
-          "from": { "node": "n242", "port": "result" },
-          "to": { "node": "n243", "port": "x" }
-        },
-        {
-          "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n245", "port": "texture" }
-        },
-        {
-          "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n245", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n230", "port": "result" },
-          "to": { "node": "n245", "port": "uv" }
-        },
-        {
-          "from": { "node": "n245", "port": "result" },
-          "to": { "node": "n246", "port": "a" },
+          "to": { "node": "n241", "port": "a" },
           "swizzle": "x"
         },
         {
-          "from": { "node": "n246", "port": "result" },
-          "to": { "node": "n247", "port": "a" }
+          "from": { "node": "n241", "port": "result" },
+          "to": { "node": "n242", "port": "a" }
+        },
+        {
+          "from": { "node": "n238", "port": "result" },
+          "to": { "node": "n243", "port": "a" }
+        },
+        {
+          "from": { "node": "n242", "port": "result" },
+          "to": { "node": "n243", "port": "b" }
+        },
+        {
+          "from": { "node": "n213", "port": "result" },
+          "to": { "node": "n244", "port": "a" }
         },
         {
           "from": { "node": "n243", "port": "result" },
-          "to": { "node": "n248", "port": "a" }
+          "to": { "node": "n244", "port": "b" }
         },
         {
-          "from": { "node": "n247", "port": "result" },
-          "to": { "node": "n248", "port": "b" }
+          "from": { "node": "n245", "port": "result" },
+          "to": { "node": "n246", "port": "a" }
         },
         {
-          "from": { "node": "n218", "port": "result" },
-          "to": { "node": "n249", "port": "a" }
+          "from": { "node": "n225", "port": "result" },
+          "to": { "node": "n247", "port": "a" }
         },
         {
-          "from": { "node": "n248", "port": "result" },
-          "to": { "node": "n249", "port": "b" }
-        },
-        {
-          "from": { "node": "n250", "port": "result" },
-          "to": { "node": "n251", "port": "a" }
-        },
-        {
-          "from": { "node": "n230", "port": "result" },
-          "to": { "node": "n252", "port": "a" }
-        },
-        {
-          "from": { "node": "n251", "port": "result" },
-          "to": { "node": "n252", "port": "b" }
+          "from": { "node": "n246", "port": "result" },
+          "to": { "node": "n247", "port": "b" }
         },
         {
           "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n253", "port": "texture" }
+          "to": { "node": "n248", "port": "texture" }
         },
         {
           "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n253", "port": "sampler" }
+          "to": { "node": "n248", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n247", "port": "result" },
+          "to": { "node": "n248", "port": "uv" }
+        },
+        {
+          "from": { "node": "n249", "port": "result" },
+          "to": { "node": "n250", "port": "a" }
+        },
+        {
+          "from": { "node": "n225", "port": "result" },
+          "to": { "node": "n251", "port": "a" }
+        },
+        {
+          "from": { "node": "n250", "port": "result" },
+          "to": { "node": "n251", "port": "b" }
+        },
+        {
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n252", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n252", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n251", "port": "result" },
+          "to": { "node": "n252", "port": "uv" }
+        },
+        {
+          "from": { "node": "n248", "port": "result" },
+          "to": { "node": "n253", "port": "a" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n252", "port": "result" },
-          "to": { "node": "n253", "port": "uv" }
+          "to": { "node": "n253", "port": "b" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n254", "port": "result" },
           "to": { "node": "n255", "port": "a" }
         },
         {
-          "from": { "node": "n230", "port": "result" },
+          "from": { "node": "n225", "port": "result" },
           "to": { "node": "n256", "port": "a" }
         },
         {
@@ -58358,115 +58348,121 @@
           "to": { "node": "n257", "port": "uv" }
         },
         {
-          "from": { "node": "n253", "port": "result" },
-          "to": { "node": "n258", "port": "a" },
-          "swizzle": "x"
+          "from": { "node": "n258", "port": "result" },
+          "to": { "node": "n259", "port": "a" }
         },
         {
-          "from": { "node": "n257", "port": "result" },
-          "to": { "node": "n258", "port": "b" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n259", "port": "result" },
+          "from": { "node": "n225", "port": "result" },
           "to": { "node": "n260", "port": "a" }
         },
         {
-          "from": { "node": "n230", "port": "result" },
-          "to": { "node": "n261", "port": "a" }
-        },
-        {
-          "from": { "node": "n260", "port": "result" },
-          "to": { "node": "n261", "port": "b" }
+          "from": { "node": "n259", "port": "result" },
+          "to": { "node": "n260", "port": "b" }
         },
         {
           "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n262", "port": "texture" }
+          "to": { "node": "n261", "port": "texture" }
         },
         {
           "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n262", "port": "sampler" }
+          "to": { "node": "n261", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n260", "port": "result" },
+          "to": { "node": "n261", "port": "uv" }
+        },
+        {
+          "from": { "node": "n257", "port": "result" },
+          "to": { "node": "n262", "port": "a" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n261", "port": "result" },
-          "to": { "node": "n262", "port": "uv" }
+          "to": { "node": "n262", "port": "b" },
+          "swizzle": "x"
+        },
+        {
+          "from": { "node": "n253", "port": "result" },
+          "to": { "node": "n263", "port": "x" }
+        },
+        {
+          "from": { "node": "n262", "port": "result" },
+          "to": { "node": "n263", "port": "y" }
         },
         {
           "from": { "node": "n263", "port": "result" },
           "to": { "node": "n264", "port": "a" }
         },
         {
-          "from": { "node": "n230", "port": "result" },
-          "to": { "node": "n265", "port": "a" }
+          "from": { "node": "n155", "port": "result" },
+          "to": { "node": "n265", "port": "a" },
+          "swizzle": "xyz"
         },
         {
-          "from": { "node": "n264", "port": "result" },
-          "to": { "node": "n265", "port": "b" }
+          "from": { "node": "n148", "port": "result" },
+          "to": { "node": "n265", "port": "b" },
+          "swizzle": "xyz"
         },
         {
-          "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n266", "port": "texture" }
+          "from": { "node": "n169", "port": "result" },
+          "to": { "node": "n266", "port": "a" },
+          "swizzle": "xyz"
         },
         {
-          "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n266", "port": "sampler" }
+          "from": { "node": "n162", "port": "result" },
+          "to": { "node": "n266", "port": "b" },
+          "swizzle": "xyz"
+        },
+        {
+          "from": { "node": "n132", "port": "result" },
+          "to": { "node": "n267", "port": "b" }
         },
         {
           "from": { "node": "n265", "port": "result" },
-          "to": { "node": "n266", "port": "uv" }
-        },
-        {
-          "from": { "node": "n262", "port": "result" },
-          "to": { "node": "n267", "port": "a" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n266", "port": "result" },
-          "to": { "node": "n267", "port": "b" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n258", "port": "result" },
-          "to": { "node": "n268", "port": "x" }
+          "to": { "node": "n268", "port": "a" }
         },
         {
           "from": { "node": "n267", "port": "result" },
-          "to": { "node": "n268", "port": "y" }
+          "to": { "node": "n268", "port": "b" }
         },
         {
-          "from": { "node": "n268", "port": "result" },
+          "from": { "node": "n266", "port": "result" },
           "to": { "node": "n269", "port": "a" }
         },
         {
-          "from": { "node": "n160", "port": "result" },
-          "to": { "node": "n270", "port": "a" },
-          "swizzle": "xyz"
+          "from": { "node": "n132", "port": "result" },
+          "to": { "node": "n269", "port": "b" }
         },
         {
-          "from": { "node": "n153", "port": "result" },
-          "to": { "node": "n270", "port": "b" },
-          "swizzle": "xyz"
+          "from": { "node": "n268", "port": "result" },
+          "to": { "node": "n270", "port": "a" }
         },
         {
-          "from": { "node": "n174", "port": "result" },
+          "from": { "node": "n269", "port": "result" },
+          "to": { "node": "n270", "port": "b" }
+        },
+        {
+          "from": { "node": "n162", "port": "result" },
           "to": { "node": "n271", "port": "a" },
           "swizzle": "xyz"
         },
         {
-          "from": { "node": "n167", "port": "result" },
+          "from": { "node": "n148", "port": "result" },
           "to": { "node": "n271", "port": "b" },
           "swizzle": "xyz"
         },
         {
-          "from": { "node": "n137", "port": "result" },
-          "to": { "node": "n272", "port": "b" }
+          "from": { "node": "n169", "port": "result" },
+          "to": { "node": "n272", "port": "a" },
+          "swizzle": "xyz"
         },
         {
-          "from": { "node": "n270", "port": "result" },
-          "to": { "node": "n273", "port": "a" }
+          "from": { "node": "n155", "port": "result" },
+          "to": { "node": "n272", "port": "b" },
+          "swizzle": "xyz"
         },
         {
-          "from": { "node": "n272", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n273", "port": "b" }
         },
         {
@@ -58474,47 +58470,43 @@
           "to": { "node": "n274", "port": "a" }
         },
         {
-          "from": { "node": "n137", "port": "result" },
+          "from": { "node": "n273", "port": "result" },
           "to": { "node": "n274", "port": "b" }
         },
         {
-          "from": { "node": "n273", "port": "result" },
+          "from": { "node": "n272", "port": "result" },
           "to": { "node": "n275", "port": "a" }
         },
         {
-          "from": { "node": "n274", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n275", "port": "b" }
         },
         {
-          "from": { "node": "n167", "port": "result" },
-          "to": { "node": "n276", "port": "a" },
-          "swizzle": "xyz"
+          "from": { "node": "n274", "port": "result" },
+          "to": { "node": "n276", "port": "a" }
         },
         {
-          "from": { "node": "n153", "port": "result" },
-          "to": { "node": "n276", "port": "b" },
-          "swizzle": "xyz"
+          "from": { "node": "n275", "port": "result" },
+          "to": { "node": "n276", "port": "b" }
         },
         {
-          "from": { "node": "n174", "port": "result" },
-          "to": { "node": "n277", "port": "a" },
-          "swizzle": "xyz"
+          "from": { "node": "n199", "port": "result" },
+          "to": { "node": "n277", "port": "a" }
         },
         {
-          "from": { "node": "n160", "port": "result" },
-          "to": { "node": "n277", "port": "b" },
-          "swizzle": "xyz"
+          "from": { "node": "n198", "port": "result" },
+          "to": { "node": "n277", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
+          "from": { "node": "n201", "port": "result" },
+          "to": { "node": "n278", "port": "a" }
+        },
+        {
+          "from": { "node": "n200", "port": "result" },
           "to": { "node": "n278", "port": "b" }
         },
         {
-          "from": { "node": "n276", "port": "result" },
-          "to": { "node": "n279", "port": "a" }
-        },
-        {
-          "from": { "node": "n278", "port": "result" },
+          "from": { "node": "n132", "port": "result" },
           "to": { "node": "n279", "port": "b" }
         },
         {
@@ -58522,43 +58514,43 @@
           "to": { "node": "n280", "port": "a" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
+          "from": { "node": "n279", "port": "result" },
           "to": { "node": "n280", "port": "b" }
         },
         {
-          "from": { "node": "n279", "port": "result" },
+          "from": { "node": "n278", "port": "result" },
           "to": { "node": "n281", "port": "a" }
         },
         {
-          "from": { "node": "n280", "port": "result" },
+          "from": { "node": "n132", "port": "result" },
           "to": { "node": "n281", "port": "b" }
         },
         {
-          "from": { "node": "n204", "port": "result" },
+          "from": { "node": "n280", "port": "result" },
           "to": { "node": "n282", "port": "a" }
         },
         {
-          "from": { "node": "n203", "port": "result" },
+          "from": { "node": "n281", "port": "result" },
           "to": { "node": "n282", "port": "b" }
         },
         {
-          "from": { "node": "n206", "port": "result" },
+          "from": { "node": "n200", "port": "result" },
           "to": { "node": "n283", "port": "a" }
         },
         {
-          "from": { "node": "n205", "port": "result" },
+          "from": { "node": "n198", "port": "result" },
           "to": { "node": "n283", "port": "b" }
         },
         {
-          "from": { "node": "n137", "port": "result" },
+          "from": { "node": "n201", "port": "result" },
+          "to": { "node": "n284", "port": "a" }
+        },
+        {
+          "from": { "node": "n199", "port": "result" },
           "to": { "node": "n284", "port": "b" }
         },
         {
-          "from": { "node": "n282", "port": "result" },
-          "to": { "node": "n285", "port": "a" }
-        },
-        {
-          "from": { "node": "n284", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n285", "port": "b" }
         },
         {
@@ -58566,39 +58558,39 @@
           "to": { "node": "n286", "port": "a" }
         },
         {
-          "from": { "node": "n137", "port": "result" },
+          "from": { "node": "n285", "port": "result" },
           "to": { "node": "n286", "port": "b" }
         },
         {
-          "from": { "node": "n285", "port": "result" },
+          "from": { "node": "n284", "port": "result" },
           "to": { "node": "n287", "port": "a" }
         },
         {
-          "from": { "node": "n286", "port": "result" },
+          "from": { "node": "n130", "port": "result" },
           "to": { "node": "n287", "port": "b" }
         },
         {
-          "from": { "node": "n205", "port": "result" },
+          "from": { "node": "n286", "port": "result" },
           "to": { "node": "n288", "port": "a" }
         },
         {
-          "from": { "node": "n203", "port": "result" },
+          "from": { "node": "n287", "port": "result" },
           "to": { "node": "n288", "port": "b" }
         },
         {
-          "from": { "node": "n206", "port": "result" },
+          "from": { "node": "n264", "port": "result" },
           "to": { "node": "n289", "port": "a" }
         },
         {
-          "from": { "node": "n204", "port": "result" },
+          "from": { "node": "n288", "port": "result" },
           "to": { "node": "n289", "port": "b" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
-          "to": { "node": "n290", "port": "b" }
+          "from": { "node": "n289", "port": "result" },
+          "to": { "node": "n290", "port": "a" }
         },
         {
-          "from": { "node": "n288", "port": "result" },
+          "from": { "node": "n238", "port": "result" },
           "to": { "node": "n291", "port": "a" }
         },
         {
@@ -58606,35 +58598,35 @@
           "to": { "node": "n291", "port": "b" }
         },
         {
-          "from": { "node": "n289", "port": "result" },
+          "from": { "node": "n276", "port": "result" },
           "to": { "node": "n292", "port": "a" }
         },
         {
-          "from": { "node": "n135", "port": "result" },
+          "from": { "node": "n291", "port": "result" },
           "to": { "node": "n292", "port": "b" }
         },
         {
-          "from": { "node": "n291", "port": "result" },
+          "from": { "node": "n264", "port": "result" },
           "to": { "node": "n293", "port": "a" }
         },
         {
-          "from": { "node": "n292", "port": "result" },
+          "from": { "node": "n282", "port": "result" },
           "to": { "node": "n293", "port": "b" }
         },
         {
-          "from": { "node": "n269", "port": "result" },
+          "from": { "node": "n293", "port": "result" },
           "to": { "node": "n294", "port": "a" }
         },
         {
-          "from": { "node": "n293", "port": "result" },
-          "to": { "node": "n294", "port": "b" }
-        },
-        {
-          "from": { "node": "n294", "port": "result" },
+          "from": { "node": "n238", "port": "result" },
           "to": { "node": "n295", "port": "a" }
         },
         {
-          "from": { "node": "n243", "port": "result" },
+          "from": { "node": "n294", "port": "result" },
+          "to": { "node": "n295", "port": "b" }
+        },
+        {
+          "from": { "node": "n270", "port": "result" },
           "to": { "node": "n296", "port": "a" }
         },
         {
@@ -58642,7 +58634,7 @@
           "to": { "node": "n296", "port": "b" }
         },
         {
-          "from": { "node": "n281", "port": "result" },
+          "from": { "node": "n292", "port": "result" },
           "to": { "node": "n297", "port": "a" }
         },
         {
@@ -58650,382 +58642,391 @@
           "to": { "node": "n297", "port": "b" }
         },
         {
-          "from": { "node": "n269", "port": "result" },
-          "to": { "node": "n298", "port": "a" }
+          "from": { "node": "n297", "port": "result" },
+          "to": { "node": "n298", "port": "x" }
         },
         {
-          "from": { "node": "n287", "port": "result" },
-          "to": { "node": "n298", "port": "b" }
+          "from": { "node": "n244", "port": "result" },
+          "to": { "node": "n299", "port": "value" }
         },
         {
           "from": { "node": "n298", "port": "result" },
-          "to": { "node": "n299", "port": "a" }
+          "to": { "node": "n300", "port": "value" }
         },
         {
-          "from": { "node": "n243", "port": "result" },
-          "to": { "node": "n300", "port": "a" }
+          "from": { "node": "n225", "port": "result" },
+          "to": { "node": "n301", "port": "value" }
         },
         {
-          "from": { "node": "n299", "port": "result" },
-          "to": { "node": "n300", "port": "b" }
-        },
-        {
-          "from": { "node": "n275", "port": "result" },
-          "to": { "node": "n301", "port": "a" }
-        },
-        {
-          "from": { "node": "n300", "port": "result" },
-          "to": { "node": "n301", "port": "b" }
-        },
-        {
-          "from": { "node": "n297", "port": "result" },
+          "from": { "node": "n27", "port": "result" },
           "to": { "node": "n302", "port": "a" }
         },
         {
-          "from": { "node": "n301", "port": "result" },
-          "to": { "node": "n302", "port": "b" }
-        },
-        {
           "from": { "node": "n302", "port": "result" },
-          "to": { "node": "n303", "port": "x" }
+          "to": { "node": "n303", "port": "value" }
         },
         {
-          "from": { "node": "n249", "port": "result" },
-          "to": { "node": "n304", "port": "value" }
-        },
-        {
-          "from": { "node": "n303", "port": "result" },
+          "from": { "node": "n304", "port": "value" },
           "to": { "node": "n305", "port": "value" }
         },
         {
-          "from": { "node": "n230", "port": "result" },
-          "to": { "node": "n306", "port": "value" }
+          "from": { "node": "n305", "port": "result" },
+          "to": { "node": "n306", "port": "a" }
         },
         {
-          "from": { "node": "n22", "port": "result" },
-          "to": { "node": "n307", "port": "a" }
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n307", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n307", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n306", "port": "result" },
+          "to": { "node": "n307", "port": "uv" }
+        },
+        {
+          "from": { "node": "n305", "port": "result" },
+          "to": { "node": "n308", "port": "a" }
+        },
+        {
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n309", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n309", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n308", "port": "result" },
+          "to": { "node": "n309", "port": "uv" }
         },
         {
           "from": { "node": "n307", "port": "result" },
-          "to": { "node": "n308", "port": "value" }
+          "to": { "node": "n310", "port": "a" },
+          "swizzle": "x"
         },
         {
-          "from": { "node": "n309", "port": "value" },
-          "to": { "node": "n310", "port": "value" }
+          "from": { "node": "n309", "port": "result" },
+          "to": { "node": "n310", "port": "b" },
+          "swizzle": "x"
         },
         {
           "from": { "node": "n310", "port": "result" },
           "to": { "node": "n311", "port": "a" }
         },
         {
-          "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n312", "port": "texture" }
-        },
-        {
-          "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n312", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n311", "port": "result" },
-          "to": { "node": "n312", "port": "uv" }
-        },
-        {
-          "from": { "node": "n310", "port": "result" },
-          "to": { "node": "n313", "port": "a" }
+          "from": { "node": "n305", "port": "result" },
+          "to": { "node": "n312", "port": "a" }
         },
         {
           "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n314", "port": "texture" }
+          "to": { "node": "n313", "port": "texture" }
         },
         {
           "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n314", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n313", "port": "result" },
-          "to": { "node": "n314", "port": "uv" }
+          "to": { "node": "n313", "port": "sampler" }
         },
         {
           "from": { "node": "n312", "port": "result" },
-          "to": { "node": "n315", "port": "a" },
-          "swizzle": "x"
+          "to": { "node": "n313", "port": "uv" }
+        },
+        {
+          "from": { "node": "n305", "port": "result" },
+          "to": { "node": "n314", "port": "a" }
+        },
+        {
+          "from": { "node": "n1", "port": "value" },
+          "to": { "node": "n315", "port": "texture" }
+        },
+        {
+          "from": { "node": "n2", "port": "value" },
+          "to": { "node": "n315", "port": "sampler" }
         },
         {
           "from": { "node": "n314", "port": "result" },
-          "to": { "node": "n315", "port": "b" },
+          "to": { "node": "n315", "port": "uv" }
+        },
+        {
+          "from": { "node": "n313", "port": "result" },
+          "to": { "node": "n316", "port": "a" },
           "swizzle": "x"
         },
         {
           "from": { "node": "n315", "port": "result" },
-          "to": { "node": "n316", "port": "a" }
-        },
-        {
-          "from": { "node": "n310", "port": "result" },
-          "to": { "node": "n317", "port": "a" }
-        },
-        {
-          "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n318", "port": "texture" }
-        },
-        {
-          "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n318", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n317", "port": "result" },
-          "to": { "node": "n318", "port": "uv" }
-        },
-        {
-          "from": { "node": "n310", "port": "result" },
-          "to": { "node": "n319", "port": "a" }
-        },
-        {
-          "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n320", "port": "texture" }
-        },
-        {
-          "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n320", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n319", "port": "result" },
-          "to": { "node": "n320", "port": "uv" }
-        },
-        {
-          "from": { "node": "n318", "port": "result" },
-          "to": { "node": "n321", "port": "a" },
+          "to": { "node": "n316", "port": "b" },
           "swizzle": "x"
-        },
-        {
-          "from": { "node": "n320", "port": "result" },
-          "to": { "node": "n321", "port": "b" },
-          "swizzle": "x"
-        },
-        {
-          "from": { "node": "n321", "port": "result" },
-          "to": { "node": "n322", "port": "a" }
         },
         {
           "from": { "node": "n316", "port": "result" },
-          "to": { "node": "n323", "port": "x" }
+          "to": { "node": "n317", "port": "a" }
         },
         {
-          "from": { "node": "n322", "port": "result" },
-          "to": { "node": "n323", "port": "z" }
+          "from": { "node": "n311", "port": "result" },
+          "to": { "node": "n318", "port": "x" }
         },
         {
-          "from": { "node": "n323", "port": "result" },
-          "to": { "node": "n324", "port": "x" }
+          "from": { "node": "n317", "port": "result" },
+          "to": { "node": "n318", "port": "z" }
         },
         {
-          "from": { "node": "n310", "port": "result" },
-          "to": { "node": "n325", "port": "a" }
+          "from": { "node": "n318", "port": "result" },
+          "to": { "node": "n319", "port": "x" }
+        },
+        {
+          "from": { "node": "n305", "port": "result" },
+          "to": { "node": "n320", "port": "a" }
         },
         {
           "from": { "node": "n1", "port": "value" },
-          "to": { "node": "n326", "port": "texture" }
+          "to": { "node": "n321", "port": "texture" }
         },
         {
           "from": { "node": "n2", "port": "value" },
-          "to": { "node": "n326", "port": "sampler" }
+          "to": { "node": "n321", "port": "sampler" }
         },
         {
-          "from": { "node": "n325", "port": "result" },
-          "to": { "node": "n326", "port": "uv" }
+          "from": { "node": "n320", "port": "result" },
+          "to": { "node": "n321", "port": "uv" }
         },
         {
-          "from": { "node": "n310", "port": "result" },
-          "to": { "node": "n328", "port": "a" }
+          "from": { "node": "n305", "port": "result" },
+          "to": { "node": "n323", "port": "a" }
         },
         {
-          "from": { "node": "n330", "port": "value" },
-          "to": { "node": "n331", "port": "a" },
+          "from": { "node": "n325", "port": "value" },
+          "to": { "node": "n326", "port": "a" },
           "swizzle": "xz"
         },
         {
-          "from": { "node": "n331", "port": "result" },
-          "to": { "node": "n332", "port": "point" }
+          "from": { "node": "n326", "port": "result" },
+          "to": { "node": "n327", "port": "point" }
+        },
+        {
+          "from": { "node": "n327", "port": "value" },
+          "to": { "node": "n328", "port": "x" }
+        },
+        {
+          "from": { "node": "n329", "port": "value" },
+          "to": { "node": "n330", "port": "texture" }
+        },
+        {
+          "from": { "node": "n324", "port": "value" },
+          "to": { "node": "n330", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n323", "port": "result" },
+          "to": { "node": "n330", "port": "uv" }
+        },
+        {
+          "from": { "node": "n323", "port": "result" },
+          "to": { "node": "n331", "port": "a" }
         },
         {
           "from": { "node": "n332", "port": "value" },
-          "to": { "node": "n333", "port": "x" }
+          "to": { "node": "n333", "port": "texture" }
         },
         {
-          "from": { "node": "n334", "port": "value" },
-          "to": { "node": "n335", "port": "texture" }
+          "from": { "node": "n324", "port": "value" },
+          "to": { "node": "n333", "port": "sampler" }
         },
         {
-          "from": { "node": "n329", "port": "value" },
-          "to": { "node": "n335", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n335", "port": "uv" }
+          "from": { "node": "n331", "port": "result" },
+          "to": { "node": "n333", "port": "uv" }
         },
         {
           "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n336", "port": "a" }
+          "to": { "node": "n334", "port": "a" }
         },
         {
-          "from": { "node": "n337", "port": "value" },
-          "to": { "node": "n338", "port": "texture" }
+          "from": { "node": "n334", "port": "result" },
+          "to": { "node": "n335", "port": "x" }
         },
         {
-          "from": { "node": "n329", "port": "value" },
-          "to": { "node": "n338", "port": "sampler" }
+          "from": { "node": "n334", "port": "result" },
+          "to": { "node": "n335", "port": "y" }
         },
         {
-          "from": { "node": "n336", "port": "result" },
-          "to": { "node": "n338", "port": "uv" }
+          "from": { "node": "n334", "port": "result" },
+          "to": { "node": "n335", "port": "z" }
+        },
+        {
+          "from": { "node": "n330", "port": "result" },
+          "to": { "node": "n336", "port": "a" },
+          "swizzle": "rgb"
         },
         {
           "from": { "node": "n333", "port": "result" },
-          "to": { "node": "n339", "port": "a" }
-        },
-        {
-          "from": { "node": "n339", "port": "result" },
-          "to": { "node": "n340", "port": "x" }
-        },
-        {
-          "from": { "node": "n339", "port": "result" },
-          "to": { "node": "n340", "port": "y" }
-        },
-        {
-          "from": { "node": "n339", "port": "result" },
-          "to": { "node": "n340", "port": "z" }
+          "to": { "node": "n336", "port": "b" },
+          "swizzle": "rgb"
         },
         {
           "from": { "node": "n335", "port": "result" },
-          "to": { "node": "n341", "port": "a" },
-          "swizzle": "rgb"
+          "to": { "node": "n336", "port": "t" }
+        },
+        {
+          "from": { "node": "n328", "port": "result" },
+          "to": { "node": "n337", "port": "x" }
+        },
+        {
+          "from": { "node": "n328", "port": "result" },
+          "to": { "node": "n337", "port": "y" }
+        },
+        {
+          "from": { "node": "n328", "port": "result" },
+          "to": { "node": "n337", "port": "z" }
+        },
+        {
+          "from": { "node": "n337", "port": "result" },
+          "to": { "node": "n338", "port": "t" }
+        },
+        {
+          "from": { "node": "n336", "port": "result" },
+          "to": { "node": "n339", "port": "a" }
         },
         {
           "from": { "node": "n338", "port": "result" },
-          "to": { "node": "n341", "port": "b" },
-          "swizzle": "rgb"
+          "to": { "node": "n339", "port": "b" }
         },
         {
-          "from": { "node": "n340", "port": "result" },
-          "to": { "node": "n341", "port": "t" }
+          "from": { "node": "n340", "port": "value" },
+          "to": { "node": "n341", "port": "texture" }
         },
         {
-          "from": { "node": "n333", "port": "result" },
-          "to": { "node": "n342", "port": "x" }
+          "from": { "node": "n324", "port": "value" },
+          "to": { "node": "n341", "port": "sampler" }
         },
         {
-          "from": { "node": "n333", "port": "result" },
-          "to": { "node": "n342", "port": "y" }
+          "from": { "node": "n325", "port": "value" },
+          "to": { "node": "n341", "port": "position" }
         },
         {
-          "from": { "node": "n333", "port": "result" },
-          "to": { "node": "n342", "port": "z" }
+          "from": { "node": "n319", "port": "result" },
+          "to": { "node": "n341", "port": "normal" }
         },
         {
-          "from": { "node": "n342", "port": "result" },
-          "to": { "node": "n343", "port": "t" }
+          "from": { "node": "n327", "port": "value" },
+          "to": { "node": "n342", "port": "a" }
         },
         {
-          "from": { "node": "n341", "port": "result" },
-          "to": { "node": "n344", "port": "a" }
-        },
-        {
-          "from": { "node": "n343", "port": "result" },
-          "to": { "node": "n344", "port": "b" }
-        },
-        {
-          "from": { "node": "n345", "port": "value" },
-          "to": { "node": "n346", "port": "texture" }
-        },
-        {
-          "from": { "node": "n329", "port": "value" },
-          "to": { "node": "n346", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n330", "port": "value" },
-          "to": { "node": "n346", "port": "position" }
-        },
-        {
-          "from": { "node": "n324", "port": "result" },
-          "to": { "node": "n346", "port": "normal" }
-        },
-        {
-          "from": { "node": "n332", "port": "value" },
-          "to": { "node": "n347", "port": "a" }
-        },
-        {
-          "from": { "node": "n324", "port": "result" },
-          "to": { "node": "n348", "port": "a" },
+          "from": { "node": "n319", "port": "result" },
+          "to": { "node": "n343", "port": "a" },
           "swizzle": "y"
         },
         {
-          "from": { "node": "n347", "port": "result" },
-          "to": { "node": "n348", "port": "b" }
+          "from": { "node": "n342", "port": "result" },
+          "to": { "node": "n343", "port": "b" }
         },
         {
-          "from": { "node": "n348", "port": "result" },
-          "to": { "node": "n349", "port": "x" }
-        },
-        {
-          "from": { "node": "n349", "port": "result" },
-          "to": { "node": "n350", "port": "b" }
-        },
-        {
-          "from": { "node": "n351", "port": "value" },
-          "to": { "node": "n352", "port": "texture" }
-        },
-        {
-          "from": { "node": "n329", "port": "value" },
-          "to": { "node": "n352", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n352", "port": "uv" }
-        },
-        {
-          "from": { "node": "n352", "port": "result" },
-          "to": { "node": "n353", "port": "sample" },
-          "swizzle": "rgb"
-        },
-        {
-          "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n353", "port": "uv" }
-        },
-        {
-          "from": { "node": "n324", "port": "result" },
-          "to": { "node": "n353", "port": "normal" }
-        },
-        {
-          "from": { "node": "n346", "port": "color" },
-          "to": { "node": "n354", "port": "height" },
-          "swizzle": "a"
-        },
-        {
-          "from": { "node": "n324", "port": "result" },
-          "to": { "node": "n354", "port": "normal" }
-        },
-        {
-          "from": { "node": "n346", "port": "color" },
-          "to": { "node": "n355", "port": "a" },
-          "swizzle": "rgb"
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n356", "port": "x" }
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n356", "port": "y" }
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n356", "port": "z" }
+          "from": { "node": "n343", "port": "result" },
+          "to": { "node": "n344", "port": "x" }
         },
         {
           "from": { "node": "n344", "port": "result" },
+          "to": { "node": "n345", "port": "b" }
+        },
+        {
+          "from": { "node": "n346", "port": "value" },
+          "to": { "node": "n347", "port": "texture" }
+        },
+        {
+          "from": { "node": "n324", "port": "value" },
+          "to": { "node": "n347", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n323", "port": "result" },
+          "to": { "node": "n347", "port": "uv" }
+        },
+        {
+          "from": { "node": "n347", "port": "result" },
+          "to": { "node": "n348", "port": "sample" },
+          "swizzle": "rgb"
+        },
+        {
+          "from": { "node": "n323", "port": "result" },
+          "to": { "node": "n348", "port": "uv" }
+        },
+        {
+          "from": { "node": "n319", "port": "result" },
+          "to": { "node": "n348", "port": "normal" }
+        },
+        {
+          "from": { "node": "n341", "port": "color" },
+          "to": { "node": "n349", "port": "height" },
+          "swizzle": "a"
+        },
+        {
+          "from": { "node": "n319", "port": "result" },
+          "to": { "node": "n349", "port": "normal" }
+        },
+        {
+          "from": { "node": "n341", "port": "color" },
+          "to": { "node": "n350", "port": "a" },
+          "swizzle": "rgb"
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n351", "port": "x" }
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n351", "port": "y" }
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n351", "port": "z" }
+        },
+        {
+          "from": { "node": "n339", "port": "result" },
+          "to": { "node": "n352", "port": "a" }
+        },
+        {
+          "from": { "node": "n350", "port": "result" },
+          "to": { "node": "n352", "port": "b" }
+        },
+        {
+          "from": { "node": "n351", "port": "result" },
+          "to": { "node": "n352", "port": "t" }
+        },
+        {
+          "from": { "node": "n353", "port": "value" },
+          "to": { "node": "n354", "port": "texture" }
+        },
+        {
+          "from": { "node": "n324", "port": "value" },
+          "to": { "node": "n354", "port": "sampler" }
+        },
+        {
+          "from": { "node": "n323", "port": "result" },
+          "to": { "node": "n354", "port": "uv" }
+        },
+        {
+          "from": { "node": "n354", "port": "result" },
+          "to": { "node": "n355", "port": "a" },
+          "swizzle": "r"
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n355", "port": "t" }
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n356", "port": "x" }
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n356", "port": "y" }
+        },
+        {
+          "from": { "node": "n345", "port": "result" },
+          "to": { "node": "n356", "port": "z" }
+        },
+        {
+          "from": { "node": "n348", "port": "normal" },
           "to": { "node": "n357", "port": "a" }
         },
         {
-          "from": { "node": "n355", "port": "result" },
+          "from": { "node": "n349", "port": "normal" },
           "to": { "node": "n357", "port": "b" }
         },
         {
@@ -59033,65 +59034,20 @@
           "to": { "node": "n357", "port": "t" }
         },
         {
-          "from": { "node": "n358", "port": "value" },
-          "to": { "node": "n359", "port": "texture" }
-        },
-        {
-          "from": { "node": "n329", "port": "value" },
-          "to": { "node": "n359", "port": "sampler" }
-        },
-        {
-          "from": { "node": "n328", "port": "result" },
-          "to": { "node": "n359", "port": "uv" }
-        },
-        {
-          "from": { "node": "n359", "port": "result" },
-          "to": { "node": "n360", "port": "a" },
-          "swizzle": "r"
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n360", "port": "t" }
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n361", "port": "x" }
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n361", "port": "y" }
-        },
-        {
-          "from": { "node": "n350", "port": "result" },
-          "to": { "node": "n361", "port": "z" }
-        },
-        {
-          "from": { "node": "n353", "port": "normal" },
-          "to": { "node": "n362", "port": "a" }
-        },
-        {
-          "from": { "node": "n354", "port": "normal" },
-          "to": { "node": "n362", "port": "b" }
-        },
-        {
-          "from": { "node": "n361", "port": "result" },
-          "to": { "node": "n362", "port": "t" }
-        },
-        {
-          "from": { "node": "n362", "port": "result" },
-          "to": { "node": "n363", "port": "x" }
-        },
-        {
           "from": { "node": "n357", "port": "result" },
-          "to": { "node": "n364", "port": "baseColor" }
+          "to": { "node": "n358", "port": "x" }
         },
         {
-          "from": { "node": "n360", "port": "result" },
-          "to": { "node": "n364", "port": "roughness" }
+          "from": { "node": "n352", "port": "result" },
+          "to": { "node": "n359", "port": "baseColor" }
         },
         {
-          "from": { "node": "n363", "port": "result" },
-          "to": { "node": "n364", "port": "normal" }
+          "from": { "node": "n355", "port": "result" },
+          "to": { "node": "n359", "port": "roughness" }
+        },
+        {
+          "from": { "node": "n358", "port": "result" },
+          "to": { "node": "n359", "port": "normal" }
         }
       ]
     }
