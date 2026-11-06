@@ -18,6 +18,11 @@ import {
 } from './graph/nodes';
 import { validateAnimationGraph } from './graph/validate';
 import { Pose } from './Pose';
+import {
+  type RootMotion,
+  RootMotionExtractor,
+  type RootMotionOptions,
+} from './RootMotion';
 import type { Skeleton } from './Skeleton';
 
 /**
@@ -76,12 +81,22 @@ export interface AnimatorOptions {
   /** The masks of the layers, by name. */
   readonly masks?: Readonly<Record<string, BoneMask>>;
   readonly registry?: Registry<AnimationNodeType>;
+  /**
+   * Takes the movement of a joint out of the clips: the poses stay in
+   * place, {@link Animator.rootMotion} tells the movement, for the code to
+   * move the character.
+   */
+  readonly rootMotion?: RootMotionOptions;
 }
 
 interface Context {
   readonly skeleton: Skeleton;
   frame: number;
   emit(event: AnimationEvent, clip: string, weight: number): void;
+  readonly rootMotion?: RootMotionExtractor;
+  readonly motion: RootMotion;
+  // Above 0 while the layers advance: their clips move nothing.
+  muted: number;
 }
 
 type NumberSource = () => number;
@@ -159,12 +174,12 @@ class ClipNode extends RuntimeNode {
     private readonly _loop: boolean,
     private readonly _speed: number,
     private readonly _rate: NumberSource,
-    additive: boolean,
+    private readonly _additive: boolean,
   ) {
     super(ctx);
     // An additive clip is the difference with its first pose: the joints
     // without track add nothing.
-    this._base = additive ? new Pose(ctx.skeleton.count) : ctx.skeleton.rest;
+    this._base = _additive ? new Pose(ctx.skeleton.count) : ctx.skeleton.rest;
   }
 
   duration(): number {
@@ -225,6 +240,10 @@ class ClipNode extends RuntimeNode {
     let from = this._time;
     const visit = this._visit;
     this._weight = weight;
+    const extractor = this.ctx.rootMotion;
+    if (extractor && !this._additive && this.ctx.muted === 0 && weight > 0) {
+      extractor.accumulate(clip, from, to, this._loop, weight, this.ctx.motion);
+    }
     if (!this._loop || length <= 0) {
       const time = Math.min(Math.max(to, 0), length);
       if (emit && time > from) {
@@ -259,6 +278,9 @@ class ClipNode extends RuntimeNode {
   protected compute(): void {
     this.out.copy(this._base);
     this._clip.sample(this._time, this.out);
+    if (this.ctx.rootMotion && !this._additive) {
+      this.ctx.rootMotion.strip(this._clip, this._time, this.out);
+    }
   }
 }
 
@@ -439,13 +461,21 @@ class LayerNode extends RuntimeNode {
   protected doAdvance(dt: number, weight: number, emit: boolean): void {
     const w = this.weight();
     this._base.advance(dt, weight, emit);
-    if (w > 0) this._layer.advance(dt, weight * w, emit);
+    if (w > 0) {
+      this.ctx.muted++;
+      this._layer.advance(dt, weight * w, emit);
+      this.ctx.muted--;
+    }
   }
 
   protected doSetPhase(phase: number, weight: number, emit: boolean): void {
     const w = this.weight();
     this._base.setPhase(phase, weight, emit);
-    if (w > 0) this._layer.setPhase(phase, weight * w, emit);
+    if (w > 0) {
+      this.ctx.muted++;
+      this._layer.setPhase(phase, weight * w, emit);
+      this.ctx.muted--;
+    }
   }
 
   protected compute(): void {
@@ -731,6 +761,11 @@ class Parameters {
 export class Animator {
   /** The pose of the last update (the rest pose before the first). */
   readonly pose: Pose;
+  /**
+   * The movement of the last update, with the `rootMotion` option: zero
+   * without it. Overwritten by each update.
+   */
+  readonly rootMotion: RootMotion = { x: 0, y: 0, z: 0, yaw: 0 };
   readonly skeleton: Skeleton;
   private readonly _events: FiredEvent[] = [];
   private readonly _listeners = new Set<(event: FiredEvent) => void>();
@@ -753,6 +788,16 @@ export class Animator {
     this._ctx = {
       skeleton: options.skeleton,
       frame: 0,
+      motion: this.rootMotion,
+      muted: 0,
+      ...(options.rootMotion
+        ? {
+            rootMotion: new RootMotionExtractor(
+              options.skeleton,
+              options.rootMotion,
+            ),
+          }
+        : {}),
       emit(event, clip, weight) {
         const fired = { ...event, clip, weight };
         events.push(fired);
@@ -1012,6 +1057,8 @@ export class Animator {
    */
   update(dt: number): Pose {
     this._events.length = 0;
+    const motion = this.rootMotion;
+    motion.x = motion.y = motion.z = motion.yaw = 0;
     this._ctx.frame++;
     this._root.advance(dt, 1, true);
     this.pose.copy(this._root.evaluate());

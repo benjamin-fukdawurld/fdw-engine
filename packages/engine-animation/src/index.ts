@@ -8,4 +8,9 @@ export * from './graph/validate';
 export * from './graph/AnimationGraphBuilder';
 export * from './graph/resources';
 export * from './Animator';
+export {
+  type RootMotion,
+  type RootMotionOptions,
+  rootMotionToWorld,
+} from './RootMotion';
 export { composeMatrix, multiplyMatrix, nlerp, slerp } from './math';

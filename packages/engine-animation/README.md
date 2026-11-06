@@ -27,4 +27,6 @@ const animator = new Animator(g.build(), { skeleton, clips });
 animator.set('speed', 2).update(dt); // a Pose, and animator.events
 ```
 
+**Root motion** (P25): `new Animator(graph, { skeleton, clips, rootMotion: { joint: 'hips', rotation: true } })` keeps the joint of the clips in place and gives what it travelled at each update in `animator.rootMotion` (`x`, `y`, `z` in the space of the character, `yaw`), through the blends, the cross-fades and the loops; the layers and the additive clips move nothing. `rootMotionToWorld(motion, heading, scale)` turns it into the world. See the [tutorial](https://benjamin-fukdawurld.github.io/fdw-engine/tutorials/root-motion/).
+
 Since P19, for the editor of graphs: `animator.setGraph(graph)` plays another graph (the parameters of the same name and type kept, the machines in their initial states; a graph that does not play throws and changes nothing), `animator.graph`, and `animator.inspect()`: the weight and the phase of each node in the pose of the last update, the state of each machine, the parameters.

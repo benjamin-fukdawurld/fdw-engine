@@ -247,7 +247,26 @@ export interface CharacterMove {
   readonly collisions: readonly PhysicsCollider[];
 }
 
-export interface PhysicsCharacter {
+/**
+ * What moves a character, whatever is behind: a physics engine
+ * ({@link PhysicsCharacter}) or the volumes of a scene
+ * ({@link SceneCharacter}). The code of a game written against it runs on
+ * both.
+ */
+export interface CharacterController {
+  /**
+   * Moves by `movement` (meters, for this step, gravity included), as far
+   * as the obstacles let it.
+   */
+  move(movement: IVec3): {
+    readonly movement: IVec3;
+    readonly grounded: boolean;
+  };
+  /** On the ground after the last move. */
+  readonly grounded: boolean;
+}
+
+export interface PhysicsCharacter extends CharacterController {
   /** Its kinematic body. */
   readonly body: PhysicsBody;
   /**

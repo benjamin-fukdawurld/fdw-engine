@@ -37,6 +37,12 @@
       "path": "../../packages/engine-resources/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-raytracing/tsconfig.lib.json"
+    },
+    {
+      "path": "../../packages/engine-ragdoll/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-physics-rapier/tsconfig.lib.json"
     },
     {
@@ -55,6 +61,9 @@
       "path": "../../packages/engine-noise/tsconfig.lib.json"
     },
     {
+      "path": "../../packages/engine-navigation/tsconfig.lib.json"
+    },
+    {
       "path": "../../packages/engine-input-web/tsconfig.lib.json"
     },
     {
@@ -71,9 +80,6 @@
     },
     {
       "path": "../../packages/engine-fluids/tsconfig.lib.json"
-    },
-    {
-      "path": "../../packages/engine-raytracing/tsconfig.lib.json"
     },
     {
       "path": "../../packages/engine-editing/tsconfig.lib.json"

@@ -9,3 +9,4 @@ export * from './intersections';
 export { gjkIntersects } from './gjk';
 export { raycastSphere } from './raycastSphere';
 export { closestOnSegment, segmentDistanceSquared } from './segments';
+export { signedDistance } from './signedDistance';

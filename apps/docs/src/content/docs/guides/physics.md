@@ -11,13 +11,18 @@ physics engine, and plugs one behind it:
 - `@fdw/engine-physics`: the **abstract API** (worlds, bodies, colliders,
   shapes, joints, queries, events, character controllers), its **binding
   to the scene** (`ScenePhysics`: the bodies as components, the simulation
-  in the fixed step) and the **debug view**. It depends on no physics
-  engine.
+  in the fixed step), the **debug view**, and a character controller
+  against the volumes of a scene (`SceneCharacter`). It depends on no
+  physics engine.
 - `@fdw/engine-physics-rapier`: the API on [Rapier](https://rapier.rs),
   compiled to WebAssembly: the same module in the browser and in Node (the
   native demos).
+- `@fdw/engine-ragdoll`: ragdolls on the skeletons of the animation,
+  against the API.
 
-The tutorial [Physics](/fdw-engine/tutorials/physics/) puts them together.
+The tutorial [Physics](/fdw-engine/tutorials/physics/) puts them together;
+[Navigation](/fdw-engine/tutorials/navigation/) walks characters without an
+engine, [Ragdolls](/fdw-engine/tutorials/ragdolls/) knocks them down.
 
 ## The API
 
@@ -158,6 +163,54 @@ const { movement, grounded, collisions } = character.move({ x, y, z });
 `move` takes the movement of this step, gravity included, and returns what
 was done of it; the body gets there at the next step. One move per step.
 
+`PhysicsCharacter` is a `CharacterController`: the interface of what moves
+a character (`move`, `grounded`), whatever is behind.
+
+### A character without an engine
+
+```ts
+import { SceneCharacter } from '@fdw/engine-physics';
+
+const character = new SceneCharacter(scene, {
+  radius: 0.3,
+  height: 1.8, // from end to end
+  position: { y: 0.92 }, // the center of the capsule
+  offset: 0.02,
+  maxSlope: Math.PI / 4,
+  stepHeight: 0.3,
+  snapToGround: 0.3,
+  ground: (x, z) => terrainHeight(x, z), // optional
+  ignore: (entity) => entity === hero.entity,
+  layers: 1, // the layers of the scene it collides with
+});
+
+const { movement, grounded, collisions } = character.move({ x, y, z });
+character.position; // the center of the capsule
+character.teleport({ x: 0, y: 5 });
+```
+
+The other `CharacterController`: a vertical capsule against the **volumes
+of the renderers of a scene**, without a physics engine. The obstacles are
+the volume given to `setMesh` (`Aabb`, `Obb`, `Sphere`, `Capsule`: their
+signed distance is exact) or the bounds of the mesh (any other volume
+stands for its bounds); and a ground function, for a terrain. The move:
+
+1. **In small steps** (half the radius), each followed by passes pushing
+   the capsule out of what it overlaps, along the normal of the surface:
+   it slides along the walls. The point of its segment closest to each
+   volume is found by a golden-section search of the signed distance
+   (`signedDistance` of `@fdw/engine-geometry`).
+2. **The ground**: a surface no steeper than `maxSlope` pushes straight
+   up — no sliding down a slope while standing — and makes it `grounded`.
+3. **The steps**: blocked while walking on the ground, it tries the move
+   again `stepHeight` higher, then down: kept if it lands on walkable
+   ground (checked by a ray under its axis: a steep slope is no step) and
+   went further.
+4. **Snapped to the ground**: grounded before, not after, not going up: a
+   probe down by `snapToGround` keeps it on a slope or a step down.
+
+`collisions` lists the entities touched. It pushes nothing.
+
 ## The scene and the fixed step
 
 `ScenePhysics` makes the bodies components of the entities of a
@@ -205,6 +258,51 @@ The lines come from `drawWorld(world, lines)`, written against the abstract
 API, into a `DebugLines` (positions and colors): a tool can draw them its
 own way. The view draws them as a mesh of `topology: 'line-list'` (a field
 of `MeshDescription`, on the three backends), unlit, without shadow.
+
+## Ragdolls
+
+```ts
+import { Ragdoll } from '@fdw/engine-ragdoll';
+
+const ragdoll = new Ragdoll(world, skeleton, {
+  bones: [
+    { joint: 'hips', to: 'spine', radius: 0.13 },
+    {
+      joint: 'lowerLeg.L',
+      to: 'foot.L',
+      radius: 0.06,
+      link: 'hinge',
+      limits: [0, 2.4],
+    },
+    // …
+  ],
+  groups: 2,
+  mask: 1,
+});
+ragdoll.activate(pose, nodeOfSkeleton.worldMatrix, velocity);
+ragdoll.readPose(out); // each frame, after the step
+ragdoll.deactivate();
+```
+
+`@fdw/engine-ragdoll` puts dynamic bodies on the bones of a skeleton of
+`@fdw/engine-animation`, against the abstract API:
+
+- A **bone** is a capsule from its joint to the joint `to`, or a sphere on
+  its joint; `density` gives its mass (1000 kg/m³ by default).
+- Each body hangs on the body of its **nearest ancestor** with one: a
+  `ball` joint at the joint, or a `hinge` around `axis` (in the space of
+  the joint, x by default) within `limits` (radians, around the angle at
+  the activation).
+- All the bodies are created **turned as the node** of the skeleton, the
+  rotation of each joint kept as an offset: a hinge axis is the same in
+  the two bodies it links, as the API asks.
+- `activate(pose, matrix, velocity)` creates the bodies and joints at the
+  pose (the world matrix of the parent of the root joint), moving at
+  `velocity`; `deactivate` removes them. `bodyOf(joint)` gives a body, to
+  push one limb.
+- `readPose(out)` writes the local transforms: the joints with a body
+  where it is, the others as at the activation under their parent;
+  relative to the node at the activation.
 
 ## Rapier
 

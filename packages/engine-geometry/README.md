@@ -42,3 +42,5 @@ registerIntersection('cylinder', 'sphere', (cylinder, sphere) => …); // a fast
 ```
 
 A volume without support function and without registered test throws an explicit error.
+
+`signedDistance(volume, point, normal?)` measures a point against a box, an oriented box, a sphere or a capsule: positive outside, negative inside (the depth), the normal leaving the volume; `undefined` for the other volumes. The character controller of the scene pushes its capsule out of the volumes with it.

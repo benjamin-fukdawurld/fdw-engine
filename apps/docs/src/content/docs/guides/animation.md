@@ -115,6 +115,39 @@ shared. A node feeding two inputs is advanced once per update.
 the events of their heavier input: one footstep, not one per blended clip.
 A layer keeps those of both.
 
+## Root motion
+
+```ts
+const animator = new Animator(graph, {
+  skeleton,
+  clips,
+  rootMotion: { joint: 'hips', rotation: true, vertical: false },
+});
+animator.update(dt);
+const { x, y, z, yaw } = animator.rootMotion;
+const step = rootMotionToWorld(animator.rootMotion, heading, scale);
+```
+
+With `rootMotion`, the animator takes the movement of a joint (the hips,
+or a root joint above them) out of the clips:
+
+- **The poses stay in place**: in each clip, the joint is kept where it is
+  at its start along x and z (and y with `vertical`), facing as at its
+  start (with `rotation`). Read in the space of the skeleton: an armature
+  turned or scaled above the joint is taken into account.
+- **`rootMotion`** gives what the joint travelled during the last update:
+  meters along x, y, z in the space of the character as it faced at the
+  start of the update, radians around y. It is zero without the option,
+  and overwritten by each update.
+- **Through the graph**: each clip adds its movement weighted by its share
+  of the pose — a blend weighs its inputs, a cross-fade its two states. A
+  loop adds the whole movement of the clip each time it wraps (in steps
+  of a cycle: no jump back), a clip without loop stops moving at its end.
+  The **layers** move nothing (their clips are left out of the movement),
+  and neither do the additive clips.
+- `rootMotionToWorld(motion, heading, scale)` turns the movement into the
+  world, for the controller; the yaw adds to the heading.
+
 ## Skinning
 
 ```ts
@@ -161,7 +194,9 @@ matrices)` skins on the CPU, for a raycast against a character.
 
 ## Limits
 
-- No morph targets, no root motion, no inverse kinematics yet.
+- No morph targets, no inverse kinematics yet.
+- The root motion takes the turns around y only; a layer whose mask
+  covers the root joint does not move the character.
 - A character is skinned with linear blending: the joints twisted far
   (a forearm turned half a turn) lose some volume.
 - The animation graphs have no events of their states nor nodes of

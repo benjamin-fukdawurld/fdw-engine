@@ -33,6 +33,8 @@ const packages = [
   'engine-fluids',
   'engine-physics',
   'engine-physics-rapier',
+  'engine-ragdoll',
+  'engine-navigation',
   'engine-audio',
   'engine-audio-web',
   'engine-audio-native',

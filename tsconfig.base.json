@@ -54,6 +54,8 @@
       "@fdw/engine-animation": ["packages/engine-animation/src/index.ts"],
       "@fdw/engine-behavior": ["packages/engine-behavior/src/index.ts"],
       "@fdw/engine-noise": ["packages/engine-noise/src/index.ts"],
+      "@fdw/engine-navigation": ["packages/engine-navigation/src/index.ts"],
+      "@fdw/engine-ragdoll": ["packages/engine-ragdoll/src/index.ts"],
       "@fdw/engine-ocean": ["packages/engine-ocean/src/index.ts"],
       "@fdw/engine-fluids": ["packages/engine-fluids/src/index.ts"],
       "@fdw/engine-raytracing": ["packages/engine-raytracing/src/index.ts"],
