@@ -9,6 +9,8 @@ import type { Renderable } from './RenderSource';
 export interface SceneBucket {
   readonly material: Material;
   readonly mesh: Mesh;
+  // Its items cast shadows.
+  readonly caster: boolean;
   readonly items: Renderable[];
   // Its first candidate.
   start: number;
@@ -25,10 +27,17 @@ const whole = (n: number) => Math.ceil(Math.max(n, 1) / Workgroup) * Workgroup;
  * boxes (center, half extents: two vec4f each) and their rows in the object
  * table, in buffers kept from frame to frame. Laid out again when items
  * are added or removed; otherwise only the changed items are written.
+ *
+ * The runs of the shadow casters come first: the shadow maps cull the
+ * first `casterCount` candidates, in the first `casterBuckets` runs.
  */
 export class GpuSceneLayout {
   version = -1;
+  // Where the changes of the scene were read up to (GpuScene.cursor).
+  cursor = 0;
   buckets: SceneBucket[] = [];
+  casterBuckets = 0;
+  casterCount = 0;
   // The transparent items, drawn as usual.
   transparent: Renderable[] = [];
   // The dynamic items, written again at each frame.
@@ -67,11 +76,13 @@ export class GpuSceneLayout {
     bounds: (item: Renderable) => Aabb | undefined,
     row: (item: Renderable) => number,
   ): void {
-    const touched = scene.takeTouched();
     if (scene.version !== this.version) {
+      this.cursor = scene.cursor;
       this.layOut(scene, bounds, row);
       return;
     }
+    const touched = scene.touchedSince(this.cursor);
+    this.cursor = scene.cursor;
     for (const list of [touched, this.dynamic]) {
       for (const item of list) {
         const slot = this._slots.get(item);
@@ -104,7 +115,11 @@ export class GpuSceneLayout {
     row: (item: Renderable) => number,
   ): void {
     this.version = scene.version;
-    const buckets = new Map<Material, Map<Mesh, SceneBucket>>();
+    // By caster, material, then mesh.
+    const buckets = [
+      new Map<Material, Map<Mesh, SceneBucket>>(),
+      new Map<Material, Map<Mesh, SceneBucket>>(),
+    ];
     this.transparent = [];
     this.dynamic = [];
     for (const item of scene.items()) {
@@ -115,16 +130,19 @@ export class GpuSceneLayout {
       if (scene.isDynamic(item)) {
         this.dynamic.push(item);
       }
-      let meshes = buckets.get(item.material);
+      const caster = item.castShadow !== false;
+      const byMaterial = buckets[caster ? 0 : 1];
+      let meshes = byMaterial.get(item.material);
       if (!meshes) {
         meshes = new Map();
-        buckets.set(item.material, meshes);
+        byMaterial.set(item.material, meshes);
       }
       let bucket = meshes.get(item.mesh);
       if (!bucket) {
         bucket = {
           material: item.material,
           mesh: item.mesh,
+          caster,
           items: [],
           start: 0,
         };
@@ -132,15 +150,22 @@ export class GpuSceneLayout {
       }
       bucket.items.push(item);
     }
-    // By material, then by mesh: the runs sharing a material follow each
-    // other (one multiple draw for the meshes of an arena).
-    this.buckets = [...buckets.values()].flatMap((meshes) => [
-      ...meshes.values(),
-    ]);
+    // The casters first, then by material and by mesh: the runs sharing a
+    // material follow each other (one multiple draw for the meshes of an
+    // arena).
+    this.buckets = buckets.flatMap((byMaterial) =>
+      [...byMaterial.values()].flatMap((meshes) => [...meshes.values()]),
+    );
     let count = 0;
+    this.casterBuckets = 0;
+    this.casterCount = 0;
     for (const bucket of this.buckets) {
       bucket.start = count;
       count += bucket.items.length;
+      if (bucket.caster) {
+        this.casterBuckets++;
+        this.casterCount = count;
+      }
     }
     this.count = count;
     const capacity = whole(count);

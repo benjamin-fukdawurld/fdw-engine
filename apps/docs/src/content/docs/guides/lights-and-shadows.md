@@ -208,6 +208,12 @@ without it cost nothing more. The background is not fogged.
 Each light with shadows draws the casters once more; a light with
 cascades, once per cascade; a point light, once per face that sees the
 view (up to six). The casters sharing a mesh and a material are
-instanced in the shadow passes too. The atlas is shared,
+instanced in the shadow passes too. Those kept on the GPU (a `GpuScene`,
+or the static nodes of a `new Scene({ gpuScene: true })`) are culled
+there with `gpuCulling`, against the frustum of each tile and, for the
+directional lights, against what the camera draws: the CPU no longer
+looks at them (see the
+[backends guide](/fdw-engine/guides/backends-and-surfaces/#shadows-culled-on-the-gpu)).
+The atlas is shared,
 so more lights make smaller tiles: 4 lights in a 2048 atlas get 1024 × 1024
 each; a sun and two lamps with shadows (13 tiles) get 512 × 512. Raise `shadowAtlasSize` for sharper shadows, at the cost of memory.

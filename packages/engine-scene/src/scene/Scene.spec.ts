@@ -3,6 +3,7 @@ import {
   DirectionalLight,
   Material,
   PointLight,
+  Renderable,
   Renderer,
   SpotLight,
   Transform,
@@ -492,5 +493,127 @@ describe('Scene observers', () => {
     stop();
     scene.root.add();
     expect(changes).toHaveLength(8);
+  });
+});
+
+describe('Scene with a GpuScene', () => {
+  const itemOf = (scene: Scene, entity: number) =>
+    scene.MeshRenderer.item[entity] as Renderable;
+  const skipped = (scene: Scene, frustum: Frustum) => {
+    const entities: number[] = [];
+    scene.query(
+      frustum,
+      0xffffffff,
+      (item) => entities.push((item as unknown as { entity: number }).entity),
+      'camera',
+      { skipGpuScene: true },
+    );
+    return entities.sort((a, b) => a - b);
+  };
+
+  it('keeps its static opaque renderers there, left out of the queries that skip it', () => {
+    const scene = new Scene({ gpuScene: true });
+    const gpuScene = scene.gpuScene;
+    if (!gpuScene) {
+      throw new Error('No GpuScene');
+    }
+    const mesh = triangle();
+    const glass = new Material({
+      graph: colorGraph(),
+      renderState: { alphaMode: 'blend' },
+    });
+    const kept = scene.root.add({ static: true }).setMesh(mesh, material());
+    // Dynamic, on a layer, transparent, hidden: not kept.
+    const others = [
+      scene.root.add().setMesh(mesh, material()),
+      scene.root.add({ static: true, layers: 2 }).setMesh(mesh, material()),
+      scene.root.add({ static: true }).setMesh(mesh, glass),
+      scene.root
+        .add({ static: true, visible: false })
+        .setMesh(mesh, material()),
+    ];
+    // Applied by the renderers before they read it.
+    gpuScene.sync();
+    expect([...gpuScene.items()]).toEqual([itemOf(scene, kept.entity)]);
+    const all = [kept, ...others.slice(0, 3)].map((node) => node.entity);
+    expect(seen(scene, box10())).toEqual(all);
+    expect(skipped(scene, box10())).toEqual(all.slice(1));
+    // The queries of the application find it.
+    const hits: number[] = [];
+    scene.queryVolumeEntities(new Sphere([0, 0, 0], 1), (entity) => {
+      hits.push(entity);
+    });
+    expect(hits).toContain(kept.entity);
+    const bounds = scene.bounds(new Aabb());
+    expect(bounds.isEmpty()).toBe(false);
+  });
+
+  it('follows its renderers: moved, hidden, changed, destroyed', () => {
+    const scene = new Scene({ gpuScene: true });
+    const gpuScene = scene.gpuScene as NonNullable<Scene['gpuScene']>;
+    const mesh = triangle();
+    const node = scene.root.add({ static: true }).setMesh(mesh, material());
+    scene.flush();
+    const item = itemOf(scene, node.entity);
+    const cursor = gpuScene.cursor;
+    let version = gpuScene.version;
+    // Moved: touched (a static node, with its warning).
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    node.transform.position = { x: 3 };
+    scene.flush();
+    warn.mockRestore();
+    expect(gpuScene.touchedSince(cursor)).toEqual([item]);
+    expect(gpuScene.version).toBe(version);
+    // Hidden, then shown: out, then in again.
+    node.visible = false;
+    scene.flush();
+    expect(gpuScene.has(item)).toBe(false);
+    node.visible = true;
+    scene.flush();
+    expect(gpuScene.has(item)).toBe(true);
+    // Another material: laid out again.
+    version = gpuScene.version;
+    node.setMesh(mesh, material());
+    scene.flush();
+    expect(gpuScene.size).toBe(1);
+    expect(gpuScene.version).toBeGreaterThan(version);
+    // Destroyed: gone.
+    scene.destroy(node.entity);
+    expect(gpuScene.size).toBe(0);
+  });
+
+  it('is drawn from the GpuScene by a renderer culling on the GPU', () => {
+    const { backend, log } = fakeBackend({
+      maxVaryings: 16,
+      storageBuffers: true,
+      compute: true,
+      objectTable: true,
+      indirectDraw: true,
+    });
+    const renderer = new Renderer(backend);
+    const scene = new Scene({ gpuScene: true });
+    const mesh = triangle();
+    const shared = material();
+    scene.createBatch({
+      count: 100,
+      positions: Array.from({ length: 300 }, (_, i) =>
+        i % 3 === 0 ? i * 10 : 0,
+      ),
+      mesh,
+      material: shared,
+      static: true,
+    });
+    scene.root.add().setMesh(mesh, shared);
+    const camera = new Camera({ position: { x: 0, y: 0, z: 10 } });
+    renderer.render({ source: scene, camera, surface, gpuCulling: true });
+    // The static ones in one run of the GpuScene; the dynamic one besides.
+    expect(renderer.stats.get('scene')).toMatchObject({
+      visible: 101,
+      drawCalls: 2,
+    });
+    expect(log.computePasses).toEqual(['scene culling']);
+    // Without the culling on the GPU: all of them from the queries.
+    renderer.render({ source: scene, camera, surface });
+    expect(renderer.stats.get('scene')?.visible).toBeLessThan(101);
   });
 });

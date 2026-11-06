@@ -241,3 +241,21 @@ describe('StaticBatches', () => {
     expect(batches.stats.cpuBytes).toBe(batches.stats.bytes);
   });
 });
+
+describe('StaticBatches with a GpuScene', () => {
+  it('takes its renderers out of the GpuScene of the scene, and gives them back', () => {
+    const scene = new Scene({ gpuScene: true });
+    const gpuScene = scene.gpuScene as NonNullable<Scene['gpuScene']>;
+    const nodes = decor(scene, 3);
+    scene.flush();
+    expect(gpuScene.size).toBe(3);
+    const batches = new StaticBatches(scene);
+    scene.flush();
+    expect(batches.batches).toHaveLength(1);
+    expect(gpuScene.size).toBe(0);
+    // Out of the batches (a material of its own): in the GpuScene again.
+    nodes[0].setMesh(triangle(), material());
+    scene.flush();
+    expect(gpuScene.size).toBe(1);
+  });
+});

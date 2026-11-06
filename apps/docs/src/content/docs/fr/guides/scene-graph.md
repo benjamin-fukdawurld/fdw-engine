@@ -179,6 +179,33 @@ lorsqu'il est défini : une étape à vous (une visibilité précalculée, des
 portails), appliquée aux seules requêtes de caméra, jamais aux projeteurs
 d'ombre.
 
+### Les nœuds statiques gardés sur le GPU
+
+```ts
+const scene = new Scene({ gpuScene: true });
+renderer.render({ source: scene, camera, surface, gpuCulling: true });
+```
+
+Avec `gpuScene: true`, la scène garde ses renderers statiques dans une
+`GpuScene` (`scene.gpuScene`, voir le
+[guide des backends](/fdw-engine/fr/guides/backends-and-surfaces/#une-scène-gardée-sur-le-gpu)),
+toute seule : ajoutés quand ils sont indexés, touchés quand l'un bouge,
+retirés quand ils sont cachés, détruits, ou qu'ils changent de mesh, de
+matériau ou d'ombre (puis ajoutés à nouveau). Là où le renderer culle sur
+le GPU (`gpuCulling`), il les dessine de là, avec leurs ombres, et les
+requêtes de la scène les laissent de côté ; ailleurs (WebGL2), les
+requêtes les donnent comme les autres. Rien ne change pour l'application :
+le gain vient sans code de sa part.
+
+- Gardés : les renderers statiques opaques vus de tous les layers. Ni les
+  transparents (triés à chaque frame), ni ceux d'autres layers, ni ceux
+  qui sont cachés, ni ceux d'un lot statique (`NodeFlags.Batched`), ni les
+  niveaux de détail (`NodeFlags.Lod`, posé par `SceneLods` : ils changent
+  souvent).
+- Les nœuds dynamiques restent dans les requêtes, préparés un par un.
+- Les requêtes de l'application (`raycast`, `queryVolume`, `bounds`) les
+  trouvent comme avant : ils restent indexés, dans un octree à eux.
+
 ## Occlusion culling
 
 Ce que le frustum garde peut encore être caché par ce qui est devant :

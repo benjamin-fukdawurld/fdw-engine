@@ -89,7 +89,10 @@ export class SceneLods {
     // A group removed shows its levels again, if they stay.
     this._unsubscribe = scene.world.onRemoved(this.Lod, (entity) => {
       const levels = this.Lod.levels[entity] as Levels | undefined;
-      levels?.renderers.forEach((renderers) => this.cull(renderers, false));
+      levels?.renderers.forEach((renderers) => {
+        this.cull(renderers, false);
+        this.mark(renderers, false);
+      });
     });
   }
 
@@ -117,7 +120,10 @@ export class SceneLods {
       world.remove(entity, this.Lod);
     }
     world.add(entity, this.Lod, { levels: data, current: 0 });
-    renderers.forEach((list, i) => this.cull(list, i !== 0));
+    renderers.forEach((list, i) => {
+      this.mark(list, true);
+      this.cull(list, i !== 0);
+    });
   }
 
   /** Removes a group: its levels are all drawn again. */
@@ -216,6 +222,20 @@ export class SceneLods {
       child = scene.Hierarchy.next[child]
     ) {
       this.collect(child, out);
+    }
+  }
+
+  // Marks the renderers of a level (NodeFlags.Lod): kept out of the
+  // GpuScene of the scene, as they switch often.
+  private mark(renderers: Uint32Array, lod: boolean): void {
+    const { flags } = this.scene.NodeState;
+    for (const entity of renderers) {
+      if (this.scene.world.isAlive(entity)) {
+        flags[entity] = lod
+          ? flags[entity] | NodeFlags.Lod
+          : flags[entity] & ~NodeFlags.Lod;
+        this.scene.rendererChanged(entity);
+      }
     }
   }
 

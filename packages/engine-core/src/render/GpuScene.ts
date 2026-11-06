@@ -10,6 +10,15 @@ export interface GpuSceneItemOptions {
   readonly dynamic?: boolean;
 }
 
+/** What a GpuScene is created with. */
+export interface GpuSceneOptions {
+  /**
+   * Called by the renderers before they read the items: applies the
+   * changes pending elsewhere (a scene graph feeding the GpuScene flushes).
+   */
+  readonly sync?: () => void;
+}
+
 /**
  * Items kept on the GPU from frame to frame (design/p24-gpu-driven.md §3.8):
  * their boxes, their rows in the object table and their runs stay in GPU
@@ -24,10 +33,14 @@ export interface GpuSceneItemOptions {
  *
  * - The transparent items are drawn as usual (sorted on the CPU each
  *   frame).
- * - The shadow maps query the items on the CPU (their casters are not
- *   culled by the camera).
+ * - The shadow maps cull its casters on the GPU too, against what the
+ *   camera sees (design/p24-gpu-driven.md §3.9).
  * - The layers of the views do not apply to the items of a GpuScene.
- * - A GpuScene is drawn by one renderer: it consumes the changes.
+ * - Several renderers can draw it: each follows the changes from its own
+ *   cursor (touchedSince).
+ *
+ * A Scene of @fdw/engine-scene keeps its static renderers in one by
+ * itself (`new Scene({ gpuScene: true })`): nothing to add nor touch.
  *
  * @example
  * ```ts
@@ -43,14 +56,24 @@ export interface GpuSceneItemOptions {
  */
 export class GpuScene {
   private readonly _items = new Map<Renderable, GpuSceneItemOptions>();
-  private readonly _touched = new Set<Renderable>();
+  // The items touched since the last layout, in order: the touch of
+  // `_log[i]` is the change `_logStart + i` (see cursor).
+  private _log: Renderable[] = [];
+  private _logStart = 0;
   private _version = 0;
+
+  constructor(private readonly _options: GpuSceneOptions = {}) {}
+
+  /** Applies the changes pending elsewhere: see GpuSceneOptions.sync. */
+  sync(): void {
+    this._options.sync?.();
+  }
 
   /** Adds an item, or changes its options. */
   add(item: Renderable, options: GpuSceneItemOptions = {}): this {
     const previous = this._items.get(item);
     if (!previous || !!previous.dynamic !== !!options.dynamic) {
-      this._version++;
+      this.changed();
     }
     this._items.set(item, options);
     return this;
@@ -58,11 +81,10 @@ export class GpuScene {
 
   /** Removes an item: whether it was there. */
   remove(item: Renderable): boolean {
-    this._touched.delete(item);
     if (!this._items.delete(item)) {
       return false;
     }
-    this._version++;
+    this.changed();
     return true;
   }
 
@@ -72,7 +94,11 @@ export class GpuScene {
    */
   touch(item: Renderable): this {
     if (this._items.has(item)) {
-      this._touched.add(item);
+      this._log.push(item);
+      // Touched over and over: laid out again rather than kept.
+      if (this._log.length > Math.max(1024, 2 * this._items.size)) {
+        this.changed();
+      }
     }
     return this;
   }
@@ -103,10 +129,25 @@ export class GpuScene {
     return this._version;
   }
 
-  /** The static items touched since the last call: for the renderer. */
-  takeTouched(): Renderable[] {
-    const touched = [...this._touched];
-    this._touched.clear();
-    return touched;
+  /** Where the changes are: give it to touchedSince to get the next ones. */
+  get cursor(): number {
+    return this._logStart + this._log.length;
+  }
+
+  /**
+   * The static items touched since `cursor` (a value of `cursor`), while
+   * the version is the same: for the renderers, each with its own cursor.
+   * An item may be there twice, or no longer be in the scene.
+   */
+  touchedSince(cursor: number): readonly Renderable[] {
+    const from = cursor - this._logStart;
+    return from <= 0 ? this._log : this._log.slice(from);
+  }
+
+  // Items added or removed: laid out again, the touches forgotten.
+  private changed(): void {
+    this._version++;
+    this._logStart += this._log.length;
+    this._log = [];
   }
 }

@@ -482,6 +482,8 @@ renderer.render({ source: scene, camera, surface });
 
 `Scene` implémente `RenderSource` : `query` vide la liste des changements, interroge l'octree statique puis le dynamique, filtre par calques et visibilité, passe l'étape d'occlusion si elle existe (§10), et livre les `RenderItem` des `MeshRenderer`. Le culling passe par l'octree, pas par la hiérarchie : une hiérarchie logique (un étage BIM, un assemblage) n'a pas à être spatialement compacte.
 
+Avec `new Scene({ gpuScene: true })` (P24, [§3.10](p24-gpu-driven.md#310-le-scene-graph-qui-alimente-la-gpuscene-étape-9)), les renderers statiques opaques vus de tous les calques vont dans un troisième octree et dans la `GpuScene` de la scène (`scene.gpuScene`), tenue à jour au flush. Un renderer qui culle sur le GPU les dessine de là, avec leurs ombres, et demande aux requêtes de les sauter (`skipGpuScene`) ; ailleurs, `query` les donne comme les autres.
+
 ### 9.6 Les requêtes de l'application
 
 ```ts

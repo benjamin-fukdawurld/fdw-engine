@@ -63,6 +63,13 @@ Les numéros sont des identifiants stables : le tableau donne l'ordre prévu, qu
 8. **P23, étapes 1 à 5** (le socle, OpenCascade en référence, les primitives, la tessellation, l'extrusion), puis les formats CAO de P22 (STEP, BREP, FCStd).
 9. **P13**, sa première feature de bout en bout dès que P20 (étapes 1 et 2), P22 et P23 (étape 5) sont là ; la précision des grandes coordonnées peut la précéder.
 
+**Revu le 5 novembre 2026, après les étapes 1 à 7 de P24.** Les prochaines étapes, pour commencer, avant de reprendre la liste ci-dessus :
+
+1. **Valider P24** : la CI Linux (lavapipe) et les captures des exemples de la documentation (`docs.yml`, WebGPU et WebGL2 sur SwiftShader), la tessellation lisant désormais un storage buffer.
+2. _Fait_ (étape 8 de P24, [§3.9](p24-gpu-driven.md#39-les-ombres-sur-le-gpu-étape-8) : 4 ms de CPU par frame avec le soleil sur 99 225 immeubles, contre 102 ms) **Les ombres sur le GPU** ([p24 §8](p24-gpu-driven.md#8-les-étapes)) : avec une `GpuScene`, les shadow maps testent et préparent encore chaque projeteur sur le CPU, à chaque tuile, à chaque frame ; c'est le prochain coût du CPU (P3 le mesurait déjà : 11,2 ms avec les ombres du soleil contre 6,7 ms sans). Le culling des projeteurs sur le GPU par tuile et par cascade, sur les buffers de la `GpuScene`, et contre les récepteurs visibles trouvés par la seconde phase de l'occlusion ([p3 §8](p3-occlusion.md#8-la-suite), point 4) ; les mêmes lots et draws multiples que la caméra.
+3. _Fait_ (étape 9 de P24, [§3.10](p24-gpu-driven.md#310-le-scene-graph-qui-alimente-la-gpuscene-étape-9) : `new Scene({ gpuScene: true })`) **Le scene graph qui alimente la `GpuScene`** : la scène connaît ses nœuds statiques et ses changements de transform ; elle ajouterait, retirerait et toucherait ses objets elle-même, sans code de l'application (la démo `city` en profiterait directement).
+4. **Plus tard, le bindless** (un draw multiple par pipeline) : rentable seulement avec beaucoup de matériaux ; WebGPU n'en a pas, et le compilateur devrait lire les valeurs des matériaux dans une table par instance.
+
 ## 3. Les phases
 
 ### P0. Socle

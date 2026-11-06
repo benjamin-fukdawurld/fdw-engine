@@ -113,9 +113,38 @@ Les mesures (§6) le montrent : avec le culling sur le GPU, le coût du CPU est 
 - **Les données persistantes** (`GpuSceneLayout`, une par renderer et par scène) : les boîtes (centre, demi-étendues) et les lignes des objets opaques, rangées par lot (un par mesh et matériau, les lots d'un matériau à la suite), dans deux storage buffers. Rangées à nouveau quand des objets sont ajoutés ou retirés ; sinon seuls les objets touchés (`touch`) et dynamiques (`dynamic: true`) sont réécrits, 32 et 4 octets chacun. Leurs lignes dans la table des objets sont mises à jour par `ObjectRows.rowOf`, écrites avec les autres.
 - **Le culling** : `GpuCulling.record` reçoit les candidats déjà sur le GPU (`persistent`) ; rien n'est envoyé, les instances seules sont réservées (`ObjectRows.extend`). Les deux phases de l'occlusion s'appliquent (la seconde reprend les buffers de la première).
 - **Les lots** : préparés une fois par frame (un `prepare` par lot, avec le premier objet), dessinés par un draw indirect chacun, ou par un draw multiple pour les meshes d'une arène.
-- **Ce qui reste sur le CPU** : les objets transparents (triés à chaque frame : la source de la scène les donne à la caméra), les projeteurs d'ombres (la même source les donne aux shadow maps, testés un à un).
+- **Ce qui reste sur le CPU** : les objets transparents (triés à chaque frame : la source de la scène les donne à la caméra). Les projeteurs d'ombres sont cullés sur le GPU depuis l'étape 8 (§3.9).
 
-Sans culling sur le GPU (WebGL2), la scène est une liste d'objets. Les layers des vues ne s'appliquent pas à elle ; une scène est dessinée par un seul renderer (`takeTouched` consomme les changements).
+Sans culling sur le GPU (WebGL2), la scène est une liste d'objets. Les layers des vues ne s'appliquent pas à elle. Plusieurs renderers peuvent la dessiner : chacun suit les changements depuis son propre curseur (`GpuScene.cursor`, `touchedSince`) ; touchés trop souvent (plus de deux fois ses objets), elle est rangée à nouveau plutôt que de garder la liste.
+
+### 3.9 Les ombres sur le GPU (étape 8)
+
+Avec une `GpuScene`, les shadow maps testaient et préparaient encore chaque projeteur sur le CPU, à chaque tuile : la ville de 99 225 immeubles avec le soleil perdait l'essentiel du gain (102 ms par frame sur le CPU). Les projeteurs de la `GpuScene` sont désormais cullés sur le GPU, tuile par tuile (une par cascade, par face), sur ses buffers :
+
+- **Les lots** : la `GpuSceneLayout` range les lots des projeteurs (`castShadow` non faux) en tête (`casterBuckets`, `casterCount`) ; une tuile culle ces seuls candidats, dans les mêmes lots, préparés une fois par tuile avec la variante de profondeur, et dessinés par les mêmes draws indirects ou multiples que la caméra. Les projeteurs trouvés par le CPU (les autres sources) sont dessinés dans la même passe, comme avant.
+- **Le frustum de la tuile** : le test des boîtes de la caméra, avec les plans de la tuile (`CullingList.planes`).
+- **Les récepteurs** (point 4 de [p3 §8](p3-occlusion.md#8-la-suite)), pour les tuiles orthographiques (les lumières directionnelles) : un projeteur n'est dessiné que si son ombre peut tomber sur ce que la caméra dessine. Les listes de la caméra compactent leurs candidats visibles (`receiversGraph` : leurs indices, après leur nombre). Vu de la lumière, un **masque** de 32 × 32 cellules (`MaskSize`) garde la profondeur du récepteur le plus lointain de chaque cellule que sa boîte couvre, agrandie de 4 texels (le filtre et le décalage normal). Deux graphes, sans atomiques : un fil par cellule et par paquet de 256 récepteurs (`maskChunksGraph`), puis un fil par cellule qui prend le plus lointain des paquets et fusionne les listes (`maskGraph`, en ping-pong). Le test d'un projeteur (`shadowTestGraph`) : la boîte dans le frustum, puis, sur les cellules qu'elle couvre (4 × 4 au plus ; au-delà, gardé), un récepteur au moins aussi loin que son point le plus proche de la lumière. Conservateur : une boîte de récepteur couvre plus que ce qu'il montre. Au-delà de 32 768 récepteurs, toutes les cellules sont couvertes.
+- **Les deux phases** : les ombres suivent celles de l'occlusion. La première passe des ombres (`scene shadows culling`, `scene shadows`) dessine les projeteurs des récepteurs de la première phase, avant `scene opaque` ; après la seconde phase, `scene shadows late culling` teste les projeteurs contre les récepteurs qu'elle a trouvés (ceux que la première n'a pas dessinés, et les transparents), sans ceux que la première passe des ombres a déjà dessinés, et `scene shadows late` les ajoute à l'atlas (chargé), avant `scene opaque late` et les transparents. Ce que le mouvement découvre a ses ombres dans la frame où il apparaît. Sans occlusion, une seule passe, après le culling de la caméra. Les tuiles sans test des récepteurs (spots, faces des lumières ponctuelles) dessinent tous leurs projeteurs dans la première.
+
+Les passes de culling de la caméra déclarent leurs listes lues par celles des ombres (`after`) : le graphe les ordonne. Le compilateur refusant de lire un buffer que le graphe écrit, le masque d'une liste à l'autre passe par deux buffers.
+
+Sur la ville, un seul sol sous toute la ville couvrait toutes les cellules : la ville le découpe en dalles, une par bloc (`CityPlan.tiledGround`, dans `defaultCityPlan`), cachées aussi par l'occlusion.
+
+### 3.10 Le scene graph qui alimente la `GpuScene` (étape 9)
+
+L'application devait appeler `add`, `touch` et `dynamic`. `new Scene({ gpuScene: true })` garde ses renderers statiques dans sa propre `GpuScene` (`scene.gpuScene`) :
+
+- **Qui** : les renderers statiques opaques vus de tous les layers, ni cachés, ni dans un lot statique (`NodeFlags.Batched`), ni niveaux de détail (`NodeFlags.Lod`, posé par `SceneLods` sur les renderers de ses niveaux : ils changent souvent, et chaque changement rangerait toute la scène). Les nœuds dynamiques restent dans l'octree dynamique, préparés un par un ; les transparents, triés à chaque frame.
+- **Où** : un troisième octree (`MeshRenderer.indexed` à 3), à côté du statique et du dynamique. Les requêtes de l'application (rayons, volumes, bornes) le parcourent ; les requêtes de rendu le sautent quand le renderer le demande (`RenderQueryOptions.skipGpuScene`).
+- **Quand** : au flush, comme les index. Un renderer placé dans l'index de la `GpuScene` y est ajouté ; ses bornes changées, il est touché ; caché, retiré ; un autre mesh, matériau ou ombre (`rendererChanged`), retiré puis ajouté (un autre lot) ; détruit, retiré. Les lots statiques déplacent leurs renderers à leur reconstruction (`Scene.reindex`). Le renderer appelle `GpuScene.sync()` avant de la lire : la scène y fait son flush (`GpuSceneOptions.sync`), et les changements de la frame sont dans la frame.
+- **Le renderer** : une source qui a une `gpuScene` (`RenderSource.gpuScene`), dessinée avec `gpuCulling` là où le GPU culle, est dessinée depuis la `GpuScene`, et ses requêtes (caméra et ombres) la laissent de côté ; sans culling sur le GPU (WebGL2), la source donne tout, comme avant : la `GpuScene` d'une scène ne coûte rien là où elle ne sert pas.
+
+La démo `city` crée sa scène avec `gpuScene: true` : la touche G suffit.
+
+### 3.11 Deux corrections
+
+- **La première phase lisait les lignes d'une `GpuScene` dans le mauvais buffer** (celui des candidats envoyés par le CPU, jamais écrit pour elle) : elle testait l'historique de la ligne 0 pour tous. Visible, tout ce que le frustum gardait était dessiné dès la première phase ; caché, la première phase et la seconde alternaient d'une frame à l'autre. Le test de rendu des deux phases passe aussi par une `GpuScene`.
+- **WebGPU refuse un buffer lié à la fois en lecture et en écriture dans un dispatch** : la seconde phase des listes sans première (les transparents) liait `visible` comme `drawn`, non lu ; Dawn rejetait le dispatch. Un autre buffer est lié.
 
 Reste de B : les matériaux sans changement d'état (bindless), qui feraient un draw multiple par pipeline. WebGPU n'a pas de bindless, et le compilateur devrait lire les valeurs des matériaux dans une table par instance : un chantier à part, pour quand les changements d'état domineront.
 
@@ -146,6 +175,15 @@ pass.multiDrawIndexedIndirect(buffer, offset, maxCount, {
   buffer: counts,
   offset: 0,
 });
+// Le scene graph garde ses nœuds statiques sur le GPU (étapes 8 et 9) :
+const scene = new Scene({ gpuScene: true });
+renderer.render({
+  source: scene,
+  camera,
+  surface,
+  occlusion,
+  gpuCulling: true,
+});
 ```
 
 ## 5. Ce qu'il a fallu ajouter au moteur
@@ -157,6 +195,8 @@ pass.multiDrawIndexedIndirect(buffer, offset, maxCount, {
 - Étape 5 : `engine-core/src/render/gpuLightClusters.ts` (`GpuLightClusters`, `MaxGpuClusterLights`) ; `lightSpheres`, `sliceParameters`.
 - Étape 4 : `engine-tessellation/src/gpuLevels.ts` (`GpuLevels`) ; `Mesh.setGpuVertexCount` ; le storage buffer des tracés.
 - Étape 7 : `GpuScene` (`add`, `remove`, `touch`, `dynamic`), l'option `gpuScene` des passes de scène, `GpuSceneLayout`, `CullingCandidates.persistent` et `count`, `ObjectRows.rowOf`.
+- Étape 8 : `GpuCulling.recordReceiverMask`, `MaskSize`, `MaxMaskReceivers`, la phase `'shadow'` (`CullingPhase`) et `CullingCandidates.receivers` ; `GpuSceneLayout.casterCount` et `casterBuckets` ; `GpuScene.cursor`, `touchedSince`, `sync` et `GpuSceneOptions` (`takeTouched` retiré) ; `CityPlan.tiledGround`.
+- Étape 9 : `SceneOptions.gpuScene` et `Scene.gpuScene`, `NodeFlags.Lod`, `Scene.reindex` (interne) ; `RenderSource.gpuScene` et `RenderQueryOptions.skipGpuScene`.
 - Étape 6 : `multiDrawIndirect`, `multiDrawIndexedIndirect`, `IndirectCount`, les capacités ; les commandes `FDW_*_CMD_MULTI_DRAW_INDIRECT` et `FDW_*_CMD_MULTI_DRAW_INDEXED_INDIRECT` des deux bibliothèques natives ; `MeshArena`, `RangeAllocator`, `ArenaBuffers`.
 - Les briques communes de la compaction exportées (`computeGraph`, `scanGraph`, `recordPrefixSum`) ; `log.bufferCopies` du faux backend.
 
@@ -184,7 +224,23 @@ Avec l'étape 7, la même mesure (le même script, mode `gpu scene` : tous les o
 | GPU, seconde phase             | 0,036 ms                | 0,039 ms         | 0,047 ms                  | 0,088 ms           |
 | GPU, toutes les passes         | 0,23 ms                 | 0,22 ms          | 0,26 ms                   | 0,59 ms            |
 
-Le CPU ne dépend plus du nombre d'objets : un lot par mesh et matériau. Le GPU teste tous les objets (pas seulement ceux du frustum de l'octree) : le culling double à 110 000 candidats, toujours sous 0,1 ms par phase. Les temps du CPU de ce poste varient d'une exécution à l'autre (de 67 à 160 ms pour le chemin GPU sans scène à 99 225) ; leur ordre de grandeur est stable.
+Le CPU ne dépend plus du nombre d'objets : un lot par mesh et matériau.
+
+Avec les étapes 8 et 9 (le même script : le sol en dalles, la scène avec `gpuScene: true` comme source, avec puis sans le soleil ; 11 979 et 121 275 candidats avec les rues et les dalles), médianes de 40 frames :
+
+|                                           | 9801, CPU (P3) | 9801, GPU | 9801, `GpuScene` | 99 225, CPU (P3) | 99 225, GPU | 99 225, `GpuScene` |
+| ----------------------------------------- | -------------- | --------- | ---------------- | ---------------- | ----------- | ------------------ |
+| CPU par frame, sans ombres                | 2,1 ms         | 7,2 ms    | **1,3 ms**       | 17,7 ms          | 159 ms      | **1,7 ms**         |
+| CPU par frame, ombres du soleil           | 8,5 ms         | 18,4 ms   | **2,3 ms**       | 102 ms           | 294 ms      | **4,0 ms**         |
+| GPU, passes des ombres                    | 0,077 ms       | 0,074 ms  | 0,035 ms         | 0,73 ms          | 0,55 ms     | **0,067 ms**       |
+| GPU, culling des ombres (les deux phases) | —              | —         | 0,12 ms          | —                | —           | 0,23 ms            |
+| GPU, toutes les passes, ombres            | 0,38 ms        | 0,54 ms   | 0,54 ms          | 1,65 ms          | 1,32 ms     | **0,82 ms**        |
+
+(GPU : le culling sur le GPU sans `GpuScene`, en deux phases.) Ce que disent ces mesures :
+
+- **Le CPU** : avec les ombres, la `GpuScene` passe de 102 ms (P3) ou 294 ms (le GPU sans scène, qui prépare chaque candidat et chaque projeteur) à 4 ms ; ce qui reste est fixe (les tuiles, les lumières, les lots).
+- **Les ombres sur le GPU** : le test des récepteurs divise par dix le dessin de l'atlas à 99 225 immeubles (0,73 → 0,067 ms) : seuls les projeteurs des rues vues restent. Son culling coûte 0,12 et 0,11 ms par phase ; le masque, par paquets de 256 récepteurs, en est une petite part (un fil par cellule et par récepteur, sans paquets, en coûtait 0,4 ms).
+- **La correction de la première phase** (§3.11) : à 99 225, toutes les passes sans ombres passent de 0,59 à 0,34 ms. Le GPU teste tous les objets (pas seulement ceux du frustum de l'octree) : le culling double à 110 000 candidats, toujours sous 0,1 ms par phase. Les temps du CPU de ce poste varient d'une exécution à l'autre (de 67 à 160 ms pour le chemin GPU sans scène à 99 225) ; leur ordre de grandeur est stable.
 
 Ce que disent ces mesures :
 
@@ -216,6 +272,8 @@ Ce que disent ces mesures :
 | **5. Les lumières**                    | Le remplissage des clusters de P2 en calcul                                                                                                                                |
 | **6. Les tables de la scène**          | L'option B (§2) : un allocateur de meshes, `multiDrawIndirect` et `drawIndirectCount` ; les instances persistantes à l'étape 7                                             |
 | **7. La scène sur le GPU** (en partie) | Les instances persistantes (`GpuScene` : le CPU n'écrit que ce qui change, plus de préparation par objet) faites ; restent les matériaux sans changement d'état (bindless) |
+| **8. Les ombres sur le GPU**           | Les projeteurs d'une `GpuScene` cullés par tuile, contre les récepteurs que la caméra dessine, en deux phases (§3.9)                                                       |
+| **9. Le scene graph et la `GpuScene`** | `new Scene({ gpuScene: true })` : la scène garde ses nœuds statiques sur le GPU, sans code de l'application (§3.10)                                                        |
 
 ## 9. Décisions
 
@@ -227,10 +285,16 @@ Ce que disent ces mesures :
 - **Un storage buffer pour les tracés des patchs**, sur les deux chemins : le calcul n'écrit pas de textures, et un seul graphe de matériau.
 - **Le nombre de sommets recopié par le `Renderer`** (une passe de copie) plutôt qu'écrit par le producteur avec la première instance, que seul le `Renderer` connaît, à l'exécution.
 - **Une `GpuScene` explicite** plutôt que la scène graph elle-même : l'application dit ce qui est statique et ce qui bouge (`touch`, `dynamic`), sans balayer les versions de tous les objets à chaque frame ; le scene graph reste la source des transparents et des ombres.
+- **Le masque des récepteurs par cellules de la lumière** plutôt qu'un test de chaque projeteur contre chaque récepteur, ou une rastérisation des récepteurs : sans atomiques, un fil par cellule et par paquet de récepteurs ; les boîtes suffisent, pourvu que les grands récepteurs soient découpés.
+- **Les ombres en deux phases**, comme la caméra, plutôt que les récepteurs de la frame précédente : sans retard, ce que la seconde phase découvre a ses ombres.
+- **Un troisième octree pour la `GpuScene` d'une scène** plutôt qu'un filtre dans les requêtes : les requêtes de rendu ne parcourent pas ses nœuds ; celles de l'application les trouvent.
+- **Les niveaux de détail hors de la `GpuScene`** : chaque changement de niveau rangerait toute la scène.
 - **Le bindless remis à plus tard** : ni WebGPU ni le compilateur ne le permettent aujourd'hui ; les lots par matériau suffisent tant que les matériaux sont peu nombreux.
 - **Les meshes d'une arène toujours en indirect** : `drawIndexed` n'a ni premier indice ni sommet de base dans l'API (et WebGL2 n'a pas de sommet de base) ; l'indirect les porte.
 
 ## 10. État
+
+_Étapes 8 et 9 faites (5 novembre 2026)_ : les projeteurs d'une `GpuScene` cullés sur le GPU par tuile, contre le frustum et les récepteurs de la caméra, en deux phases (§3.9) ; le scene graph qui garde ses nœuds statiques dans sa `GpuScene` (`new Scene({ gpuScene: true })`, §3.10), dans la démo `city` ; deux corrections (§3.11) ; les mesures (§6 : 4 ms de CPU par frame avec les ombres du soleil sur 99 225 immeubles, contre 102 ms) ; les guides (backends, scene graph, lumières et ombres) et le tutoriel de l'occlusion culling (EN, FR). Reste le bindless.
 
 _Étapes 3, 4, 5 et la première part de 6 faites, mesures prises (5 novembre 2026)_ : l'occlusion en deux phases sans retard (`OcclusionCuller.addPyramid`, l'historique par ligne) ; les clusters de lumières remplis par le GPU ; les niveaux de tessellation en calcul (`levels: 'gpu'`, `Mesh.setGpuVertexCount`, le storage buffer des tracés) ; `multiDrawIndirect` et `drawIndirectCount` sur Vulkan, Direct3D 12 et WebGPU (sans nombre), `MeshArena` et les draws multiples ; la touche G et la scène `city-gpu` de la démo ; les guides et tutoriels (backends, occlusion culling, tessellation, nombreuses lumières ; EN, FR). Puis l'étape 7, la scène gardée sur le GPU (`GpuScene`, l'option `gpuScene`) : le CPU d'une frame à 1 ms pour 10 000 comme pour 100 000 immeubles. Reste le bindless (§3.8).
 

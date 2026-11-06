@@ -251,17 +251,56 @@ crane.transform.position = { x: 3 };
 city.touch(crane);
 ```
 
+A scene graph does it by itself: `new Scene({ gpuScene: true })` keeps
+its static renderers in its own `GpuScene` (`scene.gpuScene`), adds and
+removes them, touches those that move. Draw the scene as usual, with
+`gpuCulling`: the renderer takes them from there, and the queries of the
+scene leave them out.
+
+```ts
+const scene = new Scene({ gpuScene: true });
+buildCity(scene); // static nodes
+renderer.render({ source: scene, camera, surface, gpuCulling: true });
+```
+
 On 99 225 buildings, the CPU of a frame goes from 125 ms (culled on the
-GPU, prepared one by one) to 1 ms, whatever their number.
+GPU, prepared one by one) to 1 ms, whatever their number; with the
+shadows of the sun, from 102 ms (culled on the CPU) to 4 ms.
 
 - Static objects are written again only after `touch`; `dynamic` ones at
   each frame. Adding or removing objects lays them all out again.
-- The transparent objects are drawn as usual (sorted each frame), and the
-  shadow maps query the objects on the CPU.
-- The layers of the views do not apply; a `GpuScene` is drawn by one
-  renderer. It can be given besides a `source` and `items`.
+- The transparent objects are drawn as usual (sorted each frame).
+- The shadow maps cull its casters on the GPU too, tile by tile, in the
+  same runs and multiple draws as the camera (see below).
+- The layers of the views do not apply; several renderers can draw the
+  same `GpuScene`. It can be given besides a `source` and `items`.
+- A scene graph keeps there its opaque static renderers seen by every
+  layer: not the hidden ones, those of a static batch, nor the levels of
+  detail, which switch often. Its dynamic nodes stay in its queries.
 - Where the backend cannot cull on the GPU (WebGL2), its objects are drawn
-  as a list.
+  as a list (those of a scene graph, from its queries).
+
+### Shadows culled on the GPU
+
+The casters of a `GpuScene` are culled on the GPU for each tile of the
+shadow atlas, after the camera: the box of each against the frustum of the
+tile, then, for the directional lights, against the receivers the camera
+draws. Seen from the light, a mask of 32 × 32 cells keeps the farthest
+receiver of each; a caster is drawn only if one of the cells it covers has
+a receiver behind it. With the occlusion culling in two phases, the
+shadows follow them: the casters of what the first phase draws, then, over
+the same atlas, those of what the second finds. What moving reveals has
+its shadows in the frame it appears.
+
+Nothing to set: `gpuCulling` and a `GpuScene` (or a scene keeping one)
+are enough. On the city of 99 225 buildings seen from its avenue, the
+shadow passes go from 0.73 ms (every caster in the frustum of the sun) to
+0.07 ms, and their culling costs 0.23 ms.
+
+The receivers are boxes: a large one (a single ground under the whole
+city) covers every cell, and keeps every caster in front of it. Cut it in
+tiles, as the city does (`tiledGround`), for the test to find what is
+seen.
 
 ### Meshes sharing their buffers
 

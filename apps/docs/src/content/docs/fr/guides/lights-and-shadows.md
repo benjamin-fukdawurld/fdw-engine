@@ -226,7 +226,13 @@ Chaque lumière avec ombres dessine les objets projetant des ombres une fois
 de plus ; une lumière à cascades, une fois par cascade ; une lumière ponctuelle,
 une fois par face qui voit la vue (jusqu'à six). Les objets qui
 partagent un mesh et un matériau sont instanciés dans les passes d'ombre
-aussi. L'atlas est partagé, donc davantage de lumières donnent des tuiles
+aussi. Ceux qui sont gardés sur le GPU (une `GpuScene`, ou les nœuds
+statiques d'une `new Scene({ gpuScene: true })`) y sont cullés avec
+`gpuCulling`, contre le frustum de chaque tuile et, pour les lumières
+directionnelles, contre ce que la caméra dessine : le CPU ne les regarde
+plus (voir le
+[guide des backends](/fdw-engine/fr/guides/backends-and-surfaces/#les-ombres-cullées-sur-le-gpu)).
+L'atlas est partagé, donc davantage de lumières donnent des tuiles
 plus petites : 4 lumières dans un atlas de 2048 obtiennent chacune
 1024 × 1024 ; un soleil et deux lampes à ombres (13 tuiles), 512 × 512. Augmentez `shadowAtlasSize` pour des ombres plus nettes, au prix
 de la mémoire.
