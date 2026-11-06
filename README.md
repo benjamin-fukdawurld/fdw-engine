@@ -99,8 +99,10 @@ packages/
   engine-behavior/      Behavior graphs: events, a flow of execution, run as systems, interpreted or compiled, a debugger
   engine-noise/         The noises of the material graph in TypeScript (heights, placement), the same bits as the GPU
   engine-editing/       Editing tools: selection and outlines, transform gizmos, undoable commands, scene events
-  engine-physics/       Physics: an abstract API, the bodies as components of the scene, a debug view
+  engine-physics/       Physics: an abstract API, the bodies as components of the scene, a debug view, a character controller against the volumes of a scene
   engine-physics-rapier/ The physics API on Rapier (WebAssembly, in the browser and in Node)
+  engine-ragdoll/       Ragdolls: bodies on the bones of a skeleton, on the physics API
+  engine-navigation/    Navigation meshes from the volumes of a scene, paths (A* and the funnel), agents
   engine-ocean/         The sea: an ocean spectrum by FFT on the GPU or Gerstner waves, the water seen through, buoyancy
   engine-fluids/        Fluids on the GPU: water as a field of heights, smoke and fire in a grid, a liquid of particles
   engine-native/        Native windows and surfaces (Node-API addon over SDL3)

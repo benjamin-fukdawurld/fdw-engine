@@ -1,0 +1,143 @@
+---
+title: La navigation
+description: Construire un maillage de navigation à partir des volumes d'une scène, y trouver des chemins, et y faire marcher des agents avec des contrôleurs de personnage qui heurtent les mêmes volumes — sans moteur physique.
+sidebar:
+  order: 49
+---
+
+import Example from '../../../../components/Example.astro';
+
+Quatre agents traversent un petit niveau : des murs percés de portes, des
+marches jusqu'à une plateforme, une rampe qui en redescend. Chacun trouve
+son chemin sur un **maillage de navigation** construit à partir des
+volumes de la scène, et le parcourt avec un **contrôleur de personnage**
+qui heurte les mêmes volumes. Il n'y a pas de moteur physique dans cette
+page.
+
+Cliquez sur le sol : tout le monde y va. **N** masque ou affiche le maillage
+de navigation, en bleu.
+
+<Example name="navigation" />
+
+## Le maillage de navigation
+
+```ts
+import { Aabb } from '@fdw/engine-geometry';
+import { buildNavMesh, sceneVolumes } from '@fdw/engine-navigation';
+
+const navMesh = buildNavMesh({
+  bounds: new Aabb([-10, -1, -10], [10, 3, 10]),
+  volumes: sceneVolumes(scene),
+  cellSize: 0.2,
+  agentRadius: 0.35,
+  agentHeight: 1.6,
+  maxClimb: 0.3,
+});
+```
+
+`sceneVolumes` donne les volumes des renderers d'une scène, dans le
+monde : le volume donné à `setMesh` quand il y en a un (la rampe est ici
+une boîte orientée), les bornes du mesh sinon. Un `filter` ne garde que
+certains nœuds : le niveau, pas les personnages.
+
+`buildNavMesh` découpe la région en colonnes de `cellSize`. Dans chaque
+colonne, il trouve les solides par des rayons, et garde leurs dessus comme
+**sols** quand un agent tient au-dessus (`agentHeight`) : le sol sous un
+pont et le pont sont deux sols de la même colonne. Deux sols de colonnes
+voisines sont reliés quand la marche entre eux n'est pas plus haute que
+`maxClimb` (ou la pente pas plus raide que `maxSlope`). Les sols plus
+proches d'un bord — un mur, un vide — que `agentRadius` sont écartés : les
+agents restent loin des murs de leur rayon, quel que soit le chemin. Les
+sols plats sont ensuite rassemblés en rectangles : les **polygones** du
+maillage, quelques dizaines pour ce niveau.
+
+Un terrain sans volume donne sa hauteur par une fonction : `ground: (x, z)
+=> height(x, z)`.
+
+D'autres façons d'en faire un : `NavMesh.fromTriangles(positions,
+indices)` garde les triangles praticables d'un mesh modélisé pour cela (loin
+des murs du rayon des agents), et `new NavMesh(data)` en charge un
+enregistré par `navMesh.toData()`.
+
+## Les chemins
+
+```ts
+const path = navMesh.findPath(start, end);
+// [start, coin, coin, …, end], ou undefined
+```
+
+Un chemin se trouve en deux temps : **A\*** sur les polygones, par les
+portails entre eux, donne le couloir de polygones ; puis
+l'**algorithme de l'entonnoir** tend le chemin à travers les portails du
+couloir : les coins du plus court chemin, aux coins des murs. Le départ et
+l'arrivée sont d'abord ramenés sur le maillage (`closestPoint`), à moins de
+`maxDistance`.
+
+Quand l'arrivée est inaccessible — le haut d'un mur, une île —
+`findPath` renvoie `undefined` ; avec `{ partial: true }`, un chemin
+jusqu'au point accessible le plus proche.
+
+## Les agents
+
+```ts
+import { NavAgent } from '@fdw/engine-navigation';
+
+const agent = new NavAgent(navMesh, { speed: 2.5 });
+agent.setDestination(feet, target);
+
+// À chaque pas :
+const step = agent.update(feet, dt); // vers le prochain coin, à sa vitesse
+controller.move({ x: step.x, y: -fall * dt, z: step.z });
+```
+
+Un `NavAgent` ne déplace rien : de la position donnée à chaque pas, il
+donne le déplacement vers le prochain coin de son chemin, à sa vitesse, et
+passe les coins à mesure qu'il les atteint. Poussé trop loin de son chemin
+(`maxDeviation`), il en cherche un nouveau. `idle` dit quand il est arrivé.
+
+## Un personnage contre la scène
+
+```ts
+import { SceneCharacter } from '@fdw/engine-physics';
+
+const controller = new SceneCharacter(scene, {
+  radius: 0.3,
+  height: 1.8,
+  position: { x: -8, y: 0.92, z: -8 },
+  stepHeight: 0.3,
+  ignore: (entity) => !level.has(entity),
+});
+
+controller.move({ x, y, z }); // le déplacement de ce pas, gravité comprise
+node.transform.position = controller.position;
+```
+
+Un `SceneCharacter` est un contrôleur de personnage **sans moteur
+physique** : une capsule verticale contre les volumes des renderers de la
+scène (les boîtes, boîtes orientées, sphères et capsules données à
+`setMesh`, les bornes des meshes sinon). Il avance à petits pas, et il est
+repoussé hors de ce qu'il chevauche après chacun : il **glisse** le long
+des murs, se tient sur les sols et les pentes jusqu'à `maxSlope` sans
+glisser, **monte les marches** jusqu'à `stepHeight`, reste **au sol** en
+descendant une pente ou une marche (`snapToGround`), et se cogne la tête
+aux plafonds. `ignore` écarte les renderers qu'il traverse : ses propres
+meshes, les autres personnages.
+
+Il a le même `move` que le `PhysicsCharacter` d'un moteur physique : un
+`CharacterController`. Le code d'un jeu écrit pour lui tourne sur les deux.
+
+| `SceneCharacter`                                 | `PhysicsCharacter` (Rapier)                               |
+| ------------------------------------------------ | --------------------------------------------------------- |
+| Aucun moteur, rien à charger                     | Un monde physique, son WebAssembly                        |
+| Les volumes de la scène : boîtes, sphères…       | Tout collider : meshes, heightfields, enveloppes convexes |
+| Ne pousse rien                                   | Pousse les corps dynamiques                               |
+| Un labyrinthe, un niveau de boîtes, un prototype | Un monde plein de physique                                |
+
+## La suite
+
+- [Le root motion](/fdw-engine/fr/tutorials/root-motion/) : un personnage
+  déplacé par son animation, sur le même contrôleur.
+- [Les ragdolls](/fdw-engine/fr/tutorials/ragdolls/) : des personnages qui
+  tombent.
+- [Le guide de la physique](/fdw-engine/fr/guides/physics/#un-personnage-sans-moteur)
+  et le [guide de la navigation](/fdw-engine/fr/guides/navigation/).

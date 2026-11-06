@@ -1,0 +1,102 @@
+---
+title: Ragdolls
+description: Put bodies on the bones of a skeleton, linked by joints, and let the physics take over from the animation — from the pose of the moment.
+sidebar:
+  order: 50
+---
+
+import Example from '../../../components/Example.astro';
+
+Three characters walk in place until a blow knocks them down. At that
+moment, a **ragdoll** takes over from the animation: a body on each bone,
+linked by joints, put in the physics world at the pose of the moment, and
+moving at the speed of the blow. Each frame, the bodies give a pose back to
+the skinning.
+
+Click the canvas: **Space** knocks the next one down, **R** stands them up.
+
+<Example name="ragdolls" />
+
+## The bones
+
+```ts
+import { Ragdoll, type RagdollBone } from '@fdw/engine-ragdoll';
+
+const bones: RagdollBone[] = [
+  { joint: 'hips', to: 'spine', radius: 0.13 },
+  { joint: 'spine', to: 'neck', radius: 0.13 },
+  { joint: 'head', radius: 0.12 },
+  { joint: 'upperArm.L', to: 'lowerArm.L', radius: 0.05 },
+  {
+    joint: 'lowerArm.L',
+    to: 'hand.L',
+    radius: 0.045,
+    link: 'hinge',
+    limits: [-2.4, 0.2],
+  },
+  { joint: 'upperLeg.L', to: 'lowerLeg.L', radius: 0.075 },
+  {
+    joint: 'lowerLeg.L',
+    to: 'foot.L',
+    radius: 0.06,
+    link: 'hinge',
+    limits: [-0.1, 2.4],
+  },
+  // … and the right side.
+];
+
+const ragdoll = new Ragdoll(world, skeleton, { bones, groups: 2, mask: 1 });
+```
+
+A bone is a body on a joint: a **capsule** from the joint to the joint
+given by `to`, or a **sphere** on it (a head, a hand). Not every joint
+needs one: the chest and the neck here follow the spine, the hands their
+forearms, as they were when the ragdoll took over.
+
+Each body hangs on the body of its nearest ancestor: by a **ball** joint (a
+shoulder, a hip) or a **hinge** (an elbow, a knee), its `axis` in the space
+of the joint (x by default) and its `limits` in radians, around its angle
+at the activation. The collision groups keep the bodies of the ragdoll
+from colliding with each other: group 2, colliding with group 1 only (the
+ground).
+
+The ragdoll is written against the [abstract physics
+API](/fdw-engine/tutorials/physics/): any engine behind it, Rapier here.
+
+## Taking over
+
+```ts
+// The node of the skeleton: the parent of its root joint.
+const frame = character.nodes[0].worldMatrix;
+ragdoll.activate(animator.pose, frame, { x: 0.5, y: 1.5, z: -4 });
+```
+
+`activate` puts the bodies in the world where the pose puts the joints —
+the character falls as it stood, mid-step — moving at the velocity given:
+the blow. `deactivate` takes them out.
+
+## The pose of the bodies
+
+```ts
+const pose = skeleton.rest.clone();
+
+// Each frame, after the step of the world:
+if (ragdoll.active) {
+  skinning.applyPose(ragdoll.readPose(pose));
+} else {
+  skinning.applyPose(animator.update(dt));
+}
+```
+
+`readPose` turns the poses of the bodies into the local transforms of the
+joints, relative to the node of the character at the activation: the node
+stays where it was, the body falls away from it. The pose is an ordinary
+`Pose`: `Pose.blend(ragdollPose, animator.pose, w, out)` fades from the
+ragdoll back to an animation, for a character getting up.
+
+## Next
+
+- [Physics](/fdw-engine/tutorials/physics/): bodies, joints, collision
+  groups.
+- [An animated character](/fdw-engine/tutorials/character-animation/): the
+  skeleton, the clips and the skinning under the ragdoll.

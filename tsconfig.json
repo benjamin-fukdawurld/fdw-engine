@@ -103,6 +103,12 @@
       "path": "./packages/engine-noise"
     },
     {
+      "path": "./packages/engine-navigation"
+    },
+    {
+      "path": "./packages/engine-ragdoll"
+    },
+    {
       "path": "./packages/engine-ocean"
     },
     {

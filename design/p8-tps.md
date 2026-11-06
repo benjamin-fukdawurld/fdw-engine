@@ -231,8 +231,8 @@ Validées (17 octobre 2026), avec les ajustements de la réalisation :
 2. **Les groupes de collision des personnages** (`CharacterDesc.groups`, `mask`), pour filtrer les coups et la caméra sans prédicat.
 3. **Les imposteurs** des arbres lointains, si une scène plus grande le demande ; des cartes d'aiguilles plus fines au LOD0 (le sapin vu de près reste un peu « feuillu »).
 4. **La liaison des clips par nom d'os au chargement**, puis le reciblage entre squelettes différents (proportions, poses de repos).
-5. **Le root motion** (les fichiers `_RM` des UAL), pour des coups qui avancent.
-6. **Un navmesh** et la recherche de chemin, quand un niveau aura des murs et des ponts.
+5. **Le root motion** (les fichiers `_RM` des UAL), pour des coups qui avancent. — _Le mécanisme fait avec P25_ (5 novembre 2026) ; reste à l'utiliser dans la démo.
+6. **Un navmesh** et la recherche de chemin, quand un niveau aura des murs et des ponts. — _Faits avec P25_ (5 novembre 2026) : `engine-navigation` ([p25-gameplay.md](p25-gameplay.md)).
 7. **L'IA en graphs de comportement** (P9) — _faite_ (18 octobre 2026) : [p9-behavior.md](p9-behavior.md) §6.
 8. **Le reste de P2** : clusters de lumières, IBL, un ciel ; l'occlusion des projeteurs d'ombre.
 9. **Une tête pour le rôdeur** (le pack _Universal Base Characters_), et les mesures dans Chrome sur le GPU.

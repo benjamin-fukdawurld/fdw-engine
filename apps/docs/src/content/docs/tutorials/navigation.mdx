@@ -1,0 +1,138 @@
+---
+title: Navigation
+description: Build a navigation mesh from the volumes of a scene, find paths on it, and walk agents along them with character controllers that collide with the same volumes — no physics engine.
+sidebar:
+  order: 49
+---
+
+import Example from '../../../components/Example.astro';
+
+Four agents cross a small level: walls with doors, steps up to a
+platform, a ramp down from it. Each finds its path on a **navigation
+mesh** built from the volumes of the scene, and walks it with a
+**character controller** that collides with the same volumes. There is no
+physics engine in this page.
+
+Click the ground: everyone goes there. **N** hides or shows the navigation mesh, in blue.
+
+<Example name="navigation" />
+
+## The navigation mesh
+
+```ts
+import { Aabb } from '@fdw/engine-geometry';
+import { buildNavMesh, sceneVolumes } from '@fdw/engine-navigation';
+
+const navMesh = buildNavMesh({
+  bounds: new Aabb([-10, -1, -10], [10, 3, 10]),
+  volumes: sceneVolumes(scene),
+  cellSize: 0.2,
+  agentRadius: 0.35,
+  agentHeight: 1.6,
+  maxClimb: 0.3,
+});
+```
+
+`sceneVolumes` gives the volumes of the renderers of a scene, in the
+world: the volume given to `setMesh` when there is one (the ramp here is
+an oriented box), the bounds of the mesh otherwise. A `filter` keeps some
+nodes only: the level, not the characters.
+
+`buildNavMesh` cuts the region in columns of `cellSize`. In each column, it
+finds the solids by rays, and keeps their tops as **floors** when an agent
+fits above (`agentHeight`): the floor under a bridge and the bridge are two
+floors of the same column. Two floors of neighbor columns are linked when
+the step between them is no higher than `maxClimb` (or the slope no steeper
+than `maxSlope`). The floors closer to an edge — a wall, a drop — than
+`agentRadius` are dropped: the agents keep away from the walls by their
+radius, whatever the path. The flat floors are then gathered in
+rectangles: the **polygons** of the mesh, a few dozen for this level.
+
+A terrain without a volume gives its height by a function: `ground: (x, z)
+=> height(x, z)`.
+
+Other ways to make one: `NavMesh.fromTriangles(positions, indices)` keeps
+the walkable triangles of a mesh modeled for it (away from the walls by the
+radius of the agents), and `new NavMesh(data)` loads one saved with
+`navMesh.toData()`.
+
+## Paths
+
+```ts
+const path = navMesh.findPath(start, end);
+// [start, corner, corner, …, end], or undefined
+```
+
+A path is found in two steps: **A\*** over the polygons, through the
+portals between them, gives the corridor of polygons; then the
+**funnel algorithm** pulls the path tight through the portals of the
+corridor: the corners of the shortest path, at the corners of the walls.
+The start and the end are first brought onto the mesh (`closestPoint`),
+within `maxDistance`.
+
+When the end cannot be reached — the top of a wall, an island —
+`findPath` returns `undefined`; with `{ partial: true }`, a path to the
+reachable point closest to it.
+
+## Agents
+
+```ts
+import { NavAgent } from '@fdw/engine-navigation';
+
+const agent = new NavAgent(navMesh, { speed: 2.5 });
+agent.setDestination(feet, target);
+
+// Each step:
+const step = agent.update(feet, dt); // toward the next corner, at its speed
+controller.move({ x: step.x, y: -fall * dt, z: step.z });
+```
+
+A `NavAgent` moves nothing: from the position given at each step, it gives
+the movement toward the next corner of its path, at its speed, and passes
+the corners as it reaches them. Pushed too far from its path
+(`maxDeviation`), it finds a new one. `idle` tells when it has arrived.
+
+## A character against the scene
+
+```ts
+import { SceneCharacter } from '@fdw/engine-physics';
+
+const controller = new SceneCharacter(scene, {
+  radius: 0.3,
+  height: 1.8,
+  position: { x: -8, y: 0.92, z: -8 },
+  stepHeight: 0.3,
+  ignore: (entity) => !level.has(entity),
+});
+
+controller.move({ x, y, z }); // this step's movement, gravity included
+node.transform.position = controller.position;
+```
+
+A `SceneCharacter` is a character controller **without a physics engine**:
+a vertical capsule against the volumes of the renderers of the scene (the
+boxes, oriented boxes, spheres and capsules given to `setMesh`, the bounds
+of the meshes otherwise). It moves in small steps, and is pushed out of
+what it overlaps after each: it **slides** along the walls, stands on the
+floors and the slopes up to `maxSlope` without sliding down, **climbs the
+steps** up to `stepHeight`, stays **on the ground** down a slope or a step
+(`snapToGround`), and bumps its head on the ceilings. `ignore` leaves out
+the renderers it walks through: its own meshes, the other characters.
+
+It has the same `move` as the `PhysicsCharacter` of a physics engine: a
+`CharacterController`. The code of a game written against it runs on both.
+
+| `SceneCharacter`                          | `PhysicsCharacter` (Rapier)                      |
+| ----------------------------------------- | ------------------------------------------------ |
+| No engine, nothing to load                | A physics world, its WebAssembly                 |
+| The volumes of the scene: boxes, spheres… | Any collider: meshes, heightfields, convex hulls |
+| Pushes nothing                            | Pushes the dynamic bodies                        |
+| A maze, a level of boxes, a prototype     | A world full of physics                          |
+
+## Next
+
+- [Root motion](/fdw-engine/tutorials/root-motion/): a character moved by
+  its animation, on the same controller.
+- [Ragdolls](/fdw-engine/tutorials/ragdolls/): characters that fall.
+- [Physics guide](/fdw-engine/guides/physics/#a-character-without-an-engine)
+  and the [navigation guide](/fdw-engine/guides/navigation/).

@@ -1,0 +1,105 @@
+---
+title: Le root motion
+description: Déplacer un personnage par son animation — le déplacement de ses hanches pris aux clips, à travers les mélanges et les boucles — et le faire marcher contre les volumes de la scène.
+sidebar:
+  order: 48
+---
+
+import Example from '../../../../components/Example.astro';
+
+Le personnage marche droit, puis tourne à gauche. Rien dans le code ne dit
+à quelle vitesse il va ni à quel point il tourne : les **clips** le
+disent. Leurs hanches avancent et tournent ; l'animateur retire ce
+déplacement des poses — le personnage s'anime sur place — et le donne au
+code, qui déplace le personnage d'autant. Les pieds ne glissent pas : le
+déplacement est celui que l'animateur a dessiné.
+
+Cliquez sur le canvas, maintenez **←** pour continuer à tourner.
+
+<Example name="root-motion" />
+
+## Des clips qui avancent
+
+Le modèle du [personnage animé](/fdw-engine/fr/tutorials/character-animation/)
+a deux clips pour cela : `Walk_RM`, dont les hanches avancent à 1,3 m/s, et
+`TurnLeft_RM`, dont les hanches avancent en tournant d'un douzième de tour
+par cycle. Les autres clips (`Walk`, `Run`…) sont **sur place** : leurs
+hanches restent au-dessus de l'origine, le code choisit la vitesse. Les
+packs d'assets livrent souvent les deux, ceux du root motion avec un
+suffixe (`_RM`, `_Root`).
+
+## L'animateur prend le déplacement
+
+```ts
+import { Animator, rootMotionToWorld } from '@fdw/engine-animation';
+
+const animator = new Animator(graph, {
+  skeleton,
+  clips,
+  rootMotion: { joint: 'hips', rotation: true },
+});
+```
+
+Avec `rootMotion`, chaque mise à jour de l'animateur :
+
+- **retire des poses** le déplacement de l'articulation selon x et z (et
+  sa rotation autour de y, avec `rotation: true`) : les hanches restent
+  où elles sont au début de chaque clip, tournées comme elles le sont ;
+- **additionne** ce que cette articulation a parcouru pendant la mise à
+  jour, dans `animator.rootMotion` : `x`, `y`, `z` dans l'espace du
+  personnage tel qu'il était tourné au début de la mise à jour, et `yaw`,
+  en radians autour de y.
+
+Le déplacement traverse le graphe comme les poses : un mélange pondère
+les déplacements de ses entrées, un fondu d'une machine à états aussi, une
+boucle ajoute un cycle entier à chaque fois que le clip recommence, un clip
+qui ne boucle pas s'arrête à sa fin. Les **couches** ne déplacent pas le
+personnage : un salut de la main sur une couche laisse la marche en
+dessous tranquille.
+
+Le déplacement vertical reste dans les poses (le balancement des pas),
+sauf avec `vertical: true` : un clip de saut soulève alors le personnage
+lui-même.
+
+## Déplacer le personnage
+
+```ts
+let heading = 0;
+const step = { x: 0, y: 0, z: 0 };
+
+animator.update(dt);
+const motion = animator.rootMotion;
+rootMotionToWorld(motion, heading, 1, step); // tourné par le cap, mis à l'échelle
+heading += motion.yaw;
+
+controller.move({ x: step.x, y: -fall * dt, z: step.z });
+node.transform.rotation = axisAngle(0, 1, 0, heading);
+```
+
+`rootMotionToWorld` tourne le déplacement du cap du personnage et le met à
+l'échelle de son nœud. Le code garde le dernier mot : il peut ajouter la
+gravité, ralentir le personnage sur la glace, ou refuser le déplacement.
+
+Ici, un **contrôleur de personnage** déplace le personnage contre la
+scène, et les caisses l'arrêtent : un `SceneCharacter`, qui n'a besoin
+d'aucun moteur physique (voir [La navigation](/fdw-engine/fr/tutorials/navigation/)).
+Un `PhysicsCharacter` de Rapier prend le même `move`.
+
+## Sur place ou root motion ?
+
+| Sur place                                                | Root motion                                                                                          |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Le code choisit la vitesse, le clip suit                 | Le clip choisit la vitesse, le code suit                                                             |
+| Des contrôles immédiats, précis (un tir, une plateforme) | Des mouvements qui pèsent, sans pieds qui glissent : départs, arrêts, virages, attaques qui avancent |
+| Les vitesses des clips accordées à la main (`rate`)      | Rien à accorder                                                                                      |
+
+Les deux se mélangent bien : la locomotion sur place, et le root motion
+pour les attaques et les esquives, dans le même graphe — seuls les clips
+qui avancent déplacent le personnage.
+
+## La suite
+
+- [Le guide de l'animation](/fdw-engine/fr/guides/animation/#le-root-motion) :
+  les règles du root motion dans le graphe.
+- [La navigation](/fdw-engine/fr/tutorials/navigation/) : trouver un
+  chemin, et le parcourir contre les volumes de la scène.

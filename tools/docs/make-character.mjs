@@ -1,7 +1,8 @@
 // Writes apps/docs/public/models/character.glb, the character of the
 // tutorial "An animated character": a body of tubes and spheres skinned to
-// a skeleton of 18 joints, its clothes in vertex colors, and five clips:
-// Idle, Walk, Run, Jump and Wave. Generated, so that the documentation
+// a skeleton of 18 joints, its clothes in vertex colors, and seven clips:
+// Idle, Walk, Run, Jump and Wave, in place, and Walk_RM and TurnLeft_RM,
+// whose hips travel (root motion). Generated, so that the documentation
 // ships no third-party model.
 // Usage: node tools/docs/make-character.mjs
 import { writeFileSync } from 'node:fs';
@@ -344,13 +345,30 @@ function clip(name, duration, { rotations, hips: hipsAt }) {
 const tau = Math.PI * 2;
 const hipsRest = joints[jointIndex.get('hips')][2];
 
-function locomotion(name, period, a) {
+// With `travel` (root motion): the hips go forward at `speed` (m/s),
+// turning left by `turn` radians a cycle.
+function locomotion(name, period, a, travel) {
   const phase = (t) => (t / period) * tau;
   const knee = (p) => a.knee0 + a.knee * Math.max(0, Math.sin(p - 0.9));
+  const speed = travel?.speed ?? 0;
+  const rate = (travel?.turn ?? 0) / period;
+  const heading = (t) => rate * t;
+  // Along the arc of the turn: (1 − cos, sin) × speed / rate.
+  const along = (t) =>
+    rate !== 0
+      ? [
+          (speed / rate) * (1 - Math.cos(rate * t)),
+          (speed / rate) * Math.sin(rate * t),
+        ]
+      : [0, speed * t];
   return clip(name, period, {
-    hips: (t) => [0, hipsRest[1] - a.drop + a.bob * Math.cos(2 * phase(t)), 0],
+    hips: (t) => [
+      along(t)[0],
+      hipsRest[1] - a.drop + a.bob * Math.cos(2 * phase(t)),
+      along(t)[1],
+    ],
     rotations: {
-      hips: (t) => quatY(a.twist * Math.sin(phase(t))),
+      hips: (t) => quatY(heading(t) + a.twist * Math.sin(phase(t))),
       spine: (t) => quatX(a.lean),
       chest: (t) => quatY(-a.twist * 1.4 * Math.sin(phase(t))),
       neck: () => quatX(-a.lean * 0.6),
@@ -369,6 +387,19 @@ function locomotion(name, period, a) {
   });
 }
 
+const walk = {
+  leg: 0.45,
+  knee0: 0.08,
+  knee: 0.75,
+  lift: 0,
+  arm: 0.4,
+  elbow: 0.25,
+  bob: 0.02,
+  drop: 0.01,
+  twist: 0.08,
+  lean: 0.04,
+};
+
 const clips = [
   // Breathing, the arms hanging, the head looking around.
   clip('Idle', 3, {
@@ -382,18 +413,7 @@ const clips = [
       'lowerArm.R': () => quatX(-0.15),
     },
   }),
-  locomotion('Walk', 1.1, {
-    leg: 0.45,
-    knee0: 0.08,
-    knee: 0.75,
-    lift: 0,
-    arm: 0.4,
-    elbow: 0.25,
-    bob: 0.02,
-    drop: 0.01,
-    twist: 0.08,
-    lean: 0.04,
-  }),
+  locomotion('Walk', 1.1, walk),
   locomotion('Run', 0.66, {
     leg: 0.8,
     knee0: 0.3,
@@ -480,6 +500,10 @@ const clips = [
       head: (t) => quatY(-0.3 * Math.min(t / 0.25, 1, (1.2 - t) / 0.25)),
     },
   }),
+  // The walk, its hips going forward (1.3 m/s), then turning left a
+  // twelfth of a turn a step cycle: for the root motion.
+  locomotion('Walk_RM', 1.1, walk, { speed: 1.3 }),
+  locomotion('TurnLeft_RM', 1.1, walk, { speed: 1.1, turn: tau / 12 }),
 ];
 
 // --- The file -----------------------------------------------------------------

@@ -20,6 +20,9 @@
       "path": "../engine-scene/tsconfig.lib.json"
     },
     {
+      "path": "../engine-geometry/tsconfig.lib.json"
+    },
+    {
       "path": "../engine-core/tsconfig.lib.json"
     },
     {

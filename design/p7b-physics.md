@@ -121,9 +121,9 @@ La liaison coûte donc environ 0,6 µs par corps en mouvement et par pas (lectur
 
 ## 8. La suite
 
-1. **Le contrôleur de personnage contre les volumes de la scène** (P4), comme une implémentation de `PhysicsCharacter` sans moteur, si un client veut se passer de Rapier.
+1. **Le contrôleur de personnage contre les volumes de la scène** (P4), comme une implémentation de `PhysicsCharacter` sans moteur, si un client veut se passer de Rapier. — _Fait avec P25_ (5 novembre 2026) : `SceneCharacter`, un `CharacterController` ([p25-gameplay.md](p25-gameplay.md)).
 2. **Le TPS (P8)** : le personnage animé de P6 sur `PhysicsCharacter`, les volumes d'attaque en capteurs, la caméra TPS par `shapeCast`.
-3. **Les ragdolls** sur les squelettes de P6, les véhicules (le `DynamicRayCastVehicleController` de Rapier), les corps mous.
+3. **Les ragdolls** sur les squelettes de P6 (_faits avec P25_ : `engine-ragdoll`), les véhicules (le `DynamicRayCastVehicleController` de Rapier), les corps mous.
 4. **Le déterminisme multi-plateforme** (le paquet déterministe de Rapier) pour le réseau, et l'instantané du monde (`takeSnapshot`) pour les sauvegardes.
 5. **Un moteur natif** (un addon Rust ou C++) derrière la même API, si une démo dépasse le budget d'une image.
 6. **L'éditeur de jeu (P20)** : les formes en données simples se sérialisent et s'éditent ; la vue de débogage y servira telle quelle.

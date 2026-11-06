@@ -71,6 +71,8 @@ export class AnimationClip {
   readonly tracks: readonly Track[];
   /** Sorted by time. */
   readonly events: readonly AnimationEvent[];
+  // The tracks of each joint, made at the first sampleJoint().
+  private _byJoint?: Map<number, Track[]>;
 
   constructor({
     name,
@@ -155,6 +157,25 @@ export class AnimationClip {
   sample(time: number, pose: Pose): Pose {
     for (const track of this.tracks) {
       sampleTrack(track, time, pose);
+    }
+    return pose;
+  }
+
+  /** sample(), for the tracks of one joint only. */
+  sampleJoint(time: number, joint: number, pose: Pose): Pose {
+    if (!this._byJoint) {
+      this._byJoint = new Map();
+      for (const track of this.tracks) {
+        const list = this._byJoint.get(track.joint) ?? [];
+        list.push(track);
+        this._byJoint.set(track.joint, list);
+      }
+    }
+    const tracks = this._byJoint.get(joint);
+    if (tracks) {
+      for (const track of tracks) {
+        sampleTrack(track, time, pose);
+      }
     }
     return pose;
   }

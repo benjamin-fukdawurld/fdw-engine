@@ -4,6 +4,7 @@
   "dependencies": {
     "@fdw/engine-backend": "0.0.1",
     "@fdw/engine-core": "0.0.1",
+    "@fdw/engine-geometry": "0.0.1",
     "@fdw/engine-scene": "0.0.1",
     "@fdw/engine-scene-io": "0.0.1",
     "@fdw/engine-shader": "0.0.1",

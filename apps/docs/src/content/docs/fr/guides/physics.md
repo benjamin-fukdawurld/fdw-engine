@@ -11,13 +11,19 @@ moteur physique, et en branche un derrière :
 - `@fdw/engine-physics` : l'**API abstraite** (mondes, corps, colliders,
   formes, articulations, requêtes, événements, contrôleurs de personnage),
   sa **liaison à la scène** (`ScenePhysics` : les corps comme composants,
-  la simulation dans le pas fixe) et la **vue de débogage**. Il ne dépend
-  d'aucun moteur physique.
+  la simulation dans le pas fixe), la **vue de débogage**, et un
+  contrôleur de personnage contre les volumes d'une scène
+  (`SceneCharacter`). Il ne dépend d'aucun moteur physique.
 - `@fdw/engine-physics-rapier` : l'API sur [Rapier](https://rapier.rs),
   compilé en WebAssembly : le même module dans le navigateur et dans Node
   (les démos natives).
+- `@fdw/engine-ragdoll` : les ragdolls sur les squelettes de l'animation,
+  contre l'API.
 
-Le tutoriel [La physique](/fdw-engine/fr/tutorials/physics/) les réunit.
+Le tutoriel [La physique](/fdw-engine/fr/tutorials/physics/) les réunit ;
+[La navigation](/fdw-engine/fr/tutorials/navigation/) fait marcher des
+personnages sans moteur, [Les ragdolls](/fdw-engine/fr/tutorials/ragdolls/)
+les renversent.
 
 ## L'API
 
@@ -160,6 +166,58 @@ const { movement, grounded, collisions } = character.move({ x, y, z });
 `move` prend le déplacement de ce pas, gravité comprise, et renvoie ce qui
 en a été fait ; le corps y arrive au pas suivant. Un déplacement par pas.
 
+`PhysicsCharacter` est un `CharacterController` : l'interface de ce qui
+déplace un personnage (`move`, `grounded`), quoi qu'il y ait derrière.
+
+### Un personnage sans moteur
+
+```ts
+import { SceneCharacter } from '@fdw/engine-physics';
+
+const character = new SceneCharacter(scene, {
+  radius: 0.3,
+  height: 1.8, // d'un bout à l'autre
+  position: { y: 0.92 }, // le centre de la capsule
+  offset: 0.02,
+  maxSlope: Math.PI / 4,
+  stepHeight: 0.3,
+  snapToGround: 0.3,
+  ground: (x, z) => terrainHeight(x, z), // facultatif
+  ignore: (entity) => entity === hero.entity,
+  layers: 1, // les couches de la scène qu'il heurte
+});
+
+const { movement, grounded, collisions } = character.move({ x, y, z });
+character.position; // le centre de la capsule
+character.teleport({ x: 0, y: 5 });
+```
+
+L'autre `CharacterController` : une capsule verticale contre les **volumes
+des renderers d'une scène**, sans moteur physique. Les obstacles sont le
+volume donné à `setMesh` (`Aabb`, `Obb`, `Sphere`, `Capsule` : leur
+distance signée est exacte) ou les bornes du mesh (tout autre volume vaut
+pour ses bornes) ; et une fonction du sol, pour un terrain. Le
+déplacement :
+
+1. **À petits pas** (la moitié du rayon), chacun suivi de passes qui
+   repoussent la capsule hors de ce qu'elle chevauche, selon la normale de
+   la surface : elle glisse le long des murs. Le point de son segment le
+   plus proche de chaque volume se trouve par une recherche par la section
+   dorée de la distance signée (`signedDistance` de
+   `@fdw/engine-geometry`).
+2. **Le sol** : une surface pas plus raide que `maxSlope` repousse tout
+   droit vers le haut — pas de glissade sur une pente à l'arrêt — et la
+   rend `grounded`.
+3. **Les marches** : bloquée en marchant au sol, elle refait le
+   déplacement `stepHeight` plus haut, puis redescend : gardé si elle
+   atterrit sur un sol praticable (vérifié par un rayon sous son axe : une
+   pente raide n'est pas une marche) et qu'elle est allée plus loin.
+4. **Collée au sol** : au sol avant, plus après, sans monter : une sonde
+   de `snapToGround` vers le bas la garde sur une pente ou une marche qui
+   descend.
+
+`collisions` liste les entités touchées. Elle ne pousse rien.
+
 ## La scène et le pas fixe
 
 `ScenePhysics` fait des corps des composants des entités d'une
@@ -210,6 +268,53 @@ abstraite, dans des `DebugLines` (positions et couleurs) : un outil peut
 les dessiner à sa façon. La vue les dessine comme un mesh de
 `topology: 'line-list'` (un champ de `MeshDescription`, sur les trois
 backends), sans éclairage ni ombre.
+
+## Les ragdolls
+
+```ts
+import { Ragdoll } from '@fdw/engine-ragdoll';
+
+const ragdoll = new Ragdoll(world, skeleton, {
+  bones: [
+    { joint: 'hips', to: 'spine', radius: 0.13 },
+    {
+      joint: 'lowerLeg.L',
+      to: 'foot.L',
+      radius: 0.06,
+      link: 'hinge',
+      limits: [0, 2.4],
+    },
+    // …
+  ],
+  groups: 2,
+  mask: 1,
+});
+ragdoll.activate(pose, nodeOfSkeleton.worldMatrix, velocity);
+ragdoll.readPose(out); // à chaque image, après le pas
+ragdoll.deactivate();
+```
+
+`@fdw/engine-ragdoll` pose des corps dynamiques sur les os d'un squelette
+de `@fdw/engine-animation`, contre l'API abstraite :
+
+- Un **os** est une capsule de son articulation jusqu'à l'articulation
+  `to`, ou une sphère sur son articulation ; `density` donne sa masse
+  (1000 kg/m³ par défaut).
+- Chaque corps est accroché au corps de son **plus proche ancêtre** qui en
+  a un : une rotule (`ball`) à l'articulation, ou une charnière (`hinge`)
+  autour de `axis` (dans l'espace de l'articulation, x par défaut) dans ses
+  `limits` (en radians, autour de l'angle à l'activation).
+- Tous les corps sont créés **tournés comme le nœud** du squelette, la
+  rotation de chaque articulation gardée comme un décalage : l'axe d'une
+  charnière est le même dans les deux corps qu'elle relie, comme l'API le
+  demande.
+- `activate(pose, matrix, velocity)` crée les corps et les articulations à
+  la pose (la matrice monde du parent de l'articulation racine), lancés à
+  `velocity` ; `deactivate` les retire. `bodyOf(joint)` donne un corps,
+  pour pousser un membre.
+- `readPose(out)` écrit les transformations locales : les articulations qui
+  ont un corps là où il est, les autres comme à l'activation sous leur
+  parent ; relatives au nœud à l'activation.
 
 ## Rapier
 

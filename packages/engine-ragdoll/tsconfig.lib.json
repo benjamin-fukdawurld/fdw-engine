@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/engine-ragdoll",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*.bench.ts"],
+  "references": [
+    {
+      "path": "../engine-physics/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-backend/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-animation/tsconfig.lib.json"
+    },
+    {
+      "path": "../engine-physics-rapier/tsconfig.lib.json"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+---
+title: Les ragdolls
+description: Mettre des corps sur les os d'un squelette, reliés par des articulations, et laisser la physique prendre la suite de l'animation — depuis la pose du moment.
+sidebar:
+  order: 50
+---
+
+import Example from '../../../../components/Example.astro';
+
+Trois personnages marchent sur place jusqu'à ce qu'un coup les renverse.
+À ce moment, un **ragdoll** prend la suite de l'animation : un corps sur
+chaque os, reliés par des articulations, posés dans le monde physique à la
+pose du moment, et lancés à la vitesse du coup. À chaque image, les corps
+rendent une pose au skinning.
+
+Cliquez sur le canvas : **Espace** renverse le suivant, **R** les relève.
+
+<Example name="ragdolls" />
+
+## Les os
+
+```ts
+import { Ragdoll, type RagdollBone } from '@fdw/engine-ragdoll';
+
+const bones: RagdollBone[] = [
+  { joint: 'hips', to: 'spine', radius: 0.13 },
+  { joint: 'spine', to: 'neck', radius: 0.13 },
+  { joint: 'head', radius: 0.12 },
+  { joint: 'upperArm.L', to: 'lowerArm.L', radius: 0.05 },
+  {
+    joint: 'lowerArm.L',
+    to: 'hand.L',
+    radius: 0.045,
+    link: 'hinge',
+    limits: [-2.4, 0.2],
+  },
+  { joint: 'upperLeg.L', to: 'lowerLeg.L', radius: 0.075 },
+  {
+    joint: 'lowerLeg.L',
+    to: 'foot.L',
+    radius: 0.06,
+    link: 'hinge',
+    limits: [-0.1, 2.4],
+  },
+  // … et le côté droit.
+];
+
+const ragdoll = new Ragdoll(world, skeleton, { bones, groups: 2, mask: 1 });
+```
+
+Un os est un corps sur une articulation : une **capsule** de
+l'articulation jusqu'à celle que donne `to`, ou une **sphère** sur elle (une
+tête, une main). Toutes les articulations n'en ont pas besoin : la poitrine
+et le cou suivent ici la colonne, les mains leurs avant-bras, tels qu'ils
+étaient quand le ragdoll a pris la suite.
+
+Chaque corps est accroché au corps de son plus proche ancêtre : par une
+**rotule** (`ball` : une épaule, une hanche) ou une **charnière** (`hinge`
+: un coude, un genou), son `axis` dans l'espace de l'articulation (x par
+défaut) et ses `limits` en radians, autour de son angle à l'activation. Les
+groupes de collision empêchent les corps du ragdoll de se heurter entre
+eux : le groupe 2, qui ne touche que le groupe 1 (le sol).
+
+Le ragdoll est écrit contre l'[API physique abstraite](/fdw-engine/fr/tutorials/physics/) :
+n'importe quel moteur derrière, Rapier ici.
+
+## Prendre la suite
+
+```ts
+// Le nœud du squelette : le parent de son articulation racine.
+const frame = character.nodes[0].worldMatrix;
+ragdoll.activate(animator.pose, frame, { x: 0.5, y: 1.5, z: -4 });
+```
+
+`activate` pose les corps dans le monde là où la pose place les
+articulations — le personnage tombe comme il se tenait, au milieu d'un pas
+— lancés à la vitesse donnée : le coup. `deactivate` les retire.
+
+## La pose des corps
+
+```ts
+const pose = skeleton.rest.clone();
+
+// À chaque image, après le pas du monde :
+if (ragdoll.active) {
+  skinning.applyPose(ragdoll.readPose(pose));
+} else {
+  skinning.applyPose(animator.update(dt));
+}
+```
+
+`readPose` transforme les poses des corps en transformations locales des
+articulations, relatives au nœud du personnage à l'activation : le nœud
+reste où il était, le corps tombe loin de lui. La pose est une `Pose`
+ordinaire : `Pose.blend(ragdollPose, animator.pose, w, out)` passe en
+fondu du ragdoll à une animation, pour un personnage qui se relève.
+
+## La suite
+
+- [La physique](/fdw-engine/fr/tutorials/physics/) : les corps, les
+  articulations, les groupes de collision.
+- [Un personnage animé](/fdw-engine/fr/tutorials/character-animation/) : le
+  squelette, les clips et le skinning sous le ragdoll.

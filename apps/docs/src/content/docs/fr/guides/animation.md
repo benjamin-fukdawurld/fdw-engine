@@ -120,6 +120,40 @@ qu'elle joue (`onEvent(écouteur)` aussi). Un mélange, un blend space et un
 fondu gardent les événements de leur entrée la plus lourde : un pas, pas
 un par clip mélangé. Une couche garde ceux des deux.
 
+## Le root motion
+
+```ts
+const animator = new Animator(graph, {
+  skeleton,
+  clips,
+  rootMotion: { joint: 'hips', rotation: true, vertical: false },
+});
+animator.update(dt);
+const { x, y, z, yaw } = animator.rootMotion;
+const step = rootMotionToWorld(animator.rootMotion, heading, scale);
+```
+
+Avec `rootMotion`, l'animateur retire des clips le déplacement d'une
+articulation (les hanches, ou une articulation racine au-dessus d'elles) :
+
+- **Les poses restent sur place** : dans chaque clip, l'articulation est
+  gardée où elle est au début selon x et z (et y avec `vertical`), tournée
+  comme au début (avec `rotation`). Lu dans l'espace du squelette : une
+  armature tournée ou mise à l'échelle au-dessus de l'articulation est prise
+  en compte.
+- **`rootMotion`** donne ce que l'articulation a parcouru pendant la
+  dernière mise à jour : des mètres selon x, y, z dans l'espace du
+  personnage tel qu'il était tourné au début de la mise à jour, des radians
+  autour de y. Il vaut zéro sans l'option, et chaque mise à jour l'écrase.
+- **À travers le graphe** : chaque clip ajoute son déplacement pondéré par
+  sa part de la pose — un mélange pondère ses entrées, un fondu ses deux
+  états. Une boucle ajoute tout le déplacement du clip à chaque fois qu'il
+  recommence (par cycles : pas de retour en arrière), un clip sans boucle
+  ne bouge plus à sa fin. Les **couches** ne déplacent rien (leurs clips
+  sont écartés du déplacement), les clips additifs non plus.
+- `rootMotionToWorld(motion, heading, scale)` passe le déplacement dans le
+  monde, pour le contrôleur ; le yaw s'ajoute au cap.
+
 ## Le skinning
 
 ```ts
@@ -168,7 +202,9 @@ lancer de rayon contre un personnage.
 
 ## Limites
 
-- Pas encore de morph targets, de root motion ni de cinématique inverse.
+- Pas encore de morph targets ni de cinématique inverse.
+- Le root motion ne prend que les rotations autour de y ; une couche dont
+  le masque couvre l'articulation racine ne déplace pas le personnage.
 - Le skinning est linéaire : une articulation très tordue (un avant-bras
   tourné d'un demi-tour) perd un peu de volume.
 - Les animation graphs n'ont pas encore d'événements de leurs états ni de
