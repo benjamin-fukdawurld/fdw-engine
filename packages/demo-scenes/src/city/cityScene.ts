@@ -76,12 +76,16 @@ function cityActions(input: Input): ActionMap {
  * Keys: WASD (or the arrows) to move, Q and E to turn, the wheel to rise,
  * Shift to go faster; O switches the occlusion culling, C the view of the
  * culling, G the culling on the GPU (Vulkan, Direct3D 12, WebGPU: the
- * occlusion culling in two phases, without delay; the view of the culling
- * then shows nothing hidden, the CPU not knowing).
+ * occlusion culling in two phases, without delay, the static nodes drawn
+ * from the GpuScene of the scene, their shadows culled on the GPU; the
+ * view of the culling then shows only what the CPU queried).
  */
 export function createCity(options: CityOptions = {}): SceneFactory {
   return (backend, surface, context = {}) => {
-    const scene = new Scene();
+    // The static buildings kept on the GPU by the scene: with the culling
+    // on the GPU, neither queried nor prepared one by one, their shadows
+    // culled on the GPU too.
+    const scene = new Scene({ gpuScene: true });
     const city = buildCity(scene, options.plan ?? defaultCityPlan);
     const camera = new Camera({
       projection: {

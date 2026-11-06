@@ -1745,65 +1745,71 @@ export function describeRenderer(
         occlusion.destroy();
       });
 
-      it('culls in two phases on the GPU, without delay', async () => {
-        if (!GpuCulling.supported(backend)) {
-          // WebGL2: the readback above.
-          return;
-        }
-        const mesh = quad();
-        const wall = {
-          mesh,
-          material: colored(1, 0, 0),
-          transform: placed(-1, 0, 2, 3),
-        };
-        // Drawn over everything when it is drawn: what the culling keeps
-        // shows.
-        const hidden = {
-          mesh,
-          material: new Material({
-            graph: colorGraph(),
-            values: { color: [0, 1, 0, 1] },
-            renderState: { depthTest: false, depthWrite: false },
-          }),
-          transform: placed(-1, -2, 0.5),
-        };
-        const seen = {
-          mesh,
-          material: colored(0, 0, 1),
-          transform: placed(1, -2, 0.5),
-        };
-        const items = [wall, hidden, seen];
-        const occlusion = new OcclusionCulling();
-        const frame = async () => {
-          renderer.render({
-            items,
-            camera: perspective,
-            surface,
-            occlusion,
-            gpuCulling: true,
-            clearColor: { r: 0, g: 0, b: 0, a: 1 },
-          });
-          const pixels = await fixture.readPixels();
-          return (x: number, y: number) => [
-            ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
-          ];
-        };
-        // The first frame draws everything in the second phase (nothing
-        // was visible before); the second finds the quad hidden; the third
-        // leaves it out.
-        let pixel = await frame();
-        expectColor(pixel(24, 32), [0, 255, 0, 255]);
-        await frame();
-        pixel = await frame();
-        expectColor(pixel(24, 32), [255, 0, 0, 255]);
-        expectColor(pixel(40, 32), [0, 0, 255, 255]);
-        // The wall out of view: the quad is drawn in that very frame.
-        wall.transform.position = { x: -20 };
-        pixel = await frame();
-        expectColor(pixel(24, 32), [0, 255, 0, 255]);
-        expectColor(pixel(40, 32), [0, 0, 255, 255]);
-        occlusion.destroy();
-      });
+      it.each(['list', 'GpuScene'])(
+        'culls in two phases on the GPU, without delay (%s)',
+        async (mode) => {
+          if (!GpuCulling.supported(backend)) {
+            // WebGL2: the readback above.
+            return;
+          }
+          const mesh = quad();
+          const wall = {
+            mesh,
+            material: colored(1, 0, 0),
+            transform: placed(-1, 0, 2, 3),
+          };
+          // Drawn over everything when it is drawn: what the culling keeps
+          // shows.
+          const hidden = {
+            mesh,
+            material: new Material({
+              graph: colorGraph(),
+              values: { color: [0, 1, 0, 1] },
+              renderState: { depthTest: false, depthWrite: false },
+            }),
+            transform: placed(-1, -2, 0.5),
+          };
+          const seen = {
+            mesh,
+            material: colored(0, 0, 1),
+            transform: placed(1, -2, 0.5),
+          };
+          const items = [wall, hidden, seen];
+          // Kept on the GPU: the first phase reads their rows there.
+          const gpuScene = new GpuScene();
+          items.forEach((item) => gpuScene.add(item, { dynamic: true }));
+          const occlusion = new OcclusionCulling();
+          const frame = async () => {
+            renderer.render({
+              ...(mode === 'list' ? { items } : { gpuScene }),
+              camera: perspective,
+              surface,
+              occlusion,
+              gpuCulling: true,
+              clearColor: { r: 0, g: 0, b: 0, a: 1 },
+            });
+            const pixels = await fixture.readPixels();
+            return (x: number, y: number) => [
+              ...pixels.subarray((y * size + x) * 4, (y * size + x) * 4 + 4),
+            ];
+          };
+          // The first frame draws everything in the second phase (nothing
+          // was visible before); the second finds the quad hidden; the third
+          // leaves it out.
+          let pixel = await frame();
+          expectColor(pixel(24, 32), [0, 255, 0, 255]);
+          await frame();
+          pixel = await frame();
+          expectColor(pixel(24, 32), [255, 0, 0, 255]);
+          expectColor(pixel(40, 32), [0, 0, 255, 255]);
+          // The wall out of view: the quad is drawn in that very frame.
+          wall.transform.position = { x: -20 };
+          pixel = await frame();
+          expectColor(pixel(24, 32), [0, 255, 0, 255]);
+          expectColor(pixel(40, 32), [0, 0, 255, 255]);
+          occlusion.destroy();
+        },
+      );
     });
 
     describe('culling on the GPU', () => {
@@ -1863,6 +1869,85 @@ export function describeRenderer(
         // vertex, first instance; drawIndirect: vertices, instances, first
         // vertex, first instance.
         expect([...args]).toEqual([6, 2, 0, 0, 2, 4, 1, 0, 4, 0]);
+        culling.destroy();
+        table.destroy();
+      });
+
+      it('keeps the shadow casters whose shadow falls on a receiver', async () => {
+        if (!GpuCulling.supported(backend)) {
+          return;
+        }
+        const table = backend.createObjectTable?.({
+          rows: 16,
+          instances: 32,
+          rowStride: 112,
+          label: 'shadow culling test',
+        });
+        if (!table?.instanceBuffer) {
+          throw new Error('The backend has no instance buffer');
+        }
+        // The cube [-1, 1]³, seen by the camera and by the light (whose
+        // clip space is the world: the light looks along +z).
+        const planes = [
+          [1, 0, 0, 1],
+          [-1, 0, 0, 1],
+          [0, 1, 0, 1],
+          [0, -1, 0, 1],
+          [0, 0, 1, 1],
+          [0, 0, -1, 1],
+        ].flat();
+        const identity = new Float32Array([
+          1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+        ]);
+        const box = (x: number, z: number, half = 0.1) =>
+          new Aabb([x - half, -half, z - half], [x + half, half, z + half]);
+        const culling = new GpuCulling(backend);
+        const run = (count: number) => [
+          { start: 0, count, elements: 6, indexed: true },
+        ];
+        // The receivers the camera sees: the first two (the third is out
+        // of view).
+        const receivers = [box(-0.5, 0), box(0.5, 0.6), box(5, 0)];
+        // Casters: in front of the first receiver; where none is; behind
+        // the first; in front of the second; large.
+        const casters = [
+          box(-0.5, -0.5),
+          box(0, -0.5),
+          box(-0.5, 0.5),
+          box(0.5, 0),
+          box(0, -0.5, 0.9),
+        ];
+        const encoder = backend.createCommandEncoder();
+        const pass = encoder.beginComputePass('shadow culling');
+        culling.record(pass, 'camera', {
+          first: 0,
+          rows: new Uint32Array([0, 1, 2]),
+          table,
+          bounds: (i) => receivers[i],
+          runs: run(3),
+          planes,
+          receivers: true,
+        });
+        const mask = culling.recordReceiverMask(
+          pass,
+          'tile',
+          identity,
+          ['camera'],
+          0,
+        );
+        culling.record(pass, 'tile', {
+          first: 8,
+          rows: new Uint32Array([10, 11, 12, 13, 14]),
+          table,
+          bounds: (i) => casters[i],
+          runs: run(5),
+          planes,
+          phase: { kind: 'shadow', matrix: identity, mask },
+        });
+        pass.end();
+        backend.submit([encoder.finish()]);
+        const instances = new Uint32Array(await table.instanceBuffer.read());
+        expect([...instances.subarray(8, 11)]).toEqual([10, 13, 14]);
         culling.destroy();
         table.destroy();
       });
@@ -2858,6 +2943,70 @@ export function describeRenderer(
         ]) {
           expectColor(pixel(x, y), lit);
         }
+      });
+
+      it('casts the shadows of a GpuScene, its casters culled on the GPU', async () => {
+        if (!GpuCulling.supported(backend)) {
+          return;
+        }
+        // The ground, the blocker, and one casting no shadow.
+        const items: RenderItem[] = [
+          ...scene(-0.5, 0),
+          {
+            mesh: square(0.2, 0.5),
+            material: white(),
+            transform: at(0.5, 0.6),
+            castShadow: false,
+          },
+        ];
+        const gpuScene = new GpuScene();
+        items.forEach((item) => gpuScene.add(item));
+        const lights = [sun({ x: 1, y: 0, z: -1 })];
+        const frame = async (options: {
+          items?: Renderable[];
+          gpuScene?: GpuScene;
+          occlusion?: OcclusionCulling;
+        }) => {
+          renderer.render({
+            camera,
+            surface,
+            lights,
+            gpuCulling: true,
+            clearColor: { r: 0, g: 0, b: 0, a: 1 },
+            ...options,
+          });
+          return fixture.readPixels();
+        };
+        const compare = (pixels: Uint8Array, expected: Uint8Array) => {
+          let different = 0;
+          for (let p = 0; p < pixels.length; p++) {
+            if (Math.abs(pixels[p] - expected[p]) > 1) {
+              different++;
+            }
+          }
+          expect(different).toBe(0);
+        };
+        const occlusion = new OcclusionCulling();
+        for (let step = 0; step < 2; step++) {
+          const expected = await frame({ items });
+          // The shadow is there (then 0.4 higher).
+          const y = step === 0 ? 32 : 19;
+          expectColor(
+            [...expected.subarray((y * size + 32) * 4, (y * size + 33) * 4)],
+            shadowed,
+          );
+          compare(await frame({ gpuScene }), expected);
+          compare(await frame({ gpuScene }), expected);
+          // With the occlusion culling in two phases: the casters of what
+          // the second finds drawn over the shadow maps of the first.
+          for (let i = 0; i < 3; i++) {
+            compare(await frame({ gpuScene, occlusion }), expected);
+          }
+          // The blocker moved: its shadow too.
+          items[1].transform.position = { x: -0.5, y: 0.4 };
+          gpuScene.touch(items[1]);
+        }
+        occlusion.destroy();
       });
 
       it('keeps the shadows of the other lights beside those of a point light', async () => {

@@ -119,10 +119,19 @@ là où la relecture lui permet d'écarter les objets cachés. Avec quelques
 milliers d'objets, le chemin du GPU coûte plus de CPU (12 ms contre 4 ms
 pour les 9801 immeubles ci-dessous) ; son gain est l'image sans retard, le
 temps GPU de ses tests (0,04 ms pour 10 000 ou 100 000 objets). Gardez les
-objets sur le GPU (une `GpuScene`, voir le
-[guide des backends](/fdw-engine/fr/guides/backends-and-surfaces/#une-scène-gardée-sur-le-gpu)) :
-le CPU prépare alors un lot par mesh et matériau, environ 1 ms par frame
-pour 10 000 comme pour 100 000 immeubles.
+objets statiques sur le GPU : créez la scène avec `gpuScene: true`, rien
+d'autre ne change.
+
+```ts
+const scene = new Scene({ gpuScene: true });
+```
+
+Le CPU prépare alors un lot par mesh et matériau, environ 1 ms par frame
+pour 10 000 comme pour 100 000 immeubles, et les shadow maps cullent aussi
+leurs projeteurs sur le GPU, contre ce que les deux phases ont trouvé
+visible : 4 ms par frame avec les ombres du soleil, contre 102 ms pour
+100 000 immeubles sur le CPU (voir le
+[guide des backends](/fdw-engine/fr/guides/backends-and-surfaces/#une-scène-gardée-sur-le-gpu)).
 
 ## Ce qu'il fait gagner
 

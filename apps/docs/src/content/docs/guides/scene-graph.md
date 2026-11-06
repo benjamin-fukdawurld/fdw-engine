@@ -171,6 +171,31 @@ passes through `scene.occlusion` when one is set: a stage of your own
 (a precomputed visibility, portals), applied to the camera queries only,
 never to the shadow casters.
 
+### Static nodes kept on the GPU
+
+```ts
+const scene = new Scene({ gpuScene: true });
+renderer.render({ source: scene, camera, surface, gpuCulling: true });
+```
+
+With `gpuScene: true`, the scene keeps its static renderers in a
+`GpuScene` (`scene.gpuScene`, see the
+[backends guide](/fdw-engine/guides/backends-and-surfaces/#a-scene-kept-on-the-gpu)),
+by itself: added when they are indexed, touched when one moves, removed
+when hidden, destroyed, or given another mesh, material or shadow (then
+added again). Where the renderer culls on the GPU (`gpuCulling`), it draws
+them from there, with their shadows, and the queries of the scene leave
+them out; elsewhere (WebGL2), the queries give them as the others. Nothing
+changes for the application: the gain comes without code of its own.
+
+- Kept: the opaque static renderers seen by every layer. Not the
+  transparent ones (sorted each frame), those of other layers, the hidden
+  ones, those of a static batch (`NodeFlags.Batched`), nor the levels of
+  detail (`NodeFlags.Lod`, set by `SceneLods`: they switch often).
+- The dynamic nodes stay in the queries, prepared one by one.
+- The queries of the application (`raycast`, `queryVolume`, `bounds`) find
+  them as before: they stay indexed, in an octree of their own.
+
 ## Occlusion culling
 
 What the frustum keeps can still be hidden by what is in front of it: from

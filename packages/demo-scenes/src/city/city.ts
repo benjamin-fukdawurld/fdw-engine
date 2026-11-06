@@ -19,9 +19,19 @@ export interface CityPlan {
   // The side of a block, and the width of the streets, in meters.
   readonly block: number;
   readonly street: number;
+  // The ground in a tile per block, rather than one: the occlusion culling
+  // hides those behind the buildings, and the shadows of the casters
+  // culled on the GPU only cover what is seen (their receivers,
+  // design/p24-gpu-driven.md §3.9). Default false.
+  readonly tiledGround?: boolean;
 }
 
-export const defaultCityPlan: CityPlan = { blocks: 24, block: 42, street: 14 };
+export const defaultCityPlan: CityPlan = {
+  blocks: 24,
+  block: 42,
+  street: 14,
+  tiledGround: true,
+};
 
 /** What a city is made of, once built in a scene. */
 export interface City {
@@ -138,14 +148,27 @@ export function buildCity(
   const ground = plainMaterial([0.18, 0.18, 0.19], 0.95);
 
   const city = scene.root.add({ name: 'city', static: true });
-  city
-    .add({
-      name: 'ground',
-      static: true,
-      position: { x: 0, y: -0.5, z: 0 },
-      scale: { x: 2 * half + street, y: 1, z: 2 * half + street },
-    })
-    .setMesh(cube, ground, { castShadow: false });
+  // The ground: one, or a tile per block (those of the edges reach the
+  // half street around the city).
+  const tiles = plan.tiledGround ? blocks : 1;
+  const tile = (2 * half) / tiles;
+  const edge = (i: number) => (i === 0 || i === tiles - 1 ? street / 2 : 0);
+  for (let bx = 0; bx < tiles; bx++) {
+    for (let bz = 0; bz < tiles; bz++) {
+      const x0 = -half + bx * tile - (bx === 0 ? street / 2 : 0);
+      const z0 = -half + bz * tile - (bz === 0 ? street / 2 : 0);
+      const width = tile + edge(bx) + (tiles === 1 ? street / 2 : 0);
+      const depth = tile + edge(bz) + (tiles === 1 ? street / 2 : 0);
+      city
+        .add({
+          name: 'ground',
+          static: true,
+          position: { x: x0 + width / 2, y: -0.5, z: z0 + depth / 2 },
+          scale: { x: width, y: 1, z: depth },
+        })
+        .setMesh(cube, ground, { castShadow: false });
+    }
+  }
 
   const buildings: Node[] = [];
   const lot = block / 3;

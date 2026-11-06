@@ -110,10 +110,19 @@ frustum, where the readback lets it skip the hidden ones. With a few
 thousand objects the GPU path costs more on the CPU (12 ms against 4 ms
 for the 9801 buildings below); its gain is the image without delay, the
 GPU time of its tests (0.04 ms for 10 000 or 100 000 objects). Keep the
-objects on the GPU (a `GpuScene`, see the
-[backends guide](/fdw-engine/guides/backends-and-surfaces/#a-scene-kept-on-the-gpu)):
-the CPU then prepares one run per mesh and material, about 1 ms a frame
-for 10 000 or 100 000 buildings.
+static objects on the GPU: create the scene with `gpuScene: true`, nothing
+else changes.
+
+```ts
+const scene = new Scene({ gpuScene: true });
+```
+
+The CPU then prepares one run per mesh and material, about 1 ms a frame
+for 10 000 or 100 000 buildings, and the shadow maps cull their casters
+on the GPU too, against what the two phases found visible: 4 ms a frame
+with the shadows of the sun, against 102 ms for 100 000 buildings on the
+CPU (see the
+[backends guide](/fdw-engine/guides/backends-and-surfaces/#a-scene-kept-on-the-gpu)).
 
 ## What it saves
 

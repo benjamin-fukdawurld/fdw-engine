@@ -34,6 +34,7 @@ export const Workgroup = 64;
 export const ArgumentWords = 5;
 
 const u32Array = arrayType(BuiltinTypes.u32);
+const f32Array = arrayType(BuiltinTypes.f32);
 const vec4Array = arrayType(BuiltinTypes.vec4f);
 const vec4uArray = arrayType(BuiltinTypes.vec4u);
 
@@ -106,7 +107,12 @@ type PyramidTest = Pick<OcclusionPyramid, 'key' | 'test'>;
  * - 'late', the second: the candidates tested against the depth pyramid of
  *   the first, their visibility kept in `history` for the next frame
  *   (`remember`, the opaque lists), and only those the first phase did not
- *   draw drawn (`early`, the list of the first phase).
+ *   draw drawn (`early`, the list of the first phase);
+ * - 'shadow', the casters of a shadow map (design/p24-gpu-driven.md
+ *   §3.9): tested against the frustum of its tile and, with a `mask`,
+ *   against the receivers the camera draws (see recordReceiverMask); in a
+ *   second phase (`early`, the list of the first), only those the first did
+ *   not draw.
  */
 export type CullingPhase =
   | { readonly kind: 'early'; readonly history: GpuBuffer }
@@ -122,7 +128,41 @@ export type CullingPhase =
       readonly early?: string;
       // Whether the results are kept for the next frame.
       readonly remember: boolean;
+    }
+  | {
+      readonly kind: 'shadow';
+      // World to clip space of the tile.
+      readonly matrix: ArrayLike<number>;
+      // The receivers of the tile (recordReceiverMask, for an orthographic
+      // matrix): without, every caster in the frustum is drawn.
+      readonly mask?: GpuBuffer;
+      readonly early?: string;
     };
+
+/**
+ * The cells of a side of the receiver mask of a shadow map: the farthest
+ * receiver from the light in each of its 32 × 32 cells.
+ */
+export const MaskSize = 32;
+// The cells of a side a caster is tested against, at most: those covering
+// more are drawn.
+const MaskSpan = 4;
+/** The receivers a mask is made of, at most: beyond, every cell is covered. */
+export const MaxMaskReceivers = 32768;
+// The receivers of a thread of the mask (maskChunksGraph).
+const MaskChunk = 256;
+// Far below any depth: no receiver.
+const NoReceiver = -1e30;
+
+// The first three rows of a matrix (column-major), as the graphs read
+// them: row0, row1, row2.
+const matrixRows = (m: ArrayLike<number>): Record<string, number[]> => {
+  const rows: Record<string, number[]> = {};
+  for (let r = 0; r < 3; r++) {
+    rows[`row${r}`] = [m[r], m[4 + r], m[8 + r], m[12 + r]];
+  }
+  return rows;
+};
 
 /**
  * visible[i]: 1 if the box of candidate i (center, then half extents, two
@@ -139,21 +179,7 @@ function testGraph(phase?: 'early' | PyramidTest) {
         ? 'early test'
         : `late test ${phase.key}`;
   const { g, o, index } = setup(name);
-  const boxes = g.storage('boxes', vec4Array);
-  const center = o.index(boxes, o.mul(index, 2)).swizzle('xyz');
-  const extent = o.index(boxes, o.add(o.mul(index, 2), 1)).swizzle('xyz');
-  let inside: Value = true;
-  for (let p = 0; p < 6; p++) {
-    const plane = g.uniform(`plane${p}`, BuiltinTypes.vec4f);
-    const normal = plane.swizzle('xyz');
-    // The distance of the corner furthest along the normal.
-    const distance = o.add(
-      o.add(o.dot(normal, center), plane.swizzle('w')),
-      o.dot(o.abs(normal), extent),
-    );
-    const side = o.greaterEqual(distance, 0);
-    inside = p === 0 ? side : o.select(false, side, inside);
-  }
+  const { center, extent, inside } = frustumTest(g, o, index);
   const count = g.uniform('count', BuiltinTypes.u32);
   const within = o.less(index, count);
   let visible: Value = inside;
@@ -199,6 +225,225 @@ function testGraph(phase?: 'early' | PyramidTest) {
     index,
     value: o.select(o.u32(0), o.u32(1), visible),
     when: within,
+  });
+  return finish(g);
+}
+
+type Ops = ReturnType<typeof setup>['o'];
+
+// The box of candidate `index` (center, then half extents, two vec4 each)
+// and whether it is on the inner side of the six planes.
+function frustumTest(g: GraphBuilder, o: Ops, index: PortHandle) {
+  const boxes = g.storage('boxes', vec4Array);
+  const center = o.index(boxes, o.mul(index, 2)).swizzle('xyz');
+  const extent = o.index(boxes, o.add(o.mul(index, 2), 1)).swizzle('xyz');
+  let inside: Value = true;
+  for (let p = 0; p < 6; p++) {
+    const plane = g.uniform(`plane${p}`, BuiltinTypes.vec4f);
+    const normal = plane.swizzle('xyz');
+    // The distance of the corner furthest along the normal.
+    const distance = o.add(
+      o.add(o.dot(normal, center), plane.swizzle('w')),
+      o.dot(o.abs(normal), extent),
+    );
+    const side = o.greaterEqual(distance, 0);
+    inside = p === 0 ? side : o.select(false, side, inside);
+  }
+  return { center, extent, inside };
+}
+
+// A box (center, half extents) seen by an orthographic matrix (its rows
+// row0, row1, row2): its center and half extents along x, y and z of the
+// clip space.
+function projectBox(g: GraphBuilder, o: Ops, center: Value, extent: Value) {
+  return [0, 1, 2].map((r) => {
+    const row = g.uniform(`row${r}`, BuiltinTypes.vec4f);
+    const axis = row.swizzle('xyz');
+    return {
+      center: o.add(o.dot(axis, center), row.swizzle('w')),
+      extent: o.dot(o.abs(axis), extent),
+    };
+  });
+}
+
+/**
+ * visible[i] for the casters of a shadow map: 1 if the box of candidate i
+ * is in the frustum of the tile and, with the mask (`useMask`), may shadow
+ * a receiver: the farthest receiver of a cell it covers is not nearer to
+ * the light than its nearest point. A caster covering more than MaskSpan
+ * cells of a side is kept. In a second phase (`phased`), not those the
+ * first drew (`drawn`).
+ */
+function shadowTestGraph() {
+  const { g, o, index } = setup('shadow test');
+  const { center, extent, inside } = frustumTest(g, o, index);
+  const [x, y, z] = projectBox(g, o, center, extent);
+  // The cell of a coordinate of the clip space, clamped to the mask.
+  const cell = (v: Value) =>
+    o.min(
+      o.max(
+        g.call(std.floor, {
+          x: o.mul(o.add(v, 1), MaskSize / 2),
+        } as Record<string, Value>),
+        0,
+      ),
+      MaskSize - 1,
+    );
+  const x0 = cell(o.sub(x.center, x.extent));
+  const x1 = cell(o.add(x.center, x.extent));
+  const y0 = cell(o.sub(y.center, y.extent));
+  const y1 = cell(o.add(y.center, y.extent));
+  const big = o.or(
+    o.greaterEqual(o.sub(x1, x0), MaskSpan),
+    o.greaterEqual(o.sub(y1, y0), MaskSpan),
+  );
+  const u32 = (v: Value) =>
+    g.call(std.convert, { value: v } as Record<string, Value>, {
+      params: { to: BuiltinTypes.u32 },
+    });
+  const [cx0, cx1, cy0, cy1] = [x0, x1, y0, y1].map(u32);
+  const mask = g.storage('mask', f32Array);
+  const useMask = o.equal(g.uniform('useMask', BuiltinTypes.u32), 1);
+  const span = o.select(o.u32(0), o.u32(MaskSpan), useMask);
+  // The farthest receiver of the cells of the box.
+  const farthest = g.fold(
+    g.constant(BuiltinTypes.f32, NoReceiver),
+    span,
+    (state, j) =>
+      g.fold(state, span, (s, i) => {
+        const cx = o.add(cx0, i);
+        const cy = o.add(cy0, j);
+        const covered = o.and(o.lessEqual(cx, cx1), o.lessEqual(cy, cy1));
+        const at = o.select(o.u32(0), o.add(o.mul(cy, MaskSize), cx), covered);
+        return o.select(s, o.max(s, o.index(mask, at)), covered);
+      }),
+  );
+  const nearest = o.sub(z.center, z.extent);
+  const receives = o.select(
+    true,
+    o.or(big, o.lessEqual(nearest, farthest)),
+    useMask,
+  );
+  const drawn = o.select(
+    false,
+    o.equal(o.index(g.storage('drawn', u32Array), index), 1),
+    o.equal(g.uniform('phased', BuiltinTypes.u32), 1),
+  );
+  const visible = o.and(o.and(inside, receives), o.select(true, false, drawn));
+  g.write(g.storage('visible', u32Array, { access: 'read-write' }), {
+    index,
+    value: o.select(o.u32(0), o.u32(1), visible),
+    when: o.less(index, g.uniform('count', BuiltinTypes.u32)),
+  });
+  return finish(g);
+}
+
+/**
+ * The visible candidates of a list, compacted by their prefix sum `sum`:
+ * receivers[1 + k] the index of the k-th, receivers[0] their number. The
+ * receivers of the shadow maps (see maskGraph).
+ */
+function receiversGraph() {
+  const { g, o, index, previous } = setup('receivers');
+  const sum = g.storage('sum', u32Array);
+  const through = o.index(sum, index);
+  const visible = o.equal(o.sub(through, previous(sum, index)), 1);
+  const count = g.uniform('count', BuiltinTypes.u32);
+  const receivers = g.storage('receivers', u32Array, { access: 'read-write' });
+  g.write(receivers, {
+    index: through,
+    value: index,
+    when: o.and(visible, o.less(index, count)),
+  });
+  g.write(receivers, {
+    index: o.u32(0),
+    value: through,
+    when: o.equal(o.add(index, 1), count),
+  });
+  return finish(g);
+}
+
+/**
+ * The receiver mask of a shadow map, in two graphs. First, a thread per
+ * cell (MaskSize²) and per chunk of MaskChunk receivers (a list compacted
+ * by receiversGraph, and their boxes): the farthest depth from the light
+ * of those of the chunk whose box, seen by the orthographic matrix of the
+ * tile and grown by `margin`, covers the cell (NoReceiver for none), in
+ * `partial`.
+ */
+function maskChunksGraph() {
+  const { g, o, index } = setup('receiver mask chunks');
+  const cells = MaskSize * MaskSize;
+  const cell = o.remainder(index, cells);
+  const chunk = o.div(index, cells);
+  const size = 2 / MaskSize;
+  const cellX = o.sub(o.mul(o.f32(o.remainder(cell, MaskSize)), size), 1);
+  const cellY = o.sub(o.mul(o.f32(o.div(cell, MaskSize)), size), 1);
+  const receivers = g.storage('receivers', u32Array);
+  const boxes = g.storage('boxes', vec4Array);
+  const margin = g.uniform('margin', BuiltinTypes.f32);
+  const total = o.min(
+    o.index(receivers, o.u32(0)),
+    g.uniform('cap', BuiltinTypes.u32),
+  );
+  const start = o.mul(chunk, MaskChunk);
+  const farthest = g.fold(
+    g.constant(BuiltinTypes.f32, NoReceiver),
+    o.min(o.sub(o.max(total, start), start), MaskChunk),
+    (state, k) => {
+      const i = o.index(receivers, o.add(o.add(start, k), 1));
+      const center = o.index(boxes, o.mul(i, 2)).swizzle('xyz');
+      const extent = o.index(boxes, o.add(o.mul(i, 2), 1)).swizzle('xyz');
+      const [x, y, z] = projectBox(g, o, center, extent);
+      const overlaps = (axis: typeof x, low: Value) => {
+        const reach = o.add(axis.extent, margin);
+        return o.and(
+          o.lessEqual(o.sub(axis.center, reach), o.add(low, size)),
+          o.greaterEqual(o.add(axis.center, reach), low),
+        );
+      };
+      return o.select(
+        state,
+        o.max(state, o.add(z.center, z.extent)),
+        o.and(overlaps(x, cellX), overlaps(y, cellY)),
+      );
+    },
+  );
+  g.write(g.storage('partial', f32Array, { access: 'read-write' }), {
+    index,
+    value: farthest,
+    when: o.less(chunk, g.uniform('chunks', BuiltinTypes.u32)),
+  });
+  return finish(g);
+}
+
+/**
+ * Then a thread per cell: the farthest of its chunks, merged with
+ * `previous` (the mask of other lists) unless `clear`. Beyond `cap`
+ * receivers, every cell is covered.
+ */
+function maskGraph() {
+  const { g, o, index } = setup('receiver mask');
+  const cells = MaskSize * MaskSize;
+  const total = o.index(g.storage('receivers', u32Array), o.u32(0));
+  const cap = g.uniform('cap', BuiltinTypes.u32);
+  const partial = g.storage('partial', f32Array);
+  const used = o.div(o.add(o.min(total, cap), MaskChunk - 1), MaskChunk);
+  const farthest = g.fold(
+    g.constant(BuiltinTypes.f32, NoReceiver),
+    used,
+    (state, chunk) =>
+      o.max(state, o.index(partial, o.add(o.mul(chunk, cells), index))),
+  );
+  const before = o.select(
+    o.index(g.storage('previous', f32Array), index),
+    g.constant(BuiltinTypes.f32, NoReceiver),
+    o.equal(g.uniform('clear', BuiltinTypes.u32), 1),
+  );
+  g.write(g.storage('mask', f32Array, { access: 'read-write' }), {
+    index,
+    value: o.select(o.max(before, farthest), 1e30, o.less(cap, total)),
+    when: o.less(index, cells),
   });
   return finish(g);
 }
@@ -363,6 +608,13 @@ export function recordPrefixSum(
   return sum;
 }
 
+// The receiver mask of a shadow map: two buffers, each list of receivers
+// merged from one into the other.
+interface Mask {
+  readonly buffers: readonly [GpuBuffer, GpuBuffer];
+  readonly steps: object[];
+}
+
 interface Programs {
   readonly test: CompiledProgram;
   readonly early: CompiledProgram;
@@ -371,6 +623,10 @@ interface Programs {
   readonly arguments: CompiledProgram;
   readonly nonEmpty: CompiledProgram;
   readonly pack: CompiledProgram;
+  readonly shadow: CompiledProgram;
+  readonly receivers: CompiledProgram;
+  readonly mask: CompiledProgram;
+  readonly maskChunks: CompiledProgram;
 }
 
 /** A draw of the culled candidates: entries [start, start + count). */
@@ -405,14 +661,17 @@ interface CullingBuffers {
   readonly counts: GpuBuffer;
   // The runs with instances, a u32 each.
   readonly nonEmpty: GpuBuffer;
+  // The visible candidates compacted, after their number (receiversGraph).
+  readonly receivers: GpuBuffer;
   // The data written before upload, of the size of the buffers.
   readonly boxData: Float32Array<ArrayBuffer>;
   readonly runData: Uint32Array<ArrayBuffer>;
   // The owners of the dispatches of the steps: their own uniforms.
   readonly steps: object[];
   // The boxes and the rows tested by its last culling: its own, or those
-  // kept on the GPU (CullingCandidates.persistent).
+  // kept on the GPU (CullingCandidates.persistent), and how many.
   source?: { readonly boxes: GpuBuffer; readonly rows: GpuBuffer };
+  count: number;
 }
 
 const destroyBuffers = (list: CullingBuffers) => {
@@ -426,6 +685,7 @@ const destroyBuffers = (list: CullingBuffers) => {
     list.packed,
     list.counts,
     list.nonEmpty,
+    list.receivers,
   ]) {
     buffer.destroy();
   }
@@ -470,6 +730,9 @@ export interface CullingCandidates {
   // Packs the draws of the groups of runs with instances, for multiple
   // draws whose count the GPU writes (drawIndirectCount).
   readonly pack?: boolean;
+  // Also compacts the visible candidates (their indices): the receivers
+  // of the shadow maps (see GpuCulling.recordReceiverMask).
+  readonly receivers?: boolean;
   // Candidates kept on the GPU (a GpuScene): their boxes (center, half
   // extents, two vec4f each) and rows, `count` of them, in buffers of
   // whole workgroups (64). `rows` and `bounds` are then not read.
@@ -500,9 +763,16 @@ export class GpuCulling {
   private readonly _runner: ComputeRunner;
   private readonly _lists = new Map<string, CullingBuffers>();
   private readonly _histories = new Map<string, GpuBuffer>();
+  // The receiver masks of the shadow maps, by name, and the owners of
+  // their dispatches.
+  private readonly _masks = new Map<string, Mask>();
+  private _noReceivers?: GpuBuffer;
+  private _partial?: GpuBuffer;
 
   constructor(private readonly _backend: RenderBackend) {
-    this._runner = new ComputeRunner(_backend);
+    // The dispatches of a frame: two phases of the camera and of each
+    // shadow map, a few lists each, ⌈log₂ n⌉ + 5 dispatches per list.
+    this._runner = new ComputeRunner(_backend, { bindGroups: 4096 });
   }
 
   /** Whether the backend can cull on the GPU. */
@@ -571,6 +841,7 @@ export class GpuCulling {
       phase,
       pack,
       persistent,
+      receivers,
     } = candidates;
     const instances = table.instanceBuffer;
     if (!instances) {
@@ -583,17 +854,19 @@ export class GpuCulling {
       [Math.max(1, Math.ceil(n / Workgroup))] as const;
     // The candidates of the first phase, tested again: their boxes and
     // rows, uploaded once.
-    const early =
-      phase?.kind === 'late' && phase.early
-        ? this._lists.get(phase.early)
+    const earlyName =
+      phase?.kind === 'late' || phase?.kind === 'shadow'
+        ? phase.early
         : undefined;
-    if (phase?.kind === 'late' && phase.early && !early) {
-      throw new Error(`No first phase "${phase.early}" for "${name}"`);
+    const early = earlyName ? this._lists.get(earlyName) : undefined;
+    if (earlyName && !early) {
+      throw new Error(`No first phase "${earlyName}" for "${name}"`);
     }
     // Uploaded by the CPU, or already on the GPU.
     const uploaded = !early && !persistent;
     const source = early?.source ?? persistent ?? list;
     list.source = source;
+    list.count = count;
 
     // The boxes: center, then half extents (infinite without bounds).
     const boxes = list.boxData;
@@ -657,7 +930,23 @@ export class GpuCulling {
       });
     } else if (phase.kind === 'early') {
       this._runner.record(pass, programs.early, {
-        values: { ...tested, rows: list.rows, history: phase.history },
+        values: { ...tested, rows: source.rows, history: phase.history },
+        workgroups: groups(count),
+        owner: step(0),
+      });
+    } else if (phase.kind === 'shadow') {
+      this._runner.record(pass, programs.shadow, {
+        values: {
+          ...tested,
+          ...matrixRows(phase.matrix),
+          // Bound, but not read, without a mask or a first phase (not
+          // `visible`: WebGPU binds no buffer as read-only and writable
+          // storage in a dispatch).
+          mask: phase.mask ?? this.mask(name).buffers[0],
+          useMask: phase.mask ? 1 : 0,
+          drawn: early?.visible ?? list.receivers,
+          phased: early ? 1 : 0,
+        },
         workgroups: groups(count),
         owner: step(0),
       });
@@ -669,8 +958,10 @@ export class GpuCulling {
           ...phase.textures,
           rows: source.rows,
           history: phase.history,
-          // Bound, but not read, without a first phase.
-          drawn: (early ?? list).visible,
+          // Bound, but not read, without a first phase (not `visible`:
+          // WebGPU binds no buffer as read-only and writable storage in a
+          // dispatch).
+          drawn: early?.visible ?? list.receivers,
           phased: early ? 1 : 0,
           remember: phase.remember ? 1 : 0,
         },
@@ -693,6 +984,13 @@ export class GpuCulling {
       workgroups: groups(count),
       owner: step(k++),
     });
+    if (receivers) {
+      this._runner.record(pass, programs.receivers, {
+        values: { sum, receivers: list.receivers, count },
+        workgroups: groups(count),
+        owner: step(k++),
+      });
+    }
     this._runner.record(pass, programs.arguments, {
       values: {
         runs: list.runs,
@@ -745,16 +1043,127 @@ export class GpuCulling {
     };
   }
 
+  /**
+   * Records the receiver mask of a shadow map (`name`, its tile, whose
+   * matrix is orthographic): the receivers of the lists culled before in
+   * the frame with `receivers` (the visible candidates of the camera), seen
+   * from the light. Each of its MaskSize² cells holds the farthest depth of
+   * the receivers covering it, their boxes grown by `margin` (clip space).
+   * The casters of a 'shadow' phase with this mask are drawn only if their
+   * shadow can fall on one of them.
+   */
+  recordReceiverMask(
+    pass: GpuComputePassEncoder,
+    name: string,
+    matrix: ArrayLike<number>,
+    lists: readonly string[],
+    margin: number,
+  ): GpuBuffer {
+    const mask = this.mask(name);
+    const programs = this.programs();
+    const rows = matrixRows(matrix);
+    const used = lists.flatMap((key) => {
+      const list = this._lists.get(key);
+      return list?.source ? [list] : [];
+    });
+    // Without receivers: a list of none, to clear the mask.
+    if (!this._noReceivers) {
+      this._noReceivers = this._backend.buffers.create({
+        size: 256,
+        usage: ['storage', 'copy-dst'],
+        label: 'culling no receivers',
+      });
+      this._noReceivers.write(0, new ArrayBuffer(256));
+    }
+    const noBoxes = this._noReceivers;
+    const sources =
+      used.length > 0
+        ? used.map((list) => ({
+            receivers: list.receivers,
+            boxes: (list.source as { boxes: GpuBuffer }).boxes,
+            count: list.count,
+          }))
+        : [{ receivers: noBoxes, boxes: noBoxes, count: 0 }];
+    const cells = MaskSize * MaskSize;
+    // The chunks of the receivers, shared by the masks.
+    const partial = (this._partial ??= this._backend.buffers.create({
+      size: (MaxMaskReceivers / MaskChunk) * cells * 4,
+      usage: ['storage'],
+      label: 'culling receiver mask chunks',
+    }));
+    sources.forEach(({ receivers, boxes, count }, k) => {
+      while (mask.steps.length <= 2 * k + 1) {
+        mask.steps.push({});
+      }
+      // As many chunks as the list may have receivers (the GPU knows
+      // how many it has).
+      const chunks = Math.max(
+        1,
+        Math.ceil(Math.min(count, MaxMaskReceivers) / MaskChunk),
+      );
+      this._runner.record(pass, programs.maskChunks, {
+        values: {
+          receivers,
+          boxes,
+          ...rows,
+          partial,
+          margin,
+          cap: MaxMaskReceivers,
+          chunks,
+        },
+        workgroups: [(chunks * cells) / Workgroup],
+        owner: mask.steps[2 * k],
+      });
+      this._runner.record(pass, programs.mask, {
+        values: {
+          receivers,
+          partial,
+          previous: mask.buffers[(k + 1) % 2],
+          mask: mask.buffers[k % 2],
+          cap: MaxMaskReceivers,
+          clear: k === 0 ? 1 : 0,
+        },
+        workgroups: [cells / Workgroup],
+        owner: mask.steps[2 * k + 1],
+      });
+    });
+    return mask.buffers[(sources.length - 1) % 2];
+  }
+
   destroy(): void {
     for (const list of this._lists.values()) {
       destroyBuffers(list);
     }
     this._lists.clear();
+    for (const mask of this._masks.values()) {
+      mask.buffers.forEach((buffer) => buffer.destroy());
+    }
+    this._masks.clear();
+    this._noReceivers?.destroy();
+    this._noReceivers = undefined;
+    this._partial?.destroy();
+    this._partial = undefined;
     for (const history of this._histories.values()) {
       history.destroy();
     }
     this._histories.clear();
     this._runner.destroy();
+  }
+
+  // The receiver mask of a shadow map, kept from frame to frame.
+  private mask(name: string): Mask {
+    let mask = this._masks.get(name);
+    if (!mask) {
+      const create = (k: number) =>
+        this._backend.buffers.create({
+          size: MaskSize * MaskSize * 4,
+          usage: ['storage', 'copy-dst'],
+          label: `culling ${name} mask ${k}`,
+        });
+      mask = { buffers: [create(0), create(1)], steps: [] };
+      this._masks.set(name, mask);
+    }
+    return mask;
   }
 
   // The buffers of a list, holding `count` candidates and `runs` runs:
@@ -816,9 +1225,12 @@ export class GpuCulling {
       packed: create(needed.arguments, 'packed', ['storage', 'indirect']),
       counts: create(needed.counts, 'counts', ['storage', 'indirect']),
       nonEmpty: create(needed.counts, 'non-empty runs'),
+      // Their number first.
+      receivers: create(needed.rows + 4, 'receivers'),
       boxData: new Float32Array(boxes.size / 4),
       runData: new Uint32Array(runBuffer.size / 4),
       steps: previous?.steps ?? [],
+      count: 0,
     };
     this._lists.set(name, list);
     return list;
@@ -834,6 +1246,10 @@ export class GpuCulling {
         arguments: this.build(argumentsGraph()),
         nonEmpty: this.build(nonEmptyGraph()),
         pack: this.build(packGraph()),
+        shadow: this.build(shadowTestGraph()),
+        receivers: this.build(receiversGraph()),
+        mask: this.build(maskGraph()),
+        maskChunks: this.build(maskChunksGraph()),
       };
     }
     return this._programs;

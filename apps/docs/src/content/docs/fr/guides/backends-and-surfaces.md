@@ -263,18 +263,61 @@ crane.transform.position = { x: 3 };
 city.touch(crane);
 ```
 
+Un scene graph le fait tout seul : `new Scene({ gpuScene: true })` garde
+ses renderers statiques dans sa propre `GpuScene` (`scene.gpuScene`), les
+ajoute et les retire, touche ceux qui bougent. Dessinez la scène comme
+d'habitude, avec `gpuCulling` : le renderer les prend là, et les requêtes
+de la scène les laissent de côté.
+
+```ts
+const scene = new Scene({ gpuScene: true });
+buildCity(scene); // des nœuds statiques
+renderer.render({ source: scene, camera, surface, gpuCulling: true });
+```
+
 Sur 99 225 immeubles, le CPU d'une frame passe de 125 ms (cullés sur le
-GPU, préparés un par un) à 1 ms, quel que soit leur nombre.
+GPU, préparés un par un) à 1 ms, quel que soit leur nombre ; avec les
+ombres du soleil, de 102 ms (cullés sur le CPU) à 4 ms.
 
 - Les objets statiques ne sont réécrits qu'après `touch` ; les objets
   `dynamic`, à chaque frame. Ajouter ou retirer des objets les range tous
   à nouveau.
 - Les objets transparents sont dessinés comme d'habitude (triés à chaque
-  frame), et les shadow maps interrogent les objets sur le CPU.
-- Les layers des vues ne s'appliquent pas ; une `GpuScene` est dessinée par
-  un seul renderer. Elle se donne avec une `source` et des `items`.
+  frame).
+- Les shadow maps cullent aussi ses projeteurs sur le GPU, tuile par tuile,
+  avec les mêmes lots et draws multiples que la caméra (voir plus bas).
+- Les layers des vues ne s'appliquent pas ; plusieurs renderers peuvent
+  dessiner la même `GpuScene`. Elle se donne avec une `source` et des
+  `items`.
+- Un scene graph y garde ses renderers statiques opaques vus de tous les
+  layers : ni ceux qui sont cachés, ni ceux d'un lot statique, ni les
+  niveaux de détail, qui changent souvent. Ses nœuds dynamiques restent
+  dans ses requêtes.
 - Là où le backend ne culle pas sur le GPU (WebGL2), ses objets sont
-  dessinés comme une liste.
+  dessinés comme une liste (ceux d'un scene graph, depuis ses requêtes).
+
+### Les ombres cullées sur le GPU
+
+Les projeteurs d'une `GpuScene` sont cullés sur le GPU pour chaque tuile
+de l'atlas des ombres, après la caméra : la boîte de chacun contre le
+frustum de la tuile, puis, pour les lumières directionnelles, contre les
+récepteurs que la caméra dessine. Vu de la lumière, un masque de 32 × 32
+cellules garde le récepteur le plus lointain de chacune ; un projeteur
+n'est dessiné que si l'une des cellules qu'il couvre a un récepteur
+derrière lui. Avec l'occlusion en deux phases, les ombres les suivent :
+les projeteurs de ce que la première dessine, puis, dans le même atlas,
+ceux de ce que la seconde trouve. Ce que le mouvement découvre a ses
+ombres dans la frame où il apparaît.
+
+Rien à régler : `gpuCulling` et une `GpuScene` (ou une scène qui en garde
+une) suffisent. Sur la ville de 99 225 immeubles vue de son avenue, les
+passes des ombres passent de 0,73 ms (tous les projeteurs dans le frustum
+du soleil) à 0,07 ms, et leur culling coûte 0,23 ms.
+
+Les récepteurs sont des boîtes : une grande (un seul sol sous toute la
+ville) couvre toutes les cellules, et garde tous les projeteurs devant
+elle. Découpez-la en dalles, comme la ville (`tiledGround`), pour que le
+test trouve ce qui est vu.
 
 ### Des meshes qui partagent leurs buffers
 

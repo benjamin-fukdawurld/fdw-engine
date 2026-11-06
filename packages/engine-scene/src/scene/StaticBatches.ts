@@ -463,6 +463,8 @@ export class StaticBatches implements SceneBatching {
         );
         merged.forEach((entity, slot) => {
           flags[entity] |= NodeFlags.Batched;
+          // Out of the GpuScene of the scene.
+          this._scene.reindex(entity);
           const member = this._members.get(entity) as Member;
           member.batch = batch;
           member.slot = slot;
@@ -499,6 +501,7 @@ export class StaticBatches implements SceneBatching {
     for (const batch of group.batches) {
       for (const entity of batch.entities) {
         flags[entity] &= ~NodeFlags.Batched;
+        this._scene.reindex(entity);
         const member = this._members.get(entity);
         if (member?.batch === batch) {
           member.batch = undefined;

@@ -8,9 +8,12 @@ import {
   surface,
   triangle,
 } from '../testing/fakeBackend';
+import { std } from '@fdw/engine-shader';
+import { DirectionalLight } from '../light';
 import { GpuScene } from './GpuScene';
 import { Material } from './Material';
-import { Renderer } from './Renderer';
+import type { OcclusionCuller } from './occlusion';
+import { Renderer, RenderOptions } from './Renderer';
 
 const setup = (indirectDraw = true) => {
   const { backend, log } = fakeBackend({
@@ -39,8 +42,14 @@ const setup = (indirectDraw = true) => {
   ];
   const scene = new GpuScene();
   items.forEach((item) => scene.add(item));
-  const render = () =>
-    renderer.render({ gpuScene: scene, camera, surface, gpuCulling: true });
+  const render = (options: Partial<RenderOptions> = {}) =>
+    renderer.render({
+      gpuScene: scene,
+      camera,
+      surface,
+      gpuCulling: true,
+      ...options,
+    });
   const buffer = (label: string) =>
     log.buffers.find((b) => b.label === `gpu scene ${label}`) as FakeBuffer;
   return { log, renderer, items, scene, render, buffer };
@@ -83,6 +92,99 @@ describe('GpuScene', () => {
     render();
     render();
     expect(buffer('boxes').writes).toBe(5);
+  });
+
+  it('follows its changes from a cursor per renderer', () => {
+    const { items, scene } = setup();
+    const cursor = scene.cursor;
+    const version = scene.version;
+    scene.touch(items[0]).touch(items[2]);
+    expect(scene.touchedSince(cursor)).toEqual([items[0], items[2]]);
+    expect(scene.touchedSince(cursor + 1)).toEqual([items[2]]);
+    expect(scene.touchedSince(scene.cursor)).toEqual([]);
+    // Laid out again: the touches are forgotten.
+    scene.remove(items[2]);
+    expect(scene.version).toBe(version + 1);
+    expect(scene.touchedSince(scene.cursor)).toEqual([]);
+  });
+
+  it('culls its shadow casters on the GPU, against the receivers the camera draws', () => {
+    const { log, render } = setup();
+    const sun = new DirectionalLight({
+      direction: { x: 0, y: -1, z: -1 },
+      castShadow: true,
+    });
+    render({ lights: [sun] });
+    // After the camera: the receiver mask and the casters of the tile.
+    expect(log.computePasses).toEqual([
+      'scene culling',
+      'scene shadows culling',
+    ]);
+    const pipelines = log.dispatches.map((dispatch) => dispatch.pipeline);
+    expect(pipelines).toContain('culling receivers');
+    expect(
+      pipelines.slice(pipelines.indexOf('culling receiver mask chunks')),
+    ).toEqual([
+      // The receivers of the GpuScene, then the transparent ones: by
+      // chunks, then merged.
+      'culling receiver mask chunks',
+      'culling receiver mask',
+      'culling receiver mask chunks',
+      'culling receiver mask',
+      'culling shadow test',
+      'culling scan',
+      'culling scan',
+      'culling scatter',
+      'culling arguments',
+    ]);
+    expect(log.renderPasses).toEqual([
+      'scene shadows',
+      'scene opaque',
+      'scene transparent',
+    ]);
+    // The two runs of the casters, drawn indirectly into the tile.
+    // (Then the two runs of the camera, and the transparent item.)
+    expect(log.draws.map((draw) => draw.indirect?.offset)).toEqual([
+      0, 20, 0, 20, 0,
+    ]);
+  });
+
+  it('draws over the shadow maps the casters the second phase needs', () => {
+    const { log, render } = setup();
+    const sun = new DirectionalLight({
+      direction: { x: 0, y: -1, z: -1 },
+      castShadow: true,
+    });
+    const occlusion: OcclusionCuller = {
+      begin: () => undefined,
+      visible: () => true,
+      addPasses: () => undefined,
+      addPyramid: () => ({
+        levels: [],
+        names: [],
+        key: 'none',
+        values: {},
+        test: (g, low) =>
+          g.call(std.greaterEqual, { a: low.swizzle('x'), b: -1e38 }),
+      }),
+    };
+    render({ lights: [sun], occlusion });
+    expect(log.computePasses).toEqual([
+      'scene culling',
+      'scene shadows culling',
+      'scene occlusion culling',
+      'scene shadows late culling',
+    ]);
+    expect(log.renderPasses).toEqual([
+      'scene shadows',
+      'scene opaque',
+      'scene shadows late',
+      'scene opaque late',
+      'scene transparent',
+    ]);
+    // The second loads the atlas of the first.
+    const late = log.passes[log.renderPasses.indexOf('scene shadows late')];
+    expect(late.depthAttachment?.load).toBe('load');
   });
 
   it('is a list of items where the backend cannot cull on the GPU', () => {

@@ -96,7 +96,7 @@ import { MaxObjectId, ObjectRows, RowSource } from './ObjectRows';
 import type { OcclusionCuller, OcclusionPyramid } from './occlusion';
 import { ArenaBuffers, ArenaPlacement } from './arenaBuffers';
 import type { GpuScene } from './GpuScene';
-import { GpuSceneLayout } from './gpuSceneLayout';
+import { GpuSceneLayout, SceneBucket } from './gpuSceneLayout';
 import {
   AllLayers,
   Renderable,
@@ -592,12 +592,46 @@ interface CulledList {
   readonly scene?: SceneRuns;
 }
 
-// The runs of the opaque items of a GpuScene in a view: its layout, and
-// the entry of each run (undefined while its pipeline is being created:
-// not drawn).
+// The runs of the opaque items of a GpuScene in a view: its layout, its
+// first `count` candidates in `buckets` (all of them for the camera, the
+// casters for a shadow map), and the entry of each run (undefined while
+// its pipeline is being created: not drawn).
 interface SceneRuns {
   readonly layout: GpuSceneLayout;
+  readonly count: number;
+  readonly buckets: readonly SceneBucket[];
   readonly entries: readonly (PreparedItem | undefined)[];
+}
+
+// The shadow maps of scene passes (see Renderer.prepareShadows): the
+// tiles of the atlas, and what each draws.
+interface ShadowPlan {
+  readonly name: string;
+  readonly tiles: ShadowTile[];
+  readonly draws: readonly ShadowDraw[];
+  // The draws given to the passes: the casters of the CPU, and the
+  // candidates of the GpuScene of each tile.
+  readonly casters: number;
+  // Its version written by the last pass.
+  atlas: TextureHandle;
+  // Some tile culls the casters of a GpuScene on the GPU.
+  readonly gpu: boolean;
+  // Some tile tests them against the receivers of the camera.
+  readonly masked: boolean;
+}
+
+// What a tile of the shadow atlas draws: the casters found by the CPU
+// (`entries`), and those of a GpuScene culled on the GPU (`scene`), with
+// the receiver test for the orthographic tiles (`masked`).
+interface ShadowDraw {
+  readonly tile: ShadowTile;
+  readonly key: string;
+  readonly entries: readonly PreparedItem[];
+  readonly scene?: SceneRuns;
+  readonly masked: boolean;
+  // Their culled lists, in the first and second phases.
+  culled?: CulledList;
+  late?: CulledList;
 }
 
 // A list of entries to cull on the GPU (see Renderer.addCullingPass): the
@@ -607,6 +641,11 @@ interface CullingList {
   readonly entries: readonly PreparedItem[];
   // The items of a GpuScene, instead of `entries`.
   readonly scene?: SceneRuns;
+  // Its frustum, when it is not that of the pass (the tiles of the
+  // shadow atlas).
+  readonly planes?: ArrayLike<number>;
+  // Compacts its visible candidates: the receivers of the shadow maps.
+  readonly receivers?: boolean;
   readonly phase?:
     | { readonly kind: 'early' }
     | {
@@ -614,8 +653,25 @@ interface CullingList {
         // The list of the first phase (the same entries).
         readonly early?: string;
         readonly remember: boolean;
+      }
+    | {
+        // The casters of a tile of the shadow atlas.
+        readonly kind: 'shadow';
+        readonly matrix: ArrayLike<number>;
+        // Tested against the receivers of these lists (culled before),
+        // their boxes grown by `margin` (clip space).
+        readonly receivers?: {
+          readonly lists: readonly string[];
+          readonly margin: number;
+        };
+        // The list of the first phase (the same casters).
+        readonly early?: string;
       };
 }
+
+// The texels the receivers of a shadow map are grown by, for its receiver
+// test: what the filter and the normal offset read around a point.
+const ShadowMargin = 4;
 
 // A draw of the arguments of a buffer, which the backend must have.
 function indirectDraw<T>(draw: T | undefined): T {
@@ -1107,14 +1163,17 @@ export class Renderer {
     this._objectRows.beginFrame();
     // Culled on the GPU, the lists are not tested here.
     // The opaque items of a GpuScene, kept on the GPU where it culls: the
-    // camera queries give only its transparent items.
-    const sceneLayout =
-      gpuScene && culling ? this.gpuSceneLayout(gpuScene) : undefined;
+    // camera queries give only its transparent items, and the shadow maps
+    // cull its casters on the GPU too. The GpuScene of the source (a scene
+    // graph) where the GPU culls: the source leaves its items out.
+    const kept = gpuScene ?? (culling ? source?.gpuScene : undefined);
+    const sceneLayout = kept && culling ? this.gpuSceneLayout(kept) : undefined;
     const from = this.sourceOf(
       source,
       items,
       !culling,
-      gpuScene && this.gpuSceneSource(gpuScene, sceneLayout),
+      kept && this.gpuSceneSource(kept, sceneLayout),
+      !gpuScene && kept !== undefined,
     );
     const sceneOpaque = sceneLayout && include !== 'transparent';
     const cameraCache = this.cameraCache(camera);
@@ -1196,10 +1255,12 @@ export class Renderer {
     }
     const casters =
       shadows && !receivers.isEmpty() ? used.filter(castsShadow) : [];
-    // Traced shadows need no shadow map.
-    const shadowPass =
+    // Traced shadows need no shadow map. The casters of a GpuScene are
+    // culled on the GPU after the camera's (against what it sees): their
+    // passes come after its culling pass.
+    const shadowPlan =
       casters.length > 0 && this._shadowAtlasSize > 0 && !rayShadows
-        ? this.addShadowPass(
+        ? this.prepareShadows(
             graph,
             `${name} shadows`,
             from,
@@ -1207,8 +1268,14 @@ export class Renderer {
             casters,
             receivers,
             camera,
+            sceneLayout,
           )
         : undefined;
+    if (shadowPlan && !shadowPlan.gpu) {
+      this.addShadowDraws(graph, shadowPlan, 'all');
+    }
+    // The camera lists give the receivers of the shadow maps.
+    const receiving = shadowPlan?.masked ? { receivers: true } : {};
 
     const environmentAtlas = environment
       ? this.environmentAtlas(graph, environment)
@@ -1235,7 +1302,7 @@ export class Renderer {
           cullMode:
             faces === 'back' && cullMode === 'back' ? 'front' : cullMode,
           linear,
-          shadows: shadowPass !== undefined,
+          shadows: shadowPlan !== undefined,
           ...(rayShadows && shadows ? { rayShadows: rayShadows.samples } : {}),
           ...(environment ? { environment: true } : {}),
           ...(fogged ? { fog: true } : {}),
@@ -1278,6 +1345,8 @@ export class Renderer {
     const sceneRuns: SceneRuns | undefined = sceneOpaque
       ? {
           layout: sceneLayout,
+          count: sceneLayout.count,
+          buckets: sceneLayout.buckets,
           entries: sceneLayout.buckets.map((bucket) => {
             const item = bucket.items[0];
             return this.prepare(
@@ -1301,8 +1370,8 @@ export class Renderer {
           (twoPhases ? 2 : 1) +
         this.drawCalls(transparentEntries),
       lights: used.length,
-      shadowMaps: shadowPass?.tiles.length ?? 0,
-      casters: shadowPass?.casters ?? 0,
+      shadowMaps: shadowPlan?.tiles.length ?? 0,
+      casters: shadowPlan?.casters ?? 0,
     });
     const position = camera.position;
     // With the culling on the GPU, the light clusters are filled there too.
@@ -1311,7 +1380,7 @@ export class Renderer {
       used,
       cameraCache,
       camera,
-      shadowPass?.tiles,
+      shadowPlan?.tiles,
       shadows ? rayShadows?.offset : undefined,
       culling,
     );
@@ -1332,7 +1401,7 @@ export class Renderer {
         ...lightValues,
       },
       used.length,
-      shadowPass?.tiles,
+      shadowPlan?.tiles,
     );
     this.bindLights(view, this._frameLights);
     this.bindRays(view, rays?.scene);
@@ -1354,6 +1423,7 @@ export class Renderer {
     const transparentList: CullingList = {
       key: `${name} transparent`,
       entries: transparentEntries,
+      ...receiving,
     };
     const firstCulled = culling
       ? this.addCullingPass(
@@ -1367,24 +1437,28 @@ export class Renderer {
                   key: opaqueKey,
                   entries: opaqueEntries,
                   phase: { kind: 'early' },
+                  ...receiving,
                 },
                 {
                   key: sceneKey,
                   entries: [],
                   ...(sceneRuns ? { scene: sceneRuns } : {}),
                   phase: { kind: 'early' },
+                  ...receiving,
                 },
               ]
             : [
                 {
                   key: opaqueKey,
                   entries: include !== 'transparent' ? opaqueEntries : [],
+                  ...receiving,
                 },
                 transparentList,
                 {
                   key: sceneKey,
                   entries: [],
                   ...(sceneRuns ? { scene: sceneRuns } : {}),
+                  ...receiving,
                 },
               ],
         )
@@ -1408,6 +1482,16 @@ export class Renderer {
             },
           ]),
     ]);
+    // The shadow maps of the casters culled on the GPU: those of the
+    // receivers the camera drew so far.
+    if (shadowPlan?.gpu) {
+      this.addShadowDraws(
+        graph,
+        shadowPlan,
+        twoPhases ? 'early' : 'all',
+        firstCulled,
+      );
+    }
     // The textures of the graph read by the materials, and the materials
     // that have them.
     const readInputs = (pass: {
@@ -1483,7 +1567,7 @@ export class Renderer {
     if (include !== 'transparent') {
       const last = !transparents;
       const opaque = graph.addRasterPass(`${name} opaque`, (pass) => {
-        const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+        const atlas = shadowPlan && pass.read(shadowPlan.atlas, 'sampled');
         const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
         const read = readInputs(pass);
         if (opaqueCulled) {
@@ -1561,6 +1645,7 @@ export class Renderer {
               key: `${name} opaque late`,
               entries: opaqueEntries,
               phase: { kind: 'late', early: opaqueKey, remember: true },
+              ...receiving,
             },
             {
               ...transparentList,
@@ -1571,6 +1656,7 @@ export class Renderer {
               entries: [],
               ...(sceneRuns ? { scene: sceneRuns } : {}),
               phase: { kind: 'late', early: sceneKey, remember: true },
+              ...receiving,
             },
           ],
           pyramid,
@@ -1585,12 +1671,21 @@ export class Renderer {
             ...(transparentCulled ? { culled: transparentCulled } : {}),
           },
         ]);
+        // The casters of what the second phase found: the receivers drawn
+        // by it, and the transparent ones.
+        if (shadowPlan?.gpu) {
+          this.addShadowDraws(graph, shadowPlan, 'late', [
+            lateCulled,
+            transparentCulled,
+            lateScene,
+          ]);
+        }
         if (lateCulled || lateScene) {
           const late = lateCulled;
           const scene = lateScene;
           const drawn = colorVersion;
           const written = graph.addRasterPass(`${name} opaque late`, (pass) => {
-            const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+            const atlas = shadowPlan && pass.read(shadowPlan.atlas, 'sampled');
             const ibl =
               environmentAtlas && pass.read(environmentAtlas, 'sampled');
             const read = readInputs(pass);
@@ -1638,7 +1733,7 @@ export class Renderer {
         });
       }
     }
-    const atlas = shadowPass ? { shadows: shadowPass.atlas } : {};
+    const atlas = shadowPlan ? { shadows: shadowPlan.atlas } : {};
     if (!transparents || !target || !color) {
       return {
         ...(colorVersion ? { color: colorVersion } : {}),
@@ -1651,7 +1746,7 @@ export class Renderer {
     const over = colorVersion ?? color;
     const transparent = graph.addRasterPass(`${name} transparent`, (pass) => {
       pass.readDepth(depthVersion);
-      const atlas = shadowPass && pass.read(shadowPass.atlas, 'sampled');
+      const atlas = shadowPlan && pass.read(shadowPlan.atlas, 'sampled');
       const ibl = environmentAtlas && pass.read(environmentAtlas, 'sampled');
       const read = readInputs(pass);
       if (transparentCulled) {
@@ -1980,7 +2075,19 @@ export class Renderer {
     test = true,
     // Queried besides (the items of a GpuScene).
     extra?: RenderSource,
+    // The items of the GpuScene of the source are drawn from `extra`: the
+    // queries of the source leave them out.
+    skipGpuScene = false,
   ): RenderSource {
+    if (source && skipGpuScene) {
+      const all = source;
+      source = {
+        query: (frustum, layers, visit, view) =>
+          all.query(frustum, layers, visit, view, { skipGpuScene: true }),
+        ...(all.lights ? { lights: () => all.lights!() } : {}),
+        ...(all.bounds ? { bounds: (out: Aabb) => all.bounds!(out) } : {}),
+      };
+    }
     if (extra) {
       const first = this.sourceOf(source, items, test);
       return {
@@ -2308,12 +2415,15 @@ export class Renderer {
 
   // --- Shadows -------------------------------------------------------------------
 
-  // The pass drawing the shadow maps of the lights into the tiles of an
-  // atlas: one depth-only draw of the casters per light, each with the
-  // frame uniforms of the light (its view projection). A shadow map covers
-  // the receivers (what the camera sees); its casters are the items of the
-  // source in its frustum, which reaches towards the light.
-  private addShadowPass(
+  // The shadow maps of scene passes, before their passes (addShadowDraws):
+  // the tiles of the lights in an atlas, each drawn with the frame uniforms
+  // of its light (its view projection). A shadow map covers the receivers
+  // (what the camera sees); its casters are the items of the source in its
+  // frustum, which reaches towards the light, and those of the GpuScene
+  // `layout`, culled on the GPU (design/p24-gpu-driven.md §3.9): for the
+  // orthographic tiles (the directional lights), only those whose shadow
+  // can fall on what the camera draws.
+  private prepareShadows(
     graph: RenderGraph,
     name: string,
     source: RenderSource,
@@ -2321,7 +2431,8 @@ export class Renderer {
     lights: readonly ShadowCastingLight[],
     receivers: Aabb,
     camera: Camera,
-  ): { atlas: TextureHandle; tiles: ShadowTile[]; casters: number } {
+    layout: GpuSceneLayout | undefined,
+  ): ShadowPlan {
     const format = this.backend.depthFormat;
     const tiles = this._shadowCameras.tiles(
       lights,
@@ -2332,19 +2443,27 @@ export class Renderer {
     );
     let casterCount = 0;
     const shadowVariants = this.shadowVariants();
-    const draws = tiles.map((tile, index) => {
-      const view = this.view(`${name} ${index}`);
+    const variantOf = (item: Renderable) =>
+      item.material.renderState.doubleSided
+        ? shadowVariants.none
+        : shadowVariants.back;
+    // The runs of the casters of the GpuScene.
+    const sceneCasters =
+      layout && layout.casterCount > 0
+        ? layout.buckets.slice(0, layout.casterBuckets)
+        : undefined;
+    const draws = tiles.map((tile, index): ShadowDraw => {
+      const key = `${name} ${index}`;
+      const view = this.view(key);
       const casters: Renderable[] = [];
-      const frustum = this.frustum(`${name} ${index}`).setFromMatrix(
-        tile.matrix,
-      );
+      const frustum = this.frustum(key).setFromMatrix(tile.matrix);
       // A face of a point light that sees none of the receivers keeps its
       // tile, unread, but draws nothing.
       if (
         tile.face !== undefined &&
         frustum.classifyAabb(receivers) === 'outside'
       ) {
-        return { tile, entries: [] };
+        return { tile, key, entries: [], masked: false };
       }
       source.query(
         frustum,
@@ -2361,13 +2480,7 @@ export class Renderer {
       );
       const entries: PreparedItem[] = [];
       for (const item of casters) {
-        const entry = this.prepare(
-          item,
-          item.material.renderState.doubleSided
-            ? shadowVariants.none
-            : shadowVariants.back,
-          view,
-        );
+        const entry = this.prepare(item, variantOf(item), view);
         if (entry) {
           entries.push(entry);
         }
@@ -2375,35 +2488,144 @@ export class Renderer {
       // Instanced as in the scene: the casters sharing a mesh and a
       // material in one draw.
       sortByState(entries);
-      if (entries.length > 0) {
-        this.writeView(view, entries[0].layout, {
-          viewProjection: tile.matrix,
-        });
+      // A run per mesh and material of the GpuScene, prepared once.
+      const scene: SceneRuns | undefined =
+        layout && sceneCasters
+          ? {
+              layout,
+              count: layout.casterCount,
+              buckets: sceneCasters,
+              entries: sceneCasters.map((bucket) =>
+                this.prepare(bucket.items[0], variantOf(bucket.items[0]), view),
+              ),
+            }
+          : undefined;
+      const first =
+        entries[0] ?? scene?.entries.find((entry) => entry !== undefined);
+      if (first) {
+        this.writeView(view, first.layout, { viewProjection: tile.matrix });
       }
-      casterCount += entries.length;
-      return { tile, entries };
+      casterCount += entries.length + (scene?.count ?? 0);
+      return {
+        tile,
+        key,
+        entries,
+        ...(scene ? { scene } : {}),
+        masked: scene !== undefined && tile.light instanceof DirectionalLight,
+      };
     });
+    return {
+      name,
+      tiles,
+      draws,
+      casters: casterCount,
+      atlas: graph.createTexture(`${name} atlas`, {
+        format,
+        size: { width: this._shadowAtlasSize, height: this._shadowAtlasSize },
+      }),
+      gpu: draws.some((draw) => draw.scene !== undefined),
+      masked: draws.some((draw) => draw.masked),
+    };
+  }
 
-    const atlas = graph.createTexture(`${name} atlas`, {
-      format,
-      size: { width: this._shadowAtlasSize, height: this._shadowAtlasSize },
-    });
-    this.addVertexCountPass(
-      graph,
-      `${name} vertex counts`,
-      draws.map(({ entries }) => ({ entries })),
+  // The passes drawing the shadow maps of scene passes into their atlas:
+  // its casters found by the CPU, and those of the GpuScene culled on the
+  // GPU, the culling pass first (after the camera's, whose lists give the
+  // receivers: `receivers`). With the occlusion culling in two phases, as
+  // the camera: 'early' draws what the receivers of its first phase need;
+  // 'late', over it, what those of the second add (the casters of the
+  // orthographic tiles only: the others draw all of theirs at first).
+  private addShadowDraws(
+    graph: RenderGraph,
+    plan: ShadowPlan,
+    phase: 'all' | 'early' | 'late',
+    receivers: readonly (CulledList | undefined)[] = [],
+  ): void {
+    const late = phase === 'late';
+    const name = plan.name;
+    const culled = plan.draws.filter((draw) =>
+      late ? draw.masked && draw.culled : draw.scene,
     );
-    const written = graph.addRasterPass(name, (pass) => ({
-      depth: pass.writeDepth(atlas, { load: 'clear', clearValue: 1 }),
-      execute: ({ pass: encoder }) => {
-        for (const { tile, entries } of draws) {
-          const { x, y, width, height } = tile.viewport;
-          encoder.setViewport(x, y, width, height);
-          this.drawAll(encoder, entries);
+    if (culled.length > 0) {
+      const lists = receivers.flatMap((list) => (list ? [list.key] : []));
+      const results = this.addCullingPass(
+        graph,
+        late ? `${name} late culling` : `${name} culling`,
+        name,
+        this.frustum(culled[0].key),
+        culled.map((draw): CullingList => ({
+          key: late ? `${draw.key} late` : draw.key,
+          entries: [],
+          scene: draw.scene,
+          planes: this.frustum(draw.key).planes,
+          phase: {
+            kind: 'shadow',
+            matrix: draw.tile.matrix,
+            ...(draw.masked
+              ? {
+                  receivers: {
+                    lists,
+                    margin: (2 * ShadowMargin) / draw.tile.viewport.width,
+                  },
+                }
+              : {}),
+            ...(late ? { early: draw.key } : {}),
+          },
+        })),
+        undefined,
+        receivers,
+      );
+      culled.forEach((draw, i) => {
+        if (late) {
+          draw.late = results[i];
+        } else {
+          draw.culled = results[i];
         }
+      });
+    }
+    if (!late) {
+      this.addVertexCountPass(
+        graph,
+        `${name} vertex counts`,
+        plan.draws.map(({ entries }) => ({ entries })),
+      );
+    }
+    const drawn = late ? culled : plan.draws;
+    if (drawn.length === 0) {
+      return;
+    }
+    const listOf = (draw: ShadowDraw) => (late ? draw.late : draw.culled);
+    const written = graph.addRasterPass(
+      late ? `${name} late` : name,
+      (pass) => {
+        for (const draw of drawn) {
+          const list = listOf(draw);
+          if (list) {
+            pass.read(list.handle, 'indirect');
+          }
+        }
+        return {
+          depth: pass.writeDepth(
+            plan.atlas,
+            late ? { load: 'load' } : { load: 'clear', clearValue: 1 },
+          ),
+          execute: ({ pass: encoder }) => {
+            for (const draw of drawn) {
+              const { x, y, width, height } = draw.tile.viewport;
+              encoder.setViewport(x, y, width, height);
+              if (!late) {
+                this.drawAll(encoder, draw.entries);
+              }
+              const list = listOf(draw);
+              if (list) {
+                this.drawEntries(encoder, [], list);
+              }
+            }
+          },
+        };
       },
-    }));
-    return { atlas: written.depth, tiles, casters: casterCount };
+    );
+    plan.atlas = written.depth;
   }
 
   // The variants of the shadow passes: the same objects every frame (their
@@ -3603,15 +3825,17 @@ export class Renderer {
     frustum: Frustum,
     lists: readonly CullingList[],
     pyramid?: OcclusionPyramid,
+    // Culled after these (the camera's, whose receivers it reads).
+    after: readonly (CulledList | undefined)[] = [],
   ): (CulledList | undefined)[] {
     const culling = (this._gpuCulling ??= new GpuCulling(this.backend));
     const culled = lists.map(
       ({ key, entries, scene }): CulledList | undefined => {
-        const count = scene ? scene.layout.count : entries.length;
+        const count = scene ? scene.count : entries.length;
         if (count === 0) {
           return undefined;
         }
-        let runs = scene?.layout.buckets.length ?? 0;
+        let runs = scene?.buckets.length ?? 0;
         if (!scene) {
           forEachRun(entries, () => runs++);
         }
@@ -3627,13 +3851,18 @@ export class Renderer {
       },
     );
     const used = culled.flatMap((list, i) =>
-      list ? [{ list, phase: lists[i].phase }] : [],
+      list ? [{ ...lists[i], list }] : [],
     );
     if (used.length === 0) {
       return culled;
     }
     const planes = Array.from(frustum.planes);
     graph.addComputePass(passName, (pass) => {
+      for (const list of after) {
+        if (list) {
+          pass.read(list.handle, 'storage-read');
+        }
+      }
       for (const { list } of used) {
         list.handle = pass.write(list.handle, 'storage-write');
       }
@@ -3648,7 +3877,7 @@ export class Renderer {
               (levels as TextureHandle[])[i],
             ) as MaterialValue;
           });
-          for (const { list, phase } of used) {
+          for (const { list, phase, receivers, planes: own } of used) {
             const scene = list.scene;
             // The second phase draws the candidates of the first, and the
             // rows of a GpuScene are kept on the GPU: only the instances
@@ -3657,7 +3886,7 @@ export class Renderer {
               scene || (phase?.kind === 'late' && phase.early)
                 ? {
                     ...this._objectRows.extend(
-                      scene ? scene.layout.count : list.entries.length,
+                      scene ? scene.count : list.entries.length,
                     ),
                     rows: new Uint32Array(0),
                   }
@@ -3680,7 +3909,7 @@ export class Renderer {
               });
             };
             if (scene) {
-              for (const bucket of scene.layout.buckets) {
+              for (const bucket of scene.buckets) {
                 run(bucket.mesh, bucket.start, bucket.items.length);
               }
             } else {
@@ -3706,6 +3935,23 @@ export class Renderer {
                 kind: 'early',
                 history: culling.history(view, this._objectRows.rowCount),
               };
+            } else if (phase?.kind === 'shadow') {
+              // The receivers of the tile, from the lists of the camera.
+              const mask =
+                phase.receivers &&
+                culling.recordReceiverMask(
+                  encoder,
+                  list.key,
+                  phase.matrix,
+                  phase.receivers.lists,
+                  phase.receivers.margin,
+                );
+              cullingPhase = {
+                kind: 'shadow',
+                matrix: phase.matrix,
+                ...(mask ? { mask } : {}),
+                ...(phase.early ? { early: phase.early } : {}),
+              };
             } else if (phase?.kind === 'late') {
               if (!pyramid) {
                 throw new Error(`"${passName}": no depth pyramid to test`);
@@ -3723,18 +3969,19 @@ export class Renderer {
             list.draws = culling.record(encoder, list.key, {
               first,
               rows,
-              count: scene ? scene.layout.count : list.entries.length,
+              count: scene ? scene.count : list.entries.length,
               table,
               bounds: (index) => this.worldBounds(list.entries[index].item),
               runs,
-              planes,
+              planes: own ?? planes,
               ...(cullingPhase ? { phase: cullingPhase } : {}),
               ...(pack ? { pack } : {}),
+              ...(receivers ? { receivers } : {}),
               ...(scene
                 ? {
                     persistent: {
                       ...scene.layout.buffers,
-                      count: scene.layout.count,
+                      count: scene.count,
                     },
                   }
                 : {}),
@@ -3920,6 +4167,7 @@ export class Renderer {
       this._gpuScenes.set(scene, layout);
       this._gpuSceneLayouts.add(layout);
     }
+    scene.sync();
     layout.sync(
       scene,
       (item) => this.worldBounds(item),
@@ -3928,9 +4176,10 @@ export class Renderer {
     return layout;
   }
 
-  // The items of a GpuScene as a source: those of the camera tested on the
-  // CPU (only the transparent ones when the GPU culls the others, `layout`),
-  // the shadow casters always (their culling is the shadow maps').
+  // The items of a GpuScene as a source, tested on the CPU: only the
+  // transparent ones when the GPU culls the others (`layout`), for the
+  // camera (the shadow maps cull its casters on the GPU: see
+  // prepareShadows); all of them otherwise.
   private gpuSceneSource(
     scene: GpuScene,
     layout: GpuSceneLayout | undefined,
@@ -3938,7 +4187,10 @@ export class Renderer {
     const all = () => scene.items();
     return {
       query: (frustum, layers, visit, view) => {
-        const items = layout && view === 'camera' ? layout.transparent : all();
+        if (layout && view === 'shadow') {
+          return;
+        }
+        const items = layout ? layout.transparent : all();
         this.listSource(items).query(frustum, layers, visit, view);
       },
       bounds: (out) => {

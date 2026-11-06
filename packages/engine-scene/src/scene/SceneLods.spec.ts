@@ -179,3 +179,28 @@ describe('findLodGroups', () => {
     ]);
   });
 });
+
+describe('SceneLods with a GpuScene', () => {
+  it('keeps the levels out of the GpuScene of the scene', () => {
+    const scene = new Scene({ gpuScene: true });
+    const gpuScene = scene.gpuScene as NonNullable<Scene['gpuScene']>;
+    const lods = new SceneLods(scene);
+    const material = new Material({ graph: colorGraph() });
+    const group = scene.root.add({ static: true });
+    const levels = [0, 1].map(() =>
+      group.add({ static: true }).setMesh(triangle(), material),
+    );
+    scene.flush();
+    expect(gpuScene.size).toBe(2);
+    lods.add(group, [
+      { nodes: [levels[0]], maxDistance: 10 },
+      { nodes: [levels[1]], maxDistance: 50 },
+    ]);
+    scene.flush();
+    expect(gpuScene.size).toBe(0);
+    // A group removed: its levels are back.
+    lods.remove(group);
+    scene.flush();
+    expect(gpuScene.size).toBe(2);
+  });
+});

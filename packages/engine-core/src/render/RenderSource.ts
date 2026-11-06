@@ -1,6 +1,7 @@
 import type { Mat4 } from '@fdw/engine-backend';
 import type { Aabb, Frustum } from '@fdw/engine-geometry';
 import type { BaseLight } from '../light';
+import type { GpuScene } from './GpuScene';
 import type { Transform } from '../Transform';
 import { TransformLayout } from '../TransformPool';
 import type { Material } from './Material';
@@ -47,6 +48,15 @@ export interface WorldRenderItem extends RenderItemBase {
 /** What the renderer draws: an item placed by a Transform or a world matrix. */
 export type Renderable = RenderItem | WorldRenderItem;
 
+/** What a renderer asks of a query of a RenderSource, besides the frustum. */
+export interface RenderQueryOptions {
+  /**
+   * The renderer draws the items of the GpuScene of the source from it
+   * (culled on the GPU): leave them out.
+   */
+  readonly skipGpuScene?: boolean;
+}
+
 /**
  * Where the renderer finds what to draw: queried for each view (the camera,
  * the shadow maps of the lights), with the volume the view sees. A scene
@@ -65,7 +75,15 @@ export interface RenderSource {
     layers: number,
     visit: (item: Renderable) => void,
     view: 'camera' | 'shadow',
+    options?: RenderQueryOptions,
   ): void;
+  /**
+   * Items of the source kept in a GpuScene (a scene graph keeps its static
+   * renderers there): where the renderer culls on the GPU (`gpuCulling`),
+   * it draws them from the GpuScene and asks the queries to leave them out
+   * (`skipGpuScene`); elsewhere, the queries give them as the others.
+   */
+  readonly gpuScene?: GpuScene;
   /** The lights of the source, when the frame does not give its own. */
   lights?(): Iterable<BaseLight>;
   /**

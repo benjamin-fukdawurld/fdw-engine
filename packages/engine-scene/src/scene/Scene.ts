@@ -5,12 +5,14 @@ import {
   Camera,
   composeBlock,
   DirectionalLight,
+  GpuScene,
   Material,
   Mesh,
   meshBox,
   PointLight,
   Renderable,
   RenderItem,
+  RenderQueryOptions,
   SpotLight,
   Transform,
   TransformLayout,
@@ -50,7 +52,24 @@ export const NodeFlags = {
   // Drawn in a static batch (StaticBatches): left out of the render
   // queries, which give the batch instead, but found by the others.
   Batched: 128,
+  // A level of detail (SceneLods): switched often, kept out of the
+  // GpuScene of the scene.
+  Lod: 256,
 } as const;
+
+/** What a scene is created with. */
+export interface SceneOptions {
+  /**
+   * Keeps the static renderers in a GpuScene (`scene.gpuScene`), by
+   * itself: added, touched when they move, removed. The renderers culling
+   * on the GPU (`gpuCulling`) draw them from there, without a query nor a
+   * preparation per object (design/p24-gpu-driven.md §3.10); elsewhere,
+   * the scene gives them as the others. Opaque renderers seen by every
+   * layer only: not hidden, not in a static batch, not a level of detail.
+   * Default false.
+   */
+  readonly gpuScene?: boolean;
+}
 
 /**
  * What changed for an entity, as told to the observers of a scene
@@ -142,6 +161,9 @@ export interface SceneBatching {
 
 const None = -1;
 
+// Where a renderer is indexed (MeshRenderer.indexed).
+const Indexed = { None: 0, Dynamic: 1, Static: 2, Gpu: 3 } as const;
+
 const {
   stride,
   world: World0,
@@ -188,6 +210,12 @@ export class Scene implements SceneGraph {
 
   readonly root: Node;
 
+  /**
+   * The static renderers kept on the GPU (SceneOptions.gpuScene): the
+   * renderers draw them from there where they cull on the GPU.
+   */
+  readonly gpuScene?: GpuScene;
+
   /** Called before a camera query keeps a node: the occlusion culling. */
   occlusion?: OcclusionCuller;
   /** @internal The static batches, set by StaticBatches. */
@@ -195,10 +223,17 @@ export class Scene implements SceneGraph {
 
   private readonly _dynamic = new Octree<number>();
   private readonly _static = new Octree<number>();
+  // The static renderers of the GpuScene: left out of the render queries
+  // of the renderers drawing it.
+  private readonly _gpu = new Octree<number>();
   // The roots of the branches changed since the last flush.
   private _changes: number[] = [];
   // Static renderers not indexed yet: indexed at once, at the next flush.
   private _pendingStatic: number[] = [];
+  private _pendingGpu: number[] = [];
+  // Renderers of the GpuScene whose mesh, material or shadow changed:
+  // added again.
+  private readonly _gpuChanged = new Set<number>();
   private readonly _nodes: (Node | undefined)[] = [];
   private _cameraQueries = 0;
   private _warnedStatic = false;
@@ -207,7 +242,10 @@ export class Scene implements SceneGraph {
   private readonly _lights;
   private readonly _observers: SceneObserver[] = [];
 
-  constructor() {
+  constructor(options: SceneOptions = {}) {
+    if (options.gpuScene) {
+      this.gpuScene = new GpuScene({ sync: () => this.flush() });
+    }
     const world = new World();
     this.world = world;
     this.transforms = new TransformPool({
@@ -239,7 +277,7 @@ export class Scene implements SceneGraph {
       boundsVersion: 'u32',
       meshVersion: 'u32',
       // The render item, and where the entity is indexed: 0 nowhere, 1 in
-      // the dynamic index, 2 in the static one.
+      // the dynamic index, 2 in the static one, 3 in that of the GpuScene.
       item: 'ref',
       indexed: 'u8',
     });
@@ -547,6 +585,9 @@ export class Scene implements SceneGraph {
   rendererChanged(entity: number): void {
     if (this.MeshRenderer.has(entity)) {
       this.MeshRenderer.boundsVersion[entity] = 0xffffffff;
+      if (this.MeshRenderer.indexed[entity] === Indexed.Gpu) {
+        this._gpuChanged.add(entity);
+      }
       this.queue(entity);
     }
   }
@@ -595,24 +636,33 @@ export class Scene implements SceneGraph {
         }
       }
     }
+    // The batches move renderers in and out of the GpuScene.
+    this.batching?.apply();
     if (this._pendingStatic.length > 0) {
       const pending = this._pendingStatic;
       this._pendingStatic = [];
-      this._static.insertAll(this.staticEntries(pending));
+      this._static.insertAll(
+        this.staticEntries(pending, this._static, Indexed.Static),
+      );
     }
-    this.batching?.apply();
+    if (this._pendingGpu.length > 0) {
+      const pending = this._pendingGpu;
+      this._pendingGpu = [];
+      this._gpu.insertAll(this.staticEntries(pending, this._gpu, Indexed.Gpu));
+    }
   }
 
-  // The static renderers waiting for the index, with their bounds: one box,
+  // The static renderers waiting for an index, with their bounds: one box,
   // reused (the index copies them).
-  private *staticEntries(pending: number[]): Iterable<readonly [number, Aabb]> {
+  private *staticEntries(
+    pending: number[],
+    index: Octree<number>,
+    indexed: number,
+  ): Iterable<readonly [number, Aabb]> {
     const box = new Aabb();
     const entry: [number, Aabb] = [0, box];
     for (const entity of pending) {
-      if (
-        this.MeshRenderer.indexed[entity] === 2 &&
-        !this._static.has(entity)
-      ) {
+      if (this.MeshRenderer.indexed[entity] === indexed && !index.has(entity)) {
         entry[0] = entity;
         this.readBounds(entity, box);
         yield entry;
@@ -672,12 +722,13 @@ export class Scene implements SceneGraph {
     }
     const b = MeshRenderer.bounds;
     const o = entity * 6;
-    const isStatic = this.NodeState.flags[entity] & NodeFlags.Static;
     const indexed = MeshRenderer.indexed[entity];
+    const target = this.indexOf(entity);
     // The same bounds, in the right index (a renderer given another mesh
     // or other layers): nothing to move.
     if (
-      indexed === (isStatic ? 2 : 1) &&
+      indexed === target &&
+      !this._gpuChanged.has(entity) &&
       b[o] === Math.fround(box.min[0]) &&
       b[o + 1] === Math.fround(box.min[1]) &&
       b[o + 2] === Math.fround(box.min[2]) &&
@@ -694,29 +745,86 @@ export class Scene implements SceneGraph {
     b[o + 4] = box.max[1];
     b[o + 5] = box.max[2];
     (MeshRenderer.item[entity] as SceneItem).boundsChanged(box);
+    this.place(entity, target, box);
+  }
 
-    if (isStatic) {
-      if (indexed === 2) {
+  // The index a renderer belongs in: dynamic, static, or that of the
+  // GpuScene (see SceneOptions.gpuScene).
+  private indexOf(entity: number): number {
+    const flags = this.NodeState.flags[entity];
+    if (!(flags & NodeFlags.Static)) {
+      return Indexed.Dynamic;
+    }
+    const material = this.MeshRenderer.material[entity] as Material;
+    return this.gpuScene &&
+      !(
+        flags &
+        (NodeFlags.HiddenInTree |
+          NodeFlags.Culled |
+          NodeFlags.Batched |
+          NodeFlags.Lod)
+      ) &&
+      this.NodeState.layers[entity] === AllLayers &&
+      material.renderState.alphaMode !== 'blend'
+      ? Indexed.Gpu
+      : Indexed.Static;
+  }
+
+  // Moves a renderer into an index (`to`), with its world bounds `box`:
+  // updated there if it is already in it.
+  private place(entity: number, to: number, box: Aabb): void {
+    const { MeshRenderer } = this;
+    const from = MeshRenderer.indexed[entity];
+    if (from === to) {
+      if (to === Indexed.Dynamic) {
+        this._dynamic.update(entity, box);
+      } else if (to === Indexed.Static) {
         // Indexed at the end of the flush, if not yet.
         if (this._static.has(entity)) {
           this.warnStaticMove();
           this._static.update(entity, box);
         }
-      } else {
-        if (indexed === 1) {
-          this._dynamic.remove(entity);
+      } else if (to === Indexed.Gpu) {
+        const gpuScene = this.gpuScene as GpuScene;
+        const item = MeshRenderer.item[entity] as SceneItem;
+        if (this._gpuChanged.delete(entity)) {
+          // Another mesh, material or shadow: another run.
+          gpuScene.remove(item);
+          gpuScene.add(item);
+        } else if (this._gpu.has(entity)) {
+          this.warnStaticMove();
+          this._gpu.update(entity, box);
+          gpuScene.touch(item);
         }
-        MeshRenderer.indexed[entity] = 2;
-        this._pendingStatic.push(entity);
       }
-    } else if (indexed === 1) {
-      this._dynamic.update(entity, box);
-    } else {
-      if (indexed === 2) {
-        this._static.remove(entity);
-      }
+      return;
+    }
+    this.unindex(entity);
+    MeshRenderer.indexed[entity] = to;
+    if (to === Indexed.Dynamic) {
       this._dynamic.insert(entity, box);
-      MeshRenderer.indexed[entity] = 1;
+    } else if (to === Indexed.Static) {
+      this._pendingStatic.push(entity);
+    } else if (to === Indexed.Gpu) {
+      this._pendingGpu.push(entity);
+      this.gpuScene?.add(MeshRenderer.item[entity] as SceneItem);
+    }
+  }
+
+  /**
+   * @internal The flags of a static renderer changed during a flush (a
+   * static batch took or gave it back): moved in or out of the GpuScene.
+   */
+  reindex(entity: number): void {
+    const indexed = this.MeshRenderer.indexed[entity];
+    if (
+      this.gpuScene &&
+      (indexed === Indexed.Static || indexed === Indexed.Gpu)
+    ) {
+      const target = this.indexOf(entity);
+      if (target !== indexed) {
+        this.place(entity, target, this.readBounds(entity, this._box));
+      }
     }
   }
 
@@ -731,15 +839,21 @@ export class Scene implements SceneGraph {
 
   private unindex(entity: number): void {
     const indexed = this.MeshRenderer.indexed[entity];
-    if (indexed === 1) {
+    if (indexed === Indexed.Dynamic) {
       this._dynamic.remove(entity);
-    } else if (indexed === 2) {
+    } else if (indexed === Indexed.Static) {
       // Removed from the static index, or from those waiting for it.
       if (!this._static.remove(entity)) {
         this._pendingStatic = this._pendingStatic.filter((e) => e !== entity);
       }
+    } else if (indexed === Indexed.Gpu) {
+      if (!this._gpu.remove(entity)) {
+        this._pendingGpu = this._pendingGpu.filter((e) => e !== entity);
+      }
+      this._gpuChanged.delete(entity);
+      this.gpuScene?.remove(this.MeshRenderer.item[entity] as SceneItem);
     }
-    this.MeshRenderer.indexed[entity] = 0;
+    this.MeshRenderer.indexed[entity] = Indexed.None;
   }
 
   // A light or a camera at the position of the entity, looking along its -z.
@@ -788,8 +902,10 @@ export class Scene implements SceneGraph {
       if (this._dynamic.size > 0) {
         out.union(this._dynamic.bounds(box));
       }
-      if (this._static.size > 0) {
-        out.union(this._static.bounds(box));
+      for (const index of [this._static, this._gpu]) {
+        if (index.size > 0) {
+          out.union(index.bounds(box));
+        }
       }
       return out;
     }
@@ -845,6 +961,7 @@ export class Scene implements SceneGraph {
     layers: number,
     visit: (item: Renderable) => void,
     view: 'camera' | 'shadow',
+    options: RenderQueryOptions = {},
   ): void {
     this.flush();
     const camera = view === 'camera';
@@ -870,6 +987,10 @@ export class Scene implements SceneGraph {
     };
     this._static.queryFrustum(frustum, emit);
     this._dynamic.queryFrustum(frustum, emit);
+    // Drawn from the GpuScene by the renderer.
+    if (!options.skipGpuScene) {
+      this._gpu.queryFrustum(frustum, emit);
+    }
     this.batching?.query(frustum, layers, visit, camera);
   }
 
@@ -908,6 +1029,7 @@ export class Scene implements SceneGraph {
       }
     };
     this._static.raycast(ray, collect, maxDistance);
+    this._gpu.raycast(ray, collect, maxDistance);
     this._dynamic.raycast(ray, collect, maxDistance);
     hits.sort((a, b) => a.distance - b.distance);
     for (const { entity, distance } of hits) {
@@ -943,6 +1065,9 @@ export class Scene implements SceneGraph {
       return true;
     };
     this._static.queryVolume(volume, check);
+    if (!stopped) {
+      this._gpu.queryVolume(volume, check);
+    }
     if (!stopped) {
       this._dynamic.queryVolume(volume, check);
     }
