@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import {
   installAssets,
   MaterialDataType,
@@ -269,4 +271,50 @@ describe('the level of the TPS', () => {
     // They moved: the test sees the ground.
     expect(built.some(([, y]) => y < 15)).toBe(true);
   });
+
+  it('keeps the graph of the ground of the level of the documentation up to date', async () => {
+    // The level keeps the graph of its ground, compiled as saved: written
+    // again by tools/assets/make-tps-level.ts when the graph changes.
+    const committed = JSON.parse(
+      await readFile(
+        fileURLToPath(
+          new URL(
+            '../../../../apps/docs/public/models/forest/forest.scene.json',
+            import.meta.url,
+          ),
+        ),
+        'utf8',
+      ),
+    );
+    const terrain = committed.nodes
+      .map(
+        (node: { components?: Record<string, { data: SavedOptions }> }) =>
+          node.components?.['tps terrain']?.data,
+      )
+      .find(Boolean) as SavedOptions;
+    const { backend, store, models, rock } = await setup();
+    const scene = new Scene();
+    // The ground alone: its graph depends only on the size of the terrain.
+    const forest = buildForest(backend, scene, undefined, models, rock, {
+      size: terrain.size,
+      treeRadius: 0,
+      coverDensity: 0,
+    });
+    const [json] = await saveTpsLevel(
+      backend,
+      scene,
+      store,
+      forest,
+      'forest/forest.scene.json',
+    );
+    const saved = JSON.parse(new TextDecoder().decode(json.bytes));
+    expect(
+      committed.graphs,
+      'forest.scene.json is out of date: run tools/assets/make-tps-level.ts',
+    ).toEqual(saved.graphs);
+  });
 });
+
+interface SavedOptions {
+  readonly size: number;
+}
